@@ -7,7 +7,7 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-import { BookOpenCheck, Calendar, ChevronLeft, ChevronRight, ClipboardList, Database, RefreshCw, Save, Search, Trash2, UserCheck, Users, X } from 'lucide-react';
+import { BookOpenCheck, Calendar, ChevronLeft, ChevronRight, ClipboardList, Clock, Database, RefreshCw, Save, Search, Trash2, UserCheck, Users, X } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
 
@@ -31,9 +31,22 @@ interface LearnerActivity {
   subjectGroup?: string;
   semester?: string | number;
   classId?: string | string[];
+  specialPeriodId?: string;
+  specialPeriodTitle?: string;
+  specialPeriodDay?: string;
+  specialPeriodStartTime?: string;
+  specialPeriodEndTime?: string;
   responsibleTeacherIds: string[];
   createdAt?: any;
   updatedAt?: any;
+}
+
+interface SpecialPeriod {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  day?: string;
 }
 
 interface Student {
@@ -92,6 +105,35 @@ const getVisiblePages = (currentPage: number, totalPages: number) => {
   return Array.from({ length: Math.min(5, totalPages) }, (_, index) => start + index);
 };
 
+const formatSpecialPeriodDay = (day?: string) => {
+  const labels: Record<string, string> = {
+    all: 'ทุกวัน',
+    mon: 'จันทร์',
+    tue: 'อังคาร',
+    wed: 'พุธ',
+    thu: 'พฤหัสบดี',
+    fri: 'ศุกร์',
+    sat: 'เสาร์',
+    sun: 'อาทิตย์',
+  };
+  return labels[day || 'all'] || day || 'ทุกวัน';
+};
+
+const isSelectableActivityPeriod = (period: SpecialPeriod) => {
+  const title = String(period.title || '').toLowerCase();
+  return !['ชุมนุม', 'โฮมรูม', 'พักกลางวัน', 'พักเที่ยง'].some(keyword => title.includes(keyword));
+};
+
+const sortSpecialPeriods = (a: SpecialPeriod, b: SpecialPeriod) => {
+  const timeCompare = normalizeTimeForSort(a.startTime).localeCompare(normalizeTimeForSort(b.startTime));
+  if (timeCompare !== 0) return timeCompare;
+  return String(a.title || '').localeCompare(String(b.title || ''), 'th');
+};
+
+const normalizeTimeForSort = (time?: string) => {
+  return String(time || '').replace(':', '.').padStart(5, '0');
+};
+
 const LearnerActivityManagementPage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
@@ -101,8 +143,10 @@ const LearnerActivityManagementPage: React.FC = () => {
 
   const [activities, setActivities] = useState<LearnerActivity[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedSpecialPeriodId, setSelectedSpecialPeriodId] = useState('');
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [description, setDescription] = useState('');
@@ -149,12 +193,18 @@ const LearnerActivityManagementPage: React.FC = () => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const [activitySnap, courseSnap] = await Promise.all([
+      const [activitySnap, courseSnap, periodSnap] = await Promise.all([
         getDocs(query(collection(db, 'school-settings', schoolId, 'learner-activities'), orderBy('createdAt', 'desc'))),
         getDocs(query(collection(db, 'school-settings', schoolId, 'courses'), orderBy('code', 'asc'))),
+        getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
       ]);
       setActivities(activitySnap.docs.map(d => ({ id: d.id, ...d.data() } as LearnerActivity)));
       setCourses(courseSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
+      setSpecialPeriods(periodSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as SpecialPeriod))
+        .filter(isSelectableActivityPeriod)
+        .sort(sortSpecialPeriods)
+      );
       const studentSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'students'), orderBy('firstName', 'asc')));
       setAllStudents(studentSnap.docs.map(d => ({ id: d.id, ...d.data() } as Student)).filter(isActiveStudent));
     } catch (error) {
@@ -194,6 +244,9 @@ const LearnerActivityManagementPage: React.FC = () => {
   );
 
   const selectedSemester = normalizeSemester(selectedCourse?.semester);
+  const selectedSpecialPeriod = useMemo(() => (
+    specialPeriods.find(period => period.id === selectedSpecialPeriodId) || null
+  ), [specialPeriods, selectedSpecialPeriodId]);
 
   const activeActivity = useMemo(() => {
     if (!selectedCourse) return null;
@@ -283,6 +336,7 @@ const LearnerActivityManagementPage: React.FC = () => {
 
   const resetForm = () => {
     setSelectedCourseId('');
+    setSelectedSpecialPeriodId('');
     setSelectedTeachers([]);
     setSelectedStudents([]);
     setDescription('');
@@ -333,11 +387,13 @@ const LearnerActivityManagementPage: React.FC = () => {
     );
     if (existingActivity) {
       setDescription(existingActivity.description || '');
+      setSelectedSpecialPeriodId(existingActivity.specialPeriodId || '');
       setSelectedTeachers(existingActivity.responsibleTeacherIds || []);
       await loadActivityMembers(existingActivity, courseSemester);
       return;
     }
     setDescription('');
+    setSelectedSpecialPeriodId('');
     setSelectedStudents([]);
     const teacherIds = (course.teacherAssignments || [])
       .map(assignment => assignment.teacherId)
@@ -348,6 +404,7 @@ const LearnerActivityManagementPage: React.FC = () => {
   const handleEdit = async (activity: LearnerActivity) => {
     setSelectedCourseId(activity.courseId);
     setDescription(activity.description || '');
+    setSelectedSpecialPeriodId(activity.specialPeriodId || '');
     setSelectedTeachers(activity.responsibleTeacherIds || []);
     setSelectedAvailableTeacherIds([]);
     setSelectedAssignedTeacherIds([]);
@@ -421,6 +478,10 @@ const LearnerActivityManagementPage: React.FC = () => {
       Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือกครูผู้ดูแลอย่างน้อย 1 คน', 'warning');
       return;
     }
+    if (!selectedSpecialPeriod) {
+      Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือกคาบกิจกรรมที่ใช้เช็คชื่อ', 'warning');
+      return;
+    }
 
     const activitySemester = normalizeSemester(selectedCourse.semester);
     const duplicate = activities.find(activity =>
@@ -443,6 +504,11 @@ const LearnerActivityManagementPage: React.FC = () => {
         subjectGroup: selectedCourse.subjectGroup || '',
         semester: activitySemester,
         classId: selectedCourse.classId || '',
+        specialPeriodId: selectedSpecialPeriod.id,
+        specialPeriodTitle: selectedSpecialPeriod.title,
+        specialPeriodDay: selectedSpecialPeriod.day || 'all',
+        specialPeriodStartTime: selectedSpecialPeriod.startTime,
+        specialPeriodEndTime: selectedSpecialPeriod.endTime,
         responsibleTeacherIds: selectedTeachers,
         updatedAt: serverTimestamp(),
       };
@@ -530,9 +596,9 @@ const LearnerActivityManagementPage: React.FC = () => {
                 <BookOpenCheck size={20} className="text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-black leading-none text-black dark:text-white">มอบหมายครูกิจกรรมพัฒนาผู้เรียน</h1>
+                <h1 className="text-lg font-black leading-none text-black dark:text-white">กิจกรรมพัฒนาผู้เรียน</h1>
                 <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-black/60 dark:text-white/60">
-                  เลือกกิจกรรมจากหลักสูตรและกำหนดครูผู้ดูแลแต่ละกิจกรรม
+                  มอบหมายครูผู้ดูแลกิจกรรมจากหลักสูตร
                 </p>
               </div>
             </div>
@@ -558,17 +624,17 @@ const LearnerActivityManagementPage: React.FC = () => {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={saving || !selectedCourse || selectedTeachers.length === 0}
+              disabled={saving || !selectedCourse || selectedTeachers.length === 0 || !selectedSpecialPeriod}
               className={`flex shrink-0 items-center gap-2 rounded-xl border px-6 py-2.5 text-sm font-black shadow-lg transition-all disabled:shadow-none disabled:opacity-50 ${
                 saving
                   ? 'cursor-wait border-white/10 bg-slate-700 text-white'
-                  : selectedCourse && selectedTeachers.length > 0
+                  : selectedCourse && selectedTeachers.length > 0 && selectedSpecialPeriod
                     ? 'border-emerald-500/30 bg-emerald-600 text-white shadow-emerald-600/40 hover:-translate-y-0.5 hover:bg-emerald-500'
                     : 'border-slate-300 bg-slate-200 text-slate-500 dark:border-white/5 dark:bg-white/5 dark:text-slate-400'
               }`}
             >
-              {saving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} className={selectedCourse && selectedTeachers.length > 0 ? 'animate-bounce' : ''} />}
-              {selectedCourse && selectedTeachers.length > 0 ? (activeActivity ? 'อัปเดตการมอบหมาย' : 'บันทึกการมอบหมาย') : 'เลือกกิจกรรมและครู'}
+              {saving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} className={selectedCourse && selectedTeachers.length > 0 && selectedSpecialPeriod ? 'animate-bounce' : ''} />}
+              {selectedCourse && selectedTeachers.length > 0 && selectedSpecialPeriod ? (activeActivity ? 'อัปเดตการมอบหมาย' : 'บันทึกการมอบหมาย') : 'เลือกกิจกรรม ครู และคาบ'}
             </button>
           </div>
         </header>
@@ -651,6 +717,35 @@ const LearnerActivityManagementPage: React.FC = () => {
               </div>
 
               <div className="p-4">
+                <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-[#1e1f21]">
+                  <label className="mb-2 flex items-center gap-2 text-sm font-black text-gray-700 dark:text-gray-200">
+                    <Clock className="text-teal-500" size={18} />
+                    คาบที่ใช้เช็คชื่อกิจกรรม
+                  </label>
+                  <select
+                    value={selectedSpecialPeriodId}
+                    onChange={e => setSelectedSpecialPeriodId(e.target.value)}
+                    disabled={!selectedCourse}
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold outline-none transition focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-gray-700 dark:bg-[#2a2b2f]"
+                  >
+                    <option value="">เลือกคาบจากหน้าคาบเรียนพิเศษ</option>
+                    {specialPeriods.map(period => (
+                      <option key={period.id} value={period.id}>
+                        {period.title} ({formatSpecialPeriodDay(period.day)} {period.startTime}-{period.endTime})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedSpecialPeriod ? (
+                    <p className="mt-2 text-xs font-bold text-teal-600 dark:text-teal-300">
+                      จะเปิดให้เช็คชื่อในคาบ {selectedSpecialPeriod.title} เวลา {selectedSpecialPeriod.startTime}-{selectedSpecialPeriod.endTime} น.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs font-bold text-gray-500">
+                      เช่น กิจกรรมลูกเสือ เลือกคาบ “กิจกรรม” ที่กำหนดไว้ในหน้าคาบเรียนพิเศษ
+                    </p>
+                  )}
+                </div>
+
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="flex items-center gap-2 text-sm font-black">
                     <UserCheck className="text-emerald-500" size={18} />
@@ -788,6 +883,12 @@ const LearnerActivityManagementPage: React.FC = () => {
                       <span className="rounded-lg bg-white px-2 py-1 text-xs font-bold text-gray-500 dark:bg-white/5 dark:text-gray-300">ภาคเรียน {formatSemester(activity.semester)}</span>
                     </div>
                     <h3 className="text-base font-black text-gray-900 dark:text-white">{activity.name}</h3>
+                    <div className="mt-3 flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-gray-500 dark:bg-white/5 dark:text-gray-300">
+                      <Clock size={14} className="text-teal-500" />
+                      {activity.specialPeriodTitle
+                        ? `${activity.specialPeriodTitle} (${formatSpecialPeriodDay(activity.specialPeriodDay)} ${activity.specialPeriodStartTime || '-'}-${activity.specialPeriodEndTime || '-'})`
+                        : 'ยังไม่ได้ระบุคาบเช็คชื่อ'}
+                    </div>
                     <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
                       <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
                         <UserCheck size={14} /> ครูผู้ดูแล

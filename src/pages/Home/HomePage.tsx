@@ -11,7 +11,8 @@ import { firestore as db } from "../../firebase";
 import { X, ChevronLeft, ChevronRight, Award, CalendarX, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
 
 const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์' };
+const DAY_MAP: Record<string, string> = { sun: 'อาทิตย์', mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์', sat: 'เสาร์' };
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 import { CLASSES } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -21,7 +22,126 @@ interface AttendanceItem { name: string; present?: number; late?: number; leave?
 interface StatItem { title: string; value: string; change: any; color: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
 interface ActivityItem { id: string; name: string; date: string; }
-interface ScheduleItem { period: string; subject: string; class: string; room: string; startTime?: string; endTime?: string; subjectCode?: string; }
+interface ScheduleItem {
+    period: string;
+    subject: string;
+    class: string;
+    room: string;
+    startTime?: string;
+    endTime?: string;
+    subjectCode?: string;
+    actionPath?: string;
+    actionLabel?: string;
+    type?: 'classroom' | 'club' | 'learnerActivity';
+    _sortIndex?: number;
+    _startMinutes?: number;
+}
+
+const toBangkokDateString = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Bangkok',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+    const value = (type: string) => parts.find(part => part.type === type)?.value || '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+};
+
+const normalizeSemesterValue = (value: unknown) => String(value ?? '').trim();
+
+const getTermsArray = (termsData: any): any[] => {
+    if (Array.isArray(termsData)) return termsData;
+    if (termsData && typeof termsData === 'object') {
+        return Object.entries(termsData).map(([id, term]: [string, any]) => ({ id, ...term }));
+    }
+    return [];
+};
+
+const getSemesterForDate = (calendarData: any, dateStr: string) => {
+    const term = getTermsArray(calendarData?.terms).find((t: any) => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
+    return term?.id === 'term2' || String(term?.id || '').includes('2') ? '2' : '1';
+};
+
+const isWithinAnyTerm = (calendarData: any, dateStr: string) => {
+    const terms = getTermsArray(calendarData?.terms);
+    if (terms.length === 0) return true;
+    return terms.some((t: any) => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
+};
+
+const getDayKeyFromDateString = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return DAY_KEYS[new Date(year, month - 1, day).getDay()];
+};
+
+const shouldShowScheduleForDate = (dateStr: string, calendarData: any) => {
+    const event = calendarData?.events?.[dateStr];
+    if (event?.type === 'schoolDay') return true;
+    if (event?.type === 'holiday' || event?.type === 'specialHoliday') return false;
+    if (!isWithinAnyTerm(calendarData, dateStr)) return false;
+    const dayKey = getDayKeyFromDateString(dateStr);
+    return dayKey !== 'sun' && dayKey !== 'sat';
+};
+
+const isScheduleDocForCurrentTerm = (data: any, academicYear: string, semester: string) => {
+    const dataYear = normalizeSemesterValue(data.academicYear || data.year);
+    const dataSemester = normalizeSemesterValue(data.semester || data.term);
+    const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
+    const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester === '0' || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`);
+    return yearMatches && semesterMatches;
+};
+
+const isOpaqueRoomId = (value: unknown) => {
+    const text = String(value || '').trim();
+    return /^[A-Za-z0-9_-]{16,}$/.test(text) && /[a-z]/.test(text) && /[A-Z]/.test(text) && /\d/.test(text);
+};
+
+const formatClassName = (value: unknown) => {
+    const values = Array.isArray(value) ? value : [value];
+    return values
+        .filter(Boolean)
+        .map(v => CLASSES[String(v)] || String(v))
+        .join(', ') || 'ไม่ระบุชั้น';
+};
+
+const getRoomIds = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+    const text = String(value || '').trim();
+    return text ? [text] : [];
+};
+
+const formatRoomDisplay = (value: unknown, roomDataMap: Record<string, { name: string, code: string }>) => {
+    const displays = getRoomIds(value)
+        .filter(rid => rid.toLowerCase() !== 'all' && rid !== 'ทุกห้อง')
+        .map(rid => {
+            const room = roomDataMap[rid];
+            if (!room) return isOpaqueRoomId(rid) ? '' : rid;
+            return room.code ? `${room.name} (${room.code})` : room.name;
+        })
+        .filter(Boolean);
+
+    return displays.join(', ');
+};
+
+const timeToMinutes = (time?: string) => {
+    const [hour, minute] = String(time || '').replace('.', ':').split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 9999;
+    return hour * 60 + minute;
+};
+
+const isSpecialPeriodForDay = (period: any, dayKey: string) => {
+    return !period?.day || period.day === 'all' || period.day === dayKey;
+};
+
+const includesAnyKeyword = (value: string, keywords: string[]) => {
+    const normalized = value.toLowerCase();
+    return keywords.some(keyword => normalized.includes(keyword.toLowerCase()));
+};
+
+const isLearnerActivityPeriod = (period: any) => {
+    const title = String(period?.title || '').toLowerCase();
+    return !['ชุมนุม', 'club', 'โฮมรูม', 'homeroom', 'พักกลางวัน', 'พักเที่ยง'].some(keyword => title.includes(keyword));
+};
 
 const checkIsWorkingDay = (dateStr: string, events: Record<string, CalendarEvent>) => {
     const event = events[dateStr];
@@ -208,6 +328,8 @@ const HomePage = () => {
     const [leaveReport, setLeaveReport] = useState<any>({ studentLeaves: 0, teacherLeaves: 0, studentSick: 0, studentPersonal: 0, teacherSick: 0, teacherPersonal: 0, recentLeaves: [] });
     const [academicReport, setAcademicReport] = useState<any>({ totalCourses: 0, totalClubs: 0, totalEnrollments: 0, todaySchedules: [] });
     const [attendanceData, setAttendanceData] = useState<any[]>([]);
+    const [studentAttendanceStats, setStudentAttendanceStats] = useState<any>(null);
+    const [teacherAttendanceStats, setTeacherAttendanceStats] = useState<any>(null);
     const [attendanceLoading, setAttendanceLoading] = useState(true);
 
     const [todayTeacherLeaves, setTodayTeacherLeaves] = useState<any[]>([]);
@@ -299,15 +421,17 @@ const HomePage = () => {
             const totalCount = countSnap.size;
 
             const studentStats = {
-                present: summaryData.present || 0,
-                late: summaryData.late || 0,
-                leave: summaryData.leave || 0,
-                officialTravel: summaryData.officialTravel || 0,
-                absent: summaryData.absent || 0,
+                present: Number(summaryData.present || 0),
+                late: Number(summaryData.late || 0),
+                leave: Number(summaryData.leave || 0),
+                officialTravel: Number(summaryData.officialTravel || 0),
+                absent: Math.max(0, totalCount - Number(summaryData.present || 0) - Number(summaryData.late || 0) - Number(summaryData.leave || 0) - Number(summaryData.officialTravel || 0)),
+                total: Math.max(totalCount, Number(summaryData.present || 0) + Number(summaryData.late || 0) + Number(summaryData.leave || 0) + Number(summaryData.officialTravel || 0))
             };
 
             const presentCount = studentStats.present + studentStats.late + studentStats.officialTravel;
 
+            setStudentAttendanceStats(studentStats);
             setStats(prev => {
                 const ns = [...prev];
                 ns[0] = { title: "มาเรียนวันนี้", value: `${presentCount}/${totalCount}`, change: renderStudentStats(studentStats), color: "bg-blue-500" };
@@ -324,15 +448,17 @@ const HomePage = () => {
             const totalTeachers = teachersSnap.size;
 
             const teacherStats = {
-                present: summaryData.present || 0,
-                late: summaryData.late || 0,
-                leave: summaryData.leave || 0,
-                officialTravel: summaryData.officialTravel || 0,
-                absent: Math.max(0, totalTeachers - (summaryData.present || 0) - (summaryData.late || 0) - (summaryData.leave || 0) - (summaryData.officialTravel || 0))
+                present: Number(summaryData.present || 0),
+                late: Number(summaryData.late || 0),
+                leave: Number(summaryData.leave || 0),
+                officialTravel: Number(summaryData.officialTravel || 0),
+                absent: Math.max(0, totalTeachers - Number(summaryData.present || 0) - Number(summaryData.late || 0) - Number(summaryData.leave || 0) - Number(summaryData.officialTravel || 0)),
+                total: Math.max(totalTeachers, Number(summaryData.present || 0) + Number(summaryData.late || 0) + Number(summaryData.leave || 0) + Number(summaryData.officialTravel || 0))
             };
 
             const presentCount = teacherStats.present + teacherStats.late + teacherStats.officialTravel;
 
+            setTeacherAttendanceStats(teacherStats);
             setStats(prev => {
                 const ns = [...prev];
                 ns[1] = { title: "ครูปฏิบัติงาน", value: `${presentCount}/${totalTeachers}`, change: renderTeacherStats(teacherStats), color: "bg-green-500" };
@@ -448,25 +574,25 @@ const HomePage = () => {
                     let todaySchedules: ScheduleItem[] = [];
                     const uid = currentUser?.uid;
                     if (uid) {
-                        // 1. Determine standard Day Key
-                        const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
                         const now = new Date();
-                        let dayKey = dayNames[now.getDay()];
+                        const todayStr = toBangkokDateString(now);
+                        let dayKey = getDayKeyFromDateString(todayStr);
+                        let activeAcademicYear = '';
+                        let activeSemester = '1';
+                        let shouldLoadTodaySchedule = true;
 
-                        // 2. Check for "Compensation Day" Override
-                        // We fetch the calendar doc to check if today has a specific schedule override
                         try {
-                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                             const calDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
                             const calDocSnap = await getDoc(calDocRef);
 
                             if (calDocSnap.exists()) {
                                 const calData = calDocSnap.data();
+                                activeAcademicYear = String(calData.academicYear || calData.year || '');
+                                activeSemester = getSemesterForDate(calData, todayStr);
                                 const todayEvent = calData.events?.[todayStr];
-                                // If today is marked as a school day AND has a specific scheduleDay override (e.g., 'mon')
+                                shouldLoadTodaySchedule = shouldShowScheduleForDate(todayStr, calData);
                                 if (todayEvent?.type === 'schoolDay' && todayEvent?.scheduleDay) {
                                     dayKey = todayEvent.scheduleDay;
-                                    console.log(`[Schedule Override] Using ${dayKey} schedule for ${todayStr}`);
                                 }
                             }
                         } catch (err) {
@@ -475,15 +601,16 @@ const HomePage = () => {
 
                         const teacherQ = query(collection(db, "school-settings", schoolId, "teachers"), where("uid", "==", uid));
                         const teacherSnap = await getDocs(teacherQ);
-                        if (!teacherSnap.empty) {
+                        if (!teacherSnap.empty && shouldLoadTodaySchedule) {
                             const teacherDocId = teacherSnap.docs[0].id;
 
-                            // 3. Fetch period settings & courses & rooms to enrich schedule data
                             let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
-                            const [periodSnap, coursesSnap, roomsSnap] = await Promise.all([
+                            const [periodSnap, coursesSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
                                 getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'courses')),
-                                getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms'))
+                                getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
+                                getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
+                                getDocs(collection(db, 'school-settings', schoolId, 'learner-activities'))
                             ]);
 
                             // 3.1 Map Periods
@@ -503,9 +630,9 @@ const HomePage = () => {
                             // 3.2 Map Courses for Assignments
                             const courseDataMap: Record<string, any> = {};
                             coursesSnap.forEach(cdoc => {
-                                courseDataMap[cdoc.id] = cdoc.data();
+                                courseDataMap[cdoc.id] = { id: cdoc.id, ...cdoc.data() };
                                 // Also map by code for easier lookup
-                                if (cdoc.data().code) courseDataMap[cdoc.data().code] = cdoc.data();
+                                if (cdoc.data().code) courseDataMap[cdoc.data().code] = { id: cdoc.id, ...cdoc.data() };
                             });
 
                             // 3.3 Map Rooms for Display Names
@@ -519,12 +646,30 @@ const HomePage = () => {
                                 };
                             });
 
+                            const assignmentMap: Record<string, any> = {};
+                            if (activeAcademicYear && activeSemester) {
+                                try {
+                                    const assignmentSnap = await getDocs(query(
+                                        collection(db, 'school-settings', schoolId, 'course_assignments'),
+                                        where('academicYear', '==', activeAcademicYear),
+                                        where('semester', '==', activeSemester)
+                                    ));
+                                    assignmentSnap.forEach(adoc => {
+                                        const data = adoc.data();
+                                        if (data.courseId) assignmentMap[data.courseId] = data;
+                                    });
+                                } catch (err) {
+                                    console.warn("Course assignment fetch (partial):", err);
+                                }
+                            }
+
                             const schedSnap = await getDocs(query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId)));
+                            const scheduleByKey = new Map<string, ScheduleItem & { _sortIndex?: number }>();
                             schedSnap.forEach(sdoc => {
                                 const data = sdoc.data();
+                                if (!isScheduleDocForCurrentTerm(data, activeAcademicYear, activeSemester)) return;
+
                                 const sch = data.schedule || {};
-                                const classId = Array.isArray(data.classId) ? data.classId[0] : data.classId;
-                                const baseClassName = CLASSES[classId] || classId || "ไม่ระบุชั้น";
                                 Object.keys(sch).forEach(key => {
                                     // Key format is typically "day-periodId" (e.g., "mon-period-1", "mon-homeroom")
                                     if (key.startsWith(dayKey + '-') && sch[key]) {
@@ -537,6 +682,7 @@ const HomePage = () => {
                                         const pTime = periodSettings[periodId];
                                         const startTime = pTime?.startTime || '';
                                         const endTime = pTime?.endTime || '';
+                                        const startMinutes = timeToMinutes(startTime);
 
                                         if (periodId === 'homeroom') {
                                             displayPeriod = 'โฮมรูม';
@@ -555,66 +701,139 @@ const HomePage = () => {
 
                                         const rawCourse = sch[key];
                                         const coursesArray = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-                                        const course = coursesArray[0];
+                                        coursesArray.forEach((course: any, courseIndex: number) => {
+                                            if (!course || course === '-') return; // Skip free periods
 
-                                        if (!course || course === '-') return; // Skip free periods
+                                            const subjectName = typeof course === 'string' ? '-' : (course?.title || course?.subjectName || course?.name || '-');
+                                            if (subjectName === '-') return; // Double check for empty subjects
 
-                                        const subjectName = typeof course === 'string' ? '-' : (course?.title || course?.subjectName || course?.name || '-');
-                                        if (subjectName === '-') return; // Double check for empty subjects
+                                            const subjectCode = typeof course === 'string' ? '' : (course?.code || course?.subjectCode || '');
+                                            const courseId = typeof course === 'string' ? null : (course?.id || course?.courseId);
+                                            const courseClassId = typeof course === 'string' ? data.classId : (course?.classId || data.classId);
+                                            const baseClassId = Array.isArray(courseClassId) ? courseClassId[0] : courseClassId;
+                                            const baseClassName = CLASSES[baseClassId] || baseClassId || "ไม่ระบุชั้น";
 
-                                        const subjectCode = typeof course === 'string' ? '' : (course?.code || course?.subjectCode || '');
-                                        const courseId = typeof course === 'string' ? null : (course?.id || course?.courseId);
+                                            const courseGroupNumber = typeof course === 'string' ? null : (course?.groupNumber || course?.group || course?.roomNumber);
+                                            let finalClassName = courseGroupNumber ? `${baseClassName}/${courseGroupNumber}` : baseClassName;
+                                            let finalRoom = formatRoomDisplay(typeof course === 'string' ? data.room : (course?.room || data.room), roomDataMap) || '-';
 
-                                        // --- Advanced Logic for Class/Room based on Teacher Assignments ---
-                                        let finalClassName = baseClassName;
-                                        let finalRoom = course?.room || data.room || '-';
+                                            const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
+                                            const assignmentCandidates = [
+                                                ...(assignmentMap[courseId || '']?.teacherAssignments || []),
+                                                ...(fullCourseData?.teacherAssignments || [])
+                                            ];
 
-                                        // Lookup Course Document to find Assignments
-                                        const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
+                                            if (assignmentCandidates.length > 0) {
+                                                const myAssignment = assignmentCandidates.find((a: any) =>
+                                                    String(a.teacherId) === String(teacherDocId) &&
+                                                    (!courseGroupNumber || !a.groupNumber || Number(a.groupNumber) === Number(courseGroupNumber))
+                                                ) || assignmentCandidates.find((a: any) => String(a.teacherId) === String(teacherDocId));
 
-                                        if (fullCourseData && fullCourseData.teacherAssignments) {
-                                            // Find the assignment for THIS teacher
-                                            const myAssignment = fullCourseData.teacherAssignments.find((a: any) =>
-                                                String(a.teacherId) === String(teacherDocId)
-                                            );
+                                                if (myAssignment) {
+                                                    const assignmentClassValue = myAssignment.classLevels?.length ? myAssignment.classLevels : (myAssignment.classId || courseClassId);
+                                                    const assignmentClassName = formatClassName(assignmentClassValue) || baseClassName;
+                                                    const groupNumber = myAssignment.groupNumber || myAssignment.group || myAssignment.roomNumber;
+                                                    finalClassName = groupNumber ? `${assignmentClassName}/${groupNumber}` : assignmentClassName;
 
-                                            if (myAssignment) {
-                                                // 1. Format Class Name (e.g., ม.1/1)
-                                                if (myAssignment.groupNumber) {
-                                                    finalClassName = `${baseClassName}/${myAssignment.groupNumber}`;
+                                                    finalRoom = formatRoomDisplay(myAssignment.roomIds || myAssignment.room || course?.room || data.room, roomDataMap) || '-';
                                                 }
-
-                                                // 2. Format Room Name (from Physical Rooms map)
-                                                if (myAssignment.roomIds && myAssignment.roomIds.length > 0) {
-                                                    const roomDisplays = myAssignment.roomIds.map((rid: string) => {
-                                                        const r = roomDataMap[rid];
-                                                        if (!r) return rid;
-                                                        return r.code ? `${r.name} (${r.code})` : r.name;
-                                                    });
-                                                    finalRoom = roomDisplays.join(', ');
-                                                }
+                                            } else if (course?.groupName) {
+                                                const groupNum = course.groupName.match(/\d+/);
+                                                if (groupNum) finalClassName = `${baseClassName}/${groupNum[0]}`;
                                             }
-                                        } else if (course?.groupName) {
-                                            // Fallback to groupName in schedule if available
-                                            const groupNum = course.groupName.match(/\d+/);
-                                            if (groupNum) finalClassName = `${baseClassName}/${groupNum[0]}`;
-                                        }
 
-                                        todaySchedules.push({
-                                            period: displayPeriod,
-                                            subject: subjectName,
-                                            subjectCode: subjectCode,
-                                            class: finalClassName,
-                                            room: finalRoom,
-                                            startTime,
-                                            endTime,
-                                            _sortIndex: sortIndex
-                                        } as any);
+                                            if (isOpaqueRoomId(finalRoom)) finalRoom = '-';
+
+                                            const scheduleItem = {
+                                                period: displayPeriod,
+                                                subject: subjectName,
+                                                subjectCode: subjectCode,
+                                                class: finalClassName,
+                                                room: finalRoom,
+                                                startTime,
+                                                endTime,
+                                                actionPath: '/academic/classroom-attendance',
+                                                actionLabel: 'เช็คชื่อ',
+                                                type: 'classroom',
+                                                _sortIndex: sortIndex,
+                                                _startMinutes: startMinutes
+                                            } as any;
+                                            const uniqueKey = `${sortIndex}-${courseId || subjectCode || subjectName}-${finalClassName}-${finalRoom}-${courseIndex}`;
+                                            scheduleByKey.set(uniqueKey, scheduleItem);
+                                        });
                                     }
                                 });
                             });
-                            // Sort based on the calculated sortIndex
-                            todaySchedules.sort((a: any, b: any) => a._sortIndex - b._sortIndex);
+
+                            const specialPeriods = specialPeriodsSnap.docs.map(periodDoc => ({ id: periodDoc.id, ...periodDoc.data() } as any));
+                            const periodsForToday = specialPeriods.filter(period => isSpecialPeriodForDay(period, dayKey));
+                            const findSpecialPeriod = (keywords: string[]) => periodsForToday.find(period => includesAnyKeyword(String(period.title || ''), keywords));
+
+                            const clubPeriodFallback = findSpecialPeriod(['ชุมนุม', 'club']);
+                            clubsSnap.docs
+                                .map(clubDoc => ({ id: clubDoc.id, ...clubDoc.data() } as any))
+                                .filter(club => Array.isArray(club.responsibleTeacherIds) && (
+                                    club.responsibleTeacherIds.includes(teacherDocId) ||
+                                    club.responsibleTeacherIds.includes(uid)
+                                ))
+                                .forEach(club => {
+                                    const clubPeriod = periodsForToday.find(period => period.id === club.specialPeriodId) || clubPeriodFallback;
+                                    if (!clubPeriod) return;
+
+                                    const startTime = clubPeriod.startTime || '';
+                                    const endTime = clubPeriod.endTime || '';
+                                    const scheduleItem = {
+                                        period: 'ชุมนุม',
+                                        subject: club.name ? `ชุมนุม: ${club.name}` : 'ชุมนุม',
+                                        subjectCode: '',
+                                        class: 'ชุมนุม',
+                                        room: '-',
+                                        startTime,
+                                        endTime,
+                                        actionPath: '/academic/club-attendance',
+                                        actionLabel: 'เช็คชุมนุม',
+                                        type: 'club',
+                                        _sortIndex: 90,
+                                        _startMinutes: timeToMinutes(startTime)
+                                    } as any;
+                                    scheduleByKey.set(`club-${club.id}-${clubPeriod.id}`, scheduleItem);
+                                });
+
+                            learnerActivitiesSnap.docs
+                                .map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as any))
+                                .filter(activity => Array.isArray(activity.responsibleTeacherIds) && (
+                                    activity.responsibleTeacherIds.includes(teacherDocId) ||
+                                    activity.responsibleTeacherIds.includes(uid)
+                                ))
+                                .forEach(activity => {
+                                    const activityPeriod = periodsForToday.find(period => period.id === activity.specialPeriodId)
+                                        || periodsForToday.find(period => isLearnerActivityPeriod(period));
+                                    if (!activityPeriod) return;
+
+                                    const startTime = activity.specialPeriodStartTime || activityPeriod.startTime || '';
+                                    const endTime = activity.specialPeriodEndTime || activityPeriod.endTime || '';
+                                    const scheduleItem = {
+                                        period: activityPeriod.title || 'กิจกรรม',
+                                        subject: activity.name || 'กิจกรรมพัฒนาผู้เรียน',
+                                        subjectCode: activity.courseCode || '',
+                                        class: 'กิจกรรมพัฒนาผู้เรียน',
+                                        room: '-',
+                                        startTime,
+                                        endTime,
+                                        actionPath: '/academic/activities/attendance',
+                                        actionLabel: 'เช็คกิจกรรม',
+                                        type: 'learnerActivity',
+                                        _sortIndex: 95,
+                                        _startMinutes: timeToMinutes(startTime)
+                                    } as any;
+                                    scheduleByKey.set(`learner-${activity.id}-${activityPeriod.id}`, scheduleItem);
+                                });
+
+                            todaySchedules = Array.from(scheduleByKey.values());
+                            todaySchedules.sort((a: any, b: any) =>
+                                (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) ||
+                                (a._sortIndex ?? 999) - (b._sortIndex ?? 999)
+                            );
                         }
                     }
                     setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules });
@@ -757,6 +976,142 @@ const HomePage = () => {
                     </CanAccess>
 
                     <CanAccess roles={ACADEMIC_ACCESS}>
+                        <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:gap-6 mb-8">
+                            {/* Student Attendance Donut */}
+                            <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-indigo-500/10 transition-colors"></div>
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="w-1.5 h-4 sm:h-6 bg-indigo-500 rounded-full"></div>
+                                            <h3 className="text-base sm:text-xl font-black tracking-tight text-gray-900 dark:text-white uppercase">นักเรียน</h3>
+                                        </div>
+                                        <p className="text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 uppercase tracking-tight sm:tracking-widest ml-2 sm:ml-3">Student Stats</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 sm:gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 px-1 sm:px-2 py-0.5 sm:py-1 rounded-lg border border-indigo-100 dark:border-indigo-500/20">
+                                        <Users size={8} className="text-indigo-600 dark:text-indigo-400 sm:w-[12px] sm:h-[12px]" />
+                                        <span className="text-[8px] sm:text-[10px] font-black text-indigo-600 dark:text-indigo-400">วันนี้</span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
+                                    <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
+                                        {attendanceLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={[
+                                                            { name: 'มาเรียน', value: studentAttendanceStats?.present || 0, color: '#10B981' },
+                                                            { name: 'สาย', value: studentAttendanceStats?.late || 0, color: '#F59E0B' },
+                                                            { name: 'ลา/ราชการ', value: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
+                                                            { name: 'ขาดเรียน', value: studentAttendanceStats?.absent || 0, color: '#EF4444' }
+                                                        ].filter(d => d.value > 0)}
+                                                        cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
+                                                    >
+                                                        {[
+                                                            { name: 'มาเรียน', value: studentAttendanceStats?.present || 0, color: '#10B981' },
+                                                            { name: 'สาย', value: studentAttendanceStats?.late || 0, color: '#F59E0B' },
+                                                            { name: 'ลา/ราชการ', value: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
+                                                            { name: 'ขาดเรียน', value: studentAttendanceStats?.absent || 0, color: '#EF4444' }
+                                                        ].filter(d => d.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                                    </Pie>
+                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        )}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-indigo-600 dark:text-indigo-400 leading-none tracking-tighter">
+                                                {studentAttendanceStats?.total ? Math.round(((studentAttendanceStats.present + studentAttendanceStats.late + studentAttendanceStats.officialTravel) / studentAttendanceStats.total) * 100) : 0}%
+                                            </span>
+                                            <span className="text-[6px] sm:text-[8px] lg:text-[10px] font-black text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">มาเรียน</span>
+                                        </div>
+                                    </div>
+                                    <div className="col-span-1 lg:col-span-2 space-y-1 sm:space-y-2">
+                                        {[
+                                            { label: 'มาเรียน', val: studentAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
+                                            { label: 'สาย', val: studentAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
+                                            { label: 'ลา/ราชการ', val: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: 'bg-violet-500', text: 'text-violet-500' },
+                                            { label: 'ขาดเรียน', val: studentAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
+                                        ].map(item => (
+                                            <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
+                                                <div className="flex items-center gap-1">
+                                                    <div className={`w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full ${item.color}`}></div>
+                                                    <span className="text-[6px] xs:text-[7px] sm:text-[9px] lg:text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">{item.label}</span>
+                                                </div>
+                                                <span className={`text-[7px] sm:text-xs font-black ${item.text}`}>{item.val}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Teacher Attendance Donut */}
+                            <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-500/5 transition-all duration-500">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors"></div>
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="w-1.5 h-4 sm:h-6 bg-emerald-500 rounded-full"></div>
+                                            <h3 className="text-base sm:text-xl font-black tracking-tight text-gray-900 dark:text-white uppercase">บุคลากร</h3>
+                                        </div>
+                                        <p className="text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 uppercase tracking-tight sm:tracking-widest ml-2 sm:ml-3">Staff Stats</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 sm:gap-1.5 bg-emerald-50 dark:bg-emerald-900/20 px-1 sm:px-2 py-0.5 sm:py-1 rounded-lg border border-emerald-100 dark:border-emerald-500/20">
+                                        <Briefcase size={8} className="text-emerald-600 dark:text-emerald-400 sm:w-[12px] sm:h-[12px]" />
+                                        <span className="text-[8px] sm:text-[10px] font-black text-emerald-600 dark:text-emerald-400">วันนี้</span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
+                                    <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
+                                        {attendanceLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={[
+                                                            { name: 'มาเรียน', value: teacherAttendanceStats?.present || 0, color: '#10B981' },
+                                                            { name: 'สาย', value: teacherAttendanceStats?.late || 0, color: '#F59E0B' },
+                                                            { name: 'ลา/ราชการ', value: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
+                                                            { name: 'ขาดเรียน', value: teacherAttendanceStats?.absent || 0, color: '#EF4444' }
+                                                        ].filter(d => d.value > 0)}
+                                                        cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
+                                                    >
+                                                        {[
+                                                            { name: 'มาเรียน', value: teacherAttendanceStats?.present || 0, color: '#10B981' },
+                                                            { name: 'สาย', value: teacherAttendanceStats?.late || 0, color: '#F59E0B' },
+                                                            { name: 'ลา/ราชการ', value: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
+                                                            { name: 'ขาดเรียน', value: teacherAttendanceStats?.absent || 0, color: '#EF4444' }
+                                                        ].filter(d => d.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                                    </Pie>
+                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        )}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-emerald-600 dark:text-emerald-400 leading-none tracking-tighter">
+                                                {teacherAttendanceStats?.total ? Math.round(((teacherAttendanceStats.present + teacherAttendanceStats.late + teacherAttendanceStats.officialTravel) / teacherAttendanceStats.total) * 100) : 0}%
+                                            </span>
+                                            <span className="text-[6px] sm:text-[8px] lg:text-[10px] font-black text-gray-400 uppercase tracking-widest mt-0.5 sm:mt-1">ปฏิบัติงาน</span>
+                                        </div>
+                                    </div>
+                                    <div className="col-span-1 lg:col-span-2 space-y-1 sm:space-y-2">
+                                        {[
+                                            { label: 'มาเรียน', val: teacherAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
+                                            { label: 'สาย', val: teacherAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
+                                            { label: 'ลา/ราชการ', val: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: 'bg-violet-500', text: 'text-violet-500' },
+                                            { label: 'ขาดเรียน', val: teacherAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
+                                        ].map(item => (
+                                            <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
+                                                <div className="flex items-center gap-1">
+                                                    <div className={`w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full ${item.color}`}></div>
+                                                    <span className="text-[6px] xs:text-[7px] sm:text-[9px] lg:text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">{item.label}</span>
+                                                </div>
+                                                <span className={`text-[7px] sm:text-xs font-black ${item.text}`}>{item.val}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
                         <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm border-none outline-none ring-0 mb-8">
                             <div className="flex justify-between items-center mb-6">
                                 <div>
@@ -949,7 +1304,13 @@ const HomePage = () => {
                                                             {s.subjectCode && <span className="text-[8px] font-medium text-gray-400 dark:text-gray-500 truncate">({s.subjectCode})</span>}
                                                         </div>
                                                         <div className="flex items-center gap-1.5 mt-0">
-                                                            <span className="text-[8px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 px-1 py-0 rounded border border-blue-100/20 dark:border-blue-800/10">{s.class}</span>
+                                                            <span className={`text-[8px] font-semibold px-1 py-0 rounded border ${
+                                                                s.type === 'club'
+                                                                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100/20 dark:border-emerald-800/10'
+                                                                    : s.type === 'learnerActivity'
+                                                                        ? 'text-teal-600 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-900/10 border-teal-100/20 dark:border-teal-800/10'
+                                                                        : 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/20 dark:border-blue-800/10'
+                                                            }`}>{s.class}</span>
                                                             {s.room !== '-' && (
                                                                 <span className="text-[8px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 px-1 py-0 rounded border border-emerald-100/20 dark:border-emerald-800/10">{s.room}</span>
                                                             )}
@@ -959,8 +1320,8 @@ const HomePage = () => {
                                                         </div>
                                                     </div>
 
-                                                    <button onClick={() => navigate('/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
-                                                        <CheckCircle size={12} /> เช็คชื่อ
+                                                    <button onClick={() => navigate(s.actionPath || '/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
+                                                        <CheckCircle size={12} /> {s.actionLabel || 'เช็คชื่อ'}
                                                     </button>
                                                 </div>
                                             </div>

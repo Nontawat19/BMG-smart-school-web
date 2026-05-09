@@ -24,7 +24,8 @@ import {
   RefreshCw,
   Settings,
   Copy,
-  Database
+  Database,
+  Clock
 } from 'lucide-react';
 import { compressImage } from "@/utils/imageUtils";
 
@@ -34,10 +35,50 @@ interface Club {
   description: string;
   capacity: number;
   responsibleTeacherIds: string[];
+  specialPeriodId?: string;
+  specialPeriodTitle?: string;
+  specialPeriodDay?: string;
+  specialPeriodStartTime?: string;
+  specialPeriodEndTime?: string;
   imageUrl?: string;
   createdAt: any;
   memberCount?: number;
 }
+
+interface SpecialPeriod {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  day?: string;
+}
+
+const formatSpecialPeriodDay = (day?: string) => {
+  const labels: Record<string, string> = {
+    all: 'ทุกวัน',
+    mon: 'วันจันทร์',
+    tue: 'วันอังคาร',
+    wed: 'วันพุธ',
+    thu: 'วันพฤหัสบดี',
+    fri: 'วันศุกร์',
+    sat: 'วันเสาร์',
+    sun: 'วันอาทิตย์',
+  };
+  return labels[day || 'all'] || day || 'ทุกวัน';
+};
+
+const isSelectableClubPeriod = (period: SpecialPeriod) => {
+  const title = String(period.title || '').trim().toLowerCase();
+  return !['โฮมรูม', 'พักกลางวัน', 'พักเที่ยง'].some(keyword => title.includes(keyword));
+};
+
+const sortSpecialPeriods = (a: SpecialPeriod, b: SpecialPeriod) => {
+  const timeCompare = normalizeTimeForSort(a.startTime).localeCompare(normalizeTimeForSort(b.startTime));
+  if (timeCompare !== 0) return timeCompare;
+  return String(a.title || '').localeCompare(String(b.title || ''), 'th');
+};
+
+const normalizeTimeForSort = (time?: string) => String(time || '').replace(':', '.').padStart(5, '0');
 
 const ClubManagementPage: React.FC = () => {
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -45,6 +86,8 @@ const ClubManagementPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [capacity, setCapacity] = useState<string>('40');
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
+  const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
+  const [selectedSpecialPeriodId, setSelectedSpecialPeriodId] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,6 +125,7 @@ const ClubManagementPage: React.FC = () => {
       }
       const init = async () => {
         await fetchClubs();
+        await fetchSpecialPeriods();
         // ดึงการตั้งค่าการย้ายชุมนุม
         try {
           const configRef = doc(db, 'school-settings', schoolId, 'configs', 'club_settings');
@@ -117,6 +161,21 @@ const ClubManagementPage: React.FC = () => {
       console.error("Error fetching clubs:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSpecialPeriods = async () => {
+    if (!schoolId) return;
+    try {
+      const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
+      const periods = periodsSnap.docs
+        .map(periodDoc => ({ id: periodDoc.id, ...periodDoc.data() } as SpecialPeriod))
+        .filter(isSelectableClubPeriod)
+        .sort(sortSpecialPeriods);
+      setSpecialPeriods(periods);
+      setSelectedSpecialPeriodId(prev => prev || periods.find(period => String(period.title || '').includes('ชุมนุม'))?.id || '');
+    } catch (error) {
+      console.error("Error fetching special periods:", error);
     }
   };
 
@@ -169,6 +228,11 @@ const ClubManagementPage: React.FC = () => {
           responsibleTeacherIds: Array.isArray(course.teacherId)
             ? course.teacherId.filter((id: string) => id && id !== 'pending')
             : (course.teacherId && course.teacherId !== 'pending' ? [course.teacherId] : []),
+          specialPeriodId: defaultClubPeriod?.id || '',
+          specialPeriodTitle: defaultClubPeriod?.title || '',
+          specialPeriodDay: defaultClubPeriod?.day || 'all',
+          specialPeriodStartTime: defaultClubPeriod?.startTime || '',
+          specialPeriodEndTime: defaultClubPeriod?.endTime || '',
           imageUrl: '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -202,6 +266,14 @@ const ClubManagementPage: React.FC = () => {
     );
   }, [clubs, searchTerm]);
 
+  const selectedSpecialPeriod = useMemo(() => (
+    specialPeriods.find(period => period.id === selectedSpecialPeriodId) || null
+  ), [specialPeriods, selectedSpecialPeriodId]);
+
+  const defaultClubPeriod = useMemo(() => (
+    specialPeriods.find(period => String(period.title || '').includes('ชุมนุม')) || specialPeriods[0] || null
+  ), [specialPeriods]);
+
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -222,6 +294,7 @@ const ClubManagementPage: React.FC = () => {
     setDescription(club.description);
     setCapacity(String(club.capacity));
     setSelectedTeachers(club.responsibleTeacherIds || []);
+    setSelectedSpecialPeriodId(club.specialPeriodId || defaultClubPeriod?.id || '');
     setImagePreview(club.imageUrl || null);
     setImageFile(null); // Reset image file on edit start
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -233,6 +306,7 @@ const ClubManagementPage: React.FC = () => {
     setDescription('');
     setCapacity('40');
     setSelectedTeachers([]);
+    setSelectedSpecialPeriodId(defaultClubPeriod?.id || '');
     setImageFile(null);
     setImagePreview(null);
   };
@@ -247,11 +321,11 @@ const ClubManagementPage: React.FC = () => {
     e.preventDefault();
     if (isSubmitting || !schoolId) return;
 
-    if (!name || selectedTeachers.length === 0 || !capacity) {
+    if (!name || selectedTeachers.length === 0 || !capacity || !selectedSpecialPeriod) {
       Swal.fire({
         icon: 'warning',
         title: 'ข้อมูลไม่ครบ',
-        text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ และเลือกครูผู้รับผิดชอบอย่างน้อย 1 ท่าน',
+        text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ, เลือกครูผู้รับผิดชอบ และเลือกคาบชุมนุมที่ใช้เช็คชื่อ',
         background: '#2a2b2f',
         color: '#fff'
       });
@@ -280,6 +354,11 @@ const ClubManagementPage: React.FC = () => {
         description,
         capacity: parseInt(capacity) || 0,
         responsibleTeacherIds: selectedTeachers,
+        specialPeriodId: selectedSpecialPeriod.id,
+        specialPeriodTitle: selectedSpecialPeriod.title,
+        specialPeriodDay: selectedSpecialPeriod.day || 'all',
+        specialPeriodStartTime: selectedSpecialPeriod.startTime,
+        specialPeriodEndTime: selectedSpecialPeriod.endTime,
         imageUrl,
         updatedAt: serverTimestamp(),
       };
@@ -518,6 +597,27 @@ const ClubManagementPage: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                    <Clock size={16} className="text-indigo-500" />
+                    คาบที่ใช้เช็คชื่อชุมนุม
+                  </label>
+                  <select
+                    value={selectedSpecialPeriodId}
+                    onChange={e => setSelectedSpecialPeriodId(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  >
+                    <option value="">เลือกคาบจากหน้าคาบเรียนพิเศษ</option>
+                    {specialPeriods.map(period => (
+                      <option key={period.id} value={period.id}>
+                        {period.title} ({formatSpecialPeriodDay(period.day)} {period.startTime}-{period.endTime})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs font-bold text-gray-500 dark:text-gray-400">
+                    ใช้กำหนดว่าวันไหน เวลาไหนที่ครูจะเข้าเช็คชื่อชุมนุมได้
+                  </p>
+                </div>
+                <div>
                   <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">รูปภาพชุมนุม</label>
                   <div className="flex items-center gap-4">
                     <div onClick={() => document.getElementById('club-image-input')?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-all overflow-hidden relative group">
@@ -627,6 +727,12 @@ const ClubManagementPage: React.FC = () => {
                             ) : (
                               <span>ไม่จำกัดเวลา</span>
                             )}
+                          </div>
+                          <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-300">
+                            <Clock size={13} />
+                            {club.specialPeriodTitle
+                              ? `${club.specialPeriodTitle} (${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || '-'}-${club.specialPeriodEndTime || '-'})`
+                              : 'ยังไม่ได้ระบุคาบเช็คชื่อ'}
                           </div>
                         </div>
                         <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">

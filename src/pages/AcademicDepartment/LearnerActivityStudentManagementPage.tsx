@@ -294,9 +294,9 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               <BackButton to="/academic/hub/activities" className="mb-3" />
               <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-black">
                 <BookOpenCheck className="text-emerald-500" size={32} />
-                เพิ่มรายชื่อนักเรียนเข้ากิจกรรม
+                จัดรายชื่อนักเรียนกิจกรรมพัฒนาผู้เรียน
               </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เลือกปีการศึกษา ชั้น ห้อง และจัดนักเรียนเข้ากิจกรรมพัฒนาผู้เรียน</p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เลือกปีการศึกษา ชั้น ห้อง และย้ายนักเรียนเข้าออกกิจกรรม</p>
             </div>
             <button
               onClick={handleSave}

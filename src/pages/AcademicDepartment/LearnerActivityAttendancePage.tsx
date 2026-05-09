@@ -20,6 +20,11 @@ interface LearnerActivity {
   subjectGroup?: string;
   semester?: string | number;
   classId?: string | string[];
+  specialPeriodId?: string;
+  specialPeriodTitle?: string;
+  specialPeriodDay?: string;
+  specialPeriodStartTime?: string;
+  specialPeriodEndTime?: string;
   responsibleTeacherIds: string[];
 }
 
@@ -126,7 +131,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs
           .map(periodDoc => ({ id: periodDoc.id, ...periodDoc.data() } as SpecialPeriod))
-          .filter(isLearnerActivitySpecialPeriod)
+          .filter(isSelectableActivityPeriod)
           .sort(sortSpecialPeriods);
         setSpecialPeriods(periods);
       } catch (error) {
@@ -140,11 +145,24 @@ const LearnerActivityAttendancePage: React.FC = () => {
     fetchActivities();
   }, [schoolId, currentTeacherId]);
 
-  const currentDayKey = useMemo(() => getDayKey(currentDate), [currentDate]);
+  const currentDateEvent = useMemo(() => {
+    return calendarState.rawData?.events?.[toIsoDate(currentDate)];
+  }, [calendarState.rawData, currentDate]);
+
+  const effectiveDayKey = useMemo(() => {
+    return currentDateEvent?.type === 'schoolDay' && currentDateEvent.scheduleDay
+      ? currentDateEvent.scheduleDay
+      : getDayKey(currentDate);
+  }, [currentDate, currentDateEvent]);
+
+  const isCompensationScheduleDay = currentDateEvent?.type === 'schoolDay' && Boolean(currentDateEvent.scheduleDay);
 
   const availableSpecialPeriods = useMemo(() => {
-    return specialPeriods.filter(period => isPeriodAvailableOnDay(period, currentDayKey));
-  }, [specialPeriods, currentDayKey]);
+    return specialPeriods.filter(period => {
+      if (selectedActivity?.specialPeriodId && period.id !== selectedActivity.specialPeriodId) return false;
+      return isPeriodAvailableOnDay(period, effectiveDayKey);
+    });
+  }, [specialPeriods, effectiveDayKey, selectedActivity?.specialPeriodId]);
 
   const selectedSpecialPeriod = useMemo(() => {
     return availableSpecialPeriods.find(period => period.id === selectedSpecialPeriodId) || null;
@@ -153,9 +171,12 @@ const LearnerActivityAttendancePage: React.FC = () => {
   useEffect(() => {
     setSelectedSpecialPeriodId(prev => {
       if (prev && availableSpecialPeriods.some(period => period.id === prev)) return prev;
+      if (selectedActivity?.specialPeriodId && availableSpecialPeriods.some(period => period.id === selectedActivity.specialPeriodId)) {
+        return selectedActivity.specialPeriodId;
+      }
       return availableSpecialPeriods[0]?.id || '';
     });
-  }, [availableSpecialPeriods]);
+  }, [availableSpecialPeriods, selectedActivity?.specialPeriodId]);
 
   useEffect(() => {
     if (!schoolId || !selectedActivity) {
@@ -323,13 +344,13 @@ const LearnerActivityAttendancePage: React.FC = () => {
         <div className="mx-auto max-w-7xl">
           <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <BackButton to="/academic/hub/activities" className="mb-3" />
+              <BackButton to="/academic/hub/attendance" className="mb-3" />
               <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-black">
                 <ClipboardCheck className="text-teal-500" size={32} />
                 เช็คชื่อกิจกรรมพัฒนาผู้เรียน
               </h1>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                เช็คชื่อนักเรียนตามกิจกรรมที่ได้รับมอบหมาย
+                เช็คชื่อตามคาบกิจกรรมที่กำหนดในหน้าคาบเรียนพิเศษ
               </p>
             </div>
 
@@ -365,20 +386,29 @@ const LearnerActivityAttendancePage: React.FC = () => {
                   </h3>
                   {availableSpecialPeriods.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                      วันนี้ยังไม่มีคาบกิจกรรมพัฒนาผู้เรียนในหน้าคาบเรียนพิเศษ
+                      {selectedActivity?.specialPeriodTitle
+                        ? `วันนี้ไม่ตรงกับคาบ ${selectedActivity.specialPeriodTitle} ที่ผูกไว้กับกิจกรรมนี้`
+                        : 'วันนี้ยังไม่มีคาบกิจกรรมพัฒนาผู้เรียนในหน้าคาบเรียนพิเศษ'}
                     </div>
                   ) : (
-                    <select
-                      value={selectedSpecialPeriodId}
-                      onChange={e => setSelectedSpecialPeriodId(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
-                    >
-                      {availableSpecialPeriods.map(period => (
-                        <option key={period.id} value={period.id}>
-                          {period.title} ({period.startTime}-{period.endTime})
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={selectedSpecialPeriodId}
+                        onChange={e => setSelectedSpecialPeriodId(e.target.value)}
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                      >
+                        {availableSpecialPeriods.map(period => (
+                          <option key={period.id} value={period.id}>
+                            {period.title} ({formatSpecialPeriodDay(period.day)} {period.startTime}-{period.endTime})
+                          </option>
+                        ))}
+                      </select>
+                      {isCompensationScheduleDay && (
+                        <p className="mt-2 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          วันนี้เป็นวันเรียนชดเชย ใช้ตาราง{formatSpecialPeriodDay(effectiveDayKey)} จากปฏิทินโรงเรียน
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -405,6 +435,11 @@ const LearnerActivityAttendancePage: React.FC = () => {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-black">{activity.courseCode ? `${activity.courseCode} ` : ''}{activity.name}</p>
                             <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">ภาคเรียน {formatSemester(activity.semester)} • {formatClassIds(activity.classId)}</p>
+                            <p className="mt-1 truncate text-[11px] font-bold text-teal-600 dark:text-teal-300">
+                              {activity.specialPeriodTitle
+                                ? `คาบเช็คชื่อ: ${activity.specialPeriodTitle} (${formatSpecialPeriodDay(activity.specialPeriodDay)} ${activity.specialPeriodStartTime || '-'}-${activity.specialPeriodEndTime || '-'})`
+                                : 'ยังไม่ได้ผูกคาบเช็คชื่อ'}
+                            </p>
                           </div>
                           {selectedActivity?.id === activity.id && <CheckCircle2 size={19} className="shrink-0" />}
                         </div>
@@ -427,7 +462,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
                         <div className="min-w-0">
                           <h2 className="truncate text-lg font-black text-teal-700 dark:text-teal-300">{selectedActivity.name}</h2>
                           <p className="text-xs font-bold text-gray-500">
-                            นักเรียน {students.length} คน • {selectedSpecialPeriod ? `${selectedSpecialPeriod.title} ${selectedSpecialPeriod.startTime}-${selectedSpecialPeriod.endTime} น.` : 'ยังไม่พบคาบกิจกรรม'} • {isSubmitted ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}
+                            นักเรียน {students.length} คน • {selectedSpecialPeriod ? `${selectedSpecialPeriod.title} ${formatSpecialPeriodDay(selectedSpecialPeriod.day)} ${selectedSpecialPeriod.startTime}-${selectedSpecialPeriod.endTime} น.` : 'ยังไม่พบคาบกิจกรรม'} • {isSubmitted ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}
                           </p>
                         </div>
                         <button
@@ -558,23 +593,25 @@ const isPeriodAvailableOnDay = (period: SpecialPeriod, dayKey: string) => {
   return !period.day || period.day === 'all' || period.day === dayKey;
 };
 
-const isLearnerActivitySpecialPeriod = (period: SpecialPeriod) => {
-  const title = String(period.title || '').trim();
-  const normalizedTitle = title.toLowerCase();
+const formatSpecialPeriodDay = (day?: string) => {
+  const labels: Record<string, string> = {
+    all: 'ทุกวัน',
+    mon: 'วันจันทร์',
+    tue: 'วันอังคาร',
+    wed: 'วันพุธ',
+    thu: 'วันพฤหัสบดี',
+    fri: 'วันศุกร์',
+    sat: 'วันเสาร์',
+    sun: 'วันอาทิตย์',
+  };
+  return labels[day || 'all'] || day || 'ทุกวัน';
+};
+
+const isSelectableActivityPeriod = (period: SpecialPeriod) => {
+  const normalizedTitle = String(period.title || '').trim().toLowerCase();
   const excludedKeywords = ['ชุมนุม', 'โฮมรูม', 'พักกลางวัน', 'พักเที่ยง'];
   if (excludedKeywords.some(keyword => normalizedTitle.includes(keyword))) return false;
-
-  const activityKeywords = [
-    'กิจกรรมพัฒนาผู้เรียน',
-    'กิจกรรมฯ',
-    'ลูกเสือ',
-    'เนตรนารี',
-    'ยุวกาชาด',
-    'ผู้บำเพ็ญประโยชน์',
-    'แนะแนว',
-  ];
-
-  return normalizedTitle === 'กิจกรรม' || activityKeywords.some(keyword => normalizedTitle.includes(keyword));
+  return true;
 };
 
 const sortSpecialPeriods = (a: SpecialPeriod, b: SpecialPeriod) => {

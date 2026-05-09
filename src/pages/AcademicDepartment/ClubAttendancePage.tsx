@@ -7,6 +7,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
+import { fetchCalendar } from '@/store/slices/calendarSlice';
 import Swal from 'sweetalert2';
 import {
   Users,
@@ -26,6 +27,11 @@ interface Club {
   id: string;
   name: string;
   responsibleTeacherIds: string[];
+  specialPeriodId?: string;
+  specialPeriodTitle?: string;
+  specialPeriodDay?: string;
+  specialPeriodStartTime?: string;
+  specialPeriodEndTime?: string;
 }
 
 interface Student {
@@ -56,10 +62,23 @@ const DAY_MAP: Record<string, string> = {
   sun: 'อาทิตย์'
 };
 
+const toIsoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getAttendanceDocId = (dateStr: string, specialPeriodId?: string) => {
+  return specialPeriodId ? `${dateStr}_${sanitizeDocId(specialPeriodId)}` : dateStr;
+};
+
+const sanitizeDocId = (value: string) => String(value || '').replace(/[\/#?[\]]/g, '_');
+
 const ClubAttendancePage: React.FC = () => {
   const [myClubs, setMyClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
-  const [clubSpecialPeriod, setClubSpecialPeriod] = useState<SpecialPeriod | null>(null);
+  const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -72,6 +91,7 @@ const ClubAttendancePage: React.FC = () => {
   const dispatch = useDispatch();
 
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+  const calendarState = useSelector((state: RootState) => state.calendar);
 
   const currentTeacherId = useMemo(() => {
     if (!teacherMap || !currentUser) return null;
@@ -84,6 +104,12 @@ const ClubAttendancePage: React.FC = () => {
       dispatch(fetchTeachersMap(schoolId) as any);
     }
   }, [schoolId, teacherMapStatus, dispatch]);
+
+  useEffect(() => {
+    if (schoolId && calendarState.status === 'idle') {
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, calendarState.status, dispatch]);
 
   useEffect(() => {
     if (!schoolId || !currentTeacherId) return;
@@ -102,8 +128,7 @@ const ClubAttendancePage: React.FC = () => {
 
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SpecialPeriod));
-        const clubPeriod = periods.find(p => p.title.includes('ชุมนุม'));
-        setClubSpecialPeriod(clubPeriod || null);
+        setSpecialPeriods(periods);
 
       } catch (error) {
         console.error("Error fetching initial data:", error);
@@ -114,6 +139,13 @@ const ClubAttendancePage: React.FC = () => {
 
     fetchData();
   }, [schoolId, currentTeacherId]);
+
+  const clubSpecialPeriod = useMemo(() => {
+    if (!selectedClub) return null;
+    return specialPeriods.find(period => period.id === selectedClub.specialPeriodId) ||
+      specialPeriods.find(period => String(period.title || '').includes('ชุมนุม')) ||
+      null;
+  }, [selectedClub, specialPeriods]);
 
   useEffect(() => {
     if (!schoolId || !selectedClub) {
@@ -142,12 +174,14 @@ const ClubAttendancePage: React.FC = () => {
         const initialAtt: Record<string, any> = {};
         memberList.forEach(s => initialAtt[s.id] = 'present');
 
-        const dateStr = currentDate.toISOString().split('T')[0];
-        const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
+        const dateStr = toIsoDate(currentDate);
+        const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
+        const legacyAttDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
         const attSnap = await getDoc(attDocRef);
+        const legacyAttSnap = attSnap.exists() ? null : await getDoc(legacyAttDocRef);
 
-        if (attSnap.exists()) {
-          const data = attSnap.data();
+        if (attSnap.exists() || legacyAttSnap?.exists()) {
+          const data = (attSnap.exists() ? attSnap.data() : legacyAttSnap?.data()) || {};
           setAttendance(data.records || initialAtt);
           setIsSubmitted(true);
         } else {
@@ -161,22 +195,27 @@ const ClubAttendancePage: React.FC = () => {
     };
 
     fetchMembers();
-  }, [schoolId, selectedClub, currentDate]);
+  }, [schoolId, selectedClub, currentDate, clubSpecialPeriod?.id]);
 
   const handleSaveAttendance = async () => {
     if (!schoolId || !selectedClub || isSaving) return;
 
     setIsSaving(true);
     try {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
+      const dateStr = toIsoDate(currentDate);
+      const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
 
       await setDoc(attDocRef, {
         records: attendance,
         updatedAt: Timestamp.now(),
         updatedBy: currentUser?.uid,
         clubName: selectedClub.name,
-        date: dateStr
+        date: dateStr,
+        specialPeriodId: clubSpecialPeriod?.id || '',
+        specialPeriodTitle: clubSpecialPeriod?.title || '',
+        specialPeriodDay: clubSpecialPeriod?.day || 'all',
+        startTime: clubSpecialPeriod?.startTime || '',
+        endTime: clubSpecialPeriod?.endTime || ''
       });
 
       Swal.fire({
@@ -200,8 +239,18 @@ const ClubAttendancePage: React.FC = () => {
     setAttendance(prev => ({ ...prev, [studentId]: status }));
   };
 
-  const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][currentDate.getDay()];
-  const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === dayKey) : false;
+  const currentDateEvent = useMemo(() => {
+    return calendarState.rawData?.events?.[toIsoDate(currentDate)];
+  }, [calendarState.rawData, currentDate]);
+
+  const effectiveDayKey = useMemo(() => {
+    return currentDateEvent?.type === 'schoolDay' && currentDateEvent.scheduleDay
+      ? currentDateEvent.scheduleDay
+      : ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][currentDate.getDay()];
+  }, [currentDate, currentDateEvent]);
+
+  const isCompensationScheduleDay = currentDateEvent?.type === 'schoolDay' && Boolean(currentDateEvent.scheduleDay);
+  const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === effectiveDayKey) : false;
 
   return (
     <MainLayout>
@@ -268,6 +317,11 @@ const ClubAttendancePage: React.FC = () => {
                       <span className="text-gray-500">วันทำกิจกรรม:</span>
                       <span className="font-bold">{clubSpecialPeriod.day === 'all' || !clubSpecialPeriod.day ? 'ทุกวัน' : `วัน${DAY_MAP[clubSpecialPeriod.day] || clubSpecialPeriod.day}`}</span>
                     </div>
+                    {isCompensationScheduleDay && (
+                      <div className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                        วันนี้เป็นวันเรียนชดเชย ใช้ตารางวัน{DAY_MAP[effectiveDayKey] || effectiveDayKey} จากปฏิทินโรงเรียน
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">ช่วงเวลา:</span>
                       <span className="font-bold">{clubSpecialPeriod.startTime} - {clubSpecialPeriod.endTime} น.</span>
