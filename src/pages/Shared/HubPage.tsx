@@ -56,7 +56,7 @@ interface HubConfig {
 const HubPage: React.FC = () => {
   const { hubType: paramHubType } = useParams<{ hubType: string }>();
   const location = useLocation();
-  const { user: currentUser, roles: userRoles, hasRole, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, OWNER_ONLY } = usePermissions();
+  const { user: currentUser, isSuperAdmin, roles: userRoles, hasRole, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, OWNER_ONLY, ADMIN_ACCESS } = usePermissions();
   const [settings, setSettings] = React.useState<any>({});
   
   // Handle static routes and "all" mode
@@ -539,24 +539,24 @@ const HubPage: React.FC = () => {
     },
     owner: {
       id: "owner",
-      title: "เจ้าของระบบ (Superadmin)",
-      description: "จัดการข้อมูลโรงเรียนและผู้ใช้งานในระดับแพลตฟอร์ม",
+      title: isSuperAdmin ? "เจ้าของระบบ (Superadmin)" : "จัดการข้อมูลโรงเรียน",
+      description: isSuperAdmin ? "จัดการข้อมูลโรงเรียนและผู้ใช้งานในระดับแพลตฟอร์ม" : "จัดการข้อมูลผู้ใช้งานในโรงเรียน",
       items: [
         {
-          title: "จัดการข้อมูลโรงเรียน",
-          description: "เพิ่ม ลบ และแก้ไขข้อมูลโรงเรียนทั้งหมด",
+          title: "จัดการข้อมูลโรงเรียน (ทุกแห่ง)",
+          description: "เพิ่ม ลบ และแก้ไขข้อมูลโรงเรียนทั้งหมดในระบบ",
           icon: <School size={24} />,
           path: "/owner/schools",
           colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
           allowedRoles: OWNER_ONLY
         },
         {
-          title: "ผู้ใช้งานระบบ",
-          description: "ดูและแก้ไขข้อมูลผู้ใช้งานทั้งหมดในระบบ",
+          title: isSuperAdmin ? "ผู้ใช้งานระบบทั้งหมด" : "จัดการผู้ใช้งานในโรงเรียน",
+          description: isSuperAdmin ? "ดูและแก้ไขข้อมูลผู้ใช้งานทั้งหมดในระบบ" : "ดูและแก้ไขข้อมูลบุคลากรและนักเรียนในโรงเรียน",
           icon: <Users size={24} />,
           path: "/owner/users",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: OWNER_ONLY
+          allowedRoles: ADMIN_ACCESS
         },
         {
           title: "เพิ่มผู้ใช้งานใหม่",
@@ -564,7 +564,7 @@ const HubPage: React.FC = () => {
           icon: <UserCog size={24} />,
           path: "/owner/users/add",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: OWNER_ONLY
+          allowedRoles: ADMIN_ACCESS
         }
       ]
     }
@@ -624,7 +624,7 @@ const HubPage: React.FC = () => {
   const currentHub = hubType ? hubConfigs[hubType] : null;
 
   // Final access check
-  if (hubType === 'owner' && !hasRole(OWNER_ONLY)) {
+  if (hubType === 'owner' && !hasRole(ADMIN_ACCESS)) {
     return <Navigate to="/home" replace />;
   }
 
@@ -671,7 +671,7 @@ const HubPage: React.FC = () => {
           {isMasterHub ? (
             // Show all hubs (excluding owner if not superadmin)
             Object.values(hubConfigs)
-              .filter(hub => hub.id !== 'owner' || hasRole(OWNER_ONLY))
+              .filter(hub => hub.id !== 'owner' || hasRole(ADMIN_ACCESS))
               .map(renderHubSection)
           ) : (
             // Show single hub

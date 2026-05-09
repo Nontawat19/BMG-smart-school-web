@@ -12,6 +12,7 @@ import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { FaChevronDown, FaCheck, FaCamera } from 'react-icons/fa';
+import { usePermissions } from "@/hooks/usePermissions";
 
 // --- Interface สำหรับ Teacher Form State (Type Safety) ---
 interface TeacherFormState {
@@ -111,6 +112,8 @@ export default function EditTeacherPage() {
     const [availableLevels, setAvailableLevels] = useState<string[]>([]);
     const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const { isSchoolAdmin, isSuperAdmin } = usePermissions();
+    const canElevatePermissions = isSchoolAdmin || isSuperAdmin;
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -632,28 +635,28 @@ export default function EditTeacherPage() {
                                     <div className="sm:col-span-2">
                                         <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
                                             บทบาทพิเศษ
-                                            {isEditingSelf && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
+                                            {(isEditingSelf && !canElevatePermissions) && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
                                         </label>
                                         <div className={`flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700`}>
-                                            <label className={`flex items-center space-x-2 ${isEditingSelf ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
+                                            <label className={`flex items-center space-x-2 ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
                                                 <input
                                                     type="checkbox"
                                                     name="isHeadOfLearningArea"
                                                     checked={form.isHeadOfLearningArea || false}
-                                                    onChange={isEditingSelf ? undefined : handleChange}
-                                                    onClick={(e) => isEditingSelf && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${isEditingSelf ? 'pointer-events-none' : ''}`}
+                                                    onChange={(isEditingSelf && !canElevatePermissions) ? undefined : handleChange}
+                                                    onClick={(e) => (isEditingSelf && !canElevatePermissions) && e.preventDefault()}
+                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${(isEditingSelf && !canElevatePermissions) ? 'pointer-events-none' : ''}`}
                                                 />
                                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้ากลุ่มสาระ</span>
                                             </label>
-                                            <label className={`flex items-center space-x-2 ${isEditingSelf ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
+                                            <label className={`flex items-center space-x-2 ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
                                                 <input
                                                     type="checkbox"
                                                     name="isHeadOfAssessment"
                                                     checked={form.isHeadOfAssessment || false}
-                                                    onChange={isEditingSelf ? undefined : handleChange}
-                                                    onClick={(e) => isEditingSelf && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${isEditingSelf ? 'pointer-events-none' : ''}`}
+                                                    onChange={(isEditingSelf && !canElevatePermissions) ? undefined : handleChange}
+                                                    onClick={(e) => (isEditingSelf && !canElevatePermissions) && e.preventDefault()}
+                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${(isEditingSelf && !canElevatePermissions) ? 'pointer-events-none' : ''}`}
                                                 />
                                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้างานวัดและประเมินผล</span>
                                             </label>
@@ -733,11 +736,11 @@ export default function EditTeacherPage() {
                             <div className="relative" ref={dropdownRef}>
                                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
                                     สิทธิ์การใช้งานในระบบ <span className="text-red-500">*</span>
-                                    {isEditingSelf && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขสิทธิ์ของตัวเองได้)</span>}
+                                    {(isEditingSelf && !canElevatePermissions) && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขสิทธิ์ของตัวเองได้)</span>}
                                 </label>
                                 <div
-                                    onClick={() => !isEditingSelf && setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                                    className={`flex items-center justify-between w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm transition-all min-h-[42px] ${isEditingSelf ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/50' : 'cursor-pointer focus:ring-2 focus:ring-indigo-500'}`}
+                                    onClick={() => !(isEditingSelf && !canElevatePermissions) && setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                                    className={`flex items-center justify-between w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm transition-all min-h-[42px] ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/50' : 'cursor-pointer focus:ring-2 focus:ring-indigo-500'}`}
                                 >
                                     <div className="flex flex-wrap gap-1">
                                         {Array.isArray(form.role) && form.role.length > 0 ? (
@@ -753,10 +756,10 @@ export default function EditTeacherPage() {
                                             <span className="text-gray-500 dark:text-gray-400 text-sm">-- เลือกบทบาท --</span>
                                         )}
                                     </div>
-                                    {!isEditingSelf && <FaChevronDown className={`text-gray-400 text-[10px] transition-transform duration-200 ${isRoleDropdownOpen ? 'rotate-180' : ''}`} />}
+                                    {!isEditingSelf || canElevatePermissions ? <FaChevronDown className={`text-gray-400 text-[10px] transition-transform duration-200 ${isRoleDropdownOpen ? 'rotate-180' : ''}`} /> : null}
                                 </div>
 
-                                {isRoleDropdownOpen && !isEditingSelf && (
+                                {isRoleDropdownOpen && (!isEditingSelf || canElevatePermissions) && (
                                     <div className="absolute z-50 bottom-full mb-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in slide-in-from-bottom-2 fade-in zoom-in duration-200">
                                         {userRoles.map((role) => {
                                             const isChecked = Array.isArray(form.role) && form.role.includes(role.value);

@@ -96,7 +96,7 @@ const MapController: React.FC<{
 const SchoolInfoPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId?: string }>(); // schoolId is now optional
   const navigate = useNavigate();
-  const { user: currentUser, isSchoolAdmin } = usePermissions();
+  const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
 
   const [info, setInfo] = useState<SchoolInfo>({});
   const [customPrefixModes, setCustomPrefixModes] = useState<Record<string, boolean>>({});
@@ -141,8 +141,8 @@ const SchoolInfoPage: React.FC = () => {
   }, [schoolId, navigate]);
 
   useEffect(() => {
-    // Security check for school admins
-    if (isSchoolAdmin && schoolId && schoolId !== currentUser?.schoolId) {
+    // Security check for school admins and teachers
+    if ((isSchoolAdmin || isTeacher) && schoolId && schoolId !== currentUser?.schoolId) {
       Swal.fire('เข้าถึงไม่ได้', 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลโรงเรียนอื่น', 'error');
       navigate('/home');
       return;
@@ -478,7 +478,7 @@ const SchoolInfoPage: React.FC = () => {
           background: '#2a2b2f',
           color: '#ffffff',
           }).then(() => {
-            if (isSchoolAdmin) {
+            if (isSchoolAdmin || isTeacher) {
               navigate('/owner/hub'); // Or wherever school admins should go
             } else {
               navigate(`/owner/schools/${currentSchoolId}`);
@@ -510,7 +510,7 @@ const SchoolInfoPage: React.FC = () => {
           background: '#2a2b2f',
           color: '#ffffff',
           }).then(() => {
-            if (isSchoolAdmin) {
+            if (isSchoolAdmin || isTeacher) {
               navigate('/owner/hub');
             } else {
               navigate(`/owner/schools/${newId}`);
@@ -580,7 +580,7 @@ const SchoolInfoPage: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 <Link
-                  to={isSchoolAdmin ? '/owner/hub' : '/owner/schools'}
+                  to={isSchoolAdmin || isTeacher ? '/owner/hub' : '/owner/schools'}
                   className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-[#2a2b2f] dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 transition-all shadow-sm"
                 >
                   <FaArrowLeft className="text-[10px]" />

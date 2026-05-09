@@ -11,8 +11,11 @@ import { compressImage } from '@/utils/imageUtils';
 
 interface User {
   fullName: string;
+  firstName?: string;
+  lastName?: string;
+  title?: string;
   email: string;
-  role: string | string[]; // รองรับทั้ง string (แบบเก่า) และ string[] (แบบใหม่)
+  role: string | string[];
   schoolId?: string;
   profileUrl?: string;
 }
@@ -22,10 +25,12 @@ interface School {
   schoolName: string;
 }
 
+const initialTitles = ["นาย", "นาง", "นางสาว", "ครู", "อาจารย์", "ดร.", "บาทหลวง", "ซิสเตอร์", "บราเดอร์", "อื่นๆ"];
+
 const EditUserPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
-  const { user: currentUser, isSchoolAdmin } = usePermissions();
+  const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
   const [user, setUser] = useState<User | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +40,7 @@ const EditUserPage: React.FC = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [customTitle, setCustomTitle] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -72,10 +78,33 @@ const EditUserPage: React.FC = () => {
           userData.role = [];
         }
 
-        setUser(userData);
+        // Try to split fullName if firstName/lastName are missing
+        if (!userData.firstName || !userData.lastName) {
+            const nameParts = (userData.fullName || "").trim().split(/\s+/);
+            if (nameParts.length >= 2) {
+                // Check if the first part is a title
+                const possibleTitle = nameParts[0];
+                const matchedTitle = initialTitles.find(t => possibleTitle.startsWith(t));
+                
+                if (matchedTitle) {
+                    userData.title = matchedTitle;
+                    userData.firstName = possibleTitle.replace(matchedTitle, "").trim() || nameParts[1];
+                    userData.lastName = nameParts.slice(matchedTitle === possibleTitle ? 2 : 1).join(" ");
+                } else {
+                    userData.firstName = nameParts[0];
+                    userData.lastName = nameParts.slice(1).join(" ");
+                }
+            }
+        }
 
-        // Security check for school admins
-        if (isSchoolAdmin && userData.schoolId !== currentUser?.schoolId) {
+        setUser(userData);
+        
+        if (userData.title && !initialTitles.includes(userData.title)) {
+          setCustomTitle(userData.title);
+        }
+
+        // Security check for school admins and teachers
+        if ((isSchoolAdmin || isTeacher) && userData.schoolId !== currentUser?.schoolId) {
           Swal.fire('เข้าถึงไม่ได้', 'คุณไม่มีสิทธิ์แก้ไขข้อมูลผู้ใช้นอกโรงเรียน', 'error');
           navigate('/owner/users');
           return;
@@ -130,8 +159,8 @@ const EditUserPage: React.FC = () => {
         return;
       }
       try {
-        // Compress and convert to PNG (for PDF compatibility)
-        const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
+        // Compress and convert to WebP to match standard
+        const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -176,23 +205,91 @@ const EditUserPage: React.FC = () => {
     e.preventDefault();
     if (!userId || !user) return;
 
+
     setIsSaving(true);
     try {
       let profileUrl = user.profileUrl;
+      const finalTitle = user.title === "อื่นๆ" ? customTitle : user.title;
+      const fullName = `${finalTitle}${user.firstName} ${user.lastName}`.trim();
 
       if (imageFile) {
-        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.png`);
+        // Use .webp extension to match standard
+        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.webp`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         profileUrl = await getDownloadURL(snapshot.ref);
       }
 
-      const userDocRef = doc(firestore, 'users', userId);
-      await updateDoc(userDocRef, {
-        fullName: user.fullName,
+      // 1. Update central 'users' collection
+      const userData = {
+        fullName: fullName,
+        firstName: user.firstName || null,
+        lastName: user.lastName || null,
+        title: finalTitle || null,
         role: user.role,
-        schoolId: user.schoolId || null, // Ensure it's null if empty
+        schoolId: user.schoolId || null,
         profileUrl: profileUrl || null,
-      });
+        updatedAt: serverTimestamp(),
+      };
+      await updateDoc(doc(firestore, 'users', userId), userData);
+
+      // 2. Update school-specific collections if applicable
+      const roles = Array.isArray(user.role) ? user.role : [user.role];
+      if (user.schoolId) {
+        const isStaff = roles.some(r => ['teacher', 'school_admin', 'academic_admin', 'super_admin'].includes(r));
+        const isStudent = roles.includes('student');
+
+        if (isStaff) {
+          const teacherDocRef = doc(firestore, "school-settings", user.schoolId, "teachers", userId);
+          const teacherSnap = await getDoc(teacherDocRef);
+          
+          const teacherData = {
+            uid: userId,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            title: finalTitle,
+            email: user.email,
+            role: user.role,
+            schoolId: user.schoolId,
+            profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
+            updatedAt: serverTimestamp(),
+            // Preserve existing teacher-specific fields if they exist, or use defaults
+            position: teacherSnap.exists() ? (teacherSnap.data().position || (roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู")) : (roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู"),
+            department: teacherSnap.exists() ? (teacherSnap.data().department || "งานบริหารทั่วไป") : "งานบริหารทั่วไป",
+            status: teacherSnap.exists() ? (teacherSnap.data().status || "อยู่") : "อยู่",
+            isHomeroomTeacher: teacherSnap.exists() ? (teacherSnap.data().isHomeroomTeacher || false) : false,
+            gender: teacherSnap.exists() ? (teacherSnap.data().gender || "") : "",
+            learningArea: teacherSnap.exists() ? (teacherSnap.data().learningArea || "") : "",
+            subjectGroup: teacherSnap.exists() ? (teacherSnap.data().subjectGroup || "") : "",
+          };
+          
+          await setDoc(teacherDocRef, teacherData, { merge: true });
+        }
+
+        if (isStudent) {
+          const studentDocRef = doc(firestore, "school-settings", user.schoolId, "students", userId);
+          const studentSnap = await getDoc(studentDocRef);
+
+          const studentData = {
+            uid: userId,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            title: finalTitle,
+            email: user.email,
+            role: user.role,
+            schoolId: user.schoolId,
+            profileImageUrl: profileUrl || null,
+            updatedAt: serverTimestamp(),
+            // Preserve student fields
+            studentId: studentSnap.exists() ? (studentSnap.data().studentId || "") : "",
+            classLevel: studentSnap.exists() ? (studentSnap.data().classLevel || "") : "",
+            room: studentSnap.exists() ? (studentSnap.data().room || "") : "",
+            studentStatus: studentSnap.exists() ? (studentSnap.data().studentStatus || "ปกติ") : "ปกติ",
+            gender: studentSnap.exists() ? (studentSnap.data().gender || "") : "",
+          };
+
+          await setDoc(studentDocRef, studentData, { merge: true });
+        }
+      }
 
       // 📌 Update Slug for the Profile
       const slugId = `profile:${userId}`;
@@ -206,7 +303,7 @@ const EditUserPage: React.FC = () => {
       }, { merge: true });
 
       // 📌 Update specific role slugs
-      const roles = Array.isArray(user.role) ? user.role : [user.role];
+      // (roles already defined above)
       for (const role of roles) {
         if (['student', 'teacher'].includes(role)) {
           const roleSlugId = `${role}:${userId}`;
@@ -357,17 +454,63 @@ const EditUserPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
-                        <div>
-                          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ชื่อ-สกุล</label>
-                          <input
-                            type="text"
-                            name="fullName"
-                            id="fullName"
-                            value={user.fullName}
-                            onChange={handleInputChange}
-                            className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                            required
-                          />
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">คำนำหน้า</label>
+                            <select
+                              id="title"
+                              name="title"
+                              value={user.title || ""}
+                              onChange={handleInputChange}
+                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                              required
+                            >
+                              <option value="">เลือกคำนำหน้า</option>
+                              {initialTitles.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {user.title === "อื่นๆ" && (
+                            <div className="sm:col-span-1">
+                              <label htmlFor="customTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ระบุคำนำหน้า</label>
+                              <input
+                                type="text"
+                                id="customTitle"
+                                value={customTitle}
+                                onChange={(e) => setCustomTitle(e.target.value)}
+                                placeholder="ระบุเอง..."
+                                className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                required
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ชื่อ</label>
+                            <input
+                              type="text"
+                              name="firstName"
+                              id="firstName"
+                              value={user.firstName || ""}
+                              onChange={handleInputChange}
+                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">นามสกุล</label>
+                            <input
+                              type="text"
+                              name="lastName"
+                              id="lastName"
+                              value={user.lastName || ""}
+                              onChange={handleInputChange}
+                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                              required
+                            />
+                          </div>
                         </div>
                         <div className="relative" ref={dropdownRef}>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">บทบาท</label>
@@ -428,13 +571,13 @@ const EditUserPage: React.FC = () => {
                               name="schoolId"
                               value={user.schoolId || ''}
                               onChange={handleInputChange}
-                              disabled={isSchoolAdmin}
-                              className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : ''}`}
+                              disabled={isSchoolAdmin || isTeacher}
+                              className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin || isTeacher ? 'opacity-70 cursor-not-allowed' : ''}`}
                             >
                               <option value="">-- ไม่ได้กำหนด --</option>
                               {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
                             </select>
-                            {!isSchoolAdmin && (
+                            {(!isSchoolAdmin && !isTeacher) && (
                               <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
                                 <FaPlus />
                               </Link>

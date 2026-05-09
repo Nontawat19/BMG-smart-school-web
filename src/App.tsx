@@ -248,13 +248,13 @@ function App() {
           <Route path="/academic/grade-book" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GradeBookPage /></ProtectedRoute>} />
 
           {/* Owner Pages (Super Admin & School Admin) */}
-          <Route path="/owner/hub" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><HubPage /></ProtectedRoute>} />
-          <Route path="/owner/school-info/:schoolId?" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><SchoolInfoPage /></ProtectedRoute>} />
+          <Route path="/owner/hub" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><HubPage /></ProtectedRoute>} />
+          <Route path="/owner/school-info/:schoolId?" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><SchoolInfoPage /></ProtectedRoute>} />
           <Route path="/owner/schools" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolListPage /></ProtectedRoute>} />
           <Route path="/owner/schools/:schoolId" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolDetailsPage /></ProtectedRoute>} />
-          <Route path="/owner/users" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><UserListPage /></ProtectedRoute>} />
-          <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><EditUserPage /></ProtectedRoute>} />
-          <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><AddUserPage /></ProtectedRoute>} />
+          <Route path="/owner/users" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><UserListPage /></ProtectedRoute>} />
+          <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><EditUserPage /></ProtectedRoute>} />
+          <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><AddUserPage /></ProtectedRoute>} />
 
           {/* Slug Resolver (Multi-tenancy) */}
           <Route path="/:slug" element={<SlugResolverPage />} />

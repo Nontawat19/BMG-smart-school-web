@@ -19,7 +19,7 @@ interface School {
 
 const AddUserPage = () => {
     const navigate = useNavigate();
-    const { user: currentUser, isSchoolAdmin } = usePermissions();
+    const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
     const [formData, setFormData] = useState({
         title: '',
         firstName: '',
@@ -78,10 +78,10 @@ const AddUserPage = () => {
     }, []);
 
     useEffect(() => {
-        if (isSchoolAdmin && currentUser?.schoolId) {
+        if ((isSchoolAdmin || isTeacher) && currentUser?.schoolId) {
             setFormData(prev => ({ ...prev, schoolId: currentUser.schoolId || '' }));
         }
-    }, [isSchoolAdmin, currentUser]);
+    }, [isSchoolAdmin, isTeacher, currentUser]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -184,10 +184,12 @@ const AddUserPage = () => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             try {
-                const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
+                // Compress and convert to WebP to match standard
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
                 setImageFile(compressedFile);
                 setImagePreview(URL.createObjectURL(compressedFile));
             } catch (error) {
+                console.error("Error compressing image:", error);
                 setImageFile(file);
                 setImagePreview(URL.createObjectURL(file));
             }
@@ -235,7 +237,8 @@ const AddUserPage = () => {
 
             let profileUrl = '';
             if (imageFile) {
-                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.png`);
+                // Use .webp extension to match standard
+                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.webp`);
                 const snapshot = await uploadBytes(storageRef, imageFile);
                 profileUrl = await getDownloadURL(snapshot.ref);
             }
@@ -254,6 +257,48 @@ const AddUserPage = () => {
                 profileUrl: profileUrl || null,
                 createdAt: serverTimestamp(),
             });
+
+            // 📌 Sync with school-specific collections if schoolId is provided
+            if (formData.schoolId) {
+                const roles = formData.role;
+                const isStaff = roles.some(r => ['teacher', 'school_admin', 'academic_admin', 'super_admin'].includes(r));
+                const isStudent = roles.includes('student');
+
+                if (isStaff) {
+                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "teachers", newUser.uid), {
+                        uid: newUser.uid,
+                        firstName: formData.firstName,
+                        lastName: formData.lastName,
+                        title: finalTitle,
+                        email: formData.email,
+                        role: formData.role,
+                        schoolId: formData.schoolId,
+                        profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
+                        position: roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู",
+                        department: "งานบริหารทั่วไป",
+                        status: "อยู่",
+                        isHomeroomTeacher: false,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                    });
+                }
+
+                if (isStudent) {
+                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "students", newUser.uid), {
+                        uid: newUser.uid,
+                        firstName: formData.firstName,
+                        lastName: formData.lastName,
+                        title: finalTitle,
+                        email: formData.email,
+                        role: formData.role,
+                        schoolId: formData.schoolId,
+                        profileImageUrl: profileUrl || null,
+                        studentStatus: "ปกติ",
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                    });
+                }
+            }
 
             // 📌 Create Slug for the Profile
             const slugId = `profile:${newUser.uid}`;
@@ -586,10 +631,10 @@ const AddUserPage = () => {
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        if (!isSchoolAdmin) setIsSchoolDropdownOpen(prev => !prev);
+                                                        if (!isSchoolAdmin && !isTeacher) setIsSchoolDropdownOpen(prev => !prev);
                                                     }}
-                                                    disabled={isSchoolAdmin}
-                                                    className={`w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm shadow-sm text-left text-gray-900 dark:text-white ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/50'} ${isSchoolDropdownOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
+                                                    disabled={isSchoolAdmin || isTeacher}
+                                                    className={`w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm shadow-sm text-left text-gray-900 dark:text-white ${isSchoolAdmin || isTeacher ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/50'} ${isSchoolDropdownOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
                                                 >
                                                     <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                         <FaSchool size={14} className="opacity-40" />

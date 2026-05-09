@@ -55,7 +55,7 @@ import { ROLES, ROLE_LABELS, Role } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
-  const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, ATTENDANCE_SCANNER_ACCESS } = usePermissions();
+  const { user: currentUser, isSuperAdmin, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, ATTENDANCE_SCANNER_ACCESS } = usePermissions();
   const isLoading = useSelector((state: RootState) => state.auth.loading);
   const schoolId = currentUser?.schoolId;
 
@@ -243,13 +243,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           </nav>
 
           {/* Owner Menu */}
-          <CanAccess roles={OWNER_ONLY}>
+          <CanAccess roles={ADMIN_ACCESS}>
             <div>
-              {renderSectionHeader("เจ้าของระบบ", "owner")}
+              {renderSectionHeader(isSuperAdmin ? "เจ้าของระบบ" : "แผงควบคุม", "owner")}
               <div className={!openSections["owner"] ? "hidden" : "block"}>
                 <NavLink to="/owner/hub" className={navLinkClasses}>
                   <FaShieldAlt className="text-lg min-w-[18px]" />
-                  <span>จัดการระบบ (Owner)</span>
+                  <span>{isSuperAdmin ? "จัดการระบบ (Owner)" : "จัดการข้อมูลผู้ใช้"}</span>
                 </NavLink>
               </div>
             </div>

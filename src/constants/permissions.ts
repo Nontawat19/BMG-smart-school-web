@@ -4,13 +4,13 @@ import { ROLES } from "./roles";
 export const OWNER_ONLY = [ROLES.SUPER_ADMIN];
 
 // สิทธิ์สำหรับแอดมินโรงเรียน (School Admin) เน้นจัดการข้อมูลบุคลากรในโรงเรียนเท่านั้น
-export const ADMIN_ACCESS = [ROLES.SCHOOL_ADMIN];
+export const ADMIN_ACCESS = [ROLES.SCHOOL_ADMIN, ROLES.TEACHER];
 
 // สิทธิ์สำหรับฝ่ายงานวิชาการ (ครูและแอดมินโรงเรียน)
 export const ACADEMIC_ACCESS = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN];
 
 // สิทธิ์ระดับบริหารจัดการงานวิชาการ
-export const ACADEMIC_MANAGEMENT = [ROLES.SCHOOL_ADMIN];
+export const ACADEMIC_MANAGEMENT = [ROLES.SCHOOL_ADMIN, ROLES.TEACHER];
 
 // สิทธิ์สำหรับงานบุคลากรโรงเรียนที่เข้าใช้งานระบบได้ทั่วไป (ครูและแอดมิน)
 export const STAFF_ACCESS = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN];

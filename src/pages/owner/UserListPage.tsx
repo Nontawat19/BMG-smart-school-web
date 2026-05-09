@@ -131,7 +131,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
 };
 
 const UserListPage: React.FC = () => {
-  const { user: currentUser, isSchoolAdmin } = usePermissions();
+  const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -184,8 +184,8 @@ const UserListPage: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-      // Security: School admin only sees users in their school
-      if (isSchoolAdmin && user.schoolId !== currentUser?.schoolId) {
+      // Security: School admin and Teacher only sees users in their school
+      if ((isSchoolAdmin || isTeacher) && user.schoolId !== currentUser?.schoolId) {
         return false;
       }
 
