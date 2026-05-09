@@ -30,6 +30,8 @@ import * as XLSX from 'xlsx';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
 import Select from 'react-select';
+import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 
 // --- Interfaces ---
 interface Student {
@@ -44,6 +46,7 @@ interface Student {
     nickname?: string;
     room?: string;
     groupName?: string;
+    classLevel?: string;
 }
 
 interface Course {
@@ -93,39 +96,97 @@ const DAY_KEY_MAP: Record<number, string> = {
 
 const THAI_DAY_NAMES = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
 
+const normalizeRoom = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? String(numeric) : raw.toLowerCase();
+};
+
+const getClassVariants = (classValue: string) => {
+    const value = String(classValue || '').trim();
+    if (!value) return [];
+
+    const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
+    const classKey = fromLabel || value;
+
+    return Array.from(new Set([
+        classKey,
+        CLASSES[classKey],
+        CLASS_FULL_NAMES[classKey],
+        value
+    ].filter(Boolean).map(String)));
+};
+
+const matchesClassValue = (recordClass: unknown, selectedClass: string): boolean => {
+    if (!selectedClass) return true;
+    if (!recordClass) return false;
+
+    if (Array.isArray(recordClass)) {
+        return recordClass.some(item => matchesClassValue(item, selectedClass));
+    }
+
+    const variants = getClassVariants(selectedClass);
+    const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s/g, ''));
+    const raw = String(recordClass || '').trim();
+    const normalized = raw.toLowerCase().replace(/\s/g, '');
+
+    return normalizedVariants.includes(normalized) ||
+        normalizedVariants.some(v => normalized.startsWith(`${v}_`) || normalized.startsWith(`${v}/`)) ||
+        normalizedVariants.some(v => normalized.includes(v) || v.includes(normalized));
+};
+
+const getDateDisplayPart = (slotKey: string) => slotKey.split('_')[0];
+const displayDateToISO = (displayDate: string) => {
+    const [dd, mm, yy] = displayDate.split('-');
+    return `${yy}-${mm}-${dd}`;
+};
+
 // Dark mode styles for react-select
 const selectStyles = {
     control: (base: any, state: any) => ({
         ...base,
         backgroundColor: 'var(--select-bg)',
         borderColor: state.isFocused ? '#6366f1' : 'var(--select-border)',
-        boxShadow: state.isFocused ? '0 0 0 1px #6366f1' : 'none',
+        boxShadow: state.isFocused ? '0 0 0 3px rgba(99, 102, 241, 0.18)' : 'none',
         '&:hover': {
             borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover)'
         },
-        padding: '0px',
-        borderRadius: '0.5rem',
-        fontSize: '0.75rem',
-        minHeight: '34px',
+        borderRadius: '0.75rem',
+        fontSize: '0.875rem',
+        minHeight: '46px',
+        transition: 'all 160ms ease',
+    }),
+    valueContainer: (base: any) => ({
+        ...base,
+        padding: '0 12px',
+        minWidth: 0,
+        flexWrap: 'nowrap',
     }),
     menu: (base: any) => ({
         ...base,
         backgroundColor: 'var(--select-menu-bg)',
         border: '1px solid var(--select-border)',
-        borderRadius: '0.5rem',
-        zIndex: 50
+        borderRadius: '0.75rem',
+        overflow: 'hidden',
+        zIndex: 100
     }),
+    menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
     option: (base: any, state: any) => ({
         ...base,
         backgroundColor: state.isSelected ? '#6366f1' : state.isFocused ? 'var(--select-option-hover)' : 'transparent',
         color: state.isSelected ? 'white' : 'var(--select-text)',
-        padding: '8px 12px',
-        fontSize: '0.75rem',
+        padding: '10px 12px',
+        fontSize: '0.8125rem',
         cursor: 'pointer',
     }),
     singleValue: (base: any) => ({
         ...base,
-        color: 'var(--select-text)'
+        color: 'var(--select-text)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '100%',
     }),
     input: (base: any) => ({
         ...base,
@@ -134,26 +195,42 @@ const selectStyles = {
     placeholder: (base: any) => ({
         ...base,
         color: '#9ca3af'
-    })
+    }),
+    indicatorsContainer: (base: any) => ({
+        ...base,
+        paddingRight: 6,
+    }),
+    clearIndicator: (base: any) => ({
+        ...base,
+        padding: 6,
+    }),
+    dropdownIndicator: (base: any) => ({
+        ...base,
+        padding: 6,
+    }),
+    indicatorSeparator: (base: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-border)',
+        marginTop: 10,
+        marginBottom: 10,
+    }),
 };
 
 // Helper to check if a record matches the selected room/group precisely (consistent across modules)
 const matchesRoomGroup = (data: any, selectedRoom: string): boolean => {
     if (!selectedRoom) return true;
-    const roomStr = String(data.room || data.roomNumber || data.groupNumber || data.group || '').trim();
+    const normalizedSelected = normalizeRoom(selectedRoom);
+    const roomStr = normalizeRoom(data.room || data.roomNumber || data.groupNumber || data.group || '');
     const groupName = String(data.groupName || '').trim();
     const className = String(data.className || '').trim();
+    const classId = String(data.classId || '').trim();
     
-    const matchesExact = roomStr === String(selectedRoom);
-    const matchesGroup = groupName === `กลุ่ม ${selectedRoom}` || 
-                         groupName === `ก.${selectedRoom}` || 
-                         groupName === String(selectedRoom);
-    const matchesClassNameSuffix = className.endsWith('/' + selectedRoom);
-    
-    // Fallback: If the record has NO room/group info, treat it as general and allow match
-    const isGeneralRecord = !roomStr && !groupName && !className.includes('/');
+    const matchesExact = roomStr === normalizedSelected;
+    const matchesGroup = normalizeRoom(groupName.replace(/^กลุ่ม\s*/i, '').replace(/^ก\.\s*/i, '')) === normalizedSelected;
+    const matchesClassNameSuffix = className.endsWith('/' + selectedRoom) || className.endsWith('/' + normalizedSelected);
+    const matchesClassIdSuffix = classId.endsWith('_' + selectedRoom) || classId.endsWith('_' + normalizedSelected);
 
-    return matchesExact || matchesGroup || matchesClassNameSuffix || isGeneralRecord;
+    return matchesExact || matchesGroup || matchesClassNameSuffix || matchesClassIdSuffix;
 };
 
 // Calculate Calendar Year based on Academic Year + Semester + Month + Terms Data
@@ -235,7 +312,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const yearParam = searchParams.get('year');
         const semesterParam = searchParams.get('semester');
         const classParam = searchParams.get('classId');
-        const roomParam = searchParams.get('roomNumber');
+        const roomParam = searchParams.get('roomNumber') || searchParams.get('room');
         const courseParam = searchParams.get('courseId');
 
         if (yearParam) setAcademicYear(yearParam);
@@ -274,6 +351,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
     const { availableClassOptions } = useSelector((state: RootState) => state.schoolSettings);
+    
+    // Redux Calendar State
+    const calendarState = useSelector((state: RootState) => state.calendar);
+    const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
+    const reduxTerms = calendarState.terms;
+    const reduxRawData = calendarState.rawData;
+
     const schoolId = (currentUser as any)?.schoolId;
 
     const classOptions = useMemo(() => {
@@ -296,8 +380,6 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
             try {
                 const currentCourse = courses.find(c => c.id === selectedCourse || c.code === selectedCourse);
-                const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
-                const classTitle = CLASSES[selectedClass] || selectedClass;
 
                 // Identify target codes (ID, Code, and Title for max robustness)
                 const targetCodes = new Set<string>();
@@ -319,11 +401,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                 snap.forEach(doc => {
                     const data = doc.data();
-                    const matchesClass = data.classId === classKey ||
-                        data.className === classTitle ||
-                        data.classId === classTitle ||
-                        (Array.isArray(data.classId) && data.classId.includes(classKey)) ||
-                        (data.className && classTitle && (data.className.includes(classTitle) || classTitle.includes(data.className)));
+                    const matchesClass = matchesClassValue(data.classId, selectedClass) ||
+                        matchesClassValue(data.className, selectedClass);
 
                     const matchesRoom = matchesRoomGroup(data, selectedRoomNumber);
 
@@ -352,7 +431,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                 // Calculate stats for warning
                 const totalDays = uniqueDates.size;
-                const isPrimary = selectedClass.includes('ป.') || selectedClass.toLowerCase().includes('p');
+                const classLabel = CLASSES[selectedClass] || selectedClass;
+                const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
                 const courseAny = currentCourse as any;
                 const credits = courseAny?.credits ? Number(courseAny.credits) : 1;
 
@@ -362,7 +442,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
         };
         fetchAnnualAttendanceCount();
-    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, courses, isModified]);
+    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, terms, courses, isModified]);
     // Refresh when isModified becomes false (usually after save) ou trigger it manually
 
     const months = [
@@ -373,9 +453,41 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     useEffect(() => {
         if (schoolId) {
             dispatch(fetchTeachersMap(schoolId) as any);
+            dispatch(fetchCalendar(schoolId) as any);
             fetchSchoolSettings();
         }
     }, [schoolId, dispatch]);
+
+    // Sync from Redux Calendar
+    useEffect(() => {
+        if (calendarState.status === 'succeeded') {
+            if (!academicYear) setAcademicYear(reduxAcademicYear);
+            
+            if (reduxRawData.events) setCalendarEvents(reduxRawData.events);
+            
+            // Map Redux terms to local format
+            if (reduxTerms.length > 0) {
+                const term1 = reduxTerms.find(t => t.id === 'term1' || t.name.includes('1'));
+                const term2 = reduxTerms.find(t => t.id === 'term2' || t.name.includes('2'));
+                
+                setTerms({
+                    term1: { startDate: term1?.startDate || null, endDate: term1?.endDate || null },
+                    term2: { startDate: term2?.startDate || null, endDate: term2?.endDate || null }
+                });
+
+                // Auto-set semester if not provided
+                const semParam = searchParams.get('semester');
+                if (!semParam && !semester) {
+                    const today = new Date().toISOString().split('T')[0];
+                    if (term2?.startDate && today >= term2.startDate) {
+                        setSemester('2');
+                    } else {
+                        setSemester('1');
+                    }
+                }
+            }
+        }
+    }, [calendarState.status, reduxAcademicYear, reduxTerms, reduxRawData, searchParams]);
 
     const monthPickerRef = useRef<HTMLDivElement>(null);
 
@@ -421,45 +533,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const fetchSchoolSettings = async () => {
         if (!schoolId) return;
         try {
-            // Fetch base calendar data from Firestore matching GradeBookPage logic
-            const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-            const calendarDocSnap = await getDoc(calendarDocRef);
-
-            if (calendarDocSnap.exists()) {
-                const firestoreData = calendarDocSnap.data();
-                setAcademicYear(firestoreData.academicYear || '2567');
-
-                if (firestoreData.events) setCalendarEvents(firestoreData.events);
-                if (firestoreData.terms) setTerms(firestoreData.terms);
-
-                // Calculate current term based on date ONLY if not provided in URL
-                const semParam = searchParams.get('semester');
-                if (semParam) {
-                    setSemester(semParam);
-                } else {
-                    const today = new Date().toISOString().split('T')[0];
-                    if (firestoreData.terms?.term2?.startDate && today >= firestoreData.terms.term2.startDate) {
-                        setSemester('2');
-                    } else {
-                        setSemester('1');
-                    }
-                }
-            } else {
-                // Fallback if main_calendar doesn't exist, try root settings
-                const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
-                if (schoolSnap.exists()) {
-                    const data = schoolSnap.data();
-                    setAcademicYear(data.currentAcademicYear || '2567');
-                    setSemester(data.currentSemester || '1');
-
-                    // Fetch academic settings for feature toggles
-                    if (data.academicSettings) {
-                        setAcademicSettings(data.academicSettings);
-                    }
+            // Fetch root settings for feature toggles (academicSettings)
+            const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
+            if (schoolSnap.exists()) {
+                const data = schoolSnap.data();
+                if (data.academicSettings) {
+                    setAcademicSettings(data.academicSettings);
                 }
             }
         } catch (error) {
-            console.error("Error fetching settings:", error);
+            console.error("Error fetching school settings:", error);
         }
     };
 
@@ -506,28 +589,19 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: []
                 };
 
-                const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
-                const classTitle = (CLASSES[selectedClass] || selectedClass).toLowerCase().replace(/\s/g, '');
-
                 snap.forEach(doc => {
                     const data = doc.data();
                     const docClassId = data.classId;
-                    const docClassName = (data.className || "").toLowerCase().replace(/\s/g, '');
 
                     // Robust class matching
-                    const matchesClass =
-                        docClassId === classKey ||
-                        docClassId === selectedClass ||
-                        docClassName === classTitle ||
-                        (Array.isArray(docClassId) && docClassId.includes(classKey)) ||
-                        (docClassName && classTitle && (docClassName.includes(classTitle) || classTitle.includes(docClassName)));
+                    const matchesClass = matchesClassValue(docClassId, selectedClass) ||
+                        matchesClassValue(data.className, selectedClass);
 
-                    const docRoom = String(data.room || data.roomNumber || '').toLowerCase();
-                    const matchesRoom = !selectedRoomNumber || 
-                                       docRoom === String(selectedRoomNumber) || 
-                                       docRoom === 'all' || 
-                                       docRoom === '' ||
-                                       String(data.className || '').endsWith('/' + selectedRoomNumber);
+                    const docRoom = normalizeRoom(data.room || data.roomNumber || '');
+                    const matchesRoom = !selectedRoomNumber ||
+                        docRoom === normalizeRoom(selectedRoomNumber) ||
+                        docRoom === 'all' ||
+                        matchesRoomGroup(data, selectedRoomNumber);
 
                     if (!matchesClass || !matchesRoom) return;
 
@@ -645,6 +719,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             
             // Collect all periods for this day (Scheduled + DB)
             const allPeriodsForToday = new Set<number>(scheduledPeriods);
+            if (event?.type === 'schoolDay' && allPeriodsForToday.size === 0) {
+                allPeriodsForToday.add(0);
+            }
             
             // Also check hasDataDates for extra periods
             if (hasDataDates) {
@@ -679,8 +756,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     if (hasTermData) {
                         const currentStr = dateStrLookup;
                         if (currentStr < termData.startDate! || currentStr > termData.endDate!) {
-                            // Even in term break, if there's data, we allow viewing/editing
-                            if (!hasData) {
+                            // Explicit makeup school days are allowed even when they extend the 100-day range.
+                            if (!hasData && event?.type !== 'schoolDay') {
                                 isCheckableLocal = false;
                                 if (!reasonLocal) reasonLocal = 'term_break';
                             }
@@ -727,14 +804,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     // Filter Courses based on Selected Class
     const filteredCourses = useMemo(() => {
         if (!selectedClass) return [];
-        // selectedClass is now usually the key (p1, m1)
-        const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
 
         return courses.filter(c => {
             // Handle both string and array formats for classId
-            const matchesClass = Array.isArray(c.classId) 
-                ? c.classId.includes(classKey) 
-                : c.classId === classKey;
+            const matchesClass = matchesClassValue(c.classId, selectedClass);
                 
             if (!matchesClass) return false;
 
@@ -743,7 +816,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             if (selectedRoomNumber) {
                 const assignments = c.teacherAssignments || [];
                 if (assignments.length > 0) {
-                    return assignments.some((a: any) => String(a.groupNumber) === String(selectedRoomNumber));
+                    return assignments.some((a: any) => normalizeRoom(a.groupNumber || a.room || a.roomNumber || a.group) === normalizeRoom(selectedRoomNumber));
                 }
             }
 
@@ -753,10 +826,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     // Auto-select course if only one option available
     useEffect(() => {
+        if (selectedCourse && filteredCourses.length > 0 && !filteredCourses.some(c => c.code === selectedCourse || c.id === selectedCourse)) {
+            setSelectedCourse('');
+            return;
+        }
+
         if (filteredCourses.length === 1) {
             setSelectedCourse(filteredCourses[0].code);
         }
-    }, [filteredCourses]);
+    }, [filteredCourses, selectedCourse]);
 
     // Fetch Data
     const handleFetchData = React.useCallback(async () => {
@@ -791,6 +869,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             // Class identifiers for lookup
             const currentClassKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
             const currentClassTitle = (CLASSES[selectedClass] || selectedClass);
+            const currentClassVariants = getClassVariants(selectedClass);
 
             console.log("[HistoricalAttendance] Fetching codes:", finalSubjectCodes, "Class:", currentClassKey, "Room:", selectedRoomNumber);
 
@@ -809,6 +888,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             let enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...enrollConstraints);
             let enrollSnap = await getDocs(enrollQ);
 
+            // Annual/legacy enrollment records may not store semester, or may store "annual"/"1-2".
+            if (enrollSnap.empty) {
+                enrollQ = query(
+                    collection(db, 'school-settings', schoolId, 'enrollments'),
+                    where('courseId', '==', courseId),
+                    where('academicYear', '==', academicYear)
+                );
+                enrollSnap = await getDocs(enrollQ);
+            }
+
             // 2. Fallback Query: Try fetching by courseCode if ID search yielded nothing
             if (enrollSnap.empty && subjectCode) {
                 const codeConstraints = [
@@ -817,6 +906,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     where('semester', '==', semester)
                 ];
                 enrollQ = query(collection(db, 'school-settings', schoolId, 'enrollments'), ...codeConstraints);
+                enrollSnap = await getDocs(enrollQ);
+            }
+
+            if (enrollSnap.empty && subjectCode) {
+                enrollQ = query(
+                    collection(db, 'school-settings', schoolId, 'enrollments'),
+                    where('courseCode', '==', subjectCode),
+                    where('academicYear', '==', academicYear)
+                );
                 enrollSnap = await getDocs(enrollQ);
             }
 
@@ -830,7 +928,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 filteredEnrollDocs = filteredEnrollDocs.filter(doc => {
                     const data = doc.data();
                     if (!data.classLevel) return true; 
-                    return [currentClassKey, currentClassTitle].includes(data.classLevel);
+                    return matchesClassValue(data.classLevel, selectedClass);
                 });
             }
 
@@ -857,15 +955,17 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             prefix: data.title || data.prefix || '',
                             profileImageUrl: data.profileImageUrl || '',
                             room: data.room || data.roomNumber || '',
-                            groupName: data.groupName || ''
+                            groupName: data.groupName || '',
+                            classLevel: data.classLevel || ''
                         } as Student);
                     });
                 }
                 studentList = studentDetails;
             } else {
                 // Fallback to Class Level
+                const classLevelValues = currentClassVariants.length > 0 ? currentClassVariants : [currentClassKey, currentClassTitle].filter(Boolean);
                 const studentConstraints = [
-                    where('classLevel', 'in', [currentClassKey, currentClassTitle].filter(Boolean))
+                    where('classLevel', 'in', classLevelValues.slice(0, 30))
                 ];
 
                 const studentQ = query(
@@ -888,10 +988,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             profileImageUrl: data.profileImageUrl || '',
                             roomNumber: data.room || data.roomNumber || '',
                             room: data.room || data.roomNumber || '',
-                            groupName: data.groupName || ''
+                            groupName: data.groupName || '',
+                            classLevel: data.classLevel || ''
                         } as Student & { roomNumber: string };
                     })
-                    .filter(s => matchesRoomGroup(s, selectedRoomNumber));
+                    .filter(s => matchesClassValue((s as any).classLevel || currentClassKey, selectedClass))
+                    .filter(s => !selectedRoomNumber || normalizeRoom((s as any).room || (s as any).roomNumber) === normalizeRoom(selectedRoomNumber));
             }
 
             studentList.sort((a, b) => {
@@ -930,13 +1032,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                     // Check intersection with generatedDates (which are DD-MM-YYYY)
                     // We need to convert generatedDates to YYYY-MM-DD for comparison
-                    generatedDates.forEach(dDisplay => {
-                        const [dd, mm, yy] = dDisplay.split('-');
-                        const dISO = `${yy}-${mm}-${dd}`;
+                    generatedDates.forEach(slotKey => {
+                        const datePart = getDateDisplayPart(slotKey);
+                        const dISO = displayDateToISO(datePart);
 
                         if (dISO >= startStr && dISO <= endStr) {
                             if (!leavesMap[st.id]) leavesMap[st.id] = {};
-                            leavesMap[st.id][dDisplay] = {
+                            leavesMap[st.id][datePart] = {
                                 type: lData.leaveType,
                                 description: lData.reason || lData.leaveType
                             };
@@ -956,7 +1058,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 where('semester', '==', semester)
             );
 
-            const attSnap = await getDocs(q);
+            let attSnap = await getDocs(q);
+            if (attSnap.empty) {
+                const fallbackQ = query(
+                    attRef,
+                    where('schoolId', '==', schoolId),
+                    where('subjectCode', 'in', finalSubjectCodes)
+                );
+                attSnap = await getDocs(fallbackQ);
+            }
             const rawAttendanceDocs: any[] = [];
             const foundDataSlots = new Set<string>();
 
@@ -967,12 +1077,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const docDate = d.date?.toDate ? d.date.toDate() : null;
                 
                 // Robust class matching (expanded)
-                const matchesClass = d.classId === currentClassKey ||
-                    d.className === currentClassTitle ||
-                    d.classId === currentClassTitle ||
-                    (String(d.classId || '').startsWith(currentClassKey)) ||
-                    (Array.isArray(d.classId) && d.classId.includes(currentClassKey)) ||
-                    (d.className && currentClassTitle && (d.className.includes(currentClassTitle) || currentClassTitle.includes(d.className)));
+                const matchesClass = matchesClassValue(d.classId, selectedClass) ||
+                    matchesClassValue(d.className, selectedClass);
 
                 const matchesRoom = matchesRoomGroup(d, selectedRoomNumber);
 
@@ -995,8 +1101,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 if (dateStrDisplay) {
                     const periodNum = d.period !== undefined ? d.period : 0;
                     const slotKey = `${dateStrDisplay}_P${periodNum}`;
+                    const isLegacyRoomRecord = Boolean(
+                        selectedRoomNumber &&
+                        typeof d.classId === 'string' &&
+                        d.classId.endsWith(`_${selectedRoomNumber}`)
+                    );
                     foundDataSlots.add(slotKey);
-                    rawAttendanceDocs.push({ ...d, slotKey });
+                    rawAttendanceDocs.push({ ...d, slotKey, isLegacyRoomRecord });
                 }
             });
 
@@ -1007,17 +1118,25 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             // 6. Map Attendance Data to Slots
             const dataMap: Record<string, Record<string, string>> = {};
+            const mappedRecordPreference: Record<string, boolean> = {};
             rawAttendanceDocs.forEach(d => {
+                const mapKey = `${d.studentId}:${d.slotKey}`;
+                if (mappedRecordPreference[mapKey] === false && d.isLegacyRoomRecord) {
+                    return;
+                }
+
                 // If the slot is in our final list, map it
                 if (finalDates.includes(d.slotKey)) {
                     if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
                     dataMap[d.studentId][d.slotKey] = d.status;
+                    mappedRecordPreference[mapKey] = d.isLegacyRoomRecord;
                 } else {
                     // Fallback to day-only if slotKey not found (legacy)
                     const dayOnly = d.slotKey.split('_')[0];
                     if (finalDates.includes(dayOnly)) {
                         if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
                         dataMap[d.studentId][dayOnly] = d.status;
+                        mappedRecordPreference[`${d.studentId}:${dayOnly}`] = d.isLegacyRoomRecord;
                     }
                 }
             });
@@ -1036,7 +1155,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             studentList.forEach(st => {
                 finalDates.forEach(date => {
-                    const leaveRec = leavesMap[st.id]?.[date];
+                    const leaveRec = leavesMap[st.id]?.[date] || leavesMap[st.id]?.[getDateDisplayPart(date)];
                     if (leaveRec) {
                         if (!mergedData[st.id]) mergedData[st.id] = {};
 
@@ -1083,14 +1202,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const handleCellClick = (studentId: string, date: string, multiSelect: boolean = false) => {
         const meta = dateMetadata[date];
 
-        // Redundant Safety Check: Calculate Day of Week
-        const datePart = date.split('_')[0];
-        const [d, m, y] = datePart.split('-').map(Number);
-        const dayOfWeek = new Date(y, m - 1, d).getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-        // Enforce checkability based on metadata OR strict weekend rule (unless schoolDay)
-        const isLocked = (meta && !meta.isCheckable) || (isWeekend && meta?.reason !== 'schoolDay');
+        // Calendar metadata is the source of truth, so makeup school days can override weekends/holidays.
+        const isLocked = meta && !meta.isCheckable;
 
         if (isLocked) {
             // Only show warning if trying to interact directly
@@ -1099,7 +1212,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 Swal.fire({
                     icon: 'warning',
                     title: 'ไม่สามารถเช็คชื่อได้',
-                    text: getReasonText(meta?.reason || (isWeekend ? 'weekend' : undefined)),
+                    text: getReasonText(meta?.reason),
                     timer: 1500,
                     showConfirmButton: false,
                     toast: true,
@@ -1272,33 +1385,42 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                     if (newVal !== oldVal) {
                         changesCount++;
-                        // Use the new format (P0 for summary) but maintain backward compatibility
-                        // Use a room-aware ID format to prevent data collision between different groups of the same class
+                        // Use the shared ClassroomAttendance format. Room stays in its own field.
                         const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
-                        const classKeyWithRoom = selectedRoomNumber ? `${classKey}_${selectedRoomNumber}` : classKey;
-                        const attendanceId = `${dateStr.split('_')[0]}_${subjectCode}_${classKeyWithRoom}_P${periodNum}`;
-                        const oldAttendanceId = `${dateStr.split('_')[0]}_${subjectCode}_${classKey}`;
+                        const datePartForId = dateStr.split('_')[0];
+                        const attendanceId = `${datePartForId}_${subjectCode}_${classKey}_P${periodNum}`;
+                        const oldAttendanceId = `${datePartForId}_${subjectCode}_${classKey}`;
+                        const legacyRoomAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}_P${periodNum}` : '';
+                        const legacyRoomOldAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}` : '';
                         
                         const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
                         const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldAttendanceId);
+                        const legacyRoomRef = legacyRoomAttendanceId
+                            ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomAttendanceId)
+                            : null;
+                        const legacyRoomOldRef = legacyRoomOldAttendanceId
+                            ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldAttendanceId)
+                            : null;
 
                         if (!newVal) {
                             batch.delete(ref);
                             batch.delete(oldRef); // Clean up old format too
+                            if (legacyRoomRef) batch.delete(legacyRoomRef);
+                            if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
                         } else {
                             const datePart = dateStr.split('_')[0];
                             const [d, m, y] = datePart.split('-').map(Number);
                             const dateObj = new Date(y, m - 1, d, 12, 0, 0);
 
                             const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
-                            const classNameWithRoom = selectedRoomNumber ? `${derivedClassName}/${selectedRoomNumber}` : derivedClassName;
 
                             const attendancePayload = {
                                 schoolId,
                                 studentId: student.id,
                                 date: Timestamp.fromDate(dateObj),
-                                classId: classKeyWithRoom,
-                                className: classNameWithRoom,
+                                classId: classKey,
+                                className: derivedClassName,
+                                room: selectedRoomNumber || null,
                                 period: periodNum, 
                                 subjectName,
                                 subjectCode,
@@ -1312,14 +1434,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             };
 
                             batch.set(ref, attendancePayload, { merge: true });
-                            
-                            // If it was originally an old format record, we should probably update it or migrate it.
-                            // To be safe, if we are saving a new value, we write to the new ID.
-                            // If the old one exists, we can either leave it or delete it.
-                            // Let's migrate it by deleting the old one if it's different.
-                            if (oldVal) {
-                                batch.delete(oldRef);
-                            }
+                            batch.delete(oldRef);
+                            if (legacyRoomRef) batch.delete(legacyRoomRef);
+                            if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
                         }
                     }
                 });
@@ -1405,7 +1522,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     const getStatusBadge = (studentId: string, date: string, status?: string, isCheckable: boolean = true, tooltip?: string, reason?: string) => {
         // Handle locked records (leaves) regardless of date checkability
-        const leaveRec = studentLeaves[studentId]?.[date];
+        const leaveRec = studentLeaves[studentId]?.[date] || studentLeaves[studentId]?.[getDateDisplayPart(date)];
         const isLockedRecord = !!leaveRec;
 
         let content;
@@ -1418,8 +1535,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 );
             } else {
                 content = (
-                    <div className="w-[14px] h-[14px] rounded-sm bg-gray-100/30 dark:bg-gray-800/30 flex items-center justify-center text-black dark:text-white transition-all border border-black dark:border-white">
-                        <FaLock size={8} />
+                    <div className="w-[10px] h-[10px] rounded-[2px] bg-gray-100/20 dark:bg-gray-800/20 flex items-center justify-center text-gray-500/70 dark:text-gray-300/75 transition-all border border-gray-400/50 dark:border-white/55">
+                        <FaLock size={6} />
                     </div>
                 );
             }
@@ -1531,6 +1648,24 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         return ((presentCount / totalRecorded) * 100).toFixed(1);
     };
 
+    const getDateCheckProgress = (date: string) => {
+        const meta = dateMetadata[date];
+        if (!meta?.isCheckable || students.length === 0) {
+            return { checked: 0, total: students.length, percent: 0 };
+        }
+
+        const checked = students.reduce((count, student) => {
+            const status = attendanceData[student.id]?.[date];
+            return typeof status === 'string' && ['present', 'late', 'leave', 'absent'].includes(status) ? count + 1 : count;
+        }, 0);
+
+        return {
+            checked,
+            total: students.length,
+            percent: Math.round((checked / students.length) * 100)
+        };
+    };
+
     // Resolve back to IDs for the navigation link
     const backNavParams = useMemo(() => {
         const foundCourse = courses.find(c => c.code === selectedCourse || c.id === selectedCourse);
@@ -1556,8 +1691,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         <div>
                             <div className="flex items-center gap-2 mb-1">
                                 <div className="flex items-center gap-3">
-                                    <BackButton to={`/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.room}&groupId=${backNavParams.groupId}&year=${backNavParams.year}`} />
-                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">กลับไปยังสมุดประจำวิชา (Grade Book)</span>
+                                    <BackButton to={searchParams.get('courseId') ? `/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.room}&groupId=${backNavParams.groupId}&year=${backNavParams.year}` : '/academic/hub/attendance'} />
+                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">
+                                        {searchParams.get('courseId') ? 'กลับไปยังสมุดประจำวิชา (Grade Book)' : 'กลับไปยังระบบเช็คชื่อ'}
+                                    </span>
                                 </div>
                             </div>
                             <h1 className="text-xl font-bold flex items-center gap-2">
@@ -1627,7 +1764,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                         {/* Attendance Warning Logic Based on Level */}
                         {(() => {
-                            const isPrimary = selectedClass.includes('ป.');
+                            const classLabel = CLASSES[selectedClass] || selectedClass;
+                            const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
                             const credits = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.credits;
                             const hoursPerWeek = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.hoursPerWeek || (Number(credits) * 2);
 
@@ -1679,27 +1817,26 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
 
                     {/* Filters & Controls */}
-                    <div className="bg-white dark:bg-[#1a1b1e] p-3 rounded-xl shadow-sm border border-gray-100 dark:border-white/5 flex flex-col lg:flex-row gap-4 items-end lg:items-center animate-in slide-in-from-top-4 duration-500">
-
-                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 w-full">
+                    <div className="bg-white dark:bg-[#1a1b1e] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 animate-in slide-in-from-top-4 duration-500">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(120px,0.75fr)_minmax(140px,0.9fr)_minmax(130px,0.8fr)_minmax(260px,1.65fr)_minmax(220px,1fr)_48px] 2xl:grid-cols-[minmax(130px,160px)_minmax(150px,180px)_minmax(140px,170px)_minmax(300px,1fr)_minmax(240px,280px)_52px] gap-3 xl:gap-4 items-end min-w-0">
                             {/* Term Selector */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                            <div className="space-y-1.5 min-w-0">
+                                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                                     <Filter size={10} /> ภาคเรียน
                                 </label>
                                 <div className="relative">
-                                    <select value={semester} onChange={e => setSemester(e.target.value)} className="w-full pl-2 pr-8 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none appearance-none font-medium text-xs text-gray-700 dark:text-gray-200">
+                                    <select value={semester} onChange={e => setSemester(e.target.value)} className="w-full h-[46px] pl-3 pr-9 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none appearance-none font-bold text-sm text-gray-700 dark:text-gray-200">
                                         {TERMS.map(t => <option key={t} value={t}>เทอม {t}</option>)}
                                     </select>
-                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                        <ChevronDown size={12} />
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                        <ChevronDown size={14} />
                                     </div>
                                 </div>
                             </div>
 
                             {/* Class Selector */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ระดับชั้น</label>
+                            <div className="space-y-1.5 min-w-0">
+                                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ระดับชั้น</label>
                                 <Select
                                     options={classOptions}
                                     isClearable
@@ -1707,12 +1844,14 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={classOptions.find(opt => opt.value === selectedClass || opt.label === selectedClass)}
                                     onChange={(val) => setSelectedClass(val ? val.value : '')}
                                     styles={selectStyles}
+                                    menuPortalTarget={document.body}
+                                    menuPosition="fixed"
                                 />
                             </div>
 
                             {/* Room Selector */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ห้อง</label>
+                            <div className="space-y-1.5 min-w-0">
+                                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ห้อง</label>
                                 <Select
                                     options={roomOptions}
                                     isClearable
@@ -1720,12 +1859,14 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={roomOptions.find(opt => opt.value === selectedRoomNumber)}
                                     onChange={(val) => setSelectedRoomNumber(val ? val.value : '')}
                                     styles={selectStyles}
+                                    menuPortalTarget={document.body}
+                                    menuPosition="fixed"
                                 />
                             </div>
 
                             {/* Course Selector */}
-                            <div className="space-y-1 lg:col-span-2">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
+                            <div className="space-y-1.5 min-w-0 sm:col-span-2 xl:col-span-1">
+                                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
                                 <Select
                                     options={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }))}
                                     isClearable
@@ -1734,44 +1875,47 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` })).find(opt => opt.value === selectedCourse)}
                                     onChange={(val) => setSelectedCourse(val ? val.value : '')}
                                     styles={selectStyles}
+                                    menuPortalTarget={document.body}
+                                    menuPosition="fixed"
                                 />
                             </div>
-                        </div>
 
-                        <div className="h-10 w-px bg-gray-200 dark:bg-gray-700 hidden lg:block"></div>
+                            {/* Month Navigation with Grid Picker */}
+                            <div className="space-y-1.5 min-w-0 sm:col-span-2 xl:col-span-1">
+                                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">เดือนที่แสดง</label>
+                                <div className="relative min-w-0" ref={monthPickerRef}>
+                                    <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 p-1 rounded-xl border border-gray-100 dark:border-gray-700 w-full">
+                                        <button
+                                            onClick={() => setSelectedMonth(p => p === 0 ? 11 : p - 1)}
+                                            className="h-9 w-9 flex items-center justify-center hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95 shrink-0"
+                                            title="เดือนก่อนหน้า"
+                                        >
+                                            <ChevronLeft size={17} />
+                                        </button>
 
-                        {/* Month Navigation with Grid Picker */}
-                        <div className="relative" ref={monthPickerRef}>
-                            <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-700/50 p-1 rounded-lg border border-gray-100 dark:border-gray-700 w-full lg:w-auto justify-between lg:justify-start">
-                                <button
-                                    onClick={() => setSelectedMonth(p => p === 0 ? 11 : p - 1)}
-                                    className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
-                                >
-                                    <ChevronLeft size={16} />
-                                </button>
+                                        <button
+                                            onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
+                                            className={`flex-1 min-w-0 h-9 flex flex-col items-center justify-center px-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all ${isMonthPickerOpen ? 'bg-white dark:bg-gray-600 ring-2 ring-indigo-500/20' : ''}`}
+                                        >
+                                            <div className="flex items-center justify-center gap-1.5 min-w-0 w-full">
+                                                <span className="font-black text-sm text-gray-800 dark:text-gray-100 truncate">{months[selectedMonth]}</span>
+                                                <ChevronDown size={12} className={`text-gray-400 transition-transform duration-300 shrink-0 ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
+                                            </div>
+                                            <span className="text-[9px] uppercase font-black text-indigo-500 tracking-wider leading-none">ปี พ.ศ. {calculatedYearAD + 543}</span>
+                                        </button>
 
-                                <button
-                                    onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
-                                    className={`flex flex-col items-center px-3 min-w-[120px] hover:bg-white dark:hover:bg-gray-600 rounded transition-all py-0.5 ${isMonthPickerOpen ? 'bg-white dark:bg-gray-600 ring-2 ring-indigo-500/20' : ''}`}
-                                >
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="font-bold text-base text-gray-800 dark:text-gray-100">{months[selectedMonth]}</span>
-                                        <ChevronDown size={12} className={`text-gray-400 transition-transform duration-300 ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
+                                        <button
+                                            onClick={() => setSelectedMonth(p => p === 11 ? 0 : p + 1)}
+                                            className="h-9 w-9 flex items-center justify-center hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95 shrink-0"
+                                            title="เดือนถัดไป"
+                                        >
+                                            <ChevronRight size={17} />
+                                        </button>
                                     </div>
-                                    <span className="text-[9px] uppercase font-bold text-indigo-500 tracking-wider">ปี พ.ศ. {calculatedYearAD + 543}</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setSelectedMonth(p => p === 11 ? 0 : p + 1)}
-                                    className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
-                                >
-                                    <ChevronRight size={16} />
-                                </button>
-                            </div>
 
                             {/* Month Grid Picker Dropdown */}
                             {isMonthPickerOpen && (
-                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-2xl border border-gray-100 dark:border-white/5 p-4 z-[100] animate-in fade-in zoom-in duration-200">
+                                <div className="absolute top-full left-0 sm:left-1/2 sm:-translate-x-1/2 xl:left-auto xl:right-0 xl:translate-x-0 2xl:left-1/2 2xl:right-auto 2xl:-translate-x-1/2 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-2xl border border-gray-100 dark:border-white/5 p-4 z-[100] animate-in fade-in zoom-in duration-200">
                                     <div className="grid grid-cols-3 gap-2">
                                         {months.map((month, idx) => {
                                             const isSelected = selectedMonth === idx;
@@ -1823,19 +1967,21 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-                        </div>
+                                </div>
+                            </div>
 
-                        <button
-                            onClick={handleFetchData}
-                            disabled={loading || !selectedCourse}
-                            className={`
-                                h-[38px] w-[38px] rounded-lg font-bold text-white shadow-md transition-all flex items-center justify-center
-                                ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}
-                            `}
-                            title="รีเฟรชข้อมูล"
-                        >
-                            {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-b-white"></div> : <Search size={18} />}
-                        </button>
+                            <button
+                                onClick={handleFetchData}
+                                disabled={loading || !selectedCourse}
+                                className={`
+                                    h-[46px] w-full sm:col-span-2 xl:col-span-1 rounded-xl font-bold text-white shadow-md transition-all flex items-center justify-center self-end
+                                    ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95 shadow-indigo-500/20'}
+                                `}
+                                title="รีเฟรชข้อมูล"
+                            >
+                                {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-b-white"></div> : <Search size={20} />}
+                            </button>
+                        </div>
                     </div>
 
 
@@ -1892,9 +2038,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     <div className="bg-white dark:bg-[#1a1b1e] rounded-xl shadow-xl shadow-indigo-500/5 border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col h-[calc(100vh-320px)] border-b-0">
 
                         <div className="overflow-auto flex-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
-                            <table className="w-full text-left border-collapse table-fixed">
+                            <table
+                                className="w-full text-left border-collapse table-fixed"
+                                style={{ zoom: 1.5 } as React.CSSProperties}
+                            >
                                 <thead className="bg-[#f8fafc] dark:bg-[#1e1f21] text-gray-600 dark:text-gray-300 sticky top-0 z-20 shadow-sm border-b border-gray-100 dark:border-white/5">
-                                    <tr className="h-10">
+                                    <tr className="h-12">
                                         <th style={{ left: 0, width: '18px', minWidth: '18px' }} className="p-0 text-center sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-100 dark:border-white/5 text-[8px] font-bold">#</th>
                                         <th style={{ left: '18px', width: '42px', minWidth: '42px' }} className="p-0 text-left sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-100 dark:border-white/5 text-[7px] font-bold pl-1">รหัส</th>
                                         <th style={{ left: '60px', width: '70px', minWidth: '70px' }} className="p-0 sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-200 dark:border-white/5 shadow-[1px_0_2px_-1px_rgba(0,0,0,0.1)] text-[8px] font-bold text-center">ชื่อ</th>
@@ -1910,6 +2059,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                             const isCheckable = meta?.isCheckable;
                                             const isRelevant = meta?.isRelevant;
                                             const reason = meta?.reason;
+                                            const isTeachingDate = Boolean(isCheckable && (isRelevant || periodNum !== undefined));
+                                            const checkProgress = getDateCheckProgress(date);
+                                            const progressColorClass = 'bg-emerald-400';
 
                                             // Determine Header Style
                                             let bgClass = 'bg-white dark:bg-gray-900';
@@ -1920,13 +2072,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                 else if (reason === 'holiday' || reason === 'special_holiday') bgClass = 'bg-rose-50/50 dark:bg-rose-900/10';
                                                 else if (reason === 'term_break') bgClass = 'bg-gray-100 dark:bg-gray-800';
                                                 else if (reason === 'not_scheduled') bgClass = 'bg-gray-50/20 dark:bg-gray-800/10';
+                                            } else if (isTeachingDate) {
+                                                bgClass = 'bg-white dark:bg-gray-900';
+                                                textClass = 'text-gray-600 dark:text-gray-300';
                                             } else if (reason === 'schoolDay') {
                                                 bgClass = 'bg-indigo-50/50 dark:bg-indigo-900/10';
                                                 textClass = 'text-indigo-500';
                                             }
 
                                             // If it's a school day but subject is NOT taught, make it dimmer
-                                            const opacityClass = (isCheckable && !isRelevant) ? 'opacity-30 grayscale' : '';
+                                            const opacityClass = (isCheckable && !isTeachingDate) ? 'opacity-30 grayscale' : '';
 
                                             // Tooltip Content Resolution
                                             const event = calendarEvents[yearNum + '-' + monthNum + '-' + dayNum];
@@ -1951,29 +2106,43 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     key={date}
                                                     onClick={() => handleColumnSelect(date)}
                                                     className={`
-                                                        group relative p-0 text-center min-w-[18px] w-[18px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
+                                                        group relative p-0 text-center min-w-[22px] w-[22px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
                                                         transition-all cursor-pointer select-none
                                                         ${bgClass} hover:bg-opacity-90
                                                         ${opacityClass}
                                                         ${isColumnSelected ? 'ring-2 ring-indigo-500 z-10' : ''}
                                                     `}
                                                 >
-                                                    <div className={`flex flex-col items-center justify-center h-full ${textClass} scale-90`}>
+                                                    <div className={`flex flex-col items-center justify-center h-full ${textClass} scale-90 pt-1 pb-1.5`}>
                                                         <span className="text-[7px] opacity-70 leading-none">{dayName}</span>
-                                                        <span className="text-[10px] font-bold leading-none">{dayNum}</span>
+                                                        <span className={`text-[11px] font-black leading-none ${isTeachingDate ? 'text-gray-900 dark:text-white' : ''}`}>{dayNum}</span>
                                                         {periodNum !== undefined && (
-                                                            <span className="text-[7px] font-black text-indigo-500 mt-0.5 leading-none">P{periodNum}</span>
+                                                            <span className={`text-[7px] font-black mt-0.5 leading-none ${isTeachingDate ? 'text-emerald-500 dark:text-emerald-300' : 'text-indigo-500'}`}>P{periodNum}</span>
                                                         )}
-                                                        {isRelevant && <div className="w-1 h-1 bg-emerald-500 rounded-full mt-0.5"></div>}
-                                                        {!isRelevant && isCheckable && <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mt-0.5"></div>}
+                                                        {!isTeachingDate && isCheckable && <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mt-0.5"></div>}
                                                     </div>
 
-                                                    {/* Selection Indicator */}
-                                                    {isColumnSelected && (
-                                                        <div className="absolute top-0 right-0 p-0.5">
-                                                            <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                                                    {isTeachingDate && (
+                                                        <div
+                                                            className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-white dark:ring-gray-900 shadow-sm"
+                                                            title="วันที่สอน"
+                                                        />
+                                                    )}
+
+                                                    {isCheckable && (
+                                                        <div
+                                                            className="absolute bottom-1 left-1/2 h-1 w-3.5 -translate-x-1/2 overflow-hidden rounded-full bg-emerald-500/25 ring-1 ring-emerald-300/40"
+                                                            title={`เช็คแล้ว ${checkProgress.checked}/${checkProgress.total} คน`}
+                                                        >
+                                                            <div
+                                                                className={`h-full rounded-full transition-all duration-300 ${progressColorClass}`}
+                                                                style={{ width: `${isTeachingDate ? Math.max(checkProgress.percent, 18) : checkProgress.percent}%` }}
+                                                            />
                                                         </div>
                                                     )}
+
+                                                    {/* Selection Indicator */}
+                                                    {isColumnSelected && <div className="absolute inset-0 rounded-[2px] ring-2 ring-indigo-500 pointer-events-none"></div>}
 
                                                     {/* Custom Tooltip on Hover */}
                                                     {fullTooltip && (
@@ -2061,7 +2230,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                                 key={date}
                                                                 onClick={() => handleCellClick(student.id, date)}
                                                                 className={`
-                                                                    p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[18px] w-[18px]
+                                                                    p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[22px] w-[22px]
                                                                     ${isCheckable ? 'cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50' : 'cursor-not-allowed bg-gray-50/30 dark:bg-gray-800/20'}
                                                                     ${isSelected ? 'bg-indigo-100/30 dark:bg-indigo-900/30 ring-inset ring-1 ring-indigo-500/50 z-10' : ''}
                                                                 `}

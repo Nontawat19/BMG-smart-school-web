@@ -2,12 +2,14 @@ import React, { useState, FormEvent, useEffect } from "react";
 import MainLayout from "@/layouts/MainLayout";
 import { useParams, useNavigate } from "react-router-dom";
 import { firestore, storage, auth } from "@/firebase";
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, doc, getDoc, where } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
 import { FaIdCard, FaInfoCircle, FaUserPlus, FaArrowLeft } from "react-icons/fa";
 import { getLevelsByRange } from "@/utils/schoolUtils";
+import BackButton from "@/components/Shared/BackButton";
+import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
 
 const InputField: React.FC<{ label: string; name: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; placeholder?: string; maxLength?: number; required?: boolean }> = ({ label, name, value, onChange, type = "text", placeholder, maxLength, required }) => (
   <div>
@@ -30,6 +32,7 @@ const statusColorMap: { [key: string]: { bg: string; text: string } } = {
   "พักการเรียน": { bg: "bg-yellow-500", text: "text-gray-900" },
   "ย้าย": { bg: "bg-blue-600", text: "text-white" },
   "ลาออก": { bg: "bg-red-600", text: "text-white" },
+  "จำหน่าย": { bg: "bg-gray-600", text: "text-white" },
 };
 
 const StatusSwitch: React.FC<{
@@ -66,6 +69,7 @@ const initialState = {
   ageYear: "", ageMonth: "", bloodType: "", birthProvince: "", nationality: "ไทย",
   race: "ไทย", religion: "พุทธ", schoolId: "", classLevel: "", room: "",
   studentNumber: "", studentStatus: "เรียนอยู่", studentType: "ปกติ", gpa: "", gpax: "",
+  exitDate: "", exitReason: "", exitDestinationSchool: "",
   elderBrotherCount: "0", youngerBrotherCount: "0", elderSisterCount: "0", youngerSisterCount: "0",
   childOrder: "1", childOrderInCategory: "1", studyingSiblingCount: "0",
   parentsMaritalStatus: "อยู่ด้วยกัน", fatherIdNumber: "", fatherTitle: "", fatherFirstName: "",
@@ -95,7 +99,9 @@ export default function QuickAddStudentPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
 
-  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก"] as const;
+  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+  const showExitDetails = isExitStudentStatus(form.studentStatus);
+  const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
 
   useEffect(() => {
     if (schoolId) setForm(prev => ({ ...prev, schoolId: schoolId }));
@@ -123,7 +129,13 @@ export default function QuickAddStudentPage() {
   };
 
   const handleStatusChange = (name: string, value: string) => {
-    setForm(prev => ({ ...prev, [name]: value }));
+    setForm(prev => ({
+      ...prev,
+      [name]: value,
+      exitDate: name === "studentStatus" && isExitStudentStatus(value) && !prev.exitDate
+        ? new Date().toISOString().split('T')[0]
+        : prev.exitDate,
+    }));
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +164,43 @@ export default function QuickAddStudentPage() {
         setIsLoading(false);
         return;
       }
-      const dataToSave: any = { ...studentData, schoolId: formSchoolId, role: ["student"], createdAt: serverTimestamp() };
+
+      const studentsRef = collection(firestore, 'school-settings', formSchoolId, 'students');
+      let conflictDoc: any = null;
+
+      if (studentData.studentId) {
+        const snapshotId = await getDocs(query(studentsRef, where('studentId', '==', studentData.studentId)));
+        if (!snapshotId.empty) conflictDoc = snapshotId.docs[0].data();
+      }
+
+      if (!conflictDoc && studentData.idCardNumber) {
+        const snapshotCard = await getDocs(query(studentsRef, where('idCardNumber', '==', studentData.idCardNumber)));
+        if (!snapshotCard.empty) conflictDoc = snapshotCard.docs[0].data();
+      }
+
+      if (conflictDoc) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'พบข้อมูลซ้ำในระบบ',
+          html: buildDuplicateStudentHtml(conflictDoc),
+          background: '#2a2b2f',
+          color: '#ffffff',
+          confirmButtonText: 'รับทราบ',
+          confirmButtonColor: '#4f46e5',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const dataToSave: any = { ...studentData, schoolId: formSchoolId, status: studentData.studentStatus, role: ["student"], createdAt: serverTimestamp() };
+      if (isExitStudentStatus(studentData.studentStatus)) {
+        dataToSave.exitDetails = {
+          exitDate: studentData.exitDate || "",
+          reason: studentData.exitReason || "",
+          destinationSchool: studentData.exitDestinationSchool || "",
+          status: studentData.studentStatus,
+        };
+      }
       if (imageFile) {
         const fileExtension = '.webp';
         let storagePath = `school-settings/${formSchoolId}/students/${studentData.classLevel}/${studentData.room}/${studentData.studentId}${fileExtension}`;
@@ -180,9 +228,7 @@ export default function QuickAddStudentPage() {
           {/* Compact Header */}
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate(-1)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors">
-                <FaArrowLeft className="text-gray-500" size={14} />
-              </button>
+              <BackButton to="/academic/hub/students" />
               <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                 <FaUserPlus className="text-indigo-600" size={18} />
                 เพิ่มนักเรียนด่วน
@@ -260,11 +306,24 @@ export default function QuickAddStudentPage() {
                 </div>
               </div>
 
-              <div className="pt-2">
-                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
-              </div>
+	              <div className="pt-2">
+	                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
+	              </div>
 
-            </div>
+	              {showExitDetails && (
+	                <div className="rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 p-4">
+	                  <div className="mb-3 text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-widest">
+	                    รายละเอียดกรณี {form.studentStatus}
+	                  </div>
+	                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+	                    <InputField label="วันที่ออก/ย้าย" name="exitDate" type="date" value={form.exitDate} onChange={handleChange} />
+		                    <InputField label={exitReasonLabel} name="exitReason" value={form.exitReason} onChange={handleChange} placeholder={`ระบุ${exitReasonLabel}`} />
+	                    <InputField label="ปลายทาง/หมายเหตุ" name="exitDestinationSchool" value={form.exitDestinationSchool} onChange={handleChange} placeholder="ระบุถ้ามี" />
+	                  </div>
+	                </div>
+	              )}
+
+	            </div>
 
             {/* Compact Footer */}
             <div className="p-4 sm:p-6 bg-gray-50 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-700 flex justify-end items-center gap-4">

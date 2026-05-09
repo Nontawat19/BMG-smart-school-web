@@ -354,7 +354,7 @@ const AttendanceConfigPage: React.FC = () => {
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-4xl mx-auto bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm p-8">
           <div className="flex items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-            <BackButton to="/human-resources/hub" />
+            <BackButton to="/academic/hub/settings" />
             <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
               <Clock className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>

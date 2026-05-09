@@ -25,6 +25,7 @@ import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { FaChevronDown, FaCheck } from 'react-icons/fa';
+import BackButton from "@/components/Shared/BackButton";
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({
@@ -111,6 +112,7 @@ const initialState = {
   idCardNumber: "",
   lineId: "",
   role: ["teacher"] as string[],
+  status: "อยู่",
 };
 
 export default function AddTeacherPage() {
@@ -303,23 +305,56 @@ export default function AddTeacherPage() {
       return;
     }
 
-    // ตรวจสอบรหัสตำแหน่งครูซ้ำ
-    if (form.teacherId) {
-      const teachersRef = collection(firestore, "school-settings", form.schoolId, "teachers");
-      const q = query(teachersRef, where("teacherId", "==", form.teacherId));
-      const querySnapshot = await getDocs(q);
+    // --- 🔍 Check for Duplicates (By teacherId or idCardNumber) ---
+    const teachersRef = collection(firestore, "school-settings", form.schoolId, "teachers");
+    let conflictDoc: any = null;
 
-      if (!querySnapshot.empty) {
-        Swal.fire({
-          icon: "warning",
-          title: "รหัสตำแหน่งครูซ้ำ",
-          text: `รหัสตำแหน่งครู "${form.teacherId}" มีอยู่ในระบบแล้ว กรุณาตรวจสอบอีกครั้ง`,
-          background: "#2a2b2f",
-          color: "#ffffff",
-        });
-        setIsLoading(false);
-        return;
+    // 1. Check Teacher ID
+    if (form.teacherId) {
+      const qId = query(teachersRef, where("teacherId", "==", form.teacherId));
+      const querySnapshotId = await getDocs(qId);
+      if (!querySnapshotId.empty) {
+        conflictDoc = querySnapshotId.docs[0].data();
       }
+    }
+
+    // 2. Check ID Card Number (if not found by ID)
+    if (!conflictDoc && form.idCardNumber) {
+      const qCard = query(teachersRef, where("idCardNumber", "==", form.idCardNumber));
+      const querySnapshotCard = await getDocs(qCard);
+      if (!querySnapshotCard.empty) {
+        conflictDoc = querySnapshotCard.docs[0].data();
+      }
+    }
+
+    if (conflictDoc) {
+      Swal.fire({
+        icon: "warning",
+        title: "พบข้อมูลซ้ำในระบบ",
+        html: `
+          <div class="text-left space-y-3">
+            <p>พบข้อมูลครูที่มีรหัสหรือเลขบัตรประชาชนนี้อยู่แล้วในระบบ:</p>
+            <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700">
+              <div class="font-bold text-indigo-600 dark:text-indigo-400 text-lg">
+                ${conflictDoc.title || ""}${conflictDoc.firstName} ${conflictDoc.lastName}
+              </div>
+              <div class="text-sm text-gray-500 mt-1">
+                ฝ่ายงาน: ${conflictDoc.department || "-"} | ตำแหน่ง: ${conflictDoc.position || "-"}
+              </div>
+              <div class="text-xs text-gray-400 mt-1">
+                รหัสครู: ${conflictDoc.teacherId || "-"} | เลขบัตร: ${conflictDoc.idCardNumber || "-"}
+              </div>
+            </div>
+            <p class="text-xs text-red-500 font-medium">* กรุณาตรวจสอบข้อมูลอีกครั้งเพื่อป้องกันการบันทึกซ้ำ</p>
+          </div>
+        `,
+        background: "#2a2b2f",
+        color: "#ffffff",
+        confirmButtonText: "รับทราบ",
+        confirmButtonColor: "#4f46e5",
+      });
+      setIsLoading(false);
+      return;
     }
 
     Swal.fire({
@@ -364,6 +399,8 @@ export default function AddTeacherPage() {
         ...teacherData,
         title: finalTitle,
         gender: finalGender,
+        learningArea: teacherData.learningArea || "",
+        subjectGroup: teacherData.learningArea || "",
         schoolId: schoolId,
         email: email,
         uid: user.uid,
@@ -446,9 +483,12 @@ export default function AddTeacherPage() {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-4xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-          <header className="mb-8">
-            <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลครูใหม่</h1>
-            <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)</p>
+          <header className="mb-8 flex items-center gap-4">
+            <BackButton to="/academic/hub/personnel_info" />
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลครูใหม่</h1>
+              <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)</p>
+            </div>
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -601,6 +641,18 @@ export default function AddTeacherPage() {
                         <option value="ชำนาญการพิเศษ (คศ.3)">ชำนาญการพิเศษ (คศ.3)</option>
                         <option value="เชี่ยวชาญ (คศ.4)">เชี่ยวชาญ (คศ.4)</option>
                         <option value="เชี่ยวชาญพิเศษ (คศ.5)">เชี่ยวชาญพิเศษ (คศ.5)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะครู <span className="text-red-500">*</span></label>
+                      <select name="status" value={form.status} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white" required>
+                        <option value="อยู่">อยู่ (ปฏิบัติหน้าที่)</option>
+                        <option value="ย้าย">ย้าย</option>
+                        <option value="เกษียณ">เกษียณ</option>
+                        <option value="ลาศึกษาต่อ">ลาศึกษาต่อ</option>
+                        <option value="ช่วยราชการ">ช่วยราชการ</option>
+                        <option value="ออก">ออก (ลาออก/พ้นสภาพ)</option>
+                        <option value="ถึงแก่กรรม">ถึงแก่กรรม</option>
                       </select>
                     </div>
                   </div>

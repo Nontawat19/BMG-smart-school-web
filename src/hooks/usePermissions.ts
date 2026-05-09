@@ -6,11 +6,18 @@ import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF
 export const usePermissions = () => {
     const user = useSelector((state: RootState) => state.auth.user);
 
-    // Normalize roles (handle string or array, map legacy 'admin'/'academic' to constants)
+    const normalizeRoleValue = (role: string) => {
+        if (role === 'admin' || role === 'academic' || role === ROLES.ACADEMIC_ADMIN) {
+            return ROLES.SCHOOL_ADMIN;
+        }
+        return role;
+    };
+
+    // Normalize roles: legacy academic/admin permissions now collapse into School Admin
     const normalizedRoles = Array.isArray(user?.role)
-        ? user.role.map(r => r === 'admin' ? ROLES.SCHOOL_ADMIN : r === 'academic' ? ROLES.ACADEMIC_ADMIN : r)
+        ? user.role.map(normalizeRoleValue)
         : typeof user?.role === 'string'
-            ? [user.role === 'admin' ? ROLES.SCHOOL_ADMIN : user.role === 'academic' ? ROLES.ACADEMIC_ADMIN : user.role]
+            ? [normalizeRoleValue(user.role)]
             : [];
 
     const hasRole = (allowedRoles: string[]) => {
@@ -24,9 +31,12 @@ export const usePermissions = () => {
 
     const isSuperAdmin = normalizedRoles.includes(ROLES.SUPER_ADMIN);
     const isSchoolAdmin = normalizedRoles.includes(ROLES.SCHOOL_ADMIN);
-    const isAcademicAdmin = normalizedRoles.includes(ROLES.ACADEMIC_ADMIN);
+    const isAcademicAdmin = isSchoolAdmin || normalizedRoles.includes(ROLES.ACADEMIC_ADMIN);
     const isTeacher = normalizedRoles.includes(ROLES.TEACHER);
     const isStudent = normalizedRoles.includes(ROLES.STUDENT);
+
+    const isAttendanceOnly = !isSuperAdmin && !isSchoolAdmin && !isTeacher && !isStudent && 
+        (normalizedRoles.includes(ROLES.STUDENT_ATTENDANCE) || normalizedRoles.includes(ROLES.TEACHER_ATTENDANCE) || normalizedRoles.includes(ROLES.SCHOOL_ATTENDANCE));
 
     return {
         user,
@@ -37,8 +47,9 @@ export const usePermissions = () => {
         isAcademicAdmin,   // ฝ่ายวิชาการระดับโรงเรียน
         isTeacher,
         isStudent,
+        isAttendanceOnly,  // เจ้าหน้าที่ลงเวลาโดยเฉพาะ (ไม่มีสิทธิ์อื่น)
         isAdmin: isSchoolAdmin, // แอดมินเน้นบริหารบุคคล (School Admin เท่านั้น)
-        isAcademic: isAcademicAdmin, // ฝ่ายวิชาการเท่านั้น
+        isAcademic: isSchoolAdmin, // งานวิชาการใช้สิทธิ์ School Admin
         isOwner: isSuperAdmin, // ใช้เรียกแทน Super Admin
         OWNER_ONLY,
         ADMIN_ACCESS,

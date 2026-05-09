@@ -20,7 +20,7 @@ const GradeBookHeader: React.FC<GradeBookHeaderProps> = ({
     return (
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-                <BackButton to="/academic-admin" className="mb-2" />
+                <BackButton to="/academic/hub/evaluation" className="mb-2" />
                 <h1 className="text-2xl md:text-3xl font-black flex items-center flex-wrap gap-x-3 text-gray-900 dark:text-white tracking-tight leading-none">
                     <GraduationCap className="text-blue-600 flex-shrink-0" size={36} />
                     <span>ทะเบียนวัดผล (ปพ.5) ปีการศึกษา {academicYear}</span>

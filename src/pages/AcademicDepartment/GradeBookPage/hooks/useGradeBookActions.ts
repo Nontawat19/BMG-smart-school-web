@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
-import { doc, writeBatch, Timestamp, collection, getDocs } from 'firebase/firestore';
+import { doc, writeBatch, Timestamp, collection, getDocs, deleteField } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course } from '../types';
 import { CLASSES } from '@/utils/schoolUtils';
@@ -17,6 +17,7 @@ export const useGradeBookActions = (
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
     maxScores: { formative: number; midterm: number; final: number },
+    currentCourse: Course | undefined,
     courses: Course[],
     sdqMap: Record<string, any>
 ) => {
@@ -35,13 +36,56 @@ export const useGradeBookActions = (
         return '0';
     };
 
+    const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
+
+    const distributeFormativeScore = (score: number, existingDetails: Record<string, number> = {}) => {
+        const assessments = currentCourse?.formativeAssessments?.filter(a => (a.maxScore || 0) > 0) || [];
+        if (assessments.length === 0) return existingDetails;
+
+        const nextDetails: Record<string, number> = { ...existingDetails };
+        assessments.forEach(a => {
+            nextDetails[getAssessmentKey(a)] = 0;
+        });
+
+        let remaining = Math.min(Math.max(0, score), assessments.reduce((sum, a) => sum + (a.maxScore || 0), 0));
+
+        while (remaining > 0) {
+            const available = assessments.filter(a => (nextDetails[getAssessmentKey(a)] || 0) < (a.maxScore || 0));
+            if (available.length === 0) break;
+
+            const amountPerSlot = Math.floor(remaining / available.length);
+            if (amountPerSlot === 0) {
+                for (let i = 0; i < remaining && i < available.length; i++) {
+                    const assessment = available[i];
+                    if (!assessment) continue;
+                    const key = getAssessmentKey(assessment);
+                    nextDetails[key] = (nextDetails[key] || 0) + 1;
+                }
+                remaining = 0;
+            } else {
+                let assigned = 0;
+                available.forEach(a => {
+                    const key = getAssessmentKey(a);
+                    const capacity = (a.maxScore || 0) - (nextDetails[key] || 0);
+                    const amount = Math.min(amountPerSlot, capacity);
+                    nextDetails[key] = (nextDetails[key] || 0) + amount;
+                    assigned += amount;
+                });
+                if (assigned === 0) break;
+                remaining -= assigned;
+            }
+        }
+
+        return nextDetails;
+    };
+
     const handleScoreChange = useCallback((studentId: string, field: string, value: string, criteriaId?: string) => {
         let numValue = field === 'status' ? 0 : (parseFloat(value) || 0);
 
         // Validation logic
-        if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative || 60);
-        else if (field === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm || 20);
-        else if (field === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final || 20);
+        if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative);
+        else if (field === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm);
+        else if (field === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final);
         else if (['characteristics', 'readingWriting'].includes(field)) numValue = Math.min(Math.max(0, numValue), 3);
 
         setGrades(prev => {
@@ -54,6 +98,9 @@ export const useGradeBookActions = (
                 updated.readingWritingScores = { ...(current.readingWritingScores || {}), [criteriaId]: numValue };
             } else if (field === 'status') {
                 updated.status = value || undefined;
+            } else if (field === 'formative') {
+                updated.formative = numValue;
+                updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
             } else {
                 (updated as any)[field] = numValue;
             }
@@ -65,7 +112,7 @@ export const useGradeBookActions = (
             setModifiedStudentIds(prev => new Set(prev).add(studentId));
             return { ...prev, [studentId]: updated };
         });
-    }, [maxScores, setGrades]);
+    }, [maxScores, setGrades, currentCourse]);
 
     const handleBulkFill = useCallback((value: number) => {
         setGrades(prev => {
@@ -114,6 +161,9 @@ export const useGradeBookActions = (
                 if (isCharOrRW && criteriaId) {
                     const field = activeTab === 'characteristics' ? 'characteristicsScores' : 'readingWritingScores';
                     updated[field] = { ...(current[field] || {}), [criteriaId]: numValue };
+                } else if (key === 'formative') {
+                    updated.formative = numValue;
+                    updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
                 } else {
                     (updated as any)[key] = numValue;
                 }
@@ -132,7 +182,7 @@ export const useGradeBookActions = (
             });
             return newGrades;
         });
-    }, [activeTab, maxScores, students, setGrades]);
+    }, [activeTab, maxScores, students, setGrades, currentCourse]);
 
     const handleSyncSDQColumn = useCallback(async (criteriaTitle: string, criteriaId: string) => {
         if (!selectedClass || !selectedCourse) return;
@@ -277,6 +327,10 @@ export const useGradeBookActions = (
                         delete dataToSave[key];
                     }
                 });
+                if (!record.status) {
+                    dataToSave.status = deleteField();
+                    dataToSave.grade = calculateGrade(Number(record.total || 0));
+                }
 
                 batch.set(ref, dataToSave, { merge: true });
             });
@@ -309,7 +363,10 @@ export const useGradeBookActions = (
     const handleImportFromOtherCourse = useCallback(async () => {
         if (!selectedClass || !selectedCourse || !schoolId) return;
 
-        const otherCourses = courses.filter(c => c.classId === selectedClass && c.id !== selectedCourse);
+        const otherCourses = courses.filter(c => {
+            const classIds = Array.isArray(c.classId) ? c.classId : [c.classId];
+            return classIds.includes(selectedClass) && c.id !== selectedCourse;
+        });
 
         if (otherCourses.length === 0) {
             Swal.fire({

@@ -6,6 +6,13 @@ import { collection, query, orderBy, limit, getDocs, collectionGroup, where } fr
 import { firestore as db, storage } from '@/firebase';
 import { pdf } from '@react-pdf/renderer';
 
+const GRADEBOOK_PDF_TEMPLATE_VERSION = '2026-05-08-attendance-sequential-week-labels-v18';
+const pdfUploadMetadata = {
+    customMetadata: {
+        templateVersion: GRADEBOOK_PDF_TEMPLATE_VERSION
+    }
+};
+
 export const usePdfGenerator = (
     setIsPdfValidating: React.Dispatch<React.SetStateAction<boolean>>,
     setPdfProgress: React.Dispatch<React.SetStateAction<number>>,
@@ -19,6 +26,8 @@ export const usePdfGenerator = (
     selectedClass: string,
     selectedRoom: string,
     schoolId: string,
+    year: string,
+    semester: string,
     students: any[],
     qrRef: React.RefObject<HTMLDivElement | null>
 ) => {
@@ -29,8 +38,15 @@ export const usePdfGenerator = (
         setIsPdfValidating(true);
         setPdfProgress(0);
 
+        const isReadyToGenerate = validateDataCompleteness();
+        if (!isReadyToGenerate) {
+            setIsPdfValidating(false);
+            return;
+        }
+
         const roomSlug = selectedRoom ? `_${selectedRoom}` : '';
-        const filePath = `school-settings/${schoolId}/grading/courses/${selectedCourse}/ปพ5_${selectedCourse}_${selectedClass}${roomSlug}.pdf`;
+        const semesterPath = `year_${year}/semester_${semester}`;
+        const filePath = `school-settings/${schoolId}/grading/courses/${selectedCourse}/${semesterPath}/ปพ5_${selectedCourse}_${selectedClass}${roomSlug}.pdf`;
         const storageRef = ref(storage, filePath);
 
         let existingMetadata: any = null;
@@ -78,7 +94,9 @@ export const usePdfGenerator = (
 
                 const pdfUpdateTime = new Date(existingMetadata.updated).getTime();
 
-                if (pdfUpdateTime > latestUpdate) {
+                const existingTemplateVersion = existingMetadata?.customMetadata?.templateVersion || '';
+
+                if (existingTemplateVersion === GRADEBOOK_PDF_TEMPLATE_VERSION && pdfUpdateTime > latestUpdate) {
                     console.log("Existing PDF is fresh. Skipping generation.");
 
                     const response = await fetch(storageUrl);
@@ -109,6 +127,9 @@ export const usePdfGenerator = (
                         position: 'top-end'
                     });
                     return;
+                }
+                if (existingTemplateVersion !== GRADEBOOK_PDF_TEMPLATE_VERSION) {
+                    console.log("Existing PDF template is outdated. Regenerating.");
                 }
             } catch (checkError) {
                 console.error("Error checking for fresh PDF:", checkError);
@@ -151,13 +172,13 @@ export const usePdfGenerator = (
         try {
             updateUI(10, 'กำลังรวบรวมข้อมูลหน่วยเรียน...');
 
-            const verificationUrl = `${window.location.origin}/verify-doc?s=${schoolId}&c=${selectedCourse}&cl=${selectedClass}&r=${selectedRoom || 'all'}`;
+            const verificationUrl = `${window.location.origin}/verify-doc?s=${schoolId}&c=${selectedCourse}&cl=${selectedClass}&r=${selectedRoom || 'all'}&y=${year}&sem=${semester}`;
 
             if (!storageUrl) {
                 updateUI(12, 'เตรียมพื้นที่จัดเก็บสำหรับครั้งแรก...');
                 const placeholderDoc = <GradeBookDocument {...incomingPdfProps} students={students.slice(0, 1)} qrCodeDataUrl={undefined} />;
                 const placeholderBlob = await pdf(placeholderDoc).toBlob();
-                await uploadBytes(storageRef, placeholderBlob);
+                await uploadBytes(storageRef, placeholderBlob, pdfUploadMetadata);
                 storageUrl = await getDownloadURL(storageRef);
             }
 
@@ -193,14 +214,7 @@ export const usePdfGenerator = (
                 console.log("QR Code captured successfully");
             }
 
-            updateUI(40, 'กำลังตรวจสอบความถูกต้องของข้อมูล...');
-            const isValid = validateDataCompleteness();
-
-            if (!isValid) {
-                console.warn("Data validation failed. Aborting PDF generation.");
-                setIsPdfValidating(false);
-                return;
-            }
+            updateUI(40, 'ตรวจสอบความครบถ้วนเรียบร้อย...');
 
             updateUI(65, 'กำลังประมวลผลไฟล์ PDF (อาจใช้เวลาสักครู่)...');
 
@@ -215,7 +229,7 @@ export const usePdfGenerator = (
 
             updateUI(90, 'กำลังจัดเก็บเอกสารเข้าฐานข้อมูลกลาง...');
             try {
-                await uploadBytes(storageRef, blob);
+                await uploadBytes(storageRef, blob, pdfUploadMetadata);
                 console.log("Final PDF uploaded to Storage");
             } catch (storageError) {
                 console.error("Failed to upload final PDF:", storageError);
@@ -266,7 +280,7 @@ export const usePdfGenerator = (
             setIsPdfValidating(false);
         }
     }, [
-        schoolId, selectedCourse, selectedClass, selectedRoom,
+        schoolId, selectedCourse, selectedClass, selectedRoom, year, semester,
         students, currentCourse, qrRef,
         setIsPdfValidating, setPdfProgress, setPdfUrl, setLiveQrUrl, setQrCodeDataUrl, setIsPdfReady, validateDataCompleteness
     ]);

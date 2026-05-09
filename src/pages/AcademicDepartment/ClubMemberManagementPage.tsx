@@ -13,7 +13,6 @@ import {
   Users,
   UserPlus,
   Trash2,
-  ArrowLeft,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -336,7 +335,7 @@ const ClubMemberManagementPage: React.FC = () => {
 
         {/* Header */}
         <div className="mb-8">
-          <BackButton to="/academic-admin" className="mb-2" />
+          <BackButton to="/academic/hub/activities" className="mb-2" />
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
             <Users className="text-violet-500" size={32} />
             จัดการสมาชิกชุมนุม

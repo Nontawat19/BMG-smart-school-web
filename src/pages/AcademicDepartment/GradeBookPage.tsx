@@ -22,7 +22,8 @@ import {
   Course,
   Teacher,
   CharacteristicCriteria,
-  ReadingWritingCriteria
+  ReadingWritingCriteria,
+  GroupAssignment
 } from './GradeBookPage/types';
 
 import GradeBookHeader from './GradeBookPage/components/GradeBookHeader';
@@ -58,10 +59,10 @@ const GradeBookPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'grades' | 'characteristics' | 'readingWriting'>('grades');
   const [courses, setCourses] = useState<Course[]>([]);
+  const [semesterAssignments, setSemesterAssignments] = useState<Record<string, GroupAssignment[]>>({});
   const [characteristicsCriteria, setCharacteristicsCriteria] = useState<CharacteristicCriteria[]>([]);
   const [readingWritingCriteria, setReadingWritingCriteria] = useState<ReadingWritingCriteria[]>([]);
-  const [maxScores, setMaxScores] = useState({ formative: 60, midterm: 20, final: 20 });
-  const [academicYear, setAcademicYear] = useState<string>('');
+  const [maxScores, setMaxScores] = useState({ formative: 0, midterm: 0, final: 0 });
   const qrRef = useRef<HTMLDivElement>(null);
   const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
@@ -76,7 +77,7 @@ const GradeBookPage: React.FC = () => {
   const [courseSchedule, setCourseSchedule] = useState<Record<string, number[]>>({});
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
 
-  const { user: currentUser, ACADEMIC_ACCESS, hasRole } = usePermissions();
+  const { user: currentUser, isSchoolAdmin } = usePermissions();
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const { availableClassOptions: reduxLevels, currentAcademicYear: schoolYear, schoolName, logoUrl, directorName, directorPrefix, status: schoolSettingsStatus } = useSelector((state: RootState) => state.schoolSettings);
   const { groups: reduxSubjectGroups, status: subjectGroupsStatus } = useSelector((state: RootState) => state.subjectGroups);
@@ -88,23 +89,17 @@ const GradeBookPage: React.FC = () => {
   const userPrivileges = useMemo(() => {
     const teacherProfiles = Object.values(teacherMap || {}).filter((t: any) => t.uid === currentUser?.uid);
     const teacherProfile = teacherProfiles[0] as Teacher | undefined;
-    const department = teacherProfile?.department;
-
-    // Use standard permission groups from usePermissions
-    const isAcademicByRole = hasRole(ACADEMIC_ACCESS);
-    const isAcademicStaff = department === 'งานบริหารวิชาการ' || isAcademicByRole;
     const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
-    const isAdmin = isAcademicByRole || (currentUser as any)?.position?.includes('วิชาการ');
+    const isAdmin = isSchoolAdmin;
 
     return {
-      canSeeAll: isAdmin || isAcademicStaff || isHead,
+      canSeeAll: isAdmin || isHead,
       isAdmin,
-      isAcademicStaff,
       isHead,
       teacherDocId: teacherProfile?.id,
       myTeacherIds: teacherProfiles.map(t => t.id)
     };
-  }, [currentUser, teacherMap, ACADEMIC_ACCESS, hasRole]);
+  }, [currentUser, teacherMap, isSchoolAdmin]);
 
   const {
     selectedClass, setSelectedClass,
@@ -119,14 +114,27 @@ const GradeBookPage: React.FC = () => {
     searchParams.get('classId') || '',
     searchParams.get('room') || '',
     searchParams.get('semester') || '',
+    searchParams.get('courseId') || '',
     searchParams.get('groupId') || '',
-    courses,
+    useMemo(() => {
+      return courses.map(c => ({
+        ...c,
+        teacherAssignments: semesterAssignments[c.id] || []
+      }));
+    }, [courses, semesterAssignments]),
     teacherMap,
     userPrivileges,
-    academicYear
+    calYear || ''
   );
 
-  const currentCourse = useMemo(() => courses.find(c => c.id === selectedCourse), [courses, selectedCourse]);
+  const coursesWithAssignments = useMemo(() => {
+    return courses.map(c => ({
+      ...c,
+      teacherAssignments: semesterAssignments[c.id] || []
+    }));
+  }, [courses, semesterAssignments]);
+
+  const currentCourse = useMemo(() => coursesWithAssignments.find(c => c.id === selectedCourse), [coursesWithAssignments, selectedCourse]);
 
   const checkIsHolidayLocal = useCallback((dateStr: string, events: Record<string, any>): { isHoliday: boolean; description: string } => {
     if (!dateStr || !events) return { isHoliday: false, description: '' };
@@ -168,7 +176,7 @@ const GradeBookPage: React.FC = () => {
     selectedCourse,
     selectedGroup,
     currentCourse,
-    academicYear,
+    calYear || '',
     [],
     calculateGradeMemoized
   );
@@ -182,6 +190,8 @@ const GradeBookPage: React.FC = () => {
     selectedClass,
     students,
     selectedCourse,
+    currentCourse,
+    maxScores,
     characteristicsCriteria,
     readingWritingCriteria,
     grades,
@@ -211,7 +221,8 @@ const GradeBookPage: React.FC = () => {
     characteristicsCriteria,
     readingWritingCriteria,
     maxScores,
-    courses,
+    currentCourse,
+    coursesWithAssignments,
     sdqMap
   );
 
@@ -230,22 +241,26 @@ const GradeBookPage: React.FC = () => {
     if (selectedRoom) params.set('room', selectedRoom);
     if (selectedSemester) params.set('semester', selectedSemester);
     if (selectedCourse) params.set('courseId', selectedCourse);
+    if (selectedGroup) params.set('groupId', selectedGroup);
     const newStr = params.toString();
     if (newStr !== searchParams.toString()) window.history.replaceState(null, '', `?${newStr}`);
-  }, [selectedClass, selectedRoom, selectedSemester, selectedCourse, searchParams]);
+  }, [selectedClass, selectedRoom, selectedSemester, selectedCourse, selectedGroup, searchParams]);
 
   useEffect(() => {
-    if (reduxLevels.length > 0) setAvailableClassOptions(reduxLevels);
-    if (schoolYear || calYear) setAcademicYear(schoolYear || calYear);
-    if (calTerms && calTerms.length > 0) {
+    if (reduxLevels.length > 0) {
+      setAvailableClassOptions(reduxLevels);
+    }
+    
+    // Auto-select semester based on current date and terms
+    if (calendarStatus === 'succeeded' && calTerms && calTerms.length > 0) {
       const today = new Date().toISOString().split('T')[0];
       const found = calTerms.find(t => today >= t.startDate && today <= t.endDate);
-      if (found) {
+      if (found && !selectedSemester) {
         const termId = found.name.includes('2') ? '2' : '1';
-        if (!selectedSemester) setSelectedSemester(termId);
+        setSelectedSemester(termId);
       }
     }
-  }, [reduxLevels, schoolYear, calYear, calTerms, selectedSemester, setSelectedSemester]);
+  }, [reduxLevels, calendarStatus, calYear, calTerms, selectedSemester, setSelectedSemester]);
 
   useEffect(() => {
     if (!schoolId) return;
@@ -255,6 +270,31 @@ const GradeBookPage: React.FC = () => {
     });
     return () => unsubscribe();
   }, [schoolId]);
+
+  // Real-time Semester Assignments
+  useEffect(() => {
+    if (!schoolId || !calYear || !selectedSemester) {
+      setSemesterAssignments({});
+      return;
+    }
+    const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+    const q = query(
+      assignmentsRef,
+      where('academicYear', '==', String(calYear)),
+      where('semester', '==', String(selectedSemester))
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const mapping: Record<string, GroupAssignment[]> = {};
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        mapping[data.courseId] = data.teacherAssignments || [];
+      });
+      setSemesterAssignments(mapping);
+    });
+
+    return () => unsubscribe();
+  }, [schoolId, calYear, selectedSemester]);
 
   useEffect(() => {
     const fetchCore = async () => {
@@ -272,14 +312,22 @@ const GradeBookPage: React.FC = () => {
         return;
       }
       try {
-        const snap = await getDocs(collection(db, 'school-settings', schoolId, 'schedules'));
+        const qSchedules = query(
+          collection(db, 'school-settings', schoolId, 'schedules'),
+          where('academicYear', '==', String(calYear || '')),
+          where('semester', '==', String(selectedSemester || ''))
+        );
+        const snap = await getDocs(qSchedules);
         const scheduleMap: Record<string, number[]> = { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] };
         const classTitle = CLASSES[selectedClass] || selectedClass;
         const targetCode = (currentCourse?.code || "").replace(/\s/g, '');
+        const classCandidates = new Set([selectedClass, classTitle]);
 
         snap.forEach(doc => {
           const data = doc.data();
-          if (String(data.classId || "") === selectedClass || String(data.className || "").includes(classTitle)) {
+          const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
+          const matchesClass = classIds.some((id: string) => classCandidates.has(String(id))) || String(data.className || "").includes(classTitle);
+          if (matchesClass) {
             Object.entries(data.schedule || {}).forEach(([key, val]: [string, any]) => {
               const coursesInSlot = Array.isArray(val) ? val : [val];
               if (coursesInSlot.some(c => c && ((c.id === selectedCourse) || (c.code || "").replace(/\s/g, '') === targetCode))) {
@@ -294,14 +342,26 @@ const GradeBookPage: React.FC = () => {
       } catch (err) { console.error("Schedule error:", err); }
     };
     fetchSchedule();
-  }, [schoolId, selectedClass, selectedCourse, currentCourse]);
+  }, [schoolId, selectedClass, selectedCourse, currentCourse, calYear, selectedSemester]);
 
   useEffect(() => {
-    if (currentCourse) {
-      const f = currentCourse.formativeWeight ?? 60;
-      const m = currentCourse.midtermWeight ?? 20;
-      setMaxScores({ formative: f, midterm: m, final: 100 - f - m });
+    if (!currentCourse) {
+      setMaxScores({ formative: 0, midterm: 0, final: 0 });
+      return;
     }
+
+    const hasScoreConfig = Array.isArray(currentCourse.formativeAssessments);
+
+    if (!hasScoreConfig) {
+      setMaxScores({ formative: 0, midterm: 0, final: 0 });
+      return;
+    }
+
+    const configuredFormative = currentCourse.formativeAssessments?.reduce((sum, assessment) => sum + (Number(assessment.maxScore) || 0), 0) || 0;
+    const f = configuredFormative;
+    const m = Number(currentCourse.midtermWeight ?? 0);
+    const fn = currentCourse.finalWeight !== undefined ? Number(currentCourse.finalWeight) : Math.max(0, 100 - f - m);
+    setMaxScores({ formative: f, midterm: m, final: fn });
   }, [currentCourse]);
 
   useEffect(() => {
@@ -414,10 +474,25 @@ const GradeBookPage: React.FC = () => {
   const courseTeacherName = useMemo(() => {
     if (!currentCourse) return '';
     const ids = new Set<string>();
-    if (currentCourse.teacherId) ids.add(currentCourse.teacherId);
-    if (currentCourse.teacherIds) currentCourse.teacherIds.forEach(id => ids.add(id));
-    if (currentCourse.teacherAssignments) currentCourse.teacherAssignments.forEach(a => ids.add(a.teacherId));
-    if (ids.size > 0) return Array.from(ids).map(id => teacherMap[id]?.name || teacherMap[id]?.displayName).filter(Boolean).join(', ');
+    
+    // Check semester-specific assignments first (Highest priority)
+    if (currentCourse.teacherAssignments && currentCourse.teacherAssignments.length > 0) {
+      currentCourse.teacherAssignments.forEach(a => {
+        if (a.teacherId) ids.add(a.teacherId);
+      });
+    } else {
+      // Fallback to legacy fields
+      if (currentCourse.teacherId) ids.add(currentCourse.teacherId);
+      if (currentCourse.teacherIds) currentCourse.teacherIds.forEach(id => ids.add(id));
+    }
+
+    if (ids.size > 0) {
+      return Array.from(ids)
+        .map(id => teacherMap[id]?.name || teacherMap[id]?.displayName)
+        .filter(Boolean)
+        .join(', ');
+    }
+    
     return (currentUser as any)?.displayName || '';
   }, [currentCourse, teacherMap, currentUser]);
 
@@ -436,12 +511,17 @@ const GradeBookPage: React.FC = () => {
   // PDF Resolvers
   const resolvedSubjectGroup = useMemo(() => {
     if (!currentCourse || !reduxSubjectGroups) return null;
-    return reduxSubjectGroups.find(g => g.id === currentCourse.subjectGroup || g.name === currentCourse.subjectGroup);
+    const courseSubjectGroup = currentCourse.subjectGroup || currentCourse.learningArea || '';
+    return reduxSubjectGroups.find(g =>
+      g.id === courseSubjectGroup ||
+      g.name === courseSubjectGroup ||
+      g.code === courseSubjectGroup
+    );
   }, [currentCourse, reduxSubjectGroups]);
 
   const headOfLearningAreaName = useMemo(() => {
     if (!resolvedSubjectGroup || !teacherMap) return '';
-    const headId = resolvedSubjectGroup.headTeacherId;
+    const headId = resolvedSubjectGroup.headTeacherId || (resolvedSubjectGroup as any).headId;
     return teacherMap[headId || '']?.name || teacherMap[headId || '']?.displayName || '';
   }, [resolvedSubjectGroup, teacherMap]);
 
@@ -484,7 +564,7 @@ const GradeBookPage: React.FC = () => {
     students,
     grades,
     maxScores,
-    schoolInfo: { ...schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear },
+    schoolInfo: { ...schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear: calYear },
     currentCourse,
     courseTeacherName,
     homeroomTeacher,
@@ -512,7 +592,7 @@ const GradeBookPage: React.FC = () => {
     allIndicators: currentCourse?.indicators || [],
     indicatorLabel: 'ตัวชี้วัด/ผลการเรียนรู้ที่คาดหวัง',
     totalCourseHours: attendance.completenessStats?.recordedDaysCount || 0,
-    academicYear,
+    academicYear: calYear || '',
     CLASSES,
     FULL_CLASSES: CLASS_FULL_NAMES,
     calendarData,
@@ -534,7 +614,7 @@ const GradeBookPage: React.FC = () => {
     currentTerm: selectedSemester,
     specialPeriods: reduxPeriods || [],
   }), [
-    students, grades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear,
+    students, grades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, calYear,
     currentCourse, courseTeacherName, homeroomTeacher, headOfLearningAreaName, headOfAssessmentName,
     resolvedSubjectGroup, activeTab, characteristicsCriteria, readingWritingCriteria,
     attendance.studentAttendanceSummaries, attendance.attendancePages, studentChunks, announcementChunks,
@@ -557,6 +637,8 @@ const GradeBookPage: React.FC = () => {
     selectedClass,
     curriculumRoomDisplay === 'ทุกห้อง' ? 'all' : curriculumRoomDisplay,
     schoolId || '',
+    calYear || '',
+    selectedSemester,
     students,
     qrRef
   );
@@ -569,10 +651,11 @@ const GradeBookPage: React.FC = () => {
             currentCourse={currentCourse}
             curriculumClassDisplay={curriculumClassDisplay}
             curriculumRoomDisplay={curriculumRoomDisplay}
-            academicYear={academicYear}
+            academicYear={calYear || ''}
           />
           <GradeBookFilter
             selectedClass={selectedClass} setSelectedClass={setSelectedClass}
+            selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom}
             setSelectedCourse={setSelectedCourse} availableClassOptions={availableClassOptions}
             currentCourse={currentCourse}
             selectedCourse={selectedCourse} 
@@ -586,7 +669,7 @@ const GradeBookPage: React.FC = () => {
           <GradeBookToolbar
             selectedCourse={selectedCourse} completenessStats={attendance.completenessStats}
             activeTab={activeTab} setActiveTab={setActiveTab}
-            academicSettings={schoolInfo} academicYear={academicYear}
+            academicSettings={schoolInfo} academicYear={calYear || ''}
             selectedClass={selectedClass}
             selectedRoom={selectedRoom}
             selectedGroup={selectedGroup}

@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import { firestore as db } from '../../firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { setSubjectGroups, updateSubjectGroup } from '@/store/slices/subjectGroupsSlice';
 import MainLayout from "@/layouts/MainLayout";
 import { CLASSES } from '@/utils/schoolUtils';
 import {
@@ -58,6 +59,8 @@ interface SubjectGroup {
     code?: string;
     headId?: string;
     headName?: string;
+    headTeacherId?: string;
+    headTeacherName?: string;
 }
 
 interface Teacher {
@@ -131,6 +134,7 @@ const SubjectGroupManagementPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState("");
 
     const currentUser = useSelector((state: RootState) => state.auth.user);
+    const dispatch = useDispatch();
     const schoolId = (currentUser as any)?.schoolId;
 
     useEffect(() => {
@@ -186,11 +190,22 @@ const SubjectGroupManagementPage: React.FC = () => {
                 data = [...data, ...addedData];
             }
 
-            setGroups(data.sort((a, b) => {
+            const sortedData = data.sort((a, b) => {
                 const codeA = parseInt(a.code || "999");
                 const codeB = parseInt(b.code || "999");
                 return codeA - codeB;
+            });
+
+            const normalizedGroups = sortedData.map(g => ({
+                ...g,
+                headId: g.headId || g.headTeacherId || "",
+                headName: g.headName || g.headTeacherName || "",
+                headTeacherId: g.headTeacherId || g.headId || "",
+                headTeacherName: g.headTeacherName || g.headName || "",
             }));
+
+            setGroups(normalizedGroups);
+            dispatch(setSubjectGroups(normalizedGroups));
             if (data.length > 0 && !selectedGroupId && window.innerWidth >= 1024) {
                 setSelectedGroupId(data[0].id);
             }
@@ -357,8 +372,9 @@ const SubjectGroupManagementPage: React.FC = () => {
             let newHeadName = "";
 
             // 1. If there's a previous head, remove their status from the teachers collection
-            if (group.headId) {
-                const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', group.headId);
+            const previousHeadId = group.headId || group.headTeacherId;
+            if (previousHeadId) {
+                const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', previousHeadId);
                 // Check if they are still head of THIS group before removing (insurance)
                 batch.update(prevTeacherRef, {
                     isHeadOfLearningArea: false
@@ -384,13 +400,28 @@ const SubjectGroupManagementPage: React.FC = () => {
             // 3. Update the group document
             batch.update(groupRef, {
                 headId: newHeadId,
-                headName: newHeadName
+                headName: newHeadName,
+                headTeacherId: newHeadId,
+                headTeacherName: newHeadName
             });
 
             await batch.commit();
 
             // Update local state
-            setGroups(groups.map(g => g.id === targetGroupId ? { ...g, headId: newHeadId, headName: newHeadName } : g));
+            setGroups(groups.map(g => g.id === targetGroupId ? {
+                ...g,
+                headId: newHeadId,
+                headName: newHeadName,
+                headTeacherId: newHeadId,
+                headTeacherName: newHeadName
+            } : g));
+            dispatch(updateSubjectGroup({
+                id: targetGroupId,
+                headId: newHeadId,
+                headName: newHeadName,
+                headTeacherId: newHeadId,
+                headTeacherName: newHeadName
+            }));
 
             Swal.fire({
                 icon: 'success',
@@ -424,7 +455,7 @@ const SubjectGroupManagementPage: React.FC = () => {
                 ['', '-- ไม่ระบุ --'],
                 ...sortedTeachers.map(t => [t.id, `${t.title || ''}${t.firstName} ${t.lastName}`])
             ]),
-            inputValue: group?.headId || '',
+            inputValue: group?.headId || group?.headTeacherId || '',
             showCancelButton: true,
             confirmButtonText: 'ยืนยันการแต่งตั้ง',
             cancelButtonText: 'ยกเลิก',
@@ -464,7 +495,7 @@ const SubjectGroupManagementPage: React.FC = () => {
                 <div className="sticky top-[60px] z-40 px-4 lg:pl-16 py-3 bg-white/90 dark:bg-[#0b0e14]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
                     <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-4">
                         <div className="flex items-center gap-4 min-w-fit">
-                            <BackButton to="/academic-admin" />
+                            <BackButton to="/academic/hub/registration" />
                             <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                     <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">จัดการกลุ่มสาระ & ตัวชี้วัด</h1>
@@ -521,6 +552,8 @@ const SubjectGroupManagementPage: React.FC = () => {
                                     };
 
                                     const colors = colorClasses[colorKey];
+                                    const headId = group.headId || group.headTeacherId;
+                                    const headName = group.headName || group.headTeacherName;
 
                                     return (
                                         <div key={group.id} className="group/item relative px-1">
@@ -540,13 +573,13 @@ const SubjectGroupManagementPage: React.FC = () => {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className={`text-xs font-black truncate leading-tight ${isActive ? colors.text : 'text-slate-700 dark:text-slate-300'}`}>{group.name}</div>
-                                                    {group.headId ? (
+                                                    {headId ? (
                                                         <div
                                                             className={`text-[9px] font-bold flex items-center gap-1 mt-1 transition-colors w-fit ${isActive ? colors.text : 'text-slate-400'}`}
                                                             onClick={(e) => { e.stopPropagation(); handleShowTeacherPicker(group.id); }}
                                                         >
                                                             <div className={`w-1 h-1 rounded-full ${isActive ? colors.icon : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-                                                            <span className="truncate max-w-[130px] opacity-70">หัวหน้า: {group.headName}</span>
+                                                            <span className="truncate max-w-[130px] opacity-70">หัวหน้า: {headName}</span>
                                                         </div>
                                                     ) : (
                                                         <div

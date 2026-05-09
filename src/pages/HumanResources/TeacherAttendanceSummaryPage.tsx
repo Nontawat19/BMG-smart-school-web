@@ -515,7 +515,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div className="flex items-center gap-4">
-              <BackButton to="/human-resources/hub" />
+              <BackButton to="/academic/hub/personnel_info" />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <FaCalendarAlt className="text-indigo-600 dark:text-indigo-400" />

@@ -785,7 +785,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                             {currentStep === 4 && (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
                                             <Ban size={16} className="text-red-500" />
                                             เงื่อนไขการวันสอน (วันที่ไม่สะดวก)
                                         </label>
@@ -817,7 +817,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
                                             <LayoutGrid size={16} className="text-emerald-500" />
                                             ยึดคาบสอน (Lock Slot)
                                             <span className="text-xs font-normal text-gray-500">(เลือกเฉพาะคาบที่ต้องการสอนแน่นอน)</span>

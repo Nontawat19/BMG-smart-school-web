@@ -218,15 +218,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           <div className="flex items-center gap-4">
             <div
               className="flex items-center gap-2 cursor-pointer"
-              onClick={() => {
-                const roles = Array.isArray(currentUser?.role) ? currentUser.role : [currentUser?.role];
-                const attendanceRoles = ['school_attendance', 'student_attendance', 'teacher_attendance'];
-                if (roles.some(role => attendanceRoles.includes(role as string))) {
-                  navigate("/attendance/checkin-out");
-                } else {
-                  navigate("/home");
-                }
-              }}
+              onClick={() => navigate("/home")}
             >
               <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
               <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">

@@ -127,6 +127,10 @@ export const getPartnerIndex = (idx: number): number => {
     return -1;
 };
 
+export const isDoublePeriodStart = (idx: number): boolean => {
+    return getPartnerIndex(idx) === idx + 1;
+};
+
 export const checkConstraints = (
     course: CourseInstance,
     targetSlotId: string,
@@ -167,7 +171,7 @@ export const checkConstraints = (
     if (asgnCst?.isLocked && asgnCst.lockedSlots && asgnCst.lockedSlots.length > 0) {
         const isThisSlotLocked = asgnCst.lockedSlots.some((s: any) => {
             if (typeof s === 'string') return s === targetSlotId;
-            return s.day === dayKey && s.periodId === `period-${periodNumberStr}`;
+            return s.day === dayKey && s.periodId === periodSetting.id;
         });
         if (!isThisSlotLocked) {
             return { forbidden: true, message: `กลุ่มเรียนนี้ถูกล็อคให้สอนในคาบเฉพาะเจาะจงเท่านั้น` };
@@ -211,7 +215,7 @@ export const checkConstraints = (
     // Constraint 5: Double Period Type Check
     if (asgnCst?.type === 'double' && duration === 2) {
         const partnerIdx = getPartnerIndex(periodIndex);
-        if (partnerIdx === -1) {
+        if (partnerIdx === -1 || partnerIdx !== periodIndex + 1) {
             return { forbidden: true, message: 'วิชานี้ต้องจัดเป็นคาบคู่ (2 คาบติดกันในบล็อกที่กำหนด)' };
         }
         const partnerSetting = periodSettings[partnerIdx];
@@ -290,15 +294,14 @@ export const findValidSlots = (
 ): string[] => {
     const validSlots: Array<{ slot: string; score: number }> = [];
     const days = Object.keys(DAYS);
-    const periods = periodSettings.filter(p => p.isTeachingPeriod);
 
     // Get granular constraints
     const asgnCst = assignmentConstraints[course.compositeId];
 
     days.forEach(day => {
-        periods.forEach(period => {
-            const pNum = parseInt(period.id.replace('period-', ''));
-            const slot = `${day}-${pNum}`;
+        periodSettings.forEach((period, periodIndex) => {
+            if (!period.isTeachingPeriod) return;
+            const slot = `${day}-${periodIndex}`;
 
             // 1. Basic Constraints
             const { forbidden } = checkConstraints(course, slot, teacher, periodSettings, specialPeriods, assignmentConstraints, dynamicUnavailableSlots, schoolMasterSchedule);
@@ -309,7 +312,7 @@ export const findValidSlots = (
 
             // 3. Double Period validation
             if (asgnCst?.type === 'double' || asgnCst?.type === 'mixed') {
-                const partnerIdx = getPartnerIndex(pNum);
+                const partnerIdx = getPartnerIndex(periodIndex);
                 if (partnerIdx !== -1) {
                     const partnerSlot = `${day}-${partnerIdx}`;
                     if (currentSchedule[partnerSlot]) {
@@ -329,7 +332,7 @@ export const findValidSlots = (
             let score = 100;
 
             if (asgnCst) {
-                const isMorning = pNum <= 4;
+                const isMorning = period.startTime < (periodSettings.find(p => p.id === 'lunch')?.startTime || '12:00');
                 const pref = asgnCst.type === 'double' ? asgnCst.doublePreference : asgnCst.singlePreference;
 
                 if (pref === 'morning' && isMorning) score += 50;
@@ -339,7 +342,7 @@ export const findValidSlots = (
 
                 // Extra points for double if the partner slot is also free
                 if (asgnCst.type === 'double' || asgnCst.type === 'mixed') {
-                    const partnerIdx = getPartnerIndex(pNum);
+                    const partnerIdx = getPartnerIndex(periodIndex);
                     if (partnerIdx !== -1 && !currentSchedule[`${day}-${partnerIdx}`]) {
                         score += 40;
                     }
@@ -366,24 +369,15 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
     
     // Explicit exclusions based on common Thai school subject types and keywords
     const exclusions = [
-        'กิจกรรม',
-        'ชุมนุม',
-        'ลดเวลาเรียน',
-        'ลูกเสือ',
-        'เนตรนารี',
-        'ยุวกาชาด',
-        'บำเพ็ญประโยชน์',
-        'จิตอาสา',
         'homeroom',
         'โฮมรูม',
         'assembly',
         'ประชุมสาย',
         'สวดมนต์',
         'หน้าเสาธง',
-        'แนะแนว',
-        'เวร',
         'พัก',
-        'ทัศนศึกษา'
+        'ทัศนศึกษา',
+        'เวร'
     ];
 
     const isExcluded = exclusions.some(keyword => 
@@ -393,7 +387,6 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
     );
     
     // If the subject group is specifically "กิจกรรมพัฒนาผู้เรียน", it's usually non-academic for timetable bank
-    if (subjectGroup.includes('พัฒนาผู้เรียน')) return false;
 
     // Filter out items that are clearly not academic courses (usually have 0 credits or are marked as activity)
     if (course.credits === 0 || course.credits === '0') {

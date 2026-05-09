@@ -27,6 +27,16 @@ export interface Student {
     altIds?: string[];
 }
 
+export interface GroupAssignment {
+    groupNumber: number;
+    teacherId: string;
+    targetRooms?: string[];
+    roomIds?: string[];
+    classLevels?: string[];
+    teacherName?: string;
+    note?: string;
+}
+
 export interface Course {
     id: string;
     title: string;
@@ -36,12 +46,13 @@ export interface Course {
     hoursPerWeek: number;
     teacherId?: string;
     teacherIds?: string[];
-    teacherAssignments?: { teacherId: string; classLevels: string[]; roomIds: string[] }[];
+    teacherAssignments?: GroupAssignment[];
     subjectGroup?: string;
     learningArea?: string;
     formativeWeight?: number;
     midtermWeight?: number;
-    formativeAssessments?: { id: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
+    finalWeight?: number;
+    formativeAssessments?: { id?: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
     indicators?: string[];
     expectedOutcomes?: string[];
     type?: 'พื้นฐาน' | 'เพิ่มเติม';

@@ -9,14 +9,14 @@ import {
     FaFileUpload, FaFileExcel, FaCheckCircle,
     FaExclamationTriangle, FaTable, FaSave,
     FaTimes, FaCloudUploadAlt, FaChevronRight,
-    FaDownload, FaArrowLeft, FaEdit, FaCalendarAlt, FaList
+    FaDownload, FaEdit, FaCalendarAlt, FaList
 } from 'react-icons/fa';
 import BackButton from '@/components/Shared/BackButton';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 
 // --- Configuration ---
-// ตามโครงสร้างจริงของ Excel: A=ชั้น, B=ห้อง/หมู่, C=รหัสวิชา, D=ชื่อวิชา, E=Code(English), F=Titles(English), G=หน่วยกิต, H=ประเภทวิชา, I=กลุ่มสาระ
+// ตามโครงสร้างจริงของ Excel: A=ชั้น, B=ห้อง/หมู่, C=รหัสวิชา, D=ชื่อวิชา, E=Code(English), F=Titles(English), G=หน่วยกิต, H=ประเภทวิชา, I=กลุ่มสาระ, J=จำนวนคาบ/สัปดาห์, K=คะแนนเก็บ, L=คะแนนกลางภาค, M=ภาคเรียน
 // ฟิลด์บังคับ: ชั้น, ชื่อวิชา, ประเภทวิชา, กลุ่มสาระ
 const REQUIRED_FIELDS = [
     { key: 'classId', label: 'ชั้น', required: true },
@@ -28,7 +28,6 @@ const REQUIRED_FIELDS = [
     { key: 'credits', label: 'หน่วยกิต', required: false },
     { key: 'type', label: 'ประเภทวิชา', required: true },
     { key: 'subjectGroup', label: 'กลุ่มสาระ', required: true },
-    { key: 'teacherId', label: 'รหัสครูผู้สอน', required: false },
     { key: 'hoursPerWeek', label: 'จำนวนคาบ/สัปดาห์', required: false },
     { key: 'formativeWeight', label: 'คะแนนเก็บ (%)', required: false },
     { key: 'midtermWeight', label: 'คะแนนกลางภาค (%)', required: false },
@@ -87,7 +86,6 @@ interface MappedCourse {
     credits?: string;
     type: string;
     room?: string;
-    teacherId: string;
     hoursPerWeek: number;
     formativeWeight: number;
     midtermWeight: number;
@@ -169,8 +167,8 @@ const ImportCoursePage: React.FC = () => {
 
         // ข้อมูลตัวอย่าง
         const exampleData = [
-            ['ม.1', '1', 'ว21101', 'วิทยาศาสตร์ 1', 'SCI21101', 'Science 1', '1.5', 'พื้นฐาน', 'วิทยาศาสตร์และเทคโนโลยี', '99999', '3', '70', '30', '1'],
-            ['ม.4', '1', 'ค31101', 'คณิตศาสตร์ 1', 'MAT31101', 'Mathematics 1', '1.0', 'พื้นฐาน', 'คณิตศาสตร์', '88888', '2', '80', '20', '1'],
+            ['ม.1', '1', 'ว21101', 'วิทยาศาสตร์ 1', 'SCI21101', 'Science 1', '1.5', 'พื้นฐาน', 'วิทยาศาสตร์และเทคโนโลยี', '3', '70', '30', '1'],
+            ['ม.4', '1', 'ค31101', 'คณิตศาสตร์ 1', 'MAT31101', 'Mathematics 1', '1.0', 'พื้นฐาน', 'คณิตศาสตร์', '2', '80', '20', '1'],
         ];
 
         const worksheetData = [headers, ...exampleData];
@@ -267,7 +265,6 @@ const ImportCoursePage: React.FC = () => {
                         if (field.key === 'credits' && (h === 'หน่วยกิต' || hLower.includes('credit'))) return true;
                         if (field.key === 'type' && (h === 'ประเภทวิชา' || h === 'ประเภท' || hLower.includes('type'))) return true;
                         if (field.key === 'subjectGroup' && (h === 'กลุ่มสาระ' || h === 'กลุ่มสาระฯ' || h === 'กลุ่มสาระการเรียนรู้' || hLower.includes('group') || hLower.includes('dept'))) return true;
-                        if (field.key === 'teacherId' && (h === 'รหัสครูผู้สอน' || h === 'ครูผู้สอน' || hLower.includes('teacher'))) return true;
                         if (field.key === 'hoursPerWeek' && (h === 'จำนวนคาบ/สัปดาห์' || h === 'คาบ/สัปดาห์' || h === 'คาบ' || hLower.includes('hour') || hLower.includes('period'))) return true;
                         if (field.key === 'formativeWeight' && (h === 'คะแนนเก็บ (%)' || h === 'คะแนนเก็บ' || hLower.includes('formative'))) return true;
                         if (field.key === 'midtermWeight' && (h === 'คะแนนกลางภาค (%)' || h === 'กลางภาค' || hLower.includes('midterm'))) return true;
@@ -353,15 +350,11 @@ const ImportCoursePage: React.FC = () => {
                     errorMessage = 'ข้อมูลบางส่วนไม่ครบ (ชั้น, หรือกลุ่มสาระ)';
                 }
 
-                // Warning if no teacher assigned
-                if (!rowData.teacherId && status === 'ready') {
-                    status = 'warning';
-                    errorMessage = 'ยังไม่ได้ระบุครูผู้สอน';
-                }
+                // Skip teacher warning as requested
 
                 // Check score weights
-                const formative = Number(rowData.formativeWeight) || 60;
-                const midterm = Number(rowData.midtermWeight) || 20;
+                const formative = Number(rowData.formativeWeight) || 0;
+                const midterm = Number(rowData.midtermWeight) || 0;
                 const final = 100 - formative - midterm;
 
                 if (formative + midterm + final !== 100) {
@@ -379,8 +372,7 @@ const ImportCoursePage: React.FC = () => {
                     credits: rowData.credits || "",
                     type: rowData.type || "ไม่ระบุ", // Default if missing
                     room: rowData.room || "",
-                    teacherId: rowData.teacherId || "",
-                    hoursPerWeek: Number(rowData.hoursPerWeek) || 1,
+                    hoursPerWeek: rowData.credits ? Math.round(Number(rowData.credits) * 2) : (Number(rowData.hoursPerWeek) || 1),
                     formativeWeight: formative,
                     midtermWeight: midterm,
                     semester: rowData.semester ? String(rowData.semester) : undefined, // Read semester from row
@@ -542,8 +534,8 @@ const ImportCoursePage: React.FC = () => {
                     hoursPerWeek: course.hoursPerWeek,
                     credits: String(course.credits || ''),
                     room: course.room ? [course.room] : ['all'],
-                    teacherId: course.teacherId || 'pending', // ใช้ 'pending' ถ้าไม่มีครูผู้สอน
-                    teacherIds: [course.teacherId || 'pending'], // Added teacherIds array for alignment
+                    teacherId: 'pending', // ครูผู้สอนตั้งเป็น pending รอการมอบหมายภายหลัง
+                    teacherIds: ['pending'], // Added teacherIds array for alignment
                     isCombined: false,
                     constraints: {
                         disallowedDays: [],
@@ -612,7 +604,7 @@ const ImportCoursePage: React.FC = () => {
                     {/* --- Header Section --- */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800/50">
                         <div className="flex items-center gap-4">
-                            <BackButton />
+                            <BackButton to="/academic/hub/registration" />
                             <div>
                                 <h1 className="text-2xl font-bold flex items-center gap-3 text-slate-800 dark:text-white">
                                     <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-lg">
@@ -904,9 +896,9 @@ const ImportCoursePage: React.FC = () => {
                                                 <th className="px-5 py-3.5 min-w-[200px]">รายละเอียดวิชา</th>
                                                 <th className="px-5 py-3.5 min-w-[100px]">ชั้นเรียน</th>
                                                 <th className="px-5 py-3.5 text-center">เทอม</th>
-                                                <th className="px-5 py-3.5 text-center">หน่วยกิต (คาบ)</th>
+                                                <th className="px-5 py-3.5 text-center">หน่วยกิต</th>
+                                                <th className="px-5 py-3.5 text-center">คาบ/สัปดาห์</th>
                                                 <th className="px-5 py-3.5 min-w-[150px]">สาระ/ประเภท</th>
-                                                <th className="px-5 py-3.5 min-w-[120px]">ผู้สอน</th>
                                                 <th className="px-5 py-3.5 text-center">สถานะ</th>
                                             </tr>
                                         </thead>
@@ -941,21 +933,18 @@ const ImportCoursePage: React.FC = () => {
                                                         </span>
                                                     </td>
                                                     <td className="px-5 py-4 text-center">
-                                                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">{course.credits || '-'}</span>
-                                                        <span className="text-slate-400 text-xs ml-1">({course.hoursPerWeek})</span>
+                                                        <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">
+                                                            {course.credits !== undefined ? course.credits : (course.hoursPerWeek ? (course.hoursPerWeek / 2) : 0)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-4 text-center">
+                                                        <span className="font-medium text-sm text-slate-900 dark:text-white">
+                                                            {course.hoursPerWeek}
+                                                        </span>
                                                     </td>
                                                     <td className="px-5 py-4">
                                                         <div className="font-medium text-slate-700 dark:text-slate-200 text-xs mb-0.5">{course.type}</div>
                                                         <div className="text-[11px] text-slate-500 truncate max-w-[150px]" title={course.subjectGroup}>{course.subjectGroup}</div>
-                                                    </td>
-                                                    <td className="px-5 py-4">
-                                                        {course.teacherId ? (
-                                                            <span className="text-slate-700 dark:text-slate-300 font-medium text-sm">{course.teacherId}</span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded font-medium">
-                                                                <FaExclamationTriangle size={10} /> รอระบุผู้สอน
-                                                            </span>
-                                                        )}
                                                     </td>
                                                     <td className="px-5 py-4 text-center">
                                                         {getStatusBadge(course.status)}

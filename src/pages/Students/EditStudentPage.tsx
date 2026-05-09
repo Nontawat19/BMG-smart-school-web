@@ -2,7 +2,7 @@ import React, { useState, useEffect, FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import { firestore, storage } from "@/firebase";
-import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, deleteField } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
@@ -10,6 +10,8 @@ import { FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaBus, FaArrowLeft, FaS
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
+import BackButton from "@/components/Shared/BackButton";
+import { isExitStudentStatus } from "@/utils/studentStatusUtils";
 
 // --- Reusable Components (from AddStudentPage) ---
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -74,6 +76,7 @@ const initialState = {
   // 2. ข้อมูลการเรียน (Educational Info)
   studentId: "", studentNumber: "", classLevel: "", room: "",
   studentStatus: "เรียนอยู่", enrollmentDate: "",
+  exitDate: "", exitReason: "", exitDestinationSchool: "",
   gpa: "", gpax: "", behaviorScore: 100,
   subSchoolId: "", subSchoolName: "",
 
@@ -137,6 +140,8 @@ export default function EditStudentPage() {
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [subSchools, setSubSchools] = useState<{ id: string, name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<string>("general");
+  const showExitDetails = isExitStudentStatus(form.studentStatus);
+  const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
 
   const tabs = [
     { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
@@ -214,6 +219,9 @@ export default function EditStudentPage() {
             ...prev,
             ...data,
             birthDate: formattedBirthDate || data.birthDate || "", // Use formatted or original
+            exitDate: data.exitDetails?.exitDate || data.exitDate || "",
+            exitReason: data.exitDetails?.reason || data.exitReason || "",
+            exitDestinationSchool: data.exitDetails?.destinationSchool || data.exitDestinationSchool || "",
           }));
           if (data.profileImageUrl) {
             setImagePreview(data.profileImageUrl);
@@ -295,7 +303,13 @@ export default function EditStudentPage() {
   }
 
   function handleStatusChange(name: string, value: string) {
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+      exitDate: name === "studentStatus" && isExitStudentStatus(value) && !prev.exitDate
+        ? new Date().toISOString().split('T')[0]
+        : prev.exitDate,
+    }));
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -348,9 +362,21 @@ export default function EditStudentPage() {
 
       const dataToUpdate: any = {
         ...studentData,
+        status: studentData.studentStatus,
         role: roles,
         updatedAt: serverTimestamp(),
       };
+
+      if (isExitStudentStatus(studentData.studentStatus)) {
+        dataToUpdate.exitDetails = {
+          exitDate: studentData.exitDate || "",
+          reason: studentData.exitReason || "",
+          destinationSchool: studentData.exitDestinationSchool || "",
+          status: studentData.studentStatus,
+        };
+      } else {
+        dataToUpdate.exitDetails = deleteField();
+      }
 
       // Handle image upload
       if (imageFile) {
@@ -448,11 +474,14 @@ export default function EditStudentPage() {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-          <header className="mb-8">
-            <h1 className="text-3xl font-bold tracking-tight">แก้ไขข้อมูลนักเรียน</h1>
-            <p className="mt-1 text-gray-500 dark:text-gray-400">
-              คุณกำลังแก้ไขข้อมูลของ: <span className="font-semibold text-indigo-400">{form.firstName} {form.lastName}</span>
-            </p>
+          <header className="mb-8 flex items-center gap-4">
+            <BackButton to="/academic/hub/students" />
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">แก้ไขข้อมูลนักเรียน</h1>
+              <p className="mt-1 text-gray-500 dark:text-gray-400">
+                คุณกำลังแก้ไขข้อมูลของ: <span className="font-semibold text-indigo-400">{form.firstName} {form.lastName}</span>
+              </p>
+            </div>
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -604,12 +633,25 @@ export default function EditStudentPage() {
                       <InputField label="เกรดเฉลี่ยสะสม (GPAX)" name="gpax" value={form.gpax} onChange={handleChange} />
                     </div>
 
-                    <div className="mt-6">
-                      <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
-                    </div>
-                  </InfoCard>
-                </div>
-              )}
+	                    <div className="mt-6">
+	                      <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
+	                    </div>
+
+	                    {showExitDetails && (
+	                      <div className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 p-4">
+	                        <div className="mb-3 text-sm font-semibold text-amber-800 dark:text-amber-300">
+	                          รายละเอียดกรณี {form.studentStatus}
+	                        </div>
+	                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+	                          <InputField label="วันที่ออก/ย้าย" name="exitDate" type="date" value={form.exitDate} onChange={handleChange} />
+		                          <InputField label={exitReasonLabel} name="exitReason" value={form.exitReason} onChange={handleChange} placeholder={`ระบุ${exitReasonLabel}`} />
+	                          <InputField label="โรงเรียนปลายทาง/หมายเหตุ" name="exitDestinationSchool" value={form.exitDestinationSchool} onChange={handleChange} placeholder="ระบุถ้ามี" />
+	                        </div>
+	                      </div>
+	                    )}
+	                  </InfoCard>
+	                </div>
+	              )}
 
               {activeTab === "family" && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

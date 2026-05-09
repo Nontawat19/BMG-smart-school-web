@@ -13,6 +13,8 @@ interface DocInfo {
     classDisplay: string;
     updatedAt: string;
     downloadUrl: string;
+    year?: string;
+    semester?: string;
 }
 
 const DocumentVerificationPage: React.FC = () => {
@@ -25,6 +27,8 @@ const DocumentVerificationPage: React.FC = () => {
     const courseId = searchParams.get('c');
     const classId = searchParams.get('cl');
     const room = searchParams.get('r');
+    const year = searchParams.get('y');
+    const semester = searchParams.get('sem');
 
     useEffect(() => {
         const verifyDocument = async () => {
@@ -50,13 +54,37 @@ const DocumentVerificationPage: React.FC = () => {
 
                 // 2. Locate File in Storage
                 const roomSlug = room && room !== 'all' ? `_${room}` : '';
-                const filePath = `school-settings/${schoolId}/grading/courses/${courseId}/ปพ5_${courseId}_${classId}${roomSlug}.pdf`;
-                const storageRef = ref(storage, filePath);
+                
+                // Try New Path Structure first (Semester-aware)
+                let filePath = '';
+                let storageRef;
+                let downloadUrl = '';
+                let metadata: any = null;
 
-                const [downloadUrl, metadata] = await Promise.all([
-                    getDownloadURL(storageRef),
-                    getMetadata(storageRef)
-                ]);
+                if (year && semester) {
+                    const semesterPath = `year_${year}/semester_${semester}`;
+                    filePath = `school-settings/${schoolId}/grading/courses/${courseId}/${semesterPath}/ปพ5_${courseId}_${classId}${roomSlug}.pdf`;
+                    storageRef = ref(storage, filePath);
+                    try {
+                        [downloadUrl, metadata] = await Promise.all([
+                            getDownloadURL(storageRef),
+                            getMetadata(storageRef)
+                        ]);
+                    } catch (e) {
+                        console.log("New path structure not found, trying legacy path...");
+                        filePath = ''; // reset to try legacy
+                    }
+                }
+
+                // Fallback to Legacy Path Structure
+                if (!filePath) {
+                    filePath = `school-settings/${schoolId}/grading/courses/${courseId}/ปพ5_${courseId}_${classId}${roomSlug}.pdf`;
+                    storageRef = ref(storage, filePath);
+                    [downloadUrl, metadata] = await Promise.all([
+                        getDownloadURL(storageRef),
+                        getMetadata(storageRef)
+                    ]);
+                }
 
                 // Fetch the actual file content to create a local Blob URL
                 // This masks the firebase storage URL from the user's view
@@ -72,7 +100,9 @@ const DocumentVerificationPage: React.FC = () => {
                     courseCode: courseData.code || '-',
                     classDisplay: `${formattedClass}${room && room !== 'all' ? `/${room}` : ' (ทุกห้อง)'}`,
                     updatedAt: new Date(metadata.updated).toLocaleString('th-TH'),
-                    downloadUrl: blobUrl // Use the Blob URL instead
+                    downloadUrl: blobUrl,
+                    year: year || undefined,
+                    semester: semester || undefined
                 });
 
             } catch (err: any) {
@@ -138,9 +168,17 @@ const DocumentVerificationPage: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                                    <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">วันที่ออกเอกสารลำสุด</p>
-                                    <p className="text-xs font-bold text-gray-600 dark:text-gray-400">{docInfo?.updatedAt}</p>
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">ปีการศึกษา/ภาคเรียน</p>
+                                        <p className="text-xs font-bold text-gray-600 dark:text-gray-400">
+                                            {docInfo?.year && docInfo?.semester ? `${docInfo.year}/${docInfo.semester}` : 'ไม่ระบุ (เอกสารเก่า)'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest text-right">วันที่ออกเอกสารลำสุด</p>
+                                        <p className="text-xs font-bold text-gray-600 dark:text-gray-400 text-right">{docInfo?.updatedAt}</p>
+                                    </div>
                                 </div>
                             </div>
 

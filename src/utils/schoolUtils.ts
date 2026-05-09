@@ -86,5 +86,30 @@ export const getClassKeysByRange = (levelRange: string): string[] => {
     }
 };
 
+export const getEffectiveLevelRange = (levelRange?: string, schoolType?: string): string => {
+    if (levelRange) return levelRange;
+
+    switch (schoolType) {
+        case 'ประถม':
+            return 'อ.1-ป.6';
+        case 'ขยายโอกาส':
+            return 'อ.1-ม.3';
+        case 'มัธยมศึกษา':
+            return 'ม.1-ม.6';
+        default:
+            return '';
+    }
+};
+
+export const getClassOptionsBySchoolSettings = (
+    levelRange?: string,
+    schoolType?: string
+): [string, string][] => {
+    const effectiveRange = getEffectiveLevelRange(levelRange, schoolType);
+    const levels = getLevelsByRange(effectiveRange);
+
+    return Object.entries(CLASS_MAPPING).filter(([, label]) => levels.includes(label));
+};
+
 // Aliases for backward compatibility or easier usage
 export const CLASSES = CLASS_MAPPING;

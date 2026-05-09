@@ -1,5 +1,6 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 
 // Register Thai Font
 Font.register({
@@ -155,7 +156,8 @@ const formatThaiDate = (dateStr?: any, useThaiNumerals: boolean = true) => {
         "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
     ];
     const day = useThaiNumerals ? toThaiNumerals(date.getDate()) : date.getDate();
-    const year = useThaiNumerals ? toThaiNumerals(date.getFullYear() + 543) : date.getFullYear() + 543;
+    const yearOffset = 543;
+    const year = useThaiNumerals ? toThaiNumerals(date.getFullYear() + yearOffset) : date.getFullYear() + yearOffset;
     return `${day} ${months[date.getMonth()]} ${year}`;
 };
 
@@ -198,7 +200,7 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
 
     // Red: Dynamic Data
     const schoolName = data.schoolName || "...................................................";
-    const rawDocNo = data.docNo || (data.id ? `${data.id.substring(0, 4)}/${new Date().getFullYear() + 543}` : ".......................................");
+    const rawDocNo = data.docNo || (data.id ? `${data.id.substring(0, 4)}/${getCurrentThaiYear()}` : ".......................................");
     const docNo = toThaiNumerals(rawDocNo);
     const currentDate = formatThaiDate(new Date().toISOString().split('T')[0]);
     const requesterName = data.requesterName || "....................................";

@@ -37,9 +37,10 @@ export async function syncHeadOfLearningArea(
                 // Setting as new head: update subject_groups with new head info
                 // First, check if there was a previous head and clear their teacher profile
                 const prevData = matchedDoc.data();
-                if (prevData.headId && prevData.headId !== teacherDocId) {
+                const previousHeadId = prevData.headId || prevData.headTeacherId;
+                if (previousHeadId && previousHeadId !== teacherDocId) {
                     try {
-                        const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', prevData.headId);
+                        const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', previousHeadId);
                         batch.update(prevTeacherRef, {
                             isHeadOfLearningArea: false
                         });
@@ -51,15 +52,20 @@ export async function syncHeadOfLearningArea(
                 // Update the subject_group document
                 batch.update(doc(db, 'school-settings', schoolId, 'subject_groups', matchedDoc.id), {
                     headId: teacherDocId,
-                    headName: teacherFullName
+                    headName: teacherFullName,
+                    headTeacherId: teacherDocId,
+                    headTeacherName: teacherFullName
                 });
             } else {
                 // Removing as head: clear the subject_groups headId/headName only if this teacher IS the current head
                 const currentData = matchedDoc.data();
-                if (currentData.headId === teacherDocId) {
+                const currentHeadId = currentData.headId || currentData.headTeacherId;
+                if (currentHeadId === teacherDocId) {
                     batch.update(doc(db, 'school-settings', schoolId, 'subject_groups', matchedDoc.id), {
                         headId: '',
-                        headName: ''
+                        headName: '',
+                        headTeacherId: '',
+                        headTeacherName: ''
                     });
                 }
             }

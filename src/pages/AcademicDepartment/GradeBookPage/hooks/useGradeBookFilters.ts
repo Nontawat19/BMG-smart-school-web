@@ -1,10 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Course, Teacher } from '../types';
 
+const courseMatchesRoom = (courseRooms: unknown, selectedRoom: string) => {
+    if (!selectedRoom || selectedRoom === 'all') return true;
+    if (!Array.isArray(courseRooms) || courseRooms.length === 0) return true;
+
+    const normalizedRooms = courseRooms.map(room => String(room).trim().toLowerCase());
+    return normalizedRooms.includes('all') || normalizedRooms.includes(String(selectedRoom).trim().toLowerCase());
+};
+
 export const useGradeBookFilters = (
     initialClass: string,
     initialRoom: string,
     initialSemester: string,
+    initialCourse: string,
     initialGroup: string,
     courses: Course[],
     teacherMap: Record<string, Teacher>,
@@ -14,7 +23,7 @@ export const useGradeBookFilters = (
     const [selectedClass, setSelectedClass] = useState<string>(initialClass);
     const [selectedRoom, setSelectedRoom] = useState<string>(initialRoom);
     const [selectedSemester, setSelectedSemester] = useState<string>(initialSemester);
-    const [selectedCourse, setSelectedCourse] = useState<string>('');
+    const [selectedCourse, setSelectedCourse] = useState<string>(initialCourse);
     const [selectedGroup, setSelectedGroup] = useState<string>(initialGroup);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -30,6 +39,10 @@ export const useGradeBookFilters = (
                 const classIds = Array.isArray(c.classId) ? c.classId : [c.classId];
                 if (!classIds.includes(selectedClass)) return false;
             }
+
+            if (!courseMatchesRoom(c.room, selectedRoom)) {
+                return false;
+            }
             
             // Semester Filter Logic
             if (selectedSemester && selectedSemester !== 'annual') {
@@ -41,14 +54,14 @@ export const useGradeBookFilters = (
             const courseTeacherIds = new Set<string>();
             if (c.teacherId) courseTeacherIds.add(c.teacherId);
             if (c.teacherIds) c.teacherIds.forEach(id => courseTeacherIds.add(id));
-            if ((c as any).teacherAssignments) {
-                (c as any).teacherAssignments.forEach((a: any) => {
+            if (c.teacherAssignments) {
+                c.teacherAssignments.forEach((a: any) => {
                     if (a.teacherId) courseTeacherIds.add(a.teacherId);
                 });
             }
 
             const myIds = userPrivileges.myTeacherIds || [];
-            if (myIds.length > 0) {
+            if (!userPrivileges.canSeeAll && myIds.length > 0) {
                 const isMyCourse = myIds.some((id: string) => courseTeacherIds.has(id));
                 if (!isMyCourse) return false;
             } else if (!userPrivileges.canSeeAll) {
@@ -64,17 +77,16 @@ export const useGradeBookFilters = (
             }
             return true;
         });
-    }, [selectedClass, selectedSemester, courses, userPrivileges, searchTerm, academicYear]);
+    }, [selectedClass, selectedRoom, selectedSemester, courses, userPrivileges, searchTerm, academicYear]);
 
 
     // Derive available groups for the selected course
     const availableGroups = useMemo(() => {
         if (!selectedCourse) return [];
         const course = courses.find(c => c.id === selectedCourse);
-        if (!course || !(course as any).teacherAssignments) return [];
+        if (!course || !course.teacherAssignments) return [];
 
-        const assignments = (course as any).teacherAssignments as any[];
-        return assignments
+        return course.teacherAssignments
             .map(a => ({
                 id: `กลุ่ม ${a.groupNumber}`,
                 label: `กลุ่ม ${a.groupNumber} (${teacherMap[a.teacherId]?.name || 'ไม่ระบุครู'})`,

@@ -6,6 +6,7 @@ import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
+import BackButton from "@/components/Shared/BackButton";
 
 interface SpecialPeriod {
   id: string;
@@ -274,9 +275,7 @@ const SpecialPeriodManagementPage: React.FC = () => {
           </div>
 
           <div className="mb-6">
-            <Link to="/academic-admin" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-              &larr; กลับไปหน้าบริหารงานวิชาการ
-            </Link>
+            <BackButton to="/academic/hub/scheduling" />
           </div>
 
           {/* Special Period Management Section */}

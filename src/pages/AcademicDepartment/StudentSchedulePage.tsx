@@ -13,6 +13,8 @@ import BackButton from "@/components/Shared/BackButton";
 import toast from 'react-hot-toast';
 import { saveAs } from 'file-saver';
 import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
+import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 
 // --- Types ---
 interface Course {
@@ -214,6 +216,12 @@ const StudentSchedulePage: React.FC = () => {
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+  
+  // Redux Calendar State
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
+  const reduxTerms = calendarState.terms;
+
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
 
@@ -613,6 +621,34 @@ const StudentSchedulePage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (schoolId) {
+      dispatch(fetchTeachersMap(schoolId) as any);
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, dispatch]);
+
+  // Sync from Redux Calendar
+  useEffect(() => {
+    if (calendarState.status === 'succeeded') {
+      setAcademicYear(reduxAcademicYear);
+      
+      const today = new Date().toISOString().split('T')[0];
+      const term1 = reduxTerms.find(t => t.id === 'term1' || t.name.includes('1'));
+      const term2 = reduxTerms.find(t => t.id === 'term2' || t.name.includes('2'));
+
+      if (term1 && term1.startDate && term1.endDate && today >= term1.startDate && today <= term1.endDate) {
+        setCurrentTerm('1');
+      } else if (term2 && term2.startDate && term2.endDate && today >= term2.startDate && today <= term2.endDate) {
+        setCurrentTerm('2');
+      } else if (term2?.startDate && today >= term2.startDate) {
+        setCurrentTerm('2');
+      } else if (term1?.startDate && today >= term1.startDate) {
+        setCurrentTerm('1');
+      }
+    }
+  }, [calendarState.status, reduxAcademicYear, reduxTerms]);
+
+  useEffect(() => {
     fetchScheduleData();
   }, [fetchScheduleData]);
 
@@ -632,23 +668,6 @@ const StudentSchedulePage: React.FC = () => {
           const filteredLevels: [string, string][] = Object.entries(CLASSES).filter(([key, val]) => levels.includes(val)) as [string, string][];
 
           setAvailableClassOptions(filteredLevels);
-        }
-
-        const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-        const calendarDocSnap = await getDoc(calendarDocRef);
-        if (calendarDocSnap.exists()) {
-          const data = calendarDocSnap.data();
-          setAcademicYear(data.academicYear || '');
-          const today = new Date().toISOString().split('T')[0];
-          const term1 = data.terms?.term1;
-          const term2 = data.terms?.term2;
-          if (term1 && term1.startDate && term1.endDate && today >= term1.startDate && today <= term1.endDate) {
-            setCurrentTerm('1');
-          } else if (term2 && term2.startDate && term2.endDate && today >= term2.startDate && today <= term2.endDate) {
-            setCurrentTerm('2');
-          } else {
-            setCurrentTerm('');
-          }
         }
       } catch (e) { console.error(e); }
     };
@@ -769,7 +788,7 @@ const StudentSchedulePage: React.FC = () => {
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <BackButton to="/academic-admin" className="mb-4" />
+              <BackButton to="/academic/hub/scheduling" className="mb-4" />
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
                 <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
                 ดูตารางเรียนนักเรียน

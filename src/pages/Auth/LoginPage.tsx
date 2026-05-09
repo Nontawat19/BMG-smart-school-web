@@ -86,21 +86,6 @@ const LoginPage: React.FC = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 1. ตรวจสอบ Role จาก 'users' collection ก่อน (ลำดับความสำคัญสูงสุดสำหรับ School_Attendance)
-      const userDocRef = doc(firestore, 'users', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
-        const roles = Array.isArray(userData.role) ? userData.role : [userData.role];
-
-        const attendanceRoles = ['school_attendance', 'student_attendance', 'teacher_attendance'];
-        if (roles.some(role => attendanceRoles.includes(role as string))) {
-          navigate("/attendance/checkin-out", { replace: true });
-          return;
-        }
-      }
-
       // ตรวจสอบว่า user นี้เป็นครูในระบบหรือไม่
       const teachersQuery = query(collectionGroup(firestore, 'teachers'), where('uid', '==', user.uid));
       const teacherSnapshots = await getDocs(teachersQuery);

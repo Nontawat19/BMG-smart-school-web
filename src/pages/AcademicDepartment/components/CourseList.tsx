@@ -247,7 +247,7 @@ const CourseList: React.FC<CourseListProps> = ({
     const teachersList = useMemo(() => Object.values(teacherMap || {}).map((t: any) => ({
         id: t.id,
         name: t.name,
-        subjectGroup: t.subjectGroup || "ทั่วไป"
+        subjectGroup: t.subjectGroup || t.learningArea || "ทั่วไป"
     })), [teacherMap]);
 
     // --- Pagination ---

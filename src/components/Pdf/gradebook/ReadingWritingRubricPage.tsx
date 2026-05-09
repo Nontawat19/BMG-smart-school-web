@@ -1,3 +1,4 @@
+import React from 'react';
 import { Text, View, StyleSheet, Font } from '@react-pdf/renderer';
 import PdfPage from './PdfPage';
 import { READING_WRITING_CRITERIA } from './constants';
@@ -6,25 +7,95 @@ import { READING_WRITING_CRITERIA } from './constants';
 // 0. GLOBAL CONFIG
 // ==========================================
 // บังคับปิดการใส่เครื่องหมายขีดกลาง (-) ทั้งหมดในโปรเจกต์ (สำหรับหน้านี้)
-Font.registerHyphenationCallback(word => [word]);
+const disableHyphenation = (word: string) => [word];
+Font.registerHyphenationCallback(disableHyphenation);
 
 // ==========================================
 // 1. HELPER FUNCTION
 // ==========================================
-const formatThaiText = (text: string | undefined | null) => {
+const sanitizeThaiText = (text: string | undefined | null) => {
   if (!text) return "";
-  // ลบตัวช่วยตัดคำเดิมออกก่อน
-  const clean = text.replace(/[\u200B\u200D\u200C\u00AD]/g, '');
-  
+  return text
+    .replace(/[\u200B\u200D\u200C\u00AD]/g, '')
+    .replace(/\s*[-‐‑‒–—]\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const getThaiTextParts = (text: string | undefined | null) => {
+  const clean = sanitizeThaiText(text);
+  if (!clean) return [];
+
   try {
-    // ใช้ Intl.Segmenter เพื่อแทรก ZWSP ระหว่างคำอย่างแม่นยำ
+    // แยกเป็น Text runs สั้น ๆ แทนการส่ง string ยาวให้ react-pdf hyphenate เอง
     const segmenter = new Intl.Segmenter('th-TH', { granularity: 'word' });
     const segments = Array.from(segmenter.segment(clean));
-    return segments.map(s => s.segment).join('\u200B');
+    return segments
+      .map(s => s.segment.replace(/\s+/g, ' '))
+      .filter(Boolean);
   } catch (error) {
-    return clean;
+    return clean.split('');
   }
 };
+
+const measureTextUnits = (text: string) => {
+  return Array.from(text).reduce((sum, char) => {
+    if (char === ' ') return sum + 0.35;
+    if (/[0-9A-Za-z()./]/.test(char)) return sum + 0.55;
+    return sum + 1;
+  }, 0);
+};
+
+const wrapThaiText = (text: string | undefined | null, maxUnits: number) => {
+  const parts = getThaiTextParts(text);
+  const lines: string[] = [];
+  let current = '';
+
+  parts.forEach(part => {
+    if (!part) return;
+    if (!current) {
+      current = part.trimStart();
+      return;
+    }
+
+    const next = current + part;
+    if (measureTextUnits(next) <= maxUnits) {
+      current = next;
+    } else {
+      lines.push(current.trimEnd());
+      current = part.trimStart();
+    }
+  });
+
+  if (current) lines.push(current.trimEnd());
+  return lines;
+};
+
+const ThaiText: React.FC<{ text: string | undefined | null; style?: any; maxUnits: number }> = ({ text, style, maxUnits }) => {
+  const lines = wrapThaiText(text, maxUnits);
+  return (
+    <Text style={style} hyphenationCallback={disableHyphenation}>
+      {lines.map((line, index) => (
+        <Text key={`${line}-${index}`} hyphenationCallback={disableHyphenation}>
+          {line}{index < lines.length - 1 ? '\n' : ''}
+        </Text>
+      ))}
+    </Text>
+  );
+};
+
+const getIndicatorRowHeight = (criteriaIndex: number, indicatorIndex: number) => {
+  const heights = [
+    [118, 96],
+    [128, 96],
+    [128],
+  ];
+
+  return heights[criteriaIndex]?.[indicatorIndex] ?? 112;
+};
+
+const getCriteriaRowHeight = (criteria: ReadingWritingCriteria, criteriaIndex: number) =>
+  (criteria.indicators || []).reduce((sum, _indicator, indicatorIndex) => sum + getIndicatorRowHeight(criteriaIndex, indicatorIndex), 0);
 
 // ==========================================
 // 2. INTERFACES
@@ -63,32 +134,32 @@ interface ReadingWritingRubricPageProps {
 const styles = StyleSheet.create({
   headerContainer: {
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 12, // ลดลงเพื่อให้ไม่ขึ้นบรรทัดใหม่
+    fontSize: 13,
     fontWeight: 'bold',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   subtitle: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginBottom: 10,
+    marginBottom: 3,
   },
   scopeContainer: {
-    marginBottom: 12,
-    paddingHorizontal: 2,
+    marginBottom: 5,
+    paddingHorizontal: 6,
   },
   scopeTitle: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: 'bold',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   scopeContent: {
-    fontSize: 11,
-    lineHeight: 1.4,
+    fontSize: 11.5,
+    lineHeight: 1.18,
     textAlign: 'justify',
-    textIndent: 30, // เพิ่มการย่อหน้าให้เหมือนภาพ
+    textIndent: 28,
   },
   tableContainer: {
     width: '100%',
@@ -103,10 +174,10 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   cell: {
-    padding: '6 4',
+    padding: '3 3.2',
     borderRightWidth: 1,
     borderRightColor: '#000',
-    justifyContent: 'flex-start', // เริ่มจากด้านบนเหมือนภาพ
+    justifyContent: 'flex-start',
     hyphens: 'none',
   },
   headerCell: {
@@ -115,33 +186,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 10,
-    minHeight: 22,
+    fontSize: 11.5,
+    minHeight: 24,
   },
   textHeader: {
     fontWeight: 'bold',
-    fontSize: 10,
+    fontSize: 12.3,
+    lineHeight: 1.08,
+    letterSpacing: 0,
     hyphens: 'none',
   },
   textContent: {
-    fontSize: 11,
-    lineHeight: 1.3,
-    textAlign: 'left', // เรียงเป็นประโยคชิดซ้าย
+    fontSize: 11.85,
+    lineHeight: 1.09,
+    textAlign: 'justify',
+    letterSpacing: 0,
     hyphens: 'none',
   },
   textRubric: {
-    fontSize: 11,
-    lineHeight: 1.3,
-    textAlign: 'left', // เรียงเป็นประโยคชิดซ้าย
+    fontSize: 11.85,
+    lineHeight: 1.09,
+    textAlign: 'justify',
+    letterSpacing: 0,
     hyphens: 'none',
   },
   
   // ปรับความกว้างใหม่เพื่อใช้พื้นที่ที่เพิ่มขึ้น (Sum = 100%)
-  colStandard: { width: '8%' },
-  colIndicator: { width: '24%' },
-  colRubric: { width: '17%' },
+  colStandard: { width: '8.8%' },
+  colIndicator: { width: '16.5%' },
+  rubricHeaderGroup: { width: '74.7%' },
   
-  nestedCol: { width: '92%', flexDirection: 'column' },
+  nestedCol: { width: '91.2%', flexDirection: 'column' },
   nestedRow: { 
     flexDirection: 'row', 
     width: '100%',
@@ -170,59 +245,69 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
     <PdfPage>
       {/* Header */}
       <View style={styles.headerContainer} fixed>
-        <Text style={styles.title} hyphenationCallback={(word) => [word]}>การประเมินคุณภาพการอ่าน คิด วิเคราะห์ และเขียน ของนักเรียนระดับชั้นมัธยมศึกษาปีที่ 1 - 3</Text>
-        <Text style={styles.subtitle} hyphenationCallback={(word) => [word]}>
+        <Text style={styles.title} hyphenationCallback={disableHyphenation}>การประเมินคุณภาพการอ่าน คิด วิเคราะห์ และเขียน ของนักเรียนระดับชั้นมัธยมศึกษาปีที่ 1 - 3</Text>
+        <Text style={styles.subtitle} hyphenationCallback={disableHyphenation}>
           ชั้นมัธยมศึกษาปีที่ {curriculumClassDisplay.replace(/[^0-9]/g, '')} {formattedSchoolName} ปีการศึกษา {academicYear || '2568'}
         </Text>
       </View>
 
       {/* Scope Section */}
       <View style={styles.scopeContainer}>
-        <Text style={styles.scopeTitle} hyphenationCallback={(word) => [word]}>ขอบเขตการประเมิน</Text>
-        <Text style={styles.scopeContent} hyphenationCallback={(word) => [word]}>
-          {formatThaiText('การอ่านจากสื่อสิ่งพิมพ์และสื่ออิเล็กทรอนิกส์ที่ให้ข้อมูลสารสนเทศ ข้อคิด ความรู้เกี่ยวกับสังคมและสิ่งแวดล้อมที่เอื้อให้ผู้อ่านนำไปคิดวิเคราะห์ วิจารณ์ สรุปแนวคิดคุณค่าที่นำไปประยุกต์ใช้ด้วยวิจารณญาณและถ่ายทอดเป็นข้อเขียนเชิงสร้างสรรค์ด้วยภาษาที่ถูกต้องเหมาะสม')}
-        </Text>
+        <Text style={styles.scopeTitle} hyphenationCallback={disableHyphenation}>ขอบเขตการประเมิน</Text>
+        <ThaiText
+          style={styles.scopeContent}
+          maxUnits={158}
+          text="การอ่านจากสื่อสิ่งพิมพ์และสื่ออิเล็กทรอนิกส์ที่ให้ข้อมูลสารสนเทศ ข้อคิด ความรู้เกี่ยวกับสังคมและสิ่งแวดล้อมที่เอื้อให้ผู้อ่านนำไปคิดวิเคราะห์ วิจารณ์ สรุปแนวคิดคุณค่าที่นำไปประยุกต์ใช้ด้วยวิจารณญาณและถ่ายทอดเป็นข้อเขียนเชิงสร้างสรรค์ด้วยภาษาที่ถูกต้องเหมาะสม"
+        />
       </View>
 
       {/* Table */}
       <View style={styles.tableContainer}>
         {/* Table Header Row 1 */}
         <View style={styles.row} fixed>
-          <View style={[styles.cell, styles.headerCell, styles.colStandard]}>
-            <Text hyphenationCallback={(word) => [word]}>มาตรฐาน</Text>
+          <View style={[styles.cell, styles.headerCell, styles.colStandard, { minHeight: 48 }]}>
+            <Text hyphenationCallback={disableHyphenation}>มาตรฐาน</Text>
           </View>
-          <View style={[styles.cell, styles.headerCell, styles.colIndicator]}>
-            <Text hyphenationCallback={(word) => [word]}>ตัวชี้วัด</Text>
+          <View style={[styles.cell, styles.headerCell, styles.colIndicator, { minHeight: 48 }]}>
+            <Text hyphenationCallback={disableHyphenation}>ตัวชี้วัด</Text>
           </View>
-          <View style={[styles.cell, styles.headerCell, { width: '68%', borderRightWidth: 0 }]}>
-            <Text hyphenationCallback={(word) => [word]}>ระดับคุณภาพ</Text>
-          </View>
-        </View>
-
-        {/* Table Header Row 2 (Levels) */}
-        <View style={styles.row} fixed>
-          <View style={[styles.cell, styles.headerCell, styles.colStandard]}><Text hyphenationCallback={(word) => [word]} /></View>
-          <View style={[styles.cell, styles.headerCell, styles.colIndicator]}><Text hyphenationCallback={(word) => [word]} /></View>
-          <View style={[styles.cell, styles.headerCell, styles.colRubric]}>
-            <Text hyphenationCallback={(word) => [word]}>3 (ดีเยี่ยม)</Text>
-          </View>
-          <View style={[styles.cell, styles.headerCell, styles.colRubric]}>
-            <Text hyphenationCallback={(word) => [word]}>2 (ดี)</Text>
-          </View>
-          <View style={[styles.cell, styles.headerCell, styles.colRubric]}>
-            <Text hyphenationCallback={(word) => [word]}>1 (ผ่านเกณฑ์)</Text>
-          </View>
-          <View style={[styles.cell, styles.headerCell, styles.colRubric, { borderRightWidth: 0 }]}>
-            <Text hyphenationCallback={(word) => [word]}>0 (ปรับปรุง)</Text>
+          <View style={[styles.rubricHeaderGroup, { flexDirection: 'column' }]}>
+            <View style={[styles.cell, styles.headerCell, { width: '100%', minHeight: 24, borderBottomWidth: 1, borderBottomColor: '#000', borderRightWidth: 0 }]}>
+              <Text hyphenationCallback={disableHyphenation}>ระดับคุณภาพ</Text>
+            </View>
+            <View style={{ flexDirection: 'row', width: '100%', minHeight: 24 }}>
+              <View style={[styles.cell, styles.headerCell, { width: '25%' }]}>
+                <Text hyphenationCallback={disableHyphenation}>3 (ดีเยี่ยม)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%' }]}>
+                <Text hyphenationCallback={disableHyphenation}>2 (ดี)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%' }]}>
+                <Text hyphenationCallback={disableHyphenation}>1 (ผ่านเกณฑ์)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%', borderRightWidth: 0 }]}>
+                <Text hyphenationCallback={disableHyphenation}>0 (ปรับปรุง)</Text>
+              </View>
+            </View>
           </View>
         </View>
 
         {/* Table Body */}
-        {(readingWritingCriteria && readingWritingCriteria.length > 0 ? readingWritingCriteria : READING_WRITING_CRITERIA).map((criteria, cIdx) => (
-          <View key={criteria.id || cIdx} style={[styles.row, { borderBottomWidth: cIdx === (readingWritingCriteria?.length || READING_WRITING_CRITERIA.length) - 1 ? 0 : 1 }]} wrap={false}>
+        {(readingWritingCriteria && readingWritingCriteria.length > 0 ? readingWritingCriteria : READING_WRITING_CRITERIA).map((criteria, cIdx, criteriaList) => (
+          <View
+            key={criteria.id || cIdx}
+            style={[
+              styles.row,
+              {
+                borderBottomWidth: cIdx === criteriaList.length - 1 ? 0 : 1,
+                height: getCriteriaRowHeight(criteria, cIdx),
+              },
+            ]}
+            wrap={false}
+          >
             {/* Standard Column */}
             <View style={[styles.cell, styles.colStandard]}>
-              <Text style={styles.textHeader} hyphenationCallback={(word) => [word]}>{cIdx + 1}. {formatThaiText(criteria.standard)}</Text>
+              <Text style={styles.textHeader} hyphenationCallback={disableHyphenation}>{cIdx + 1}. {sanitizeThaiText(criteria.standard)}</Text>
             </View>
 
             {/* Nested Content for Indicators and Rubrics */}
@@ -230,25 +315,29 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
               {(criteria.indicators || []).map((indicator, iIdx) => (
                 <View key={iIdx} style={[
                   styles.nestedRow, 
-                  { borderBottomWidth: iIdx === (criteria.indicators?.length || 0) - 1 ? 0 : 1, borderRightWidth: 0 }
+                  {
+                    borderBottomWidth: iIdx === (criteria.indicators?.length || 0) - 1 ? 0 : 1,
+                    borderRightWidth: 0,
+                    height: getIndicatorRowHeight(cIdx, iIdx),
+                  }
                 ]}>
                   {/* Indicator Cell */}
-                  <View style={[styles.cell, { width: '26.087%' }]}>
-                    <Text style={styles.textContent} hyphenationCallback={(word) => [word]}>{formatThaiText(`${cIdx + 1}.${iIdx + 1} ${indicator.text}`)}</Text>
+                  <View style={[styles.cell, { width: '18.092%' }]}>
+                    <ThaiText style={styles.textContent} maxUnits={22.8} text={`${cIdx + 1}.${iIdx + 1} ${indicator.text}`} />
                   </View>
                   
                   {/* Rubric Cells */}
-                  <View style={[styles.cell, { width: '18.4783%' }]}>
-                    <Text style={styles.textRubric} hyphenationCallback={(word) => [word]}>{formatThaiText(indicator.rubric[3])}</Text>
+                  <View style={[styles.cell, { width: '20.477%' }]}>
+                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[3]} />
                   </View>
-                  <View style={[styles.cell, { width: '18.4783%' }]}>
-                    <Text style={styles.textRubric} hyphenationCallback={(word) => [word]}>{formatThaiText(indicator.rubric[2])}</Text>
+                  <View style={[styles.cell, { width: '20.477%' }]}>
+                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[2]} />
                   </View>
-                  <View style={[styles.cell, { width: '18.4783%' }]}>
-                    <Text style={styles.textRubric} hyphenationCallback={(word) => [word]}>{formatThaiText(indicator.rubric[1])}</Text>
+                  <View style={[styles.cell, { width: '20.477%' }]}>
+                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[1]} />
                   </View>
-                  <View style={[styles.cell, { width: '18.4783%', borderRightWidth: 0 }]}>
-                    <Text style={styles.textRubric} hyphenationCallback={(word) => [word]}>{formatThaiText(indicator.rubric[0])}</Text>
+                  <View style={[styles.cell, { width: '20.477%', borderRightWidth: 0 }]}>
+                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[0]} />
                   </View>
                 </View>
               ))}

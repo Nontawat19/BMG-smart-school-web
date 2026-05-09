@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Page } from '@react-pdf/renderer';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { styles } from './HomeVisitPdfStyles';
 import { formatFullTitle } from './utils';
 import { Teacher } from './types';
@@ -48,7 +49,7 @@ const SummaryPage2: React.FC<SummaryPage2Props> = ({ stats, teacherName, teacher
             'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
             'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
         ];
-        return `${today.getDate()} ${thaiMonths[today.getMonth()]} พ.ศ. ${today.getFullYear() + 543}`;
+        return `${today.getDate()} ${thaiMonths[today.getMonth()]} พ.ศ. ${getCurrentThaiYear()}`;
     };
 
     const thaiDate = getThaiDate();

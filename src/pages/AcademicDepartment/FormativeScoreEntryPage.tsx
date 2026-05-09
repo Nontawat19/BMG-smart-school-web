@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useSelector } from "react-redux";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import BackButton from "@/components/Shared/BackButton";
 import { RootState } from "@/store";
 import { firestore as db } from "@/firebase";
@@ -31,7 +32,7 @@ import {
     Trophy,
     ChevronsRight
 } from "lucide-react";
-import { CLASSES } from "@/utils/schoolUtils";
+import { CLASSES, CLASS_FULL_NAMES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 import Swal from "sweetalert2";
 
 interface Student {
@@ -40,11 +41,12 @@ interface Student {
     lastName: string;
     studentNumber: string;
     room: string;
+    studentId?: string;
     title?: string;
 }
 
 interface AssessmentItem {
-    id: string;
+    id?: string;
     name: string;
     maxScore: number;
     term: 'pre-midterm' | 'post-midterm';
@@ -61,6 +63,7 @@ interface Course {
     formativeWeight?: number;
     midtermWeight?: number;
     finalWeight?: number;
+    semester?: string;
 }
 
 interface GradeRecord {
@@ -72,15 +75,119 @@ interface GradeRecord {
     updatedBy?: string;
 }
 
+const getAssessmentKey = (assessment: AssessmentItem) => assessment.id || assessment.name;
+const normalizeRoom = (room: unknown) => {
+    const value = String(room ?? "").trim();
+    if (!value) return "";
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? String(numeric) : value.toLowerCase();
+};
+const courseMatchesRoom = (courseRooms: unknown, selectedRoom: string) => {
+    if (!selectedRoom || selectedRoom === 'all') return true;
+    if (!Array.isArray(courseRooms) || courseRooms.length === 0) return true;
+
+    const normalizedRooms = courseRooms.map(room => normalizeRoom(room));
+    return normalizedRooms.includes('all') || normalizedRooms.includes(normalizeRoom(selectedRoom));
+};
+
+const matchesLevel = (courseClassId: any, selectedLevel: any): boolean => {
+    if (!selectedLevel || selectedLevel === "ทั้งหมด") return true;
+    if (!courseClassId) return false;
+
+    if (Array.isArray(courseClassId)) {
+        return courseClassId.some(level => matchesLevel(level, selectedLevel));
+    }
+    
+    // Normalize for comparison
+    const normalizedId = String(courseClassId).toLowerCase().trim();
+    const normalizedSelected = String(selectedLevel || "").toLowerCase().trim();
+
+    // Direct match
+    if (normalizedId === normalizedSelected) return true;
+
+    // Group logic for "ม.ต้น"
+    if (normalizedSelected === "junior_high" || normalizedSelected === "ม.ต้น") {
+        return ["m1", "m2", "m3", "ม.1", "ม.2", "ม.3", "junior_high", "ม.ต้น"].includes(normalizedId);
+    }
+    
+    // Group logic for "ม.ปลาย"
+    if (normalizedSelected === "senior_high" || normalizedSelected === "ม.ปลาย") {
+        return ["m4", "m5", "m6", "ม.4", "ม.5", "ม.6", "senior_high", "ม.ปลาย"].includes(normalizedId);
+    }
+
+    // Individual grade mapping (English ID <-> Thai Label)
+    const gradeMap: Record<string, string[]> = {
+        k1: ['k1', 'อนุบาล 1', 'อ.1'], k2: ['k2', 'อนุบาล 2', 'อ.2'], k3: ['k3', 'อนุบาล 3', 'อ.3'],
+        p1: ['p1', 'ป.1'], p2: ['p2', 'ป.2'], p3: ['p3', 'ป.3'],
+        p4: ['p4', 'ป.4'], p5: ['p5', 'ป.5'], p6: ['p6', 'ป.6'],
+        m1: ['m1', 'ม.1'], m2: ['m2', 'ม.2'], m3: ['m3', 'ม.3'],
+        m4: ['m4', 'ม.4'], m5: ['m5', 'ม.5'], m6: ['m6', 'ม.6']
+    };
+
+    // Check if the selected level is one of our mapped grades
+    for (const [id, labels] of Object.entries(gradeMap)) {
+        if (id === normalizedSelected || labels.includes(normalizedSelected)) {
+            return labels.includes(normalizedId) || id === normalizedId;
+        }
+    }
+
+    return false;
+};
+
+const allClassOptions = Object.entries(CLASSES) as [string, string][];
+const toScoreNumber = (value: unknown) => value === "" || value === undefined || value === null ? 0 : Number(value) || 0;
+const normalizeFormativeDetails = (details?: Record<string, number | string>) => {
+    const normalized: Record<string, number> = {};
+    Object.entries(details || {}).forEach(([key, value]) => {
+        normalized[key] = toScoreNumber(value);
+    });
+    return normalized;
+};
+const getClassLevelVariants = (classKey: string) => {
+    return Array.from(new Set([
+        classKey,
+        CLASSES[classKey],
+        CLASS_FULL_NAMES[classKey]
+    ].filter(Boolean).map(String)));
+};
+
 const FormativeScoreEntryPage: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
+    const dispatch = useDispatch();
+
+    const { academicYear: calYear, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
+    const [academicYear, setAcademicYear] = useState<string>("");
+
+    useEffect(() => {
+        if (schoolId && calendarStatus === 'idle') {
+            dispatch(fetchCalendar(schoolId) as any);
+        }
+    }, [schoolId, calendarStatus, dispatch]);
+
+    useEffect(() => {
+        if (calendarStatus === 'succeeded' && calYear) {
+            setAcademicYear(calYear);
+        }
+    }, [calendarStatus, calYear]);
 
     // Filters
-    const [selectedLevel, setSelectedLevel] = useState(searchParams.get('level') || "");
+    const [selectedLevel, setSelectedLevel] = useState(() => {
+        const rawLevel = searchParams.get('level') || searchParams.get('classId') || "";
+        if (!rawLevel) return "";
+        // Pre-normalize if it's a label
+        const found = allClassOptions.find(([id, label]) => 
+            id.toLowerCase() === rawLevel.toLowerCase() || 
+            label.toLowerCase() === rawLevel.toLowerCase()
+        );
+        return found ? found[0] : rawLevel;
+    });
     const [selectedRoom, setSelectedRoom] = useState(searchParams.get('room') || "");
+    const [selectedSemester, setSelectedSemester] = useState(searchParams.get('semester') || "");
     const [selectedCourseId, setSelectedCourseId] = useState(searchParams.get('courseId') || "");
+    const [selectedGroup, setSelectedGroup] = useState(searchParams.get('groupId') || "");
+    const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>(allClassOptions);
 
     const [courses, setCourses] = useState<Course[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
@@ -88,22 +195,136 @@ const FormativeScoreEntryPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
+    const [availableGroups, setAvailableGroups] = useState<{ id: string; label: string }[]>([]);
     const [bulkValues, setBulkValues] = useState<Record<string, string>>({});
     const [rowBulkValues, setRowBulkValues] = useState<Record<string, string>>({});
+    const fetchStudentsRequestRef = useRef(0);
+
+    useEffect(() => {
+        if (!schoolId) return;
+
+        const fetchSchoolClassOptions = async () => {
+            try {
+                const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
+                if (!schoolSnap.exists()) {
+                    setAvailableClassOptions(allClassOptions);
+                    return;
+                }
+
+                const data = schoolSnap.data();
+                const options = getClassOptionsBySchoolSettings(
+                    data.opportunityExpansionLevel || "",
+                    data.schoolType || ""
+                );
+                setAvailableClassOptions(options.length > 0 ? options : allClassOptions);
+            } catch (err) {
+                console.error("Error fetching school class options:", err);
+                setAvailableClassOptions(allClassOptions);
+            }
+        };
+
+        fetchSchoolClassOptions();
+    }, [schoolId]);
+
+    useEffect(() => {
+        if (!selectedLevel || selectedLevel === "ทั้งหมด") return;
+
+        const exists = availableClassOptions.some(([id]) => id === selectedLevel);
+        if (!exists) {
+            // Try to normalize from label if it was set as a label
+            const found = availableClassOptions.find(([id, label]) => label === selectedLevel);
+            if (found) {
+                setSelectedLevel(found[0]);
+            } else {
+                setSelectedLevel("");
+                setSelectedCourseId("");
+                setSelectedGroup("");
+            }
+        }
+    }, [availableClassOptions, selectedLevel]);
 
     // Fetch Courses
     useEffect(() => {
         if (!schoolId) return;
         const fetchCourses = async () => {
             const coursesRef = collection(db, 'school-settings', schoolId, 'courses');
-            const snap = await getDocs(query(coursesRef, where('isActive', '!=', false)));
-            setCourses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
+            const snap = await getDocs(query(coursesRef));
+            setCourses(snap.docs
+                .map(d => ({ id: d.id, ...d.data() } as Course))
+                .filter(course => (course as any).isActive !== false)
+            );
         };
         fetchCourses();
     }, [schoolId]);
 
     // Derived State: Selected Course
     const currentCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
+
+    const filteredCourses = useMemo(() => {
+        return courses.filter(c => {
+            if (selectedLevel) {
+                if (!matchesLevel(c.classId, selectedLevel)) return false;
+            }
+
+            if (!courseMatchesRoom(c.room, selectedRoom)) {
+                return false;
+            }
+
+            if (selectedSemester) {
+                const isAnnualCourse = c.semester === '1-2' || c.semester === 'annual' || c.semester === '0' || !c.semester;
+                if (!isAnnualCourse && c.semester !== selectedSemester) return false;
+            }
+
+            if (searchTerm.trim()) {
+                const term = searchTerm.toLowerCase().trim();
+                return c.code.toLowerCase().includes(term) || c.title.toLowerCase().includes(term);
+            }
+
+            return true;
+        });
+    }, [courses, selectedLevel, selectedRoom, selectedSemester, searchTerm]);
+
+    useEffect(() => {
+        const fetchGroups = async () => {
+            if (!schoolId || !selectedCourseId || !academicYear) {
+                setAvailableGroups([]);
+                return;
+            }
+
+            const constraints = [
+                where('courseId', '==', selectedCourseId),
+                where('academicYear', '==', academicYear)
+            ];
+            if (selectedSemester && selectedSemester !== 'annual' && selectedSemester !== '0') {
+                constraints.push(where('semester', '==', selectedSemester));
+            }
+
+            const snap = await getDocs(query(collection(db, 'school-settings', schoolId, 'enrollments'), ...constraints));
+            const groupNames = Array.from(new Set(snap.docs.map(d => d.data().groupName as string).filter(Boolean)));
+            setAvailableGroups(groupNames.sort().map(name => ({ id: name, label: name })));
+        };
+
+        fetchGroups();
+    }, [schoolId, selectedCourseId, selectedSemester, academicYear]);
+
+    useEffect(() => {
+        if (selectedGroup && selectedGroup !== 'all' && availableGroups.length > 0 && !availableGroups.some(g => g.id === selectedGroup)) {
+            setSelectedGroup('');
+        }
+    }, [availableGroups, selectedGroup]);
+
+    useEffect(() => {
+        const params = new URLSearchParams();
+        if (selectedLevel) params.set('level', selectedLevel);
+        if (selectedRoom) params.set('room', selectedRoom);
+        if (selectedSemester) params.set('semester', selectedSemester);
+        if (selectedCourseId) params.set('courseId', selectedCourseId);
+        if (selectedGroup) params.set('groupId', selectedGroup);
+        const newStr = params.toString();
+        if (newStr !== searchParams.toString()) {
+            setSearchParams(params, { replace: true });
+        }
+    }, [selectedLevel, selectedRoom, selectedSemester, selectedCourseId, selectedGroup, searchParams, setSearchParams]);
     
     // Filtered Assessments (Pre-midterm only)
     const activeAssessments = useMemo(() => {
@@ -112,9 +333,12 @@ const FormativeScoreEntryPage: React.FC = () => {
     }, [currentCourse]);
 
     const totalMaxPossible = useMemo(() => activeAssessments.reduce((sum, a) => sum + a.maxScore, 0), [activeAssessments]);
+    const configuredFormativeMax = useMemo(() => currentCourse?.formativeAssessments?.reduce((sum, a) => sum + (Number(a.maxScore) || 0), 0) || 0, [currentCourse]);
 
     // Fetch Students & Grades
     useEffect(() => {
+        const requestId = ++fetchStudentsRequestRef.current;
+
         if (!schoolId || !selectedLevel || !selectedCourseId) {
             setStudents([]);
             setGrades({});
@@ -123,51 +347,99 @@ const FormativeScoreEntryPage: React.FC = () => {
         }
 
         setIsLoading(true);
-        const classTitle = CLASSES[selectedLevel] || selectedLevel;
-        const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-        let qStudents = query(studentsRef, where('classLevel', '==', classTitle));
-        if (selectedRoom && selectedRoom !== 'all') {
-            qStudents = query(studentsRef, where('classLevel', '==', classTitle), where('room', '==', selectedRoom));
-        }
-
         const fetchAll = async () => {
             try {
-                const [studentSnap, gradeSnap] = await Promise.all([
-                    getDocs(qStudents),
+                const classTitle = CLASSES[selectedLevel] || selectedLevel;
+                const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+                const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
+                const enrollmentConstraints = [
+                    where('courseId', '==', selectedCourseId),
+                    where('academicYear', '==', academicYear)
+                ];
+
+                if (selectedGroup && selectedGroup !== 'all') {
+                    enrollmentConstraints.push(where('groupName', '==', selectedGroup));
+                }
+
+                if (selectedSemester && selectedSemester !== 'annual' && selectedSemester !== '0') {
+                    const isAnnualCourse = currentCourse?.semester === '1-2' || currentCourse?.semester === 'annual' || currentCourse?.semester === '0';
+                    if (!isAnnualCourse && currentCourse?.semester) {
+                        enrollmentConstraints.push(where('semester', '==', selectedSemester));
+                    }
+                }
+
+                const [enrollSnap, gradeSnap] = await Promise.all([
+                    getDocs(query(enrollmentsRef, ...enrollmentConstraints)),
                     getDocs(collection(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades'))
                 ]);
 
-                const studentList = studentSnap.docs.map(d => ({
-                    id: d.id,
-                    ...d.data(),
-                    studentNumber: String(d.data().number || d.data().classNumber || d.data().no || "")
-                } as Student)).sort((a, b) => parseInt(a.studentNumber) - parseInt(b.studentNumber));
+                let studentList: Student[] = [];
+
+                if (!enrollSnap.empty) {
+                    const enrolledStudentIds = Array.from(new Set(enrollSnap.docs.map(d => d.data().studentId as string).filter(Boolean)));
+                    const studentDetails: Student[] = [];
+
+                    for (let i = 0; i < enrolledStudentIds.length; i += 30) {
+                        const batchIds = enrolledStudentIds.slice(i, i + 30);
+                        const batchSnap = await getDocs(query(studentsRef, where('__name__', 'in', batchIds)));
+                        batchSnap.forEach(d => {
+                            const data = d.data();
+                            studentDetails.push({
+                                id: d.id,
+                                ...data,
+                                studentNumber: String(data.number || data.classNumber || data.no || data.studentNumber || ""),
+                                studentId: String(data.studentCode || data.studentId || d.id || ""),
+                                room: data.room || ""
+                            } as Student);
+                        });
+                    }
+                    studentList = studentDetails;
+                } else {
+                    const classLevelVariants = getClassLevelVariants(selectedLevel);
+                    const qStudents = query(studentsRef, where('classLevel', 'in', classLevelVariants));
+                    const studentSnap = await getDocs(qStudents);
+                    studentList = studentSnap.docs
+                        .map(d => ({
+                            id: d.id,
+                            ...d.data(),
+                            studentNumber: String(d.data().number || d.data().classNumber || d.data().no || d.data().studentNumber || ""),
+                            studentId: String(d.data().studentCode || d.data().studentId || d.id || ""),
+                            room: d.data().room || ""
+                        } as Student))
+                        .filter(s => matchesLevel((s as any).classLevel, selectedLevel));
+                }
+
+                if (selectedRoom && selectedRoom !== 'all') {
+                    studentList = studentList.filter(s => normalizeRoom(s.room) === normalizeRoom(selectedRoom));
+                }
+
+                studentList.sort((a, b) => parseInt(a.studentNumber) - parseInt(b.studentNumber));
 
                 const gradeMap: Record<string, GradeRecord> = {};
                 gradeSnap.forEach(d => {
                     gradeMap[d.id] = d.data() as GradeRecord;
                 });
 
+                if (requestId !== fetchStudentsRequestRef.current) return;
                 setStudents(studentList);
                 setGrades(gradeMap);
             } catch (err) {
                 console.error(err);
             } finally {
-                setIsLoading(false);
+                if (requestId === fetchStudentsRequestRef.current) {
+                    setIsLoading(false);
+                }
             }
         };
 
         fetchAll();
-    }, [schoolId, selectedLevel, selectedRoom, selectedCourseId]);
+    }, [schoolId, selectedLevel, selectedRoom, selectedSemester, selectedCourseId, selectedGroup, academicYear, currentCourse]);
 
     // Handlers
     const handleScoreChange = (studentId: string, assessmentId: string, value: string) => {
-        // Allow empty string for better typing experience
-        const numValue = value === "" ? 0 : parseFloat(value);
-        
         setGrades(prev => {
             const current = prev[studentId] || {};
-            const details = { ...(current.formativeDetails || {}), [assessmentId]: value === "" ? "" : numValue };
+            const details = { ...(current.formativeDetails || {}), [assessmentId]: value };
             return {
                 ...prev,
                 [studentId]: { ...current, formativeDetails: details }
@@ -176,13 +448,11 @@ const FormativeScoreEntryPage: React.FC = () => {
     };
 
     const handleMidtermChange = (studentId: string, value: string) => {
-        const numValue = value === "" ? 0 : parseFloat(value);
-
         setGrades(prev => {
             const current = prev[studentId] || {};
             return {
                 ...prev,
-                [studentId]: { ...current, midterm: value === "" ? "" : numValue }
+                [studentId]: { ...current, midterm: value }
             };
         });
     };
@@ -213,25 +483,29 @@ const FormativeScoreEntryPage: React.FC = () => {
             const current = next[studentId] || {};
             
             let remaining = numValue;
-            const newDetails: Record<string, any> = {};
-            activeAssessments.forEach(a => { newDetails[a.id] = 0; });
+            const newDetails: Record<string, any> = { ...(current.formativeDetails || {}) };
+            activeAssessments.forEach(a => { newDetails[getAssessmentKey(a)] = 0; });
 
             while (remaining > 0) {
-                const canTakeMore = activeAssessments.filter(a => (newDetails[a.id] || 0) < a.maxScore);
+                const canTakeMore = activeAssessments.filter(a => (newDetails[getAssessmentKey(a)] || 0) < a.maxScore);
                 if (canTakeMore.length === 0) break;
 
                 const amountPerSlot = Math.floor(remaining / canTakeMore.length);
                 if (amountPerSlot === 0) {
                     for (let i = 0; i < remaining && i < canTakeMore.length; i++) {
-                        newDetails[canTakeMore[i].id]++;
+                        const assessment = canTakeMore[i];
+                        if (!assessment) continue;
+                        const key = getAssessmentKey(assessment);
+                        newDetails[key]++;
                     }
                     remaining = 0;
                 } else {
                     let assignedInRound = 0;
                     canTakeMore.forEach(a => {
-                        const capacity = a.maxScore - (newDetails[a.id] || 0);
+                        const key = getAssessmentKey(a);
+                        const capacity = a.maxScore - (newDetails[key] || 0);
                         const assign = Math.min(amountPerSlot, capacity);
-                        newDetails[a.id] = (newDetails[a.id] || 0) + assign;
+                        newDetails[key] = (newDetails[key] || 0) + assign;
                         assignedInRound += assign;
                     });
                     remaining -= assignedInRound;
@@ -248,7 +522,7 @@ const FormativeScoreEntryPage: React.FC = () => {
         const record = grades[studentId] || {};
         const details = record.formativeDetails || {};
         
-        const formativeTotal = activeAssessments.reduce((sum, a) => sum + (parseFloat(details[a.id] as any) || 0), 0);
+        const formativeTotal = activeAssessments.reduce((sum, a) => sum + (parseFloat(details[getAssessmentKey(a)] as any) || 0), 0);
         const midterm = parseFloat(record.midterm as any) || 0;
         const part1Total = formativeTotal + midterm;
         
@@ -266,8 +540,8 @@ const FormativeScoreEntryPage: React.FC = () => {
                 const ref = doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', student.id);
                 batch.set(ref, {
                     ...record,
-                    midterm: Number(record.midterm || 0),
-                    formativeDetails: record.formativeDetails || {},
+                    midterm: toScoreNumber(record.midterm),
+                    formativeDetails: normalizeFormativeDetails(record.formativeDetails),
                     updatedAt: serverTimestamp(),
                     updatedBy: (currentUser as any)?.displayName || (currentUser as any)?.email
                 }, { merge: true });
@@ -283,10 +557,16 @@ const FormativeScoreEntryPage: React.FC = () => {
     };
 
     const filteredStudents = useMemo(() => {
-        return students.filter(s => 
-            `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            s.studentNumber.includes(searchTerm)
-        );
+        const term = searchTerm.toLowerCase().trim();
+        if (!term) return students;
+
+        return students.filter(s => {
+            const fullName = `${s.firstName} ${s.lastName}`.toLowerCase();
+            const studentNumber = String(s.studentNumber || "").toLowerCase();
+            const studentCode = String(s.studentId || "").toLowerCase();
+
+            return fullName.includes(term) || studentNumber.includes(term) || studentCode.includes(term);
+        });
     }, [students, searchTerm]);
 
     return (
@@ -295,37 +575,41 @@ const FormativeScoreEntryPage: React.FC = () => {
                 
                 {/* Premium Header Bar */}
                 <div className="sticky top-[60px] z-40 px-4 lg:pl-16 py-3 bg-white/90 dark:bg-[#0b0e14]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
-                    <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-4">
+                    <div className="max-w-[1600px] mx-auto flex flex-row items-center gap-3 overflow-hidden">
                         
                         {/* Title & Course Info */}
-                        <div className="flex items-center gap-4 min-w-fit">
-                            <BackButton to="/academic-admin" />
-                            <div className="flex flex-col">
+                        <div className="flex items-center gap-3 w-[320px] min-w-0 shrink-0">
+                            <BackButton to="/academic/hub/evaluation" />
+                            <div className="flex flex-col min-w-0">
                                 <div className="flex items-center gap-2">
                                     <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">บันทึกคะแนน</h1>
                                     <span className="px-2 py-0.5 bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-tighter rounded-md border border-indigo-500/20">ก่อนกลางภาค</span>
                                 </div>
-                                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest min-w-0">
                                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                                    {currentCourse ? <span className="text-slate-600 dark:text-slate-400">{currentCourse.code} • {currentCourse.title}</span> : "โปรดเลือกรายวิชา"}
+                                    {currentCourse ? <span className="text-slate-600 dark:text-slate-400 truncate">{currentCourse.code} • {currentCourse.title}</span> : "โปรดเลือกรายวิชา"}
                                 </div>
                             </div>
                         </div>
 
                         {/* Control Center */}
-                        <div className="flex flex-1 items-center justify-end gap-3">
+                        <div className="flex flex-1 min-w-0 flex-nowrap items-center gap-3">
                             
                             {/* Filter Group */}
-                            <div className="flex items-center bg-slate-100 dark:bg-white/5 p-1 rounded-2xl border border-slate-200 dark:border-white/5 shadow-inner">
+                            <div className="flex flex-1 min-w-0 flex-nowrap items-center bg-slate-100 dark:bg-white/5 p-1 rounded-2xl border border-slate-200 dark:border-white/5 shadow-inner">
                                 <div className="flex items-center gap-1 px-3 py-1.5 border-r border-slate-200 dark:border-white/5">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ชั้น</span>
                                     <select 
                                         value={selectedLevel}
-                                        onChange={(e) => setSelectedLevel(e.target.value)}
+                                        onChange={(e) => {
+                                            setSelectedLevel(e.target.value);
+                                            setSelectedCourseId("");
+                                            setSelectedGroup("");
+                                        }}
                                         className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors"
                                     >
                                         <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">เลือก</option>
-                                        {Object.entries(CLASSES).map(([id, name]) => (
+                                        {availableClassOptions.map(([id, name]) => (
                                             <option key={id} value={id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{name}</option>
                                         ))}
                                     </select>
@@ -337,40 +621,68 @@ const FormativeScoreEntryPage: React.FC = () => {
                                         onChange={(e) => setSelectedRoom(e.target.value)}
                                         className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทั้งหมด</option>
+                                        <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทั้งหมด</option>
                                         {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
-                                            <option key={r} value={r} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{r}</option>
+                                            <option key={r} value={String(r)} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{r}</option>
                                         ))}
                                     </select>
                                 </div>
-                                <div className="flex items-center gap-1 px-3 py-1.5 min-w-[220px]">
+                                <div className="flex items-center gap-1 px-3 py-1.5 border-r border-slate-200 dark:border-white/5">
+                                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ภาค</span>
+                                    <select 
+                                        value={selectedSemester}
+                                        onChange={(e) => {
+                                            setSelectedSemester(e.target.value);
+                                            setSelectedCourseId("");
+                                            setSelectedGroup("");
+                                        }}
+                                        className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors"
+                                    >
+                                        <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทั้งหมด</option>
+                                        <option value="1" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">1</option>
+                                        <option value="2" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">2</option>
+                                        <option value="annual" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">รายปี</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-1 items-center gap-1 px-3 py-1.5 min-w-[170px] border-r border-slate-200 dark:border-white/5">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">วิชา</span>
                                     <select 
                                         value={selectedCourseId}
-                                        onChange={(e) => setSelectedCourseId(e.target.value)}
+                                        onChange={(e) => {
+                                            setSelectedCourseId(e.target.value);
+                                            setSelectedGroup("");
+                                        }}
                                         className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors w-full"
                                         disabled={!selectedLevel}
                                     >
                                         <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">เลือกวิชา</option>
-                                        {courses
-                                            .filter(c => {
-                                                if (Array.isArray(c.classId)) return c.classId.includes(selectedLevel);
-                                                return c.classId === selectedLevel;
-                                            })
-                                            .map(c => (
-                                                <option key={c.id} value={c.id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{c.code} - {c.title}</option>
-                                            ))
-                                        }
+                                        {filteredCourses.map(c => (
+                                            <option key={c.id} value={c.id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{c.code} - {c.title}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-1 px-3 py-1.5 min-w-0 w-[130px]">
+                                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</span>
+                                    <select 
+                                        value={selectedGroup}
+                                        onChange={(e) => setSelectedGroup(e.target.value)}
+                                        className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors w-full disabled:opacity-40"
+                                        disabled={!selectedCourseId || availableGroups.length === 0}
+                                    >
+                                        <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทุกกลุ่ม</option>
+                                        {availableGroups.map(g => (
+                                            <option key={g.id} value={g.id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{g.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                             </div>
 
                             {/* Search */}
-                            <div className="relative group min-w-[180px]">
+                            <div className="relative group w-[220px] shrink-0">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
                                 <input 
                                     type="text"
-                                    placeholder="ค้นหานักเรียน..."
+                                    placeholder="ค้นหาวิชา/นักเรียน..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl py-2 pl-10 pr-4 text-[12px] font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
@@ -378,10 +690,10 @@ const FormativeScoreEntryPage: React.FC = () => {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-nowrap items-center gap-2 shrink-0">
                                 <Link 
-                                    to={`/academic/post-midterm-scores?level=${selectedLevel}&room=${selectedRoom}&courseId=${selectedCourseId}`}
-                                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-white rounded-xl text-[12px] font-black border border-slate-200 dark:border-white/5 transition-all group whitespace-nowrap"
+                                    to={`/academic/post-midterm-scores?level=${selectedLevel}&room=${selectedRoom}&semester=${selectedSemester}&courseId=${selectedCourseId}&groupId=${selectedGroup}`}
+                                    className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-white rounded-xl text-[12px] font-black border border-slate-200 dark:border-white/5 transition-all group whitespace-nowrap"
                                 >
                                     ถัดไป
                                     <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
@@ -390,7 +702,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                 <button 
                                     onClick={handleSave}
                                     disabled={isSaving || !selectedCourseId}
-                                    className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800/50 disabled:text-slate-500 text-white rounded-xl text-[12px] font-black shadow-lg shadow-indigo-600/20 transition-all border border-indigo-400/20 active:scale-95 whitespace-nowrap"
+                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800/50 disabled:text-slate-500 text-white rounded-xl text-[12px] font-black shadow-lg shadow-indigo-600/20 transition-all border border-indigo-400/20 active:scale-95 whitespace-nowrap"
                                 >
                                     <Save size={16} />
                                     บันทึกข้อมูล
@@ -448,35 +760,39 @@ const FormativeScoreEntryPage: React.FC = () => {
                                             </th>
                                             
                                             <th rowSpan={2} className="px-2 py-4 w-[70px] text-center border-r border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-slate-800/30 text-slate-600 dark:text-slate-400">รวมเก็บ ({activeAssessments.reduce((s, a) => s + a.maxScore, 0)})</th>
-                                            <th rowSpan={2} className="px-2 py-4 w-[70px] text-center border-r border-slate-200 dark:border-white/5 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">กลางภาค ({currentCourse?.midtermWeight || 20})</th>
+                                            <th rowSpan={2} className="px-2 py-4 w-[70px] text-center border-r border-slate-200 dark:border-white/5 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">กลางภาค ({currentCourse?.midtermWeight ?? 0})</th>
                                             <th rowSpan={2} className="px-2 py-4 w-[80px] text-center bg-indigo-500/10 text-indigo-900 dark:text-white font-black text-[12px]">รวมส่วน 1</th>
                                         </tr>
                                         <tr className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5">
-                                            {activeAssessments.map(a => (
-                                                <th key={a.id} className="px-0.5 py-3 text-center border-r border-slate-200 dark:border-white/5 bg-indigo-500/5 w-[40px]">
+                                            {activeAssessments.map(a => {
+                                                const assessmentKey = getAssessmentKey(a);
+                                                return (
+                                                <th key={assessmentKey} className="px-0.5 py-3 text-center border-r border-slate-200 dark:border-white/5 bg-indigo-500/5 w-[40px]">
                                                     <div className="flex flex-col items-center gap-0.5">
                                                         <span className="text-slate-600 dark:text-white/80">{a.name}</span>
                                                         <span className="text-indigo-600/60 dark:text-indigo-400/60 font-bold">/{a.maxScore}</span>
                                                     </div>
                                                 </th>
-                                            ))}
+                                            )})}
                                         </tr>
                                         {/* Bulk Fill Inputs */}
                                         <tr className="bg-slate-200 dark:bg-[#1c2132] border-b border-slate-200 dark:border-white/5">
                                             <td className="sticky left-0 bg-slate-200 dark:bg-[#1c2132] z-20 border-r border-slate-300 dark:border-white/5"></td>
                                             <td className="sticky left-[60px] bg-slate-200 dark:bg-[#1c2132] z-20 border-r border-slate-300 dark:border-white/5"></td>
                                             <td className="sticky left-[240px] bg-slate-200 dark:bg-[#1c2132] z-20 border-r border-slate-300 dark:border-white/5 px-2 py-2 text-[10px] font-black text-indigo-600 dark:text-indigo-400/60 text-center whitespace-nowrap">กรอกทั้งคอลัมน์ →</td>
-                                            {activeAssessments.map(a => (
-                                                <td key={`bulk-${a.id}`} className="px-1 py-1 border-r border-slate-300 dark:border-white/5">
+                                            {activeAssessments.map(a => {
+                                                const assessmentKey = getAssessmentKey(a);
+                                                return (
+                                                <td key={`bulk-${assessmentKey}`} className="px-1 py-1 border-r border-slate-300 dark:border-white/5">
                                                     <input 
                                                         type="text" 
                                                         placeholder="0"
-                                                        value={bulkValues[a.id] || ""}
-                                                        onChange={(e) => handleBulkFill(a.id, e.target.value)}
+                                                        value={bulkValues[assessmentKey] || ""}
+                                                        onChange={(e) => handleBulkFill(assessmentKey, e.target.value)}
                                                         className="w-full bg-indigo-500/10 border border-indigo-500/20 text-center text-[11px] font-black text-indigo-600 dark:text-indigo-400 py-1 rounded-lg outline-none focus:border-indigo-400/50"
                                                     />
                                                 </td>
-                                            ))}
+                                            )})}
                                             <td colSpan={3} className="bg-transparent"></td>
                                         </tr>
                                     </thead>
@@ -494,7 +810,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                                     <td className="px-6 py-3 border-r border-slate-200 dark:border-white/5 bg-white dark:bg-[#161a27] sticky left-[60px] z-10 group-hover:bg-slate-50 dark:group-hover:bg-[#1c2132]">
                                                         <div className="flex flex-col">
                                                             <span className="text-[12px] font-bold text-slate-900 dark:text-white">{student.title}{student.firstName} {student.lastName}</span>
-                                                            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ID: {student.id.substring(0, 8)}</span>
+                                                            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">รหัสนักเรียน: {student.studentId || student.id.substring(0, 8)}</span>
                                                         </div>
                                                     </td>
                                                     <td className="px-1 py-3 border-r border-slate-200 dark:border-white/5 text-center bg-white dark:bg-[#161a27] sticky left-[240px] z-10 group-hover:bg-slate-50 dark:group-hover:bg-[#1c2132]">
@@ -511,31 +827,33 @@ const FormativeScoreEntryPage: React.FC = () => {
                                                         />
                                                     </td>
 
-                                                    {activeAssessments.map(a => (
-                                                        <td key={`${student.id}-${a.id}`} className={`px-0.5 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(details[a.id]) || 0) > a.maxScore ? 'bg-red-500/10' : 'bg-white/[0.01]' }`}>
+                                                    {activeAssessments.map(a => {
+                                                        const assessmentKey = getAssessmentKey(a);
+                                                        return (
+                                                        <td key={`${student.id}-${assessmentKey}`} className={`px-0.5 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(details[assessmentKey]) || 0) > a.maxScore ? 'bg-red-500/10' : 'bg-white/[0.01]' }`}>
                                                             <input 
                                                                 type="text"
-                                                                value={details[a.id] ?? ""}
-                                                                onChange={(e) => handleScoreChange(student.id, a.id, e.target.value)}
+                                                                value={details[assessmentKey] ?? ""}
+                                                                onChange={(e) => handleScoreChange(student.id, assessmentKey, e.target.value)}
                                                                 className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${
-                                                                    (Number(details[a.id]) || 0) > a.maxScore ? 'text-red-500' : 'text-slate-900 dark:text-white'
+                                                                    (Number(details[assessmentKey]) || 0) > a.maxScore ? 'text-red-500' : 'text-slate-900 dark:text-white'
                                                                 }`}
                                                                 placeholder="0"
                                                             />
                                                         </td>
-                                                    ))}
+                                                    )})}
 
                                                     <td className="px-2 py-3 text-center border-r border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-slate-800/20 text-[12px] font-black text-slate-500 dark:text-slate-400">
                                                         {formativeTotal}
                                                     </td>
 
-                                                    <td className={`px-1 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(record.midterm) || 0) > (currentCourse?.midtermWeight || 20) ? 'bg-red-500/10' : 'bg-emerald-500/[0.02]' }`}>
+                                                    <td className={`px-1 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'bg-red-500/10' : 'bg-emerald-500/[0.02]' }`}>
                                                         <input 
                                                             type="text"
                                                             value={record.midterm ?? ""}
                                                             onChange={(e) => handleMidtermChange(student.id, e.target.value)}
                                                             className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${
-                                                                (Number(record.midterm) || 0) > (currentCourse?.midtermWeight || 20) ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'
+                                                                (Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'
                                                             }`}
                                                             placeholder="0"
                                                         />
@@ -562,7 +880,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                 {currentCourse && (
                                     <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400/80">
                                         <Info size={14} />
-                                        <span className="text-[10px] font-bold">สัดส่วนคะแนน: เก็บ {currentCourse.formativeWeight || 60} / กลางภาค {currentCourse.midtermWeight || 20} / ปลายภาค {currentCourse.finalWeight || 20}</span>
+                                        <span className="text-[10px] font-bold">สัดส่วนคะแนน: เก็บ {configuredFormativeMax || currentCourse.formativeWeight || 0} / กลางภาค {currentCourse.midtermWeight ?? 0} / ปลายภาค {currentCourse.finalWeight ?? 0}</span>
                                     </div>
                                 )}
                             </div>
@@ -577,6 +895,8 @@ const FormativeScoreEntryPage: React.FC = () => {
                 </div>
 
                 <style>{`
+                    .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+                    .no-scrollbar::-webkit-scrollbar { display: none; }
                     .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
                     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }

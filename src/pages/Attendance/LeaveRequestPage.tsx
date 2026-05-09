@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { firestore } from "@/firebase";
 import {
   collection,
@@ -22,6 +23,7 @@ import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 
 // ... (Interface StudentOption และ CustomStyles ไม่มีการเปลี่ยนแปลง)
 
@@ -150,7 +152,8 @@ const ThaiDatePicker: React.FC<{
   const displayValue = value
     ? (() => {
       const [y, m, d] = value.split('-').map(Number);
-      return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
+      const date = new Date(y, m - 1, d);
+      return `${d} ${thaiMonths[m - 1]} ${getThaiYear(date)}`;
     })()
     : '';
 
@@ -169,7 +172,7 @@ const ThaiDatePicker: React.FC<{
           <div className="flex justify-between items-center mb-4">
             <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
-              {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
+              {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
             </span>
             <button type="button" onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
           </div>
@@ -190,13 +193,18 @@ const ThaiDatePicker: React.FC<{
 };
 
 const LeaveRequestPage: React.FC = () => {
+  const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
+
+  // Redux Calendar State
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const reduxRawData = calendarState.rawData;
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<StudentOption | null>(
     null
   );
-  const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
+  const currentAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
   const [leaveType, setLeaveType] = useState<"ลากิจ" | "ลาป่วย">("ลาป่วย");
   const [startDate, setStartDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -276,35 +284,29 @@ const LeaveRequestPage: React.FC = () => {
     fetchStudents();
   }, [schoolId]);
 
-  // Fetch calendar data (Firestore first, then Google Calendar API fallback)
+  // Fetch calendar data
   useEffect(() => {
-    if (!schoolId) return;
+    if (schoolId) {
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, dispatch]);
 
-    const fetchCalendar = async () => {
-      try {
-        const docRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.events) {
-            setCalendarEvents(data.events);
-          }
-          if (data.academicYear) {
-            setCurrentAcademicYear(data.academicYear);
-          }
-        }
+  // Sync from Redux Calendar
+  useEffect(() => {
+    if (calendarState.status === 'succeeded' && reduxRawData.events) {
+      setCalendarEvents(reduxRawData.events);
+    }
+  }, [calendarState.status, reduxRawData]);
 
-        // Fallback: Fetch from Google Calendar API if Firestore is empty/missing or no events
-        const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
-        if (apiKey) {
-          fetchGoogleCalendar(apiKey);
-        }
-      } catch (error) {
-        console.error("Error fetching calendar:", error);
+  // Fallback Google Calendar logic
+  useEffect(() => {
+    if (schoolId && (!calendarEvents || Object.keys(calendarEvents).length === 0)) {
+      const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
+      if (apiKey) {
+        fetchGoogleCalendar(apiKey);
       }
-    };
-    fetchCalendar();
-  }, [schoolId]);
+    }
+  }, [schoolId, calendarEvents]);
 
   const fetchGoogleCalendar = async (apiKey: string) => {
     try {

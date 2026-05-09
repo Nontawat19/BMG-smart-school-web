@@ -18,7 +18,6 @@ import {
   Clock,
   Calendar,
   Users,
-  ArrowLeft,
   MoreHorizontal,
   LayoutGrid,
   ChevronDown,
@@ -91,6 +90,7 @@ const ViewCoursesPage: React.FC = () => {
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
   const [selectedActiveFilter, setSelectedActiveFilter] = useState<string>('all'); // 'all', 'active', 'inactive'
+  const [selectedSubjectGroupFilter, setSelectedSubjectGroupFilter] = useState<string>('all');
   const [periodSettings, setPeriodSettings] = useState<any[]>([]);
 
   // Modal State
@@ -234,19 +234,13 @@ const ViewCoursesPage: React.FC = () => {
   // ✅ ดึง calendar (ภาคเรียนปัจจุบัน) จาก Redux
   const reduxCalendar = useSelector((state: RootState) => state.calendar);
   useEffect(() => {
-    if (reduxCalendar.status === 'succeeded' && reduxCalendar.rawData?.terms) {
+    if (reduxCalendar.status === 'succeeded' && reduxCalendar.terms.length > 0) {
       const today = new Date().toISOString().split('T')[0];
-      const term1 = reduxCalendar.rawData.terms?.term1;
-      const term2 = reduxCalendar.rawData.terms?.term2;
-      if (term1 && term1.startDate && term1.endDate) {
-        if (today >= term1.startDate && today <= term1.endDate) {
-          setSelectedSemester('1'); return;
-        }
-      }
-      if (term2 && term2.startDate && term2.endDate) {
-        if (today >= term2.startDate && today <= term2.endDate) {
-          setSelectedSemester('2'); return;
-        }
+      const currentTerm = reduxCalendar.terms.find(t => 
+        t.startDate && t.endDate && today >= t.startDate && today <= t.endDate
+      );
+      if (currentTerm) {
+        setSelectedSemester(currentTerm.id === 'term1' ? '1' : '2');
       }
     }
   }, [reduxCalendar.status, reduxCalendar.rawData]);
@@ -346,7 +340,7 @@ const ViewCoursesPage: React.FC = () => {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedRoomFilter, selectedSemester]);
+  }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedRoomFilter, selectedSemester, selectedSubjectGroupFilter]);
 
   const handleEdit = (course: Course) => {
     setEditingCourse(course);
@@ -655,14 +649,59 @@ const ViewCoursesPage: React.FC = () => {
 
       const matchesSemester = course.semester === selectedSemester || !course.semester; // Filter by semester
 
-      return matchesSearch && matchesClass && matchesTeacher && matchesRoom && matchesSemester;
-    });
-  }, [courses, searchTerm, selectedClassFilter, selectedTeacherFilter, teacherMap, selectedRoomFilter, selectedSemester]);
+      const matchesSubjectGroup = selectedSubjectGroupFilter === 'all' ||
+        course.subjectGroup === selectedSubjectGroupFilter ||
+        (course.subjectGroup && subjectGroupMap[course.subjectGroup] === selectedSubjectGroupFilter) ||
+        (subjectGroupMap[selectedSubjectGroupFilter] === (subjectGroupMap[course.subjectGroup || ''] || course.subjectGroup));
 
-  // Statistics
-  const totalCourses = filteredCourses.length;
-  const totalHours = filteredCourses.reduce((sum, course) => sum + (course.hoursPerWeek || 0), 0);
-  const uniqueTeachers = new Set(filteredCourses.map(c => c.teacherId)).size;
+      const matchesActive = selectedActiveFilter === 'all' || 
+        (selectedActiveFilter === 'active' && course.isActive) ||
+        (selectedActiveFilter === 'inactive' && !course.isActive);
+
+      return matchesSearch && matchesClass && matchesTeacher && matchesRoom && matchesSemester && matchesSubjectGroup && matchesActive;
+    });
+  }, [courses, searchTerm, selectedClassFilter, selectedTeacherFilter, teacherMap, selectedRoomFilter, selectedSemester, selectedSubjectGroupFilter, subjectGroupMap, selectedActiveFilter]);
+
+  // Statistics Analysis
+  const { totalCourses, totalHours, totalCredits, uniqueTeachers } = useMemo(() => {
+    let hoursSum = 0;
+    let creditsSum = 0;
+    let academicCoursesCount = 0;
+    const teachersSet = new Set();
+
+    filteredCourses.forEach(course => {
+      // ตรวจสอบว่าเป็นกิจกรรมพัฒนาผู้เรียนหรือไม่ (มักไม่มีหน่วยกิต และอยู่ในกลุ่มกิจกรรม)
+      const group = course.subjectGroup || "";
+      const groupName = (subjectGroupMap[group] || group).toLowerCase();
+      
+      const isActivity = 
+        groupName.includes("กิจกรรม") || 
+        groupName.includes("แนะแนว") || 
+        groupName.includes("ชุมนุม") ||
+        groupName.includes("homeroom") ||
+        groupName.includes("act") ||
+        course.title.includes("กิจกรรม") ||
+        course.title.includes("ชุมนุม");
+
+      // ถ้าเป็นกิจกรรม ไม่นำมานับรวมในภาระงานสอนและหน่วยกิตหลัก
+      if (isActivity) return;
+
+      const c = Number(course.credits || 0);
+      const h = course.credits ? Math.round(c * 2) : Number(course.hoursPerWeek || 0);
+      
+      creditsSum += c;
+      hoursSum += h;
+      academicCoursesCount++;
+      if (course.teacherId) teachersSet.add(course.teacherId);
+    });
+
+    return {
+      totalCourses: academicCoursesCount,
+      totalHours: hoursSum,
+      totalCredits: creditsSum,
+      uniqueTeachers: teachersSet.size
+    };
+  }, [filteredCourses, subjectGroupMap]);
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -676,9 +715,9 @@ const ViewCoursesPage: React.FC = () => {
         <div className="page-container">
 
           {/* Header Section */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <div className="flex items-center gap-4 mb-8">
+            <BackButton to="/academic/hub/registration" />
             <div>
-              <BackButton to="/academic-admin" className="mb-4" />
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <BookOpen className="text-indigo-600 dark:text-indigo-400" size={28} />
                 ทำเนียบหลักสูตร
@@ -688,103 +727,137 @@ const ViewCoursesPage: React.FC = () => {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <LayoutGrid size={20} />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">รายวิชาทั้งหมด</p>
-                <h3 className="text-xl font-bold">{totalCourses} <span className="text-xs font-normal text-gray-400">วิชา</span></h3>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">รายวิชาทั้งหมด</p>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{totalCourses.toLocaleString()} <span className="text-[10px] font-medium text-gray-400 uppercase">วิชา</span></h3>
               </div>
             </div>
+
+            <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+              <div className="p-2.5 rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
+                <GraduationCap size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">หน่วยกิตรวม</p>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{totalCredits.toFixed(1)} <span className="text-[10px] font-medium text-gray-400 uppercase">นก.</span></h3>
+              </div>
+            </div>
+
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <Clock size={20} />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">จำนวนคาบรวม</p>
-                <h3 className="text-xl font-bold">{totalHours} <span className="text-xs font-normal text-gray-400">คาบ/สัปดาห์</span></h3>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">ภาระการสอนรวม</p>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{totalHours.toLocaleString()} <span className="text-[10px] font-medium text-gray-400 uppercase">คาบ/สัปดาห์</span></h3>
               </div>
             </div>
+
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <Users size={20} />
               </div>
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">ครูผู้สอน</p>
-                <h3 className="text-xl font-bold">{uniqueTeachers} <span className="text-xs font-normal text-gray-400">คน</span></h3>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">บุคลากรผู้สอน</p>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{uniqueTeachers} <span className="text-[10px] font-medium text-gray-400 uppercase">คน</span></h3>
               </div>
             </div>
           </div>
 
           {/* Filters & Search */}
           <div className="sticky top-[60px] z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
-            <div className="flex flex-col lg:flex-row gap-3">
-              <div className="flex-1 relative">
+            <div className="flex flex-col xl:flex-row gap-4">
+              <div className="flex-1 relative min-w-full xl:min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
                   type="text"
-                  placeholder="ค้นหาชื่อวิชา, รหัสวิชา..."
+                  placeholder="ค้นหาชื่อวิชา, รหัสวิชา, ครู..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="pl-9 pr-4 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  className="pl-9 pr-4 py-2.5 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all font-medium"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative min-w-[180px]">
+              
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:flex xl:flex-row gap-3 w-full xl:w-auto">
+                <div className="relative">
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedSemester}
                     onChange={(e) => setSelectedSemester(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
+                    className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
                   >
                     <option value="1">ภาคเรียนที่ 1</option>
                     <option value="2">ภาคเรียนที่ 2</option>
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
-                <div className="relative min-w-[180px]">
+
+                <div className="relative">
                   <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedClassFilter}
                     onChange={(e) => setSelectedClassFilter(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
+                    className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
                   >
                     <option value="all">ทุกระดับชั้น</option>
                     {availableClassOptions.map(([key, name]: [string, string]) => (
                       <option key={key} value={key}>{name}</option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
-                <div className="relative min-w-[150px]">
-                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <select
-                    value={selectedRoomFilter}
-                    onChange={(e) => setSelectedRoomFilter(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="all">ทุกห้อง</option>
-                    {Array.from({ length: 24 }, (_, i) => i + 1).map(r => (
-                      <option key={r} value={String(r)}>ห้อง {r}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-                </div>
-                <div className="relative min-w-[180px]">
+
+
+
+                <div className="relative">
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedTeacherFilter}
                     onChange={(e) => setSelectedTeacherFilter(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
+                    className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
                   >
                     <option value="all">ครูทุกคน</option>
                     {teachers.map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                </div>
+
+                <div className="relative col-span-2 md:col-span-1 xl:min-w-[180px]">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <select
+                    value={selectedSubjectGroupFilter}
+                    onChange={(e) => setSelectedSubjectGroupFilter(e.target.value)}
+                    className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
+                  >
+                    <option value="all">ทุกกลุ่มสาระฯ</option>
+                    {subjectGroupsList.map(group => (
+                      <option key={group.id} value={group.code || group.id}>
+                        {group.name.replace("กลุ่มสาระการเรียนรู้", "").trim()}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                </div>
+
+                <div className="relative">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <select
+                    value={selectedActiveFilter}
+                    onChange={(e) => setSelectedActiveFilter(e.target.value)}
+                    className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
+                  >
+                    <option value="all">ทุกสถานะ</option>
+                    <option value="active">เปิดใช้งาน</option>
+                    <option value="inactive">ปิดใช้งาน</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
 
               </div>
@@ -911,14 +984,9 @@ const ViewCoursesPage: React.FC = () => {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
-                              <div className="flex flex-col items-center">
-                                <span className={`font-medium text-sm ${(course.credits && course.hoursPerWeek !== Math.round(Number(course.credits) * 2)) ? 'text-red-500 font-bold' : 'text-gray-900 dark:text-white'}`}>
-                                  {course.hoursPerWeek}
-                                </span>
-                                {course.credits && course.hoursPerWeek !== Math.round(Number(course.credits) * 2) && (
-                                  <span className="text-[9px] text-red-400 font-bold animate-pulse">ควรเป็น {Math.round(Number(course.credits) * 2)}</span>
-                                )}
-                              </div>
+                              <span className="font-medium text-sm text-gray-900 dark:text-white">
+                                {course.credits ? Math.round(Number(course.credits) * 2) : (course.hoursPerWeek || 0)}
+                              </span>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-2">

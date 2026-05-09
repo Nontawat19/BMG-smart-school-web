@@ -20,6 +20,7 @@ import TeacherLeaveRequestPdfDocument from '@/components/Pdf/leave/TeacherLeaveR
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from '@/components/SkeletonLoader';
 import BackButton from '@/components/Shared/BackButton';
+import { getThaiYear } from '@/utils/dateUtils';
 
 interface TeacherLeaveRequest {
   id: string;
@@ -145,7 +146,7 @@ const TeacherLeaveHistoryPage: React.FC = () => {
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('th-TH', { month: 'long' }),
-      year: d.getFullYear() + 543,
+      year: getThaiYear(d),
     };
   })();
 

@@ -5,7 +5,7 @@ import { collection, query, where, getDocs, doc, getDoc } from "firebase/firesto
 import { RootState } from "../../store";
 import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
-import { FaUserClock, FaSearch } from "react-icons/fa";
+import { FaUserClock, FaSearch, FaAngleLeft, FaAngleRight, FaAngleDoubleLeft, FaAngleDoubleRight } from "react-icons/fa";
 import defaultProfile from "@/assets/profile.png";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
@@ -31,6 +31,8 @@ const TeacherAttendanceTodayPage: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [todayEvent, setTodayEvent] = useState<{ type: string; name: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   useEffect(() => {
     const handleResize = () => {
@@ -129,13 +131,36 @@ const TeacherAttendanceTodayPage: React.FC = () => {
     record.fullName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+    if (endPage - startPage + 1 < maxVisiblePages) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
   return (
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-4">
-                    <BackButton to="/human-resources/hub" />
+                    <BackButton to="/academic/hub/personnel_info" />
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                             <FaUserClock className="text-indigo-600 dark:text-indigo-400" />
@@ -191,7 +216,7 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredData.map((record) => (
+                                paginatedData.map((record) => (
                                     <tr key={record.id} className="hover:bg-gray-50 dark:hover:bg-[#323338]/50 transition-colors">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
@@ -237,6 +262,66 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination UI */}
+                {!loading && totalPages > 1 && (
+                    <div className="px-6 py-4 bg-gray-50 dark:bg-[#323338]/30 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                            แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, filteredData.length)} จาก {filteredData.length} รายการ
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <button 
+                                onClick={() => setCurrentPage(1)}
+                                disabled={currentPage === 1}
+                                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-600 dark:text-gray-300"
+                                title="หน้าแรก"
+                            >
+                                <FaAngleDoubleLeft size={14} />
+                            </button>
+                            <button 
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-600 dark:text-gray-300"
+                                title="ย้อนกลับ"
+                            >
+                                <FaAngleLeft size={14} />
+                            </button>
+                            
+                            <div className="flex items-center gap-1 mx-2">
+                                {getPageNumbers().map(pageNum => (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() => setCurrentPage(pageNum)}
+                                        className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                                            currentPage === pageNum 
+                                            ? 'bg-indigo-600 text-white' 
+                                            : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                                        }`}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <button 
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-600 dark:text-gray-300"
+                                title="ถัดไป"
+                            >
+                                <FaAngleRight size={14} />
+                            </button>
+                            <button 
+                                onClick={() => setCurrentPage(totalPages)}
+                                disabled={currentPage === totalPages}
+                                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-600 dark:text-gray-300"
+                                title="หน้าสุดท้าย"
+                            >
+                                <FaAngleDoubleRight size={14} />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
       </div>

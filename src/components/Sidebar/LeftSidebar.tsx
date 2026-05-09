@@ -177,55 +177,48 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
 
 
-            <CanAccess roles={[ROLES.SCHOOL_ATTENDANCE, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE]}>
-              <div className="flex flex-col gap-1">
-                <NavLink to="/attendance/checkin-out" className={navLinkClasses}>
-                  <FaClock className="text-lg min-w-[18px]" />
-                  <span>ลงเวลาเข้า-ออก (Check-in/out)</span>
-                </NavLink>
-              </div>
-            </CanAccess>
-
             {/* --- งานวิชาการ --- */}
             {isEnabled('academic') && (
               <CanAccess roles={STAFF_ACCESS}>
                 <div className="flex flex-col gap-1">
                   <CanAccess roles={ACADEMIC_MANAGEMENT}>
-                    <NavLink to="/academic/hub/curriculum" className={navLinkClasses}>
-                      <FaBook className="text-lg min-w-[18px]" />
-                      <span>งานหลักสูตรและวิชาการ</span>
+                    <NavLink to="/academic/hub/registration" className={navLinkClasses}>
+                      <FaIdCard className="text-lg min-w-[18px]" />
+                      <span>ทะเบียน</span>
                     </NavLink>
                   </CanAccess>
                   <NavLink to="/academic/hub/scheduling" className={navLinkClasses}>
                     <FaClock className="text-lg min-w-[18px]" />
-                    <span>งานตารางสอน</span>
+                    <span>ตารางสอน</span>
                   </NavLink>
-                  <CanAccess roles={ACADEMIC_MANAGEMENT}>
-                    <NavLink to="/academic/hub/personnel" className={navLinkClasses}>
-                      <FaUsers className="text-lg min-w-[18px]" />
-                      <span>งานทะเบียนและบุคคล</span>
-                    </NavLink>
-                  </CanAccess>
+                  <NavLink to="/academic/hub/students" className={navLinkClasses}>
+                    <FaUserGraduate className="text-lg min-w-[18px]" />
+                    <span>นักเรียน</span>
+                  </NavLink>
+                  <NavLink to="/academic/hub/personnel_info" className={navLinkClasses}>
+                    <FaUserTie className="text-lg min-w-[18px]" />
+                    <span>บุคลากร</span>
+                  </NavLink>
                   <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
                     <FaUserCheck className="text-lg min-w-[18px]" />
-                    <span>งานมาเรียนและการลา</span>
+                    <span>ระบบเช็คชื่อ</span>
                   </NavLink>
                   <NavLink to="/academic/hub/activities" className={navLinkClasses}>
                     <FaFlag className="text-lg min-w-[18px]" />
-                    <span>งานกิจกรรมและชุมนุม</span>
+                    <span>กิจกรรมและชุมนุม</span>
                   </NavLink>
                   <NavLink to="/student-support/hub" className={navLinkClasses}>
                     <FaHandHoldingHeart className="text-lg min-w-[18px]" />
-                    <span>งานดูแลช่วยเหลือนักเรียน</span>
+                    <span>ระบบดูแลช่วยเหลือนักเรียน</span>
                   </NavLink>
                   <NavLink to="/academic/hub/evaluation" className={navLinkClasses}>
                     <FaGraduationCap className="text-lg min-w-[18px]" />
-                    <span>งานวัดผลและประเมินผล</span>
+                    <span>วัดผลและประเมินผล</span>
                   </NavLink>
-                  <CanAccess roles={ADMIN_ACCESS}>
-                    <NavLink to="/human-resources/hub" className={navLinkClasses}>
-                      <FaUserTie className="text-lg min-w-[18px]" />
-                      <span>งานบุคลากร (HR)</span>
+                  <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                    <NavLink to="/academic/alumni-management" className={navLinkClasses}>
+                      <FaHistory className="text-lg min-w-[18px]" />
+                      <span>ทำเนียบศิษย์เก่า</span>
                     </NavLink>
                   </CanAccess>
                   <CanAccess roles={ACADEMIC_MANAGEMENT}>
@@ -238,6 +231,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </CanAccess>
             )}
 
+            {/* --- ระบบลงเวลา (Scanner) --- */}
+            <CanAccess roles={ATTENDANCE_SCANNER_ACCESS}>
+              <div className="flex flex-col gap-1">
+                <NavLink to="/attendance/checkin-out" className={navLinkClasses}>
+                  <FaUserClock className="text-lg min-w-[18px]" />
+                  <span>เครื่องลงเวลา (Scanner)</span>
+                </NavLink>
+              </div>
+            </CanAccess>
           </nav>
 
           {/* Owner Menu */}

@@ -115,8 +115,8 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
         <button
             onClick={() => setActiveTab(id)}
             className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium transition-colors ${activeTab === id
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/20'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
                 }`}
         >
             <Icon size={18} />
@@ -131,11 +131,11 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                 <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                     <div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">แบบคัดกรองนักเรียนรายบุคคล</h2>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                             {student.title}{student.firstName} {student.lastName} (ผู้ประเมิน: {evaluatorType === 'teacher' ? 'ครู' : evaluatorType === 'student' ? 'นักเรียน' : 'ผู้ปกครอง'})
                         </p>
                     </div>
-                    <button onClick={onClose}><X className="text-gray-400 hover:text-gray-600" /></button>
+                    <button onClick={onClose}><X className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" /></button>
                 </div>
 
                 {/* Tabs */}
@@ -199,20 +199,42 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">น้ำหนัก (กก.)</label>
-                                        <input type="number" value={formData.health.weight} onChange={(e) => handleChange('health', 'weight', e.target.value)} className="w-full p-2 border rounded-lg" />
+                                        <input 
+                                            type="number" 
+                                            value={formData.health.weight} 
+                                            onChange={(e) => handleChange('health', 'weight', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ส่วนสูง (ซม.)</label>
-                                        <input type="number" value={formData.health.height} onChange={(e) => handleChange('health', 'height', e.target.value)} className="w-full p-2 border rounded-lg" />
+                                        <input 
+                                            type="number" 
+                                            value={formData.health.height} 
+                                            onChange={(e) => handleChange('health', 'height', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">BMI (คำนวณอัตโนมัติ)</label>
-                                        <div className="w-full p-2 bg-gray-100 rounded-lg font-bold text-center">{formData.health.bmi || '-'}</div>
+                                        <div className="w-full p-2 bg-gray-100 dark:bg-gray-700/50 dark:text-indigo-400 rounded-lg font-bold text-center">{formData.health.bmi || '-'}</div>
                                     </div>
                                     <div className="md:col-span-3">
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">โรคประจำตัว / ความพิการ</label>
-                                        <input type="text" value={formData.health.congenitalDisease} onChange={(e) => handleChange('health', 'congenitalDisease', e.target.value)} placeholder="ระบุโรคประจำตัว (ถ้ามี)" className="w-full p-2 border rounded-lg mb-2" />
-                                        <input type="text" value={formData.health.disabilities} onChange={(e) => handleChange('health', 'disabilities', e.target.value)} placeholder="ระบุความพิการ (ถ้ามี)" className="w-full p-2 border rounded-lg" />
+                                        <input 
+                                            type="text" 
+                                            value={formData.health.congenitalDisease} 
+                                            onChange={(e) => handleChange('health', 'congenitalDisease', e.target.value)} 
+                                            placeholder="ระบุโรคประจำตัว (ถ้ามี)" 
+                                            className="w-full p-2 border rounded-lg mb-2 bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                        />
+                                        <input 
+                                            type="text" 
+                                            value={formData.health.disabilities} 
+                                            onChange={(e) => handleChange('health', 'disabilities', e.target.value)} 
+                                            placeholder="ระบุความพิการ (ถ้ามี)" 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -227,7 +249,11 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">สถานภาพบิดา-มารดา</label>
-                                        <select value={formData.family.parentsStatus} onChange={(e) => handleChange('family', 'parentsStatus', e.target.value)} className="w-full p-2 border rounded-lg">
+                                        <select 
+                                            value={formData.family.parentsStatus} 
+                                            onChange={(e) => handleChange('family', 'parentsStatus', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        >
                                             <option value="together">อยู่ด้วยกัน</option>
                                             <option value="separated">แยกกันอยู่</option>
                                             <option value="divorced">หย่าร้าง</option>
@@ -236,7 +262,11 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">เศรษฐกิจครอบครัว</label>
-                                        <select value={formData.family.economy} onChange={(e) => handleChange('family', 'economy', e.target.value)} className="w-full p-2 border rounded-lg">
+                                        <select 
+                                            value={formData.family.economy} 
+                                            onChange={(e) => handleChange('family', 'economy', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        >
                                             <option value="sufficient">เพียงพอ</option>
                                             <option value="poor">ยากจน / รายได้น้อย</option>
                                             <option value="debt">มีภาระหนี้สินมาก</option>
@@ -244,7 +274,11 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ความปลอดภัย/ที่พักอาศัย</label>
-                                        <select value={formData.family.security} onChange={(e) => handleChange('family', 'security', e.target.value)} className="w-full p-2 border rounded-lg">
+                                        <select 
+                                            value={formData.family.security} 
+                                            onChange={(e) => handleChange('family', 'security', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        >
                                             <option value="safe">ปลอดภัยดี</option>
                                             <option value="risk">อยู่ในแหล่งมั่วสุม/ไม่ปลอดภัย</option>
                                         </select>
@@ -262,15 +296,33 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">พฤติกรรมเสี่ยง / ก้าวร้าว</label>
-                                        <input type="text" value={formData.other.behavior} onChange={(e) => handleChange('other', 'behavior', e.target.value)} className="w-full p-2 border rounded-lg" placeholder="ระบุ..." />
+                                        <input 
+                                            type="text" 
+                                            value={formData.other.behavior} 
+                                            onChange={(e) => handleChange('other', 'behavior', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                            placeholder="ระบุ..." 
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ความเสี่ยงสารเสพติด</label>
-                                        <input type="text" value={formData.other.drugs} onChange={(e) => handleChange('other', 'drugs', e.target.value)} className="w-full p-2 border rounded-lg" placeholder="บุหรี่, แอลกอฮอล์, ยาเสพติด..." />
+                                        <input 
+                                            type="text" 
+                                            value={formData.other.drugs} 
+                                            onChange={(e) => handleChange('other', 'drugs', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                            placeholder="บุหรี่, แอลกอฮอล์, ยาเสพติด..." 
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ติดเกม / สื่อโซเชียล</label>
-                                        <input type="text" value={formData.other.games} onChange={(e) => handleChange('other', 'games', e.target.value)} className="w-full p-2 border rounded-lg" placeholder="รายละเอียด..." />
+                                        <input 
+                                            type="text" 
+                                            value={formData.other.games} 
+                                            onChange={(e) => handleChange('other', 'games', e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                            placeholder="รายละเอียด..." 
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -280,18 +332,18 @@ const ScreeningAssessmentModal: React.FC<Props> = ({
 
                 {/* Footer */}
                 <div className="p-6 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-b-2xl flex justify-between items-center">
-                    <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                         <span>สถานะประเมิน:</span>
                         <span className={`px-2 py-1 rounded font-bold uppercase
-                           ${formData.academic.status === 'problem' || formData.health.status === 'problem' || formData.family.status === 'problem' ? 'bg-red-100 text-red-700' :
-                                formData.academic.status === 'risk' || formData.health.status === 'risk' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}
+                           ${formData.academic.status === 'problem' || formData.health.status === 'problem' || formData.family.status === 'problem' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                formData.academic.status === 'risk' || formData.health.status === 'risk' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}
                        `}>
                             {formData.academic.status === 'problem' || formData.health.status === 'problem' ? 'มีปัญหา' : formData.academic.status === 'risk' ? 'กลุ่มเสี่ยง' : 'ปกติ'}
                         </span>
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={onClose} className="px-5 py-2 rounded-lg bg-gray-100 hover:bg-gray-200">ยกเลิก</button>
-                        <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2">
+                        <button onClick={onClose} className="px-5 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 transition-colors">ยกเลิก</button>
+                        <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2 transition-colors disabled:opacity-50">
                             <Save size={18} /> บันทึก
                         </button>
                     </div>

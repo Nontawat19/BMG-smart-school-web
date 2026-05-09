@@ -8,8 +8,10 @@ import { doc, getDoc, collection, query, where, getDocs, Timestamp, writeBatch }
 import Swal from 'sweetalert2';
 import { Calendar } from 'lucide-react';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
+import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 
 // Sub-components and Utilities from the same folder
 import { Student, CourseSchedule } from './types';
@@ -18,6 +20,77 @@ import AttendanceHeader from './components/AttendanceHeader';
 import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
+
+const normalizeRoom = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? String(numeric) : raw.toLowerCase();
+};
+
+const getClassVariants = (classValue: unknown): string[] => {
+    if (Array.isArray(classValue)) {
+        return Array.from(new Set(classValue.flatMap(getClassVariants)));
+    }
+
+    const value = String(classValue || '').trim();
+    if (!value) return [];
+
+    const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
+    const classKey = fromLabel || value;
+
+    return Array.from(new Set([
+        classKey,
+        CLASSES[classKey],
+        value
+    ].filter(Boolean).map(String)));
+};
+
+const matchesClassValue = (recordClass: unknown, selectedClass: unknown): boolean => {
+    if (!selectedClass) return true;
+    if (!recordClass) return false;
+
+    if (Array.isArray(recordClass)) {
+        return recordClass.some(item => matchesClassValue(item, selectedClass));
+    }
+
+    const variants = getClassVariants(selectedClass);
+    const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s/g, ''));
+    const raw = String(recordClass || '').trim();
+    const normalized = raw.toLowerCase().replace(/\s/g, '');
+
+    return normalizedVariants.includes(normalized) ||
+        normalizedVariants.some(v => normalized.startsWith(`${v}_`) || normalized.startsWith(`${v}/`)) ||
+        normalizedVariants.some(v => normalized.includes(v) || v.includes(normalized));
+};
+
+const matchesEnrollmentGroup = (data: any, groupNumber?: number | string): boolean => {
+    if (!groupNumber) return true;
+    const normalizedSelected = normalizeRoom(groupNumber);
+    const groupName = String(data.groupName || '').trim();
+    const plainGroup = groupName.replace(/^กลุ่ม\s*/i, '').replace(/^ก\.\s*/i, '');
+    const roomStr = normalizeRoom(data.room || data.roomNumber || data.groupNumber || data.group || '');
+
+    return normalizeRoom(plainGroup) === normalizedSelected ||
+        roomStr === normalizedSelected ||
+        groupName === `กลุ่ม ${groupNumber}` ||
+        groupName === `ก.${groupNumber}`;
+};
+
+const formatClassDisplay = (value: unknown) => {
+    const values = Array.isArray(value) ? value : [value];
+    const labels = values
+        .flatMap(getClassVariants)
+        .filter(Boolean)
+        .map(v => CLASSES[v] || v);
+
+    return Array.from(new Set(labels)).join(', ') || 'ไม่ระบุชั้น';
+};
+
+const getStableClassKey = (value: unknown) => {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean).join('-');
+    return String(value || '');
+};
 
 const ClassroomAttendancePage: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -47,8 +120,8 @@ const ClassroomAttendancePage: React.FC = () => {
     const [isHoliday, setIsHoliday] = useState(false);
     const [holidayName, setHolidayName] = useState('');
     const [scheduleDayOverride, setScheduleDayOverride] = useState<string | null>(null);
-    const [refreshTick, setRefreshTick] = useState(0);
-    const [academicYear, setAcademicYear] = useState<string>("");
+    const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
+    const [academicYear, setAcademicYear] = useState<string>(reduxAcademicYear);
     const [semester, setSemester] = useState<string>("");
 
     const dispatch = useDispatch();
@@ -77,30 +150,22 @@ const ClassroomAttendancePage: React.FC = () => {
         }
     }, [schoolId, teacherMapStatus, dispatch]);
 
+    const calendarState = useSelector((state: RootState) => state.calendar);
+
     // --- 1. Fetch Current Settings (Academic Year) ---
     useEffect(() => {
-        const fetchSettings = async () => {
-            if (!schoolId) return;
-            try {
-                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-                const calendarSnap = await getDoc(calendarRef);
+        if (schoolId && calendarState.status === 'idle') {
+            dispatch(fetchCalendar(schoolId) as any);
+        }
+    }, [schoolId, calendarState.status, dispatch]);
 
-                if (calendarSnap.exists()) {
-                    const calendarData = calendarSnap.data();
-                    setAcademicYear(calendarData.academicYear || "");
-                } else {
-                    const settingsRef = doc(db, 'school-settings', schoolId);
-                    const settingsSnap = await getDoc(settingsRef);
-                    if (settingsSnap.exists()) {
-                        setAcademicYear(settingsSnap.data().currentAcademicYear || "");
-                    }
-                }
-            } catch (error) {
-                console.error("Error fetching school settings:", error);
-            }
-        };
-        fetchSettings();
-    }, [schoolId]);
+    useEffect(() => {
+        if (calendarState.status === 'succeeded') {
+            setAcademicYear(calendarState.academicYear);
+        } else if (!academicYear) {
+            setAcademicYear(reduxAcademicYear);
+        }
+    }, [calendarState.status, calendarState.academicYear, reduxAcademicYear]);
 
     // --- 1.1 Fetch Courses to find inactive ones ---
     useEffect(() => {
@@ -122,72 +187,72 @@ const ClassroomAttendancePage: React.FC = () => {
 
     // --- 1.2 Check for Holidays ---
     useEffect(() => {
-        const checkHoliday = async () => {
-            if (!schoolId) return;
-            setIsHoliday(false);
-            setHolidayName('');
-            setScheduleDayOverride(null);
+        if (!schoolId) return;
+        setIsHoliday(false);
+        setHolidayName('');
+        setScheduleDayOverride(null);
 
+        const year = currentDate.getFullYear();
+        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+        const day = String(currentDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        if (calendarState.status === 'succeeded') {
+            const events = calendarState.rawData?.events || {};
+            const event = events[dateStr];
+
+            // 1. Determine local semester for this calculation
+            const currentTerm = calendarState.terms.find(t => 
+                t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate
+            ) || calendarState.terms[0]; // Fallback to term1 if not found in any term
+
+            const localSemester = currentTerm?.id === 'term2' ? "2" : "1";
+            setSemester(localSemester);
+
+            // 1. Priority: Check if it's a Makeup School Day (Overrides everything)
+            if (event && event.type === 'schoolDay') {
+                if (event.scheduleDay) setScheduleDayOverride(event.scheduleDay);
+                return;
+            }
+
+            // 2. Term Boundaries: Check if within any term period
+            const isWithinTerm = calendarState.terms.some(t => 
+                t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate
+            );
+
+            if (!isWithinTerm) {
+                setIsHoliday(true);
+                setHolidayName('อยู่นอกภาคเรียน (ไม่อยู่ในช่วงวันเรียน 100 วัน)');
+            }
+
+            // 3. Regular Weekend: Saturday (6) and Sunday (0) are non-school days unless schoolDay
+            const dayOfWeek = currentDate.getDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                if (!isHoliday) {
+                    setIsHoliday(true);
+                    setHolidayName(dayOfWeek === 0 ? 'วันอาทิตย์' : 'วันเสาร์');
+                }
+            }
+
+            // 4. Calendar Events: Specific holidays or special closures
+            if (event) {
+                if (event.type === 'holiday' || event.type === 'specialHoliday') {
+                    setIsHoliday(true);
+                    setHolidayName(event.description || 'วันหยุดโรงเรียน');
+                }
+            }
+        }
+    }, [currentDate, schoolId, calendarState.status, calendarState.rawData]);
+
+    // Fallback Google Calendar API (kept as is but optional)
+    useEffect(() => {
+        const checkGoogleHoliday = async () => {
+            if (!schoolId || isHoliday) return;
             const year = currentDate.getFullYear();
             const month = String(currentDate.getMonth() + 1).padStart(2, '0');
             const day = String(currentDate.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${day}`;
 
-            // 1.1 Check Firestore School Calendar
-            try {
-                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-                const calendarSnap = await getDoc(calendarRef);
-                if (calendarSnap.exists()) {
-                    const calendarData = calendarSnap.data();
-                    const events = calendarData.events || {};
-                    const terms = calendarData.terms || {};
-                    const event = events[dateStr];
-
-                    // 1. Determine local semester for this calculation
-                    let localSemester = "1";
-                    if (terms.term2?.startDate && dateStr >= terms.term2.startDate) {
-                        localSemester = "2";
-                    }
-                    setSemester(localSemester);
-
-                    // 1. Priority: Check if it's a Makeup School Day (Overrides everything)
-                    if (event && event.type === 'schoolDay') {
-                        if (event.scheduleDay) setScheduleDayOverride(event.scheduleDay);
-                        return;
-                    }
-
-                    // 2. Term Boundaries: Check if within the 100-day term period
-                    const currentSemKey = `term${localSemester}` as 'term1' | 'term2';
-                    const termData = terms[currentSemKey];
-                    if (termData && termData.startDate && termData.endDate) {
-                        if (dateStr < termData.startDate || dateStr > termData.endDate) {
-                            setIsHoliday(true);
-                            setHolidayName('อยู่นอกภาคเรียน (ไม่อยู่ในช่วงวันเรียน 100 วัน)');
-                        }
-                    }
-
-                    // 3. Regular Weekend: Saturday (6) and Sunday (0) are non-school days unless schoolDay
-                    const dayOfWeek = currentDate.getDay();
-                    if (dayOfWeek === 0 || dayOfWeek === 6) {
-                        if (!isHoliday) { // Only set if not already set by semester boundary
-                            setIsHoliday(true);
-                            setHolidayName(dayOfWeek === 0 ? 'วันอาทิตย์' : 'วันเสาร์');
-                        }
-                    }
-
-                    // 4. Calendar Events: Specific holidays or special closures
-                    if (event) {
-                        if (event.type === 'holiday' || event.type === 'specialHoliday') {
-                            setIsHoliday(true);
-                            setHolidayName(event.description || 'วันหยุดโรงเรียน');
-                        }
-                    }
-                }
-            } catch (error: any) {
-                console.error("Error checking Firestore calendar:", error);
-            }
-
-            // 1.2 Check Google Calendar API (Fallback)
             const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
             if (apiKey) {
                 try {
@@ -215,9 +280,8 @@ const ClassroomAttendancePage: React.FC = () => {
                 }
             }
         };
-
-        checkHoliday();
-    }, [currentDate, schoolId]);
+        checkGoogleHoliday();
+    }, [currentDate, schoolId, isHoliday]);
 
     // --- 2. Fetch Teacher's Schedule for the Day ---
     useEffect(() => {
@@ -236,6 +300,12 @@ const ClassroomAttendancePage: React.FC = () => {
 
                 querySnapshot.forEach(doc => {
                     const data = doc.data();
+                    const dataYear = String(data.academicYear || "");
+                    const dataSemester = String(data.semester || "");
+                    const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
+                    const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`);
+                    if (!yearMatches || !semesterMatches) return;
+
                     const scheduleMap = data.schedule || {};
 
                     for (let i = 1; i <= 8; i++) {
@@ -253,29 +323,22 @@ const ClassroomAttendancePage: React.FC = () => {
 
                                 if (isMyCourse) {
                                     const timeInfo = PERIOD_TIMES.find(p => p.period === i);
-                                    const levelName = CLASSES[data.classId] || data.classId || course.className || "ไม่ระบุชั้น";
-
-                                    const rawRoom = course.room || course.roomIds || course.classroom || data.room || "";
-                                    let room = "";
-
-                                    if (Array.isArray(rawRoom)) {
-                                        const firstValid = rawRoom.find(r => r && String(r).toLowerCase() !== 'all');
-                                        room = firstValid ? String(firstValid) : "";
-                                    } else if (rawRoom && String(rawRoom).toLowerCase() !== 'all') {
-                                        room = String(rawRoom);
-                                    }
+                                    const courseClassId = course.classId || data.classId;
+                                    const groupNumber = Number(course.groupNumber || course.group || 1) || 1;
+                                    const levelName = formatClassDisplay(courseClassId);
 
                                     dailySchedules.push({
-                                        id: doc.id,
+                                        id: `${doc.id}-${slotKey}-${course.id || course.courseId || course.code || 'course'}-${groupNumber}`,
                                         courseId: course.id || course.courseId,
                                         subjectCode: course.code || course.subjectCode || "",
                                         subjectName: course.title || course.subjectName || "ไม่ระบุชื่อวิชา",
                                         period: i,
                                         startTime: timeInfo?.start || '',
                                         endTime: timeInfo?.end || '',
-                                        classId: data.classId || course.classId,
+                                        classId: courseClassId,
                                         className: levelName,
-                                        room: room,
+                                        room: String(groupNumber),
+                                        groupNumber,
                                         day: dayKey,
                                         isChecked: false
                                     });
@@ -316,6 +379,7 @@ const ClassroomAttendancePage: React.FC = () => {
 
                         dailySchedules.push({
                             id: `sub-${doc.id}`,
+                            courseId: data.courseId || data.originalCourseId,
                             subjectCode: data.subjectCode || "",
                             subjectName: data.subjectName || "สอนแทน",
                             period: data.period,
@@ -324,6 +388,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             classId: data.classId,
                             className: subLevelName,
                             room: subRoom,
+                            groupNumber: Number(data.groupNumber || data.group || subRoom || 1) || 1,
                             day: dayKey,
                             isChecked: false,
                             isSubstitute: true,
@@ -348,7 +413,7 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         fetchSchedule();
-    }, [currentDate, schoolId, currentTeacher, scheduleDayOverride]);
+    }, [currentDate, schoolId, currentTeacher, scheduleDayOverride, academicYear, semester]);
 
     const isCurrentPeriod = (start: string, end: string) => {
         const now = new Date();
@@ -367,68 +432,104 @@ const ClassroomAttendancePage: React.FC = () => {
             setIsSubmitted(false);
 
             try {
-                // 3.1 Check Enrollments First
                 const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
-                let enrollmentQ = query(enrollmentsRef);
+                const groupNumber = selectedClass.groupNumber || (Number(selectedClass.room) || 1);
+                const enrollmentQueries = [];
 
-                if (selectedClass.subjectCode) {
-                    const constraints = [
-                        where('courseCode', '==', selectedClass.subjectCode),
-                        where('classLevel', '==', selectedClass.className)
-                    ];
-
-                    // Note: Enrollments might use 'groupName' instead of 'room'
-                    // Fetch all enrollments for this course/level and filter locally for robustness
-                    if (academicYear) constraints.push(where('academicYear', '==', academicYear));
-                    if (semester) constraints.push(where('semester', '==', semester));
-                    enrollmentQ = query(enrollmentsRef, ...constraints);
+                if (selectedClass.courseId) {
+                    if (academicYear && semester) {
+                        enrollmentQueries.push(query(enrollmentsRef, where('courseId', '==', selectedClass.courseId), where('academicYear', '==', academicYear), where('semester', '==', semester)));
+                    }
+                    if (academicYear) {
+                        enrollmentQueries.push(query(enrollmentsRef, where('courseId', '==', selectedClass.courseId), where('academicYear', '==', academicYear)));
+                    }
+                    enrollmentQueries.push(query(enrollmentsRef, where('courseId', '==', selectedClass.courseId)));
                 }
 
-                const enrollSnap = await getDocs(enrollmentQ);
+                if (selectedClass.subjectCode) {
+                    if (academicYear && semester) {
+                        enrollmentQueries.push(query(enrollmentsRef, where('courseCode', '==', selectedClass.subjectCode), where('academicYear', '==', academicYear), where('semester', '==', semester)));
+                    }
+                    if (academicYear) {
+                        enrollmentQueries.push(query(enrollmentsRef, where('courseCode', '==', selectedClass.subjectCode), where('academicYear', '==', academicYear)));
+                    }
+                    enrollmentQueries.push(query(enrollmentsRef, where('courseCode', '==', selectedClass.subjectCode)));
+                }
+
+                let enrollSnap = null;
+                for (const enrollmentQ of enrollmentQueries) {
+                    const snap = await getDocs(enrollmentQ);
+                    if (!snap.empty) {
+                        enrollSnap = snap;
+                        break;
+                    }
+                }
+
                 let studentList: Student[] = [];
 
-                if (!enrollSnap.empty) {
-                    const studentMap = new Map<string, Student>();
-                    let filteredDocs = enrollSnap.docs;
+                if (enrollSnap && !enrollSnap.empty) {
+                    let filteredDocs = enrollSnap.docs.filter(d => {
+                        const data = d.data();
+                        const matchesGroup = matchesEnrollmentGroup(data, groupNumber);
+                        const matchesClass = !data.classLevel || matchesClassValue(data.classLevel, selectedClass.classId) || matchesClassValue(data.classLevel, selectedClass.className);
+                        return matchesGroup && matchesClass;
+                    });
 
-                    if (selectedClass.room && selectedClass.room !== 'all') {
-                        filteredDocs = filteredDocs.filter(d => {
-                            const data = d.data();
-                            const gName = String(data.groupName || '');
-                            const matchesGroup = gName.includes(`กลุ่ม ${selectedClass.room}`) || gName.includes(`ก.${selectedClass.room}`) || gName === String(selectedClass.room);
-                            const matchesRoom = String(data.room || data.roomNumber || '') === String(selectedClass.room);
-                            return matchesRoom || matchesGroup;
+                    if (filteredDocs.length === 0) {
+                        filteredDocs = enrollSnap.docs.filter(d => matchesEnrollmentGroup(d.data(), groupNumber));
+                    }
+
+                    const enrolledStudentIds = Array.from(new Set(filteredDocs.map(d => d.data().studentId).filter(Boolean).map(String)));
+                    const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+                    const studentMap = new Map<string, Student>();
+
+                    for (let i = 0; i < enrolledStudentIds.length; i += 30) {
+                        const batchIds = enrolledStudentIds.slice(i, i + 30);
+                        const studentSnap = await getDocs(query(studentsRef, where('__name__', 'in', batchIds)));
+                        studentSnap.forEach(snap => {
+                            const data = snap.data() as any;
+                            studentMap.set(snap.id, {
+                                id: snap.id,
+                                firstName: data.firstName || '',
+                                lastName: data.lastName || '',
+                                number: data.studentNumber || data.number || '',
+                                studentNumber: data.studentId || '',
+                                studentId: data.studentId || '',
+                                gender: data.gender || '',
+                                prefix: data.title || data.prefix || '',
+                                profileImageUrl: data.profileImageUrl || '',
+                                nickname: data.nickname || '',
+                            } as Student);
                         });
                     }
 
-                    filteredDocs.forEach(doc => {
-                        const data = doc.data();
-                        const sId = data.studentId || doc.id;
+                    filteredDocs.forEach(enrollDoc => {
+                        const data = enrollDoc.data();
+                        const sId = String(data.studentId || enrollDoc.id);
                         if (!studentMap.has(sId)) {
+                            const nameParts = String(data.studentName || '').trim().split(/\s+/);
                             studentMap.set(sId, {
                                 id: sId,
-                                firstName: data.studentName?.split(' ')[0] || data.firstName || "",
-                                lastName: data.studentName?.split(' ').slice(1).join(' ') || data.lastName || "",
-                                number: data.number || data.studentNumber || "",
-                                studentNumber: data.studentCode || data.studentId || "",
-                                studentId: data.studentId || data.studentCode || "",
-                                gender: data.gender || "",
-                                prefix: data.prefix || data.title || "",
-                                profileImageUrl: data.profileImageUrl || "",
-                                nickname: data.nickname || "",
+                                firstName: data.firstName || nameParts[0] || '',
+                                lastName: data.lastName || nameParts.slice(1).join(' ') || '',
+                                number: data.number || data.studentNumber || '',
+                                studentNumber: data.studentCode || data.studentId || '',
+                                studentId: data.studentId || data.studentCode || '',
+                                gender: data.gender || '',
+                                prefix: data.prefix || data.title || '',
+                                profileImageUrl: data.profileImageUrl || '',
+                                nickname: data.nickname || '',
                             } as Student);
                         }
                     });
                     studentList = Array.from(studentMap.values());
                 } else {
                     const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-                    let q;
-                    if (selectedClass.room && selectedClass.room !== 'all') {
-                        q = query(studentsRef, where('classLevel', '==', selectedClass.className), where('room', '==', selectedClass.room));
-                    } else {
-                        q = query(studentsRef, where('classLevel', '==', selectedClass.className));
-                    }
-                    const snapshot = await getDocs(q);
+                    const classVariants = getClassVariants(selectedClass.classId);
+                    const snapshot = classVariants.length > 0
+                        ? await getDocs(query(studentsRef, where('classLevel', 'in', classVariants.slice(0, 30))))
+                        : await getDocs(query(studentsRef, where('classLevel', '==', selectedClass.className)));
+
                     studentList = snapshot.docs.map(doc => {
                         const data = doc.data() as any;
                         return {
@@ -440,7 +541,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             prefix: data.title || data.prefix || "",
                             nickname: data.nickname || ""
                         } as Student;
-                    });
+                    }).filter(student => matchesClassValue((student as any).classLevel || selectedClass.className, selectedClass.classId));
                 }
 
                 studentList.sort((a, b) => {
@@ -504,8 +605,9 @@ const ClassroomAttendancePage: React.FC = () => {
                 const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${currentDate.getFullYear()}`;
                 const attendancePromises = studentList.map(async (student) => {
                     const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
-                    const classKey = selectedClass.classId || '';
+                    const classKey = getStableClassKey(selectedClass.classId);
                     const periodNum = selectedClass.period || 0;
+                    const roomKey = selectedClass.room && selectedClass.room !== 'all' ? String(selectedClass.room) : '';
                     
                     // Try new format first (with period)
                     const newId = `${dateStr}_${stableSubjectCode}_${classKey}_P${periodNum}`;
@@ -513,13 +615,32 @@ const ClassroomAttendancePage: React.FC = () => {
                     const newSnap = await getDoc(newRef);
                     
                     if (newSnap.exists()) return { id: student.id, status: newSnap.data().status };
+
+                    // Fallback to legacy historical format where room was embedded in classId/document id
+                    if (roomKey) {
+                        const legacyRoomId = `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}_P${periodNum}`;
+                        const legacyRoomRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomId);
+                        const legacyRoomSnap = await getDoc(legacyRoomRef);
+
+                        if (legacyRoomSnap.exists()) return { id: student.id, status: legacyRoomSnap.data().status };
+                    }
                     
                     // Fallback to old format (no period)
                     const oldId = `${dateStr}_${stableSubjectCode}_${classKey}`;
                     const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldId);
                     const oldSnap = await getDoc(oldRef);
-                    
-                    return oldSnap.exists() ? { id: student.id, status: oldSnap.data().status } : null;
+
+                    if (oldSnap.exists()) return { id: student.id, status: oldSnap.data().status };
+
+                    if (roomKey) {
+                        const legacyRoomOldId = `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}`;
+                        const legacyRoomOldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldId);
+                        const legacyRoomOldSnap = await getDoc(legacyRoomOldRef);
+
+                        if (legacyRoomOldSnap.exists()) return { id: student.id, status: legacyRoomOldSnap.data().status };
+                    }
+
+                    return null;
                 });
 
                 const results = await Promise.all(attendancePromises);
@@ -550,7 +671,7 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         if (selectedClass) fetchStudents();
-    }, [selectedClass, schoolId, currentDate, refreshTick, academicYear, semester]);
+    }, [selectedClass, schoolId, currentDate, academicYear, semester]);
 
     // --- ปิดระบบ Auto-Refresh เมื่อสลับแท็บตามที่ผู้ใช้แจ้ง (ลดภาระการโหลดซ้ำ) ---
     /*
@@ -577,16 +698,25 @@ const ClassroomAttendancePage: React.FC = () => {
 
             // Generate stable subject code and class key
             const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
-            const classKey = selectedClass.classId || '';
+            const classKey = getStableClassKey(selectedClass.classId);
             const periodNum = selectedClass.period || 0;
+            const roomKey = selectedClass.room && selectedClass.room !== 'all' ? String(selectedClass.room) : '';
 
             // Format ID consistently: DD-MM-YYYY_SubjectCode_ClassId_P{Period}
             const attendanceId = `${dateStr}_${stableSubjectCode}_${classKey}_P${periodNum}`;
-            const derivedClassName = selectedClass.className || CLASSES[classKey] || classKey || 'ไม่ระบุ';
+            const derivedClassName = selectedClass.className || CLASSES[classKey] || formatClassDisplay(selectedClass.classId);
 
             const batch = writeBatch(db);
             students.forEach(student => {
                 const studentRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+                const legacyRoomRef = roomKey
+                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}_P${periodNum}`)
+                    : null;
+                const legacyRoomOldRef = roomKey
+                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}`)
+                    : null;
+                const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}`);
+
                 batch.set(studentRef, {
                     schoolId,
                     studentId: student.id,
@@ -605,6 +735,10 @@ const ClassroomAttendancePage: React.FC = () => {
                     semester,
                     updatedAt: Timestamp.now(),
                 }, { merge: true });
+
+                batch.delete(oldRef);
+                if (legacyRoomRef) batch.delete(legacyRoomRef);
+                if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
             });
 
             await batch.commit();
@@ -640,13 +774,14 @@ const ClassroomAttendancePage: React.FC = () => {
         <MainLayout>
             <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300 min-h-screen">
                 <div className="max-w-5xl mx-auto">
-                    <BackButton to="/academic-admin" className="mb-4" />
+                    <BackButton to="/academic/hub/attendance" className="mb-4" />
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}
                         academicYear={academicYear}
                         semester={semester}
                         onDateChange={setCurrentDate}
+                        title="ระบบเช็คชื่อเข้าเรียน"
                     />
 
                     {isHoliday && schedules.length === 0 ? (

@@ -18,6 +18,6 @@ export const ROLE_LABELS: Record<Role, string> = {
     [ROLES.TEACHER]: 'ครู',
     [ROLES.STUDENT]: 'นักเรียน',
     [ROLES.SCHOOL_ATTENDANCE]: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)',
-    [ROLES.STUDENT_ATTENDANCE]: 'เจ้าหน้าที่ลงเวลา (นักเรียน)',
+    [ROLES.STUDENT_ATTENDANCE]: 'เจ้าหน้าที่ลงเวลา (Student Attendance)',
     [ROLES.TEACHER_ATTENDANCE]: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)',
 };

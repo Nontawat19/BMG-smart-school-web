@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "@/firebase";
+import { getCurrentThaiYear } from "@/utils/dateUtils";
 
 /**
  * calendarSlice
@@ -59,7 +60,7 @@ export const fetchCalendar = createAsyncThunk(
 
             if (!calDocSnap.exists()) {
                 // Fallback: ใช้ปีปัจจุบัน + 543
-                const currentYear = new Date().getFullYear() + 543;
+                const currentYear = getCurrentThaiYear();
                 return {
                     academicYear: String(currentYear),
                     terms: [],
@@ -76,7 +77,7 @@ export const fetchCalendar = createAsyncThunk(
             const academicYear =
                 data.academicYear ||
                 data.year ||
-                String(new Date().getFullYear() + 543);
+                String(getCurrentThaiYear());
 
             // ดึงเทอม/ภาคเรียน (รองรับทั้ง Array และ Object)
             const termsData = data.terms || {};

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { firestore } from "@/firebase";
 import { RootState } from "../../store";
 import {
@@ -19,6 +20,7 @@ import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 
 interface TeacherOption {
   value: string; // teacher document ID
@@ -144,7 +146,8 @@ const ThaiDatePicker: React.FC<{
   const displayValue = value
     ? (() => {
       const [y, m, d] = value.split('-').map(Number);
-      return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
+      const date = new Date(y, m - 1, d);
+      return `${d} ${thaiMonths[m - 1]} ${getThaiYear(date)}`;
     })()
     : '';
 
@@ -163,7 +166,7 @@ const ThaiDatePicker: React.FC<{
           <div className="flex justify-between items-center mb-4">
             <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
-              {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
+              {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
             </span>
             <button type="button" onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
           </div>
@@ -184,8 +187,19 @@ const ThaiDatePicker: React.FC<{
 };
 
 const TeacherLeaveRequestPage: React.FC = () => {
+  const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
+
+  // Redux Calendar State
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const reduxRawData = calendarState.rawData;
+
+  useEffect(() => {
+    if (schoolId) {
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, dispatch]);
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherOption | null>(
     null
@@ -206,7 +220,7 @@ const TeacherLeaveRequestPage: React.FC = () => {
   const [isFetchingTeachers, setIsFetchingTeachers] = useState(true);
   const { isDarkMode } = useTheme();
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
-  const [academicYear, setAcademicYear] = useState<string>("");
+  const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
   const [docNo, setDocNo] = useState<string>("");
   const [schoolAffiliation, setSchoolAffiliation] = useState<string>(""); // 📌 เพิ่มสังกัดโรงเรียน
 
@@ -247,49 +261,46 @@ const TeacherLeaveRequestPage: React.FC = () => {
   useEffect(() => {
     if (!schoolId) return;
 
-    // 1. Real-time listener for Firestore (School Settings)
-    const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
+    if (calendarState.status === 'succeeded' && reduxRawData.events) {
+      setCalendarEvents(reduxRawData.events);
+    } else {
+      // 1. Real-time listener for Firestore (School Settings)
+      const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
 
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.events) {
-          setCalendarEvents(data.events);
-          return;
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.events) {
+            setCalendarEvents(data.events);
+            return;
+          }
         }
-      }
 
-      // 2. Fallback: Fetch from Google Calendar API if Firestore is empty/missing
-      const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
-      if (apiKey) {
-        fetchGoogleCalendar(apiKey);
-      }
-    }, (error) => {
-      console.error("Error listening to calendar:", error);
-    });
+        // 2. Fallback: Fetch from Google Calendar API if Firestore is empty/missing
+        const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
+        if (apiKey) {
+          fetchGoogleCalendar(apiKey);
+        }
+      }, (error) => {
+        console.error("Error listening to calendar:", error);
+      });
 
-    return () => unsubscribe();
-  }, [schoolId]);
-
-  // Fetch Academic Year and Running Number
+      return () => unsubscribe();
+    }
+  }, [schoolId, calendarState.status, reduxRawData.events]);
+  // Fetch Running Number and School Info
   useEffect(() => {
-    const fetchAcademicYearAndDocNo = async () => {
-      if (!schoolId) return;
+    const fetchDocNoAndAffiliation = async () => {
+      if (!schoolId || !academicYear) return;
       try {
-        // 1. Fetch Academic Year
+        // 1. Fetch Affiliation
         const calendarRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
         const calendarSnap = await getDoc(calendarRef);
-        let year = (new Date().getFullYear() + 543).toString();
         if (calendarSnap.exists()) {
           const calendarData = calendarSnap.data();
-          if (calendarData.academicYear) {
-            year = calendarData.academicYear;
-          }
-          // 📌 ดึงข้อมูลสังกัดโรงเรียน
           if (calendarData.affiliation) {
             setSchoolAffiliation(calendarData.affiliation);
           } else {
-            // ดึงจาก document หลักถ้าไม่มีใน calendar doc (กรณีโครงสร้างเก็บที่เดียวกัน)
             const schoolRef = doc(firestore, 'school-settings', schoolId);
             const schoolSnap = await getDoc(schoolRef);
             if (schoolSnap.exists()) {
@@ -297,34 +308,28 @@ const TeacherLeaveRequestPage: React.FC = () => {
             }
           }
         }
-        setAcademicYear(year);
 
-        // 2. Fetch Running Number (Collection Group for all teacher leave requests in this school)
-        // Since we don't want to fetch ALL documents just to count, 
-        // in a real production app we'd use a counter. 
-        // For now, we'll suggest a number based on current count + 1
-        // Note: collectionGroup requires an index. If it fails, fallback to 1.
+        // 2. Fetch Running Number
         try {
           const leaveRequestsQuery = query(
             collectionGroup(firestore, "leave_summary"),
             where("schoolId", "==", schoolId),
-            where("academicYear", "==", year)
+            where("academicYear", "==", academicYear)
           );
           const snapshot = await getDocs(leaveRequestsQuery);
           const nextNumber = snapshot.size + 1;
-          setDocNo(`${nextNumber}/${year}`);
+          setDocNo(`${nextNumber}/${academicYear}`);
         } catch (err) {
           console.error("Error counting leave requests:", err);
-          // Fallback if index is missing or other error
-          setDocNo(`1/${year}`);
+          setDocNo(`1/${academicYear}`);
         }
       } catch (error) {
         console.error("Error fetching academic info:", error);
       }
     };
 
-    fetchAcademicYearAndDocNo();
-  }, [schoolId]);
+    fetchDocNoAndAffiliation();
+  }, [schoolId, academicYear]);
 
   const fetchGoogleCalendar = async (apiKey: string) => {
     try {

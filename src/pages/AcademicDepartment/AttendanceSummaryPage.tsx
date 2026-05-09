@@ -21,7 +21,6 @@ import {
     Search,
     Download,
     Filter,
-    ArrowLeft,
     Clock,
     User,
     ChevronDown,
@@ -37,6 +36,7 @@ import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
+import { getCurrentThaiYear } from '@/utils/dateUtils';
 
 interface AttendanceRecord {
     studentId: string;
@@ -116,8 +116,9 @@ const AttendanceSummaryPage: React.FC = () => {
     const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
     const schoolId = (currentUser as any)?.schoolId;
 
+    const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [loading, setLoading] = useState(false);
-    const [academicYear, setAcademicYear] = useState<string>(() => sessionStorage.getItem('as_year') || '');
+    const [academicYear, setAcademicYear] = useState<string>(() => sessionStorage.getItem('as_year') || reduxAcademicYear);
     const [semester, setSemester] = useState<string>(() => sessionStorage.getItem('as_semester') || '');
     const [selectedCourse, setSelectedCourse] = useState<any>(() => {
         const saved = sessionStorage.getItem('as_course');
@@ -207,27 +208,7 @@ const AttendanceSummaryPage: React.FC = () => {
         })
     }), [isDarkMode]);
 
-    const fetchSettings = async () => {
-        if (!schoolId) return;
-        try {
-            const settingsRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-            const snap = await getDoc(settingsRef);
-            if (snap.exists()) {
-                const data = snap.data();
-                setAcademicYear(data.academicYear || '2567');
-                if (!semester) {
-                    const today = new Date().toISOString().split('T')[0];
-                    if (data.terms?.term2?.startDate && today >= data.terms.term2.startDate) {
-                        setSemester('2');
-                    } else {
-                        setSemester('1');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching settings:", error);
-        }
-    };
+
 
     const fetchCourses = async () => {
         if (!schoolId) return;
@@ -396,9 +377,9 @@ const AttendanceSummaryPage: React.FC = () => {
         if (schoolId && teacherMapStatus === 'idle') {
             dispatch(fetchTeachersMap(schoolId) as any);
         }
-        fetchSettings();
+        if (!academicYear) setAcademicYear(reduxAcademicYear);
         fetchCourses();
-    }, [schoolId, teacherMapStatus, dispatch]);
+    }, [schoolId, teacherMapStatus, dispatch, reduxAcademicYear]);
 
     useEffect(() => {
         handleFetchData();
@@ -641,7 +622,7 @@ const AttendanceSummaryPage: React.FC = () => {
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-baseline gap-4">
                             <div className="space-y-2">
-                                <BackButton to="/academic-admin" className="mb-2" />
+                                <BackButton to="/academic/hub/attendance" className="mb-2" />
                                 <div className="flex items-center gap-4 mt-2">
                                     <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
                                         <BarChart3 size={24} />

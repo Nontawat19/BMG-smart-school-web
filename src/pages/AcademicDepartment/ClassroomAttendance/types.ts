@@ -27,9 +27,10 @@ export interface CourseSchedule {
     period: number;
     startTime: string;
     endTime: string;
-    classId: string;
+    classId: string | string[];
     className: string;
     room?: string;
+    groupNumber?: number;
     day: string;
     isChecked: boolean;
     isSubstitute?: boolean;

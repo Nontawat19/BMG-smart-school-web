@@ -41,6 +41,7 @@ interface TeacherFormState {
     major: string;
     idCardNumber?: string;
     role: string[];
+    status: string;
 }
 
 // --- Reusable Components ---
@@ -92,6 +93,7 @@ const initialState: TeacherFormState = {
     lineId: "",
     idCardNumber: "",
     role: ["teacher"],
+    status: "อยู่",
 };
 
 export default function EditTeacherPage() {
@@ -185,6 +187,7 @@ export default function EditTeacherPage() {
                     const mergedData = {
                         ...initialState,
                         ...data,
+                        learningArea: data.learningArea || data.subjectGroup || "",
                     } as TeacherFormState;
 
                     setForm(mergedData);
@@ -312,6 +315,8 @@ export default function EditTeacherPage() {
                 ...teacherDataWithoutImageAndGrade,
                 title: finalTitle,
                 gender: finalGender,
+                learningArea: form.learningArea || "",
+                subjectGroup: form.learningArea || "",
                 homeroomGrade: homeroomGrade,
                 updatedAt: serverTimestamp(),
                 isHomeroomTeacher: homeroomGrade !== "",
@@ -679,6 +684,18 @@ export default function EditTeacherPage() {
                                         <option value="พี่เลี้ยงเด็กพิการ">พี่เลี้ยงเด็กพิการ</option>
                                         <option value="วิทยากรพิเศษ">วิทยากรพิเศษ</option>
                                         <option value="อื่นๆ">อื่นๆ</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะครู <span className="text-red-500">*</span></label>
+                                    <select name="status" value={form.status} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white" required>
+                                        <option value="อยู่">อยู่ (ปฏิบัติหน้าที่)</option>
+                                        <option value="ย้าย">ย้าย</option>
+                                        <option value="เกษียณ">เกษียณ</option>
+                                        <option value="ลาศึกษาต่อ">ลาศึกษาต่อ</option>
+                                        <option value="ช่วยราชการ">ช่วยราชการ</option>
+                                        <option value="ออก">ออก (ลาออก/พ้นสภาพ)</option>
+                                        <option value="ถึงแก่กรรม">ถึงแก่กรรม</option>
                                     </select>
                                 </div>
                             </div>

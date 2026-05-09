@@ -8,6 +8,7 @@ interface Teacher {
     teacherId: string;
     name: string;
     subjectGroup?: string;
+    learningArea?: string;
     department?: string;
 }
 
@@ -244,7 +245,7 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({
 
         // Subject Group Filter
         if (activeSgFilter !== "ทั้งหมด") {
-            list = list.filter(t => t.subjectGroup === activeSgFilter);
+            list = list.filter(t => (t.subjectGroup || t.learningArea) === activeSgFilter);
         }
 
         // Search Term Filter
@@ -254,6 +255,7 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({
                 t.name.toLowerCase().includes(term) ||
                 (t.teacherId && t.teacherId.toLowerCase().includes(term)) ||
                 (t.subjectGroup && t.subjectGroup.toLowerCase().includes(term)) ||
+                (t.learningArea && t.learningArea.toLowerCase().includes(term)) ||
                 (t.department && t.department.toLowerCase().includes(term))
             );
         }
@@ -365,6 +367,7 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({
             <div className="p-2 space-y-1 overflow-y-auto min-h-0 flex-1 custom-scrollbar">
                 {paginatedTeachers.map((teacher, index) => {
                     const isSelected = selectedTeacherIds.includes(teacher.id);
+                    const teacherSubjectGroup = teacher.subjectGroup || teacher.learningArea || "";
                     return (
                         <div
                             key={teacher.id}
@@ -404,19 +407,19 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({
                             </div>
 
                             <div className="text-center">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${teacher.subjectGroup === "ภาษาไทย" ? "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400" :
-                                    teacher.subjectGroup === "คณิตศาสตร์" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" :
-                                        teacher.subjectGroup === "วิทยาศาสตร์และเทคโนโลยี" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400" :
-                                            teacher.subjectGroup === "สังคมศึกษา ศาสนา และวัฒนธรรม" ? "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400" :
-                                                teacher.subjectGroup === "สุขศึกษาและพลศึกษา" ? "bg-lime-50 text-lime-600 dark:bg-lime-900/20 dark:text-lime-400" :
-                                                    teacher.subjectGroup === "ศิลปะ" ? "bg-pink-50 text-pink-600 dark:bg-pink-900/20 dark:text-pink-400" :
-                                                        teacher.subjectGroup === "การงานอาชีพ" ? "bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400" :
-                                                            teacher.subjectGroup === "ภาษาต่างประเทศ" ? "bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400" :
-                                                                teacher.subjectGroup === "กิจกรรมพัฒนาผู้เรียน" ? "bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400" :
-                                                                    teacher.subjectGroup === "ปฐมวัย" ? "bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" :
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${teacherSubjectGroup === "ภาษาไทย" ? "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400" :
+                                    teacherSubjectGroup === "คณิตศาสตร์" ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400" :
+                                        teacherSubjectGroup === "วิทยาศาสตร์และเทคโนโลยี" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400" :
+                                            teacherSubjectGroup === "สังคมศึกษา ศาสนา และวัฒนธรรม" ? "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400" :
+                                                teacherSubjectGroup === "สุขศึกษาและพลศึกษา" ? "bg-lime-50 text-lime-600 dark:bg-lime-900/20 dark:text-lime-400" :
+                                                    teacherSubjectGroup === "ศิลปะ" ? "bg-pink-50 text-pink-600 dark:bg-pink-900/20 dark:text-pink-400" :
+                                                        teacherSubjectGroup === "การงานอาชีพ" ? "bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400" :
+                                                            teacherSubjectGroup === "ภาษาต่างประเทศ" ? "bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400" :
+                                                                teacherSubjectGroup === "กิจกรรมพัฒนาผู้เรียน" ? "bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400" :
+                                                                    teacherSubjectGroup === "ปฐมวัย" ? "bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400" :
                                                                         "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                                     }`}>
-                                    {teacher.subjectGroup || "-"}
+                                    {teacherSubjectGroup || "-"}
                                 </span>
                             </div>
 

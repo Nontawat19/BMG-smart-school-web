@@ -6,7 +6,8 @@ import MainLayout from "@/layouts/MainLayout";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import Swal from 'sweetalert2';
-import { ArrowLeft, PlusCircle, Trash2, ClipboardList, Edit2, X, Check, ListPlus, Star, Info, LayoutGrid, ChevronDown, ChevronUp } from 'lucide-react';
+import { PlusCircle, Trash2, ClipboardList, Edit2, X, Check, ListPlus, Star, Info, LayoutGrid, ChevronDown, ChevronUp } from 'lucide-react';
+import BackButton from '@/components/Shared/BackButton';
 
 interface DesiredCharacteristic {
   id: string;
@@ -189,10 +190,7 @@ const AddDesiredCharacteristicsPage: React.FC = () => {
               กำหนดเกณฑ์มาตรฐานและพฤติกรรมบ่งชี้สำหรับการประเมินนักเรียนตามหลักสูตร
             </p>
           </div>
-          <Link to="/academic-admin" className="inline-flex items-center justify-center px-5 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-all group font-semibold text-gray-700 dark:text-gray-200 text-sm">
-            <ArrowLeft size={18} className="mr-2 group-hover:-translate-x-1 transition-transform" /> 
-            กลับหน้าบริหารวิชาการ
-          </Link>
+          <BackButton to="/academic/hub/evaluation" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

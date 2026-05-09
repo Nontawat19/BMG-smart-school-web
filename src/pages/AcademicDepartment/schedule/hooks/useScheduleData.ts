@@ -9,7 +9,11 @@ import { Course, CourseInstance, Schedule, SpecialPeriod, PeriodSetting, SchoolS
 import { CLASSES } from '../utils';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 
-export const useScheduleData = (schoolId: string | undefined) => {
+export const useScheduleData = (
+    schoolId: string | undefined,
+    selectedYear?: string,
+    selectedSemester: string = "1"
+) => {
     const [availableCourseInstances, setAvailableCourseInstances] = useState<CourseInstance[]>([]);
     const [allCourses, setAllCourses] = useState<Course[]>([]);
     const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
@@ -22,21 +26,32 @@ export const useScheduleData = (schoolId: string | undefined) => {
     const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]>>({});
     const [teacherMasterSchedule, setTeacherMasterSchedule] = useState<Record<string, { classId: string | string[]; course: Course | null }>>({});
     const [schedule, setSchedule] = useState<Schedule>({});
-    const [academicYear, setAcademicYear] = useState<string>('');
-    const [academicTerm, setAcademicTerm] = useState<string>('1');
+    const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
+    const academicTerm = useSelector((state: RootState) => state.calendar.rawData?.currentTerm || "1");
     const [assignmentConstraints, setAssignmentConstraints] = useState<AssignmentConstraintMap>({});
 
     const dispatch = useDispatch();
     const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
 
     const loadSchoolMasterSchedule = useCallback(async (currentSchoolId: string) => {
+        const targetYear = String(selectedYear || academicYear || "");
+        const targetSemester = String(selectedSemester || academicTerm || "1");
+        const matchesYearSemester = (data: any) => {
+            const dataYear = String(data.academicYear || "");
+            const dataSemester = String(data.semester || "");
+            const yearMatches = !targetYear || !dataYear || dataYear === targetYear;
+            const semesterMatches = !dataSemester || dataSemester === targetSemester || dataSemester.startsWith(targetSemester + '/') || targetSemester.startsWith(dataSemester + '/');
+            return yearMatches && semesterMatches;
+        };
+
         const masterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]> = {};
         const schedulesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'schedules');
         const querySnapshot = await getDocs(schedulesCollectionRef);
 
         querySnapshot.forEach((doc) => {
             const data = doc.data();
-            const teacherId = data.teacherId;
+            if (!matchesYearSemester(data)) return;
+            const teacherId = data.teacherId || doc.id.split('__')[0];
             const classId = data.classId;
             const scheduleData = data.schedule as Schedule;
 
@@ -70,16 +85,35 @@ export const useScheduleData = (schoolId: string | undefined) => {
             }
         });
         setSchoolMasterSchedule(masterSchedule);
-    }, []);
+    }, [academicTerm, academicYear, selectedSemester, selectedYear]);
 
     const fetchData = useCallback(async (currentSchoolId: string) => {
         const fetchCourses = async () => {
             try {
                 const coursesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'courses');
                 const querySnapshot = await getDocs(coursesCollectionRef);
-                const coursesData = querySnapshot.docs
+                const rawCoursesData = querySnapshot.docs
                     .map(doc => ({ id: doc.id, ...doc.data() } as Course))
                     .filter(c => c.isActive !== false);
+
+                const assignmentsCollectionRef = collection(db, 'school-settings', currentSchoolId, 'course_assignments');
+                const assignmentsSnap = await getDocs(assignmentsCollectionRef);
+                const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+
+                const coursesData = rawCoursesData.map(course => {
+                    const targetSem = String(selectedSemester || academicTerm || "1");
+                    const targetYear = String(selectedYear || academicYear || "");
+                    const semesterAssignment = assignmentsData.find((a: any) => {
+                        const aSem = String(a.semester || "");
+                        const aYear = String(a.academicYear || "");
+                        const yearMatches = !targetYear || !aYear || aYear === targetYear;
+                        return a.courseId === course.id && yearMatches && (aSem === targetSem || aSem.startsWith(targetSem + '/') || targetSem.startsWith(aSem + '/'));
+                    });
+                    if (semesterAssignment && semesterAssignment.teacherAssignments) {
+                        return { ...course, teacherAssignments: semesterAssignment.teacherAssignments };
+                    }
+                    return course;
+                });
 
                 setAllCourses(coursesData);
                 
@@ -87,7 +121,7 @@ export const useScheduleData = (schoolId: string | undefined) => {
                 const flattened: CourseInstance[] = [];
                 coursesData.forEach(course => {
                     if (course.teacherAssignments && course.teacherAssignments.length > 0) {
-                        course.teacherAssignments.forEach((asgn, idx) => {
+                        course.teacherAssignments.forEach((asgn: any, idx: number) => {
                             // Filter out assignments without a valid teacher
                             if (!asgn.teacherId || asgn.teacherId === 'pending' || asgn.teacherId.startsWith('GHOST')) return;
 
@@ -221,44 +255,9 @@ export const useScheduleData = (schoolId: string | undefined) => {
         };
 
         const fetchDefaultCalendar = async () => {
-            try {
-                const calendarRef = doc(db, 'school-settings', currentSchoolId, 'main_calendar', 'default');
-                const calendarSnap = await getDoc(calendarRef);
-                if (calendarSnap.exists()) {
-                    const data = calendarSnap.data();
-                    if (data.academicYear) {
-                        setAcademicYear(data.academicYear);
-                    } else {
-                        const currentYear = new Date().getFullYear() + 543;
-                        setAcademicYear(currentYear.toString());
-                    }
-
-                    // Determine current term based on date
-                    const today = new Date().toISOString().split('T')[0];
-                    const term1 = data.terms?.term1;
-                    const term2 = data.terms?.term2;
-                    
-                    if (term1?.startDate && term1?.endDate && today >= term1.startDate && today <= term1.endDate) {
-                        setAcademicTerm('1');
-                    } else if (term2?.startDate && term2?.endDate && today >= term2.startDate && today <= term2.endDate) {
-                        setAcademicTerm('2');
-                    } else {
-                        // If not in specific range, check if terms even exist
-                        if (data.terms) {
-                             // Maybe we are between terms? Default to the closer one or just '1'
-                             setAcademicTerm('1');
-                        } else {
-                             setAcademicTerm('1');
-                        }
-                    }
-                } else {
-                    const currentYear = new Date().getFullYear() + 543;
-                    setAcademicYear(currentYear.toString());
-                    setAcademicTerm('1');
-                }
-            } catch (error) {
-                console.error("Error fetching academic year: ", error);
-            }
+            // Logic moved to calendarSlice and consumed via useSelector
+            // This function is kept for backward compatibility if other parts of fetchData need it
+            // but it no longer sets local state
         };
 
         if (currentSchoolId) {
@@ -272,7 +271,7 @@ export const useScheduleData = (schoolId: string | undefined) => {
                 loadSchoolMasterSchedule(currentSchoolId)
             ]);
         }
-    }, [loadSchoolMasterSchedule]);
+    }, [loadSchoolMasterSchedule, academicTerm, academicYear, selectedSemester, selectedYear]);
 
     useEffect(() => {
         if (teacherMapStatus === 'idle' && schoolId) {
@@ -296,8 +295,8 @@ export const useScheduleData = (schoolId: string | undefined) => {
         schoolMasterSchedule, setSchoolMasterSchedule,
         teacherMasterSchedule, setTeacherMasterSchedule,
         schedule, setSchedule,
-        academicYear, setAcademicYear,
-        academicTerm, setAcademicTerm,
+        academicYear,
+        academicTerm,
         loadSchoolMasterSchedule,
         fetchData
     };

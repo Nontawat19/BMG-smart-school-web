@@ -18,8 +18,7 @@ import {
   AlertCircle,
   CheckCircle2,
   LayoutGrid,
-  RefreshCw,
-  ArrowLeft
+  RefreshCw
 } from 'lucide-react';
 import SkeletonLoader from "@/components/SkeletonLoader";
 
@@ -209,7 +208,7 @@ const ClubAttendancePage: React.FC = () => {
       <div className="p-4 sm:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white">
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <BackButton to="/academic-admin" className="mb-2" />
+            <BackButton to="/academic/hub/attendance" className="mb-2" />
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
               <ClipboardCheck className="text-emerald-500" size={32} />
               เช็คชื่อเข้าชุมนุม

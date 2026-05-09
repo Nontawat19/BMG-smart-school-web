@@ -23,6 +23,7 @@ interface AttendanceCheckViewProps {
         ลา: number;
         ขาด: number;
     };
+    children?: React.ReactNode;
 }
 
 const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
@@ -39,6 +40,7 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     onSave,
     onToggleStatus,
     attendanceSummary,
+    children,
 }) => {
     return (
         <div className="space-y-6">
@@ -100,6 +102,8 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                     </div>
                 </div>
             </div>
+
+            {children}
 
             {/* Summary Cards */}
             <AttendanceSummary summary={attendanceSummary} />

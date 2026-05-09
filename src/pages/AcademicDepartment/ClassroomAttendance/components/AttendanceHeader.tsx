@@ -7,6 +7,7 @@ interface AttendanceHeaderProps {
     academicYear: string;
     semester: string;
     onDateChange: (date: Date) => void;
+    title?: string;
 }
 
 const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
@@ -15,6 +16,7 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
     academicYear,
     semester,
     onDateChange,
+    title = "ระบบเช็คชื่อเข้าเรียน",
 }) => {
     const prevDate = () => {
         const d = new Date(currentDate);
@@ -37,7 +39,7 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
                     </div>
                     <div>
                         <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
-                            ระบบเช็คชื่อเข้าเรียน
+                            {title}
                         </h1>
                         <p className="text-gray-500 dark:text-gray-400 text-xs font-bold flex items-center gap-1.5 pt-0.5">
                             <span className="opacity-60">ครูผู้สอน:</span>

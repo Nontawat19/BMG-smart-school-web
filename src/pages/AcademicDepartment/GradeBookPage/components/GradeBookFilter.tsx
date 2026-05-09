@@ -5,6 +5,8 @@ import { Course } from '../types';
 interface GradeBookFilterProps {
     selectedClass: string;
     setSelectedClass: React.Dispatch<React.SetStateAction<string>>;
+    selectedRoom: string;
+    setSelectedRoom: React.Dispatch<React.SetStateAction<string>>;
     setSelectedCourse: React.Dispatch<React.SetStateAction<string>>;
     availableClassOptions: [string, string][];
     currentCourse: Course | undefined;
@@ -24,6 +26,8 @@ interface GradeBookFilterProps {
 const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
     selectedClass,
     setSelectedClass,
+    selectedRoom,
+    setSelectedRoom,
     setSelectedCourse,
     availableClassOptions,
     selectedCourse,
@@ -64,6 +68,33 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                 </div>
             </div>
 
+            {/* ห้องเรียน */}
+            <div className="md:col-span-1 group">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                    ห้อง
+                </label>
+                <div className="relative">
+                    <select
+                        value={selectedRoom}
+                        onChange={(e) => {
+                            setSelectedRoom(e.target.value);
+                            setSelectedCourse('');
+                            setSelectedGroup('');
+                        }}
+                        disabled={!selectedClass}
+                        className="w-full pl-3 pr-8 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer disabled:opacity-40 whitespace-nowrap text-gray-900 dark:text-gray-100"
+                    >
+                        <option value="" className="bg-white dark:bg-gray-800">ทุกห้อง</option>
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(room => (
+                            <option key={room} value={String(room)} className="bg-white dark:bg-gray-800">{room}</option>
+                        ))}
+                    </select>
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                        <ChevronDown size={12} />
+                    </div>
+                </div>
+            </div>
+
             {/* ภาคเรียน */}
             <div className="md:col-span-2 group">
                 <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
@@ -94,7 +125,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
             </div>
 
             {/* รายวิชา */}
-            <div className="md:col-span-3 group">
+            <div className="md:col-span-2 group">
                 <label className="flex items-center gap-2 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
                     รายวิชาที่เปิดสอน
                 </label>

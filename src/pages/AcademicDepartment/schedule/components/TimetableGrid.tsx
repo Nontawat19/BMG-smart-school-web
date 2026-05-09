@@ -58,19 +58,19 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
     onCellClick,
     selectedCourseCode
 }) => {
-    // Exact period mapping from screenshot: ฮ, 1, 2, 3, 4, พ, 5, 6, 7, 8
-    const displayPeriods = [
-        { label: 'ฮ', time: '08:30', index: 0 },
-        { label: '1', time: '08:40', index: 1 },
-        { label: '2', time: '09:30', index: 2 },
-        { label: '3', time: '10:20', index: 3 },
-        { label: '4', time: '11:10', index: 4 },
-        { label: 'พ', time: '12:00', index: 5 },
-        { label: '5', time: '13:00', index: 6 },
-        { label: '6', time: '13:50', index: 7 },
-        { label: '7', time: '14:40', index: 8 },
-        { label: '8', time: '15:30', index: 9 },
-    ];
+    const displayPeriods = periodSettings
+        .map((period, index) => {
+            const isLunch = period.id === 'lunch' || period.label?.includes('พัก');
+            const match = period.id.match(/period-(\d+)/);
+            return {
+                label: isLunch ? 'พ' : match?.[1] || period.label.replace('คาบที่', '').trim(),
+                time: period.startTime,
+                index,
+                period,
+            };
+        })
+        .filter(({ period }) => period.id !== 'homeroom' && period.label !== 'โฮมรูม');
+    const gridTemplateColumns = `35px repeat(${displayPeriods.length}, minmax(0, 1fr))`;
 
     return (
         <div className="flex flex-col bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] shadow-sm dark:shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative transition-colors h-full">
@@ -91,7 +91,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                 <div className="min-w-0 flex flex-col gap-0.5 pb-2">
                         
                         {/* Days / Times Header Row - High Precision Alignment */}
-                        <div className="grid grid-cols-[35px_repeat(10,1fr)] gap-0.5 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
+                        <div className="grid gap-0.5 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5" style={{ gridTemplateColumns }}>
                             <div className="flex items-center justify-center text-[7px] font-black text-gray-900 dark:text-gray-400 uppercase tracking-widest pb-0.5">วัน</div>
                             {displayPeriods.map((p) => (
                                 <div key={p.label} className="flex flex-col items-center justify-center">
@@ -103,7 +103,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
 
                         {/* Daily Rows */}
                         {Object.entries(DAYS).map(([dayKey, dayLabel]) => (
-                            <div key={dayKey} className="grid grid-cols-[35px_repeat(10,1fr)] gap-0.5 items-stretch h-[38px]">
+                            <div key={dayKey} className="grid gap-0.5 items-stretch h-[44px]" style={{ gridTemplateColumns }}>
                                 <div className="flex items-center justify-center bg-transparent">
                                     <span className="text-[9px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-tight">{dayLabel}</span>
                                 </div>

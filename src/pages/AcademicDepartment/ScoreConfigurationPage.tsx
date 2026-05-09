@@ -4,23 +4,23 @@ import { Link } from "react-router-dom";
 import BackButton from "@/components/Shared/BackButton";
 import { RootState } from "@/store";
 import { firestore as db } from "@/firebase";
-import { collection, query, onSnapshot, writeBatch, doc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, onSnapshot, writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import MainLayout from "@/layouts/MainLayout";
 import { 
     Settings, 
     Save, 
     Copy, 
-    ChevronLeft, 
     Search, 
     Info,
     AlertCircle,
-    CheckCircle2,
     Calendar
 } from "lucide-react";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import { CLASSES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 import Swal from "sweetalert2";
 
 interface FormativeAssessment {
+    id: string;
     name: string;
     maxScore: number;
     term: 'pre-midterm' | 'post-midterm';
@@ -31,6 +31,9 @@ interface Course {
     code: string;
     title: string;
     subjectGroup: string;
+    classId?: string | string[];
+    semester?: string;
+    formativeWeight?: number;
     formativeAssessments?: FormativeAssessment[];
     midtermWeight?: number;
     finalWeight?: number;
@@ -39,6 +42,28 @@ interface Course {
     isActive?: boolean;
 }
 
+const allClassOptions = Object.entries(CLASSES) as [string, string][];
+const isAnnualCourse = (semester?: string) => !semester || semester === '1-2' || semester === 'annual' || semester === '0' || semester === 'ปีการศึกษา';
+const PAGE_SIZE = 20;
+
+const getInitialCourseScores = (course: Course) => {
+    const preMidterm = course.formativeAssessments?.filter(a => a.term === 'pre-midterm') || [];
+    const postMidterm = course.formativeAssessments?.filter(a => a.term === 'post-midterm') || [];
+    const looksLikeOldDefault =
+        preMidterm.length === 0 &&
+        postMidterm.length === 0 &&
+        course.finalWeight === undefined &&
+        Number(course.formativeWeight) === 60 &&
+        Number(course.midtermWeight) === 20;
+
+    return {
+        s1_9: Array(9).fill(0).map((_, i) => preMidterm[i]?.maxScore || 0),
+        midterm: looksLikeOldDefault ? 0 : course.midtermWeight || 0,
+        s10_18: Array(9).fill(0).map((_, i) => postMidterm[i]?.maxScore || 0),
+        final: looksLikeOldDefault ? 0 : course.finalWeight || 0
+    };
+};
+
 const ScoreConfigurationPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
@@ -46,27 +71,70 @@ const ScoreConfigurationPage: React.FC = () => {
     const { subjectGroups } = useSubjectGroups(schoolId);
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>("");
+    const [selectedLevel, setSelectedLevel] = useState<string>("");
+    const [selectedSemester, setSelectedSemester] = useState<string>("");
+    const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>(allClassOptions);
     const [filterScope, setFilterScope] = useState<"group" | "all">("group");
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [localScores, setLocalScores] = useState<Record<string, any>>({});
+    const [dirtyCourseIds, setDirtyCourseIds] = useState<Set<string>>(() => new Set());
+    const [currentPage, setCurrentPage] = useState(1);
+
+    useEffect(() => {
+        if (!schoolId) return;
+
+        const fetchSchoolClassOptions = async () => {
+            try {
+                const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
+                if (!schoolSnap.exists()) {
+                    setAvailableClassOptions(allClassOptions);
+                    return;
+                }
+
+                const data = schoolSnap.data();
+                const options = getClassOptionsBySchoolSettings(
+                    data.opportunityExpansionLevel || "",
+                    data.schoolType || ""
+                );
+                setAvailableClassOptions(options.length > 0 ? options : allClassOptions);
+            } catch (err) {
+                console.error("Error fetching school class options:", err);
+                setAvailableClassOptions(allClassOptions);
+            }
+        };
+
+        fetchSchoolClassOptions();
+    }, [schoolId]);
+
+    useEffect(() => {
+        if (!selectedLevel || availableClassOptions.some(([id]) => id === selectedLevel)) return;
+
+        setSelectedLevel("");
+    }, [availableClassOptions, selectedLevel]);
 
     // Fetch Courses
     useEffect(() => {
         if (!schoolId) return;
+
+        if (filterScope === "group" && !selectedGroup) {
+            setCourses([]);
+            setIsLoading(false);
+            return;
+        }
+
+        setIsLoading(true);
         
         const coursesRef = collection(db, 'school-settings', schoolId, 'courses');
-        const unsubscribe = onSnapshot(query(coursesRef), (snap) => {
+        const courseQuery = filterScope === "group"
+            ? query(coursesRef, where('subjectGroup', '==', selectedGroup))
+            : query(coursesRef);
+
+        const unsubscribe = onSnapshot(courseQuery, (snap) => {
             const courseList = snap.docs
                 .map(doc => ({ id: doc.id, ...doc.data() } as Course))
                 .filter(c => c.isActive !== false);
             setCourses(courseList);
-            
-            // Auto-select first group if none selected
-            if (!selectedGroup && courseList.length > 0) {
-                const firstGroup = courseList[0].subjectGroup;
-                if (firstGroup) setSelectedGroup(firstGroup);
-            }
 
             // Initialize local scores ONLY if not already initialized
             setLocalScores(prev => {
@@ -75,15 +143,7 @@ const ScoreConfigurationPage: React.FC = () => {
                 
                 courseList.forEach(course => {
                     if (!next[course.id]) {
-                        const preMidterm = course.formativeAssessments?.filter(a => a.term === 'pre-midterm') || [];
-                        const postMidterm = course.formativeAssessments?.filter(a => a.term === 'post-midterm') || [];
-                        
-                        next[course.id] = {
-                            s1_9: Array(9).fill(0).map((_, i) => preMidterm[i]?.maxScore || 0),
-                            midterm: course.midtermWeight || 0,
-                            s10_18: Array(9).fill(0).map((_, i) => postMidterm[i]?.maxScore || 0),
-                            final: course.finalWeight || 0
-                        };
+                        next[course.id] = getInitialCourseScores(course);
                         hasChanges = true;
                     }
                 });
@@ -93,14 +153,61 @@ const ScoreConfigurationPage: React.FC = () => {
         });
 
         return () => unsubscribe();
-    }, [schoolId, selectedGroup]);
+    }, [schoolId, selectedGroup, filterScope]);
 
     // Filtered Courses
     const filteredCourses = useMemo(() => {
-        if (filterScope === "all") return courses;
-        if (!selectedGroup) return [];
-        return courses.filter(c => c.subjectGroup === selectedGroup);
-    }, [courses, selectedGroup, filterScope]);
+        return courses.filter(course => {
+            if (selectedLevel) {
+                const classIds = Array.isArray(course.classId) ? course.classId : [course.classId];
+                if (!classIds.includes(selectedLevel)) return false;
+            }
+
+            if (selectedSemester) {
+                if (selectedSemester === 'annual') {
+                    if (!isAnnualCourse(course.semester)) return false;
+                } else if (!isAnnualCourse(course.semester) && course.semester !== selectedSemester) {
+                    return false;
+                }
+            }
+
+            if (filterScope === "group") {
+                if (!selectedGroup) return false;
+                return course.subjectGroup === selectedGroup;
+            }
+
+            return true;
+        });
+    }, [courses, selectedGroup, selectedLevel, selectedSemester, filterScope]);
+
+    const dirtyVisibleCourseCount = useMemo(() => {
+        return filteredCourses.filter(course => dirtyCourseIds.has(course.id)).length;
+    }, [filteredCourses, dirtyCourseIds]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredCourses.length / PAGE_SIZE));
+    const paginatedCourses = useMemo(() => {
+        const startIndex = (currentPage - 1) * PAGE_SIZE;
+        return filteredCourses.slice(startIndex, startIndex + PAGE_SIZE);
+    }, [filteredCourses, currentPage]);
+
+    const paginationPages = useMemo(() => {
+        const maxButtons = 5;
+        const half = Math.floor(maxButtons / 2);
+        let start = Math.max(1, currentPage - half);
+        const end = Math.min(totalPages, start + maxButtons - 1);
+
+        start = Math.max(1, end - maxButtons + 1);
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }, [currentPage, totalPages]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedGroup, selectedLevel, selectedSemester, filterScope]);
+
+    useEffect(() => {
+        if (currentPage <= totalPages) return;
+        setCurrentPage(totalPages);
+    }, [currentPage, totalPages]);
 
     // Handle Score Change
     const handleScoreChange = (courseId: string, type: 's1_9' | 's10_18' | 'midterm' | 'final', index: number, value: string) => {
@@ -119,6 +226,11 @@ const ScoreConfigurationPage: React.FC = () => {
                 courseScore[type] = value === "" ? "" : numValue;
             }
             return { ...prev, [courseId]: courseScore };
+        });
+        setDirtyCourseIds(prev => {
+            const next = new Set(prev);
+            next.add(courseId);
+            return next;
         });
     };
 
@@ -159,6 +271,15 @@ const ScoreConfigurationPage: React.FC = () => {
                     }
                 });
                 setLocalScores(newScores);
+                setDirtyCourseIds(prev => {
+                    const next = new Set(prev);
+                    filteredCourses.forEach(course => {
+                        if (course.id !== sourceCourseId) {
+                            next.add(course.id);
+                        }
+                    });
+                    return next;
+                });
                 Swal.fire({
                     icon: 'success',
                     title: 'คัดลอกสำเร็จ',
@@ -173,17 +294,13 @@ const ScoreConfigurationPage: React.FC = () => {
 
     // Save Changes
     const handleSave = async () => {
-        // Validation: Check if any course total is not 100
-        const invalidCourses = filteredCourses.filter(course => {
-            const { total } = calculateTotals(course.id);
-            return total !== 100;
-        });
+        const coursesToSave = filteredCourses.filter(course => dirtyCourseIds.has(course.id));
 
-        if (invalidCourses.length > 0) {
+        if (coursesToSave.length === 0) {
             Swal.fire({
-                icon: 'warning',
-                title: 'คะแนนรวมไม่ถูกต้อง',
-                text: `มีรายวิชาที่คะแนนรวมไม่เท่ากับ 100 (${invalidCourses.map(c => c.code).join(', ')}) กรุณาตรวจสอบอีกครั้ง`,
+                icon: 'info',
+                title: 'ยังไม่มีรายการที่แก้ไข',
+                text: 'กรุณาแก้ไขคะแนนของรายวิชาที่ต้องการก่อนบันทึก',
                 background: '#1e2235',
                 color: '#fff'
             });
@@ -193,34 +310,45 @@ const ScoreConfigurationPage: React.FC = () => {
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
-            filteredCourses.forEach(course => {
+            const toScoreNumber = (score: unknown) => Number(score) || 0;
+
+            coursesToSave.forEach(course => {
                 const scores = localScores[course.id];
+                if (!scores) return;
+
                 const formativeAssessments: FormativeAssessment[] = [];
                 
-                scores.s1_9.forEach((score: number, i: number) => {
-                    if (score > 0) {
-                        formativeAssessments.push({ name: `S${i + 1}`, maxScore: score, term: 'pre-midterm' });
+                scores.s1_9.forEach((score: unknown, i: number) => {
+                    const maxScore = toScoreNumber(score);
+                    if (maxScore > 0) {
+                        formativeAssessments.push({ id: `S${i + 1}`, name: `S${i + 1}`, maxScore, term: 'pre-midterm' });
                     }
                 });
                 
-                scores.s10_18.forEach((score: number, i: number) => {
-                    if (score > 0) {
-                        formativeAssessments.push({ name: `S${i + 10}`, maxScore: score, term: 'post-midterm' });
+                scores.s10_18.forEach((score: unknown, i: number) => {
+                    const maxScore = toScoreNumber(score);
+                    if (maxScore > 0) {
+                        formativeAssessments.push({ id: `S${i + 10}`, name: `S${i + 10}`, maxScore, term: 'post-midterm' });
                     }
                 });
 
                 const courseRef = doc(db, 'school-settings', schoolId, 'courses', course.id);
                 batch.update(courseRef, {
                     formativeAssessments,
-                    midtermWeight: scores.midterm,
-                    finalWeight: scores.final,
+                    midtermWeight: toScoreNumber(scores.midterm),
+                    finalWeight: toScoreNumber(scores.final),
                     updatedBy: currentUser ? `${(currentUser as any).firstName || ''} ${(currentUser as any).lastName || ''}`.trim() || currentUser?.email : 'System',
                     updatedAt: serverTimestamp()
                 });
             });
 
             await batch.commit();
-            Swal.fire({ icon: 'success', title: 'บันทึกการตั้งค่าสำเร็จ', background: '#1e2235', color: '#fff' });
+            setDirtyCourseIds(prev => {
+                const next = new Set(prev);
+                coursesToSave.forEach(course => next.delete(course.id));
+                return next;
+            });
+            Swal.fire({ icon: 'success', title: `บันทึกสำเร็จ ${coursesToSave.length} วิชา`, background: '#1e2235', color: '#fff' });
         } catch (err) {
             console.error(err);
             Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาดในการบันทึก', background: '#1e2235', color: '#fff' });
@@ -237,7 +365,7 @@ const ScoreConfigurationPage: React.FC = () => {
                 <div className="bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 p-4 sm:p-6 lg:pl-16 sticky top-[60px] z-40 backdrop-blur-md bg-white/90 dark:bg-[#161a27]/90">
                     <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-4">
-                            <BackButton to="/academic-admin" />
+                            <BackButton to="/academic/hub/evaluation" />
                             <div className="flex items-center gap-3">
                                 <div className="p-3 bg-emerald-500/10 dark:bg-emerald-500/20 rounded-2xl shadow-lg border border-emerald-500/20">
                                     <Settings size={24} className="text-emerald-500 dark:text-emerald-400" />
@@ -254,6 +382,34 @@ const ScoreConfigurationPage: React.FC = () => {
 
                         {/* Filters & Actions */}
                         <div className="flex items-center gap-4">
+                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
+                                <span className="pl-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ชั้น</span>
+                                <select 
+                                    value={selectedLevel}
+                                    onChange={(e) => setSelectedLevel(e.target.value)}
+                                    className="bg-transparent border-none text-[12px] font-bold text-slate-900 dark:text-white px-3 py-2 outline-none min-w-[110px]"
+                                >
+                                    <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทุกชั้น</option>
+                                    {availableClassOptions.map(([id, name]) => (
+                                        <option key={id} value={id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
+                                <span className="pl-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ภาค</span>
+                                <select 
+                                    value={selectedSemester}
+                                    onChange={(e) => setSelectedSemester(e.target.value)}
+                                    className="bg-transparent border-none text-[12px] font-bold text-slate-900 dark:text-white px-3 py-2 outline-none min-w-[110px]"
+                                >
+                                    <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทุกภาค</option>
+                                    <option value="1" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ภาคเรียนที่ 1</option>
+                                    <option value="2" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ภาคเรียนที่ 2</option>
+                                    <option value="annual" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">รายปี</option>
+                                </select>
+                            </div>
+
                             <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
                                 <select 
                                     value={selectedGroup}
@@ -292,11 +448,11 @@ const ScoreConfigurationPage: React.FC = () => {
 
                             <button 
                                 onClick={handleSave}
-                                disabled={isSaving || filteredCourses.length === 0}
+                                disabled={isSaving || dirtyVisibleCourseCount === 0}
                                 className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl font-black text-[12px] shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 whitespace-nowrap"
                             >
                                 <Save size={16} />
-                                บันทึกตั้งค่า
+                                {dirtyVisibleCourseCount > 0 ? `บันทึก ${dirtyVisibleCourseCount} วิชา` : 'บันทึกตั้งค่า'}
                             </button>
                         </div>
                     </div>
@@ -359,7 +515,7 @@ const ScoreConfigurationPage: React.FC = () => {
                                     </div>
                                 </div>
                             ) : (
-                                filteredCourses.map(course => {
+                                paginatedCourses.map(course => {
                                     const scores = localScores[course.id];
                                     if (!scores) return null;
                                     const { sum1, sum2, total } = calculateTotals(course.id);
@@ -463,14 +619,75 @@ const ScoreConfigurationPage: React.FC = () => {
                                 </div>
                                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400/80">
                                     <AlertCircle size={14} />
-                                    <span className="text-[10px] font-bold">คะแนนรวมต้องเท่ากับ 100 ทุกวิชา</span>
+                                    <span className="text-[10px] font-bold">บันทึกเฉพาะรายวิชาที่แก้ไข คะแนนรวมไม่จำเป็นต้องครบ 100</span>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">จำนวนที่แสดง:</span>
                                 <span className="text-[12px] font-black text-slate-900 dark:text-white">{filteredCourses.length} วิชา</span>
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">แก้ไข:</span>
+                                <span className="text-[12px] font-black text-emerald-600 dark:text-emerald-400">{dirtyVisibleCourseCount} วิชา</span>
                             </div>
                         </div>
+
+                        {filteredCourses.length > PAGE_SIZE && (
+                            <div className="bg-white dark:bg-[#161a27] border-t border-slate-200 dark:border-white/10 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+                                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                    แสดง {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, filteredCourses.length)} จาก {filteredCourses.length} วิชา
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(1)}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e2235] disabled:opacity-40 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                    >
+                                        หน้าแรก
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e2235] disabled:opacity-40 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                    >
+                                        ย้อนกลับ
+                                    </button>
+
+                                    {paginationPages.map(page => (
+                                        <button
+                                            key={page}
+                                            type="button"
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`min-w-8 px-2.5 py-1.5 rounded-lg text-[11px] font-black transition-colors ${
+                                                currentPage === page
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : 'bg-slate-100 dark:bg-[#1e2235] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                                            }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    ))}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e2235] disabled:opacity-40 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                    >
+                                        ถัดไป
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(totalPages)}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e2235] disabled:opacity-40 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                    >
+                                        หน้าสุดท้าย
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

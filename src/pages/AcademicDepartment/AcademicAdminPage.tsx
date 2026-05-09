@@ -1,8 +1,8 @@
 import React from "react";
-import HubPage from "../Shared/HubPage";
+import { Navigate } from "react-router-dom";
 
 const AcademicAdminPage: React.FC = () => {
-  return <HubPage />;
+  return <Navigate to="/academic/hub/registration" replace />;
 };
 
 export default AcademicAdminPage;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Link } from 'react-router-dom';
 import { firestore } from '@/firebase';
 import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, collectionGroup } from 'firebase/firestore';
@@ -72,6 +73,8 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
     school_admin: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
     teacher: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
     student: { icon: <FaUserGraduate />, text: 'นักเรียน (Student)', className: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20' },
+    school_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)', className: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' },
+    student_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลา (Student Attendance)', className: 'bg-cyan-50 text-cyan-600 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20' },
   };
 
   const safeRoles = (Array.isArray(roles) ? roles : [roles])
@@ -128,6 +131,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
 };
 
 const UserListPage: React.FC = () => {
+  const { user: currentUser, isSchoolAdmin } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -180,6 +184,11 @@ const UserListPage: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
+      // Security: School admin only sees users in their school
+      if (isSchoolAdmin && user.schoolId !== currentUser?.schoolId) {
+        return false;
+      }
+
       const userRoles = Array.isArray(user.role) ? user.role : [user.role];
       const matchesRole = roleFilter === 'all' || userRoles.includes(roleFilter);
       const matchesSearch = searchTerm === '' ||
@@ -188,7 +197,7 @@ const UserListPage: React.FC = () => {
         (user.schoolName || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesRole && matchesSearch;
     });
-  }, [users, searchTerm, roleFilter]);
+  }, [users, searchTerm, roleFilter, isSchoolAdmin, currentUser]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -416,6 +425,9 @@ const UserListPage: React.FC = () => {
                   <option value="school_admin">ผู้ดูแลระบบโรงเรียน (School Admin)</option>
                   <option value="teacher">ครู (Teacher)</option>
                   <option value="student">นักเรียน (Student)</option>
+                  <option value="school_attendance">เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)</option>
+                  <option value="student_attendance">เจ้าหน้าที่ลงเวลา (Student Attendance)</option>
+                  <option value="teacher_attendance">เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)</option>
                 </select>
               </div>
               <Link

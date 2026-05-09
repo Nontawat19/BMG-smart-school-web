@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { usePermissions } from "@/hooks/usePermissions";
 import { firestore, storage } from '@/firebase';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -24,6 +25,7 @@ interface School {
 const EditUserPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
+  const { user: currentUser, isSchoolAdmin } = usePermissions();
   const [user, setUser] = useState<User | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,6 +73,14 @@ const EditUserPage: React.FC = () => {
         }
 
         setUser(userData);
+
+        // Security check for school admins
+        if (isSchoolAdmin && userData.schoolId !== currentUser?.schoolId) {
+          Swal.fire('เข้าถึงไม่ได้', 'คุณไม่มีสิทธิ์แก้ไขข้อมูลผู้ใช้นอกโรงเรียน', 'error');
+          navigate('/owner/users');
+          return;
+        }
+
         if (userData.profileUrl) {
           setImagePreview(userData.profileUrl);
         }
@@ -258,6 +268,7 @@ const EditUserPage: React.FC = () => {
     { value: 'student', label: 'นักเรียน (Student)' },
     { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
     { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
+    { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
   ];
 
   return (
@@ -383,7 +394,7 @@ const EditUserPage: React.FC = () => {
 
                           {isRoleDropdownOpen && (
                             <div className="absolute z-50 mt-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in fade-in zoom-in duration-200">
-                              {userRoles.map((role) => {
+                              {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
                                 const isChecked = Array.isArray(user.role)
                                   ? user.role.includes(role.value)
                                   : user.role === role.value;
@@ -417,14 +428,17 @@ const EditUserPage: React.FC = () => {
                               name="schoolId"
                               value={user.schoolId || ''}
                               onChange={handleInputChange}
-                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                              disabled={isSchoolAdmin}
+                              className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : ''}`}
                             >
                               <option value="">-- ไม่ได้กำหนด --</option>
                               {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
                             </select>
-                            <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
-                              <FaPlus />
-                            </Link>
+                            {!isSchoolAdmin && (
+                              <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
+                                <FaPlus />
+                              </Link>
+                            )}
                           </div>
                         </div>
                       </div>

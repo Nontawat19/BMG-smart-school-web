@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { RootState } from "../../store";
 import { firestore } from "@/firebase";
 import {
@@ -26,6 +27,7 @@ import MainLayout from "@/layouts/MainLayout";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ThaiDatePicker from "../../components/Common/ThaiDatePicker";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 import { FaPaperPlane, FaArrowLeft, FaHistory, FaUsers, FaHashtag, FaMapMarkerAlt, FaFileAlt, FaCalendarAlt, FaSpinner, FaLayerGroup, FaTimes } from "react-icons/fa";
 import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
@@ -266,6 +268,7 @@ const StudentSelectorModal: React.FC<StudentSelectorModalProps> = ({ schoolId, o
 };
 
 const OfficialTravelRequestPage: React.FC = () => {
+    const dispatch = useDispatch();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const requesterType = (searchParams.get("type") as 'teacher' | 'student') || 'teacher';
@@ -273,6 +276,16 @@ const OfficialTravelRequestPage: React.FC = () => {
     const { user } = useSelector((state: RootState) => state.auth);
     const schoolId = user?.schoolId;
     const { isDarkMode } = useTheme();
+
+    // Redux Calendar State
+    const calendarState = useSelector((state: RootState) => state.calendar);
+    const reduxRawData = calendarState.rawData;
+
+    useEffect(() => {
+        if (schoolId) {
+            dispatch(fetchCalendar(schoolId) as any);
+        }
+    }, [schoolId, dispatch]);
 
     // Form State
     const [subject, setSubject] = useState("ขออนุญาตไปราชการ");
@@ -301,8 +314,8 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [transportType, setTransportType] = useState<'public' | 'school_vehicle' | 'private_vehicle' | 'other'>('school_vehicle');
     const [transportDetail, setTransportDetail] = useState("");
     const [requiresSubstitute, setRequiresSubstitute] = useState(false); // 📌 เพิ่มสถานะการสอนแทน
+    const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [docNo, setDocNo] = useState(""); // 📌 เพิ่มเลขที่เอกสาร
-    const [academicYear, setAcademicYear] = useState(""); // 📌 เพิ่มปีการศึกษา
     const [schoolAffiliation, setSchoolAffiliation] = useState(""); // 📌 เพิ่มสังกัดโรงเรียน
 
 
@@ -321,7 +334,6 @@ const OfficialTravelRequestPage: React.FC = () => {
     });
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
-    const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
 
     // Fetch User Info (Current Requester)
@@ -471,30 +483,30 @@ const OfficialTravelRequestPage: React.FC = () => {
     // Fetch calendar data
     useEffect(() => {
         if (!schoolId) return;
-        const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().events) {
-                setCalendarEvents(docSnap.data().events);
-            }
-        });
-        return () => unsubscribe();
-    }, [schoolId]);
 
-    // Fetch Academic Year and Running Number
+        if (calendarState.status === 'succeeded' && reduxRawData.events) {
+            setCalendarEvents(reduxRawData.events);
+        } else {
+            const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
+            const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists() && docSnap.data().events) {
+                    setCalendarEvents(docSnap.data().events);
+                }
+            });
+            return () => unsubscribe();
+        }
+    }, [schoolId, calendarState.status, reduxRawData.events]);
+
+    // Fetch Running Number and School Info
     useEffect(() => {
-        const fetchAcademicYearAndDocNo = async () => {
-            if (!schoolId) return;
+        const fetchDocNoAndAffiliation = async () => {
+            if (!schoolId || !academicYear) return;
             try {
-                // 1. Fetch Academic Year
+                // 1. Fetch Affiliation
                 const calendarRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
                 const calendarSnap = await getDoc(calendarRef);
-                let year = (new Date().getFullYear() + 543).toString();
                 if (calendarSnap.exists()) {
                     const calendarData = calendarSnap.data();
-                    if (calendarData.academicYear) {
-                        year = calendarData.academicYear;
-                    }
-                    // 📌 ดึงข้อมูลสังกัดโรงเรียน
                     if (calendarData.affiliation) {
                         setSchoolAffiliation(calendarData.affiliation);
                     } else {
@@ -505,49 +517,33 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }
                     }
                 }
-                setAcademicYear(year);
 
                 // 2. Fetch Running Number (From Counters)
                 try {
-                    const counterRef = doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${year}`);
+                    const counterRef = doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${academicYear}`);
                     const counterSnap = await getDoc(counterRef);
 
                     if (counterSnap.exists()) {
                         const nextNumber = (counterSnap.data().lastNumber || 0) + 1;
-                        setDocNo(`${nextNumber}/${year}`);
+                        setDocNo(`${nextNumber}/${academicYear}`);
                     } else {
-                        setDocNo(`1/${year}`);
+                        setDocNo(`1/${academicYear}`);
                     }
                 } catch (err) {
                     console.error("Error fetching doc number:", err);
-                    setDocNo(`1/${year}`);
+                    setDocNo(`1/${academicYear}`);
                 }
             } catch (error) {
                 console.error("Error fetching academic info:", error);
             }
         };
 
-        fetchAcademicYearAndDocNo();
-    }, [schoolId]);
+        fetchDocNoAndAffiliation();
+    }, [schoolId, academicYear]);
 
 
 
-    // Fetch current academic year for period summaries
-    useEffect(() => {
-        if (schoolId) {
-            // Fetch academic year
-            const calendarRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-            const unsubscribe = onSnapshot(calendarRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.academicYear) {
-                        setCurrentAcademicYear(data.academicYear);
-                    }
-                }
-            });
-            return () => unsubscribe();
-        }
-    }, [schoolId]);
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -689,7 +685,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }, { merge: true });
 
                         // Update Period Summaries (Week, Month, Year, Semester)
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'students', dateStr, 'absent', 'officialTravel', cls, currentAcademicYear);
+                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'students', dateStr, 'absent', 'officialTravel', cls, academicYear);
 
                         // For co-adventurers as well
                         if (travelDataToSave.coAdventurers) {
@@ -697,7 +693,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                                 if (adv.type === 'student') {
                                     const advClassMatch = adv.position.match(/ชั้น\s+([^/]+)/);
                                     const advCls = advClassMatch ? advClassMatch[1].trim() : "ไม่ระบุชั้น";
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'students', dateStr, 'absent', 'officialTravel', advCls, currentAcademicYear);
+                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'students', dateStr, 'absent', 'officialTravel', advCls, academicYear);
                                 }
                             }
                         }
@@ -711,13 +707,13 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }, { merge: true });
 
                         // Update Period Summaries (Week, Month, Year, Semester)
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'teachers', dateStr, 'absent', 'officialTravel', undefined, currentAcademicYear);
+                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
 
                         // For co-adventurers as well
                         if (travelDataToSave.coAdventurers) {
                             for (const adv of travelDataToSave.coAdventurers) {
                                 if (adv.type === 'teacher') {
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'teachers', dateStr, 'absent', 'officialTravel', undefined, currentAcademicYear);
+                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
                                 }
                             }
                         }

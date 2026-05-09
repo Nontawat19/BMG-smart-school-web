@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { doc, setDoc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { firestore as db } from '../../firebase';
 import Swal from 'sweetalert2';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
 import { isNonOfficialHoliday } from '../../utils/calendarUtils';
+import { getThaiYear, getCurrentThaiYear } from '@/utils/dateUtils';
+import { Calendar } from 'lucide-react';
 
 type DayType = 'schoolDay' | 'holiday' | 'specialHoliday';
 
@@ -131,7 +133,7 @@ const ThaiDatePicker: React.FC<{
   const displayValue = value
     ? (() => {
       const [y, m, d] = value.split('-').map(Number);
-      return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
+      return `${d} ${thaiMonths[m - 1]} ${getThaiYear(new Date(y, m - 1, d))}`;
     })()
     : '';
 
@@ -150,7 +152,7 @@ const ThaiDatePicker: React.FC<{
           <div className="flex justify-between items-center mb-4">
             <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
-              {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
+              {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
             </span>
             <button onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
           </div>
@@ -312,7 +314,7 @@ const SchoolCalendarPage: React.FC = () => {
             position: 'top-end',
             icon: 'info',
             title: `วันสิ้นสุดภาคเรียนที่ ${term === 'term1' ? 1 : 2} ถูกปรับอัตโนมัติ`,
-            text: `เป็นวันที่ ${newEndDate.getDate()} ${thaiMonths[newEndDate.getMonth()]} ${newEndDate.getFullYear() + 543} เนื่องจากมีการเปลี่ยนแปลงวันหยุด`,
+            text: `เป็นวันที่ ${newEndDate.getDate()} ${thaiMonths[newEndDate.getMonth()]} ${getThaiYear(newEndDate)} เนื่องจากมีการเปลี่ยนแปลงวันหยุด`,
             showConfirmButton: false,
             timer: 5000,
             timerProgressBar: true,
@@ -543,7 +545,7 @@ const SchoolCalendarPage: React.FC = () => {
                 { val: 'fri', label: 'ศุกร์' }
               ].map(opt => `
                       <div class="relative">
-                        <input type="radio" name="scheduleDay" id="day-${opt.val || 'normal'}" value="${opt.val}" class="peer hidden" ${opt.val === '' ? 'checked' : ''}>
+                        <input type="radio" name="scheduleDay" id="day-${opt.val || 'normal'}" value="${opt.val}" class="peer hidden" ${opt.val === (isWeekend ? 'mon' : '') ? 'checked' : ''}>
                         <label for="day-${opt.val || 'normal'}" class="block cursor-pointer rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 text-center text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 peer-checked:text-white transition-all">
                           ${opt.label}
                         </label>
@@ -559,6 +561,10 @@ const SchoolCalendarPage: React.FC = () => {
             cancelButtonText: 'ยกเลิก',
             preConfirm: () => {
               const selectedDay = document.querySelector('input[name="scheduleDay"]:checked') as HTMLInputElement;
+              if (isWeekend && !selectedDay?.value) {
+                Swal.showValidationMessage('วันเสาร์-อาทิตย์ต้องเลือกว่าจะใช้ตารางสอนของวันใด');
+                return false;
+              }
               return {
                 description: (document.getElementById('swal-input-desc') as HTMLInputElement).value,
                 scheduleDay: selectedDay ? selectedDay.value : ''
@@ -624,7 +630,7 @@ const SchoolCalendarPage: React.FC = () => {
     if (endDate) {
       const endDateString = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
       handleTermDateChange(term, 'endDate', endDateString);
-      Swal.fire('คำนวณสำเร็จ', `วันสิ้นสุดภาคเรียน (100 วันเรียน) คือ ${endDate.getDate()} ${thaiMonths[endDate.getMonth()]} ${endDate.getFullYear() + 543}`, 'success');
+      Swal.fire('คำนวณสำเร็จ', `วันสิ้นสุดภาคเรียน (100 วันเรียน) คือ ${endDate.getDate()} ${thaiMonths[endDate.getMonth()]} ${getThaiYear(endDate)}`, 'success');
     } else {
       Swal.fire('คำนวณไม่สำเร็จ', 'ไม่สามารถหาวันสิ้นสุด 100 วันเรียนได้ภายใน 200 วันจากวันที่เริ่มต้น', 'error');
     }
@@ -715,15 +721,20 @@ const SchoolCalendarPage: React.FC = () => {
     <MainLayout>
       <div className="p-4 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-6">
-            <Link to="/academic-admin" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-              &larr; กลับไปหน้าบริหารงานวิชาการ
-            </Link>
+          <div className="flex items-center gap-4 mb-8">
+            <BackButton to="/academic/hub/settings" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Calendar className="text-indigo-600 dark:text-indigo-400" size={28} />
+                ปฏิทินการศึกษา
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">จัดการกำหนดการและวันหยุดของสถานศึกษา</p>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm dark:shadow-none">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ปฏิทินการศึกษา</h1>
+              <div />
               <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
                 {isSaving ? 'กำลังบันทึก...' : 'บันทึกปฏิทิน'}
               </button>
@@ -804,7 +815,7 @@ const SchoolCalendarPage: React.FC = () => {
               <div className="flex justify-between items-center mb-4">
                 <button onClick={() => changeMonth(-1)} className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500">&lt;</button>
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  {thaiMonths[currentDate.getMonth()]} {currentDate.getFullYear() + 543}
+                  {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
                 </h2>
                 <button onClick={() => changeMonth(1)} className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500">&gt;</button>
               </div>

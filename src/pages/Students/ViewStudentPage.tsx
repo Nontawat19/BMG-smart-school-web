@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy } from "firebase/firestore";
@@ -12,6 +14,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
+import { getCurrentThaiYear } from "@/utils/dateUtils";
 
 // --- Type Definition ---
 interface StudentData {
@@ -346,7 +349,15 @@ export default function ViewStudentPage() {
   const [activeTab, setActiveTab] = useState("general");
   const [attendanceTrendData, setAttendanceTrendData] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
-  const [academicYear, setAcademicYear] = useState<string>("");
+  const dispatch = useDispatch();
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const academicYear = calendarState.academicYear || String(getCurrentThaiYear());
+
+  useEffect(() => {
+    if (schoolId) {
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, dispatch]);
   const [calculatedStats, setCalculatedStats] = useState<{
     present: number; late: number; leave: number; absent: number; early: number; noCheckout: number; official_travel_days?: number;
   } | null>(null);
@@ -368,9 +379,6 @@ export default function ViewStudentPage() {
   const nextStudentId = currentIndex < allStudentIds.length - 1 ? allStudentIds[currentIndex + 1] : null;
   const prevStudentId = currentIndex > 0 ? allStudentIds[currentIndex - 1] : null;
 
-  // RFID Mapping State
-  const [rfidValue, setRfidValue] = useState("");
-  const [isSavingRfid, setIsSavingRfid] = useState(false);
 
   useEffect(() => {
     const fetchAllIds = async () => {
@@ -391,41 +399,7 @@ export default function ViewStudentPage() {
     fetchAllIds();
   }, [schoolId, student]);
 
-  useEffect(() => {
-    if (student) {
-      setRfidValue(student.rfid || "");
-    }
-  }, [student]);
 
-  const handleSaveRfid = async (val: string) => {
-    if (!schoolId || !studentId) return;
-    setIsSavingRfid(true);
-    try {
-      const { updateDoc, doc } = await import("firebase/firestore");
-      const studentRef = doc(firestore, "school-settings", schoolId, "students", studentId);
-      await updateDoc(studentRef, { rfid: val });
-      
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'success',
-        title: 'บันทึก RFID สำเร็จ',
-        showConfirmButton: false,
-        timer: 1000
-      });
-
-      if (nextStudentId) {
-        navigate(`/school/${schoolId}/students/view/${nextStudentId}`);
-      } else {
-        setStudent(prev => prev ? { ...prev, rfid: val } : null);
-      }
-    } catch (err) {
-      console.error("Error saving RFID:", err);
-      Swal.fire('Error', 'ไม่สามารถบันทึก RFID ได้', 'error');
-    } finally {
-      setIsSavingRfid(false);
-    }
-  };
 
   const { isDarkMode, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -482,19 +456,7 @@ export default function ViewStudentPage() {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const data = calendarSnap.data();
-            if (data.academicYear && !schoolInfo.schoolName) {
-              setAcademicYear(data.academicYear || "");
-            }
+            // Logic handled by calendarSlice
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -512,19 +474,25 @@ export default function ViewStudentPage() {
           // 1. Get Term Dates
           let startDate = "";
           let endDate = "";
-          const yearDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", academicYear);
-          let yearSnap = await getDoc(yearDocRef);
 
-          if (!yearSnap.exists()) {
-            const defaultDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-            yearSnap = await getDoc(defaultDocRef);
-          }
+          if (calendarState.status === 'succeeded') {
+            startDate = calendarState.terms[0]?.startDate || "";
+            endDate = calendarState.terms[calendarState.terms.length - 1]?.endDate || calendarState.terms[0]?.endDate || "";
+          } else {
+            const yearDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", academicYear);
+            let yearSnap = await getDoc(yearDocRef);
 
-          if (yearSnap.exists()) {
-            const data = yearSnap.data();
-            // ดึงช่วงเวลาทั้งปีการศึกษา (เริ่มเทอม 1 ถึง จบเทอม 2)
-            startDate = data.terms?.term1?.startDate || "";
-            endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
+            if (!yearSnap.exists()) {
+              const defaultDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
+              yearSnap = await getDoc(defaultDocRef);
+            }
+
+            if (yearSnap.exists()) {
+              const data = yearSnap.data();
+              // ดึงช่วงเวลาทั้งปีการศึกษา (เริ่มเทอม 1 ถึง จบเทอม 2)
+              startDate = data.terms?.term1?.startDate || "";
+              endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
+            }
           }
 
           if (!startDate || !endDate) {
@@ -972,11 +940,14 @@ export default function ViewStudentPage() {
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <header className="mb-8">
             <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">ข้อมูลนักเรียน</h1>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">
-                  รายละเอียดข้อมูลของ: <span className="font-semibold text-indigo-400">{student.firstName} {student.lastName}</span>
-                </p>
+              <div className="flex items-center gap-4">
+                {!isStudentLogin && <BackButton to="/academic/hub/students" />}
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">ข้อมูลนักเรียน</h1>
+                  <p className="mt-1 text-gray-500 dark:text-gray-400">
+                    รายละเอียดข้อมูลของ: <span className="font-semibold text-indigo-400">{student.firstName} {student.lastName}</span>
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-x-4">
                 {!isStudentLogin && (
@@ -1097,39 +1068,6 @@ export default function ViewStudentPage() {
               <div className="space-y-6">
                 {activeTab === "general" && (
                   <div className="space-y-6 animate-fade-in">
-                    {/* RFID Mapping Card */}
-                    {!isStudentLogin && (
-                      <InfoCard title="การเชื่อมโยงบัตร RFID" className="border-2 border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-900/10">
-                        <div className="flex flex-col sm:flex-row items-center gap-4">
-                          <div className="flex-1 w-full">
-                            <label className="block text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2">สแกนบัตรเพื่อลงทะเบียน</label>
-                            <input 
-                              type="text"
-                              value={rfidValue}
-                              onChange={(e) => setRfidValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSaveRfid(rfidValue);
-                                }
-                              }}
-                              autoFocus
-                              placeholder="วางบัตรบนเครื่องสแกน..."
-                              className="w-full bg-white dark:bg-gray-700 border-2 border-indigo-200 dark:border-indigo-900/50 rounded-xl px-4 py-3 text-lg font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
-                            />
-                          </div>
-                          <div className="flex-shrink-0 flex items-end h-full pt-6">
-                            <button 
-                              onClick={() => handleSaveRfid(rfidValue)}
-                              disabled={isSavingRfid || !rfidValue}
-                              className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all disabled:opacity-50"
-                            >
-                              {isSavingRfid ? "กำลังบันทึก..." : "บันทึกและถัดไป"}
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-gray-400 mt-2 italic">* เมื่อสแกนบัตร ระบบจะบันทึกข้อมูลและข้ามไปยังนักเรียนคนถัดไปโดยอัตโนมัติ</p>
-                      </InfoCard>
-                    )}
                     <InfoCard title="ข้อมูลส่วนตัว">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div className="space-y-4">
@@ -1521,7 +1459,7 @@ export default function ViewStudentPage() {
                 {activeTab === "attendance" && (
                   <div className="animate-fade-in space-y-6">
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-                      <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear || new Date().getFullYear() + 543})</h2>
+                      <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear})</h2>
 
                       {isStatsLoading ? (
                         <div className="py-10 text-center text-gray-500">กำลังประมวลผลข้อมูล...</div>

@@ -23,19 +23,20 @@ interface ReadingWritingEvaluationPageProps {
 
 // กำหนดความกว้างคอลัมน์
 const COL_WIDTHS = {
-    NO: 20,
-    ID: 35,
+    NO: 22,
+    ID: 38,
     NAME: 'auto',
-    SCORE_SUB: 18,  // ความกว้างช่องย่อย
-    SCORE_FULL: 18, // ความกว้างช่องเต็ม
-    TOTAL: 25,
-    LEVEL: 30,
-    RESULT: 35,
+    SCORE_SUB: 24,
+    SCORE_FULL: 24,
+    TOTAL: 27,
+    LEVEL: 34,
+    RESULT: 43,
 };
 
 const styles = StyleSheet.create({
     headerContainer: {
-        marginBottom: 5,
+        marginBottom: 6,
+        marginTop: 22,
     },
     header: {
         flexDirection: 'row',
@@ -43,7 +44,7 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     title: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: 'bold',
         textAlign: 'center',
         flex: 1,
@@ -56,8 +57,9 @@ const styles = StyleSheet.create({
     },
     subtitle: {
         textAlign: 'center',
-        fontSize: 12,
-        marginBottom: 5,
+        fontSize: 13,
+        fontWeight: 'bold',
+        marginBottom: 6,
     },
     bold: {
         fontWeight: 'bold',
@@ -76,13 +78,12 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderColor: '#000',
         alignItems: 'stretch',
-        flexGrow: 1,
-        minHeight: 22,
+        minHeight: 18,
     },
     cell: {
         borderRightWidth: 1,
         borderColor: '#000',
-        padding: 2,
+        padding: 1,
         textAlign: 'center',
         justifyContent: 'center',
         alignItems: 'center',
@@ -95,21 +96,40 @@ const styles = StyleSheet.create({
     },
     verticalText: {
         transform: 'rotate(-90deg)',
-        width: 100,
+        width: 96,
         textAlign: 'center',
         fontWeight: 'bold',
+        fontSize: 12,
     },
     studentNameCell: {
         textAlign: 'left',
-        paddingLeft: 4,
+        paddingLeft: 5,
         justifyContent: 'center',
         alignItems: 'flex-start',
     },
     headerText: {
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 'bold',
         textAlign: 'center',
-    }
+    },
+    bodyText: {
+        fontSize: 12,
+        lineHeight: 1,
+    },
+    bodyTextBold: {
+        fontSize: 12,
+        lineHeight: 1,
+        fontWeight: 'bold',
+    },
+    groupBorder: {
+        borderRightWidth: 1.6,
+    },
+    thickRight: {
+        borderRightWidth: 1.6,
+    },
+    thickLeft: {
+        borderLeftWidth: 1.6,
+    },
 });
 
 const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> = ({
@@ -145,7 +165,7 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
 
             {/* Table Header */}
             <View style={styles.table}>
-                <View style={[styles.row, { height: 100 }]} fixed>
+                <View style={[styles.row, { height: 88 }]} fixed>
 
                     {/* 1. เลขที่ */}
                     <View style={[styles.cell, { width: COL_WIDTHS.NO }]}>
@@ -158,49 +178,63 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
                     </View>
 
                     {/* 3. ชื่อ - สกุล */}
-                    <View style={[styles.cell, { flex: 1, height: '100%' }]}>
+                    <View style={[styles.cell, styles.thickRight, { flex: 1, height: '100%' }]}>
                         <Text style={styles.headerText}>ชื่อ - สกุล</Text>
                     </View>
 
-                    {/* 4. กลุ่มคะแนนประเมิน (Dynamic) */}
-                    {readingWritingCriteria.map((criteria, cIdx) => (
-                        <View key={criteria.id || cIdx} style={{ flexDirection: 'column', width: (criteria.indicators?.length || 0) * COL_WIDTHS.SCORE_SUB + COL_WIDTHS.SCORE_FULL, height: '100%' }}>
-                            <View style={[styles.cell, { height: 25, borderBottomWidth: 1, width: '100%' }]}>
-                                <Text style={[styles.headerText, { fontSize: 9 }]}>{cIdx + 1}. {criteria.standard}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', height: 75 }}>
-                                {(criteria.indicators || []).map((_, iIdx) => (
-                                    <View key={iIdx} style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, height: '100%' }]}>
-                                        <View style={styles.verticalTextContainer}>
-                                            <Text style={[styles.verticalText, { fontSize: 9 }]}>{cIdx + 1}.{iIdx + 1}</Text>
-                                        </View>
-                                    </View>
-                                ))}
-                                <View style={[styles.cell, { width: COL_WIDTHS.SCORE_FULL, height: '100%' }]}>
-                                    <View style={styles.verticalTextContainer}>
-                                        <Text style={[styles.verticalText, { fontSize: 9 }]}>รวม</Text>
-                                    </View>
-                                </View>
-                            </View>
+                    {/* 4. กลุ่มคะแนนประเมิน */}
+                    <View style={{ flexDirection: 'column', width: COL_WIDTHS.SCORE_SUB * 8, height: '100%' }}>
+                        <View style={[styles.cell, { height: 20, borderBottomWidth: 1, width: '100%' }]}>
+                            <Text style={styles.headerText}>ผลประเมินอ่าน คิด วิเคราะห์ และเขียนสื่อความหมาย</Text>
                         </View>
-                    ))}
+                        <View style={{ flexDirection: 'row', height: 24 }}>
+                            {readingWritingCriteria.map((criteria, cIdx) => {
+                                const columnSpan = cIdx === 2 ? 2 : 3;
+                                return (
+                                    <View key={criteria.id || cIdx} style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB * columnSpan, borderBottomWidth: 1 }, cIdx < 2 ? styles.thickRight : {}]}>
+                                        <Text style={styles.headerText}>{cIdx + 1}. {cIdx === 1 ? 'การคิดวิเคราะห์' : criteria.standard}</Text>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                        <View style={{ flexDirection: 'row', height: 22 }}>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>1.1</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>1.2</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>เต็ม</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>2.1</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>2.2</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>เต็ม</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>3.1</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB, borderBottomWidth: 1 }]}><Text style={styles.headerText}>เต็ม</Text></View>
+                        </View>
+                        <View style={{ flexDirection: 'row', height: 22 }}>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>6</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>6</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.headerText}>3</Text></View>
+                        </View>
+                    </View>
 
-                    {/* 5. รวมทั้งสิ้น */}
+                    {/* 5. รวมทั้งหมด */}
                     <View style={{ flexDirection: 'column', width: COL_WIDTHS.TOTAL, height: '100%' }}>
-                        <View style={[styles.cell, { width: '100%', height: 75, borderBottomWidth: 1 }]}>
-                            <View style={styles.verticalTextContainer}><Text style={styles.verticalText}>รวมทั้งสิ้น</Text></View>
+                        <View style={[styles.cell, { width: '100%', height: 66, borderBottomWidth: 1 }]}>
+                            <View style={styles.verticalTextContainer}><Text style={styles.verticalText}>รวมทั้งหมด</Text></View>
                         </View>
-                        <View style={[styles.cell, { width: '100%', height: 25, borderBottomWidth: 0 }]}>
+                        <View style={[styles.cell, { width: '100%', height: 22, borderBottomWidth: 0 }]}>
                             <Text style={styles.headerText}>15</Text>
                         </View>
                     </View>
 
                     {/* 6. ผลการประเมิน */}
                     <View style={{ flexDirection: 'column', width: COL_WIDTHS.LEVEL + COL_WIDTHS.RESULT, height: '100%' }}>
-                        <View style={[styles.cell, { height: 25, borderBottomWidth: 1, width: '100%' }]}>
+                        <View style={[styles.cell, { height: 24, borderBottomWidth: 1, width: '100%' }]}>
                             <Text style={styles.headerText}>ผลการประเมิน</Text>
                         </View>
-                        <View style={{ flexDirection: 'row', height: 75 }}>
+                        <View style={{ flexDirection: 'row', height: 64 }}>
                             <View style={[styles.cell, { width: COL_WIDTHS.LEVEL, borderRightWidth: 1 }]}>
                                 <View style={styles.verticalTextContainer}><Text style={styles.verticalText}>ระดับ</Text></View>
                             </View>
@@ -212,68 +246,66 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
                 </View>
 
                 {/* Body Rows */}
-                {studentChunk.map((s) => {
+                {studentChunk.map((s, index) => {
                     const summary = getRWSummary(s.id);
+                    const readingScores = [
+                        getRWScore(s.id, readingWritingCriteria[0]?.id, 0) || 0,
+                        getRWScore(s.id, readingWritingCriteria[0]?.id, 1) || 0,
+                    ];
+                    const analysisScores = [
+                        getRWScore(s.id, readingWritingCriteria[1]?.id, 0) || 0,
+                        getRWScore(s.id, readingWritingCriteria[1]?.id, 1) || 0,
+                    ];
+                    const writingScore = getRWScore(s.id, readingWritingCriteria[2]?.id, 0) || 0;
+                    const readingSum = readingScores.reduce((sum, score) => sum + score, 0);
+                    const analysisSum = analysisScores.reduce((sum, score) => sum + score, 0);
                     return (
-                        <View key={s.id} style={styles.row} wrap={false}>
-                            <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text>{s.studentNumber}</Text></View>
-                            <View style={[styles.cell, { width: COL_WIDTHS.ID }]}><Text>{s.studentId}</Text></View>
-                            <View style={[styles.cell, styles.studentNameCell, { flex: 1 }]}>
-                                <Text>{`${formatPrefix(s.title)}${s.firstName}  ${s.lastName}`}</Text>
+                        <View key={s.id} style={[styles.row, { height: 20 }]} wrap={false}>
+                            <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text style={styles.bodyText}>{index + 1}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.ID }]}><Text style={styles.bodyTextBold}>{s.studentId}</Text></View>
+                            <View style={[styles.cell, styles.studentNameCell, styles.thickRight, { flex: 1 }]}>
+                                <Text style={styles.bodyText}>{`${formatPrefix(s.title)}${s.firstName}      ${s.lastName}`}</Text>
                             </View>
 
-                            {/* Dynamic Scores */}
-                            {readingWritingCriteria.map((criteria) => {
-                                let criteriaSum = 0;
-                                return (
-                                    <React.Fragment key={criteria.id}>
-                                        {(criteria.indicators || []).map((_, iIdx) => {
-                                            const score = getRWScore(s.id, criteria.id, iIdx) || 0;
-                                            criteriaSum += score;
-                                            return (
-                                                <View key={iIdx} style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}>
-                                                    <Text>{score || ''}</Text>
-                                                </View>
-                                            );
-                                        })}
-                                        <View style={[styles.cell, { width: COL_WIDTHS.SCORE_FULL, backgroundColor: '#f0f0f0' }]}>
-                                            <Text>{criteriaSum || ''}</Text>
-                                        </View>
-                                    </React.Fragment>
-                                );
-                            })}
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{readingScores[0] || ''}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{readingScores[1] || ''}</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{readingSum || ''}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{analysisScores[0] || ''}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{analysisScores[1] || ''}</Text></View>
+                            <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{analysisSum || ''}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{writingScore || ''}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]}><Text style={styles.bodyTextBold}>{writingScore || ''}</Text></View>
 
                             {/* Total */}
-                            <View style={[styles.cell, { width: COL_WIDTHS.TOTAL, fontWeight: 'bold' }]}><Text>{summary.total}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.TOTAL, fontWeight: 'bold' }]}><Text style={styles.bodyTextBold}>{summary.total}</Text></View>
 
                             {/* Result */}
-                            <View style={[styles.cell, { width: COL_WIDTHS.LEVEL }]}><Text>{summary.level}</Text></View>
-                            <View style={[styles.cell, { width: COL_WIDTHS.RESULT, borderRightWidth: 1 }]}><Text>{summary.result}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.LEVEL }]}><Text style={styles.bodyTextBold}>{summary.level}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.RESULT, borderRightWidth: 1 }]}><Text style={styles.bodyText}>{summary.result}</Text></View>
                         </View>
                     );
                 })}
 
                 {/* Filler Rows */}
                 {Array.from({ length: Math.max(0, 25 - studentChunk.length) }).map((_, i) => (
-                    <View key={`filler-${i}`} style={styles.row}>
+                    <View key={`filler-${i}`} style={[styles.row, { height: 20 }]}>
                         <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text>&nbsp;</Text></View>
                         <View style={[styles.cell, { width: COL_WIDTHS.ID }]}><Text>&nbsp;</Text></View>
-                        <View style={[styles.cell, styles.studentNameCell, { flex: 1 }]}><Text>&nbsp;</Text></View>
+                        <View style={[styles.cell, styles.studentNameCell, styles.thickRight, { flex: 1 }]}><Text>&nbsp;</Text></View>
 
                         {/* Reading */}
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
-                        <View style={[styles.cell, { width: COL_WIDTHS.SCORE_FULL }]} />
+                        <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]} />
 
                         {/* Analysis */}
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
-                        <View style={[styles.cell, { width: COL_WIDTHS.SCORE_FULL }]} />
+                        <View style={[styles.cell, styles.thickRight, { width: COL_WIDTHS.SCORE_SUB }]} />
 
                         {/* Writing */}
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
                         <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUB }]} />
-                        <View style={[styles.cell, { width: COL_WIDTHS.SCORE_FULL }]} />
 
                         {/* Total */}
                         <View style={[styles.cell, { width: COL_WIDTHS.TOTAL }]} />

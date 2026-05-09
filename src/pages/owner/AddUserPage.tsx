@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { usePermissions } from "@/hooks/usePermissions";
 import { auth, firestore, storage } from '@/firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -7,16 +8,18 @@ import { doc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/fire
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import MainLayout from '@/layouts/MainLayout';
 import Swal from 'sweetalert2';
-import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool } from 'react-icons/fa';
+import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool, FaSearch } from 'react-icons/fa';
 import { compressImage } from '@/utils/imageUtils';
 
 interface School {
     id: string;
     schoolName: string;
+    schoolCode?: string;
 }
 
 const AddUserPage = () => {
     const navigate = useNavigate();
+    const { user: currentUser, isSchoolAdmin } = usePermissions();
     const [formData, setFormData] = useState({
         title: '',
         firstName: '',
@@ -33,12 +36,23 @@ const AddUserPage = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+    const [isSchoolDropdownOpen, setIsSchoolDropdownOpen] = useState(false);
+    const [schoolSearchTerm, setSchoolSearchTerm] = useState('');
+    const [schoolPage, setSchoolPage] = useState(1);
+    const [schoolDropdownPlacement, setSchoolDropdownPlacement] = useState<'bottom' | 'top'>('bottom');
+    const [schoolDropdownMaxHeight, setSchoolDropdownMaxHeight] = useState(520);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const schoolDropdownRef = useRef<HTMLDivElement>(null);
+    const schoolMenuRef = useRef<HTMLDivElement>(null);
+    const schoolsPerPage = 10;
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsRoleDropdownOpen(false);
+            }
+            if (schoolDropdownRef.current && !schoolDropdownRef.current.contains(event.target as Node)) {
+                setIsSchoolDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -53,7 +67,8 @@ const AddUserPage = () => {
                 const schoolsData = schoolSnapshot.docs.map(doc => ({
                     id: doc.id,
                     schoolName: doc.data().schoolName,
-                }));
+                    schoolCode: doc.data().schoolCode || doc.data().schoolId || doc.data().code || doc.id,
+                })).sort((a, b) => (a.schoolName || '').localeCompare(b.schoolName || '', 'th'));
                 setSchools(schoolsData);
             } catch (err) {
                 console.error("Error fetching schools:", err);
@@ -61,6 +76,12 @@ const AddUserPage = () => {
         };
         fetchSchools();
     }, []);
+
+    useEffect(() => {
+        if (isSchoolAdmin && currentUser?.schoolId) {
+            setFormData(prev => ({ ...prev, schoolId: currentUser.schoolId || '' }));
+        }
+    }, [isSchoolAdmin, currentUser]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -76,6 +97,87 @@ const AddUserPage = () => {
             ? currentRoles.filter(r => r !== roleValue)
             : [...currentRoles, roleValue];
         setFormData({ ...formData, role: updatedRoles });
+    };
+
+    const selectedSchool = useMemo(() => {
+        return schools.find(school => school.id === formData.schoolId);
+    }, [schools, formData.schoolId]);
+
+    const getSchoolCode = (school: School) => school.schoolCode || school.id;
+    const formatSchoolNameWithCode = (school: School) => `${getSchoolCode(school)} - ${school.schoolName || 'ไม่ระบุชื่อโรงเรียน'}`;
+
+    const filteredSchools = useMemo(() => {
+        const keyword = schoolSearchTerm.trim().toLowerCase();
+        if (!keyword) return schools;
+
+        return schools.filter(school => {
+            const name = (school.schoolName || '').toLowerCase();
+            const code = (school.schoolCode || '').toLowerCase();
+            const id = (school.id || '').toLowerCase();
+            return name.includes(keyword) || code.includes(keyword) || id.includes(keyword);
+        });
+    }, [schools, schoolSearchTerm]);
+
+    const schoolTotalPages = Math.max(1, Math.ceil(filteredSchools.length / schoolsPerPage));
+    const currentSchoolPage = Math.min(schoolPage, schoolTotalPages);
+    const paginatedSchools = filteredSchools.slice(
+        (currentSchoolPage - 1) * schoolsPerPage,
+        currentSchoolPage * schoolsPerPage
+    );
+
+    useEffect(() => {
+        setSchoolPage(1);
+    }, [schoolSearchTerm]);
+
+    useEffect(() => {
+        if (schoolPage > schoolTotalPages) {
+            setSchoolPage(schoolTotalPages);
+        }
+    }, [schoolPage, schoolTotalPages]);
+
+    useEffect(() => {
+        if (!isSchoolDropdownOpen) return;
+
+        const updateSchoolDropdownPosition = () => {
+            const wrapper = schoolDropdownRef.current;
+            if (!wrapper) return;
+
+            const rect = wrapper.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            const gap = 12;
+            const spaceBelow = viewportHeight - rect.bottom - gap;
+            const spaceAbove = rect.top - gap;
+            const shouldOpenUp = spaceBelow < 460 && spaceAbove > spaceBelow;
+            const availableSpace = shouldOpenUp ? spaceAbove : spaceBelow;
+
+            setSchoolDropdownPlacement(shouldOpenUp ? 'top' : 'bottom');
+            setSchoolDropdownMaxHeight(Math.max(220, Math.min(520, Math.floor(availableSpace))));
+        };
+
+        const frame = window.requestAnimationFrame(updateSchoolDropdownPosition);
+        window.addEventListener('resize', updateSchoolDropdownPosition);
+        window.addEventListener('scroll', updateSchoolDropdownPosition, true);
+
+        return () => {
+            window.cancelAnimationFrame(frame);
+            window.removeEventListener('resize', updateSchoolDropdownPosition);
+            window.removeEventListener('scroll', updateSchoolDropdownPosition, true);
+        };
+    }, [isSchoolDropdownOpen, schoolSearchTerm, currentSchoolPage, schoolTotalPages]);
+
+    const visibleSchoolPages = useMemo(() => {
+        const maxVisible = 5;
+        const half = Math.floor(maxVisible / 2);
+        let start = Math.max(1, currentSchoolPage - half);
+        const end = Math.min(schoolTotalPages, start + maxVisible - 1);
+        start = Math.max(1, end - maxVisible + 1);
+
+        return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+    }, [currentSchoolPage, schoolTotalPages]);
+
+    const handleSchoolSelect = (schoolId: string) => {
+        setFormData(prev => ({ ...prev, schoolId }));
+        setIsSchoolDropdownOpen(false);
     };
 
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,6 +310,7 @@ const AddUserPage = () => {
         { value: 'student', label: 'นักเรียน (Student)' },
         { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
         { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
+        { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
     ];
 
     const inputClasses = "w-full pl-11 pr-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 shadow-sm dark:autofill:shadow-[0_0_0_30px_#1c1c24_inset]";
@@ -451,7 +554,7 @@ const AddUserPage = () => {
 
                                         {isRoleDropdownOpen && (
                                             <div className="absolute z-50 mt-2 w-full bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-white/5 rounded-2xl shadow-2xl py-2 max-h-64 overflow-auto animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-xl">
-                                                {userRoles.map((role) => {
+                                                {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
                                                     const isChecked = formData.role.includes(role.value);
                                                     return (
                                                         <div
@@ -479,22 +582,112 @@ const AddUserPage = () => {
                                     {!formData.role.includes('super_admin') && (
                                         <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
                                             <label className={labelClasses}>สังกัดโรงเรียน (School Assignment)</label>
-                                            <div className="relative group">
-                                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none group-focus-within:text-indigo-500 transition-colors">
-                                                    <FaSchool size={14} className="opacity-40" />
-                                                </div>
-                                                <select
-                                                    name="schoolId"
-                                                    value={formData.schoolId}
-                                                    onChange={handleInputChange}
-                                                    className="w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm appearance-none cursor-pointer shadow-sm text-gray-900 dark:text-white"
+                                            <div className="relative" ref={schoolDropdownRef}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (!isSchoolAdmin) setIsSchoolDropdownOpen(prev => !prev);
+                                                    }}
+                                                    disabled={isSchoolAdmin}
+                                                    className={`w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm shadow-sm text-left text-gray-900 dark:text-white ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/50'} ${isSchoolDropdownOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
                                                 >
-                                                    <option value="">-- ส่วนกลาง / ยังไม่ระบุ --</option>
-                                                    {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
-                                                </select>
-                                                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                                                    <FaChevronDown size={10} className="text-gray-400" />
-                                                </div>
+                                                    <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                                        <FaSchool size={14} className="opacity-40" />
+                                                    </span>
+	                                                    <span className={`block truncate ${selectedSchool ? '' : 'text-gray-400 dark:text-gray-600'}`}>
+	                                                        {selectedSchool
+	                                                            ? formatSchoolNameWithCode(selectedSchool)
+	                                                            : '-- ส่วนกลาง / ยังไม่ระบุ --'}
+	                                                    </span>
+                                                    <span className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                                        <FaChevronDown size={10} className={`text-gray-400 transition-transform ${isSchoolDropdownOpen ? 'rotate-180' : ''}`} />
+                                                    </span>
+                                                </button>
+
+                                                {isSchoolDropdownOpen && (
+                                                    <div
+                                                        ref={schoolMenuRef}
+                                                        style={{ maxHeight: `${schoolDropdownMaxHeight}px` }}
+                                                        className={`absolute z-50 w-full overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700/50 bg-white dark:bg-[#1c1c24] shadow-2xl animate-in fade-in duration-300 flex flex-col ${schoolDropdownPlacement === 'top' ? 'bottom-full mb-2 slide-in-from-bottom-2' : 'top-full mt-2 slide-in-from-top-2'}`}
+                                                    >
+                                                        <div className="flex flex-col sm:flex-row gap-2 p-3 border-b border-gray-100 dark:border-white/5">
+	                                                            <div className="relative min-w-0 flex-1">
+	                                                                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 dark:text-gray-600">
+	                                                                    <FaSearch size={13} />
+	                                                                </span>
+	                                                                <input
+	                                                                    type="text"
+	                                                                    value={schoolSearchTerm}
+	                                                                    onChange={(e) => setSchoolSearchTerm(e.target.value)}
+	                                                                    placeholder="ค้นหาชื่อโรงเรียน หรือรหัสโรงเรียน..."
+	                                                                    className="w-full h-10 pl-10 pr-4 rounded-xl bg-gray-50 dark:bg-[#14141b] border border-gray-200 dark:border-gray-700/50 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+	                                                                    autoFocus
+	                                                                />
+	                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSchoolSelect('')}
+                                                                className={`h-10 px-4 rounded-xl text-xs font-black border transition-colors whitespace-nowrap ${!formData.schoolId ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700/50 hover:border-indigo-400'}`}
+                                                            >
+                                                                ส่วนกลาง
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="min-h-0 flex-1 overflow-y-auto">
+                                                            {paginatedSchools.length > 0 ? (
+                                                                paginatedSchools.map((school) => {
+                                                                    const isSelected = formData.schoolId === school.id;
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            key={school.id}
+                                                                            onClick={() => handleSchoolSelect(school.id)}
+                                                                            className={`w-full min-h-10 flex items-center gap-3 px-4 py-2 text-left border-b border-gray-100 last:border-b-0 dark:border-white/5 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-500/10 ${isSelected ? 'bg-indigo-50/80 dark:bg-indigo-500/10' : ''}`}
+                                                                        >
+                                                                            <span className={`w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300 dark:border-gray-700'}`}>
+                                                                                {isSelected && <FaCheck size={10} />}
+                                                                            </span>
+                                                                            <span className="min-w-0">
+	                                                                                <span className={`block truncate text-sm leading-5 ${isSelected ? 'font-black text-indigo-600 dark:text-indigo-400' : 'font-bold text-gray-700 dark:text-gray-300'}`}>
+	                                                                                    {formatSchoolNameWithCode(school)}
+	                                                                                </span>
+	                                                                                <span className="block truncate text-[11px] leading-4 font-bold text-gray-400 dark:text-gray-600">
+	                                                                                    ชื่อโรงเรียน: {school.schoolName || '-'}
+	                                                                                </span>
+                                                                            </span>
+                                                                        </button>
+                                                                    );
+                                                                })
+                                                            ) : (
+                                                                <div className="px-5 py-8 text-center text-sm font-bold text-gray-400 dark:text-gray-600">
+                                                                    ไม่พบโรงเรียนที่ตรงกับคำค้นหา
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex flex-col gap-2 border-t border-gray-100 dark:border-white/5 bg-gray-50/80 dark:bg-[#181820] p-3">
+                                                            <div className="text-center text-[11px] font-black text-gray-400 dark:text-gray-600">
+                                                                แสดง {paginatedSchools.length} จาก {filteredSchools.length} รายการ | หน้า {currentSchoolPage} / {schoolTotalPages}
+                                                            </div>
+                                                            <div className="flex flex-wrap items-center justify-center gap-1">
+                                                                <button type="button" onClick={() => setSchoolPage(1)} disabled={currentSchoolPage === 1} className="px-2.5 h-8 rounded-lg text-[11px] font-black bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 dark:hover:bg-indigo-500/10">หน้าแรก</button>
+                                                                <button type="button" onClick={() => setSchoolPage(page => Math.max(1, page - 1))} disabled={currentSchoolPage === 1} className="px-2.5 h-8 rounded-lg text-[11px] font-black bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 dark:hover:bg-indigo-500/10">ย้อนกลับ</button>
+                                                                {visibleSchoolPages.map(page => (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={page}
+                                                                        onClick={() => setSchoolPage(page)}
+                                                                        className={`min-w-8 h-8 rounded-lg text-[11px] font-black transition-colors ${page === currentSchoolPage ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'}`}
+                                                                    >
+                                                                        {page}
+                                                                    </button>
+                                                                ))}
+                                                                <button type="button" onClick={() => setSchoolPage(page => Math.min(schoolTotalPages, page + 1))} disabled={currentSchoolPage === schoolTotalPages} className="px-2.5 h-8 rounded-lg text-[11px] font-black bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 dark:hover:bg-indigo-500/10">ถัดไป</button>
+                                                                <button type="button" onClick={() => setSchoolPage(schoolTotalPages)} disabled={currentSchoolPage === schoolTotalPages} className="px-2.5 h-8 rounded-lg text-[11px] font-black bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 dark:hover:bg-indigo-500/10">หน้าสุดท้าย</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}

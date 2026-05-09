@@ -274,7 +274,7 @@ const AnnouncementPage: React.FC<AnnouncementPageProps> = ({
 
           <Text style={styles.headerLineDetail}>
             <Text>
-              <Text style={styles.boldText}>กลุ่มสาระฯ</Text> {currentCourse?.subjectGroup || '...'}
+              <Text style={styles.boldText}>กลุ่มสาระฯ</Text> {currentCourse?.subjectGroup || currentCourse?.learningArea || '...'}
               <Text style={styles.boldText}> รายวิชา</Text> {currentCourse?.title}
               <Text style={styles.boldText}> รหัสวิชา</Text> {currentCourse?.code}
               <Text style={styles.boldText}> เวลาเรียน</Text> {currentCourse?.hoursPerWeek} ชม./สัปดาห์

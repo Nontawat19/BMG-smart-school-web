@@ -16,6 +16,8 @@ export interface SubjectGroup {
     code?: string;
     headTeacherId?: string;
     headTeacherName?: string;
+    headId?: string;
+    headName?: string;
 }
 
 export interface SubjectGroupsState {
@@ -57,8 +59,10 @@ export const fetchSubjectGroups = createAsyncThunk(
                 id: d.id,
                 name: d.data().name || "",
                 code: d.data().code || "",
-                headTeacherId: d.data().headTeacherId || "",
-                headTeacherName: d.data().headTeacherName || "",
+                headTeacherId: d.data().headTeacherId || d.data().headId || "",
+                headTeacherName: d.data().headTeacherName || d.data().headName || "",
+                headId: d.data().headId || d.data().headTeacherId || "",
+                headName: d.data().headName || d.data().headTeacherName || "",
             }));
 
             // สร้าง default groups ถ้ายังไม่มี (logic เดียวกับ useSubjectGroups hook)

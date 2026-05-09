@@ -20,6 +20,8 @@ import { useDispatch } from "react-redux";
 import Swal from 'sweetalert2';
 
 import "react-toastify/dist/ReactToastify.css";
+import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 
 // 1. สร้าง Interface สำหรับข้อมูลโปรไฟล์
 interface TeacherProfile {
@@ -298,7 +300,7 @@ const ProfilePage: React.FC = () => {
     if (teachingSemester === "ทั้งหมด") return courses;
     return courses.filter(c => c.semester === teachingSemester || c.semester === Number(teachingSemester).toString());
   }, [courses, teachingSemester]);
-  const [academicYear, setAcademicYear] = useState<string>("");
+  const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
@@ -336,6 +338,15 @@ const ProfilePage: React.FC = () => {
       setAvailableClassOptions(reduxSchoolSettings.availableClassOptions);
     }
   }, [reduxSchoolSettings.status, reduxSchoolSettings.availableClassOptions]);
+
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const reduxTerms = calendarState.terms;
+
+  useEffect(() => {
+    if (profile?.schoolId) {
+      dispatch(fetchCalendar(profile.schoolId) as any);
+    }
+  }, [profile?.schoolId, dispatch]);
 
   useEffect(() => {
     let isMounted = true;
@@ -504,19 +515,7 @@ const ProfilePage: React.FC = () => {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const data = calendarSnap.data();
-            if (data.academicYear && !schoolInfo.schoolName) {
-              setAcademicYear(data.academicYear || "");
-            }
+            // Logic handled by calendarSlice
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -534,18 +533,20 @@ const ProfilePage: React.FC = () => {
           let startDate = "";
           let endDate = "";
 
-          const yearDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", academicYear);
-          let yearSnap = await getDoc(yearDocRef);
-
-          if (!yearSnap.exists()) {
+          if (calendarState.status === 'succeeded' && reduxTerms.length > 0) {
+            const term1 = reduxTerms.find(t => t.id === 'term1' || t.name.includes('1'));
+            const term2 = reduxTerms.find(t => t.id === 'term2' || t.name.includes('2'));
+            startDate = term1?.startDate || "";
+            endDate = term2?.endDate || term1?.endDate || "";
+          } else {
+            // Fallback to manual fetch only if Redux not ready (should rarely happen with fetchCalendar above)
             const defaultDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", "default");
-            yearSnap = await getDoc(defaultDocRef);
-          }
-
-          if (yearSnap.exists()) {
-            const data = yearSnap.data();
-            startDate = data.terms?.term1?.startDate || "";
-            endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
+            const yearSnap = await getDoc(defaultDocRef);
+            if (yearSnap.exists()) {
+              const data = yearSnap.data();
+              startDate = data.terms?.term1?.startDate || "";
+              endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
+            }
           }
 
           const attRef = collection(firestore, "school-settings", profile.schoolId, "teachers", profile.docId, "attendance");
@@ -1408,7 +1409,7 @@ const ProfilePage: React.FC = () => {
 
               {activeTab === "attendance" && userRole === 'teacher' && (
                 <div className="animate-fade-in space-y-6">
-                  <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || new Date().getFullYear() + 543})`}>
+                  <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || getCurrentThaiYear()})`}>
                     <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 table-responsive pb-4 scrollbar-hide -mx-2 px-2 lg:mx-0 lg:px-0">
                       <div className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800">
                         <div className="text-lg sm:text-xl font-bold text-green-600 dark:text-green-400">{stats.present || 0}</div>

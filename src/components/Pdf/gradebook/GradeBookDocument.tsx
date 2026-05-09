@@ -45,6 +45,8 @@ interface Course {
     formativeAssessments?: { id: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
     indicators?: string[];
     expectedOutcomes?: string[];
+    subjectGroup?: string;
+    learningArea?: string;
     type?: 'พื้นฐาน' | 'เพิ่มเติม';
 }
 

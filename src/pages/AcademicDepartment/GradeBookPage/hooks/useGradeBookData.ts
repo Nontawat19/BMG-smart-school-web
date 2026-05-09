@@ -6,6 +6,22 @@ import { CLASSES } from "@/utils/schoolUtils";
 import { AllStudentAttendanceSummaries, StudentAttendanceSummary } from '@/components/Pdf/gradebook/types';
 import { getLatestSDQForStudents, SDQAssessment } from '@/services/sdqService';
 
+const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
+
+const getConfiguredFormativeTotal = (record: any, currentCourse?: Course) => {
+    const assessments = currentCourse?.formativeAssessments || [];
+    const details = record.formativeDetails || {};
+
+    if (assessments.length === 0) {
+        return Number(record.formative || 0);
+    }
+
+    return assessments.reduce((sum, assessment) => {
+        const key = getAssessmentKey(assessment);
+        return sum + Number(details[key] || 0);
+    }, 0);
+};
+
 export const useGradeBookData = (
     schoolId: string | undefined,
     selectedClass: string,
@@ -127,6 +143,7 @@ export const useGradeBookData = (
                             studentNumber: s.studentNumber?.toString().trim() || ""
                         };
                     })
+                    .filter(s => !selectedRoom || selectedRoom === 'all' || String(s.room) === String(selectedRoom))
                     .sort((a, b) => {
                         const numA = a.studentNumber ? parseInt(a.studentNumber, 10) : 9999;
                         const numB = b.studentNumber ? parseInt(b.studentNumber, 10) : 9999;
@@ -178,19 +195,27 @@ export const useGradeBookData = (
                 }
             });
 
-            setGrades(prev => {
-                const newGrades = { ...prev };
+            setGrades(() => {
+                const newGrades: Record<string, GradeRecord> = {};
 
                 Object.entries(studentDataGroups).forEach(([targetId, records]) => {
                     const primaryRecord = records.find(r => r.id === targetId);
                     const bestRecord = primaryRecord || records.reduce((best, cur) => {
-                        const bestTotal = (Number(best.formative || 0) + Number(best.midterm || 0) + Number(best.final || 0));
-                        const curTotal = (Number(cur.formative || 0) + Number(cur.midterm || 0) + Number(cur.final || 0));
+                        const bestTotal = getConfiguredFormativeTotal(best, currentCourse) + Number(best.midterm || 0) + Number(best.final || 0);
+                        const curTotal = getConfiguredFormativeTotal(cur, currentCourse) + Number(cur.midterm || 0) + Number(cur.final || 0);
                         return curTotal > bestTotal ? cur : best;
                     }, records[0]);
 
                     if (bestRecord) {
-                        const f = Number(bestRecord.formative || 0);
+                        let combinedDetails = { ...(bestRecord.formativeDetails || {}) };
+                        records.forEach(r => {
+                            if (r.formativeDetails) {
+                                combinedDetails = { ...combinedDetails, ...r.formativeDetails };
+                            }
+                        });
+
+                        const normalizedRecord = { ...bestRecord, formativeDetails: combinedDetails };
+                        const f = getConfiguredFormativeTotal(normalizedRecord, currentCourse);
                         const m = Number(bestRecord.midterm || 0);
                         const fn = Number(bestRecord.final || 0);
                         const total = f + m + fn;
@@ -201,18 +226,9 @@ export const useGradeBookData = (
                             midterm: m,
                             final: fn,
                             total: total,
-                            grade: bestRecord.status || calculateGrade(total)
+                            grade: bestRecord.status || calculateGrade(total),
+                            formativeDetails: combinedDetails
                         };
-
-                        if (records.length > 1) {
-                            let combinedDetails = { ...(bestRecord.formativeDetails || {}) };
-                            records.forEach(r => {
-                                if (r.formativeDetails) {
-                                    combinedDetails = { ...combinedDetails, ...r.formativeDetails };
-                                }
-                            });
-                            newGrades[targetId].formativeDetails = combinedDetails;
-                        }
                     }
                 });
 
@@ -223,7 +239,7 @@ export const useGradeBookData = (
         });
 
         return () => unsubscribe();
-    }, [schoolId, selectedCourse, students, calculateGrade]);
+    }, [schoolId, selectedCourse, students, calculateGrade, currentCourse]);
 
     // Fetch Detailed Attendance
     useEffect(() => {

@@ -6,7 +6,9 @@ import { RootState } from '@/store';
 import { firestore as db } from '../../firebase';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
-import { Loader2, FileDown, Calendar, User, Printer, ArrowLeft, Search } from 'lucide-react';
+import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { Loader2, FileDown, Calendar, User, Printer, Search } from 'lucide-react';
+import BackButton from '@/components/Shared/BackButton';
 import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
 import { TeacherSchedulePDF, BulkTeacherSchedulePDF, Teacher, Course, Schedule, ScheduleEntry, SpecialPeriod, PeriodSetting, SchoolInfo, Club } from '@/components/Pdf/TeacherScheduleDocument';
 import { pdf } from '@react-pdf/renderer';
@@ -70,6 +72,52 @@ const TeacherScheduleViewPage: React.FC = () => {
 
   const selectedTeacherData = (teacherMap[selectedTeacher] as Teacher) || null;
 
+  const formatClassNames = (classIds: any): string => {
+    const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
+    return ids.map(c => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
+  };
+
+  const matchesSelectedYearTerm = (data: any): boolean => {
+    if (!academicYear || !currentTerm) return false;
+    return String(data.academicYear || '') === String(academicYear) && String(data.semester || '') === String(currentTerm);
+  };
+
+  const fetchAssignmentMap = async (): Promise<Record<string, any>> => {
+    if (!schoolId || !academicYear || !currentTerm) return {};
+    const assignmentQuery = query(
+      collection(db, 'school-settings', schoolId, 'course_assignments'),
+      where('academicYear', '==', academicYear),
+      where('semester', '==', currentTerm)
+    );
+    const assignmentSnap = await getDocs(assignmentQuery);
+    const assignmentMap: Record<string, any> = {};
+    assignmentSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.courseId) {
+        assignmentMap[data.courseId] = data;
+      }
+    });
+    return assignmentMap;
+  };
+
+  const findAssignment = (course: Course, teacherId: string, groupNumber: number, assignmentMap: Record<string, any>) => {
+    const semesterAssignment = assignmentMap[course.id]?.teacherAssignments || [];
+    const courseAssignment = coursesMap[course.id]?.teacherAssignments || [];
+    return [...semesterAssignment, ...courseAssignment].find((a: any) =>
+      a.teacherId === teacherId && Number(a.groupNumber || 1) === Number(groupNumber)
+    );
+  };
+
+  // Redux Calendar State
+  const calendarState = useSelector((state: RootState) => state.calendar);
+  const reduxRawData = calendarState.rawData;
+
+  useEffect(() => {
+    if (schoolId) {
+      dispatch(fetchCalendar(schoolId) as any);
+    }
+  }, [schoolId, dispatch]);
+
   /* ===================== FETCH DATA ===================== */
   useEffect(() => {
     if (!schoolId) return;
@@ -87,29 +135,23 @@ const TeacherScheduleViewPage: React.FC = () => {
     };
 
     const fetchCalendarSettings = async () => {
-      const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-      const docSnap = await getDoc(calendarDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setAcademicYear(data.academicYear || '');
-
-        const today = new Date().toISOString().split('T')[0];
-        const term1 = data.terms?.term1;
-        const term2 = data.terms?.term2;
-
-        if (term1 && term1.startDate && term1.endDate) {
-          if (today >= term1.startDate && today <= term1.endDate) {
-            setCurrentTerm('1');
+      if (calendarState.status === 'succeeded' && calendarState.academicYear) {
+        setAcademicYear(calendarState.academicYear);
+        
+        // Auto-select term based on current date
+        const terms = calendarState.terms;
+        if (terms && terms.length > 0) {
+          const today = new Date().toISOString().split('T')[0];
+          const found = terms.find(t => today >= t.startDate && today <= t.endDate);
+          if (found) {
+            const termId = found.name.includes('2') ? '2' : '1';
+            setCurrentTerm(termId);
             return;
           }
         }
-        if (term2 && term2.startDate && term2.endDate) {
-          if (today >= term2.startDate && today <= term2.endDate) {
-            setCurrentTerm('2');
-            return;
-          }
-        }
-        setCurrentTerm('');
+        setCurrentTerm('1'); // Fallback
+      } else if (calendarState.status === 'idle' && schoolId) {
+        dispatch(fetchCalendar(schoolId) as any);
       }
     };
 
@@ -206,6 +248,7 @@ const TeacherScheduleViewPage: React.FC = () => {
       const merged: Schedule = {};
 
       try {
+        const assignmentMap = await fetchAssignmentMap();
         const q = query(
           collection(db, 'school-settings', schoolId, 'schedules'),
           where('teacherId', '==', selectedTeacher)
@@ -214,8 +257,9 @@ const TeacherScheduleViewPage: React.FC = () => {
 
         snap.forEach(doc => {
           const data = doc.data();
-          const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-          const className = classIds.map(c => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
+          if (!matchesSelectedYearTerm(data)) return;
+
+          const scheduleClassName = formatClassNames(data.classId);
 
           const sch = data.schedule as Record<string, any>;
 
@@ -225,11 +269,9 @@ const TeacherScheduleViewPage: React.FC = () => {
               courses.forEach((course: Course) => {
                 if (!course) return;
 
-                const latestCourse = coursesMap[course.id];
                 const groupNum = (course as any).groupNumber || 1;
-                const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                  a.teacherId === data.teacherId && (a.groupNumber === groupNum)
-                );
+                const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
+                const courseWithGroup = { ...course, groupNumber: groupNum };
 
                 const roomIds = assignment?.roomIds || course.room || [];
                 let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
@@ -241,16 +283,18 @@ const TeacherScheduleViewPage: React.FC = () => {
                   roomDisplay = String(groupNum);
                 }
 
-                const displayClassName = className; 
+                const displayClassName = assignment?.classLevels?.length
+                  ? formatClassNames(assignment.classLevels)
+                  : scheduleClassName; 
 
-                if (merged[slot] && merged[slot]!.course.code === course.code) {
+                if (merged[slot] && merged[slot]!.course.id === course.id && merged[slot]!.course.groupNumber === groupNum) {
                   // Same slot, same course -> Merge classes
                   const existingClass = merged[slot]!.className;
                   if (!existingClass.includes(displayClassName)) {
                     merged[slot]!.className = `${existingClass}, ${displayClassName}`;
                   }
                 } else {
-                  merged[slot] = { course, className: displayClassName, roomDisplay };
+                  merged[slot] = { course: courseWithGroup, className: displayClassName, roomDisplay };
                 }
               });
             }
@@ -269,22 +313,24 @@ const TeacherScheduleViewPage: React.FC = () => {
     };
 
     fetchSchedule();
-  }, [selectedTeacher, schoolId, clubs]);
+  }, [selectedTeacher, schoolId, clubs, academicYear, currentTerm, coursesMap, roomMap]);
 
   const prepareBulkExport = async () => {
     if (!schoolId) return;
     setIsPreparingBulk(true);
     try {
+      const assignmentMap = await fetchAssignmentMap();
       const q = query(collection(db, 'school-settings', schoolId, 'schedules'));
       const snap = await getDocs(q);
       const allSchedules: Record<string, any> = {};
 
       snap.forEach(doc => {
         const data = doc.data();
+        if (!matchesSelectedYearTerm(data)) return;
+
         if (!allSchedules[data.teacherId]) allSchedules[data.teacherId] = {};
 
-        const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-        const className = classIds.map((c: any) => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
+        const scheduleClassName = formatClassNames(data.classId);
 
         const sch = data.schedule;
         Object.entries(sch).forEach(([slot, courseData]: [string, any]) => {
@@ -293,11 +339,9 @@ const TeacherScheduleViewPage: React.FC = () => {
             courses.forEach((course: Course) => {
               if (!course) return;
 
-              const latestCourse = coursesMap[course.id];
               const groupNum = (course as any).groupNumber || 1;
-              const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                a.teacherId === data.teacherId && (a.groupNumber === groupNum)
-              );
+              const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
+              const courseWithGroup = { ...course, groupNumber: groupNum };
 
               const roomIds = assignment?.roomIds || course.room || [];
               let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
@@ -309,13 +353,17 @@ const TeacherScheduleViewPage: React.FC = () => {
                 roomDisplay = String(groupNum);
               }
 
+              const className = assignment?.classLevels?.length
+                ? formatClassNames(assignment.classLevels)
+                : scheduleClassName;
+
               const currentEntry = allSchedules[data.teacherId][slot];
-              if (currentEntry && currentEntry.course.code === course.code) {
+              if (currentEntry && currentEntry.course.id === course.id && currentEntry.course.groupNumber === groupNum) {
                 if (!currentEntry.className.includes(className)) {
                   currentEntry.className = `${currentEntry.className}, ${className}`;
                 }
               } else {
-                allSchedules[data.teacherId][slot] = { course, className, roomDisplay };
+                allSchedules[data.teacherId][slot] = { course: courseWithGroup, className, roomDisplay };
               }
             });
           }
@@ -346,9 +394,7 @@ const TeacherScheduleViewPage: React.FC = () => {
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors font-medium">
-                <ArrowLeft size={20} className="mr-1" /> กลับหน้าบริหารงานวิชาการ
-              </Link>
+              <BackButton to="/academic/hub/scheduling" />
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
                 <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
                 ดูตารางสอนครู

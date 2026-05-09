@@ -1,5 +1,7 @@
 import React from "react";
 import { useParams, Link, Navigate, useLocation } from "react-router-dom";
+import { doc, onSnapshot } from "firebase/firestore";
+import { firestore as db } from "@/firebase";
 import BackButton from "@/components/Shared/BackButton";
 import { usePermissions } from "@/hooks/usePermissions";
 import MainLayout from "@/layouts/MainLayout";
@@ -30,9 +32,7 @@ import {
   HeartPulse,
   MapPin,
   ArrowRight,
-  MessageSquare,
-  Send,
-  IdCard
+  History
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 
@@ -43,6 +43,7 @@ interface HubItem {
   path: string;
   colorClass: string;
   allowedRoles?: string[];
+  featureKey?: string;
 }
 
 interface HubConfig {
@@ -55,7 +56,8 @@ interface HubConfig {
 const HubPage: React.FC = () => {
   const { hubType: paramHubType } = useParams<{ hubType: string }>();
   const location = useLocation();
-  const { user: currentUser, roles: userRoles, hasRole, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, OWNER_ONLY, ADMIN_ACCESS } = usePermissions();
+  const { user: currentUser, roles: userRoles, hasRole, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, OWNER_ONLY } = usePermissions();
+  const [settings, setSettings] = React.useState<any>({});
   
   // Handle static routes and "all" mode
   let hubType = paramHubType;
@@ -64,21 +66,38 @@ const HubPage: React.FC = () => {
   if (!hubType && !isMasterHub) {
     if (location.pathname.includes('/student-support/hub')) hubType = 'support';
     if (location.pathname.includes('/owner/hub')) hubType = 'owner';
-    if (location.pathname.includes('/human-resources/hub')) hubType = 'human_resources';
   }
 
   const schoolId = (currentUser as any)?.schoolId;
 
-  const checkAccess = (allowedRoles?: string[]) => {
-    if (!allowedRoles) return true;
-    return hasRole(allowedRoles);
+  React.useEffect(() => {
+    if (schoolId) {
+      const unsub = onSnapshot(doc(db, "school-settings", schoolId), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setSettings(data.academicSettings || {});
+        }
+      });
+      return () => unsub();
+    }
+  }, [schoolId]);
+
+  const isEnabled = (featureKey?: string) => {
+    if (!featureKey) return true;
+    return settings[featureKey] !== false;
+  };
+
+  const checkAccess = (item: HubItem) => {
+    if (item.featureKey && !isEnabled(item.featureKey)) return false;
+    if (!item.allowedRoles) return true;
+    return hasRole(item.allowedRoles);
   };
 
   const hubConfigs: Record<string, HubConfig> = {
-    curriculum: {
-      id: "curriculum",
-      title: "งานหลักสูตรและวิชาการ",
-      description: "จัดการโครงสร้างหลักสูตร กลุ่มสาระ และตัวชี้วัด",
+    registration: {
+      id: "registration",
+      title: "ทะเบียน",
+      description: "จัดการข้อมูลหลักสูตร การลงทะเบียน และสรุปข้อมูลนักเรียน",
       items: [
         {
           title: "จัดการหลักสูตร",
@@ -97,19 +116,19 @@ const HubPage: React.FC = () => {
           allowedRoles: STAFF_ACCESS
         },
         {
-          title: "จัดการกลุ่มสาระและตัวชี้วัด",
-          description: "กำหนดรหัสและรายละเอียดตัวชี้วัดสำหรับรายวิชา",
-          icon: <ListChecks size={24} />,
-          path: "/academic/subject-groups",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
           title: "นำเข้าหลักสูตร (Excel)",
           description: "นำข้อมูลวิชาเข้าสู่ระบบผ่านไฟล์ Excel",
           icon: <FileText size={24} />,
           path: "/academic/import-courses",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "จัดการกลุ่มสาระและตัวชี้วัด",
+          description: "กำหนดรหัสและรายละเอียดตัวชี้วัดสำหรับรายวิชา",
+          icon: <ListChecks size={24} />,
+          path: "/academic/subject-groups",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
@@ -119,12 +138,44 @@ const HubPage: React.FC = () => {
           path: "/academic/course-assignment",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ลงทะเบียนเรียน (นักเรียน)",
+          description: "ลงทะเบียนนักเรียนเข้าสู่รายวิชา",
+          icon: <Users size={24} />,
+          path: "/academic/course-enrollment",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "สรุปการลงทะเบียน",
+          description: "ดูสถิติและรายชื่อการลงทะเบียนวิชาเรียน",
+          icon: <ClipboardList size={24} />,
+          path: "/academic/enrollment-list",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "จัดการระบบย้ายห้อง",
+          description: "ย้ายนักเรียนจากห้องปัจจุบันไปยังห้องใหม่",
+          icon: <GitMerge size={24} />,
+          path: "/academic/room-transfer",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ระบบเลื่อนชั้นและจบการศึกษา",
+          description: "จัดการการเลื่อนชั้น, ซ้ำชั้น, จำหน่ายออก และอนุมัติจบการศึกษา",
+          icon: <GraduationCap size={24} />,
+          path: "/academic/graduation-management",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
         }
       ]
     },
     scheduling: {
       id: "scheduling",
-      title: "งานตารางสอน",
+      title: "ตารางสอน",
       description: "จัดการตารางเรียนตารางสอนสำหรับครูและนักเรียน",
       items: [
         {
@@ -161,97 +212,18 @@ const HubPage: React.FC = () => {
         }
       ]
     },
-    personnel: {
-      id: "personnel",
-      title: "งานทะเบียนและข้อมูลบุคคล",
-      description: "จัดการข้อมูลนักเรียน บุคลากร และงานทะเบียนทั่วไป",
+    students: {
+      id: "students",
+      title: "ข้อมูลนักเรียน",
+      description: "จัดการข้อมูลประวัติและสถานะนักเรียน",
       items: [
         {
           title: "ข้อมูลนักเรียน",
-          description: "จัดการข้อมูลประวัตินักเรียน",
+          description: "จัดการข้อมูลประวัตินักเรียนรายบุคคล",
           icon: <User size={24} />,
           path: schoolId ? `/school/${schoolId}/students` : "/students",
           colorClass: "bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-400",
           allowedRoles: STAFF_ACCESS
-        },
-        {
-          title: "ข้อมูลบุคลากร",
-          description: "จัดการข้อมูลประวัติครูและบุคลากร",
-          icon: <Users size={24} />,
-          path: schoolId ? `/school/${schoolId}/teachers` : "/teachers",
-          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
-          allowedRoles: STAFF_ACCESS
-        },
-        {
-          title: "ลงทะเบียนเรียน (นักเรียน)",
-          description: "ลงทะเบียนนักเรียนเข้าสู่รายวิชา",
-          icon: <Users size={24} />,
-          path: "/academic/course-enrollment",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "สรุปการลงทะเบียน",
-          description: "ดูสถิติและรายชื่อการลงทะเบียนวิชาเรียน",
-          icon: <ClipboardList size={24} />,
-          path: "/academic/enrollment-list",
-          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "จัดการระบบย้ายห้อง",
-          description: "ย้ายนักเรียนจากห้องปัจจุบันไปยังห้องใหม่",
-          icon: <GitMerge size={24} />,
-          path: "/academic/room-transfer",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "ระบบสำเร็จการศึกษา",
-          description: "อนุมัติและจัดการข้อมูลผู้สำเร็จการศึกษา",
-          icon: <GraduationCap size={24} />,
-          path: "/academic/graduation-management",
-          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        }
-      ]
-    },
-    attendance: {
-      id: "attendance",
-      title: "งานมาเรียนและการลา",
-      description: "เช็คชื่อรายวิชา และจัดการข้อมูลการลาของนักเรียน/ครู",
-      items: [
-        {
-          title: "กิจกรรมหน้าเสาธง",
-          description: "บันทึกการเข้าร่วมกิจกรรมหน้าเสาธงของนักเรียน",
-          icon: <School size={24} />,
-          path: "/attendance/flag-ceremony",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: STAFF_ACCESS
-        },
-        {
-          title: "เช็คชื่อรายวิชา",
-          description: "บันทึกการเข้าเรียนของนักเรียนในแต่ละคาบ",
-          icon: <UserCheck size={24} />,
-          path: "/academic/classroom-attendance",
-          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
-          allowedRoles: TEACHER_OPERATIONAL
-        },
-        {
-          title: "เช็คชื่อย้อนหลัง",
-          description: "จัดการข้อมูลการเช็คชื่อที่ผ่านมา",
-          icon: <Clock size={24} />,
-          path: "/academic/classroom-attendance-history",
-          colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
-          allowedRoles: TEACHER_OPERATIONAL
-        },
-        {
-          title: "สรุปการมาเรียนรายวิชา",
-          description: "ดูสถิติการมาเรียนแยกตามวิชาและชั้นเรียน",
-          icon: <BarChart3 size={24} />,
-          path: "/academic/classroom-attendance-summary",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
           title: "ใบลานักเรียน",
@@ -259,6 +231,21 @@ const HubPage: React.FC = () => {
           icon: <FileText size={24} />,
           path: "/attendance/leave-request",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: STAFF_ACCESS
+        }
+      ]
+    },
+    personnel_info: {
+      id: "personnel_info",
+      title: "ข้อมูลบุคลากร",
+      description: "จัดการข้อมูลประวัติครูและบุคลากรในโรงเรียน",
+      items: [
+        {
+          title: "ข้อมูลบุคลากร",
+          description: "จัดการข้อมูลประวัติครูและบุคลากร",
+          icon: <Users size={24} />,
+          path: schoolId ? `/school/${schoolId}/teachers` : "/teachers",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
           allowedRoles: STAFF_ACCESS
         },
         {
@@ -276,12 +263,86 @@ const HubPage: React.FC = () => {
           path: schoolId ? `/school/${schoolId}/official-travel-request` : "#",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
           allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "เช็คเวลาวันนี้ (ครู)",
+          description: "ตรวจสอบการลงเวลาเข้า-ออกงานประจำวันของบุคลากร",
+          icon: <UserCheck size={24} />,
+          path: "/human-resources/teacher-attendance-today",
+          colorClass: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400",
+          allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "สรุปการลงเวลาครู",
+          description: "รายงานสถิติการลงเวลาเข้า-ออกงานของบุคลากร",
+          icon: <Clock size={24} />,
+          path: "/human-resources/teacher-attendance-summary",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: STAFF_ACCESS
         }
+      ]
+    },
+
+    attendance: {
+      id: "attendance",
+      title: "ระบบเช็คชื่อ",
+      description: "เช็คชื่อรายวิชา และจัดการข้อมูลการลาของนักเรียน/ครู",
+      items: [
+        {
+          title: "เช็คชื่อโฮมรูม",
+          description: "บันทึกการเข้าโฮมรูมของนักเรียนในชั้นประจำ",
+          icon: <Home size={24} />,
+          path: "/academic/homeroom-attendance",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
+          title: "เช็คแถว (หน้าเสาธง)",
+          description: "บันทึกการเข้าแถวเคารพธงชาติและกิจกรรมหน้าเสาธง",
+          icon: <ListChecks size={24} />,
+          path: "/academic/flag-ceremony",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
+          title: "เช็คชื่อรายวิชา",
+          description: "บันทึกการเข้าเรียนของนักเรียนในแต่ละคาบ",
+          icon: <UserCheck size={24} />,
+          path: "/academic/classroom-attendance",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
+          allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
+          title: "เช็คชื่อย้อนหลัง",
+          description: "จัดการข้อมูลการเช็คชื่อที่ผ่านมา",
+          icon: <Clock size={24} />,
+          path: "/academic/classroom-attendance-history",
+          colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "allowHistoricalAttendance"
+        },
+        {
+          title: "เช็คชื่อชุมนุม",
+          description: "บันทึกการเข้าทำกิจกรรมชุมนุม",
+          icon: <ClipboardCheck size={24} />,
+          path: "/academic/club-attendance",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
+          title: "สรุปการมาเรียนรายวิชา",
+          description: "ดูสถิติการมาเรียนแยกตามวิชาและชั้นเรียน",
+          icon: <BarChart3 size={24} />,
+          path: "/academic/classroom-attendance-summary",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+
       ]
     },
     support: {
       id: "support",
-      title: "งานดูแลช่วยเหลือนักเรียน",
+      title: "ระบบดูแลช่วยเหลือนักเรียน",
       description: "ระบบคัดกรอง SDQ และการเยี่ยมบ้านเพื่อช่วยเหลือนักเรียน",
       items: [
         {
@@ -320,7 +381,7 @@ const HubPage: React.FC = () => {
     },
     activities: {
       id: "activities",
-      title: "งานกิจกรรมและชุมนุม",
+      title: "กิจกรรมและชุมนุม",
       description: "จัดการข้อมูลชุมนุมและการเข้าทำกิจกรรม",
       items: [
         {
@@ -338,20 +399,12 @@ const HubPage: React.FC = () => {
           path: "/academic/club-members",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "เช็คชื่อชุมนุม",
-          description: "บันทึกการเข้าทำกิจกรรมชุมนุม",
-          icon: <ClipboardCheck size={24} />,
-          path: "/academic/club-attendance",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: TEACHER_OPERATIONAL
         }
       ]
     },
     evaluation: {
       id: "evaluation",
-      title: "งานวัดผลและประเมินผล",
+      title: "วัดผลและประเมินผล",
       description: "บันทึกคะแนนและสมุดบันทึกผลการเรียนรายวิชา",
       items: [
         {
@@ -360,7 +413,8 @@ const HubPage: React.FC = () => {
           icon: <GraduationCap size={24} />,
           path: "/academic/grade-book",
           colorClass: "bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "showGradeBookMenu"
         },
         {
           title: "บันทึกคะแนน (ก่อนกลางภาค)",
@@ -402,6 +456,14 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
+          title: "ตั้งค่าระบบลงเวลา",
+          description: "กำหนดช่วงเวลาการลงเวลาเข้า-ออก และการตั้งค่าอื่นๆ",
+          icon: <Clock size={24} />,
+          path: "/academic/attendance-config",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
           title: "ตั้งค่าคาบเรียน",
           description: "กำหนดช่วงเวลาของแต่ละคาบเรียน",
           icon: <Clock size={24} />,
@@ -434,76 +496,21 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
-          title: "ตั้งค่าระบบแจ้งเตือน LINE OA",
-          description: "จัดการ API Key ของ LINE Official Account สำหรับระบบส่วนกลางและรายชั้นเรียน",
-          icon: <MessageSquare size={24} />,
-          path: "/administrator/line-oa",
-          colorClass: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400",
+          title: "ข้อมูลโรงเรียน",
+          description: "แก้ไขข้อมูลพื้นฐาน ตราสัญลักษณ์ และพิกัดที่ตั้งของโรงเรียน",
+          icon: <School size={24} />,
+          path: schoolId ? `/owner/school-info/${schoolId}` : "/owner/school-info",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
-          title: "ตั้งค่าระบบแจ้งเตือน Telegram",
-          description: "จัดการ Bot Token และ Chat ID สำหรับระบบส่วนกลางและรายชั้นเรียน",
-          icon: <Send size={24} />,
-          path: "/administrator/telegram",
-          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "ตั้งค่าระบบลงเวลา",
-          description: "กำหนดเวลาเข้าสายและเวลาปฏิบัติงาน",
-          icon: <Settings size={24} />,
-          path: "/human-resources/attendance-config",
-          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: ADMIN_ACCESS
-        }
-      ]
-    },
-    human_resources: {
-      id: "human_resources",
-      title: "งานบุคลากรและทรัพยากรมนุษย์",
-      description: "จัดการข้อมูลบุคลากร การลงเวลา และบัตรประจำตัว",
-      items: [
-        {
-          title: "จัดการข้อมูลบุคลากร",
-          description: "บริหารจัดการข้อมูลประวัติและตำแหน่งครู/บุคลากร",
+          title: "จัดการผู้ใช้งาน",
+          description: "จัดการบัญชีรายชื่อครูและบุคลากรในโรงเรียน",
           icon: <Users size={24} />,
-          path: "/human-resources/management",
-          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
-          allowedRoles: ADMIN_ACCESS
-        },
-        {
-          title: "ลงเวลาวันนี้ (ครู/บุคลากร)",
-          description: "ดูสถิติการลงเวลาเข้า-ออกรายวันของบุคลากร",
-          icon: <Clock size={24} />,
-          path: "/human-resources/teacher-attendance-today",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: ADMIN_ACCESS
-        },
-        {
-          title: "สรุปการลงเวลา (รายเดือน/เทอม)",
-          description: "รายงานสรุปสถิติการมาทำงานของบุคลากร",
-          icon: <BarChart3 size={24} />,
-          path: "/human-resources/teacher-attendance-summary",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ADMIN_ACCESS
-        },
-        {
-          title: "ออกแบบบัตรประจำตัว",
-          description: "สร้างและพิมพ์บัตรประจำตัวนักเรียนและครู",
-          icon: <IdCard size={24} />,
-          path: "/human-resources/id-card",
-          colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
-          allowedRoles: ADMIN_ACCESS
-        },
-        {
-          title: "สรุปการมาเรียน (นักเรียน)",
-          description: "รายงานสรุป ขาด ลา มา สาย ของนักเรียนรายห้อง",
-          icon: <BarChart3 size={24} />,
-          path: "/human-resources/students-attendance-summary",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ADMIN_ACCESS
-        },
+          path: "/owner/users",
+          colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        }
       ]
     },
     owner: {
@@ -567,7 +574,7 @@ const HubPage: React.FC = () => {
   );
 
   const renderHubSection = (hub: HubConfig) => {
-    const visibleItems = hub.items.filter(item => checkAccess(item.allowedRoles));
+    const visibleItems = hub.items.filter(item => checkAccess(item));
     if (visibleItems.length === 0) return null;
 
     return (
@@ -616,12 +623,7 @@ const HubPage: React.FC = () => {
                   <Home size={20} />
                 </Link>
               ) : (
-                <div className="flex items-center gap-3">
-                  <BackButton to="/academic-admin" />
-                  <Link to="/academic-admin" className="hidden sm:block text-sm font-bold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
-                    ย้อนกลับกลุ่มงาน
-                  </Link>
-                </div>
+                <BackButton to="/home" />
               )}
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">

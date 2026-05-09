@@ -21,6 +21,7 @@ import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocum
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from '@/components/SkeletonLoader';
+import { getThaiYear } from '@/utils/dateUtils';
 
 interface LeaveRequest {
   id: string;
@@ -189,7 +190,7 @@ const LeaveHistoryPage: React.FC = () => {
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('th-TH', { month: 'long' }),
-      year: d.getFullYear() + 543,
+      year: getThaiYear(d),
     };
   })();
 

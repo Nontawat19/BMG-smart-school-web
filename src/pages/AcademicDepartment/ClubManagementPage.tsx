@@ -14,7 +14,6 @@ import {
   PlusCircle,
   Trash2,
   Image as ImageIcon,
-  ArrowLeft,
   Save,
   UserCheck,
   FileText,
@@ -404,7 +403,7 @@ const ClubManagementPage: React.FC = () => {
         {/* Page Header */}
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <BackButton to="/academic-admin" className="mb-2" />
+            <BackButton to="/academic/hub/activities" className="mb-2" />
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
               <Users className="text-indigo-500" size={32} />
               จัดการข้อมูลชุมนุม

@@ -15,7 +15,6 @@ import {
   FileText,
   CalendarX2,
   Save,
-  ArrowLeft,
   Lock,
 } from "lucide-react";
 import Swal from "sweetalert2";
@@ -117,8 +116,8 @@ const CourseManagementPage: React.FC = () => {
   const [courseCode, setCourseCode] = useState("");
   const [subjectGroup, setSubjectGroup] = useState("");
   const [courseType, setCourseType] = useState("พื้นฐาน");
-  const [formativeWeight, setFormativeWeight] = useState(60); // New state for formative score weight
-  const [midtermWeight, setMidtermWeight] = useState(20);   // New state for midterm score weight
+  const [formativeWeight, setFormativeWeight] = useState(0); // New state for formative score weight
+  const [midtermWeight, setMidtermWeight] = useState(0);   // New state for midterm score weight
   const [indicators, setIndicators] = useState("");
   const [expectedOutcomes, setExpectedOutcomes] = useState("");
   const [targetClasses, setTargetClasses] = useState<string[]>([]);
@@ -391,8 +390,8 @@ const CourseManagementPage: React.FC = () => {
       setCourseCode("");
       setSubjectGroup("");
       setCourseType("พื้นฐาน");
-      setFormativeWeight(60);
-      setMidtermWeight(20);
+      setFormativeWeight(0);
+      setMidtermWeight(0);
       setIndicators("");
       setExpectedOutcomes("");
       setTargetClasses([]);
@@ -424,7 +423,7 @@ const CourseManagementPage: React.FC = () => {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
               <div className="flex items-center gap-4 mb-2">
-                <BackButton />
+                <BackButton to="/academic/hub/registration" />
                 <span className="text-gray-500 dark:text-gray-400 font-medium">กลับไปหน้าบริหารงานวิชาการ</span>
               </div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">

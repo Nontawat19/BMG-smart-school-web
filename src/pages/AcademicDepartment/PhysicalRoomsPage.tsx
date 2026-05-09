@@ -7,6 +7,7 @@ import { collection, query, doc, writeBatch, orderBy, onSnapshot, addDoc, update
 import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import {
     Building2,
     ChevronLeft,
@@ -216,9 +217,7 @@ const PhysicalRoomsPage: React.FC = () => {
                 
                 {/* Header - Precise Replica */}
                 <div className="flex items-center gap-4 mb-10">
-                    <Link to="/academic-admin" className="p-2.5 bg-[#1e2235] rounded-xl text-slate-400 hover:text-white transition-all border border-white/5">
-                        <ChevronLeft size={20} />
-                    </Link>
+                    <BackButton to="/academic/hub/settings" />
                     <div className="flex items-center gap-4">
                         <div className="w-14 h-14 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/10">
                             <LayoutGrid size={28} className="text-indigo-400" />

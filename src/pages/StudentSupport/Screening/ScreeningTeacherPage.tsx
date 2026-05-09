@@ -113,16 +113,24 @@ const ScreeningTeacherPage: React.FC = () => {
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <ClipboardCheck className="text-indigo-600" />
+                                <ClipboardCheck className="text-indigo-600 dark:text-indigo-400" />
                                 คัดกรองนักเรียน (ครู)
                             </h1>
-                            <p className="text-sm text-gray-500">ประเมินความเสี่ยง 4 ด้าน (การเรียน, สุขภาพ, ครอบครัว, อื่นๆ)</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">ประเมินความเสี่ยง 4 ด้าน (การเรียน, สุขภาพ, ครอบครัว, อื่นๆ)</p>
                         </div>
                         <div className="flex gap-2">
-                            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} className="p-2 border rounded-lg">
+                            <select 
+                                value={selectedClass} 
+                                onChange={e => setSelectedClass(e.target.value)} 
+                                className="p-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                            >
                                 {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
                             </select>
-                            <select value={selectedRoom} onChange={e => setSelectedRoom(e.target.value)} className="p-2 border rounded-lg min-w-[100px]">
+                            <select 
+                                value={selectedRoom} 
+                                onChange={e => setSelectedRoom(e.target.value)} 
+                                className="p-2 border rounded-lg min-w-[100px] bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                            >
                                 <option value="">ทุกห้อง</option>
                                 {rooms.map(r => <option key={r} value={r}>ห้อง {r}</option>)}
                             </select>
@@ -130,24 +138,24 @@ const ScreeningTeacherPage: React.FC = () => {
                     </div>
 
                     {/* Table */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
                         <table className="w-full text-left">
-                            <thead className="bg-gray-50 dark:bg-gray-700">
-                                <tr>
-                                    <th className="p-4">เลขที่</th>
-                                    <th className="p-4">ชื่อ-นามสกุล</th>
-                                    <th className="p-4 text-center">สถานะ (4 ด้าน)</th>
-                                    <th className="p-4 text-center">สรุปผล</th>
-                                    <th className="p-4 text-center">จัดการ</th>
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                <tr className="text-gray-700 dark:text-gray-200">
+                                    <th className="p-4 font-semibold">เลขที่</th>
+                                    <th className="p-4 font-semibold">ชื่อ-นามสกุล</th>
+                                    <th className="p-4 text-center font-semibold">สถานะ (4 ด้าน)</th>
+                                    <th className="p-4 text-center font-semibold">สรุปผล</th>
+                                    <th className="p-4 text-center font-semibold">จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                                 {displayedStudents.map(s => {
                                     const studentAsm = assessments[s.id]?.find(a => a.evaluatorType === 'teacher');
                                     return (
-                                        <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                        <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-gray-700 dark:text-gray-300">
                                             <td className="p-4">{s.studentNumber}</td>
-                                            <td className="p-4">{s.title}{s.firstName} {s.lastName}</td>
+                                            <td className="p-4 font-medium">{s.title}{s.firstName} {s.lastName}</td>
                                             <td className="p-4">
                                                 {studentAsm ? (
                                                     <div className="flex justify-center gap-2">
@@ -156,22 +164,23 @@ const ScreeningTeacherPage: React.FC = () => {
                                                         {getStatusBadge(studentAsm.family.status)}
                                                         {getStatusBadge(studentAsm.other.status)}
                                                     </div>
-                                                ) : <div className="text-center text-xs text-gray-400">-</div>}
+                                                ) : <div className="text-center text-xs text-gray-400 dark:text-gray-500">-</div>}
                                             </td>
                                             <td className="p-4 text-center">
                                                 {studentAsm ? (
                                                     <span className={`px-2 py-1 rounded text-xs font-bold uppercase
-                                                        ${studentAsm.summary === 'problem' ? 'bg-red-100 text-red-700' :
-                                                            studentAsm.summary === 'risk' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`
+                                                        ${studentAsm.summary === 'problem' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                            studentAsm.summary === 'risk' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 
+                                                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`
                                                     }>
                                                         {studentAsm.summary === 'problem' ? 'มีปัญหา' : studentAsm.summary === 'risk' ? 'เสี่ยง' : 'ปกติ'}
                                                     </span>
-                                                ) : '-'}
+                                                ) : <span className="text-gray-400 dark:text-gray-500">-</span>}
                                             </td>
                                             <td className="p-4 text-center">
                                                 <button
                                                     onClick={() => { setCurrentStudent(s); setShowModal(true); }}
-                                                    className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 font-medium text-sm"
+                                                    className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors font-medium text-sm"
                                                 >
                                                     {studentAsm ? 'แก้ไข' : 'ประเมิน'}
                                                 </button>

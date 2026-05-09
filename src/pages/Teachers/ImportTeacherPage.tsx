@@ -13,6 +13,7 @@ import {
     FaTimes, FaCloudUploadAlt, FaDownload, FaArrowLeft, FaEdit, FaUserPlus, FaUsers
 } from 'react-icons/fa';
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import BackButton from "@/components/Shared/BackButton";
 
 // --- Configuration ---
 const REQUIRED_FIELDS = [
@@ -272,7 +273,8 @@ export default function ImportTeacherPage() {
                     lastName: teacher.lastName,
                     idCardNumber: teacher.idCardNumber,
                     position: "",
-                    learningArea: "",
+                    learningArea: teacher.learningArea || "",
+                    subjectGroup: teacher.learningArea || "",
                     email: teacher.email,
                     teacherId: teacher.teacherId,
                     schoolId,
@@ -323,10 +325,8 @@ export default function ImportTeacherPage() {
                     {/* Header */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800/50">
                         <div>
-                            <button onClick={() => navigate(-1)} className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 mb-2 text-sm font-medium">
-                                <FaArrowLeft size={12} className="mr-1.5" /> ย้อนกลับ
-                            </button>
-                            <h1 className="text-2xl font-bold flex items-center gap-3 text-slate-800 dark:text-white">
+                            <BackButton to="/academic/hub/personnel_info" />
+                            <h1 className="text-2xl font-bold flex items-center gap-3 text-slate-800 dark:text-white mt-4">
                                 <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-lg">
                                     <FaFileExcel className="text-emerald-600 dark:text-emerald-400" size={24} />
                                 </div>

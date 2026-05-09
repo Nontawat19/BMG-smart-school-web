@@ -40,6 +40,7 @@ interface TeacherData {
   advisorRole?: string;
   learningArea?: string;
   isHeadOfLearningArea?: boolean;
+  status?: string;
   rfid?: string;
   attendanceStats?: {
     present: number;
@@ -191,7 +192,7 @@ export default function ViewTeacherPage() {
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
   const [substitutionsCurrentPage, setSubstitutionsCurrentPage] = useState(1);
   const [substitutionsItemsPerPage, setSubstitutionsItemsPerPage] = useState(10);
-  const [academicYear, setAcademicYear] = useState<string>("");
+  const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
   const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
   
   // Navigation State
@@ -200,9 +201,6 @@ export default function ViewTeacherPage() {
   const nextTeacherId = currentIndex < allTeacherIds.length - 1 ? allTeacherIds[currentIndex + 1] : null;
   const prevTeacherId = currentIndex > 0 ? allTeacherIds[currentIndex - 1] : null;
 
-  // RFID Mapping State
-  const [rfidValue, setRfidValue] = useState("");
-  const [isSavingRfid, setIsSavingRfid] = useState(false);
 
   const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
     schoolName: "",
@@ -226,41 +224,7 @@ export default function ViewTeacherPage() {
     fetchAllIds();
   }, [schoolId]);
 
-  useEffect(() => {
-    if (teacher) {
-      setRfidValue(teacher.rfid || "");
-    }
-  }, [teacher]);
 
-  const handleSaveRfid = async (val: string) => {
-    if (!schoolId || !teacherId) return;
-    setIsSavingRfid(true);
-    try {
-      const { updateDoc, doc } = await import("firebase/firestore");
-      const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
-      await updateDoc(teacherRef, { rfid: val });
-      
-      Swal.fire({
-        toast: true,
-        position: 'top-end',
-        icon: 'success',
-        title: 'บันทึก RFID สำเร็จ',
-        showConfirmButton: false,
-        timer: 1000
-      });
-
-      if (nextTeacherId) {
-        navigate(`/school/${schoolId}/teachers/view/${nextTeacherId}`);
-      } else {
-        setTeacher(prev => prev ? { ...prev, rfid: val } : null);
-      }
-    } catch (err) {
-      console.error("Error saving RFID:", err);
-      Swal.fire('Error', 'ไม่สามารถบันทึก RFID ได้', 'error');
-    } finally {
-      setIsSavingRfid(false);
-    }
-  };
 
   useEffect(() => {
     if (activeTab === 'official_travel' && schoolId && teacherId) {
@@ -391,19 +355,6 @@ export default function ViewTeacherPage() {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const cData = calendarSnap.data();
-            if (cData.academicYear && !schoolInfo.schoolName) { // Only update if not already set by school-settings
-              setAcademicYear(cData.academicYear);
-            }
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -560,7 +511,30 @@ export default function ViewTeacherPage() {
                   className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
                 />
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">{teacher.title}{teacher.firstName} {teacher.lastName}</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{teacher.email}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{teacher.email}</p>
+                
+                <div className="flex justify-center mb-4">
+                  {teacher.status ? (
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                      teacher.status === "อยู่" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                      teacher.status === "ย้าย" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                      teacher.status === "เกษียณ" ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400" :
+                      teacher.status === "ลาศึกษาต่อ" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" :
+                      teacher.status === "ช่วยราชการ" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" :
+                      teacher.status === "ออก" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                      teacher.status === "ถึงแก่กรรม" ? "bg-black text-white dark:bg-gray-950" :
+                      "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                    }`}>
+                      {teacher.status === "อยู่" ? "อยู่ (ปฏิบัติหน้าที่)" :
+                       teacher.status === "ออก" ? "ออก (ลาออก/พ้นสภาพ)" :
+                       teacher.status}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      อยู่ (ปฏิบัติหน้าที่)
+                    </span>
+                  )}
+                </div>
 
                 <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500 space-y-1">
                   <p>สร้างเมื่อ: {teacher.createdAt ? new Date(teacher.createdAt.seconds * 1000).toLocaleString('th-TH') : '-'}</p>
@@ -616,37 +590,6 @@ export default function ViewTeacherPage() {
               <div className="space-y-6">
                 {activeTab === "general" && (
                   <div className="space-y-6 animate-fade-in">
-                    {/* RFID Mapping Card */}
-                    <InfoCard title="การเชื่อมโยงบัตร RFID" className="border-2 border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-900/10">
-                      <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <div className="flex-1 w-full">
-                          <label className="block text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2">สแกนบัตรเพื่อลงทะเบียน</label>
-                          <input 
-                            type="text"
-                            value={rfidValue}
-                            onChange={(e) => setRfidValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleSaveRfid(rfidValue);
-                              }
-                            }}
-                            autoFocus
-                            placeholder="วางบัตรบนเครื่องสแกน..."
-                            className="w-full bg-white dark:bg-gray-700 border-2 border-indigo-200 dark:border-indigo-900/50 rounded-xl px-4 py-3 text-lg font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-inner"
-                          />
-                        </div>
-                        <div className="flex-shrink-0 flex items-end h-full pt-6">
-                           <button 
-                            onClick={() => handleSaveRfid(rfidValue)}
-                            disabled={isSavingRfid || !rfidValue}
-                            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all disabled:opacity-50"
-                           >
-                             {isSavingRfid ? "กำลังบันทึก..." : "บันทึกและถัดไป"}
-                           </button>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-gray-400 mt-2 italic">* เมื่อสแกนบัตร ระบบจะบันทึกข้อมูลและข้ามไปยังครูคนถัดไปโดยอัตโนมัติ</p>
-                    </InfoCard>
 
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
                       <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ข้อมูลส่วนตัวและวุฒิการศึกษา</h2>
@@ -791,7 +734,7 @@ export default function ViewTeacherPage() {
 
                 {activeTab === "attendance" && (
                   <div className="animate-fade-in space-y-6">
-                    <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || new Date().getFullYear() + 543})`}>
+                    <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear})`}>
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
                         <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800">
                           <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.present || 0}</div>

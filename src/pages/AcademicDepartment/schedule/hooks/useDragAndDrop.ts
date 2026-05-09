@@ -39,6 +39,24 @@ export const useDragAndDrop = ({
     setActiveDragItem,
     assignmentConstraints
 }: UseDragAndDropProps) => {
+    const removeInstancesFromBank = (activeId: string, activeItem: CourseInstance, count: number) => {
+        setAvailableCourseInstances((list: CourseInstance[]) => {
+            let remainingToRemove = Math.max(1, count);
+            const next: CourseInstance[] = [];
+
+            for (const item of list) {
+                const isActiveItem = item.instanceId === activeId;
+                const isSameAssignment = item.compositeId === activeItem.compositeId;
+                if ((isActiveItem || isSameAssignment) && remainingToRemove > 0) {
+                    remainingToRemove--;
+                    continue;
+                }
+                next.push(item);
+            }
+
+            return next;
+        });
+    };
 
     const handleDragStart = (event: DragStartEvent) => {
         const activeId = String(event.active.id);
@@ -117,6 +135,10 @@ export const useDragAndDrop = ({
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
+        if (isFromBank && targetItemsInCurrentSchedule.length > 0) {
+            MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่าง หรือย้ายรายวิชาเดิมออกก่อน' });
+            return;
+        }
 
         // 2. Global Conflict Checks (School Master Schedule)
         const targetOccupancies = (schoolMasterSchedule[overId] || []).filter(occ => {
@@ -178,7 +200,7 @@ export const useDragAndDrop = ({
                         schoolMasterSchedule
                     );
                     
-                    if (!partnerCheck.forbidden && !schedule[potPartnerId]) {
+                    if (!partnerCheck.forbidden && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
                         partnerSlotId = potPartnerId;
                     } else if (asgnCst.type === 'double') {
                         MySwal.fire({ 
@@ -199,8 +221,8 @@ export const useDragAndDrop = ({
             const next = { ...prev };
 
             if (isFromBank) {
-                // Remove from bank
-                setAvailableCourseInstances((list: CourseInstance[]) => list.filter(c => c.instanceId !== activeId));
+                // Remove the exact number of periods placed. Double periods consume two bank instances.
+                removeInstancesFromBank(activeId, activeItem!, partnerSlotId ? 2 : 1);
                 
                 // Primary Slot
                 const newInstance = { ...activeItem!, instanceId: `${activeItem!.id}-${overId}-${Date.now()}`, locked: false };
@@ -306,6 +328,10 @@ export const useDragAndDrop = ({
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถเพิ่มได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
+        if (targetItemsInCurrentSchedule.length > 0) {
+            MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่างก่อนเพิ่มรายวิชา' });
+            return;
+        }
 
         // 2. Constraints Check
         const { forbidden, message } = checkConstraints(
@@ -373,14 +399,7 @@ export const useDragAndDrop = ({
         setSchedule((prev: Schedule) => {
             const next = { ...prev };
             
-            // Remove from bank
-            setAvailableCourseInstances((list: CourseInstance[]) => {
-                const index = list.findIndex(c => c.instanceId === activeItem.instanceId);
-                if (index === -1) return list;
-                const newList = [...list];
-                newList.splice(index, 1);
-                return newList;
-            });
+            removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
             
             // Primary Slot
             const newInstance = { ...activeItem, instanceId: `${activeItem.id}-${slotId}-${Date.now()}`, locked: false };

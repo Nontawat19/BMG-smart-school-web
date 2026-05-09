@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom'; // Import useNavigate and useParams
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
+import { usePermissions } from "@/hooks/usePermissions";
 import { firestore as db, storage } from '../../firebase';
 import { doc, getDoc, setDoc, addDoc, collection, query, getDocs, serverTimestamp } from 'firebase/firestore'; // Import addDoc, collection, serverTimestamp
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
@@ -9,6 +10,7 @@ import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
 import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+import { ROLES } from "@/constants/roles";
 
 // Import Leaflet components
 import { MapContainer, TileLayer, Marker, Polygon, useMapEvents, CircleMarker, Popup } from 'react-leaflet';
@@ -94,7 +96,7 @@ const MapController: React.FC<{
 const SchoolInfoPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId?: string }>(); // schoolId is now optional
   const navigate = useNavigate();
-  const { user: currentUser } = useSelector((state: RootState) => state.auth);
+  const { user: currentUser, isSchoolAdmin } = usePermissions();
 
   const [info, setInfo] = useState<SchoolInfo>({});
   const [customPrefixModes, setCustomPrefixModes] = useState<Record<string, boolean>>({});
@@ -139,6 +141,13 @@ const SchoolInfoPage: React.FC = () => {
   }, [schoolId, navigate]);
 
   useEffect(() => {
+    // Security check for school admins
+    if (isSchoolAdmin && schoolId && schoolId !== currentUser?.schoolId) {
+      Swal.fire('เข้าถึงไม่ได้', 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลโรงเรียนอื่น', 'error');
+      navigate('/home');
+      return;
+    }
+
     if (schoolId) {
       fetchData();
     } else {
@@ -468,9 +477,13 @@ const SchoolInfoPage: React.FC = () => {
           text: 'ข้อมูลโรงเรียนได้รับการอัปเดตแล้ว',
           background: '#2a2b2f',
           color: '#ffffff',
-        }).then(() => {
-          navigate(`/owner/schools/${currentSchoolId}`); // Navigate to details page
-        });
+          }).then(() => {
+            if (isSchoolAdmin) {
+              navigate('/owner/hub'); // Or wherever school admins should go
+            } else {
+              navigate(`/owner/schools/${currentSchoolId}`);
+            }
+          });
       } else {
         // 📌 Create the new school first to get the ID
         const newDocRef = await addDoc(collection(db, collectionName), dataToSave);
@@ -496,9 +509,13 @@ const SchoolInfoPage: React.FC = () => {
           text: 'ข้อมูลโรงเรียนใหม่ได้รับการบันทึกแล้ว',
           background: '#2a2b2f',
           color: '#ffffff',
-        }).then(() => {
-          navigate(`/owner/schools/${newId}`); // Navigate to the new school's details page
-        });
+          }).then(() => {
+            if (isSchoolAdmin) {
+              navigate('/owner/hub');
+            } else {
+              navigate(`/owner/schools/${newId}`);
+            }
+          });
       }
 
     } catch (error) {
@@ -563,7 +580,7 @@ const SchoolInfoPage: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 <Link
-                  to="/owner/schools"
+                  to={isSchoolAdmin ? '/owner/hub' : '/owner/schools'}
                   className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-[#2a2b2f] dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 transition-all shadow-sm"
                 >
                   <FaArrowLeft className="text-[10px]" />

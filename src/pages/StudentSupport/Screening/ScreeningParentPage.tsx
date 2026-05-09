@@ -102,16 +102,24 @@ const ScreeningParentPage: React.FC = () => {
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <ClipboardCheck className="text-pink-600" />
+                                <ClipboardCheck className="text-pink-600 dark:text-pink-400" />
                                 คัดกรองนักเรียน (ผู้ปกครอง)
                             </h1>
-                            <p className="text-sm text-gray-500">ผู้ปกครองให้ข้อมูลลูกหลาน (เศรษฐกิจ, ครอบครัว, สุขภาพ)</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">ผู้ปกครองให้ข้อมูลลูกหลาน (เศรษฐกิจ, ครอบครัว, สุขภาพ)</p>
                         </div>
                         <div className="flex gap-2">
-                            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} className="p-2 border rounded-lg">
+                            <select 
+                                value={selectedClass} 
+                                onChange={e => setSelectedClass(e.target.value)} 
+                                className="p-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                            >
                                 {availableLevels.map(l => <option key={l} value={l}>{l}</option>)}
                             </select>
-                            <select value={selectedRoom} onChange={e => setSelectedRoom(e.target.value)} className="p-2 border rounded-lg min-w-[100px]">
+                            <select 
+                                value={selectedRoom} 
+                                onChange={e => setSelectedRoom(e.target.value)} 
+                                className="p-2 border rounded-lg min-w-[100px] bg-white dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                            >
                                 <option value="">ทุกห้อง</option>
                                 {rooms.map(r => <option key={r} value={r}>ห้อง {r}</option>)}
                             </select>
@@ -119,32 +127,32 @@ const ScreeningParentPage: React.FC = () => {
                     </div>
 
                     {/* Table */}
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
                         <table className="w-full text-left">
-                            <thead className="bg-gray-50 dark:bg-gray-700">
-                                <tr>
-                                    <th className="p-4">เลขที่</th>
-                                    <th className="p-4">ชื่อ-นามสกุล</th>
-                                    <th className="p-4 text-center">สถานะ</th>
-                                    <th className="p-4 text-center">จัดการ</th>
+                            <thead className="bg-gray-50 dark:bg-gray-700/50">
+                                <tr className="text-gray-700 dark:text-gray-200">
+                                    <th className="p-4 font-semibold">เลขที่</th>
+                                    <th className="p-4 font-semibold">ชื่อ-นามสกุล</th>
+                                    <th className="p-4 text-center font-semibold">สถานะ</th>
+                                    <th className="p-4 text-center font-semibold">จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                                 {displayedStudents.map(s => {
                                     const studentAsm = assessments[s.id]?.find(a => a.evaluatorType === 'parent');
                                     return (
-                                        <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                        <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-gray-700 dark:text-gray-300">
                                             <td className="p-4">{s.studentNumber}</td>
-                                            <td className="p-4">{s.title}{s.firstName} {s.lastName}</td>
+                                            <td className="p-4 font-medium">{s.title}{s.firstName} {s.lastName}</td>
                                             <td className="p-4 text-center">
                                                 {studentAsm ? (
-                                                    <span className="text-green-600 font-bold text-sm">บันทึกแล้ว</span>
-                                                ) : <span className="text-gray-400 text-sm">ยังไม่บันทึก</span>}
+                                                    <span className="text-green-600 dark:text-green-400 font-bold text-sm">บันทึกแล้ว</span>
+                                                ) : <span className="text-gray-400 dark:text-gray-500 text-sm">ยังไม่บันทึก</span>}
                                             </td>
                                             <td className="p-4 text-center">
                                                 <button
                                                     onClick={() => { setCurrentStudent(s); setShowModal(true); }}
-                                                    className="px-3 py-1 bg-pink-50 text-pink-600 rounded hover:bg-pink-100 font-medium text-sm"
+                                                    className="px-3 py-1 bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded hover:bg-pink-100 dark:hover:bg-pink-900/50 transition-colors font-medium text-sm"
                                                 >
                                                     {studentAsm ? 'แก้ไขข้อมูล' : 'ให้ข้อมูล'}
                                                 </button>

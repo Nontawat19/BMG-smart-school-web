@@ -955,6 +955,8 @@ const ImportStudentDMCPage: React.FC = () => {
         });
 
         // --- Process Loop ---
+        const duplicates: { record: MappedData; conflict: any }[] = [];
+
         for (let i = 0; i < total; i++) {
             const student = previewData[i];
 
@@ -965,11 +967,29 @@ const ImportStudentDMCPage: React.FC = () => {
             }
 
             try {
-                // Check Duplicate
-                const q = query(studentsRef, where('studentId', '==', student.studentId));
-                const snapshot = await getDocs(q);
+                // Check Duplicate (By studentId or idCardNumber)
+                let conflictDoc: any = null;
 
-                if (!snapshot.empty) {
+                // Check Student ID
+                if (student.studentId) {
+                    const qId = query(studentsRef, where('studentId', '==', student.studentId));
+                    const snapshotId = await getDocs(qId);
+                    if (!snapshotId.empty) {
+                        conflictDoc = snapshotId.docs[0].data();
+                    }
+                }
+
+                // Check ID Card Number (if not already found)
+                if (!conflictDoc && student.idCardNumber) {
+                    const qCard = query(studentsRef, where('idCardNumber', '==', student.idCardNumber));
+                    const snapshotCard = await getDocs(qCard);
+                    if (!snapshotCard.empty) {
+                        conflictDoc = snapshotCard.docs[0].data();
+                    }
+                }
+
+                if (conflictDoc) {
+                    duplicates.push({ record: student, conflict: conflictDoc });
                     skipCount++;
                     const skipCountEl = document.getElementById('swal-skip-count');
                     if (skipCountEl) skipCountEl.innerText = String(skipCount);
@@ -1049,6 +1069,41 @@ const ImportStudentDMCPage: React.FC = () => {
                             </div>
                             <span class="text-4xl font-black text-amber-600 dark:text-amber-400">${skipCount}</span>
                         </div>
+
+                        ${duplicates.length > 0 ? `
+                            <div class="mt-8">
+                                <div class="flex items-center gap-2 mb-3 px-4">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                                    <h4 class="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">รายละเอียดข้อมูลที่ซ้ำ</h4>
+                                </div>
+                                <div class="max-h-64 overflow-y-auto rounded-[2rem] border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-2 custom-scrollbar">
+                                    <table class="w-full text-left border-separate border-spacing-y-2">
+                                        <thead>
+                                            <tr class="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">
+                                                <th class="px-4 pb-2">นักเรียนใหม่</th>
+                                                <th class="px-4 pb-2">ซ้ำกับคนปัจจุบัน</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${duplicates.map(d => `
+                                                <tr class="bg-white dark:bg-gray-800/50 rounded-2xl shadow-sm">
+                                                    <td class="p-4 rounded-l-2xl border-y border-l border-gray-50 dark:border-gray-800">
+                                                        <div class="font-bold text-gray-700 dark:text-gray-200">${d.record.firstName} ${d.record.lastName}</div>
+                                                        <div class="text-[10px] text-gray-400 font-medium mt-1">ID: ${d.record.studentId || "-"}</div>
+                                                    </td>
+                                                    <td class="p-4 rounded-r-2xl border-y border-r border-gray-50 dark:border-gray-800">
+                                                        <div class="font-bold text-indigo-600 dark:text-indigo-400">${d.conflict.title || ""}${d.conflict.firstName} ${d.conflict.lastName}</div>
+                                                        <div class="flex items-center gap-2 mt-1">
+                                                            <span class="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-black rounded-lg uppercase tracking-tighter">ชั้น ${d.conflict.classLevel || d.conflict.level || ""}/${d.conflict.room || ""}</span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            `).join("")}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ` : ""}
 
                         ${failCount > 0 ? `
                         <div class="flex justify-between items-center p-6 bg-red-50/50 dark:bg-red-900/10 rounded-[2.5rem] border border-red-100 dark:border-red-800/30 group">
