@@ -87,6 +87,9 @@ import ClubAttendancePage from "./pages/AcademicDepartment/ClubAttendancePage"; 
 
 import ClubManagementPage from "./pages/AcademicDepartment/ClubManagementPage"; // 📌 เพิ่มการ import หน้าจัดการชุมนุม
 import ClubMemberManagementPage from "./pages/AcademicDepartment/ClubMemberManagementPage"; // 📌 เพิ่มการ import หน้าจัดการสมาชิกชุมนุม
+import LearnerActivityManagementPage from "./pages/AcademicDepartment/LearnerActivityManagementPage"; // 📌 เพิ่มหน้าจัดการกิจกรรมพัฒนาผู้เรียน
+import LearnerActivityStudentManagementPage from "./pages/AcademicDepartment/LearnerActivityStudentManagementPage"; // 📌 เพิ่มหน้าจัดการนักเรียนกิจกรรม
+import LearnerActivityAttendancePage from "./pages/AcademicDepartment/LearnerActivityAttendancePage"; // 📌 เพิ่มหน้าเช็คชื่อกิจกรรม
 import SchoolInfoPage from "./pages/owner/SchoolInfoPage";
 import CheckinOutPage from "./pages/Attendance/CheckinOutPage";
 import SchoolListPage from "./pages/owner/SchoolListPage";
@@ -229,6 +232,12 @@ function App() {
           <Route path="/academic/club-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClubAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/club-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubManagementPage /></ProtectedRoute>} />
           <Route path="/academic/club-members" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubMemberManagementPage /></ProtectedRoute>} />
+          
+          {/* Learner Activities (Staff Access) */}
+          <Route path="/academic/activities/management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/activities/students" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityStudentManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/activities/attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><LearnerActivityAttendancePage /></ProtectedRoute>} />
+
           <Route path="/academic/homeroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HomeroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />

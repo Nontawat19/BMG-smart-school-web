@@ -399,6 +399,30 @@ const HubPage: React.FC = () => {
           path: "/academic/club-members",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "มอบหมายครูกิจกรรมพัฒนาผู้เรียน",
+          description: "เลือกกิจกรรมจากหลักสูตรและกำหนดครูผู้ดูแลแต่ละกิจกรรม",
+          icon: <ClipboardList size={24} />,
+          path: "/academic/activities/management",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "เพิ่มรายชื่อนักเรียนเข้ากิจกรรม",
+          description: "เลือกปีการศึกษา ชั้น ห้อง และจัดนักเรียนเข้ากิจกรรมพัฒนาผู้เรียน",
+          icon: <Users size={24} />,
+          path: "/academic/activities/students",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "เช็คชื่อกิจกรรมพัฒนาผู้เรียน",
+          description: "เช็คชื่อนักเรียนตามกิจกรรมที่ได้รับมอบหมาย",
+          icon: <ClipboardCheck size={24} />,
+          path: "/academic/activities/attendance",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: TEACHER_OPERATIONAL
         }
       ]
     },
