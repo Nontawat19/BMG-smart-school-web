@@ -1,0 +1,14 @@
+{
+    "name": "porborsystem-functions",
+    "description": "Cloud Functions for Firebase",
+    "dependencies": {
+        "cors": "^2.8.5",
+        "firebase-admin": "^13.7.0",
+        "firebase-functions": "^7.0.6"
+    },
+    "engines": {
+        "node": "20"
+    },
+    "main": "index.js",
+    "private": true
+}

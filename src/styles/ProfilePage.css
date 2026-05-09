@@ -1,0 +1,51 @@
+.profile-container {
+    text-align: center;
+    margin-top: 40px;
+  }
+  
+  .profile-image {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-top: 20px;
+  }
+  
+  .profile-upload-input {
+    margin-bottom: 20px;
+  }
+  
+  .profile-input {
+    padding: 10px;
+    width: 300px;
+    font-size: 16px;
+    margin-bottom: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  
+  .profile-input-disabled {
+    padding: 10px;
+    width: 300px;
+    font-size: 16px;
+    background-color: #eee;
+    margin-bottom: 20px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  
+  .profile-save-button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #3b82f6; /* สีฟ้า */
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .profile-save-button:hover {
+    background-color: #2563eb; /* ฟ้าเข้มตอน hover */
+  }
+  

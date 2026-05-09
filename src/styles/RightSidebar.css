@@ -1,0 +1,16 @@
+.right-sidebar {
+  width: 270px;
+  background-color: #18191a;
+  color: #e4e6eb;
+  padding: 20px;
+  box-sizing: border-box;
+  height: fit-content;
+  position: sticky;
+  top: 60px;
+}
+
+@media (max-width: 1024px) {
+  .right-sidebar {
+    display: none;
+  }
+}
