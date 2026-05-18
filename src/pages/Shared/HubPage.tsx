@@ -36,7 +36,9 @@ import {
   Image,
   Flag,
   List,
-  LayoutGrid
+  LayoutGrid,
+  MessageSquare,
+  Send
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 
@@ -698,6 +700,22 @@ const HubPage: React.FC = () => {
           icon: <Users size={24} />,
           path: "/owner/users",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "จัดการ LINE OA",
+          description: "ตั้งค่าการแจ้งเตือนและการเชื่อมต่อ LINE Official Account",
+          icon: <MessageSquare size={24} />,
+          path: "/academic/settings/line-oa",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "จัดการ Telegram",
+          description: "ตั้งค่าการแจ้งเตือนและการเชื่อมต่อ Telegram Bot",
+          icon: <Send size={24} />,
+          path: "/academic/settings/telegram",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         }
       ]

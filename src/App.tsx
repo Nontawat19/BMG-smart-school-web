@@ -128,6 +128,8 @@ import TeacherAttendanceTodayPage from "./pages/HumanResources/TeacherAttendance
 import TeacherAttendanceSummaryPage from "./pages/HumanResources/TeacherAttendanceSummaryPage";
 import TeacherAttendanceIndividualPage from "./pages/HumanResources/TeacherAttendanceIndividualPage";
 import StudentsAttendanceSummaryPage from "./pages/Students/StudentsAttendanceSummaryPage";
+import LineOAManagementPage from "./pages/Administrator/LineOAManagementPage";
+import TelegramManagementPage from "./pages/Administrator/TelegramManagementPage";
 
 
 
@@ -241,8 +243,10 @@ function App() {
           <Route path="/academic/period-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodSettingsPage /></ProtectedRoute>} />
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />
           <Route path="/academic/settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AcademicSettingsPage /></ProtectedRoute>} />
-          <Route path="/academic/attendance-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceConfigPage /></ProtectedRoute>} />
+           <Route path="/academic/attendance-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceConfigPage /></ProtectedRoute>} />
           <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
+          <Route path="/academic/settings/line-oa" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LineOAManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-individual" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceIndividualPage /></ProtectedRoute>} />
