@@ -544,6 +544,14 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
+          title: "รายงานชุมนุม",
+          description: "สรุปข้อมูลการเข้าชุมนุม สมาชิก และผลการประเมิน",
+          icon: <FileText size={24} />,
+          path: "/academic/club-reports",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
           title: "มอบหมายครูกิจกรรมพัฒนาผู้เรียน",
           description: "เลือกกิจกรรมจากหลักสูตรและกำหนดครูผู้ดูแลแต่ละกิจกรรม",
           icon: <ClipboardList size={24} />,

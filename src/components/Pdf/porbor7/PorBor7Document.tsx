@@ -171,8 +171,8 @@ const PorBor7Document: React.FC<PorBor7Props> = ({
     issueDate,
     principalName,
     principalPosition = "ผู้อำนวยการโรงเรียน",
-    headOfDeptName = "นางรุ่งทิพย์ นามมีฤทธิ์",
-    headOfDeptPosition = "หัวหน้ากลุ่มงานบริหารงานทั่วไป",
+    headOfDeptName = "",
+    headOfDeptPosition = "หัวหน้าฝ่ายบริหารงานวิชาการ",
 }) => {
     const fullName = `${student.title || ''}${student.firstName || ''} ${student.lastName || ''}`.trim();
 

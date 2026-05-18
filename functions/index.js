@@ -42,3 +42,35 @@ exports.deleteUser = functions.region("us-central1").https.onCall(async (data, c
         );
     }
 });
+
+exports.updateUserEmail = functions.region("us-central1").https.onCall(async (data, context) => {
+    // optional permission check
+    const userId = data.userId;
+    const newEmail = data.email;
+
+    if (!userId || !newEmail) {
+        throw new functions.https.HttpsError(
+            "invalid-argument",
+            "กรุณาระบุ userId และ email"
+        );
+    }
+
+    try {
+        console.log(`กำลังอัปเดตอีเมลของผู้ใช้ ${userId} เป็น ${newEmail}`);
+
+        // อัปเดตอีเมลใน Firebase Auth
+        await admin.auth().updateUser(userId, { email: newEmail });
+
+        // อัปเดตอีเมลใน Firestore collection "users"
+        await admin.firestore().collection("users").doc(userId).update({ email: newEmail });
+
+        console.log(`อัปเดตอีเมลสำเร็จ: ${userId}`);
+        return { success: true, message: `อัปเดตอีเมลของผู้ใช้ ${userId} สำเร็จ` };
+    } catch (error) {
+        console.error(`เกิดข้อผิดพลาดในการอัปเดตอีเมลผู้ใช้ ${userId}:`, error);
+        throw new functions.https.HttpsError(
+            "internal",
+            `ไม่สามารถอัปเดตอีเมลได้: ${error.message}`
+        );
+    }
+});

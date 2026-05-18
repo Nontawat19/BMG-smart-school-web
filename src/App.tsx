@@ -95,6 +95,7 @@ import ClubAttendancePage from "./pages/AcademicDepartment/ClubAttendancePage"; 
 
 import ClubManagementPage from "./pages/AcademicDepartment/ClubManagementPage"; // 📌 เพิ่มการ import หน้าจัดการชุมนุม
 import ClubMemberManagementPage from "./pages/AcademicDepartment/ClubMemberManagementPage"; // 📌 เพิ่มการ import หน้าจัดการสมาชิกชุมนุม
+import ClubReportsPage from "./pages/AcademicDepartment/ClubReportsPage"; // 📌 เพิ่มการ import หน้าสรุปรายงานชุมนุม
 import LearnerActivityAttendancePage from "./pages/AcademicDepartment/LearnerActivityAttendancePage";
 import LearnerActivityManagementPage from "./pages/AcademicDepartment/LearnerActivityManagementPage";
 import LearnerActivityStudentManagementPage from "./pages/AcademicDepartment/LearnerActivityStudentManagementPage";
@@ -264,6 +265,8 @@ function App() {
           <Route path="/academic/club-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClubAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/club-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubManagementPage /></ProtectedRoute>} />
           <Route path="/academic/club-members" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubMemberManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/club-reports" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubReportsPage /></ProtectedRoute>} />
+          <Route path="/academic/club-reports/:reportType" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubReportsPage /></ProtectedRoute>} />
           <Route path="/academic/learner-activity-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><LearnerActivityAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/learner-activities" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityManagementPage /></ProtectedRoute>} />
           <Route path="/academic/learner-activity-students" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityStudentManagementPage /></ProtectedRoute>} />

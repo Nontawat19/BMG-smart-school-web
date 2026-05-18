@@ -64,14 +64,11 @@ const styles = StyleSheet.create({
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
-        borderTopWidth: 1.2,
-        borderLeftWidth: 1.2,
-        borderColor: '#000',
-        flexGrow: 1,
     },
     tableRow: {
         flexDirection: 'row',
         width: '100%',
+        borderLeftWidth: 1.2,
         borderBottomWidth: 1,
         borderColor: '#000',
         alignItems: 'stretch',
@@ -88,6 +85,7 @@ const styles = StyleSheet.create({
     // --- Header Specific ---
     headerRow: {
         height: 92,
+        borderTopWidth: 1.2,
         backgroundColor: '#fff',
         fontWeight: 'bold',
     },

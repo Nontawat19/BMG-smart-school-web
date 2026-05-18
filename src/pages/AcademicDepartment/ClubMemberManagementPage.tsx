@@ -613,7 +613,10 @@ const ClubMemberManagementPage: React.FC = () => {
                   placeholder="เลือกชุมนุม..."
                   styles={{
                     ...selectStyles,
-                    control: (base: any) => ({ ...base, minHeight: '30px', height: '30px', borderRadius: '8px' }),
+                    control: (base: any, props: any) => ({
+                      ...(selectStyles.control ? selectStyles.control(base) : base),
+                      minHeight: '30px', height: '30px', borderRadius: '8px'
+                    }),
                     valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
                     dropdownIndicator: (base: any) => ({ ...base, padding: '2px' }),
                   }}
@@ -718,9 +721,15 @@ const ClubMemberManagementPage: React.FC = () => {
                         onChange={(opt: any) => setSelectedClassLevel(opt.value)}
                         styles={{
                           ...selectStyles,
-                          control: (base: any) => ({ ...base, minHeight: '34px', height: '34px', borderRadius: '10px' }),
+                          control: (base: any, props: any) => ({
+                            ...(selectStyles.control ? selectStyles.control(base) : base),
+                            minHeight: '34px', height: '34px', borderRadius: '10px'
+                          }),
                           valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
-                          singleValue: (base: any) => ({ ...base, fontSize: '11px', fontWeight: 800 }),
+                          singleValue: (base: any, props: any) => ({
+                            ...(selectStyles.singleValue ? selectStyles.singleValue(base) : base),
+                            fontSize: '11px', fontWeight: 800
+                          }),
                         }}
                         isSearchable={false}
                         menuPortalTarget={document.body}
@@ -731,9 +740,15 @@ const ClubMemberManagementPage: React.FC = () => {
                         onChange={(opt: any) => setSelectedRoom(opt.value)}
                         styles={{
                           ...selectStyles,
-                          control: (base: any) => ({ ...base, minHeight: '34px', height: '34px', borderRadius: '10px' }),
+                          control: (base: any, props: any) => ({
+                            ...(selectStyles.control ? selectStyles.control(base) : base),
+                            minHeight: '34px', height: '34px', borderRadius: '10px'
+                          }),
                           valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
-                          singleValue: (base: any) => ({ ...base, fontSize: '11px', fontWeight: 800 }),
+                          singleValue: (base: any, props: any) => ({
+                            ...(selectStyles.singleValue ? selectStyles.singleValue(base) : base),
+                            fontSize: '11px', fontWeight: 800
+                          }),
                         }}
                         isSearchable={false}
                         menuPortalTarget={document.body}
@@ -746,7 +761,7 @@ const ClubMemberManagementPage: React.FC = () => {
                         placeholder="ค้นหาชื่อ หรือเลขประจำตัว..." 
                         value={studentSearchTerm} 
                         onChange={(e) => setStudentSearchTerm(e.target.value)} 
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none" 
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#1a1b1e] border border-slate-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:focus:border-emerald-500 transition-all outline-none" 
                       />
                     </div>
                   </div>
@@ -887,7 +902,7 @@ const ClubMemberManagementPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="px-6 py-3 bg-slate-50/50 dark:bg-white/3 border-b border-slate-100 dark:border-white/5">
+                <div className="px-6 py-3 bg-slate-50/50 dark:bg-[#1a1b1e]/50 border-b border-slate-100 dark:border-white/5">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                     <input 
@@ -895,13 +910,13 @@ const ClubMemberManagementPage: React.FC = () => {
                       placeholder="ค้นหาในชุมนุม..." 
                       value={searchTerm} 
                       onChange={(e) => setSearchTerm(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all outline-none" 
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-[#1a1b1e] border border-slate-100 dark:border-white/10 rounded-xl text-[11px] font-bold dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-violet-500 transition-all outline-none" 
                     />
                   </div>
                 </div>
 
                 {/* TABLE HEADER */}
-                <div className="px-6 py-2 bg-slate-50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 grid grid-cols-[1fr,70px,44px] items-center text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                <div className="px-6 py-2 bg-slate-50 dark:bg-[#1a1b1e]/80 border-b border-slate-100 dark:border-white/5 grid grid-cols-[1fr,70px,44px] items-center text-[9px] font-black text-slate-400 uppercase tracking-widest">
                   <span>รหัส / รายชื่อนักเรียน</span>
                   <span className="text-center">ชั้น/ห้อง</span>
                   <span className="text-right">จัดการ</span>

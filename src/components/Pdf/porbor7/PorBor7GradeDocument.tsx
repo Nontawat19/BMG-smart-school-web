@@ -128,6 +128,7 @@ const styles = StyleSheet.create({
     panelHeader: {
         height: 43,
         flexDirection: 'row',
+        position: 'relative',
         borderBottomWidth: 0.8,
         borderBottomColor: '#000',
         borderBottomStyle: 'solid',
@@ -136,22 +137,34 @@ const styles = StyleSheet.create({
         width: 132,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRightWidth: 0.8,
-        borderRightColor: '#000',
-        borderRightStyle: 'solid',
     },
     hourHeader: {
         width: 26,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRightWidth: 0.8,
-        borderRightColor: '#000',
-        borderRightStyle: 'solid',
     },
     gradeHeader: {
         width: 25,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    headerSubjectDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 132,
+        height: 43,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
+    },
+    headerHourDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 158,
+        height: 43,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
     },
     verticalText: {
         fontSize: 8.5,
@@ -290,6 +303,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
     },
     summaryContent: {
+        position: 'relative',
         flexDirection: 'row',
         height: 118,
     },
@@ -297,16 +311,10 @@ const styles = StyleSheet.create({
         width: 132,
         paddingTop: 4,
         paddingLeft: 3,
-        borderRightWidth: 0.8,
-        borderRightColor: '#000',
-        borderRightStyle: 'solid',
     },
     summaryHour: {
         width: 26,
         paddingTop: 4,
-        borderRightWidth: 0.8,
-        borderRightColor: '#000',
-        borderRightStyle: 'solid',
     },
     summaryGrade: {
         width: 25,
@@ -315,9 +323,46 @@ const styles = StyleSheet.create({
     summaryBottom: {
         height: 14,
         flexDirection: 'row',
+        position: 'relative',
         borderTopWidth: 0.8,
         borderTopColor: '#000',
         borderTopStyle: 'solid',
+    },
+    summarySubjectDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 132,
+        height: 118,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
+    },
+    summaryHourDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 158,
+        height: 118,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
+    },
+    summaryBottomSubjectDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 132,
+        height: 14,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
+    },
+    summaryBottomHourDivider: {
+        position: 'absolute',
+        top: 0,
+        left: 158,
+        height: 14,
+        borderRightWidth: 0.8,
+        borderRightColor: '#000',
+        borderRightStyle: 'solid',
     },
     issueText: {
         position: 'absolute',
@@ -759,6 +804,8 @@ const GradePanel = ({
     return (
         <View style={last ? styles.panelLast : styles.panel}>
             <View style={styles.panelHeader}>
+                <View style={styles.headerSubjectDivider} />
+                <View style={styles.headerHourDivider} />
                 <View style={styles.subjectHeader}><Text style={styles.headerText}>รหัส/รายวิชา</Text></View>
                 <View style={styles.hourHeader}><Text style={styles.verticalText}>เวลา(ชั่วโมง)</Text></View>
                 <View style={styles.gradeHeader}><Text style={styles.verticalText}>ผลการเรียน</Text></View>
@@ -793,6 +840,8 @@ const SummaryBox = ({ items, isPrimary }: { items: GradeItem[]; isPrimary: boole
     return (
         <View style={styles.summaryBox}>
             <View style={styles.summaryContent}>
+                <View style={styles.summarySubjectDivider} />
+                <View style={styles.summaryHourDivider} />
                 <View style={styles.summarySubject}>
                     {rows.slice(0, 10).map(item => <Text style={styles.courseText} key={item.group}>{item.group}</Text>)}
                 </View>
@@ -804,6 +853,8 @@ const SummaryBox = ({ items, isPrimary }: { items: GradeItem[]; isPrimary: boole
                 </View>
             </View>
             <View style={styles.summaryBottom}>
+                <View style={styles.summaryBottomSubjectDivider} />
+                <View style={styles.summaryBottomHourDivider} />
                 <View style={[styles.summarySubject, { height: 14, paddingTop: 2 }]}><Text style={styles.courseText}>ผลการเรียนเฉลี่ย</Text></View>
                 <View style={[styles.summaryHour, { height: 14, paddingTop: 2 }]}><Text style={styles.numberText}>{totalHours ? formatStudyHours(totalHours) : ''}</Text></View>
                 <View style={[styles.summaryGrade, { height: 14, paddingTop: 2 }]}><Text style={styles.numberText}>{formatAverage(average)}</Text></View>

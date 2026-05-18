@@ -33,6 +33,8 @@ const COL_WIDTHS = {
     RESULT: 43,
 };
 
+const ROWS_PER_PAGE = 31;
+
 const styles = StyleSheet.create({
     headerContainer: {
         marginBottom: 6,
@@ -67,14 +69,11 @@ const styles = StyleSheet.create({
     // --- Table Styles ---
     table: {
         width: '100%',
-        borderTopWidth: 1,
-        borderLeftWidth: 1,
-        borderColor: '#000',
         flexDirection: 'column',
-        flexGrow: 1,
     },
     row: {
         flexDirection: 'row',
+        borderLeftWidth: 1,
         borderBottomWidth: 1,
         borderColor: '#000',
         alignItems: 'stretch',
@@ -165,7 +164,7 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
 
             {/* Table Header */}
             <View style={styles.table}>
-                <View style={[styles.row, { height: 88 }]} fixed>
+                <View style={[styles.row, { height: 88, borderTopWidth: 1 }]} fixed>
 
                     {/* 1. เลขที่ */}
                     <View style={[styles.cell, { width: COL_WIDTHS.NO }]}>
@@ -287,7 +286,7 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
                 })}
 
                 {/* Filler Rows */}
-                {Array.from({ length: Math.max(0, 25 - studentChunk.length) }).map((_, i) => (
+                {Array.from({ length: Math.max(0, ROWS_PER_PAGE - studentChunk.length) }).map((_, i) => (
                     <View key={`filler-${i}`} style={[styles.row, { height: 20 }]}>
                         <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text>&nbsp;</Text></View>
                         <View style={[styles.cell, { width: COL_WIDTHS.ID }]}><Text>&nbsp;</Text></View>

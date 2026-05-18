@@ -744,11 +744,11 @@ const PorBor7Page: React.FC = () => {
                           {`${student.classLevel} / ${student.room}`}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => handleIssueCertificate(student)}
                               disabled={isExporting === student.id}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-500 text-white rounded-xl transition-all font-medium shadow-lg shadow-indigo-500/20 active:scale-95"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-500 text-white rounded-xl transition-all font-medium shadow-lg shadow-indigo-500/20 active:scale-95 whitespace-nowrap text-sm"
                             >
                               {isExporting === student.id ? (
                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
@@ -760,7 +760,7 @@ const PorBor7Page: React.FC = () => {
                             <button
                               onClick={() => handleIssueGradeCertificate(student)}
                               disabled={isExporting === student.id}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 text-white rounded-xl transition-all font-medium shadow-lg shadow-emerald-500/20 active:scale-95"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-500 text-white rounded-xl transition-all font-medium shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap text-sm"
                             >
                               {isExporting === student.id ? (
                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />

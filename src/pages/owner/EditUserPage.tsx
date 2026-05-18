@@ -4,6 +4,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { firestore, storage } from '@/firebase';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import MainLayout from '@/layouts/MainLayout';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import Swal from 'sweetalert2';
@@ -300,6 +301,22 @@ const EditUserPage: React.FC = () => {
 
     setIsSaving(true);
     try {
+      // If email has changed, update it in Firebase Auth first via Cloud Function
+      if (user.email !== originalUser?.email) {
+        Swal.fire({
+          title: 'กำลังอัปเดตอีเมล...',
+          text: 'กำลังบันทึกอีเมลใหม่ใน Firebase Auth และระบบส่วนกลาง',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
+        });
+
+        const functions = getFunctions();
+        const updateUserEmailCallable = httpsCallable(functions, 'updateUserEmail');
+        await updateUserEmailCallable({ userId: userId, email: user.email });
+      }
+
       let profileUrl = user.profileUrl;
       const finalTitle = user.title === "อื่นๆ" ? customTitle : user.title;
       const fullName = `${finalTitle}${user.firstName} ${user.lastName}`.trim();
@@ -316,6 +333,7 @@ const EditUserPage: React.FC = () => {
         firstName: user.firstName || null,
         lastName: user.lastName || null,
         title: finalTitle || null,
+        email: user.email,
         role: user.role,
         schoolId: user.schoolId || null,
         profileUrl: profileUrl || null,
@@ -486,8 +504,6 @@ const EditUserPage: React.FC = () => {
     { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลระบบสูงสุด (Super Admin)' },
     { value: ROLES.SCHOOL_ADMIN, label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
     { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
-    { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
-    { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
     { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
   ];
 
@@ -735,11 +751,21 @@ const EditUserPage: React.FC = () => {
                       <h2 className="text-lg font-semibold mb-2">บัญชีและความปลอดภัย</h2>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">จัดการการเข้าถึงบัญชีของผู้ใช้</p>
                       <div className="space-y-6">
-                        <div className="flex items-start p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                          <div className="flex-shrink-0 h-6 flex items-center text-gray-400"><FaEnvelope /></div>
-                          <div className="ml-3 text-sm">
-                            <p className="font-medium text-gray-800 dark:text-gray-200">อีเมล</p>
-                            <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+                        <div className="flex flex-col p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-6 flex items-center text-gray-400"><FaEnvelope /></div>
+                            <div className="ml-3 text-sm flex-grow">
+                              <label htmlFor="email" className="block font-medium text-gray-800 dark:text-gray-200 mb-2">อีเมล (สำหรับเข้าสู่ระบบ)</label>
+                              <input
+                                type="email"
+                                name="email"
+                                id="email"
+                                value={user.email || ""}
+                                onChange={handleInputChange}
+                                className="block w-full max-w-md px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900 dark:text-white"
+                                required
+                              />
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-start p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
