@@ -1,6 +1,12 @@
+<<<<<<< HEAD
 import React, { useState, useMemo, useEffect } from 'react';
 import Select, { components, MenuListProps } from 'react-select';
 import { User, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+=======
+import React from 'react';
+import Select from 'react-select';
+import { User, ChevronDown } from 'lucide-react';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { Teacher } from '../types';
 import { useTheme } from '@/ThemeContext';
 
@@ -18,6 +24,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
     setSchedule
 }) => {
     const { isDarkMode } = useTheme();
+<<<<<<< HEAD
     const [currentPage, setCurrentPage] = useState(1);
     const [inputValue, setInputValue] = useState('');
     const itemsPerPage = 9;
@@ -121,11 +128,16 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
             </components.MenuList>
         );
     }, [currentPage, itemsPerPage]);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     return (
         <div className="relative group">
             <Select
+<<<<<<< HEAD
                 components={{ MenuList: CustomMenuList }}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 menuPortalTarget={document.body}
                 value={teachers.find(t => t.id === selectedTeacher) ? (() => {
                     const t = teachers.find(t => t.id === selectedTeacher)!;
@@ -135,8 +147,11 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                         teacher: t
                     };
                 })() : null}
+<<<<<<< HEAD
                 inputValue={inputValue}
                 onInputChange={(val) => setInputValue(val)}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 onChange={(option: any) => {
                     const val = option?.value || '';
                     setSelectedTeacher(val);
@@ -144,6 +159,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                         setSchedule({});
                     }
                 }}
+<<<<<<< HEAD
                 onMenuOpen={() => {
                     // Optional: Reset to page 1 when menu opens if desired
                     // setCurrentPage(1);
@@ -151,6 +167,11 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                 options={teachers.map(teacher => ({
                     value: teacher.id,
                     label: `${teacher.title || ''}${teacher.firstName || ''} ${teacher.lastName || teacher.name || ''}`.trim(),
+=======
+                options={teachers.map(teacher => ({
+                    value: teacher.id,
+                    label: teacher.name,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     teacher: teacher
                 }))}
                 placeholder="เลือกครู..."
@@ -174,7 +195,11 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                                 {data.teacher?.teacherId || 'ID:N/A'}
                             </span>
                             <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap overflow-hidden">
+<<<<<<< HEAD
                                 {data.label}
+=======
+                                {data.teacher?.title || ''}{data.teacher?.firstName || ''} {data.teacher?.lastName || data.teacher?.name || ''}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </span>
                         </div>
                     </div>
@@ -264,7 +289,13 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                         height: '34px',
                     })
                 }}
+<<<<<<< HEAD
             />
+=======
+
+            />
+            {/* <User removed as per request /> */}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         </div>
     );
 };

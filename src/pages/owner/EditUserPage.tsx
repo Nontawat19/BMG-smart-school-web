@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+<<<<<<< HEAD
 import { usePermissions } from "@/hooks/usePermissions";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore, storage } from '@/firebase';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -11,11 +14,16 @@ import { compressImage } from '@/utils/imageUtils';
 
 interface User {
   fullName: string;
+<<<<<<< HEAD
   firstName?: string;
   lastName?: string;
   title?: string;
   email: string;
   role: string | string[];
+=======
+  email: string;
+  role: string | string[]; // รองรับทั้ง string (แบบเก่า) และ string[] (แบบใหม่)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   schoolId?: string;
   profileUrl?: string;
 }
@@ -25,12 +33,18 @@ interface School {
   schoolName: string;
 }
 
+<<<<<<< HEAD
 const initialTitles = ["นาย", "นาง", "นางสาว", "ครู", "อาจารย์", "ดร.", "บาทหลวง", "ซิสเตอร์", "บราเดอร์", "อื่นๆ"];
 
 const EditUserPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
+=======
+const EditUserPage: React.FC = () => {
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [user, setUser] = useState<User | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,7 +54,10 @@ const EditUserPage: React.FC = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+<<<<<<< HEAD
   const [customTitle, setCustomTitle] = useState("");
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +95,7 @@ const EditUserPage: React.FC = () => {
           userData.role = [];
         }
 
+<<<<<<< HEAD
         // Try to split fullName if firstName/lastName are missing
         if (!userData.firstName || !userData.lastName) {
             const nameParts = (userData.fullName || "").trim().split(/\s+/);
@@ -110,6 +128,9 @@ const EditUserPage: React.FC = () => {
           return;
         }
 
+=======
+        setUser(userData);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (userData.profileUrl) {
           setImagePreview(userData.profileUrl);
         }
@@ -159,8 +180,13 @@ const EditUserPage: React.FC = () => {
         return;
       }
       try {
+<<<<<<< HEAD
         // Compress and convert to WebP to match standard
         const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+=======
+        // Compress and convert to PNG (for PDF compatibility)
+        const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -205,6 +231,7 @@ const EditUserPage: React.FC = () => {
     e.preventDefault();
     if (!userId || !user) return;
 
+<<<<<<< HEAD
 
     setIsSaving(true);
     try {
@@ -215,10 +242,19 @@ const EditUserPage: React.FC = () => {
       if (imageFile) {
         // Use .webp extension to match standard
         const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.webp`);
+=======
+    setIsSaving(true);
+    try {
+      let profileUrl = user.profileUrl;
+
+      if (imageFile) {
+        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.png`);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const snapshot = await uploadBytes(storageRef, imageFile);
         profileUrl = await getDownloadURL(snapshot.ref);
       }
 
+<<<<<<< HEAD
       // 1. Update central 'users' collection
       const userData = {
         fullName: fullName,
@@ -290,6 +326,15 @@ const EditUserPage: React.FC = () => {
           await setDoc(studentDocRef, studentData, { merge: true });
         }
       }
+=======
+      const userDocRef = doc(firestore, 'users', userId);
+      await updateDoc(userDocRef, {
+        fullName: user.fullName,
+        role: user.role,
+        schoolId: user.schoolId || null, // Ensure it's null if empty
+        profileUrl: profileUrl || null,
+      });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       // 📌 Update Slug for the Profile
       const slugId = `profile:${userId}`;
@@ -303,7 +348,11 @@ const EditUserPage: React.FC = () => {
       }, { merge: true });
 
       // 📌 Update specific role slugs
+<<<<<<< HEAD
       // (roles already defined above)
+=======
+      const roles = Array.isArray(user.role) ? user.role : [user.role];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       for (const role of roles) {
         if (['student', 'teacher'].includes(role)) {
           const roleSlugId = `${role}:${userId}`;
@@ -363,9 +412,12 @@ const EditUserPage: React.FC = () => {
     { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
     { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
     { value: 'student', label: 'นักเรียน (Student)' },
+<<<<<<< HEAD
     { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
     { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
     { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   ];
 
   return (
@@ -454,6 +506,7 @@ const EditUserPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
+<<<<<<< HEAD
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
                             <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">คำนำหน้า</label>
@@ -511,6 +564,19 @@ const EditUserPage: React.FC = () => {
                               required
                             />
                           </div>
+=======
+                        <div>
+                          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ชื่อ-สกุล</label>
+                          <input
+                            type="text"
+                            name="fullName"
+                            id="fullName"
+                            value={user.fullName}
+                            onChange={handleInputChange}
+                            className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                            required
+                          />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                         <div className="relative" ref={dropdownRef}>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">บทบาท</label>
@@ -537,7 +603,11 @@ const EditUserPage: React.FC = () => {
 
                           {isRoleDropdownOpen && (
                             <div className="absolute z-50 mt-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in fade-in zoom-in duration-200">
+<<<<<<< HEAD
                               {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
+=======
+                              {userRoles.map((role) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 const isChecked = Array.isArray(user.role)
                                   ? user.role.includes(role.value)
                                   : user.role === role.value;
@@ -571,17 +641,27 @@ const EditUserPage: React.FC = () => {
                               name="schoolId"
                               value={user.schoolId || ''}
                               onChange={handleInputChange}
+<<<<<<< HEAD
                               disabled={isSchoolAdmin || isTeacher}
                               className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin || isTeacher ? 'opacity-70 cursor-not-allowed' : ''}`}
+=======
+                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             >
                               <option value="">-- ไม่ได้กำหนด --</option>
                               {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
                             </select>
+<<<<<<< HEAD
                             {(!isSchoolAdmin && !isTeacher) && (
                               <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
                                 <FaPlus />
                               </Link>
                             )}
+=======
+                            <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
+                              <FaPlus />
+                            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                           </div>
                         </div>
                       </div>

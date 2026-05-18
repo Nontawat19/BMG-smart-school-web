@@ -22,8 +22,12 @@ import {
   Course,
   Teacher,
   CharacteristicCriteria,
+<<<<<<< HEAD
   ReadingWritingCriteria,
   GroupAssignment
+=======
+  ReadingWritingCriteria
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from './GradeBookPage/types';
 
 import GradeBookHeader from './GradeBookPage/components/GradeBookHeader';
@@ -59,10 +63,17 @@ const GradeBookPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'grades' | 'characteristics' | 'readingWriting'>('grades');
   const [courses, setCourses] = useState<Course[]>([]);
+<<<<<<< HEAD
   const [semesterAssignments, setSemesterAssignments] = useState<Record<string, GroupAssignment[]>>({});
   const [characteristicsCriteria, setCharacteristicsCriteria] = useState<CharacteristicCriteria[]>([]);
   const [readingWritingCriteria, setReadingWritingCriteria] = useState<ReadingWritingCriteria[]>([]);
   const [maxScores, setMaxScores] = useState({ formative: 0, midterm: 0, final: 0 });
+=======
+  const [characteristicsCriteria, setCharacteristicsCriteria] = useState<CharacteristicCriteria[]>([]);
+  const [readingWritingCriteria, setReadingWritingCriteria] = useState<ReadingWritingCriteria[]>([]);
+  const [maxScores, setMaxScores] = useState({ formative: 60, midterm: 20, final: 20 });
+  const [academicYear, setAcademicYear] = useState<string>('');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const qrRef = useRef<HTMLDivElement>(null);
   const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
@@ -77,7 +88,11 @@ const GradeBookPage: React.FC = () => {
   const [courseSchedule, setCourseSchedule] = useState<Record<string, number[]>>({});
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
 
+<<<<<<< HEAD
   const { user: currentUser, isSchoolAdmin } = usePermissions();
+=======
+  const { user: currentUser, ACADEMIC_ACCESS, hasRole } = usePermissions();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const { availableClassOptions: reduxLevels, currentAcademicYear: schoolYear, schoolName, logoUrl, directorName, directorPrefix, status: schoolSettingsStatus } = useSelector((state: RootState) => state.schoolSettings);
   const { groups: reduxSubjectGroups, status: subjectGroupsStatus } = useSelector((state: RootState) => state.subjectGroups);
@@ -89,17 +104,36 @@ const GradeBookPage: React.FC = () => {
   const userPrivileges = useMemo(() => {
     const teacherProfiles = Object.values(teacherMap || {}).filter((t: any) => t.uid === currentUser?.uid);
     const teacherProfile = teacherProfiles[0] as Teacher | undefined;
+<<<<<<< HEAD
     const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
     const isAdmin = isSchoolAdmin;
 
     return {
       canSeeAll: isAdmin || isHead,
       isAdmin,
+=======
+    const department = teacherProfile?.department;
+
+    // Use standard permission groups from usePermissions
+    const isAcademicByRole = hasRole(ACADEMIC_ACCESS);
+    const isAcademicStaff = department === 'งานบริหารวิชาการ' || isAcademicByRole;
+    const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
+    const isAdmin = isAcademicByRole || (currentUser as any)?.position?.includes('วิชาการ');
+
+    return {
+      canSeeAll: isAdmin || isAcademicStaff || isHead,
+      isAdmin,
+      isAcademicStaff,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       isHead,
       teacherDocId: teacherProfile?.id,
       myTeacherIds: teacherProfiles.map(t => t.id)
     };
+<<<<<<< HEAD
   }, [currentUser, teacherMap, isSchoolAdmin]);
+=======
+  }, [currentUser, teacherMap, ACADEMIC_ACCESS, hasRole]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const {
     selectedClass, setSelectedClass,
@@ -114,6 +148,7 @@ const GradeBookPage: React.FC = () => {
     searchParams.get('classId') || '',
     searchParams.get('room') || '',
     searchParams.get('semester') || '',
+<<<<<<< HEAD
     searchParams.get('courseId') || '',
     searchParams.get('groupId') || '',
     useMemo(() => {
@@ -135,6 +170,16 @@ const GradeBookPage: React.FC = () => {
   }, [courses, semesterAssignments]);
 
   const currentCourse = useMemo(() => coursesWithAssignments.find(c => c.id === selectedCourse), [coursesWithAssignments, selectedCourse]);
+=======
+    searchParams.get('groupId') || '',
+    courses,
+    teacherMap,
+    userPrivileges,
+    academicYear
+  );
+
+  const currentCourse = useMemo(() => courses.find(c => c.id === selectedCourse), [courses, selectedCourse]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const checkIsHolidayLocal = useCallback((dateStr: string, events: Record<string, any>): { isHoliday: boolean; description: string } => {
     if (!dateStr || !events) return { isHoliday: false, description: '' };
@@ -176,7 +221,11 @@ const GradeBookPage: React.FC = () => {
     selectedCourse,
     selectedGroup,
     currentCourse,
+<<<<<<< HEAD
     calYear || '',
+=======
+    academicYear,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     [],
     calculateGradeMemoized
   );
@@ -190,8 +239,11 @@ const GradeBookPage: React.FC = () => {
     selectedClass,
     students,
     selectedCourse,
+<<<<<<< HEAD
     currentCourse,
     maxScores,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     characteristicsCriteria,
     readingWritingCriteria,
     grades,
@@ -221,8 +273,12 @@ const GradeBookPage: React.FC = () => {
     characteristicsCriteria,
     readingWritingCriteria,
     maxScores,
+<<<<<<< HEAD
     currentCourse,
     coursesWithAssignments,
+=======
+    courses,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     sdqMap
   );
 
@@ -241,6 +297,7 @@ const GradeBookPage: React.FC = () => {
     if (selectedRoom) params.set('room', selectedRoom);
     if (selectedSemester) params.set('semester', selectedSemester);
     if (selectedCourse) params.set('courseId', selectedCourse);
+<<<<<<< HEAD
     if (selectedGroup) params.set('groupId', selectedGroup);
     const newStr = params.toString();
     if (newStr !== searchParams.toString()) window.history.replaceState(null, '', `?${newStr}`);
@@ -261,6 +318,24 @@ const GradeBookPage: React.FC = () => {
       }
     }
   }, [reduxLevels, calendarStatus, calYear, calTerms, selectedSemester, setSelectedSemester]);
+=======
+    const newStr = params.toString();
+    if (newStr !== searchParams.toString()) window.history.replaceState(null, '', `?${newStr}`);
+  }, [selectedClass, selectedRoom, selectedSemester, selectedCourse, searchParams]);
+
+  useEffect(() => {
+    if (reduxLevels.length > 0) setAvailableClassOptions(reduxLevels);
+    if (schoolYear || calYear) setAcademicYear(schoolYear || calYear);
+    if (calTerms && calTerms.length > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      const found = calTerms.find(t => today >= t.startDate && today <= t.endDate);
+      if (found) {
+        const termId = found.name.includes('2') ? '2' : '1';
+        if (!selectedSemester) setSelectedSemester(termId);
+      }
+    }
+  }, [reduxLevels, schoolYear, calYear, calTerms, selectedSemester, setSelectedSemester]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   useEffect(() => {
     if (!schoolId) return;
@@ -271,6 +346,7 @@ const GradeBookPage: React.FC = () => {
     return () => unsubscribe();
   }, [schoolId]);
 
+<<<<<<< HEAD
   // Real-time Semester Assignments
   useEffect(() => {
     if (!schoolId || !calYear || !selectedSemester) {
@@ -296,6 +372,8 @@ const GradeBookPage: React.FC = () => {
     return () => unsubscribe();
   }, [schoolId, calYear, selectedSemester]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   useEffect(() => {
     const fetchCore = async () => {
       if (!schoolId) return;
@@ -312,6 +390,7 @@ const GradeBookPage: React.FC = () => {
         return;
       }
       try {
+<<<<<<< HEAD
         const qSchedules = query(
           collection(db, 'school-settings', schoolId, 'schedules'),
           where('academicYear', '==', String(calYear || '')),
@@ -328,6 +407,16 @@ const GradeBookPage: React.FC = () => {
           const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
           const matchesClass = classIds.some((id: string) => classCandidates.has(String(id))) || String(data.className || "").includes(classTitle);
           if (matchesClass) {
+=======
+        const snap = await getDocs(collection(db, 'school-settings', schoolId, 'schedules'));
+        const scheduleMap: Record<string, number[]> = { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] };
+        const classTitle = CLASSES[selectedClass] || selectedClass;
+        const targetCode = (currentCourse?.code || "").replace(/\s/g, '');
+
+        snap.forEach(doc => {
+          const data = doc.data();
+          if (String(data.classId || "") === selectedClass || String(data.className || "").includes(classTitle)) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             Object.entries(data.schedule || {}).forEach(([key, val]: [string, any]) => {
               const coursesInSlot = Array.isArray(val) ? val : [val];
               if (coursesInSlot.some(c => c && ((c.id === selectedCourse) || (c.code || "").replace(/\s/g, '') === targetCode))) {
@@ -342,6 +431,7 @@ const GradeBookPage: React.FC = () => {
       } catch (err) { console.error("Schedule error:", err); }
     };
     fetchSchedule();
+<<<<<<< HEAD
   }, [schoolId, selectedClass, selectedCourse, currentCourse, calYear, selectedSemester]);
 
   useEffect(() => {
@@ -362,6 +452,16 @@ const GradeBookPage: React.FC = () => {
     const m = Number(currentCourse.midtermWeight ?? 0);
     const fn = currentCourse.finalWeight !== undefined ? Number(currentCourse.finalWeight) : Math.max(0, 100 - f - m);
     setMaxScores({ formative: f, midterm: m, final: fn });
+=======
+  }, [schoolId, selectedClass, selectedCourse, currentCourse]);
+
+  useEffect(() => {
+    if (currentCourse) {
+      const f = currentCourse.formativeWeight ?? 60;
+      const m = currentCourse.midtermWeight ?? 20;
+      setMaxScores({ formative: f, midterm: m, final: 100 - f - m });
+    }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }, [currentCourse]);
 
   useEffect(() => {
@@ -394,6 +494,7 @@ const GradeBookPage: React.FC = () => {
           rws = [
             { 
               id: '1', 
+<<<<<<< HEAD
               standard: 'การอ่าน', 
               indicators: [
                 { 
@@ -454,6 +555,70 @@ const GradeBookPage: React.FC = () => {
                   }
                 }
               ] 
+=======
+              standard: 'ข้อที่ 1 การอ่าน', 
+              indicators: [{ 
+                text: 'สามารถอ่านเพื่อหาข้อมูลความรู้ ประสบการณ์จากสื่อประเภทต่างๆ', 
+                rubric: {
+                  3: 'อ่านได้ถูกต้อง คล่องแคล่ว สรุปใจความสำคัญได้ครบถ้วน',
+                  2: 'อ่านได้ถูกต้อง สรุปใจความสำคัญได้ค่อนข้างครบถ้วน',
+                  1: 'อ่านได้ถูกต้องบ้าง สรุปใจความสำคัญได้บางส่วน',
+                  0: 'อ่านไม่ถูกต้อง หรือไม่สามารถสรุปใจความสำคัญได้'
+                }
+              }] 
+            },
+            { 
+              id: '2', 
+              standard: 'ข้อที่ 2 การจับใจความสำคัญ', 
+              indicators: [{ 
+                text: 'สามารถจับใจความสำคัญ ตั้งคำถาม ตอบคำถามจากเรื่องที่อ่าน', 
+                rubric: {
+                  3: 'จับใจความสำคัญได้ถูกต้อง ตั้งและตอบคำถามได้อย่างชัดเจน',
+                  2: 'จับใจความสำคัญได้ ตั้งและตอบคำถามได้ถูกต้องส่วนใหญ่',
+                  1: 'จับใจความสำคัญได้บ้าง ตั้งและตอบคำถามพื้นฐานได้',
+                  0: 'ไม่สามารถจับใจความสำคัญ หรือตอบคำถามจากเรื่องที่อ่านได้'
+                }
+              }] 
+            },
+            { 
+              id: '3', 
+              standard: 'ข้อที่ 3 การวิเคราะห์', 
+              indicators: [{ 
+                text: 'สามารถวิเคราะห์ ประเมินสิ่งที่อ่านเพื่อนำไปใช้ประโยชน์', 
+                rubric: {
+                  3: 'วิเคราะห์และประเมินสิ่งที่อ่านได้อย่างมีเหตุผลและสร้างสรรค์',
+                  2: 'วิเคราะห์และประเมินสิ่งที่อ่านได้อย่างมีเหตุผล',
+                  1: 'วิเคราะห์สิ่งที่อ่านได้ตามประเด็นที่กำหนด',
+                  0: 'ไม่สามารถวิเคราะห์หรือประเมินสิ่งที่อ่านได้'
+                }
+              }] 
+            },
+            { 
+              id: '4', 
+              standard: 'ข้อที่ 4 การสังเคราะห์', 
+              indicators: [{ 
+                text: 'สามารถสังเคราะห์ แสดงความคิดเห็นเชิงสร้างสรรค์จากเรื่องที่อ่าน', 
+                rubric: {
+                  3: 'สังเคราะห์และแสดงความคิดเห็นได้อย่างโดดเด่นและสร้างสรรค์',
+                  2: 'สังเคราะห์และแสดงความคิดเห็นได้สอดคล้องกับเนื้อเรื่อง',
+                  1: 'แสดงความคิดเห็นต่อเรื่องที่อ่านได้',
+                  0: 'ไม่สามารถแสดงความคิดเห็นหรือสังเคราะห์เนื้อหาได้'
+                }
+              }] 
+            },
+            { 
+              id: '5', 
+              standard: 'ข้อที่ 5 การเขียน', 
+              indicators: [{ 
+                text: 'สามารถเขียนถ่ายทอดความรู้ วรรณกรรม และประสบการณ์', 
+                rubric: {
+                  3: 'เขียนถ่ายทอดข้อมูลและประสบการณ์ได้สละสลวย ชัดแจ้ง',
+                  2: 'เขียนถ่ายทอดข้อมูลและประสบการณ์ได้ถูกต้องตามรูปแบบ',
+                  1: 'เขียนสื่อสารได้ตามเนื้อหาที่ต้องการ',
+                  0: 'ไม่สามารถเขียนสื่อสารหรือเขียนได้ไม่เป็นประโยค'
+                }
+              }] 
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }
           ];
         }
@@ -474,6 +639,7 @@ const GradeBookPage: React.FC = () => {
   const courseTeacherName = useMemo(() => {
     if (!currentCourse) return '';
     const ids = new Set<string>();
+<<<<<<< HEAD
     
     // Check semester-specific assignments first (Highest priority)
     if (currentCourse.teacherAssignments && currentCourse.teacherAssignments.length > 0) {
@@ -493,6 +659,12 @@ const GradeBookPage: React.FC = () => {
         .join(', ');
     }
     
+=======
+    if (currentCourse.teacherId) ids.add(currentCourse.teacherId);
+    if (currentCourse.teacherIds) currentCourse.teacherIds.forEach(id => ids.add(id));
+    if (currentCourse.teacherAssignments) currentCourse.teacherAssignments.forEach(a => ids.add(a.teacherId));
+    if (ids.size > 0) return Array.from(ids).map(id => teacherMap[id]?.name || teacherMap[id]?.displayName).filter(Boolean).join(', ');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     return (currentUser as any)?.displayName || '';
   }, [currentCourse, teacherMap, currentUser]);
 
@@ -511,17 +683,25 @@ const GradeBookPage: React.FC = () => {
   // PDF Resolvers
   const resolvedSubjectGroup = useMemo(() => {
     if (!currentCourse || !reduxSubjectGroups) return null;
+<<<<<<< HEAD
     const courseSubjectGroup = currentCourse.subjectGroup || currentCourse.learningArea || '';
     return reduxSubjectGroups.find(g =>
       g.id === courseSubjectGroup ||
       g.name === courseSubjectGroup ||
       g.code === courseSubjectGroup
     );
+=======
+    return reduxSubjectGroups.find(g => g.id === currentCourse.subjectGroup || g.name === currentCourse.subjectGroup);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }, [currentCourse, reduxSubjectGroups]);
 
   const headOfLearningAreaName = useMemo(() => {
     if (!resolvedSubjectGroup || !teacherMap) return '';
+<<<<<<< HEAD
     const headId = resolvedSubjectGroup.headTeacherId || (resolvedSubjectGroup as any).headId;
+=======
+    const headId = resolvedSubjectGroup.headTeacherId;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     return teacherMap[headId || '']?.name || teacherMap[headId || '']?.displayName || '';
   }, [resolvedSubjectGroup, teacherMap]);
 
@@ -543,11 +723,15 @@ const GradeBookPage: React.FC = () => {
 
   const curriculumRoomDisplay = useMemo(() => {
     let room = "";
+<<<<<<< HEAD
     // If we have a group selected, that's our "Room" for the gradebook
     if (selectedGroup && selectedGroup !== 'all' && selectedGroup !== '') {
       // Extracts "1" from "กลุ่ม 1"
       room = selectedGroup.replace('กลุ่ม', '').trim();
     } else if (selectedRoom && selectedRoom !== 'all') {
+=======
+    if (selectedRoom && selectedRoom !== 'all') {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       room = selectedRoom;
     } else if (selectedRoom === 'all') {
       room = 'ทุกห้อง';
@@ -558,13 +742,21 @@ const GradeBookPage: React.FC = () => {
     // Final check for 'all' string
     if (room === 'all') return 'ทุกห้อง';
     return room;
+<<<<<<< HEAD
   }, [selectedGroup, selectedRoom, currentCourse]);
+=======
+  }, [selectedRoom, currentCourse]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const pdfProps = useMemo(() => ({
     students,
     grades,
     maxScores,
+<<<<<<< HEAD
     schoolInfo: { ...schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear: calYear },
+=======
+    schoolInfo: { ...schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear },
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     currentCourse,
     courseTeacherName,
     homeroomTeacher,
@@ -592,7 +784,11 @@ const GradeBookPage: React.FC = () => {
     allIndicators: currentCourse?.indicators || [],
     indicatorLabel: 'ตัวชี้วัด/ผลการเรียนรู้ที่คาดหวัง',
     totalCourseHours: attendance.completenessStats?.recordedDaysCount || 0,
+<<<<<<< HEAD
     academicYear: calYear || '',
+=======
+    academicYear,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     CLASSES,
     FULL_CLASSES: CLASS_FULL_NAMES,
     calendarData,
@@ -614,7 +810,11 @@ const GradeBookPage: React.FC = () => {
     currentTerm: selectedSemester,
     specialPeriods: reduxPeriods || [],
   }), [
+<<<<<<< HEAD
     students, grades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, calYear,
+=======
+    students, grades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     currentCourse, courseTeacherName, homeroomTeacher, headOfLearningAreaName, headOfAssessmentName,
     resolvedSubjectGroup, activeTab, characteristicsCriteria, readingWritingCriteria,
     attendance.studentAttendanceSummaries, attendance.attendancePages, studentChunks, announcementChunks,
@@ -635,10 +835,15 @@ const GradeBookPage: React.FC = () => {
     currentCourse,
     selectedCourse,
     selectedClass,
+<<<<<<< HEAD
     curriculumRoomDisplay === 'ทุกห้อง' ? 'all' : curriculumRoomDisplay,
     schoolId || '',
     calYear || '',
     selectedSemester,
+=======
+    selectedRoom,
+    schoolId || '',
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     students,
     qrRef
   );
@@ -651,11 +856,18 @@ const GradeBookPage: React.FC = () => {
             currentCourse={currentCourse}
             curriculumClassDisplay={curriculumClassDisplay}
             curriculumRoomDisplay={curriculumRoomDisplay}
+<<<<<<< HEAD
             academicYear={calYear || ''}
           />
           <GradeBookFilter
             selectedClass={selectedClass} setSelectedClass={setSelectedClass}
             selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom}
+=======
+            academicYear={academicYear}
+          />
+          <GradeBookFilter
+            selectedClass={selectedClass} setSelectedClass={setSelectedClass}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             setSelectedCourse={setSelectedCourse} availableClassOptions={availableClassOptions}
             currentCourse={currentCourse}
             selectedCourse={selectedCourse} 
@@ -669,11 +881,17 @@ const GradeBookPage: React.FC = () => {
           <GradeBookToolbar
             selectedCourse={selectedCourse} completenessStats={attendance.completenessStats}
             activeTab={activeTab} setActiveTab={setActiveTab}
+<<<<<<< HEAD
             academicSettings={schoolInfo} academicYear={calYear || ''}
             selectedClass={selectedClass}
             selectedRoom={selectedRoom}
             selectedGroup={selectedGroup}
             selectedSemester={selectedSemester}
+=======
+            academicSettings={schoolInfo} academicYear={academicYear}
+            selectedClass={selectedClass}
+            selectedRoom={selectedRoom} selectedSemester={selectedSemester}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             isPdfValidating={isPdfValidating} handleCreatePdf={() => handleCreatePdf(GradeBookDocument, pdfProps)}
             isSaving={isSaving} handleSave={handleSave}
           />
@@ -706,4 +924,8 @@ const GradeBookPage: React.FC = () => {
   );
 };
 
+<<<<<<< HEAD
 export default GradeBookPage;
+=======
+export default GradeBookPage;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

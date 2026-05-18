@@ -19,7 +19,10 @@ import Swal from "sweetalert2";
 import { RootState } from "../../store";
 import MainLayout from "../../layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import {
   Users,
   UserPlus,
@@ -311,8 +314,12 @@ const UserManagementPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
             <div>
+<<<<<<< HEAD
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-4">
                 <BackButton />
+=======
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <Users className="w-8 h-8 text-indigo-600" />
                 {currentSchoolId ? `จัดการผู้ใช้งาน (${getSchoolName(currentSchoolId)})` : 'จัดการผู้ใช้งาน (ทุกโรงเรียน)'}
               </h1>

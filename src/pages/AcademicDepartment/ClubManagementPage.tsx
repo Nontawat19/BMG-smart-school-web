@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db, storage } from '../../firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, orderBy, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -14,6 +17,10 @@ import {
   PlusCircle,
   Trash2,
   Image as ImageIcon,
+<<<<<<< HEAD
+=======
+  ArrowLeft,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   Save,
   UserCheck,
   FileText,
@@ -24,8 +31,12 @@ import {
   RefreshCw,
   Settings,
   Copy,
+<<<<<<< HEAD
   Database,
   Clock
+=======
+  Database
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from 'lucide-react';
 import { compressImage } from "@/utils/imageUtils";
 
@@ -35,16 +46,20 @@ interface Club {
   description: string;
   capacity: number;
   responsibleTeacherIds: string[];
+<<<<<<< HEAD
   specialPeriodId?: string;
   specialPeriodTitle?: string;
   specialPeriodDay?: string;
   specialPeriodStartTime?: string;
   specialPeriodEndTime?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   imageUrl?: string;
   createdAt: any;
   memberCount?: number;
 }
 
+<<<<<<< HEAD
 interface SpecialPeriod {
   id: string;
   title: string;
@@ -80,14 +95,19 @@ const sortSpecialPeriods = (a: SpecialPeriod, b: SpecialPeriod) => {
 
 const normalizeTimeForSort = (time?: string) => String(time || '').replace(':', '.').padStart(5, '0');
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 const ClubManagementPage: React.FC = () => {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [capacity, setCapacity] = useState<string>('40');
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
+<<<<<<< HEAD
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [selectedSpecialPeriodId, setSelectedSpecialPeriodId] = useState('');
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -125,7 +145,10 @@ const ClubManagementPage: React.FC = () => {
       }
       const init = async () => {
         await fetchClubs();
+<<<<<<< HEAD
         await fetchSpecialPeriods();
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         // ดึงการตั้งค่าการย้ายชุมนุม
         try {
           const configRef = doc(db, 'school-settings', schoolId, 'configs', 'club_settings');
@@ -164,6 +187,7 @@ const ClubManagementPage: React.FC = () => {
     }
   };
 
+<<<<<<< HEAD
   const fetchSpecialPeriods = async () => {
     if (!schoolId) return;
     try {
@@ -179,6 +203,8 @@ const ClubManagementPage: React.FC = () => {
     }
   };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const fetchPullableCourses = async () => {
     if (!schoolId) return;
     setIsPulling(true);
@@ -228,11 +254,14 @@ const ClubManagementPage: React.FC = () => {
           responsibleTeacherIds: Array.isArray(course.teacherId)
             ? course.teacherId.filter((id: string) => id && id !== 'pending')
             : (course.teacherId && course.teacherId !== 'pending' ? [course.teacherId] : []),
+<<<<<<< HEAD
           specialPeriodId: defaultClubPeriod?.id || '',
           specialPeriodTitle: defaultClubPeriod?.title || '',
           specialPeriodDay: defaultClubPeriod?.day || 'all',
           specialPeriodStartTime: defaultClubPeriod?.startTime || '',
           specialPeriodEndTime: defaultClubPeriod?.endTime || '',
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           imageUrl: '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -266,6 +295,7 @@ const ClubManagementPage: React.FC = () => {
     );
   }, [clubs, searchTerm]);
 
+<<<<<<< HEAD
   const selectedSpecialPeriod = useMemo(() => (
     specialPeriods.find(period => period.id === selectedSpecialPeriodId) || null
   ), [specialPeriods, selectedSpecialPeriodId]);
@@ -274,6 +304,8 @@ const ClubManagementPage: React.FC = () => {
     specialPeriods.find(period => String(period.title || '').includes('ชุมนุม')) || specialPeriods[0] || null
   ), [specialPeriods]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -294,7 +326,10 @@ const ClubManagementPage: React.FC = () => {
     setDescription(club.description);
     setCapacity(String(club.capacity));
     setSelectedTeachers(club.responsibleTeacherIds || []);
+<<<<<<< HEAD
     setSelectedSpecialPeriodId(club.specialPeriodId || defaultClubPeriod?.id || '');
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setImagePreview(club.imageUrl || null);
     setImageFile(null); // Reset image file on edit start
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -306,7 +341,10 @@ const ClubManagementPage: React.FC = () => {
     setDescription('');
     setCapacity('40');
     setSelectedTeachers([]);
+<<<<<<< HEAD
     setSelectedSpecialPeriodId(defaultClubPeriod?.id || '');
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setImageFile(null);
     setImagePreview(null);
   };
@@ -321,11 +359,19 @@ const ClubManagementPage: React.FC = () => {
     e.preventDefault();
     if (isSubmitting || !schoolId) return;
 
+<<<<<<< HEAD
     if (!name || selectedTeachers.length === 0 || !capacity || !selectedSpecialPeriod) {
       Swal.fire({
         icon: 'warning',
         title: 'ข้อมูลไม่ครบ',
         text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ, เลือกครูผู้รับผิดชอบ และเลือกคาบชุมนุมที่ใช้เช็คชื่อ',
+=======
+    if (!name || selectedTeachers.length === 0 || !capacity) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ข้อมูลไม่ครบ',
+        text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ และเลือกครูผู้รับผิดชอบอย่างน้อย 1 ท่าน',
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         background: '#2a2b2f',
         color: '#fff'
       });
@@ -354,11 +400,14 @@ const ClubManagementPage: React.FC = () => {
         description,
         capacity: parseInt(capacity) || 0,
         responsibleTeacherIds: selectedTeachers,
+<<<<<<< HEAD
         specialPeriodId: selectedSpecialPeriod.id,
         specialPeriodTitle: selectedSpecialPeriod.title,
         specialPeriodDay: selectedSpecialPeriod.day || 'all',
         specialPeriodStartTime: selectedSpecialPeriod.startTime,
         specialPeriodEndTime: selectedSpecialPeriod.endTime,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         imageUrl,
         updatedAt: serverTimestamp(),
       };
@@ -482,7 +531,13 @@ const ClubManagementPage: React.FC = () => {
         {/* Page Header */}
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+<<<<<<< HEAD
             <BackButton to="/academic/hub/activities" className="mb-2" />
+=======
+            <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
+              <ArrowLeft size={16} className="mr-1" /> กลับหน้าบริหารวิชาการ
+            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
               <Users className="text-indigo-500" size={32} />
               จัดการข้อมูลชุมนุม
@@ -597,6 +652,7 @@ const ClubManagementPage: React.FC = () => {
                   />
                 </div>
                 <div>
+<<<<<<< HEAD
                   <label className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">
                     <Clock size={16} className="text-indigo-500" />
                     คาบที่ใช้เช็คชื่อชุมนุม
@@ -618,6 +674,8 @@ const ClubManagementPage: React.FC = () => {
                   </p>
                 </div>
                 <div>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">รูปภาพชุมนุม</label>
                   <div className="flex items-center gap-4">
                     <div onClick={() => document.getElementById('club-image-input')?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-all overflow-hidden relative group">
@@ -728,12 +786,15 @@ const ClubManagementPage: React.FC = () => {
                               <span>ไม่จำกัดเวลา</span>
                             )}
                           </div>
+<<<<<<< HEAD
                           <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-300">
                             <Clock size={13} />
                             {club.specialPeriodTitle
                               ? `${club.specialPeriodTitle} (${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || '-'}-${club.specialPeriodEndTime || '-'})`
                               : 'ยังไม่ได้ระบุคาบเช็คชื่อ'}
                           </div>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                         <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
                           <h4 className="text-xs font-bold text-gray-400 mb-1.5">ครูผู้รับผิดชอบ</h4>
@@ -826,4 +887,8 @@ const ClubManagementPage: React.FC = () => {
   );
 };
 
+<<<<<<< HEAD
 export default ClubManagementPage;
+=======
+export default ClubManagementPage;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

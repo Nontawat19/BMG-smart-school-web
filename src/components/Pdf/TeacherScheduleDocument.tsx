@@ -24,7 +24,10 @@ export interface Course {
     code: string;
     room?: string[];
     isCombined?: boolean;
+<<<<<<< HEAD
     groupNumber?: number;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 export interface ScheduleEntry {
@@ -167,7 +170,11 @@ const styles = StyleSheet.create({
     courseTitle: { fontWeight: 'bold', fontSize: 10, marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 }, // Slightly reduced from 11
     courseCode: { fontSize: 9, marginBottom: 1, color: '#333' }, // Slightly reduced from 10
     className: { fontSize: 8, color: '#444', marginBottom: 1 }, // Slightly reduced from 9
+<<<<<<< HEAD
     roomDisplay: { fontSize: 10, color: '#000', fontWeight: 'bold', marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
+=======
+    roomDisplay: { fontSize: 8, color: '#10b981', fontWeight: 'bold' }, // Added for room info
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Summary Table Styles
     summaryTable: {
@@ -299,8 +306,12 @@ export const generateCourseSummary = (schedule: Schedule, teacher?: Teacher | nu
     Object.values(schedule).forEach(entry => {
         if (!entry) return;
         const { course, className } = entry;
+<<<<<<< HEAD
         const groupNumber = course.groupNumber || 1;
         const key = `${course.id || `${course.code}-${course.title}`}-${groupNumber}`;
+=======
+        const key = `${course.code}-${course.title}`; // Group by code + title to be safe
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         if (!summaryMap[key]) {
             summaryMap[key] = {
@@ -700,7 +711,10 @@ export const BulkTeacherSchedulePDF = ({
                                                             <Text style={styles.courseTitle}>{entry.course.title}</Text>
                                                             <Text style={styles.courseCode}>{entry.course.code}</Text>
                                                             <Text style={styles.className}>{entry.className}</Text>
+<<<<<<< HEAD
                                                             {entry.roomDisplay && <Text style={styles.roomDisplay}>{entry.roomDisplay}</Text>}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         </>
                                                     ) : isUnavailable ? (
                                                         <Text style={{ color: '#888', fontSize: 10 }}>คาบว่าง</Text>

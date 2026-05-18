@@ -27,10 +27,16 @@ export interface CourseSchedule {
     period: number;
     startTime: string;
     endTime: string;
+<<<<<<< HEAD
     classId: string | string[];
     className: string;
     room?: string;
     groupNumber?: number;
+=======
+    classId: string;
+    className: string;
+    room?: string;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     day: string;
     isChecked: boolean;
     isSubstitute?: boolean;

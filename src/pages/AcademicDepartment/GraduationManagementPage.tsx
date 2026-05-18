@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useSelector, useDispatch } from 'react-redux';
@@ -80,6 +83,7 @@ interface Student {
     classLevel: string;
     roomNumber: string;
     status: string;
+<<<<<<< HEAD
     // New fields for graduation/exit
     graduationDetails?: {
         date?: string;
@@ -109,6 +113,8 @@ interface TransitionData {
     remark?: string;
     exitReason?: string;
     destination?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 const GraduationManagementPage: React.FC = () => {
@@ -118,6 +124,7 @@ const GraduationManagementPage: React.FC = () => {
     const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
+<<<<<<< HEAD
     const [showTransitionModal, setShowTransitionModal] = useState(false);
     const [transitionList, setTransitionList] = useState<TransitionData[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -125,6 +132,12 @@ const GraduationManagementPage: React.FC = () => {
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 30;
+=======
+    
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 20;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const { user } = useSelector((state: RootState) => state.auth);
     const { availableClassOptions, classKeys, status: settingsStatus } = useSelector((state: RootState) => state.schoolSettings);
@@ -257,7 +270,11 @@ const GraduationManagementPage: React.FC = () => {
         }
     };
 
+<<<<<<< HEAD
     const openTransitionModal = () => {
+=======
+    const handlePromotion = async () => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (selectedStudents.size === 0) {
             Swal.fire({
                 title: 'โปรดเลือกนักเรียน',
@@ -269,6 +286,7 @@ const GraduationManagementPage: React.FC = () => {
             return;
         }
 
+<<<<<<< HEAD
         const selectedList: TransitionData[] = Array.from(selectedStudents).map(docId => {
             const s = students.find(item => item.docId === docId);
             const currentClassKey = s ? Object.keys(CLASSES).find(k => k === String(s.classLevel).toLowerCase() || CLASSES[k as keyof typeof CLASSES] === s.classLevel) || s.classLevel.toLowerCase() : '';
@@ -394,6 +412,57 @@ const GraduationManagementPage: React.FC = () => {
             });
         } finally {
             setIsSubmitting(false);
+=======
+        const confirm = await Swal.fire({
+            title: 'ยืนยันเลื่อนชั้นนักเรียน?',
+            html: `เตรียมปรับระดับชั้นนักเรียนจำนวน <b class="text-indigo-600 text-xl font-black">${selectedStudents.size}</b> คน <br/> ข้อมูลจะถูกปรับปรุงในฐานข้อมูลทันที`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'ยืนยันดำเนินการ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#4f46e5',
+            customClass: { popup: 'rounded-[2rem]', confirmButton: 'rounded-xl px-8 py-3', cancelButton: 'rounded-xl px-8 py-3' }
+        });
+
+        if (confirm.isConfirmed) {
+            if (!schoolId) return;
+            setLoading(true);
+            try {
+                const promises = Array.from(selectedStudents).map(docId => {
+                    const studentRef = doc(firestore, 'school-settings', schoolId, 'students', docId);
+                    const userStudent = students.find(s => s.docId === docId);
+                    if (!userStudent) return Promise.resolve();
+
+                    // ✅ ใช้ classKeys จาก Redux ในการคำนวณลำดับการเลื่อนชั้น (ข้าม Virtual Levels อัตโนมัติ)
+                    const getKey = (val: string) => {
+                        const cleanVal = String(val || "").trim();
+                        return Object.keys(CLASSES).find(k => k === cleanVal.toLowerCase() || CLASSES[k] === cleanVal) || cleanVal.toLowerCase();
+                    };
+                    const currentClassKey = getKey(userStudent.classLevel);
+                    const currentIndex = classKeys.indexOf(currentClassKey);
+
+                    let updateData: any = {};
+
+                    // 1. ถ้าไม่พบชั้นเรียนในระบบ หรือ อยู่ชั้นสุดท้ายของโรงเรียนจริงๆ -> สำเร็จการศึกษา
+                    if (currentIndex === -1 || currentIndex === classKeys.length - 1) {
+                        updateData = { status: 'สำเร็จการศึกษา' };
+                    } 
+                    // 2. ถ้ายังมีชั้นถัดไป -> เลื่อนชั้นตามลำดับใน classKeys (บันทึกเป็นชื่อชั้นเรียน เช่น ม.2)
+                    else {
+                        const nextKey = classKeys[currentIndex + 1];
+                        const nextLabel = CLASSES[nextKey] || nextKey;
+                        updateData = { classLevel: nextLabel };
+                    }
+
+                    return updateDoc(studentRef, updateData);
+                });
+                await Promise.all(promises);
+                Swal.fire({ title: 'สำเร็จ!', text: 'เลื่อนชั้นนักเรียนเรียบร้อยแล้ว', icon: 'success', customClass: { popup: 'rounded-[2rem]' } });
+                fetchStudents();
+            } catch (error) {
+                Swal.fire({ title: 'ข้อผิดพลาด', text: 'ไม่สามารถบันทึกได้', icon: 'error', customClass: { popup: 'rounded-[2rem]' } });
+            } finally { setLoading(false); }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
     };
 
@@ -447,7 +516,10 @@ const GraduationManagementPage: React.FC = () => {
                 {/* 1. Ultra Compact Header Row */}
                 <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm">
                     <div className="flex items-center gap-3">
+<<<<<<< HEAD
                         <BackButton to="/academic/hub/registration" className="mr-2" />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
                             <FaGraduationCap className="text-white text-xl" />
                         </div>
@@ -520,7 +592,11 @@ const GraduationManagementPage: React.FC = () => {
                         </div>
                         <div className="col-span-12 lg:col-span-3">
                             <button
+<<<<<<< HEAD
                                 onClick={openTransitionModal}
+=======
+                                onClick={handlePromotion}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 disabled={loading || selectedStudents.size === 0}
                                 className={`w-full h-9 rounded-lg font-black text-[11px] flex items-center justify-center gap-2 transition-all active:scale-95 ${selectedStudents.size > 0
                                     ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
@@ -596,7 +672,11 @@ const GraduationManagementPage: React.FC = () => {
                                             <td className="px-6 py-5 text-xs font-mono font-bold text-gray-500 dark:text-gray-400">{student.studentId}</td>
                                             <td className="px-6 py-5 font-extrabold text-gray-800 dark:text-gray-100">{student.firstName} {student.lastName}</td>
                                             <td className="px-10 py-5 text-right font-black text-indigo-600 dark:text-indigo-400 text-lg">
+<<<<<<< HEAD
                                                 {CLASSES[student.classLevel as keyof typeof CLASSES] || student.classLevel}/{student.roomNumber}
+=======
+                                                {(CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel).replace('มัธยมศึกษาปีที่', 'ม.')}/{student.roomNumber}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             </td>
                                         </tr>
                                     ))}
@@ -637,7 +717,11 @@ const GraduationManagementPage: React.FC = () => {
                                     </div>
                                     <div className="text-right">
                                         <div className="text-indigo-600 dark:text-indigo-400 font-black text-lg">
+<<<<<<< HEAD
                                             {CLASSES[student.classLevel as keyof typeof CLASSES] || student.classLevel}/{student.roomNumber}
+=======
+                                            {(CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel).replace('มัธยมศึกษาปีที่', 'ม.')}/{student.roomNumber}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         </div>
                                     </div>
                                 </div>
@@ -745,14 +829,22 @@ const GraduationManagementPage: React.FC = () => {
                 {selectedStudents.size > 0 && (
                     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 md:hidden w-[calc(100%-3rem)]">
                         <button
+<<<<<<< HEAD
                             onClick={openTransitionModal}
                             className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm"
                         >
                             ยืนยันดำเนินการ ({selectedStudents.size} รายชื่อ)
+=======
+                            onClick={handlePromotion}
+                            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm"
+                        >
+                            ยืนยันเลื่อนชั้น ({selectedStudents.size} รายชื่อ)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <FaArrowRight size={10} className="animate-bounce-x" />
                         </button>
                     </div>
                 )}
+<<<<<<< HEAD
 
                 {/* Transition Modal */}
                 {showTransitionModal && (
@@ -966,6 +1058,8 @@ const GraduationManagementPage: React.FC = () => {
                         </div>
                     </div>
                 )}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             </div>
         </MainLayout>
     );

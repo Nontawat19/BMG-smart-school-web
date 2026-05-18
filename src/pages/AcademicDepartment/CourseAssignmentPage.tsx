@@ -2,18 +2,27 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
+<<<<<<< HEAD
 import { collection, query, doc, onSnapshot, updateDoc, where, orderBy, getDoc, getDocs, setDoc, writeBatch } from "firebase/firestore";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
+=======
+import { collection, query, doc, onSnapshot, updateDoc, where, orderBy, getDoc, getDocs } from "firebase/firestore";
+import { useSelector } from "react-redux";
+import { RootState } from "../../store";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import {
     Users,
     MapPin,
     BookOpen,
     ChevronLeft,
+<<<<<<< HEAD
     ChevronDown,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     Search,
     Check,
     Plus,
@@ -114,6 +123,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: { currentPage: nu
     const pages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
 
     const Btn = ({ onClick, disabled, children, active }: any) => (
+<<<<<<< HEAD
         <button 
             onClick={onClick} 
             disabled={disabled} 
@@ -136,6 +146,16 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: { currentPage: nu
             <div className="flex items-center gap-1 mx-1">
                 {pages.map(p => <Btn key={p} onClick={() => onPageChange(p)} active={p === currentPage}>{p}</Btn>)}
             </div>
+=======
+        <button onClick={onClick} disabled={disabled} className={`w-5 h-5 rounded text-[7px] font-black flex items-center justify-center transition-all ${active ? 'bg-indigo-600 text-white' : disabled ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 cursor-pointer'}`}>{children}</button>
+    );
+
+    return (
+        <div className="flex items-center justify-center gap-0.5 py-1.5 border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/10 px-1">
+            <Btn onClick={() => onPageChange(1)} disabled={currentPage === 1}><ChevronsLeft size={10} /></Btn>
+            <Btn onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}><ChevronLeft size={10} /></Btn>
+            {pages.map(p => <Btn key={p} onClick={() => onPageChange(p)} active={p === currentPage}>{p}</Btn>)}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <Btn onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages}><ChevronRight size={10} /></Btn>
             <Btn onClick={() => onPageChange(totalPages)} disabled={currentPage === totalPages}><ChevronsRight size={10} /></Btn>
         </div>
@@ -143,9 +163,13 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: { currentPage: nu
 };
 
 const CourseAssignmentPage: React.FC = () => {
+<<<<<<< HEAD
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const BackButton = React.lazy(() => import("@/components/Shared/BackButton"));
+=======
+    const navigate = useNavigate();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = urlSchoolId || (currentUser as any)?.schoolId;
@@ -165,11 +189,18 @@ const CourseAssignmentPage: React.FC = () => {
     const [selectedAssignments, setSelectedAssignments] = useState<{ courseId: string, groupNumber: number, isPending?: boolean }[]>([]);
     const [pendingQueue, setPendingQueue] = useState<{ courseId: string, teacherId: string, roomIds: string[], groupNumber: number, title: string, code: string, classId: any }[]>([]);
 
+<<<<<<< HEAD
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [selectedYear, setSelectedYear] = useState<string>(academicYear);
     const [selectedSemester, setSelectedSemester] = useState<string>("1");
     const [availableYears, setAvailableYears] = useState<string[]>([]);
     const [semesterAssignments, setSemesterAssignments] = useState<any[]>([]);
+=======
+    // Academic Year & Semester States
+    const [selectedYear, setSelectedYear] = useState<string>("");
+    const [selectedSemester, setSelectedSemester] = useState<string>("1");
+    const [availableYears, setAvailableYears] = useState<string[]>([]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Search/Filter States
     const [courseSearch, setCourseSearch] = useState("");
@@ -217,10 +248,17 @@ const CourseAssignmentPage: React.FC = () => {
 
     const middleButtonProps = useMemo(() => {
         const isUpdate = selectedAssignments.length > 0 && selectedTeacherId !== null;
+<<<<<<< HEAD
+=======
+        const isBulkDelete = selectedAssignments.length > 1;
+        const isSingleDelete = selectedAssignments.length === 1;
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (isUpdate) {
             const teacherName = teacherMap?.[selectedTeacherId]?.name || "";
             return { icon: RefreshCw, color: 'bg-amber-500', label: `เปลี่ยนครูเป็น ${teacherName} (${selectedAssignments.length} รายการ)`, action: 'update' };
         }
+<<<<<<< HEAD
         return { icon: X, color: 'bg-slate-500', label: 'ล้างการเลือกทั้งหมด', action: 'reset' };
     }, [selectedAssignments, selectedTeacherId, teacherMap]);
 
@@ -234,6 +272,13 @@ const CourseAssignmentPage: React.FC = () => {
         };
     }, [selectedAssignments]);
 
+=======
+        if (isBulkDelete) return { icon: Trash2, color: 'bg-rose-600', label: `ลบ ${selectedAssignments.length} รายการที่เลือก`, action: 'bulkDelete' };
+        if (isSingleDelete) return { icon: Trash2, color: 'bg-rose-500', label: 'ลบรายการที่เลือก', action: 'delete' };
+        return { icon: X, color: 'bg-slate-500', label: 'ล้างการเลือกทั้งหมด', action: 'reset' };
+    }, [selectedAssignments, selectedTeacherId, teacherMap]);
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const roomButtonProps = useMemo(() => {
         const canUpdate = selectedAssignments.length > 0 && selectedRoomId !== null;
         if (canUpdate) {
@@ -250,6 +295,7 @@ const CourseAssignmentPage: React.FC = () => {
     }, [selectedAssignments, selectedRoomId, rooms]);
     const teacherList = useMemo(() => Object.values(teacherMap) as Teacher[], [teacherMap]);
 
+<<<<<<< HEAD
     // Computed courses with merged assignments for the selected year/semester
     const coursesWithAssignments = useMemo(() => {
         return courses.map(course => {
@@ -269,6 +315,16 @@ const CourseAssignmentPage: React.FC = () => {
             const hours = creditsNum > 0 ? Math.round(creditsNum * 2) : (c.hoursPerWeek || 0);
             
             c.teacherAssignments?.forEach((asgn: GroupAssignment) => {
+=======
+    // --- Enterprise Feature: Teacher Load Calculation ---
+    const teacherLoadMap = useMemo(() => {
+        const load: Record<string, number> = {};
+        courses.forEach(c => {
+            const creditsNum = Number(c.credits || 0);
+            const hours = creditsNum > 0 ? Math.round(creditsNum * 2) : (c.hoursPerWeek || 0);
+            
+            c.teacherAssignments?.forEach(asgn => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (asgn.teacherId) {
                     load[asgn.teacherId] = (load[asgn.teacherId] || 0) + hours;
                 }
@@ -292,6 +348,7 @@ const CourseAssignmentPage: React.FC = () => {
         return ["ทั้งหมด", ...unique];
     }, [rooms]);
 
+<<<<<<< HEAD
     const calendarState = useSelector((state: RootState) => state.calendar);
 
     useEffect(() => {
@@ -304,13 +361,35 @@ const CourseAssignmentPage: React.FC = () => {
         const fetchInitialSettings = async () => {
             try {
                 // Fetch School Info
+=======
+    useEffect(() => {
+        if (!schoolId) return;
+
+        // Fetch current active calendar settings
+        const fetchCalendarSettings = async () => {
+            try {
+                // Fetch School Info for levels
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const schoolRef = doc(db, 'school-settings', schoolId);
                 const schoolSnap = await getDoc(schoolRef);
                 if (schoolSnap.exists()) {
                     setSchoolInfo(schoolSnap.data());
                 }
 
+<<<<<<< HEAD
                 // Fetch available years for dropdown
+=======
+                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
+                const calendarSnap = await getDoc(calendarRef);
+                if (calendarSnap.exists()) {
+                    const data = calendarSnap.data();
+                    if (data.academicYear) {
+                        setSelectedYear(data.academicYear);
+                    }
+                }
+
+                // Also fetch all available academic years to populate the dropdown
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const calendarColRef = collection(db, 'school-settings', schoolId, 'main_calendar');
                 const calendarColSnap = await getDocs(calendarColRef);
                 const years = calendarColSnap.docs
@@ -319,6 +398,7 @@ const CourseAssignmentPage: React.FC = () => {
                     .sort((a, b) => b.localeCompare(a));
                 
                 setAvailableYears(years);
+<<<<<<< HEAD
                 
                 // Initialize selection from Redux if available
                 if (calendarState.status === 'succeeded' && !selectedYear) {
@@ -332,6 +412,14 @@ const CourseAssignmentPage: React.FC = () => {
         };
 
         fetchInitialSettings();
+=======
+            } catch (error) {
+                console.error("Error fetching calendar settings:", error);
+            }
+        };
+
+        fetchCalendarSettings();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         const unsubCourses = onSnapshot(query(collection(db, 'school-settings', schoolId, 'courses'), orderBy('code', 'asc')), (snap) => {
             setCourses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course)).filter(c => c.isActive !== false));
@@ -355,6 +443,7 @@ const CourseAssignmentPage: React.FC = () => {
         };
     }, [schoolId]);
 
+<<<<<<< HEAD
     // Real-time listener for semester-specific assignments
     useEffect(() => {
         if (!schoolId || !selectedYear || !selectedSemester) return;
@@ -372,6 +461,8 @@ const CourseAssignmentPage: React.FC = () => {
         return () => unsub();
     }, [schoolId, selectedYear, selectedSemester]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     // Handlers
     const handleAddToQueue = async () => {
         if (!selectedCourses.length || !selectedTeacherId || !schoolId) return;
@@ -430,9 +521,14 @@ const CourseAssignmentPage: React.FC = () => {
             });
 
             for (const [courseId, queueItems] of Object.entries(byCourse)) {
+<<<<<<< HEAD
                 const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                 const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
                 const courseData = coursesWithAssignments.find(c => c.id === courseId);
+=======
+                const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
+                const courseData = courses.find(c => c.id === courseId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (!courseData) continue;
 
                 const currentAssignments = [...(courseData.teacherAssignments || [])];
@@ -453,12 +549,16 @@ const CourseAssignmentPage: React.FC = () => {
                     }
                 });
 
+<<<<<<< HEAD
                 await setDoc(assignmentRef, { 
                     courseId,
                     academicYear: selectedYear,
                     semester: selectedSemester,
                     teacherAssignments: currentAssignments 
                 }, { merge: true });
+=======
+                await updateDoc(courseRef, { teacherAssignments: currentAssignments });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }
 
             Swal.fire({ icon: 'success', title: 'บันทึกข้อมูลเรียบร้อย', text: 'ข้อมูลถูกเขียนลงฐานข้อมูลและพร้อมใช้งานแล้ว', timer: 2000, showConfirmButton: false });
@@ -521,21 +621,31 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
+<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
+=======
+                    const course = courses.find(c => c.id === courseId);
+                    if (!course) continue;
+                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(num => {
                         const idx = assignments.findIndex(a => a.groupNumber === num);
                         if (idx !== -1) assignments[idx] = { ...assignments[idx], teacherId: selectedTeacherId };
                     });
+<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
+=======
+                    batch.update(courseRef, { teacherAssignments: assignments });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
@@ -590,21 +700,31 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
+<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
+=======
+                    const course = courses.find(c => c.id === courseId);
+                    if (!course) continue;
+                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(num => {
                         const idx = assignments.findIndex(a => a.groupNumber === num);
                         if (idx !== -1) assignments[idx] = { ...assignments[idx], roomIds: [selectedRoomId] };
                     });
+<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
+=======
+                    batch.update(courseRef, { teacherAssignments: assignments });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
@@ -658,21 +778,31 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
+<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
+=======
+                    const course = courses.find(c => c.id === courseId);
+                    if (!course) continue;
+                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(groupNum => {
                         const idx = assignments.findIndex(a => a.groupNumber === groupNum);
                         if (idx !== -1) assignments[idx] = { ...assignments[idx], roomIds: [] };
                     });
+<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
+=======
+                    batch.update(courseRef, { teacherAssignments: assignments });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
@@ -718,6 +848,7 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
+<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
@@ -729,6 +860,12 @@ const CourseAssignmentPage: React.FC = () => {
                         semester: selectedSemester,
                         teacherAssignments: updated 
                     }, { merge: true });
+=======
+                    const course = courses.find(c => c.id === courseId);
+                    if (!course) continue;
+                    const updated = (course.teacherAssignments || []).filter(a => !groups.includes(a.groupNumber));
+                    await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { teacherAssignments: updated });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
             }
             
@@ -754,6 +891,7 @@ const CourseAssignmentPage: React.FC = () => {
 
         if (result.isConfirmed && schoolId) {
             try {
+<<<<<<< HEAD
                 const course = coursesWithAssignments.find(c => c.id === courseId);
                 if (!course) return;
                 const updated = (course.teacherAssignments || []).filter((a: GroupAssignment) => a.groupNumber !== groupNumber);
@@ -764,6 +902,12 @@ const CourseAssignmentPage: React.FC = () => {
                     semester: selectedSemester,
                     teacherAssignments: updated
                 }, { merge: true });
+=======
+                const course = courses.find(c => c.id === courseId);
+                if (!course) return;
+                const updated = (course.teacherAssignments || []).filter(a => a.groupNumber !== groupNumber);
+                await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { teacherAssignments: updated });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
             } catch (error) {
                 console.error(error);
@@ -771,11 +915,16 @@ const CourseAssignmentPage: React.FC = () => {
         }
     };
 
+<<<<<<< HEAD
     // Helper for level matching - handles both IDs (m1) and Thai labels (ม.1)
+=======
+    // Helper for level matching
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const matchesLevel = (courseClassId: string | undefined) => {
         if (selectedLevel === "ทั้งหมด") return true;
         if (!courseClassId) return false;
         
+<<<<<<< HEAD
         const cid = courseClassId.toString().toLowerCase().trim();
         const sid = selectedLevel.toLowerCase().trim();
 
@@ -801,6 +950,19 @@ const CourseAssignmentPage: React.FC = () => {
         // Group logic for "ม.ปลาย"
         if (sid === "senior_high" || sid === "ม.ปลาย") {
             return ["m4", "m5", "m6", "senior_high", "ม.ปลาย", "ม.4", "ม.5", "ม.6"].includes(cid);
+=======
+        // Exact match (either English ID or Thai string from DB)
+        if (courseClassId === selectedLevel) return true;
+        
+        // Group logic for "ม.ต้น"
+        if (selectedLevel === "junior_high" || selectedLevel === "ม.ต้น") {
+            return ["m1", "m2", "m3", "junior_high", "ม.ต้น"].includes(courseClassId);
+        }
+        
+        // Group logic for "ม.ปลาย"
+        if (selectedLevel === "senior_high" || selectedLevel === "ม.ปลาย") {
+            return ["m4", "m5", "m6", "senior_high", "ม.ปลาย"].includes(courseClassId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
         
         return false;
@@ -828,17 +990,29 @@ const CourseAssignmentPage: React.FC = () => {
     // --- Senior Logic: Filtering System ---
     
     // 1. Filter for Left Panel (Source Courses)
+<<<<<<< HEAD
     const filteredCourses = coursesWithAssignments.filter(c => {
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
         const matchesGroup = subjectGroupFilter === "กลุ่มวิชา ทั้งหมด" || (c.subjectGroup && (c.subjectGroup === subjectGroupFilter || c.subjectGroup.includes(subjectGroupFilter.replace('กลุ่มสาระการเรียนรู้', '').trim()) || subjectGroupFilter.includes(c.subjectGroup.replace('กลุ่มสาระการเรียนรู้', '').trim())));
+=======
+    const filteredCourses = courses.filter(c => {
+        // Core Logic: Checks if matches all active filters
+        const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
+        const matchesGroup = subjectGroupFilter === "กลุ่มวิชา ทั้งหมด" || (c.subjectGroup === subjectGroupFilter);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const matchesType = categoryFilter === "ประเภท" || categoryFilter === "ทั้งหมด" || (c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase());
         const matchesLevelFilter = matchesLevel(c.classId);
         
         let matchesSemester = true;
         if (selectedSemester !== "0") {
+<<<<<<< HEAD
             const courseSem = c.semester?.toString().trim() || "0";
             matchesSemester = courseSem === selectedSemester || courseSem === "0" || courseSem === "";
+=======
+            const courseSem = c.semester?.toString().trim() || "";
+            matchesSemester = courseSem === selectedSemester || courseSem === "0";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
 
         if (!(matchesSearch && matchesGroup && matchesType && matchesLevelFilter && matchesSemester)) return false;
@@ -861,12 +1035,20 @@ const CourseAssignmentPage: React.FC = () => {
     });
 
     // 2. Filter for Right Panel (Assigned Courses View) - "FOCUS MODE"
+<<<<<<< HEAD
     const assignedCourses = coursesWithAssignments.filter(c => {
+=======
+    const assignedCourses = courses.filter(c => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (!matchesLevel(c.classId)) return false;
 
         // Condition 1: If a teacher is selected, show ALL courses assigned to that teacher
         if (selectedTeacherId) {
+<<<<<<< HEAD
             const matchesDB = c.teacherAssignments?.some((a: GroupAssignment) => a.teacherId === selectedTeacherId);
+=======
+            const matchesDB = c.teacherAssignments?.some(a => a.teacherId === selectedTeacherId);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const matchesQueue = pendingQueue.some(p => p.courseId === c.id && p.teacherId === selectedTeacherId);
             if (matchesDB || matchesQueue) return true;
         }
@@ -877,6 +1059,7 @@ const CourseAssignmentPage: React.FC = () => {
         // Condition 3: If an assignment is already selected for editing
         if (selectedAssignments.some(a => a.courseId === c.id)) return true;
 
+<<<<<<< HEAD
         // Condition 4: If specifically showOnlyAssigned is on, show those with DB assignments (ONLY if a teacher is selected to avoid cluttering the view)
         if (showOnlyAssigned && selectedTeacherId && c.teacherAssignments && c.teacherAssignments.length > 0) return true;
 
@@ -887,6 +1070,13 @@ const CourseAssignmentPage: React.FC = () => {
         if (aGroup?.code !== bGroup?.code) return (parseInt(aGroup?.code || '999')) - (parseInt(bGroup?.code || '999'));
         return (a.code || "").localeCompare(b.code || "");
     });
+=======
+        // Condition 4: If specifically showOnlyAssigned is on, show those with DB assignments
+        if (showOnlyAssigned && c.teacherAssignments && c.teacherAssignments.length > 0) return true;
+
+        return false;
+    }).sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Paginated data
     const courseTotalPages = Math.ceil(filteredCourses.length / ITEMS_PER_PAGE);
@@ -912,6 +1102,7 @@ const CourseAssignmentPage: React.FC = () => {
             <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e14] text-slate-800 dark:text-slate-300 font-sans flex flex-col overflow-hidden h-screen select-none transition-colors duration-300">
                 
                 {/* --- Header --- */}
+<<<<<<< HEAD
                 <header className="px-6 py-3 bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0 shadow-sm z-30 transition-colors duration-300">
                     <div className="flex items-center gap-6">
                         <div className="flex items-center gap-4">
@@ -926,12 +1117,27 @@ const CourseAssignmentPage: React.FC = () => {
                                     <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">การมอบหมายงานสอน</h1>
                                     <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-1 uppercase tracking-wider">กำหนดวิชาสอน ครูผู้สอน และสถานที่เรียนรายภาคเรียน</p>
                                 </div>
+=======
+                <header className="px-6 py-3 bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0 shadow-sm">
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-600 rounded-xl shadow-lg">
+                                <BookOpen size={20} className="text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">การมอบหมายงานสอน</h1>
+                                <p className="text-[9px] text-slate-500 font-bold mt-1 uppercase tracking-wider">กำหนดวิชาสอน ครูผู้สอน และสถานที่เรียนรายภาคเรียน</p>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-3">
+<<<<<<< HEAD
                         <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
+=======
+                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <div className="flex items-center gap-2 border-r border-slate-200 dark:border-white/10 pr-3">
                                 <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">ปีการศึกษา</span>
                                 <select 
@@ -941,10 +1147,17 @@ const CourseAssignmentPage: React.FC = () => {
                                 >
                                     {availableYears.length > 0 ? (
                                         availableYears.map(year => (
+<<<<<<< HEAD
                                             <option key={year} value={year} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">{year}</option>
                                         ))
                                     ) : (
                                         <option value={selectedYear} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">{selectedYear || '—'}</option>
+=======
+                                            <option key={year} value={year} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{year}</option>
+                                        ))
+                                    ) : (
+                                        <option value={selectedYear} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{selectedYear || '—'}</option>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     )}
                                 </select>
                             </div>
@@ -955,9 +1168,15 @@ const CourseAssignmentPage: React.FC = () => {
                                     onChange={(e) => setSelectedSemester(e.target.value)}
                                     className="bg-transparent border-none text-xs font-black text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-4"
                                 >
+<<<<<<< HEAD
                                     <option value="1" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ภาคเรียนที่ 1</option>
                                     <option value="2" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ภาคเรียนที่ 2</option>
                                     <option value="0" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ทั้งปีการศึกษา (0)</option>
+=======
+                                    <option value="1" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ภาคเรียนที่ 1</option>
+                                    <option value="2" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ภาคเรียนที่ 2</option>
+                                    <option value="0" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ทั้งปีการศึกษา (0)</option>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </select>
                             </div>
                             <div className="flex items-center gap-2 px-3 border-l border-slate-200 dark:border-white/10">
@@ -967,6 +1186,7 @@ const CourseAssignmentPage: React.FC = () => {
                                     onChange={(e) => setSelectedLevel(e.target.value)}
                                     className="bg-transparent border-none text-xs font-black text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-4"
                                 >
+<<<<<<< HEAD
                                     <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27] font-bold">ทั้งหมด</option>
                                     <option value="m1" className="bg-white dark:bg-[#161a27] font-bold">ม.1</option>
                                     <option value="m2" className="bg-white dark:bg-[#161a27] font-bold">ม.2</option>
@@ -976,13 +1196,59 @@ const CourseAssignmentPage: React.FC = () => {
                                     <option value="m5" className="bg-white dark:bg-[#161a27] font-bold">ม.5</option>
                                     <option value="m6" className="bg-white dark:bg-[#161a27] font-bold">ม.6</option>
                                     <option value="senior_high" className="bg-white dark:bg-[#161a27] font-bold">ม.ปลาย</option>
+=======
+                                    <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27]">ทั้งหมด</option>
+                                    {(() => {
+                                        const exp = schoolInfo?.opportunityExpansionLevel || "";
+                                        
+                                        // Standard levels in logical order
+                                        const allPossible = [
+                                            {id: 'k1', name: 'อนุบาล 1'}, {id: 'k2', name: 'อนุบาล 2'}, {id: 'k3', name: 'อนุบาล 3'},
+                                            {id: 'p1', name: 'ป.1'}, {id: 'p2', name: 'ป.2'}, {id: 'p3', name: 'ป.3'},
+                                            {id: 'p4', name: 'ป.4'}, {id: 'p5', name: 'ป.5'}, {id: 'p6', name: 'ป.6'},
+                                            {id: 'm1', name: 'ม.1'}, {id: 'm2', name: 'ม.2'}, {id: 'm3', name: 'ม.3'},
+                                            {id: 'junior_high', name: 'ม.ต้น'}, 
+                                            {id: 'm4', name: 'ม.4'}, {id: 'm5', name: 'ม.5'}, {id: 'm6', name: 'ม.6'},
+                                            {id: 'senior_high', name: 'ม.ปลาย'}
+                                        ];
+
+                                        if (!exp) return allPossible.map(l => <option key={l.id} value={l.id} className="bg-white dark:bg-[#161a27]">{l.name}</option>);
+
+                                        // Parsing of "อ.1-ม.6"
+                                        const start = exp.split('-')[0]?.trim();
+                                        const end = exp.split('-')[1]?.trim();
+
+                                        let startIndex = allPossible.findIndex(l => l.name === start);
+                                        let endIndex = allPossible.findIndex(l => l.name === end);
+
+                                        if (startIndex === -1) startIndex = 0;
+                                        if (endIndex === -1) endIndex = allPossible.length - 1;
+
+                                        // Extra logic: If the range ends at m3, include the 'ม.ต้น' group label
+                                        if (endIndex < allPossible.length - 1 && allPossible[endIndex].id === 'm3') {
+                                            endIndex += 1;
+                                        }
+                                        // If the range ends at m6, include the 'ม.ปลาย' group label
+                                        if (endIndex < allPossible.length - 1 && allPossible[endIndex].id === 'm6') {
+                                            endIndex += 1;
+                                        }
+
+                                        const filtered = allPossible.slice(startIndex, endIndex + 1);
+                                        
+                                        return filtered.map(l => <option key={l.id} value={l.id} className="bg-white dark:bg-[#161a27]">{l.name}</option>);
+                                    })()}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </select>
                             </div>
                         </div>
                         <button 
                             onClick={handleCommitAll}
                             disabled={!pendingQueue.length || isSaving}
+<<<<<<< HEAD
                             className={`px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 dark:disabled:bg-white/5 disabled:text-slate-500 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 border border-white/10 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
+=======
+                            className={`px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-400 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         >
                             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                             {pendingQueue.length > 0 ? `บันทึกข้อมูลลงระบบ (${pendingQueue.length})` : 'ไม่มีรายการรอยืนยัน'}
@@ -999,6 +1265,7 @@ const CourseAssignmentPage: React.FC = () => {
                             
                             <div className="flex-[1.1] flex flex-col border-r border-slate-200 dark:border-white/5">
                                 <PanelHeader title="รายวิชา" icon={BookOpen} count={filteredCourses.length} compact />
+<<<<<<< HEAD
                                     <div className="space-y-2 p-2">
                                         <div className="grid grid-cols-2 gap-2">
                                             <div className="relative group">
@@ -1091,6 +1358,41 @@ const CourseAssignmentPage: React.FC = () => {
                                             </button>
                                         </div>
                                     </div>
+=======
+                                <div className="p-1.5 space-y-1">
+                                    <div className="grid grid-cols-2 gap-1">
+                                        <div className="relative">
+                                            <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
+                                            <input type="text" placeholder="ค้นหา..." value={courseSearch} onChange={e=>setCourseSearch(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] outline-none focus:border-indigo-500/30 text-slate-900 dark:text-white" />
+                                        </div>
+                                        <div className="relative">
+                                            <School className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
+                                            <select value={subjectGroupFilter} onChange={e=>setSubjectGroupFilter(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] font-bold outline-none text-slate-700 dark:text-white appearance-none cursor-pointer">
+                                                {subjectGroups.map(g => <option key={g} value={g} className="bg-white dark:bg-[#161a27]">{g.replace('กลุ่มวิชา ', '')}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1">
+                                        <div className="relative">
+                                            <Filter className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
+                                            <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] font-bold outline-none text-slate-700 dark:text-white appearance-none cursor-pointer">
+                                                <option className="bg-white dark:bg-[#161a27]">ประเภท</option>
+                                                <option className="bg-white dark:bg-[#161a27]">พื้นฐาน</option>
+                                                <option className="bg-white dark:bg-[#161a27]">เพิ่มเติม</option>
+                                            </select>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowOnlyAssigned(!showOnlyAssigned)}
+                                            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border transition-all ${showOnlyAssigned ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500'}`}
+                                        >
+                                            <Check size={10} className={showOnlyAssigned ? 'opacity-100' : 'opacity-30'} />
+                                            <span className="text-[9px] font-black uppercase tracking-tight">
+                                                {showOnlyAssigned ? 'วิชาที่มอบหมายแล้ว' : 'วิชาที่ยังไม่มอบหมาย'}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1 space-y-0.5">
                                     {(() => {
                                         let lastGroup = '';
@@ -1103,11 +1405,20 @@ const CourseAssignmentPage: React.FC = () => {
                                             const groupCode = groupInfo?.code || '?';
                                             return (
                                                 <div key={course.id}>
+<<<<<<< HEAD
+=======
+                                                    {showHeader && courseGroup && (
+                                                        <div className="sticky top-0 z-10 bg-slate-100/90 dark:bg-[#1a1f30]/90 backdrop-blur-sm px-2 py-1.5 rounded-lg mt-1 mb-0.5 border-b border-slate-200 dark:border-white/5">
+                                                            <span className="text-[9px] font-black text-indigo-500 dark:text-indigo-400">กลุ่มที่ {groupCode} : {courseGroup}</span>
+                                                        </div>
+                                                    )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     <div 
                                                         onClick={() => {
                                                             setSelectedCourses(prev => {
                                                                 const isAlreadySelected = prev.some(c => c.id === course.id);
                                                                 if (isAlreadySelected) return prev.filter(c => c.id !== course.id);
+<<<<<<< HEAD
                                                                 const dbCount = course.teacherAssignments?.length || 0;
                                                                 const qCount = pendingQueue.filter(p => p.courseId === course.id).length;
                                                                 setActiveGroupNumber(dbCount + qCount + 1);
@@ -1127,6 +1438,48 @@ const CourseAssignmentPage: React.FC = () => {
                                                             <span className="text-slate-900 dark:text-white font-black shrink-0">{course.code}</span>
                                                             <span className="text-slate-600 dark:text-slate-300 truncate font-bold">{course.title}</span>
                                                         </div>
+=======
+                                                                
+                                                                // Auto-set next group number
+                                                                const dbCount = course.teacherAssignments?.length || 0;
+                                                                const qCount = pendingQueue.filter(p => p.courseId === course.id).length;
+                                                                setActiveGroupNumber(dbCount + qCount + 1);
+                                                                
+                                                                return [...prev, course];
+                                                            });
+                                                        }} 
+                                                        className={`p-2 rounded-lg cursor-pointer transition-all border ${isSel ? 'bg-indigo-600/10 dark:bg-indigo-600/20 border-indigo-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-1 mb-1">
+                                                            <div className="flex items-center gap-1">
+                                                                {isSel && <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
+                                                                <span className="text-[8px] font-black bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400 block w-fit">{course.code}</span>
+                                                                <span className="text-[8px] font-black bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                                                                    {course.credits !== undefined ? course.credits : (course.hoursPerWeek ? (course.hoursPerWeek / 2) : 0)} นก. ({course.hoursPerWeek || (course.credits ? Math.round(Number(course.credits) * 2) : 0)} คาบ)
+                                                                </span>
+                                                                {course.type && <span className={`text-[7px] font-bold px-1 py-0.5 rounded ${course.type === 'พื้นฐาน' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-500'}`}>{course.type}</span>}
+                                                                {course.classId && (
+                                                                    <span className="text-[7px] font-black px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                                                        {getLevelLabel(course.classId)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                {(() => {
+                                                                    const count = (course.teacherAssignments?.length || 0) + pendingQueue.filter(p => p.courseId === course.id).length;
+                                                                    return count > 0 && (
+                                                                        <span className="text-[7px] font-black px-1 py-0.5 rounded bg-blue-500 text-white shadow-sm">
+                                                                            {count} กลุ่ม
+                                                                        </span>
+                                                                    );
+                                                                })()}
+                                                                <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded ${course.semester === 1 || course.semester === '1' ? 'text-blue-500 bg-blue-500/10' : course.semester === 2 || course.semester === '2' ? 'text-emerald-500 bg-emerald-500/10' : 'text-indigo-500 bg-indigo-500/10'}`}>
+                                                                    {(course.semester === 0 || course.semester === '0') ? 'เทอม 1,2' : `เทอม ${course.semester}`}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <h4 className={`text-[10px] font-bold truncate ${isSel ? 'text-indigo-600 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>{course.title}</h4>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </div>
                                                 </div>
                                             );
@@ -1136,6 +1489,7 @@ const CourseAssignmentPage: React.FC = () => {
                                 <Pagination currentPage={coursePage} totalPages={courseTotalPages} onPageChange={setCoursePage} />
                             </div>
 
+<<<<<<< HEAD
                             <div className="w-16 flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
                                 <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1147,6 +1501,13 @@ const CourseAssignmentPage: React.FC = () => {
                                         >
                                             {i+1}
                                         </button>
+=======
+                            <div className="w-16 flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black/10">
+                                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400">กลุ่ม</div>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                    {Array.from({ length: 22 }, (_, i) => (
+                                        <button key={i+1} onClick={() => setActiveGroupNumber(i+1)} className={`w-full py-2.5 text-[11px] font-black ${activeGroupNumber === i+1 ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-indigo-600'}`}>{i+1}</button>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     ))}
                                 </div>
                             </div>
@@ -1163,15 +1524,24 @@ const CourseAssignmentPage: React.FC = () => {
                                     </div>
                                     <div className="relative">
                                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={10} />
+<<<<<<< HEAD
                                         <input type="text" placeholder="ค้นชื่อ..." value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} className="w-full pl-6 pr-2 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white shadow-inner" />
+=======
+                                        <input type="text" placeholder="ค้นชื่อ..." value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} className="w-full pl-6 pr-2 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white" />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1 space-y-0.5">
                                     {paginatedTeachers.map(teacher => (
+<<<<<<< HEAD
                                         <div key={teacher.id} onClick={() => setSelectedTeacherId(prev => prev === teacher.id ? null : teacher.id)} className={`p-2 rounded-lg cursor-pointer flex items-center gap-3 border transition-all ${selectedTeacherId === teacher.id ? 'bg-blue-600/10 dark:bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                                             <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${selectedTeacherId === teacher.id ? 'border-blue-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
                                                 {selectedTeacherId === teacher.id && <div className="w-2 h-2 rounded-full bg-blue-500 animate-in zoom-in-50 duration-200" />}
                                             </div>
+=======
+                                        <div key={teacher.id} onClick={() => setSelectedTeacherId(prev => prev === teacher.id ? null : teacher.id)} className={`p-2 rounded-lg cursor-pointer flex items-center gap-3 border ${selectedTeacherId === teacher.id ? 'bg-blue-600/10 dark:bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+                                            {selectedTeacherId === teacher.id && <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-0.5">
                                                     <span className={`text-[10px] font-black ${selectedTeacherId === teacher.id ? 'text-blue-600 dark:text-white' : 'text-slate-500'}`}>
@@ -1205,10 +1575,16 @@ const CourseAssignmentPage: React.FC = () => {
                             color={middleButtonProps.color}
                             onClick={() => {
                                 if (middleButtonProps.action === 'update') handleUpdateTeacher();
+<<<<<<< HEAD
+=======
+                                else if (middleButtonProps.action === 'bulkDelete') handleBulkRemoveAssignments();
+                                else if (middleButtonProps.action === 'delete') handleRemoveAssignment(selectedAssignments[0].courseId, selectedAssignments[0].groupNumber);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 else handleResetSelections();
                             }}
                             label={middleButtonProps.label}
                         />
+<<<<<<< HEAD
                         <FloatingButton 
                             icon={deleteButtonProps.icon} 
                             color={deleteButtonProps.color}
@@ -1216,6 +1592,8 @@ const CourseAssignmentPage: React.FC = () => {
                             label={deleteButtonProps.label}
                             disabled={deleteButtonProps.disabled}
                         />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
                     <div className="flex-1 bg-white dark:bg-[#161a27] rounded-[1.5rem] border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
                         <PanelHeader title="วิชาที่มอบหมายแล้ว" icon={LayoutGrid} count={assignedCourses.length} />
@@ -1245,8 +1623,13 @@ const CourseAssignmentPage: React.FC = () => {
                                                             className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-amber-500/20 border-amber-500/40' : 'bg-amber-50/50 dark:bg-amber-500/5 border-amber-500/10 hover:bg-amber-100/50'}`}
                                                         >
                                                             <div className="flex items-center gap-2 min-w-0">
+<<<<<<< HEAD
                                                                 <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-amber-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-amber-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
                                                                     {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-in zoom-in-50 duration-200" />}
+=======
+                                                                <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border transition-all ${isSelected ? 'bg-amber-500 border-amber-500' : 'border-amber-300 dark:border-white/10'}`}>
+                                                                    {isSelected && <Check size={7} className="text-white" />}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                                 </div>
                                                                 <div className="min-w-0">
                                                                     <p className="text-[9px] font-black text-slate-800 dark:text-white leading-tight">
@@ -1263,7 +1646,11 @@ const CourseAssignmentPage: React.FC = () => {
                                                     );
                                                 })}
                                             </div>
+<<<<<<< HEAD
                                             <div className="h-px bg-slate-200 dark:bg-white/5 my-4" />
+=======
+                                            <div className="h-px bg-slate-200 dark:border-white/5 my-4" />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         </div>
                                     )}
 
@@ -1275,7 +1662,11 @@ const CourseAssignmentPage: React.FC = () => {
                                                     const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                     
                                                     // Check if all (saved and pending) are selected
+<<<<<<< HEAD
                                                     const areSavedSelected = dbGroups.every((g: GroupAssignment) => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending));
+=======
+                                                    const areSavedSelected = dbGroups.every(g => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     const arePendingSelected = queueGroups.every(g => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && a.isPending));
                                                     
                                                     if (areSavedSelected && arePendingSelected) {
@@ -1285,7 +1676,11 @@ const CourseAssignmentPage: React.FC = () => {
                                                         // Select all
                                                         const newSelection = [...selectedAssignments];
                                                         
+<<<<<<< HEAD
                                                         dbGroups.forEach((g: GroupAssignment) => {
+=======
+                                                        dbGroups.forEach(g => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             if (!newSelection.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending)) {
                                                                 newSelection.push({ courseId: course.id, groupNumber: g.groupNumber });
                                                             }
@@ -1302,21 +1697,32 @@ const CourseAssignmentPage: React.FC = () => {
                                                 }}
                                                 className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg sticky top-0 z-10 bg-white dark:bg-[#161a27] hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all border border-transparent hover:border-indigo-500/20 ${selectedAssignments.some(a => a.courseId === course.id) ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : ''}`}
                                             >
+<<<<<<< HEAD
                                                 <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+=======
+                                                <div className={`w-3 h-3 rounded flex items-center justify-center border transition-all ${
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     (() => {
                                                         const dbGroups = course.teacherAssignments || [];
                                                         const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                         const total = dbGroups.length + queueGroups.length;
                                                         if (total === 0) return false;
+<<<<<<< HEAD
                                                         const selectedCount = selectedAssignments.filter(a => a.courseId === course.id).length;
                                                         return selectedCount === total;
                                                     })() ? 'border-indigo-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'
+=======
+                                                        const selected = selectedAssignments.filter(a => a.courseId === course.id).length;
+                                                        return selected === total;
+                                                    })() ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                 }`}>
                                                     {(() => {
                                                         const dbGroups = course.teacherAssignments || [];
                                                         const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                         const total = dbGroups.length + queueGroups.length;
                                                         if (total === 0) return false;
+<<<<<<< HEAD
                                                         const selectedCount = selectedAssignments.filter(a => a.courseId === course.id).length;
                                                         return selectedCount === total;
                                                     })() && <div className="w-2 h-2 rounded-full bg-indigo-500 animate-in zoom-in-50 duration-200" />}
@@ -1335,6 +1741,24 @@ const CourseAssignmentPage: React.FC = () => {
                                                 </span>
                                             </div>
                                             {course.teacherAssignments?.sort((a: any, b: any) => a.groupNumber - b.groupNumber).map((assign: GroupAssignment, idx: number) => {
+=======
+                                                        const selected = selectedAssignments.filter(a => a.courseId === course.id).length;
+                                                        return selected === total;
+                                                    })() && <Check size={6} className="text-white" />}
+                                                </div>
+                                                <BookOpen size={9} className="text-indigo-400 shrink-0" />
+                                                <span className="text-[7px] font-black text-indigo-400 shrink-0">{course.code}</span>
+                                                <span className="text-[8px] font-bold text-slate-600 dark:text-slate-300 truncate">{course.title}</span>
+                                                <span className="text-[7px] font-bold text-slate-400 dark:text-slate-500 shrink-0 ml-auto">
+                                                    {(() => {
+                                                        const dbLen = course.teacherAssignments?.length || 0;
+                                                        const qLen = pendingQueue.filter(p => p.courseId === course.id).length;
+                                                        return dbLen + qLen;
+                                                    })()}
+                                                </span>
+                                            </div>
+                                            {course.teacherAssignments?.sort((a,b) => a.groupNumber - b.groupNumber).map((assign, idx) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                 const isSelected = selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === assign.groupNumber && !a.isPending);
                                                 return (
                                                     <div key={idx}
@@ -1357,11 +1781,19 @@ const CourseAssignmentPage: React.FC = () => {
                                                                 }
                                                             });
                                                         }}
+<<<<<<< HEAD
                                                         className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-500/30 shadow-sm' : 'bg-slate-50/50 dark:bg-white/[0.03] border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/[0.06] shadow-sm hover:shadow-md'}`}
                                                     >
                                                         <div className="flex items-center gap-2 min-w-0">
                                                             <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-indigo-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
                                                                 {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-in zoom-in-50 duration-200" />}
+=======
+                                                        className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-500/30' : 'bg-slate-50 dark:bg-white/[0.03] border-transparent hover:bg-slate-100 dark:hover:bg-white/[0.06]'}`}
+                                                    >
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border transition-all ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'}`}>
+                                                                {isSelected && <Check size={7} className="text-white" />}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             </div>
                                                             <div className="min-w-0">
                                                                 <p className={`text-[9px] font-black leading-tight ${isSelected ? 'text-indigo-600 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
@@ -1453,15 +1885,23 @@ const CourseAssignmentPage: React.FC = () => {
                                 <select value={buildingFilter} onChange={e=>setBuildingFilter(e.target.value)} className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20">
                                     {buildings.map(b => <option key={b} value={b} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{b}</option>)}
                                 </select>
+<<<<<<< HEAD
                                 <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} /><input type="text" placeholder="ค้นห้อง..." value={roomSearch} onChange={e=>setRoomSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 rounded-xl text-[10px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white shadow-inner focus:ring-2 focus:ring-emerald-500/20 transition-all" /></div>
+=======
+                                <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} /><input type="text" placeholder="ค้นห้อง..." value={roomSearch} onChange={e=>setRoomSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 rounded-xl text-[10px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white" /></div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-1 space-y-1">
                             {paginatedRooms.map(room => (
                                 <div key={room.id} onClick={() => setSelectedRoomId(prev => prev === room.id ? null : room.id)} className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border flex items-center gap-2 ${selectedRoomId === room.id ? 'bg-emerald-600/10 dark:bg-emerald-600/20 border-emerald-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+<<<<<<< HEAD
                                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${selectedRoomId === room.id ? 'border-emerald-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
                                         {selectedRoomId === room.id && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-in zoom-in-50 duration-200" />}
                                     </div>
+=======
+                                    {selectedRoomId === room.id && <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shrink-0 ${selectedRoomId === room.id ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>{room.roomCode || "—"}</span>
                                     <h4 className={`text-[10px] font-black truncate flex-1 ${selectedRoomId === room.id ? 'text-emerald-600 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{room.roomName}</h4>
                                     <span className="text-[7px] font-bold text-slate-400 dark:text-slate-500 shrink-0 text-right leading-tight">{room.building && `${room.building}`}{room.floor && ` ชั้น${room.floor}`}</span>

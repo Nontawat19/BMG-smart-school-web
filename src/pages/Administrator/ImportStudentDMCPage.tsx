@@ -955,8 +955,11 @@ const ImportStudentDMCPage: React.FC = () => {
         });
 
         // --- Process Loop ---
+<<<<<<< HEAD
         const duplicates: { record: MappedData; conflict: any }[] = [];
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         for (let i = 0; i < total; i++) {
             const student = previewData[i];
 
@@ -967,6 +970,7 @@ const ImportStudentDMCPage: React.FC = () => {
             }
 
             try {
+<<<<<<< HEAD
                 // Check Duplicate (By studentId or idCardNumber)
                 let conflictDoc: any = null;
 
@@ -990,6 +994,13 @@ const ImportStudentDMCPage: React.FC = () => {
 
                 if (conflictDoc) {
                     duplicates.push({ record: student, conflict: conflictDoc });
+=======
+                // Check Duplicate
+                const q = query(studentsRef, where('studentId', '==', student.studentId));
+                const snapshot = await getDocs(q);
+
+                if (!snapshot.empty) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     skipCount++;
                     const skipCountEl = document.getElementById('swal-skip-count');
                     if (skipCountEl) skipCountEl.innerText = String(skipCount);
@@ -1070,6 +1081,7 @@ const ImportStudentDMCPage: React.FC = () => {
                             <span class="text-4xl font-black text-amber-600 dark:text-amber-400">${skipCount}</span>
                         </div>
 
+<<<<<<< HEAD
                         ${duplicates.length > 0 ? `
                             <div class="mt-8">
                                 <div class="flex items-center gap-2 mb-3 px-4">
@@ -1105,6 +1117,8 @@ const ImportStudentDMCPage: React.FC = () => {
                             </div>
                         ` : ""}
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         ${failCount > 0 ? `
                         <div class="flex justify-between items-center p-6 bg-red-50/50 dark:bg-red-900/10 rounded-[2.5rem] border border-red-100 dark:border-red-800/30 group">
                             <i class="fas fa-exclamation-triangle text-2xl text-red-500"></i>

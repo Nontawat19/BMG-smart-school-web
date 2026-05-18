@@ -6,6 +6,7 @@ import { CLASSES } from "@/utils/schoolUtils";
 import { AllStudentAttendanceSummaries, StudentAttendanceSummary } from '@/components/Pdf/gradebook/types';
 import { getLatestSDQForStudents, SDQAssessment } from '@/services/sdqService';
 
+<<<<<<< HEAD
 const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
 
 const getConfiguredFormativeTotal = (record: any, currentCourse?: Course) => {
@@ -22,6 +23,8 @@ const getConfiguredFormativeTotal = (record: any, currentCourse?: Course) => {
     }, 0);
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 export const useGradeBookData = (
     schoolId: string | undefined,
     selectedClass: string,
@@ -49,11 +52,20 @@ export const useGradeBookData = (
                 return;
             }
 
+<<<<<<< HEAD
             // Prioritize Enrollment data if a course is selected
             const hasCourseSelected = !!selectedCourse;
             const hasClassFilter = !!selectedClass;
 
             if (!hasCourseSelected && !hasClassFilter) {
+=======
+            // Requirement: Must have either (Class + Room) OR (Course + Group)
+            // If we have selectedCourse and selectedGroup, we prioritize Enrollment data
+            const hasEnrollmentFilter = selectedCourse && selectedGroup;
+            const hasClassFilter = selectedClass;
+
+            if (!hasEnrollmentFilter && !hasClassFilter) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setStudents([]);
                 setGrades({});
                 return;
@@ -64,11 +76,16 @@ export const useGradeBookData = (
                 const classTitle = CLASSES[selectedClass] || selectedClass;
                 let studentList: Student[] = [];
 
+<<<<<<< HEAD
                 if (hasCourseSelected) {
+=======
+                if (hasEnrollmentFilter) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     // --- CASE A: Fetch from Enrollments (Course Groups) ---
                     const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
                     const constraints = [
                         where('courseId', '==', selectedCourse),
+<<<<<<< HEAD
                         where('academicYear', '==', academicYear)
                     ];
                     
@@ -82,6 +99,15 @@ export const useGradeBookData = (
                         if (!isAnnualCourse && currentCourse?.semester) {
                             constraints.push(where('semester', '==', selectedSemester));
                         }
+=======
+                        where('groupName', '==', selectedGroup),
+                        where('academicYear', '==', academicYear)
+                    ];
+                    
+                    // Optional: If course is not annual, filter by semester
+                    if (currentCourse?.semester && currentCourse.semester !== '1-2' && currentCourse.semester !== 'annual') {
+                        constraints.push(where('semester', '==', selectedSemester));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     }
 
                     const enrollSnap = await getDocs(query(enrollmentsRef, ...constraints));
@@ -105,8 +131,13 @@ export const useGradeBookData = (
                                 studentDetails.push({
                                     id: snap.id,
                                     ...data,
+<<<<<<< HEAD
                                     studentNumber: String(data.number ?? data.classNumber ?? data.no ?? data.studentNumber ?? ""),
                                     studentId: String(data.studentCode ?? data.studentId ?? snap.id ?? ""),
+=======
+                                    studentNumber: String(data.number || data.classNumber || data.no || data.studentNumber || ""),
+                                    studentId: String(data.studentCode || data.studentId || snap.id || ""),
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     room: data.room || ""
                                 } as Student);
                             });
@@ -143,16 +174,27 @@ export const useGradeBookData = (
                             studentNumber: s.studentNumber?.toString().trim() || ""
                         };
                     })
+<<<<<<< HEAD
                     .filter(s => !selectedRoom || selectedRoom === 'all' || String(s.room) === String(selectedRoom))
                     .sort((a, b) => {
                         const numA = a.studentNumber ? parseInt(a.studentNumber, 10) : 9999;
                         const numB = b.studentNumber ? parseInt(b.studentNumber, 10) : 9999;
                         if (numA !== numB) return numA - numB;
 
+=======
+                    .sort((a, b) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         const roomA = parseInt(a.room) || 0;
                         const roomB = parseInt(b.room) || 0;
                         if (roomA !== roomB) return roomA - roomB;
 
+<<<<<<< HEAD
+=======
+                        const numA = a.studentNumber ? parseInt(a.studentNumber, 10) : 9999;
+                        const numB = b.studentNumber ? parseInt(b.studentNumber, 10) : 9999;
+                        if (numA !== numB) return numA - numB;
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         return (a.firstName || "").localeCompare(b.firstName || "", 'th');
                     });
 
@@ -195,18 +237,29 @@ export const useGradeBookData = (
                 }
             });
 
+<<<<<<< HEAD
             setGrades(() => {
                 const newGrades: Record<string, GradeRecord> = {};
+=======
+            setGrades(prev => {
+                const newGrades = { ...prev };
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 Object.entries(studentDataGroups).forEach(([targetId, records]) => {
                     const primaryRecord = records.find(r => r.id === targetId);
                     const bestRecord = primaryRecord || records.reduce((best, cur) => {
+<<<<<<< HEAD
                         const bestTotal = getConfiguredFormativeTotal(best, currentCourse) + Number(best.midterm || 0) + Number(best.final || 0);
                         const curTotal = getConfiguredFormativeTotal(cur, currentCourse) + Number(cur.midterm || 0) + Number(cur.final || 0);
+=======
+                        const bestTotal = (Number(best.formative || 0) + Number(best.midterm || 0) + Number(best.final || 0));
+                        const curTotal = (Number(cur.formative || 0) + Number(cur.midterm || 0) + Number(cur.final || 0));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         return curTotal > bestTotal ? cur : best;
                     }, records[0]);
 
                     if (bestRecord) {
+<<<<<<< HEAD
                         let combinedDetails = { ...(bestRecord.formativeDetails || {}) };
                         records.forEach(r => {
                             if (r.formativeDetails) {
@@ -216,6 +269,9 @@ export const useGradeBookData = (
 
                         const normalizedRecord = { ...bestRecord, formativeDetails: combinedDetails };
                         const f = getConfiguredFormativeTotal(normalizedRecord, currentCourse);
+=======
+                        const f = Number(bestRecord.formative || 0);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         const m = Number(bestRecord.midterm || 0);
                         const fn = Number(bestRecord.final || 0);
                         const total = f + m + fn;
@@ -226,9 +282,24 @@ export const useGradeBookData = (
                             midterm: m,
                             final: fn,
                             total: total,
+<<<<<<< HEAD
                             grade: bestRecord.status || calculateGrade(total),
                             formativeDetails: combinedDetails
                         };
+=======
+                            grade: bestRecord.status || calculateGrade(total)
+                        };
+
+                        if (records.length > 1) {
+                            let combinedDetails = { ...(bestRecord.formativeDetails || {}) };
+                            records.forEach(r => {
+                                if (r.formativeDetails) {
+                                    combinedDetails = { ...combinedDetails, ...r.formativeDetails };
+                                }
+                            });
+                            newGrades[targetId].formativeDetails = combinedDetails;
+                        }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     }
                 });
 
@@ -239,7 +310,11 @@ export const useGradeBookData = (
         });
 
         return () => unsubscribe();
+<<<<<<< HEAD
     }, [schoolId, selectedCourse, students, calculateGrade, currentCourse]);
+=======
+    }, [schoolId, selectedCourse, students, calculateGrade]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Fetch Detailed Attendance
     useEffect(() => {

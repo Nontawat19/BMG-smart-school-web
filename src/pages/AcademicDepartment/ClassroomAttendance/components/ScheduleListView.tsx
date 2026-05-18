@@ -57,7 +57,11 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
                         {isNow && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-600 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>}
                         <div className={`flex items-center gap-4 ${isNow ? 'pl-2' : ''}`}>
                             <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${isNow ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+<<<<<<< HEAD
                                 {schedule.period === 0 ? 'ฮ' : schedule.period}
+=======
+                                {schedule.period}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                             <div>
                                 <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">

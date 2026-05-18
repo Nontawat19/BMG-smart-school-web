@@ -141,7 +141,11 @@ const styles = StyleSheet.create({
     courseTitle: { fontWeight: 'bold', fontSize: 11, marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
     courseCode: { fontSize: 9, marginBottom: 1, color: '#333' },
     teacherName: { fontSize: 9, color: '#444', marginBottom: 1 },
+<<<<<<< HEAD
     roomCode: { fontSize: 10, color: '#000000', fontWeight: 'bold' },
+=======
+    roomCode: { fontSize: 9, color: '#10b981', fontWeight: 'bold' },
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Footer
 
@@ -170,7 +174,11 @@ const StudentSchedulePageContent = ({
                 </View>
                 <View style={styles.headerContent}>
                     <Text style={styles.headerText}>
+<<<<<<< HEAD
                         ตารางเรียน {className}{roomName ? `/${roomName}` : ''} ภาคเรียนที่ {term || '...'} ปีการศึกษา {academicYear || '...'}
+=======
+                        ตารางเรียน {className} {roomName ? `ห้อง ${roomName}` : ''} ภาคเรียนที่ {term || '...'} ปีการศึกษา {academicYear || '...'}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </Text>
                     <Text style={styles.subHeaderText}>
                         {schoolInfo.schoolName ? `โรงเรียน${schoolInfo.schoolName} ` : ''}

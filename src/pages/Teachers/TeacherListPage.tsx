@@ -3,9 +3,14 @@ import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { Link, useParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { firestore, storage, auth } from "@/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, updateDoc } from "firebase/firestore";
+=======
+import { firestore, storage, auth } from "@/firebase";
+import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc } from "firebase/firestore";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, deleteObject } from "firebase/storage";
 import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaCloudUploadAlt, FaCheck, FaTimes, FaEye, FaEyeSlash, FaIdCard, FaFileExcel } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -29,7 +34,10 @@ interface Teacher {
   subjects?: string[];
   academicStanding?: string;
   rfid?: string;
+<<<<<<< HEAD
   status?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 
@@ -83,6 +91,19 @@ export default function TeacherListPage() {
   const { ADMIN_ACCESS } = usePermissions();
   const profile = useSelector((state: RootState) => state.profile);
 
+<<<<<<< HEAD
+=======
+  // RFID Edit State
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+  const [rfidInputValue, setRfidInputValue] = useState<string>('');
+  const [isSavingRfid, setIsSavingRfid] = useState(false);
+  const [isRfidVisible, setIsRfidVisible] = useState(false);
+
+  // Bulk RFID state
+  const [isBulkRfidMode, setIsBulkRfidMode] = useState(false);
+  const [bulkRfidData, setBulkRfidData] = useState<Record<string, string>>({});
+  const [isSavingBulkRfid, setIsSavingBulkRfid] = useState(false);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -127,6 +148,102 @@ export default function TeacherListPage() {
     });
   };
 
+<<<<<<< HEAD
+=======
+  const handleStartEditRfid = (teacher: Teacher) => {
+    setEditingTeacherId(teacher.id);
+    setRfidInputValue(teacher.rfid || '');
+    setIsRfidVisible(false);
+  };
+
+  const handleCancelEditRfid = () => {
+    setEditingTeacherId(null);
+    setRfidInputValue('');
+  };
+
+  const handleSaveRfidForTeacher = async () => {
+    if (!editingTeacherId || !schoolId) return;
+    setIsSavingRfid(true);
+    try {
+      const { doc, updateDoc } = await import("firebase/firestore");
+      const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", editingTeacherId);
+      await updateDoc(teacherRef, { rfid: rfidInputValue });
+
+      setTeachers(prevTeachers =>
+        prevTeachers.map(t => t.id === editingTeacherId ? { ...t, rfid: rfidInputValue } : t)
+      );
+
+      setEditingTeacherId(null);
+      setRfidInputValue('');
+      Swal.fire({ 
+        icon: 'success', 
+        title: 'บันทึกสำเร็จ', 
+        timer: 1500, 
+        showConfirmButton: false,
+        background: '#2a2b2f',
+        color: '#ffffff'
+      });
+    } catch (err) {
+      console.error("Error updating teacher RFID: ", err);
+      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอัปเดตข้อมูล RFID ได้', 'error');
+    } finally {
+      setIsSavingRfid(false);
+    }
+  };
+
+  const handleSaveBulkRfid = async () => {
+    if (!schoolId) return;
+    setIsSavingBulkRfid(true);
+    try {
+      const { writeBatch, doc } = await import("firebase/firestore");
+      const batch = writeBatch(firestore);
+      let changedCount = 0;
+
+      Object.entries(bulkRfidData).forEach(([teacherId, rfidValue]) => {
+        const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
+        batch.update(teacherRef, { rfid: rfidValue });
+        changedCount++;
+      });
+
+      if (changedCount > 0) {
+        await batch.commit();
+        setTeachers(prevTeachers =>
+          prevTeachers.map(t => bulkRfidData[t.id] !== undefined ? { ...t, rfid: bulkRfidData[t.id] } : t)
+        );
+        Swal.fire({
+          icon: 'success',
+          title: 'บันทึกสำเร็จ',
+          text: `บันทึกข้อมูล RFID ครูทั้งหมด ${changedCount} รายการเรียบร้อยแล้ว`,
+          timer: 2000,
+          showConfirmButton: false,
+          background: '#2a2b2f',
+          color: '#ffffff'
+        });
+      }
+      setIsBulkRfidMode(false);
+      setBulkRfidData({});
+    } catch (err) {
+      console.error("Error saving bulk teacher RFID: ", err);
+      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลแบบกลุ่มได้', 'error');
+    } finally {
+      setIsSavingBulkRfid(false);
+    }
+  };
+
+  const handleToggleBulkRfidMode = () => {
+    if (isBulkRfidMode) {
+      setIsBulkRfidMode(false);
+      setBulkRfidData({});
+    } else {
+      setIsBulkRfidMode(true);
+      const initialData: Record<string, string> = {};
+      teachers.forEach(t => {
+        if (t.rfid) initialData[t.id] = t.rfid;
+      });
+      setBulkRfidData(initialData);
+    }
+  };
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchTeachers = useCallback(async (currentSchoolId: string) => {
     setIsLoading(true);
@@ -207,6 +324,7 @@ export default function TeacherListPage() {
         <table className="min-w-full divide-y divide-gray-700">
           <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
             <tr>
+<<<<<<< HEAD
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
               <th scope="col" className="py-3 px-2 text-xs font-semibold text-gray-600 dark:text-gray-300 w-12 text-center">ลำดับ</th>
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
@@ -215,6 +333,15 @@ export default function TeacherListPage() {
               <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อ</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">RFID</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
+=======
+              <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-12 text-center">ลำดับ</th>
+              <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
+              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">วิทยฐานะ</th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
+              <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ฝ่ายงาน</th>
+              <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อ</th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-32 sm:w-40">RFID</th>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <CanAccess roles={ADMIN_ACCESS}>
                 <th scope="col" className="py-3 pl-3 pr-4 sm:pr-6 text-right text-xs font-semibold text-gray-600 dark:text-gray-300">
                   ดำเนินการ
@@ -225,7 +352,10 @@ export default function TeacherListPage() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
             {currentTeachers.map((teacher, index) => (
               <tr key={teacher.id} className="hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors">
+<<<<<<< HEAD
                 <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400 font-medium">{teacher.teacherId}</td>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
                   <Link to={`/school/${teacher.schoolId}/teachers/view/${teacher.id}`} className="flex items-center group">
@@ -236,12 +366,20 @@ export default function TeacherListPage() {
                         alt={`${teacher.firstName} ${teacher.lastName}`}
                       />
                     </div>
+<<<<<<< HEAD
                     <div className="ml-3 font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                       {`${teacher.title || ''}${teacher.firstName} ${teacher.lastName}`}
+=======
+                    <div className="ml-3">
+                      <div className="font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        {`${teacher.title || ''}${teacher.firstName} ${teacher.lastName}`}
+                      </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
                   </Link>
                 </td>
                 <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.academicStanding || '-'}</td>
+<<<<<<< HEAD
                 <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.department || '-'}</td>
                 <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.contact}</td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs">
@@ -261,6 +399,51 @@ export default function TeacherListPage() {
                     </span>
                   </td>
                   <CanAccess roles={ADMIN_ACCESS}>
+=======
+                <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.teacherId}</td>
+                <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.department || '-'}</td>
+                <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.contact}</td>
+                <td className="whitespace-nowrap px-2 py-3 text-xs">
+                  {isBulkRfidMode ? (
+                    <div className="flex items-center gap-2 w-full max-w-[150px]">
+                      <input
+                        type="text"
+                        value={bulkRfidData[teacher.id] || ''}
+                        onChange={(e) => setBulkRfidData(prev => ({ ...prev, [teacher.id]: e.target.value }))}
+                        placeholder="สแกน..."
+                        className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
+                      />
+                    </div>
+                  ) : editingTeacherId === teacher.id ? (
+                    <div className="flex items-center gap-2 w-full max-w-[150px]">
+                      <div className="relative flex-grow">
+                        <input
+                          type={isRfidVisible ? "text" : "password"}
+                          value={rfidInputValue}
+                          onChange={(e) => setRfidInputValue(e.target.value)}
+                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 pr-6 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => setIsRfidVisible(!isRfidVisible)} className="absolute inset-y-0 right-0 flex items-center pr-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                          {isRfidVisible ? <FaEyeSlash size={10} /> : <FaEye size={10} />}
+                        </button>
+                      </div>
+                      <button onClick={handleSaveRfidForTeacher} disabled={isSavingRfid} className="text-green-500 hover:text-green-400"><FaCheck size={12} /></button>
+                      <button onClick={handleCancelEditRfid} className="text-red-500 hover:text-red-400"><FaTimes size={12} /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 group">
+                      <span className="text-gray-500 dark:text-gray-400 font-mono text-[10px] tracking-wider">{teacher.rfid ? '••••••••' : 'ไม่มีข้อมูล'}</span>
+                      <CanAccess roles={ADMIN_ACCESS}>
+                        <button onClick={() => handleStartEditRfid(teacher)} className="text-gray-400 opacity-0 group-hover:opacity-100 hover:text-indigo-400 transition-all" title="แก้ไข RFID">
+                          <FaIdCard size={12} />
+                        </button>
+                      </CanAccess>
+                    </div>
+                  )}
+                </td>
+                <CanAccess roles={ADMIN_ACCESS}>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <td className="relative whitespace-nowrap py-3 pl-3 pr-4 text-right text-xs font-medium sm:pr-6">
                     <div className="flex justify-end items-center gap-x-3">
                       <Link to={`/school/${teacher.schoolId}/teachers/edit/${teacher.id}`} className="text-indigo-400 hover:text-indigo-300 transition-colors" title="แก้ไข">
@@ -364,10 +547,14 @@ export default function TeacherListPage() {
           <header className="mb-6 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
+<<<<<<< HEAD
                 <div className="flex items-center gap-4">
                   <BackButton to="/academic/hub/personnel_info" />
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลครูทั้งหมด</h1>
                 </div>
+=======
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลครูทั้งหมด</h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   แสดง, จัดการ, และเพิ่มข้อมูลครูในระบบ
                 </p>
@@ -390,6 +577,7 @@ export default function TeacherListPage() {
 
               <div className="flex flex-wrap gap-2 ml-auto">
                 <CanAccess roles={ADMIN_ACCESS}>
+<<<<<<< HEAD
                   <Link
                     to={schoolId ? `/school/${schoolId}/teachers/add` : '#'}
                     className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
@@ -425,6 +613,58 @@ export default function TeacherListPage() {
                     <FaCloudUploadAlt size={14} />
                     <span>อัปโหลดรูป</span>
                   </Link>
+=======
+                  {isBulkRfidMode ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveBulkRfid}
+                        disabled={isSavingBulkRfid}
+                        className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        {isSavingBulkRfid ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <FaCheck size={12} />}
+                        <span>บันทึกทั้งหมด</span>
+                      </button>
+                      <button
+                        onClick={handleToggleBulkRfidMode}
+                        className="flex items-center justify-center gap-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        <FaTimes size={12} />
+                        <span>ยกเลิก</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Link
+                        to={schoolId ? `/school/${schoolId}/teachers/add` : '#'}
+                        className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        <FaPlus size={12} />
+                        <span>เพิ่มครู</span>
+                      </Link>
+                      <button
+                        onClick={handleToggleBulkRfidMode}
+                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        <FaIdCard size={12} />
+                        <span>จับคู่ RFID</span>
+                      </button>
+                      <Link
+                        to={schoolId ? `/school/${schoolId}/teachers/quick-add` : '#'}
+                        className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        <FaUserPlus size={12} />
+                        <span>เพิ่มด่วน</span>
+                      </Link>
+                      <Link
+                        to={schoolId ? `/school/${schoolId}/teachers/bulk-upload-images` : '#'}
+                        className="hidden md:flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                      >
+                        <FaCloudUploadAlt size={14} />
+                        <span>อัปโหลดรูป</span>
+                      </Link>
+                    </>
+                  )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </CanAccess>
               </div>
             </div>

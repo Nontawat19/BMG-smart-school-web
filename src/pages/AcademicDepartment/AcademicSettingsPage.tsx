@@ -16,7 +16,10 @@ import { firestore as db } from "@/firebase";
 import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const AcademicSettingsPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -112,10 +115,20 @@ const AcademicSettingsPage: React.FC = () => {
                 <div className="max-w-4xl mx-auto">
                     {/* Breadcrumb & Header */}
                     <div className="mb-8">
+<<<<<<< HEAD
                         <div className="flex items-center gap-4 mb-4">
                             <BackButton to="/academic/hub/settings" />
                             <span className="font-medium text-gray-500 dark:text-gray-400">กลับหน้างานวิชาการ</span>
                         </div>
+=======
+                        <Link
+                            to="/academic-admin"
+                            className="inline-flex items-center gap-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition-colors mb-4 group"
+                        >
+                            <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                            <span className="font-medium">กลับหน้างานวิชาการ</span>
+                        </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div className="flex items-center gap-4">

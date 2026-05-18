@@ -27,6 +27,7 @@ export interface Student {
     altIds?: string[];
 }
 
+<<<<<<< HEAD
 export interface GroupAssignment {
     groupNumber: number;
     teacherId: string;
@@ -37,6 +38,8 @@ export interface GroupAssignment {
     note?: string;
 }
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 export interface Course {
     id: string;
     title: string;
@@ -46,13 +49,21 @@ export interface Course {
     hoursPerWeek: number;
     teacherId?: string;
     teacherIds?: string[];
+<<<<<<< HEAD
     teacherAssignments?: GroupAssignment[];
+=======
+    teacherAssignments?: { teacherId: string; classLevels: string[]; roomIds: string[] }[];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     subjectGroup?: string;
     learningArea?: string;
     formativeWeight?: number;
     midtermWeight?: number;
+<<<<<<< HEAD
     finalWeight?: number;
     formativeAssessments?: { id?: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
+=======
+    formativeAssessments?: { id: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     indicators?: string[];
     expectedOutcomes?: string[];
     type?: 'พื้นฐาน' | 'เพิ่มเติม';

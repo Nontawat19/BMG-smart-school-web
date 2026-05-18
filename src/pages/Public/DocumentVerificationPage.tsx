@@ -13,8 +13,11 @@ interface DocInfo {
     classDisplay: string;
     updatedAt: string;
     downloadUrl: string;
+<<<<<<< HEAD
     year?: string;
     semester?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 const DocumentVerificationPage: React.FC = () => {
@@ -27,8 +30,11 @@ const DocumentVerificationPage: React.FC = () => {
     const courseId = searchParams.get('c');
     const classId = searchParams.get('cl');
     const room = searchParams.get('r');
+<<<<<<< HEAD
     const year = searchParams.get('y');
     const semester = searchParams.get('sem');
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         const verifyDocument = async () => {
@@ -54,6 +60,7 @@ const DocumentVerificationPage: React.FC = () => {
 
                 // 2. Locate File in Storage
                 const roomSlug = room && room !== 'all' ? `_${room}` : '';
+<<<<<<< HEAD
                 
                 // Try New Path Structure first (Semester-aware)
                 let filePath = '';
@@ -85,6 +92,15 @@ const DocumentVerificationPage: React.FC = () => {
                         getMetadata(storageRef)
                     ]);
                 }
+=======
+                const filePath = `school-settings/${schoolId}/grading/courses/${courseId}/ปพ5_${courseId}_${classId}${roomSlug}.pdf`;
+                const storageRef = ref(storage, filePath);
+
+                const [downloadUrl, metadata] = await Promise.all([
+                    getDownloadURL(storageRef),
+                    getMetadata(storageRef)
+                ]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 // Fetch the actual file content to create a local Blob URL
                 // This masks the firebase storage URL from the user's view
@@ -100,9 +116,13 @@ const DocumentVerificationPage: React.FC = () => {
                     courseCode: courseData.code || '-',
                     classDisplay: `${formattedClass}${room && room !== 'all' ? `/${room}` : ' (ทุกห้อง)'}`,
                     updatedAt: new Date(metadata.updated).toLocaleString('th-TH'),
+<<<<<<< HEAD
                     downloadUrl: blobUrl,
                     year: year || undefined,
                     semester: semester || undefined
+=======
+                    downloadUrl: blobUrl // Use the Blob URL instead
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
 
             } catch (err: any) {
@@ -168,6 +188,7 @@ const DocumentVerificationPage: React.FC = () => {
                                     </div>
                                 </div>
 
+<<<<<<< HEAD
                                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-200 dark:border-gray-700">
                                     <div>
                                         <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">ปีการศึกษา/ภาคเรียน</p>
@@ -179,6 +200,11 @@ const DocumentVerificationPage: React.FC = () => {
                                         <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest text-right">วันที่ออกเอกสารลำสุด</p>
                                         <p className="text-xs font-bold text-gray-600 dark:text-gray-400 text-right">{docInfo?.updatedAt}</p>
                                     </div>
+=======
+                                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">วันที่ออกเอกสารลำสุด</p>
+                                    <p className="text-xs font-bold text-gray-600 dark:text-gray-400">{docInfo?.updatedAt}</p>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </div>
                             </div>
 

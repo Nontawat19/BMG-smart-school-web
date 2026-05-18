@@ -151,8 +151,11 @@ export default function QuickAddTeacherPage() {
       const teacherData = {
         ...form,
         title: finalTitle,
+<<<<<<< HEAD
         learningArea: form.learningArea || "",
         subjectGroup: form.learningArea || "",
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         profileImageUrl,
         schoolId,
         uid: user.uid,

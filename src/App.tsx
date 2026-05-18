@@ -13,7 +13,11 @@ import ProfilePage from "./pages/Profile/ProfilePage";
 import LeaveRequestPage from "./pages/Attendance/LeaveRequestPage"; // 📌 เพิ่มการ import หน้าใบลากิจ/ลาป่วย
 import LeaveHistoryPage from "./pages/Attendance/LeaveHistoryPage"; // 📌 เพิ่มการ import หน้าประวัติการลา
 import ProtectedRoute from "./components/ProtectedRoute";
+<<<<<<< HEAD
 import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, ATTENDANCE_SCANNER_ACCESS } from "@/constants/permissions";
+=======
+import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } from "@/constants/permissions";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 
 import UserManagementPage from "./pages/Administrator/UserManagementPage";
@@ -28,7 +32,10 @@ import QuickAddStudentPage from "./pages/Students/QuickAddStudentPage";
 import StudentListPage from "./pages/Students/StudentListPage"; 
 import EditStudentPage from "./pages/Students/EditStudentPage"; 
 import ViewStudentPage from "./pages/Students/ViewStudentPage"; 
+<<<<<<< HEAD
 import MapRfidPage from "./pages/Students/MapRfidPage"; 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 import BulkUploadStudentImagesPage from "./pages/Administrator/BulkUploadStudentImagesPage"; // 📌 หน้าอัปโหลดรูปนักเรียนจำนวนมาก
 import ImportStudentDMCPage from "./pages/Administrator/ImportStudentDMCPage"; // 📌 หน้า Import DMC
@@ -55,7 +62,10 @@ import OfficialTravelRequestPage from "./pages/Attendance/OfficialTravelRequestP
 import OfficialTravelHistoryPage from "./pages/Attendance/OfficialTravelHistoryPage"; // 📌 เพิ่มการ import หน้าขอไปราชการ
 import ViewTeacherPage from "./pages/Teachers/ViewTeacherPage";
 import QuickAddTeacherPage from "./pages/Teachers/QuickAddTeacherPage";
+<<<<<<< HEAD
 import ImportTeacherPage from "./pages/Teachers/ImportTeacherPage";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import BulkUploadTeacherImagesPage from "./pages/Administrator/BulkUploadTeacherImagesPage";
 
 // Import Academic Pages
@@ -67,10 +77,17 @@ import TeacherSchedulePage from "./pages/AcademicDepartment/schedule/TeacherSche
 import StudentSchedulePage from "./pages/AcademicDepartment/StudentSchedulePage"; // 📌 เพิ่มการ import หน้าใหม่
 import SpecialPeriodManagementPage from "./pages/AcademicDepartment/SpecialPeriodManagementPage"; // 📌 เพิ่มการ import หน้าจัดการคาบเรียนพิเศษ
 import ClassroomAttendancePage from "./pages/AcademicDepartment/ClassroomAttendance"; // 📌 เปลี่ยนพาธให้ชี้ที่โฟลเดอร์ใหม่ที่มี index.tsx
+<<<<<<< HEAD
 import HomeroomAttendancePage from "./pages/AcademicDepartment/HomeroomAttendancePage";
 import HistoricalClassroomAttendancePage from "./pages/AcademicDepartment/HistoricalClassroomAttendancePage"; // 📌 เพิ่มการ import หน้าเช็คชื่อย้อนหลัง
 import AttendanceSummaryPage from "./pages/AcademicDepartment/AttendanceSummaryPage"; // 📌 เพิ่มการสรุปการมาเรียน
 import GradeBookPage from "./pages/AcademicDepartment/GradeBookPage";
+=======
+import HistoricalClassroomAttendancePage from "./pages/AcademicDepartment/HistoricalClassroomAttendancePage"; // 📌 เพิ่มการ import หน้าเช็คชื่อย้อนหลัง
+import AttendanceSummaryPage from "./pages/AcademicDepartment/AttendanceSummaryPage"; // 📌 เพิ่มการสรุปการมาเรียน
+import GradeBookPage from "./pages/AcademicDepartment/GradeBookPage";
+import FormativeScorePage from "./pages/AcademicDepartment/FormativeScorePage";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import SchoolCalendarPage from "./pages/AcademicDepartment/SchoolCalendarPage"; // 📌 เพิ่มการ import หน้าใหม่
 import SubstituteManagementPage from "./pages/AcademicDepartment/SubstituteManagementPage"; // 📌 เพิ่มการ import หน้าใหม่
 import TeacherScheduleViewPage from "./pages/AcademicDepartment/TeacherScheduleViewPage"; // 📌 เพิ่มการ import หน้าใหม่
@@ -87,11 +104,15 @@ import ClubAttendancePage from "./pages/AcademicDepartment/ClubAttendancePage"; 
 
 import ClubManagementPage from "./pages/AcademicDepartment/ClubManagementPage"; // 📌 เพิ่มการ import หน้าจัดการชุมนุม
 import ClubMemberManagementPage from "./pages/AcademicDepartment/ClubMemberManagementPage"; // 📌 เพิ่มการ import หน้าจัดการสมาชิกชุมนุม
+<<<<<<< HEAD
 import LearnerActivityManagementPage from "./pages/AcademicDepartment/LearnerActivityManagementPage"; // 📌 เพิ่มหน้าจัดการกิจกรรมพัฒนาผู้เรียน
 import LearnerActivityStudentManagementPage from "./pages/AcademicDepartment/LearnerActivityStudentManagementPage"; // 📌 เพิ่มหน้าจัดการนักเรียนกิจกรรม
 import LearnerActivityAttendancePage from "./pages/AcademicDepartment/LearnerActivityAttendancePage"; // 📌 เพิ่มหน้าเช็คชื่อกิจกรรม
 import SchoolInfoPage from "./pages/owner/SchoolInfoPage";
 import CheckinOutPage from "./pages/Attendance/CheckinOutPage";
+=======
+import SchoolInfoPage from "./pages/owner/SchoolInfoPage";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import SchoolListPage from "./pages/owner/SchoolListPage";
 import SchoolDetailsPage from "./pages/owner/SchoolDetailsPage"; // New page
 import UserListPage from "./pages/owner/UserListPage";
@@ -102,19 +123,27 @@ import ImportCoursePage from "./pages/AcademicDepartment/ImportCoursePage"; // �
 import EnrollmentListPage from "./pages/AcademicDepartment/EnrollmentListPage"; // 📌 เพิ่มการสรุปการลงทะเบียน
 import SubjectGroupManagementPage from "@/pages/AcademicDepartment/SubjectGroupManagementPage"; // 📌 เพิ่มการ import หน้าจัดการกลุ่มสาระและตัวชี้วัด
 import ScoreConfigurationPage from "./pages/AcademicDepartment/ScoreConfigurationPage"; // 📌 เพิ่มการ import หน้าตั้งค่าคะแนนเต็มรายวิชา
+<<<<<<< HEAD
 import FlagCeremonyPage from "./pages/Attendance/FlagCeremonyPage"; // 📌 เพิ่มการ import หน้าเช็คแถว (หน้าเสาธง)
 import AttendanceConfigPage from "./pages/HumanResources/AttendanceConfigPage"; // 📌 เพิ่มการ import หน้าตั้งค่าระบบลงเวลา
 import TeacherAttendanceSummaryPage from "./pages/HumanResources/TeacherAttendanceSummaryPage"; // 📌 เพิ่มหน้าสรุปการลงเวลาครู
 import TeacherAttendanceTodayPage from "./pages/HumanResources/TeacherAttendanceTodayPage"; // 📌 เพิ่มหน้าตรวจสอบการลงเวลาวันนี้
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import FormativeScoreEntryPage from "./pages/AcademicDepartment/FormativeScoreEntryPage"; // 📌 เพิ่มหน้าบันทึกคะแนนก่อนกลางภาค
 import PostMidtermScoreEntryPage from "./pages/AcademicDepartment/PostMidtermScoreEntryPage"; // 📌 เพิ่มหน้าบันทึกคะแนนหลังกลางภาค
 import AcademicSettingsPage from "./pages/AcademicDepartment/AcademicSettingsPage"; // 📌 เพิ่มการ import หน้าตั้งค่าระบบวิชาการ
 import PeriodConstraintPage from "./pages/AcademicDepartment/schedule/PeriodConstraintPage";
 import GraduationManagementPage from "./pages/AcademicDepartment/GraduationManagementPage";
+<<<<<<< HEAD
 import AlumniManagementPage from "./pages/AcademicDepartment/AlumniManagementPage";
 import RoomTransferManagementPage from "./pages/AcademicDepartment/RoomTransferManagementPage";
 import PhysicalRoomsPage from "./pages/AcademicDepartment/PhysicalRoomsPage";
 import HubPage from "./pages/Shared/HubPage"; // 📌 เพิ่มหน้า Hub กลาง
+=======
+import RoomTransferManagementPage from "./pages/AcademicDepartment/RoomTransferManagementPage";
+import PhysicalRoomsPage from "./pages/AcademicDepartment/PhysicalRoomsPage";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 
 import { ROLES } from "@/constants/roles";
@@ -153,7 +182,10 @@ function App() {
           <Route path="/school/:schoolId/official-travel-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><OfficialTravelHistoryPage /></ProtectedRoute>} />
           <Route path="/attendance/leave-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><LeaveHistoryPage /></ProtectedRoute>} />
           <Route path="/attendance/teacher-leave-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherLeaveHistoryPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           <Route path="/attendance/checkin-out" element={<ProtectedRoute allowedRoles={ATTENDANCE_SCANNER_ACCESS}><CheckinOutPage /></ProtectedRoute>} />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
           {/* Administrator Pages */}
           <Route path="/administrator/user-management" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS} featureFlag="personnel"><UserManagementPage /></ProtectedRoute>} />
@@ -182,7 +214,10 @@ function App() {
           <Route path="/school/:schoolId/students/quick-add" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><QuickAddStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/edit/:studentId" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><EditStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/view/:studentId" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ViewStudentPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           <Route path="/school/:schoolId/map-rfid/:type" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><MapRfidPage /></ProtectedRoute>} />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
           {/* Teacher Management */}
           <Route path="/school/:schoolId/teachers" element={<ProtectedRoute allowedRoles={[...ADMIN_ACCESS, ...ACADEMIC_ACCESS]}><TeacherListPage /></ProtectedRoute>} />
@@ -190,6 +225,7 @@ function App() {
           <Route path="/school/:schoolId/teachers/view/:teacherId" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ViewTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><AddTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/quick-add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><QuickAddTeacherPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           <Route path="/school/:schoolId/teachers/import" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><ImportTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/bulk-upload-images" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><BulkUploadTeacherImagesPage /></ProtectedRoute>} />
           <Route path="/human-resources/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />
@@ -202,12 +238,24 @@ function App() {
           {/* Academic Department (Academic Admin Access) */}
           <Route path="/school/:schoolId/academic" element={<ProtectedRoute allowedRoles={STAFF_ACCESS} featureFlag="academic"><HubPage /></ProtectedRoute>} />
           <Route path="/academic-admin" element={<ProtectedRoute allowedRoles={STAFF_ACCESS} featureFlag="academic"><HubPage /></ProtectedRoute>} />
+=======
+          <Route path="/school/:schoolId/teachers/bulk-upload-images" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><BulkUploadTeacherImagesPage /></ProtectedRoute>} />
+
+          {/* Academic Department (Academic Admin Access) */}
+          <Route path="/school/:schoolId/academic" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT} featureFlag="academic"><AcademicAdminPage /></ProtectedRoute>} />
+          <Route path="/academic-admin" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT} featureFlag="academic"><AcademicAdminPage /></ProtectedRoute>} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <Route path="/academic/course-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseManagementPage /></ProtectedRoute>} />
           <Route path="/academic/course-enrollment" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseEnrollmentPage /></ProtectedRoute>} />
           <Route path="/academic/course-assignment" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseAssignmentPage /></ProtectedRoute>} />
           <Route path="/academic/score-configuration" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ScoreConfigurationPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           <Route path="/academic/formative-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FormativeScoreEntryPage /></ProtectedRoute>} />
           <Route path="/academic/post-midterm-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><PostMidtermScoreEntryPage /></ProtectedRoute>} />
+=======
+          <Route path="/academic/formative-scores" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><FormativeScoreEntryPage /></ProtectedRoute>} />
+          <Route path="/academic/post-midterm-scores" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PostMidtermScoreEntryPage /></ProtectedRoute>} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <Route path="/academic/enrollment-list" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><EnrollmentListPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/academic/course-enrollment" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseEnrollmentPage /></ProtectedRoute>} />
           <Route path="/academic/view-courses" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ViewCoursesPage /></ProtectedRoute>} />
@@ -222,9 +270,13 @@ function App() {
           <Route path="/academic/period-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodSettingsPage /></ProtectedRoute>} />
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />
           <Route path="/academic/settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AcademicSettingsPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           <Route path="/academic/attendance-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceConfigPage /></ProtectedRoute>} />
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
           <Route path="/academic/alumni-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AlumniManagementPage /></ProtectedRoute>} />
+=======
+          <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <Route path="/academic/room-transfer" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><RoomTransferManagementPage /></ProtectedRoute>} />
           <Route path="/academic/physical-rooms" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PhysicalRoomsPage /></ProtectedRoute>} />
 
@@ -232,6 +284,7 @@ function App() {
           <Route path="/academic/club-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClubAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/club-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubManagementPage /></ProtectedRoute>} />
           <Route path="/academic/club-members" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubMemberManagementPage /></ProtectedRoute>} />
+<<<<<<< HEAD
           
           {/* Learner Activities (Staff Access) */}
           <Route path="/academic/activities/management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityManagementPage /></ProtectedRoute>} />
@@ -242,10 +295,15 @@ function App() {
           <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/flag-ceremony" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FlagCeremonyPage /></ProtectedRoute>} />
+=======
+          <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/student-schedule" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ROLES.STUDENT]}><StudentSchedulePage /></ProtectedRoute>} />
           <Route path="/academic/teacher-schedule-view" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><TeacherScheduleViewPage /></ProtectedRoute>} />
           <Route path="/academic/grade-book" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GradeBookPage /></ProtectedRoute>} />
+<<<<<<< HEAD
 
           {/* Owner Pages (Super Admin & School Admin) */}
           <Route path="/owner/hub" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><HubPage /></ProtectedRoute>} />
@@ -255,6 +313,17 @@ function App() {
           <Route path="/owner/users" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><UserListPage /></ProtectedRoute>} />
           <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><EditUserPage /></ProtectedRoute>} />
           <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><AddUserPage /></ProtectedRoute>} />
+=======
+          <Route path="/academic/formative-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FormativeScorePage /></ProtectedRoute>} />
+
+          {/* Owner Pages (Super Admin & School Admin) */}
+          <Route path="/owner/school-info/:schoolId?" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolInfoPage /></ProtectedRoute>} />
+          <Route path="/owner/schools" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolListPage /></ProtectedRoute>} />
+          <Route path="/owner/schools/:schoolId" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolDetailsPage /></ProtectedRoute>} />
+          <Route path="/owner/users" element={<ProtectedRoute allowedRoles={[...OWNER_ONLY, ROLES.SCHOOL_ADMIN]}><UserListPage /></ProtectedRoute>} />
+          <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={[...OWNER_ONLY, ROLES.SCHOOL_ADMIN]}><EditUserPage /></ProtectedRoute>} />
+          <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={[...OWNER_ONLY, ROLES.SCHOOL_ADMIN]}><AddUserPage /></ProtectedRoute>} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
           {/* Slug Resolver (Multi-tenancy) */}
           <Route path="/:slug" element={<SlugResolverPage />} />

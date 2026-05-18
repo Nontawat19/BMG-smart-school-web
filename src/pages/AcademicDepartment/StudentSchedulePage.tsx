@@ -8,6 +8,7 @@ import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer, pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { StudentSchedulePDF, BulkStudentSchedulePDF, ScheduleEntry, SpecialPeriod } from '@/components/Pdf/StudentScheduleDocument';
+<<<<<<< HEAD
 import { Loader2, FileDown, Calendar, Users, Printer, Search } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import toast from 'react-hot-toast';
@@ -15,6 +16,12 @@ import { saveAs } from 'file-saver';
 import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+=======
+import { Loader2, FileDown, Calendar, Users, Printer, ArrowLeft, Search } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { saveAs } from 'file-saver';
+import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Types ---
 interface Course {
@@ -30,7 +37,10 @@ interface Course {
     disallowedDays?: string[];
   };
   isActive?: boolean;
+<<<<<<< HEAD
   groupNumber?: number | string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface SchoolInfo {
@@ -212,6 +222,7 @@ const StudentSchedulePage: React.FC = () => {
   const [multiRoomData, setMultiRoomData] = useState<any[] | null>(null); // New state for all-rooms view
   const [roomMap, setRoomMap] = useState<Record<string, string>>({});
   const [coursesMap, setCoursesMap] = useState<Record<string, any>>({});
+<<<<<<< HEAD
   const [availableGroups, setAvailableGroups] = useState<string[]>([]); // New state for dynamic groups
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -222,6 +233,11 @@ const StudentSchedulePage: React.FC = () => {
   const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
   const reduxTerms = calendarState.terms;
 
+=======
+
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
 
@@ -242,6 +258,7 @@ const StudentSchedulePage: React.FC = () => {
 
     setIsLoading(true);
 
+<<<<<<< HEAD
     // CRITICAL: Clear previous data immediately so we don't show old room's data
     setSchedule({});
     setMultiRoomData(null);
@@ -254,6 +271,22 @@ const StudentSchedulePage: React.FC = () => {
 
       // If a specific room is selected, we might want to find the teacher assigned to that specific room if data exists
       // For now, using the general grade mapping
+=======
+    // Reset states
+    setSchedule({});
+    setMultiRoomData(null);
+
+    try {
+      // Find homeroom teacher logic (simplified to finding for generic class first)
+      // Note: Homeroom teachers might differ per room.
+      // For single room view, we find specifically.
+      // For multi-room view, the Bulk component needs per-room homeroom teachers.
+
+      let foundHomeroomTeacher = '';
+      const gradeToFind = HOMEROOM_GRADE_MAP[selectedClass as keyof typeof HOMEROOM_GRADE_MAP];
+
+      // Basic homeroom teacher fetch for single view usage (or fallback)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       for (const teacherId in teacherMap) {
         if (gradeToFind && teacherMap[teacherId].homeroomGrade === gradeToFind) {
           foundHomeroomTeacher = teacherMap[teacherId].name;
@@ -294,6 +327,7 @@ const StudentSchedulePage: React.FC = () => {
             if (courseData) {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
+<<<<<<< HEAD
                   if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
                     const latestCourse = coursesMap[course.id];
                     const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
@@ -323,6 +357,30 @@ const StudentSchedulePage: React.FC = () => {
                       
                       mergedSchedule[slot] = { course: course, teacherName, roomCode: String(roomCode) };
                     }
+=======
+                if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+                  let isMatch = true;
+                  if (course.room) {
+                    if (Array.isArray(course.room)) {
+                      isMatch = course.room.includes(selectedRoom) || course.room.includes('all');
+                    } else {
+                      isMatch = (course.room as any) === selectedRoom || (course.room as any) === 'all';
+                    }
+                  }
+                  if (isMatch) {
+                    const latestCourse = coursesMap[course.id];
+                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
+                      String(a.groupNumber) === selectedRoom && 
+                      (a.classLevels?.includes(selectedClass) || course.classId === selectedClass)
+                    );
+
+                    const roomIds = assignment?.roomIds || course.room || [];
+                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
+                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
+                      : selectedRoom; // Fallback to selected room if 'all' or empty
+                    mergedSchedule[slot] = { course: course, teacherName, roomCode: String(roomCode) };
+                  }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
               });
             }
@@ -363,6 +421,7 @@ const StudentSchedulePage: React.FC = () => {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
                 if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+<<<<<<< HEAD
                   const latestCourse = coursesMap[course.id];
                   const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
                   const gNum = String(course.groupNumber || 1);
@@ -383,6 +442,21 @@ const StudentSchedulePage: React.FC = () => {
                     let roomCode = roomIds.length > 0 
                       ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
                       : ''; // Don't show group number as room code
+=======
+                  const rooms = course.room && course.room.length > 0 ? course.room : ['all'];
+
+                  rooms.forEach((room: string) => {
+                    const latestCourse = coursesMap[course.id];
+                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
+                      String(a.groupNumber) === room && 
+                      (a.classLevels?.includes(selectedClass) || course.classId === selectedClass)
+                    );
+
+                    const roomIds = assignment?.roomIds || course.room || [];
+                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
+                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
+                      : (room === 'all' ? '' : room); // Use specific room if available
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                     const entry: ScheduleEntry = { course: { ...course }, teacherName, roomCode: String(roomCode) };
 
@@ -482,6 +556,7 @@ const StudentSchedulePage: React.FC = () => {
             if (courseData) {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
+<<<<<<< HEAD
                   if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
                     const gNum = String(course.groupNumber || '');
                     const isCommon = course.room?.includes('all') && !course.groupNumber;
@@ -489,12 +564,21 @@ const StudentSchedulePage: React.FC = () => {
                     const targetRoomKeys = course.groupNumber ? [gNum] : (isCommon ? ['ALL_ROOMS'] : ['1']);
 
                   targetRoomKeys.forEach((targetRoomKey: string) => {
+=======
+                if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+                  const rooms = course.room && course.room.length > 0 ? course.room : ['all'];
+
+                  rooms.forEach((room: string) => {
+                    const targetRoomKey = room === 'all' ? 'ALL_ROOMS' : room;
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     if (!schoolSchedules[classId][targetRoomKey]) {
                       schoolSchedules[classId][targetRoomKey] = {};
                     }
 
                     const latestCourse = coursesMap[course.id];
                     const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
+<<<<<<< HEAD
                       String(a.groupNumber || 1) === targetRoomKey && 
                       ((a.classLevels || []).includes(classId) || 
                        (Array.isArray(course.classId) ? course.classId.includes(classId) : course.classId === classId))
@@ -504,6 +588,16 @@ const StudentSchedulePage: React.FC = () => {
                     let roomCode = roomIds.length > 0 
                       ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
                       : '';
+=======
+                      String(a.groupNumber) === targetRoomKey && 
+                      (a.classLevels?.includes(classId) || course.classId === classId)
+                    );
+
+                    const roomIds = assignment?.roomIds || course.room || [];
+                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
+                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
+                      : (targetRoomKey === 'ALL_ROOMS' ? '' : targetRoomKey);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                     schoolSchedules[classId][targetRoomKey][slot] = {
                       course: { ...course },
@@ -621,6 +715,7 @@ const StudentSchedulePage: React.FC = () => {
   };
 
   useEffect(() => {
+<<<<<<< HEAD
     if (schoolId) {
       dispatch(fetchTeachersMap(schoolId) as any);
       dispatch(fetchCalendar(schoolId) as any);
@@ -649,6 +744,8 @@ const StudentSchedulePage: React.FC = () => {
   }, [calendarState.status, reduxAcademicYear, reduxTerms]);
 
   useEffect(() => {
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     fetchScheduleData();
   }, [fetchScheduleData]);
 
@@ -669,6 +766,26 @@ const StudentSchedulePage: React.FC = () => {
 
           setAvailableClassOptions(filteredLevels);
         }
+<<<<<<< HEAD
+=======
+
+        const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
+        const calendarDocSnap = await getDoc(calendarDocRef);
+        if (calendarDocSnap.exists()) {
+          const data = calendarDocSnap.data();
+          setAcademicYear(data.academicYear || '');
+          const today = new Date().toISOString().split('T')[0];
+          const term1 = data.terms?.term1;
+          const term2 = data.terms?.term2;
+          if (term1 && term1.startDate && term1.endDate && today >= term1.startDate && today <= term1.endDate) {
+            setCurrentTerm('1');
+          } else if (term2 && term2.startDate && term2.endDate && today >= term2.startDate && today <= term2.endDate) {
+            setCurrentTerm('2');
+          } else {
+            setCurrentTerm('');
+          }
+        }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       } catch (e) { console.error(e); }
     };
 
@@ -744,6 +861,7 @@ const StudentSchedulePage: React.FC = () => {
     fetchInactiveCourses();
   }, [schoolId]);
 
+<<<<<<< HEAD
   // Dynamic Room/Group detection
   useEffect(() => {
     if (selectedClass && Object.keys(coursesMap).length > 0) {
@@ -780,6 +898,8 @@ const StudentSchedulePage: React.FC = () => {
     }
   }, [selectedClass]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   return (
     <MainLayout>
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
@@ -788,7 +908,13 @@ const StudentSchedulePage: React.FC = () => {
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
+<<<<<<< HEAD
               <BackButton to="/academic/hub/scheduling" className="mb-4" />
+=======
+              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors font-medium">
+                <ArrowLeft size={20} className="mr-1" /> กลับหน้าบริหารงานวิชาการ
+              </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
                 <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
                 ดูตารางเรียนนักเรียน
@@ -828,15 +954,23 @@ const StudentSchedulePage: React.FC = () => {
                 </div>
               </div>
 
+<<<<<<< HEAD
               {/* Room/Group Selector */}
               <div className="w-full lg:w-1/4 relative">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   เลือกห้อง (กลุ่มเรียน)
+=======
+              {/* Room Selector */}
+              <div className="w-full lg:w-1/4 relative">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  เลือกห้อง
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </label>
                 <div className="relative">
                   <select
                     value={selectedRoom}
                     onChange={e => setSelectedRoom(e.target.value)}
+<<<<<<< HEAD
                     className="block w-full pl-4 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none font-medium"
                     disabled={!selectedClass}
                   >
@@ -845,6 +979,13 @@ const StudentSchedulePage: React.FC = () => {
                       <option key={r} value={r}>
                         {r}
                       </option>
+=======
+                    className="block w-full pl-4 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none"
+                  >
+                    <option value="">-- ทุกห้อง --</option>
+                    {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
+                      <option key={r} value={r}>{r}</option>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     ))}
                   </select>
                 </div>
@@ -913,6 +1054,7 @@ const StudentSchedulePage: React.FC = () => {
             ) : (
               <div className="w-full h-[85vh] bg-gray-100 dark:bg-gray-900">
                 {/* Prevent PDFViewer crash if data is empty for Bulk view */}
+<<<<<<< HEAD
                 {(!selectedClass) ? (
                   <div className="flex flex-col justify-center items-center h-full text-center p-8">
                     <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
@@ -920,6 +1062,15 @@ const StudentSchedulePage: React.FC = () => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">กรุณาเลือกชั้นเรียน</h3>
                     <p className="text-gray-500 dark:text-gray-400">เลือกชั้นเรียนเพื่อดูตารางเรียน</p>
+=======
+                {(!selectedRoom && (!multiRoomData || multiRoomData.length === 0)) ? (
+                  <div className="flex flex-col justify-center items-center h-full text-center p-8">
+                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                      <Calendar className="text-gray-400" size={40} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">ไม่พบข้อมูลตารางเรียน</h3>
+                    <p className="text-gray-500 dark:text-gray-400">ยังไม่มีการจัดตารางเรียนสำหรับชั้นเรียนนี้</p>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   </div>
                 ) : (
                   <PDFViewer width="100%" height="100%" className="w-full h-full border-none" showToolbar={true}>

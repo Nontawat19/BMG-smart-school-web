@@ -1,4 +1,5 @@
 import React from 'react';
+<<<<<<< HEAD
 import { Text, View, StyleSheet, Font } from '@react-pdf/renderer';
 import PdfPage from './PdfPage';
 import { READING_WRITING_CRITERIA } from './constants';
@@ -99,6 +100,26 @@ const getCriteriaRowHeight = (criteria: ReadingWritingCriteria, criteriaIndex: n
 
 // ==========================================
 // 2. INTERFACES
+=======
+import { Text, View, StyleSheet } from '@react-pdf/renderer';
+import PdfPage from './PdfPage';
+
+// ==========================================
+// 2. HELPER FUNCTION (หัวใจสำคัญของการตัดคำ)
+// ==========================================
+const formatThaiText = (text: string | undefined | null) => {
+  // 1. ถ้าไม่มีข้อมูล ให้คืนค่าว่าง "" (ไม่แสดงเครื่องหมาย -)
+  if (!text) return "";
+
+  // 2. แทรก Zero-Width Space (\u200B) หลังตัวอักษรทุกตัว
+  //    เพื่อให้ PDF รู้ว่าสามารถตัดขึ้นบรรทัดใหม่ตรงไหนก็ได้
+  //    ผลลัพธ์: ข้อความจะไหลลงมาเองโดยไม่มีขีด hyphen (-)
+  return text.split('').join('\u200B');
+};
+
+// ==========================================
+// 3. INTERFACES
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 // ==========================================
 interface ReadingWritingIndicator {
   text: string;
@@ -129,6 +150,7 @@ interface ReadingWritingRubricPageProps {
 }
 
 // ==========================================
+<<<<<<< HEAD
 // 3. STYLES
 // ==========================================
 const styles = StyleSheet.create({
@@ -228,11 +250,89 @@ const styles = StyleSheet.create({
 
 // ==========================================
 // 4. MAIN COMPONENT
+=======
+// 4. STYLES
+// ==========================================
+const COL_WIDTHS = {
+  STANDARD: '10%',
+  INDICATOR: '22%',
+};
+
+const styles = StyleSheet.create({
+  // --- Header ---
+  headerContainer: {
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  scopeSection: {
+    marginBottom: 10,
+    paddingLeft: 5,
+  },
+  scopeHeader: {
+    fontWeight: 'bold',
+    fontSize: 14,
+    textDecoration: 'underline',
+    marginBottom: 2,
+  },
+  scopeText: {
+    fontSize: 12,
+    textAlign: 'justify',
+    textIndent: 20,
+  },
+  // --- Table ---
+  tableContainer: {
+    width: '100%',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: '#000',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'stretch', // ยืดความสูงให้เท่ากัน
+  },
+  cell: {
+    padding: 4,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#000',
+    fontSize: 12,
+    textAlign: 'left', // ชิดซ้ายเพื่อให้อ่านง่าย
+  },
+  headerCell: {
+    backgroundColor: '#f0f0f0',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  standardCell: {
+    width: COL_WIDTHS.STANDARD,
+    padding: 4,
+    borderRightWidth: 1,
+    borderColor: '#000',
+    textAlign: 'left',
+    backgroundColor: '#fff',
+  },
+});
+
+// ==========================================
+// 5. MAIN COMPONENT
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 // ==========================================
 const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
   schoolInfo,
   academicYear,
   termToDisplay,
+<<<<<<< HEAD
   readingWritingCriteria,
   curriculumClassDisplay,
   curriculumRoomDisplay,
@@ -259,10 +359,37 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
           maxUnits={158}
           text="การอ่านจากสื่อสิ่งพิมพ์และสื่ออิเล็กทรอนิกส์ที่ให้ข้อมูลสารสนเทศ ข้อคิด ความรู้เกี่ยวกับสังคมและสิ่งแวดล้อมที่เอื้อให้ผู้อ่านนำไปคิดวิเคราะห์ วิจารณ์ สรุปแนวคิดคุณค่าที่นำไปประยุกต์ใช้ด้วยวิจารณญาณและถ่ายทอดเป็นข้อเขียนเชิงสร้างสรรค์ด้วยภาษาที่ถูกต้องเหมาะสม"
         />
+=======
+  selectedClass,
+  FULL_CLASSES,
+  readingWritingCriteria,
+  selectedRoom,
+  curriculumClassDisplay,
+  curriculumRoomDisplay,
+}) => {
+  return (
+    <PdfPage>
+
+      {/* Header */}
+      <View style={styles.headerContainer} fixed>
+        <Text style={styles.title}>การประเมินคุณภาพการอ่าน คิด วิเคราะห์ และเขียน</Text>
+        <Text style={styles.subtitle}>
+          ชั้น {curriculumClassDisplay}{curriculumRoomDisplay ? ` ห้อง ${curriculumRoomDisplay}` : ''} ภาคเรียนที่ {termToDisplay} ปีการศึกษา {academicYear || '2568'}
+        </Text>
+      </View>
+
+      <View style={styles.scopeSection}>
+        <Text style={styles.scopeHeader}>ขอบเขตการประเมิน</Text>
+        {/* ใช้ formatThaiText กับข้อความยาวๆ ด้วย */}
+        <Text style={styles.scopeText}>
+          {formatThaiText('การอ่านจากสื่อสิ่งพิมพ์และสื่ออิเล็กทรอนิกส์ที่ให้ข้อมูลสารสนเทศ ข้อคิด ความรู้เกี่ยวกับสังคมและสิ่งแวดล้อม...')}
+        </Text>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       </View>
 
       {/* Table */}
       <View style={styles.tableContainer}>
+<<<<<<< HEAD
         {/* Table Header Row 1 */}
         <View style={styles.row} fixed>
           <View style={[styles.cell, styles.headerCell, styles.colStandard, { minHeight: 48 }]}>
@@ -287,12 +414,41 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
               </View>
               <View style={[styles.cell, styles.headerCell, { width: '25%', borderRightWidth: 0 }]}>
                 <Text hyphenationCallback={disableHyphenation}>0 (ปรับปรุง)</Text>
+=======
+
+        {/* Table Header */}
+        <View style={styles.row} fixed>
+          <View style={[styles.cell, styles.headerCell, { width: COL_WIDTHS.STANDARD }]}>
+            <Text>มาตรฐาน</Text>
+          </View>
+          <View style={[styles.cell, styles.headerCell, { width: COL_WIDTHS.INDICATOR }]}>
+            <Text>ตัวชี้วัด</Text>
+          </View>
+
+          <View style={{ width: '68%', flexDirection: 'column' }}>
+            <View style={[styles.cell, styles.headerCell, { width: '100%', borderBottomWidth: 1, borderRightWidth: 1 }]}>
+              <Text>ระดับคุณภาพ</Text>
+            </View>
+            <View style={{ flexDirection: 'row', width: '100%' }}>
+              <View style={[styles.cell, styles.headerCell, { width: '25%', borderBottomWidth: 1, borderRightWidth: 1 }]}>
+                <Text>3 (ดีเยี่ยม)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%', borderBottomWidth: 1, borderRightWidth: 1 }]}>
+                <Text>2 (ดี)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%', borderBottomWidth: 1, borderRightWidth: 1 }]}>
+                <Text>1 (ผ่านเกณฑ์)</Text>
+              </View>
+              <View style={[styles.cell, styles.headerCell, { width: '25%', borderBottomWidth: 1, borderRightWidth: 1 }]}>
+                <Text>0 (ปรับปรุง)</Text>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               </View>
             </View>
           </View>
         </View>
 
         {/* Table Body */}
+<<<<<<< HEAD
         {(readingWritingCriteria && readingWritingCriteria.length > 0 ? readingWritingCriteria : READING_WRITING_CRITERIA).map((criteria, cIdx, criteriaList) => (
           <View
             key={criteria.id || cIdx}
@@ -344,9 +500,65 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
             </View>
           </View>
         ))}
+=======
+        {readingWritingCriteria && readingWritingCriteria.map((criteria, cIdx) => (
+          <View key={criteria.id} style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#000' }} wrap={false}>
+
+            {/* Standard Column */}
+            <View style={[styles.standardCell, { borderBottomWidth: 0 }]}>
+              <Text>{cIdx + 1}. {criteria.standard}</Text>
+            </View>
+
+            {/* Content Column */}
+            <View style={{ width: '90%', flexDirection: 'column' }}>
+              {criteria.indicators.map((indicator, iIdx) => {
+                const isLast = iIdx === criteria.indicators.length - 1;
+
+                return (
+                  <View
+                    key={`${criteria.id}-${iIdx}`}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'stretch',
+                      borderBottomWidth: isLast ? 0 : 1,
+                      borderBottomStyle: isLast ? 'solid' : 'dotted',
+                      borderColor: '#000'
+                    }}
+                  >
+                    {/* Indicator */}
+                    <View style={[styles.cell, { width: '24.44%', borderBottomWidth: 0 }]}>
+                      <Text>{formatThaiText(`${cIdx + 1}.${iIdx + 1} ${indicator.text}`)}</Text>
+                    </View>
+
+                    {/* Rubrics (3, 2, 1, 0) */}
+                    <View style={[styles.cell, { flex: 1, borderBottomWidth: 0 }]}>
+                      <Text>{formatThaiText(indicator.rubric[3])}</Text>
+                    </View>
+                    <View style={[styles.cell, { flex: 1, borderBottomWidth: 0 }]}>
+                      <Text>{formatThaiText(indicator.rubric[2])}</Text>
+                    </View>
+                    <View style={[styles.cell, { flex: 1, borderBottomWidth: 0 }]}>
+                      <Text>{formatThaiText(indicator.rubric[1])}</Text>
+                    </View>
+                    <View style={[styles.cell, { flex: 1, borderBottomWidth: 0 }]}>
+                      <Text>{formatThaiText(indicator.rubric[0])}</Text>
+                    </View>
+
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       </View>
     </PdfPage>
   );
 };
 
+<<<<<<< HEAD
 export default ReadingWritingRubricPage;
+=======
+export default ReadingWritingRubricPage;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

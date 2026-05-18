@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
+<<<<<<< HEAD
 import { useSelector, useDispatch } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
+=======
+import { useSelector } from "react-redux";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore } from "@/firebase";
 import { RootState } from "../../store";
 import {
@@ -18,9 +22,13 @@ import Swal from "sweetalert2";
 import Select, { StylesConfig } from "react-select";
 import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
+=======
+import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface TeacherOption {
   value: string; // teacher document ID
@@ -146,8 +154,12 @@ const ThaiDatePicker: React.FC<{
   const displayValue = value
     ? (() => {
       const [y, m, d] = value.split('-').map(Number);
+<<<<<<< HEAD
       const date = new Date(y, m - 1, d);
       return `${d} ${thaiMonths[m - 1]} ${getThaiYear(date)}`;
+=======
+      return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     })()
     : '';
 
@@ -166,7 +178,11 @@ const ThaiDatePicker: React.FC<{
           <div className="flex justify-between items-center mb-4">
             <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
+<<<<<<< HEAD
               {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
+=======
+              {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             </span>
             <button type="button" onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
           </div>
@@ -187,6 +203,7 @@ const ThaiDatePicker: React.FC<{
 };
 
 const TeacherLeaveRequestPage: React.FC = () => {
+<<<<<<< HEAD
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
@@ -200,6 +217,10 @@ const TeacherLeaveRequestPage: React.FC = () => {
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [schoolId, dispatch]);
+=======
+  const { user } = useSelector((state: RootState) => state.auth);
+  const schoolId = user?.schoolId;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherOption | null>(
     null
@@ -220,7 +241,11 @@ const TeacherLeaveRequestPage: React.FC = () => {
   const [isFetchingTeachers, setIsFetchingTeachers] = useState(true);
   const { isDarkMode } = useTheme();
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
+<<<<<<< HEAD
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
+=======
+  const [academicYear, setAcademicYear] = useState<string>("");
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [docNo, setDocNo] = useState<string>("");
   const [schoolAffiliation, setSchoolAffiliation] = useState<string>(""); // 📌 เพิ่มสังกัดโรงเรียน
 
@@ -261,6 +286,7 @@ const TeacherLeaveRequestPage: React.FC = () => {
   useEffect(() => {
     if (!schoolId) return;
 
+<<<<<<< HEAD
     if (calendarState.status === 'succeeded' && reduxRawData.events) {
       setCalendarEvents(reduxRawData.events);
     } else {
@@ -301,6 +327,51 @@ const TeacherLeaveRequestPage: React.FC = () => {
           if (calendarData.affiliation) {
             setSchoolAffiliation(calendarData.affiliation);
           } else {
+=======
+    // 1. Real-time listener for Firestore (School Settings)
+    const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
+
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.events) {
+          setCalendarEvents(data.events);
+          return;
+        }
+      }
+
+      // 2. Fallback: Fetch from Google Calendar API if Firestore is empty/missing
+      const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
+      if (apiKey) {
+        fetchGoogleCalendar(apiKey);
+      }
+    }, (error) => {
+      console.error("Error listening to calendar:", error);
+    });
+
+    return () => unsubscribe();
+  }, [schoolId]);
+
+  // Fetch Academic Year and Running Number
+  useEffect(() => {
+    const fetchAcademicYearAndDocNo = async () => {
+      if (!schoolId) return;
+      try {
+        // 1. Fetch Academic Year
+        const calendarRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
+        const calendarSnap = await getDoc(calendarRef);
+        let year = (new Date().getFullYear() + 543).toString();
+        if (calendarSnap.exists()) {
+          const calendarData = calendarSnap.data();
+          if (calendarData.academicYear) {
+            year = calendarData.academicYear;
+          }
+          // 📌 ดึงข้อมูลสังกัดโรงเรียน
+          if (calendarData.affiliation) {
+            setSchoolAffiliation(calendarData.affiliation);
+          } else {
+            // ดึงจาก document หลักถ้าไม่มีใน calendar doc (กรณีโครงสร้างเก็บที่เดียวกัน)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const schoolRef = doc(firestore, 'school-settings', schoolId);
             const schoolSnap = await getDoc(schoolRef);
             if (schoolSnap.exists()) {
@@ -308,12 +379,23 @@ const TeacherLeaveRequestPage: React.FC = () => {
             }
           }
         }
+<<<<<<< HEAD
 
         // 2. Fetch Running Number
+=======
+        setAcademicYear(year);
+
+        // 2. Fetch Running Number (Collection Group for all teacher leave requests in this school)
+        // Since we don't want to fetch ALL documents just to count, 
+        // in a real production app we'd use a counter. 
+        // For now, we'll suggest a number based on current count + 1
+        // Note: collectionGroup requires an index. If it fails, fallback to 1.
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         try {
           const leaveRequestsQuery = query(
             collectionGroup(firestore, "leave_summary"),
             where("schoolId", "==", schoolId),
+<<<<<<< HEAD
             where("academicYear", "==", academicYear)
           );
           const snapshot = await getDocs(leaveRequestsQuery);
@@ -322,14 +404,30 @@ const TeacherLeaveRequestPage: React.FC = () => {
         } catch (err) {
           console.error("Error counting leave requests:", err);
           setDocNo(`1/${academicYear}`);
+=======
+            where("academicYear", "==", year)
+          );
+          const snapshot = await getDocs(leaveRequestsQuery);
+          const nextNumber = snapshot.size + 1;
+          setDocNo(`${nextNumber}/${year}`);
+        } catch (err) {
+          console.error("Error counting leave requests:", err);
+          // Fallback if index is missing or other error
+          setDocNo(`1/${year}`);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
       } catch (error) {
         console.error("Error fetching academic info:", error);
       }
     };
 
+<<<<<<< HEAD
     fetchDocNoAndAffiliation();
   }, [schoolId, academicYear]);
+=======
+    fetchAcademicYearAndDocNo();
+  }, [schoolId]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchGoogleCalendar = async (apiKey: string) => {
     try {
@@ -642,12 +740,18 @@ const TeacherLeaveRequestPage: React.FC = () => {
       <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 mb-6 shadow-sm dark:shadow-none">
+<<<<<<< HEAD
             <div className="flex items-center gap-4 mb-1">
               <BackButton />
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
                 ยื่นใบลากิจ/ลาป่วย (ครูและบุคลากร)
               </h1>
             </div>
+=======
+            <h1 className="text-2xl sm:text-3xl font-bold mb-1 text-gray-900 dark:text-white">
+              ยื่นใบลากิจ/ลาป่วย (ครูและบุคลากร)
+            </h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <p className="text-gray-500 dark:text-gray-400">
               กรอกแบบฟอร์มเพื่อบันทึกการลาของครูและบุคลากร
             </p>

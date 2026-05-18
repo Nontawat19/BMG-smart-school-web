@@ -1,6 +1,11 @@
+<<<<<<< HEAD
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { usePermissions } from "@/hooks/usePermissions";
+=======
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { auth, firestore, storage } from '@/firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -8,18 +13,28 @@ import { doc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/fire
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import MainLayout from '@/layouts/MainLayout';
 import Swal from 'sweetalert2';
+<<<<<<< HEAD
 import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool, FaSearch } from 'react-icons/fa';
+=======
+import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool } from 'react-icons/fa';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { compressImage } from '@/utils/imageUtils';
 
 interface School {
     id: string;
     schoolName: string;
+<<<<<<< HEAD
     schoolCode?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 const AddUserPage = () => {
     const navigate = useNavigate();
+<<<<<<< HEAD
     const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [formData, setFormData] = useState({
         title: '',
         firstName: '',
@@ -36,6 +51,7 @@ const AddUserPage = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+<<<<<<< HEAD
     const [isSchoolDropdownOpen, setIsSchoolDropdownOpen] = useState(false);
     const [schoolSearchTerm, setSchoolSearchTerm] = useState('');
     const [schoolPage, setSchoolPage] = useState(1);
@@ -45,15 +61,21 @@ const AddUserPage = () => {
     const schoolDropdownRef = useRef<HTMLDivElement>(null);
     const schoolMenuRef = useRef<HTMLDivElement>(null);
     const schoolsPerPage = 10;
+=======
+    const dropdownRef = useRef<HTMLDivElement>(null);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsRoleDropdownOpen(false);
             }
+<<<<<<< HEAD
             if (schoolDropdownRef.current && !schoolDropdownRef.current.contains(event.target as Node)) {
                 setIsSchoolDropdownOpen(false);
             }
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -67,8 +89,12 @@ const AddUserPage = () => {
                 const schoolsData = schoolSnapshot.docs.map(doc => ({
                     id: doc.id,
                     schoolName: doc.data().schoolName,
+<<<<<<< HEAD
                     schoolCode: doc.data().schoolCode || doc.data().schoolId || doc.data().code || doc.id,
                 })).sort((a, b) => (a.schoolName || '').localeCompare(b.schoolName || '', 'th'));
+=======
+                }));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setSchools(schoolsData);
             } catch (err) {
                 console.error("Error fetching schools:", err);
@@ -77,12 +103,15 @@ const AddUserPage = () => {
         fetchSchools();
     }, []);
 
+<<<<<<< HEAD
     useEffect(() => {
         if ((isSchoolAdmin || isTeacher) && currentUser?.schoolId) {
             setFormData(prev => ({ ...prev, schoolId: currentUser.schoolId || '' }));
         }
     }, [isSchoolAdmin, isTeacher, currentUser]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === "title" && value !== "อื่นๆ") {
@@ -99,6 +128,7 @@ const AddUserPage = () => {
         setFormData({ ...formData, role: updatedRoles });
     };
 
+<<<<<<< HEAD
     const selectedSchool = useMemo(() => {
         return schools.find(school => school.id === formData.schoolId);
     }, [schools, formData.schoolId]);
@@ -180,16 +210,25 @@ const AddUserPage = () => {
         setIsSchoolDropdownOpen(false);
     };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             try {
+<<<<<<< HEAD
                 // Compress and convert to WebP to match standard
                 const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
                 setImageFile(compressedFile);
                 setImagePreview(URL.createObjectURL(compressedFile));
             } catch (error) {
                 console.error("Error compressing image:", error);
+=======
+                const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
+                setImageFile(compressedFile);
+                setImagePreview(URL.createObjectURL(compressedFile));
+            } catch (error) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setImageFile(file);
                 setImagePreview(URL.createObjectURL(file));
             }
@@ -237,8 +276,12 @@ const AddUserPage = () => {
 
             let profileUrl = '';
             if (imageFile) {
+<<<<<<< HEAD
                 // Use .webp extension to match standard
                 const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.webp`);
+=======
+                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.png`);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const snapshot = await uploadBytes(storageRef, imageFile);
                 profileUrl = await getDownloadURL(snapshot.ref);
             }
@@ -258,6 +301,7 @@ const AddUserPage = () => {
                 createdAt: serverTimestamp(),
             });
 
+<<<<<<< HEAD
             // 📌 Sync with school-specific collections if schoolId is provided
             if (formData.schoolId) {
                 const roles = formData.role;
@@ -300,6 +344,8 @@ const AddUserPage = () => {
                 }
             }
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             // 📌 Create Slug for the Profile
             const slugId = `profile:${newUser.uid}`;
             await setDoc(doc(firestore, 'slugs', slugId), {
@@ -353,9 +399,12 @@ const AddUserPage = () => {
         { value: 'school_admin', label: 'แอดมินโรงเรียน (School Admin)' },
         { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
         { value: 'student', label: 'นักเรียน (Student)' },
+<<<<<<< HEAD
         { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
         { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
         { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     ];
 
     const inputClasses = "w-full pl-11 pr-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 shadow-sm dark:autofill:shadow-[0_0_0_30px_#1c1c24_inset]";
@@ -599,7 +648,11 @@ const AddUserPage = () => {
 
                                         {isRoleDropdownOpen && (
                                             <div className="absolute z-50 mt-2 w-full bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-white/5 rounded-2xl shadow-2xl py-2 max-h-64 overflow-auto animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-xl">
+<<<<<<< HEAD
                                                 {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
+=======
+                                                {userRoles.map((role) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     const isChecked = formData.role.includes(role.value);
                                                     return (
                                                         <div
@@ -627,6 +680,7 @@ const AddUserPage = () => {
                                     {!formData.role.includes('super_admin') && (
                                         <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
                                             <label className={labelClasses}>สังกัดโรงเรียน (School Assignment)</label>
+<<<<<<< HEAD
                                             <div className="relative" ref={schoolDropdownRef}>
                                                 <button
                                                     type="button"
@@ -733,6 +787,24 @@ const AddUserPage = () => {
                                                         </div>
                                                     </div>
                                                 )}
+=======
+                                            <div className="relative group">
+                                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none group-focus-within:text-indigo-500 transition-colors">
+                                                    <FaSchool size={14} className="opacity-40" />
+                                                </div>
+                                                <select
+                                                    name="schoolId"
+                                                    value={formData.schoolId}
+                                                    onChange={handleInputChange}
+                                                    className="w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm appearance-none cursor-pointer shadow-sm text-gray-900 dark:text-white"
+                                                >
+                                                    <option value="">-- ส่วนกลาง / ยังไม่ระบุ --</option>
+                                                    {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
+                                                </select>
+                                                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                                                    <FaChevronDown size={10} className="text-gray-400" />
+                                                </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             </div>
                                         </div>
                                     )}

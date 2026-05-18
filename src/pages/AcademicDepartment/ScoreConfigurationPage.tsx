@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { RootState } from "@/store";
 import { firestore as db } from "@/firebase";
 import { collection, query, where, onSnapshot, writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
+=======
+import { RootState } from "@/store";
+import { firestore as db } from "@/firebase";
+import { collection, query, onSnapshot, writeBatch, doc, serverTimestamp } from "firebase/firestore";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import { 
     Settings, 
     Save, 
     Copy, 
+<<<<<<< HEAD
     Search, 
     Info,
     AlertCircle,
@@ -21,6 +28,19 @@ import Swal from "sweetalert2";
 
 interface FormativeAssessment {
     id: string;
+=======
+    ChevronLeft, 
+    Search, 
+    Info,
+    AlertCircle,
+    CheckCircle2,
+    Calendar
+} from "lucide-react";
+import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import Swal from "sweetalert2";
+
+interface FormativeAssessment {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     name: string;
     maxScore: number;
     term: 'pre-midterm' | 'post-midterm';
@@ -31,9 +51,12 @@ interface Course {
     code: string;
     title: string;
     subjectGroup: string;
+<<<<<<< HEAD
     classId?: string | string[];
     semester?: string;
     formativeWeight?: number;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     formativeAssessments?: FormativeAssessment[];
     midtermWeight?: number;
     finalWeight?: number;
@@ -42,6 +65,7 @@ interface Course {
     isActive?: boolean;
 }
 
+<<<<<<< HEAD
 const allClassOptions = Object.entries(CLASSES) as [string, string][];
 const isAnnualCourse = (semester?: string) => !semester || semester === '1-2' || semester === 'annual' || semester === '0' || semester === 'ปีการศึกษา';
 const PAGE_SIZE = 20;
@@ -64,6 +88,8 @@ const getInitialCourseScores = (course: Course) => {
     };
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 const ScoreConfigurationPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
@@ -71,13 +97,17 @@ const ScoreConfigurationPage: React.FC = () => {
     const { subjectGroups } = useSubjectGroups(schoolId);
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>("");
+<<<<<<< HEAD
     const [selectedLevel, setSelectedLevel] = useState<string>("");
     const [selectedSemester, setSelectedSemester] = useState<string>("");
     const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>(allClassOptions);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [filterScope, setFilterScope] = useState<"group" | "all">("group");
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [localScores, setLocalScores] = useState<Record<string, any>>({});
+<<<<<<< HEAD
     const [dirtyCourseIds, setDirtyCourseIds] = useState<Set<string>>(() => new Set());
     const [currentPage, setCurrentPage] = useState(1);
 
@@ -112,10 +142,13 @@ const ScoreConfigurationPage: React.FC = () => {
 
         setSelectedLevel("");
     }, [availableClassOptions, selectedLevel]);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Fetch Courses
     useEffect(() => {
         if (!schoolId) return;
+<<<<<<< HEAD
 
         if (filterScope === "group" && !selectedGroup) {
             setCourses([]);
@@ -131,10 +164,16 @@ const ScoreConfigurationPage: React.FC = () => {
             : query(coursesRef);
 
         const unsubscribe = onSnapshot(courseQuery, (snap) => {
+=======
+        
+        const coursesRef = collection(db, 'school-settings', schoolId, 'courses');
+        const unsubscribe = onSnapshot(query(coursesRef), (snap) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const courseList = snap.docs
                 .map(doc => ({ id: doc.id, ...doc.data() } as Course))
                 .filter(c => c.isActive !== false);
             setCourses(courseList);
+<<<<<<< HEAD
 
             // Initialize local scores ONLY if not already initialized
             setLocalScores(prev => {
@@ -149,10 +188,28 @@ const ScoreConfigurationPage: React.FC = () => {
                 });
                 return hasChanges ? next : prev;
             });
+=======
+            
+            // Initialize local scores if not already set
+            const initialScores: Record<string, any> = {};
+            courseList.forEach(course => {
+                const preMidterm = course.formativeAssessments?.filter(a => a.term === 'pre-midterm') || [];
+                const postMidterm = course.formativeAssessments?.filter(a => a.term === 'post-midterm') || [];
+                
+                initialScores[course.id] = {
+                    s1_9: Array(9).fill(0).map((_, i) => preMidterm[i]?.maxScore || 0),
+                    midterm: course.midtermWeight || 0,
+                    s10_18: Array(9).fill(0).map((_, i) => postMidterm[i]?.maxScore || 0),
+                    final: course.finalWeight || 0
+                };
+            });
+            setLocalScores(initialScores);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             setIsLoading(false);
         });
 
         return () => unsubscribe();
+<<<<<<< HEAD
     }, [schoolId, selectedGroup, filterScope]);
 
     // Filtered Courses
@@ -232,6 +289,31 @@ const ScoreConfigurationPage: React.FC = () => {
             next.add(courseId);
             return next;
         });
+=======
+    }, [schoolId]);
+
+    // Filtered Courses
+    const filteredCourses = useMemo(() => {
+        if (filterScope === "all") return courses;
+        if (!selectedGroup) return [];
+        return courses.filter(c => c.subjectGroup === selectedGroup);
+    }, [courses, selectedGroup, filterScope]);
+
+    // Handle Score Change
+    const handleScoreChange = (courseId: string, type: 's1_9' | 's10_18' | 'midterm' | 'final', index: number, value: string) => {
+        const numValue = parseInt(value) || 0;
+        setLocalScores(prev => {
+            const courseScore = { ...prev[courseId] };
+            if (type === 's1_9' || type === 's10_18') {
+                const newArr = [...courseScore[type]];
+                newArr[index] = numValue;
+                courseScore[type] = newArr;
+            } else {
+                courseScore[type] = numValue;
+            }
+            return { ...prev, [courseId]: courseScore };
+        });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     };
 
     // Calculate Totals
@@ -239,11 +321,17 @@ const ScoreConfigurationPage: React.FC = () => {
         const scores = localScores[courseId];
         if (!scores) return { sum1: 0, sum2: 0, total: 0 };
         
+<<<<<<< HEAD
         const sum1 = scores.s1_9.reduce((a: any, b: any) => (parseInt(a) || 0) + (parseInt(b) || 0), 0);
         const sum2 = scores.s10_18.reduce((a: any, b: any) => (parseInt(a) || 0) + (parseInt(b) || 0), 0);
         const midterm = parseInt(scores.midterm) || 0;
         const final = parseInt(scores.final) || 0;
         const total = sum1 + midterm + sum2 + final;
+=======
+        const sum1 = scores.s1_9.reduce((a: number, b: number) => a + b, 0);
+        const sum2 = scores.s10_18.reduce((a: number, b: number) => a + b, 0);
+        const total = sum1 + scores.midterm + sum2 + scores.final;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         
         return { sum1, sum2, total };
     }, [localScores]);
@@ -271,6 +359,7 @@ const ScoreConfigurationPage: React.FC = () => {
                     }
                 });
                 setLocalScores(newScores);
+<<<<<<< HEAD
                 setDirtyCourseIds(prev => {
                     const next = new Set(prev);
                     filteredCourses.forEach(course => {
@@ -280,6 +369,8 @@ const ScoreConfigurationPage: React.FC = () => {
                     });
                     return next;
                 });
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 Swal.fire({
                     icon: 'success',
                     title: 'คัดลอกสำเร็จ',
@@ -294,6 +385,7 @@ const ScoreConfigurationPage: React.FC = () => {
 
     // Save Changes
     const handleSave = async () => {
+<<<<<<< HEAD
         const coursesToSave = filteredCourses.filter(course => dirtyCourseIds.has(course.id));
 
         if (coursesToSave.length === 0) {
@@ -301,6 +393,19 @@ const ScoreConfigurationPage: React.FC = () => {
                 icon: 'info',
                 title: 'ยังไม่มีรายการที่แก้ไข',
                 text: 'กรุณาแก้ไขคะแนนของรายวิชาที่ต้องการก่อนบันทึก',
+=======
+        // Validation: Check if any course total is not 100
+        const invalidCourses = filteredCourses.filter(course => {
+            const { total } = calculateTotals(course.id);
+            return total !== 100;
+        });
+
+        if (invalidCourses.length > 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'คะแนนรวมไม่ถูกต้อง',
+                text: `มีรายวิชาที่คะแนนรวมไม่เท่ากับ 100 (${invalidCourses.map(c => c.code).join(', ')}) กรุณาตรวจสอบอีกครั้ง`,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 background: '#1e2235',
                 color: '#fff'
             });
@@ -310,6 +415,7 @@ const ScoreConfigurationPage: React.FC = () => {
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
+<<<<<<< HEAD
             const toScoreNumber = (score: unknown) => Number(score) || 0;
 
             coursesToSave.forEach(course => {
@@ -329,26 +435,50 @@ const ScoreConfigurationPage: React.FC = () => {
                     const maxScore = toScoreNumber(score);
                     if (maxScore > 0) {
                         formativeAssessments.push({ id: `S${i + 10}`, name: `S${i + 10}`, maxScore, term: 'post-midterm' });
+=======
+            filteredCourses.forEach(course => {
+                const scores = localScores[course.id];
+                const formativeAssessments: FormativeAssessment[] = [];
+                
+                scores.s1_9.forEach((score: number, i: number) => {
+                    if (score > 0) {
+                        formativeAssessments.push({ name: `S${i + 1}`, maxScore: score, term: 'pre-midterm' });
+                    }
+                });
+                
+                scores.s10_18.forEach((score: number, i: number) => {
+                    if (score > 0) {
+                        formativeAssessments.push({ name: `S${i + 10}`, maxScore: score, term: 'post-midterm' });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     }
                 });
 
                 const courseRef = doc(db, 'school-settings', schoolId, 'courses', course.id);
                 batch.update(courseRef, {
                     formativeAssessments,
+<<<<<<< HEAD
                     midtermWeight: toScoreNumber(scores.midterm),
                     finalWeight: toScoreNumber(scores.final),
+=======
+                    midtermWeight: scores.midterm,
+                    finalWeight: scores.final,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     updatedBy: currentUser ? `${(currentUser as any).firstName || ''} ${(currentUser as any).lastName || ''}`.trim() || currentUser?.email : 'System',
                     updatedAt: serverTimestamp()
                 });
             });
 
             await batch.commit();
+<<<<<<< HEAD
             setDirtyCourseIds(prev => {
                 const next = new Set(prev);
                 coursesToSave.forEach(course => next.delete(course.id));
                 return next;
             });
             Swal.fire({ icon: 'success', title: `บันทึกสำเร็จ ${coursesToSave.length} วิชา`, background: '#1e2235', color: '#fff' });
+=======
+            Swal.fire({ icon: 'success', title: 'บันทึกการตั้งค่าสำเร็จ', background: '#1e2235', color: '#fff' });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         } catch (err) {
             console.error(err);
             Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาดในการบันทึก', background: '#1e2235', color: '#fff' });
@@ -365,7 +495,13 @@ const ScoreConfigurationPage: React.FC = () => {
                 <div className="bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 p-4 sm:p-6 lg:pl-16 sticky top-[60px] z-40 backdrop-blur-md bg-white/90 dark:bg-[#161a27]/90">
                     <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-4">
+<<<<<<< HEAD
                             <BackButton to="/academic/hub/evaluation" />
+=======
+                            <Link to="/academic-admin" className="p-2 bg-slate-100 dark:bg-[#1e2235] rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                                <ChevronLeft size={18} />
+                            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <div className="flex items-center gap-3">
                                 <div className="p-3 bg-emerald-500/10 dark:bg-emerald-500/20 rounded-2xl shadow-lg border border-emerald-500/20">
                                     <Settings size={24} className="text-emerald-500 dark:text-emerald-400" />
@@ -383,6 +519,7 @@ const ScoreConfigurationPage: React.FC = () => {
                         {/* Filters & Actions */}
                         <div className="flex items-center gap-4">
                             <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
+<<<<<<< HEAD
                                 <span className="pl-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ชั้น</span>
                                 <select 
                                     value={selectedLevel}
@@ -411,6 +548,8 @@ const ScoreConfigurationPage: React.FC = () => {
                             </div>
 
                             <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <select 
                                     value={selectedGroup}
                                     onChange={(e) => setSelectedGroup(e.target.value)}
@@ -448,11 +587,19 @@ const ScoreConfigurationPage: React.FC = () => {
 
                             <button 
                                 onClick={handleSave}
+<<<<<<< HEAD
                                 disabled={isSaving || dirtyVisibleCourseCount === 0}
                                 className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl font-black text-[12px] shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 whitespace-nowrap"
                             >
                                 <Save size={16} />
                                 {dirtyVisibleCourseCount > 0 ? `บันทึก ${dirtyVisibleCourseCount} วิชา` : 'บันทึกตั้งค่า'}
+=======
+                                disabled={isSaving || filteredCourses.length === 0}
+                                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl font-black text-[12px] shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 whitespace-nowrap"
+                            >
+                                <Save size={16} />
+                                บันทึกตั้งค่า
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </button>
                         </div>
                     </div>
@@ -468,11 +615,19 @@ const ScoreConfigurationPage: React.FC = () => {
                             <div className="row-span-2 px-4 py-4 text-left border-r border-slate-200 dark:border-white/5 sticky left-0 bg-slate-100 dark:bg-[#1e2235] flex items-center text-slate-900 dark:text-white">รหัส / รายวิชา</div>
                             
                             {/* Pre-midterm Headers */}
+<<<<<<< HEAD
                             <div className="col-span-9 border-r border-b border-slate-200 dark:border-white/5 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 py-2">คะแนนเก็บก่อนกลางภาค</div>
                             <div className="row-span-2 flex items-center justify-center border-r border-slate-200 dark:border-white/5 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 font-bold px-2">กลางภาค</div>
                             
                             {/* Post-midterm Headers */}
                             <div className="col-span-9 border-r border-b border-slate-200 dark:border-white/5 bg-purple-500/5 text-purple-600 dark:text-purple-400 py-2">คะแนนเก็บหลังกลางภาค</div>
+=======
+                            <div className="col-span-9 border-r border-slate-200 dark:border-white/5 bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 py-2 border-b border-slate-200 dark:border-white/5">คะแนนเก็บก่อนกลางภาค</div>
+                            <div className="row-span-2 flex items-center justify-center border-r border-slate-200 dark:border-white/5 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 font-bold px-2">กลางภาค</div>
+                            
+                            {/* Post-midterm Headers */}
+                            <div className="col-span-9 border-r border-slate-200 dark:border-white/5 bg-purple-500/5 text-purple-600 dark:text-purple-400 py-2 border-b border-slate-200 dark:border-white/5">คะแนนเก็บหลังกลางภาค</div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             
                             <div className="row-span-2 flex items-center justify-center border-r border-slate-200 dark:border-white/5 bg-slate-200 dark:bg-slate-800/50">รวม 1</div>
                             <div className="row-span-2 flex items-center justify-center border-r border-slate-200 dark:border-white/5 bg-slate-200 dark:bg-slate-800/50">รวม 2</div>
@@ -515,7 +670,11 @@ const ScoreConfigurationPage: React.FC = () => {
                                     </div>
                                 </div>
                             ) : (
+<<<<<<< HEAD
                                 paginatedCourses.map(course => {
+=======
+                                filteredCourses.map(course => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     const scores = localScores[course.id];
                                     if (!scores) return null;
                                     const { sum1, sum2, total } = calculateTotals(course.id);
@@ -619,12 +778,17 @@ const ScoreConfigurationPage: React.FC = () => {
                                 </div>
                                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400/80">
                                     <AlertCircle size={14} />
+<<<<<<< HEAD
                                     <span className="text-[10px] font-bold">บันทึกเฉพาะรายวิชาที่แก้ไข คะแนนรวมไม่จำเป็นต้องครบ 100</span>
+=======
+                                    <span className="text-[10px] font-bold">คะแนนรวมต้องเท่ากับ 100 ทุกวิชา</span>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">จำนวนที่แสดง:</span>
                                 <span className="text-[12px] font-black text-slate-900 dark:text-white">{filteredCourses.length} วิชา</span>
+<<<<<<< HEAD
                                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">แก้ไข:</span>
                                 <span className="text-[12px] font-black text-emerald-600 dark:text-emerald-400">{dirtyVisibleCourseCount} วิชา</span>
                             </div>
@@ -688,6 +852,10 @@ const ScoreConfigurationPage: React.FC = () => {
                                 </div>
                             </div>
                         )}
+=======
+                            </div>
+                        </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
                 </div>
 

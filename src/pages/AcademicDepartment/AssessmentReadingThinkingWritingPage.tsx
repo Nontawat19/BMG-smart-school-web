@@ -6,8 +6,12 @@ import MainLayout from "@/layouts/MainLayout";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import Swal from 'sweetalert2';
+<<<<<<< HEAD
 import { PlusCircle, Trash2, Edit2, X, Check, ListPlus, FileText, LayoutGrid, ChevronDown, ChevronUp } from 'lucide-react';
 import BackButton from '@/components/Shared/BackButton';
+=======
+import { ArrowLeft, PlusCircle, Trash2, Edit2, X, Check, ListPlus, FileText, LayoutGrid, ChevronDown, ChevronUp } from 'lucide-react';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface Indicator {
   text: string;
@@ -189,7 +193,13 @@ const AssessmentReadingThinkingWritingPage: React.FC = () => {
             <h1 className="text-3xl font-bold tracking-tight">การอ่าน คิดวิเคราะห์ และเขียน</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1 text-base">กำหนดเกณฑ์มาตรฐานและตัวชี้วัดสำหรับการประเมินความสามารถนักเรียน</p>
           </div>
+<<<<<<< HEAD
           <BackButton to="/academic/hub/evaluation" />
+=======
+          <Link to="/academic-admin" className="inline-flex items-center justify-center px-5 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-all group font-semibold text-gray-700 dark:text-gray-200 text-sm">
+            <ArrowLeft size={18} className="mr-2 group-hover:-translate-x-1 transition-transform" /> กลับหน้าบริหารวิชาการ
+          </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

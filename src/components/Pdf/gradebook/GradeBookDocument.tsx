@@ -45,8 +45,11 @@ interface Course {
     formativeAssessments?: { id: string; name: string; maxScore: number; term?: 'pre-midterm' | 'post-midterm' }[];
     indicators?: string[];
     expectedOutcomes?: string[];
+<<<<<<< HEAD
     subjectGroup?: string;
     learningArea?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     type?: 'พื้นฐาน' | 'เพิ่มเติม';
 }
 
@@ -384,4 +387,8 @@ const GradeBookDocument = (props: GradeBookDocumentProps) => {
     );
 };
 
+<<<<<<< HEAD
 export default GradeBookDocument;
+=======
+export default GradeBookDocument;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

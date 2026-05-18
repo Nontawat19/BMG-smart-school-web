@@ -9,11 +9,15 @@ import { Course, CourseInstance, Schedule, SpecialPeriod, PeriodSetting, SchoolS
 import { CLASSES } from '../utils';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 
+<<<<<<< HEAD
 export const useScheduleData = (
     schoolId: string | undefined,
     selectedYear?: string,
     selectedSemester: string = "1"
 ) => {
+=======
+export const useScheduleData = (schoolId: string | undefined) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [availableCourseInstances, setAvailableCourseInstances] = useState<CourseInstance[]>([]);
     const [allCourses, setAllCourses] = useState<Course[]>([]);
     const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
@@ -26,14 +30,20 @@ export const useScheduleData = (
     const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]>>({});
     const [teacherMasterSchedule, setTeacherMasterSchedule] = useState<Record<string, { classId: string | string[]; course: Course | null }>>({});
     const [schedule, setSchedule] = useState<Schedule>({});
+<<<<<<< HEAD
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
     const academicTerm = useSelector((state: RootState) => state.calendar.rawData?.currentTerm || "1");
+=======
+    const [academicYear, setAcademicYear] = useState<string>('');
+    const [academicTerm, setAcademicTerm] = useState<string>('1');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [assignmentConstraints, setAssignmentConstraints] = useState<AssignmentConstraintMap>({});
 
     const dispatch = useDispatch();
     const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
 
     const loadSchoolMasterSchedule = useCallback(async (currentSchoolId: string) => {
+<<<<<<< HEAD
         const targetYear = String(selectedYear || academicYear || "");
         const targetSemester = String(selectedSemester || academicTerm || "1");
         const matchesYearSemester = (data: any) => {
@@ -44,14 +54,20 @@ export const useScheduleData = (
             return yearMatches && semesterMatches;
         };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const masterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]> = {};
         const schedulesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'schedules');
         const querySnapshot = await getDocs(schedulesCollectionRef);
 
         querySnapshot.forEach((doc) => {
             const data = doc.data();
+<<<<<<< HEAD
             if (!matchesYearSemester(data)) return;
             const teacherId = data.teacherId || doc.id.split('__')[0];
+=======
+            const teacherId = data.teacherId;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const classId = data.classId;
             const scheduleData = data.schedule as Schedule;
 
@@ -85,13 +101,18 @@ export const useScheduleData = (
             }
         });
         setSchoolMasterSchedule(masterSchedule);
+<<<<<<< HEAD
     }, [academicTerm, academicYear, selectedSemester, selectedYear]);
+=======
+    }, []);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const fetchData = useCallback(async (currentSchoolId: string) => {
         const fetchCourses = async () => {
             try {
                 const coursesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'courses');
                 const querySnapshot = await getDocs(coursesCollectionRef);
+<<<<<<< HEAD
                 const rawCoursesData = querySnapshot.docs
                     .map(doc => ({ id: doc.id, ...doc.data() } as Course))
                     .filter(c => c.isActive !== false);
@@ -115,13 +136,23 @@ export const useScheduleData = (
                     return course;
                 });
 
+=======
+                const coursesData = querySnapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() } as Course))
+                    .filter(c => c.isActive !== false);
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setAllCourses(coursesData);
                 
                 // --- Flattening logic (Senior Level) ---
                 const flattened: CourseInstance[] = [];
                 coursesData.forEach(course => {
                     if (course.teacherAssignments && course.teacherAssignments.length > 0) {
+<<<<<<< HEAD
                         course.teacherAssignments.forEach((asgn: any, idx: number) => {
+=======
+                        course.teacherAssignments.forEach((asgn, idx) => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             // Filter out assignments without a valid teacher
                             if (!asgn.teacherId || asgn.teacherId === 'pending' || asgn.teacherId.startsWith('GHOST')) return;
 
@@ -255,9 +286,50 @@ export const useScheduleData = (
         };
 
         const fetchDefaultCalendar = async () => {
+<<<<<<< HEAD
             // Logic moved to calendarSlice and consumed via useSelector
             // This function is kept for backward compatibility if other parts of fetchData need it
             // but it no longer sets local state
+=======
+            try {
+                const calendarRef = doc(db, 'school-settings', currentSchoolId, 'main_calendar', 'default');
+                const calendarSnap = await getDoc(calendarRef);
+                if (calendarSnap.exists()) {
+                    const data = calendarSnap.data();
+                    if (data.academicYear) {
+                        setAcademicYear(data.academicYear);
+                    } else {
+                        const currentYear = new Date().getFullYear() + 543;
+                        setAcademicYear(currentYear.toString());
+                    }
+
+                    // Determine current term based on date
+                    const today = new Date().toISOString().split('T')[0];
+                    const term1 = data.terms?.term1;
+                    const term2 = data.terms?.term2;
+                    
+                    if (term1?.startDate && term1?.endDate && today >= term1.startDate && today <= term1.endDate) {
+                        setAcademicTerm('1');
+                    } else if (term2?.startDate && term2?.endDate && today >= term2.startDate && today <= term2.endDate) {
+                        setAcademicTerm('2');
+                    } else {
+                        // If not in specific range, check if terms even exist
+                        if (data.terms) {
+                             // Maybe we are between terms? Default to the closer one or just '1'
+                             setAcademicTerm('1');
+                        } else {
+                             setAcademicTerm('1');
+                        }
+                    }
+                } else {
+                    const currentYear = new Date().getFullYear() + 543;
+                    setAcademicYear(currentYear.toString());
+                    setAcademicTerm('1');
+                }
+            } catch (error) {
+                console.error("Error fetching academic year: ", error);
+            }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         };
 
         if (currentSchoolId) {
@@ -271,7 +343,11 @@ export const useScheduleData = (
                 loadSchoolMasterSchedule(currentSchoolId)
             ]);
         }
+<<<<<<< HEAD
     }, [loadSchoolMasterSchedule, academicTerm, academicYear, selectedSemester, selectedYear]);
+=======
+    }, [loadSchoolMasterSchedule]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         if (teacherMapStatus === 'idle' && schoolId) {
@@ -295,8 +371,13 @@ export const useScheduleData = (
         schoolMasterSchedule, setSchoolMasterSchedule,
         teacherMasterSchedule, setTeacherMasterSchedule,
         schedule, setSchedule,
+<<<<<<< HEAD
         academicYear,
         academicTerm,
+=======
+        academicYear, setAcademicYear,
+        academicTerm, setAcademicTerm,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         loadSchoolMasterSchedule,
         fetchData
     };

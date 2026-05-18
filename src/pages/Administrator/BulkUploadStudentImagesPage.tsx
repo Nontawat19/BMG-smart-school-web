@@ -367,7 +367,11 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                                         </button>
                                     </>
                                 ) : (
+<<<<<<< HEAD
                                     <div className="items-center gap-6 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 py-2 px-4 rounded-lg border border-gray-100 dark:border-gray-700 hidden lg:flex">
+=======
+                                    <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 py-2 px-4 rounded-lg border border-gray-100 dark:border-gray-700 hidden lg:flex">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <div className="flex items-center gap-2">
                                             <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold text-xs">1</span>
                                             <span>เลือกห้องเรียน</span>

@@ -43,7 +43,10 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
     
     const isCharacteristics = activeTab === 'characteristics';
     const isRW = activeTab === 'readingWriting';
+<<<<<<< HEAD
     const scoreInputClass = "w-16 h-9 text-center bg-slate-900/5 dark:bg-slate-800 border rounded-xl text-sm font-black focus:ring-2 outline-none transition-all shadow-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     return (
         <div className={`overflow-x-auto ${(isCharacteristics || isRW) ? 'scrollbar-hide' : ''}`}>
@@ -251,6 +254,7 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                     <>
                                         <td className="px-2 py-3 bg-blue-50/50 dark:bg-blue-900/5 text-center border-r border-blue-100/50 dark:border-slate-800">
                                             <input 
+<<<<<<< HEAD
                                                 type="text"
                                                 inputMode="decimal"
                                                 value={record.formative || 0} 
@@ -258,26 +262,46 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                                 onChange={(e) => handleScoreChange(student.id, 'formative', e.target.value)} 
                                                 title="แก้คะแนนเก็บรวม ระบบจะเกลี่ยลงหัวข้อย่อยอัตโนมัติ"
                                                 className={`${scoreInputClass} border-blue-200 dark:border-blue-500/30 focus:ring-blue-500/50 text-blue-600 dark:text-blue-400`} 
+=======
+                                                type="number" 
+                                                value={record.formative || 0} 
+                                                onChange={(e) => handleScoreChange(student.id, 'formative', e.target.value)} 
+                                                className="w-12 h-7 text-center bg-white dark:bg-slate-800 border border-blue-200 dark:border-slate-700 rounded-md text-[11px] font-black focus:ring-2 focus:ring-blue-500/50 outline-none text-blue-600 dark:text-blue-400 transition-all shadow-sm" 
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             />
                                         </td>
                                         <td className="px-2 py-3 bg-orange-50/50 dark:bg-orange-900/5 text-center border-r border-orange-100/50 dark:border-slate-800">
                                             <input 
+<<<<<<< HEAD
                                                 type="text"
                                                 inputMode="decimal"
                                                 value={record.midterm || 0} 
                                                 onFocus={(e) => e.currentTarget.select()}
                                                 onChange={(e) => handleScoreChange(student.id, 'midterm', e.target.value)} 
                                                 className={`${scoreInputClass} border-orange-200 dark:border-orange-500/30 focus:ring-orange-500/50 text-orange-600 dark:text-orange-400`} 
+=======
+                                                type="number" 
+                                                value={record.midterm || 0} 
+                                                onChange={(e) => handleScoreChange(student.id, 'midterm', e.target.value)} 
+                                                className="w-12 h-7 text-center bg-white dark:bg-slate-800 border border-orange-200 dark:border-slate-700 rounded-md text-[11px] font-black focus:ring-2 focus:ring-orange-500/50 outline-none text-orange-600 dark:text-orange-400 transition-all shadow-sm" 
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             />
                                         </td>
                                         <td className="px-2 py-3 bg-emerald-50/50 dark:bg-emerald-900/5 text-center border-r border-emerald-100/50 dark:border-slate-800">
                                             <input 
+<<<<<<< HEAD
                                                 type="text"
                                                 inputMode="decimal"
                                                 value={record.final || 0} 
                                                 onFocus={(e) => e.currentTarget.select()}
                                                 onChange={(e) => handleScoreChange(student.id, 'final', e.target.value)} 
                                                 className={`${scoreInputClass} border-emerald-200 dark:border-emerald-500/30 focus:ring-emerald-500/50 text-emerald-600 dark:text-emerald-400`} 
+=======
+                                                type="number" 
+                                                value={record.final || 0} 
+                                                onChange={(e) => handleScoreChange(student.id, 'final', e.target.value)} 
+                                                className="w-12 h-7 text-center bg-white dark:bg-slate-800 border border-emerald-200 dark:border-slate-700 rounded-md text-[11px] font-black focus:ring-2 focus:ring-emerald-500/50 outline-none text-emerald-600 dark:text-emerald-400 transition-all shadow-sm" 
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             />
                                         </td>
                                         <td className="px-2 py-3 text-center border-r dark:border-slate-800">

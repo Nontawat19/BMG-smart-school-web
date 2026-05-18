@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { collection, getDocs, query, updateDoc, doc } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import { fetchSchoolSettings } from '@/store/slices/schoolSettingsSlice';
+<<<<<<< HEAD
 import { FaExchangeAlt, FaSearch, FaCheckCircle, FaTimesCircle, FaChevronLeft, FaChevronRight, FaUndo, FaSave, FaMagic } from 'react-icons/fa';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+=======
+import { FaExchangeAlt, FaSearch, FaCheckCircle, FaTimesCircle, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASS_FULL_NAMES, CLASSES } from '@/utils/schoolUtils';
@@ -112,11 +119,14 @@ const RoomTransferManagementPage: React.FC = () => {
     const [selectedLeft, setSelectedLeft] = useState<Set<string>>(new Set());
     const [selectedRight, setSelectedRight] = useState<Set<string>>(new Set());
 
+<<<<<<< HEAD
     // Pagination State
     const [currentPageLeft, setCurrentPageLeft] = useState(1);
     const [currentPageRight, setCurrentPageRight] = useState(1);
     const itemsPerPage = 30;
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [toClassLevel, setToClassLevel] = useState<string>('');
     const [toRoomNumber, setToRoomNumber] = useState<string>('');
 
@@ -132,7 +142,11 @@ const RoomTransferManagementPage: React.FC = () => {
     }, [schoolId, settingsStatus, dispatch]);
 
     const classOptions = useMemo(() => {
+<<<<<<< HEAD
         return availableClassOptions.map(([val, label]) => ({ value: label, label }));
+=======
+        return availableClassOptions.map(([val, label]) => ({ value: val, label }));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     }, [availableClassOptions]);
 
     const roomOptions = useMemo(() => {
@@ -177,6 +191,7 @@ const RoomTransferManagementPage: React.FC = () => {
         } else {
             setToClassLevel('');
         }
+<<<<<<< HEAD
         setCurrentPageLeft(1);
         setCurrentPageRight(1);
     }, [selectedClassLevel]);
@@ -189,6 +204,10 @@ const RoomTransferManagementPage: React.FC = () => {
         setCurrentPageRight(1);
     }, [toRoomNumber]);
 
+=======
+    }, [selectedClassLevel]);
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const filteredStudents = useMemo(() => {
         return students.filter(s => {
             const fullName = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
@@ -200,7 +219,11 @@ const RoomTransferManagementPage: React.FC = () => {
             const cleanClass = String(s.classLevel || '').trim();
             const matchClass = !selectedClassLevel ||
                 cleanClass === selectedClassLevel ||
+<<<<<<< HEAD
                 CLASSES[cleanClass] === selectedClassLevel;
+=======
+                cleanClass === CLASSES[selectedClassLevel];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             // Match room by exact match OR handle slashes (e.g., "1/2" matching "2")
             const cleanRoom = String(s.roomNumber || '').trim();
@@ -300,7 +323,11 @@ const RoomTransferManagementPage: React.FC = () => {
             title: isMovingRight ? 'ยืนยันการย้ายห้องไปปลายทาง?' : 'ยืนยันการย้ายกลับห้องต้นทาง?',
             html: `
                 <div class="text-left text-gray-700 dark:text-gray-300">
+<<<<<<< HEAD
                     <p>ต้องการย้ายนักเรียน <b>${movingStudents.length}</b> คน ไปยัง <b>${destClass} ห้อง ${destRoom}</b> ใช่หรือไม่?</p>
+=======
+                    <p>ต้องการย้ายนักเรียน <b>${movingStudents.length}</b> คน ไปยัง <b>${(CLASS_FULL_NAMES as any)[destClass] || destClass} ห้อง ${destRoom}</b> ใช่หรือไม่?</p>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     <div class="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-300 rounded-lg text-sm border border-indigo-100 dark:border-indigo-800/30">
                         <p class="font-bold mb-1"><i class="fas fa-magic"></i> ระบบจะรันเลขที่ใหม่อัตโนมัติ</p>
                         <ul class="list-disc pl-5">
@@ -338,7 +365,11 @@ const RoomTransferManagementPage: React.FC = () => {
 
                 let roomStudents = updatedAllStudents.filter(s => {
                     const c = String(s.classLevel || '').trim();
+<<<<<<< HEAD
                     const mClass = c === cLevel || CLASSES[c] === cLevel;
+=======
+                    const mClass = c === cLevel || c === (CLASS_FULL_NAMES as any)[cLevel] || c === (CLASSES as any)[cLevel];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const r = String(s.roomNumber || '').trim();
                     const mRoom = r === rNum || r === rNum.padStart(2, '0') || r.endsWith('/' + rNum);
                     return mClass && mRoom;
@@ -387,7 +418,12 @@ const RoomTransferManagementPage: React.FC = () => {
         const invalidClasses = selectedList.filter(s => {
             const cleanClass = String(s.classLevel || '').trim();
             return cleanClass !== toClassLevel &&
+<<<<<<< HEAD
                 CLASSES[cleanClass] !== toClassLevel;
+=======
+                cleanClass !== (CLASS_FULL_NAMES as any)[toClassLevel] &&
+                cleanClass !== (CLASSES as any)[toClassLevel];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         });
 
         if (invalidClasses.length > 0) {
@@ -415,7 +451,12 @@ const RoomTransferManagementPage: React.FC = () => {
         const invalidClasses = listToMove.filter(s => {
             const cleanClass = String(s.classLevel || '').trim();
             return cleanClass !== selectedClassLevel &&
+<<<<<<< HEAD
                 CLASSES[cleanClass] !== selectedClassLevel;
+=======
+                cleanClass !== (CLASS_FULL_NAMES as any)[selectedClassLevel] &&
+                cleanClass !== (CLASSES as any)[selectedClassLevel];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         });
 
         if (invalidClasses.length > 0) {
@@ -434,7 +475,11 @@ const RoomTransferManagementPage: React.FC = () => {
         if (!toClassLevel || !toRoomNumber) return null;
         let targetStudents = students.filter(s => {
             const cleanClass = String(s.classLevel || '').trim();
+<<<<<<< HEAD
             const matchClass = cleanClass === toClassLevel || CLASSES[cleanClass] === toClassLevel;
+=======
+            const matchClass = cleanClass === toClassLevel || cleanClass === (CLASS_FULL_NAMES as any)[toClassLevel] || cleanClass === (CLASSES as any)[toClassLevel];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             const cleanRoom = String(s.roomNumber || '').trim();
             const targetRoomStr = String(toRoomNumber || '').trim();
@@ -500,6 +545,7 @@ const RoomTransferManagementPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="p-4 sm:p-8 space-y-6" style={darkVariables}>
+<<<<<<< HEAD
                 <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-4 mb-2">
                         <BackButton to="/academic/hub/registration" />
@@ -511,6 +557,16 @@ const RoomTransferManagementPage: React.FC = () => {
                         </h1>
                     </div>
                     <p className="text-gray-500 dark:text-gray-400 max-w-2xl text-sm leading-relaxed border-l-4 border-indigo-500 pl-4 py-1 ml-14">
+=======
+                <div className="flex flex-col gap-2">
+                    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
+                        <div className="p-3 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-sm">
+                            <FaExchangeAlt size={24} />
+                        </div>
+                        จัดการระบบย้ายห้อง
+                    </h1>
+                    <p className="text-gray-500 dark:text-gray-400 mt-2 max-w-2xl text-sm leading-relaxed border-l-4 border-indigo-500 pl-4 py-1">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         ระบบย้ายนักเรียนใช้สำหรับย้ายนักเรียนจากห้องเรียนเดิมไปยังห้องเรียนใหม่ สามารถเลือกนักเรียนได้หลายคนพร้อมกันในคราวเดียว
                     </p>
                 </div>
@@ -559,11 +615,19 @@ const RoomTransferManagementPage: React.FC = () => {
                             </div>
                         </div>
 
+<<<<<<< HEAD
                         <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden flex flex-col shadow-sm bg-gray-50/50 dark:bg-white/5 relative">
                             {/* Decorative Top Gradient */}
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-50 z-20"></div>
 
                             <div className="">
+=======
+                        <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden flex flex-col h-[500px] shadow-sm bg-gray-50/50 dark:bg-white/5 relative">
+                            {/* Decorative Top Gradient */}
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-50 z-20"></div>
+
+                            <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 hover:scrollbar-thumb-indigo-500/50">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 {loading ? (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
                                         <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
@@ -599,7 +663,11 @@ const RoomTransferManagementPage: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+<<<<<<< HEAD
                                             {filteredStudents.slice((currentPageLeft - 1) * itemsPerPage, currentPageLeft * itemsPerPage).map((student) => (
+=======
+                                            {filteredStudents.map((student) => (
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                 <tr
                                                     key={student.docId}
                                                     className={`hover:bg-indigo-50 dark:hover:bg-white/5 cursor-pointer transition-colors ${selectedLeft.has(student.docId) ? 'bg-indigo-50/50 dark:bg-white/5' : ''}`}
@@ -618,7 +686,11 @@ const RoomTransferManagementPage: React.FC = () => {
                                                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{student.firstName} {student.lastName}</td>
                                                     <td className="px-4 py-3 text-right">
                                                         <span className="inline-flex px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-md text-xs font-bold text-gray-600 dark:text-gray-300 tracking-wider">
+<<<<<<< HEAD
                                                             {CLASSES[student.classLevel] || student.classLevel}/{student.roomNumber}
+=======
+                                                            {CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel}/{student.roomNumber}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -636,6 +708,7 @@ const RoomTransferManagementPage: React.FC = () => {
                                         </tfoot>
                                     </table>
                                 )}
+<<<<<<< HEAD
 
                                 {/* Pagination Left */}
                                 {!loading && filteredStudents.length > itemsPerPage && (
@@ -707,6 +780,9 @@ const RoomTransferManagementPage: React.FC = () => {
                                 )}
                             </div>
 
+=======
+                            </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </div>
 
@@ -785,10 +861,17 @@ const RoomTransferManagementPage: React.FC = () => {
                             </div>
 
                             {/* แสดงนักเรียนปลายทาง */}
+<<<<<<< HEAD
                             <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden flex flex-col shadow-sm bg-gray-50/50 dark:bg-white/5 relative">
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-rose-500 opacity-50 z-20"></div>
 
                                 <div className="">
+=======
+                            <div className="border border-gray-100 dark:border-gray-800 rounded-2xl overflow-hidden flex flex-col h-[500px] shadow-sm bg-gray-50/50 dark:bg-white/5 relative">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-rose-500 opacity-50 z-20"></div>
+
+                                <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700 hover:scrollbar-thumb-pink-500/50">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     {!targetRoomPreview ? (
                                         <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
                                             <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
@@ -822,7 +905,11 @@ const RoomTransferManagementPage: React.FC = () => {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+<<<<<<< HEAD
                                                 {targetRoomPreview.studentsList.slice((currentPageRight - 1) * itemsPerPage, currentPageRight * itemsPerPage).map((student) => (
+=======
+                                                {targetRoomPreview.studentsList.map((student) => (
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     <tr key={student.docId} className={`hover:bg-pink-50 dark:hover:bg-white/5 cursor-pointer transition-colors ${selectedRight.has(student.docId) ? 'bg-pink-50/50 dark:bg-white/5' : ''}`} onClick={() => toggleRight(student.docId)}>
                                                         <td className="px-4 py-3 text-center">
                                                             <input
@@ -839,7 +926,11 @@ const RoomTransferManagementPage: React.FC = () => {
                                                         <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{student.firstName} {student.lastName}</td>
                                                         <td className="px-4 py-3 text-right">
                                                             <span className="inline-flex px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-md text-xs font-bold text-gray-600 dark:text-gray-300 tracking-wider">
+<<<<<<< HEAD
                                                                 {CLASSES[student.classLevel] || student.classLevel}/{student.roomNumber}
+=======
+                                                                {CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel}/{student.roomNumber}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             </span>
                                                         </td>
                                                     </tr>
@@ -875,6 +966,7 @@ const RoomTransferManagementPage: React.FC = () => {
                                         </table>
                                     )}
                                 </div>
+<<<<<<< HEAD
 
                                 {/* Pagination Right */}
                                 {targetRoomPreview && targetRoomPreview.studentsList.length > itemsPerPage && (
@@ -944,6 +1036,8 @@ const RoomTransferManagementPage: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
                     </div>

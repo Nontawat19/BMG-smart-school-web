@@ -38,7 +38,10 @@ import {
   FaExchangeAlt,
   FaGraduationCap,
   FaChartBar,
+<<<<<<< HEAD
   FaShieldAlt
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from "react-icons/fa";
 
 import defaultProfile from "@/assets/profile.png";
@@ -55,7 +58,11 @@ import { ROLES, ROLE_LABELS, Role } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
+<<<<<<< HEAD
   const { user: currentUser, isSuperAdmin, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, ATTENDANCE_SCANNER_ACCESS } = usePermissions();
+=======
+  const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } = usePermissions();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const isLoading = useSelector((state: RootState) => state.auth.loading);
   const schoolId = currentUser?.schoolId;
 
@@ -151,6 +158,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </>
             ) : (
               <>
+<<<<<<< HEAD
                 <div className="w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
                   <img
                     src={currentUser?.profileUrl || defaultProfile}
@@ -161,6 +169,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                     }}
                   />
                 </div>
+=======
+                <img
+                  src={currentUser?.profileUrl || defaultProfile}
+                  alt="Profile"
+                  className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
+                  onError={(e) => {
+                    e.currentTarget.src = defaultProfile;
+                  }}
+                />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <div className="flex flex-col min-w-0">
                   <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
                   <span className="text-[10px] text-gray-500 truncate">
@@ -180,6 +198,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
             {/* --- งานวิชาการ --- */}
             {isEnabled('academic') && (
               <CanAccess roles={STAFF_ACCESS}>
+<<<<<<< HEAD
                 <div className="flex flex-col gap-1">
                   <CanAccess roles={ACADEMIC_MANAGEMENT}>
                     <NavLink to="/academic/hub/registration" className={navLinkClasses}>
@@ -227,10 +246,76 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                       <span>การตั้งค่าระบบ</span>
                     </NavLink>
                   </CanAccess>
+=======
+                <div>
+                  {renderSectionHeader("งานวิชาการ", "academic")}
+                  <div className={!openSections["academic"] ? "hidden" : "block"}>
+
+                    {/* Admin Only Academic Tabs */}
+                    <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                      <NavLink to="/academic-admin" className={navLinkClasses} end>
+                        <FaBook className="text-lg min-w-[18px]" />
+                        <span>ฝ่ายบริหารงานวิชาการ</span>
+                      </NavLink>
+                      <NavLink to="/academic/period-settings" className={navLinkClasses}>
+                        <FaClock className="text-lg min-w-[18px]" />
+                        <span>ตั้งค่าคาบเรียน</span>
+                      </NavLink>
+                    </CanAccess>
+
+                    {/* Teacher & Admin Tabs */}
+                    <NavLink to="/academic/classroom-attendance" className={navLinkClasses}>
+                      <FaUserCheck className="text-lg min-w-[18px]" />
+                      <span>เช็คชื่อรายวิชา</span>
+                    </NavLink>
+
+                    <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                      <NavLink to="/academic/classroom-attendance-summary" className={navLinkClasses}>
+                        <FaChartBar className="text-lg min-w-[18px]" />
+                        <span>สรุปการมาเรียนรายวิชา</span>
+                      </NavLink>
+                    </CanAccess>
+
+                    {isEnabled('showGradeBookMenu') && (
+                      <CanAccess roles={TEACHER_OPERATIONAL}>
+                        <NavLink to="/academic/grade-book" className={navLinkClasses}>
+                          <FaBookOpen className="text-lg min-w-[18px]" />
+                          <span>สมุดบันทึกผลการเรียน</span>
+                        </NavLink>
+                      </CanAccess>
+                    )}
+
+                    {/* Admin Only Academic Tabs (Continued) */}
+                    <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                      <NavLink to="/academic/import-courses" className={navLinkClasses}>
+                        <FaFileExcel className="text-lg min-w-[18px]" />
+                        <span>นำเข้าหลักสูตร (Excel)</span>
+                      </NavLink>
+                      <NavLink to="/academic/course-enrollment" className={navLinkClasses}>
+                        <FaUserPlus className="text-lg min-w-[18px]" />
+                        <span>ลงทะเบียนวิชาเรียน</span>
+                      </NavLink>
+                      <NavLink to="/academic/enrollment-list" className={navLinkClasses}>
+                        <FaListAlt className="text-lg min-w-[18px]" />
+                        <span>สรุปการลงทะเบียน</span>
+                      </NavLink>
+                      <NavLink to="/academic/room-transfer" className={navLinkClasses}>
+                        <FaExchangeAlt className="text-lg min-w-[18px]" />
+                        <span>จัดการระบบย้ายห้อง</span>
+                      </NavLink>
+                      <NavLink to="/academic/graduation-management" className={navLinkClasses}>
+                        <FaGraduationCap className="text-lg min-w-[18px]" />
+                        <span>ระบบสำเร็จการศึกษา</span>
+                      </NavLink>
+                    </CanAccess>
+
+                  </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </div>
               </CanAccess>
             )}
 
+<<<<<<< HEAD
             {/* --- ระบบลงเวลา (Scanner) --- */}
             <CanAccess roles={ATTENDANCE_SCANNER_ACCESS}>
               <div className="flex flex-col gap-1">
@@ -239,10 +324,104 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <span>เครื่องลงเวลา (Scanner)</span>
                 </NavLink>
               </div>
+=======
+
+
+            <CanAccess roles={ADMIN_ACCESS}>
+              {isEnabled('personnel') && (
+                <div>
+                  {renderSectionHeader("งานบริหารบุคคล", "hr")}
+                  <div className={!openSections["hr"] ? "hidden" : "block"}>
+
+                    <NavLink to="/administrator/user-management" className={navLinkClasses}>
+                      <FaUsersCog className="text-lg min-w-[18px]" />
+                      <span>จัดการผู้ใช้งาน</span>
+                    </NavLink>
+
+                  </div>
+                </div>
+              )}
+            </CanAccess>
+
+
+
+
+            <CanAccess roles={STAFF_ACCESS}>
+              {isEnabled('studentAffairs') && (
+                <div>
+                  {renderSectionHeader("ระบบดูแลช่วยเหลือนักเรียน", "support")}
+                  <div className={!openSections["support"] ? "hidden" : "block"}>
+                    <NavLink to="/student-support" className={navLinkClasses}>
+                      <FaHandHoldingHeart className="text-lg min-w-[18px]" />
+                      <span>ระบบดูแลช่วยเหลือฯ</span>
+                    </NavLink>
+                  </div>
+                </div>
+              )}
+            </CanAccess>
+
+            <CanAccess roles={STAFF_ACCESS}>
+              {(isEnabled('personnel') || isEnabled('studentAffairs')) && (
+                <div>
+                  {renderSectionHeader("จัดการข้อมูล", "data")}
+                  <div className={`flex flex-col gap-1 ${!openSections["data"] ? "hidden" : "block"}`}>
+                    <CanAccess roles={[...ADMIN_ACCESS, ...ACADEMIC_ACCESS]}>
+                      {isEnabled('personnel') && (
+                        <NavLink to={schoolId ? `/school/${schoolId}/teachers` : '#'} className={navLinkClasses}>
+                          <FaChalkboardTeacher className="text-lg min-w-[18px]" />
+                          <span>ข้อมูลครู</span>
+                        </NavLink>
+                      )}
+                    </CanAccess>
+                    {isEnabled('studentAffairs') && (
+                      <NavLink to={schoolId ? `/school/${schoolId}/students` : '#'} className={navLinkClasses}>
+                        <FaUserGraduate className="text-lg min-w-[18px]" />
+                        <span>ข้อมูลนักเรียน</span>
+                      </NavLink>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CanAccess>
+
+            <CanAccess roles={[...ADMIN_ACCESS, ...ACADEMIC_ACCESS]}>
+              {(isEnabled('personnel') || isEnabled('studentAffairs')) && (
+                <div>
+                  {renderSectionHeader("เพิ่มข้อมูลใหม่", "add")}
+                  <div className={`flex flex-col gap-1 ${!openSections["add"] ? "hidden" : "block"}`}>
+                    <CanAccess roles={ADMIN_ACCESS}>
+                      {isEnabled('personnel') && (
+                        <NavLink to={schoolId ? `/school/${schoolId}/teachers/add` : '#'} className={navLinkClasses}>
+                          <FaUserPlus className="text-lg min-w-[18px]" />
+                          <span>เพิ่มข้อมูลครู</span>
+                        </NavLink>
+                      )}
+                    </CanAccess>
+                    {isEnabled('studentAffairs') && (
+                      <>
+                        <NavLink to={schoolId ? `/school/${schoolId}/students/add` : '#'} className={navLinkClasses}>
+                          <FaUserPlus className="text-lg min-w-[18px]" />
+                          <span>เพิ่มข้อมูลนักเรียน</span>
+                        </NavLink>
+                        <NavLink to={schoolId ? `/school/${schoolId}/students/bulk-upload` : '#'} className={navLinkClasses}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60"></span>
+                          อัปโหลดรูป (Bulk)
+                        </NavLink>
+                        <NavLink to={schoolId ? `/school/${schoolId}/students/import-dmc` : '#'} className={navLinkClasses}>
+                          <FaFileExcel className="text-lg min-w-[18px]" />
+                          <span>นำเข้าข้อมูลนักเรียน (DMC)</span>
+                        </NavLink>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             </CanAccess>
           </nav>
 
           {/* Owner Menu */}
+<<<<<<< HEAD
           <CanAccess roles={ADMIN_ACCESS}>
             <div>
               {renderSectionHeader(isSuperAdmin ? "เจ้าของระบบ" : "แผงควบคุม", "owner")}
@@ -250,6 +429,21 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                 <NavLink to="/owner/hub" className={navLinkClasses}>
                   <FaShieldAlt className="text-lg min-w-[18px]" />
                   <span>{isSuperAdmin ? "จัดการระบบ (Owner)" : "จัดการข้อมูลผู้ใช้"}</span>
+=======
+          <CanAccess roles={[...OWNER_ONLY, ROLES.SCHOOL_ADMIN]}>
+            <div>
+              {renderSectionHeader("เจ้าของระบบ", "owner")}
+              <div className={!openSections["owner"] ? "hidden" : "block"}>
+                <CanAccess roles={OWNER_ONLY}>
+                  <NavLink to="/owner/schools" className={navLinkClasses}>
+                    <FaSchool className="text-lg min-w-[18px]" />
+                    <span>จัดการข้อมูลโรงเรียน</span>
+                  </NavLink>
+                </CanAccess>
+                <NavLink to="/owner/users" className={navLinkClasses}>
+                  <FaUsers className="text-lg min-w-[18px]" />
+                  <span>จัดการผู้ใช้งาน</span>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </NavLink>
               </div>
             </div>

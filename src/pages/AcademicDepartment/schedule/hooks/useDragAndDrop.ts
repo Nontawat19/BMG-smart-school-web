@@ -39,6 +39,7 @@ export const useDragAndDrop = ({
     setActiveDragItem,
     assignmentConstraints
 }: UseDragAndDropProps) => {
+<<<<<<< HEAD
     const removeInstancesFromBank = (activeId: string, activeItem: CourseInstance, count: number) => {
         setAvailableCourseInstances((list: CourseInstance[]) => {
             let remainingToRemove = Math.max(1, count);
@@ -57,6 +58,8 @@ export const useDragAndDrop = ({
             return next;
         });
     };
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleDragStart = (event: DragStartEvent) => {
         const activeId = String(event.active.id);
@@ -135,10 +138,13 @@ export const useDragAndDrop = ({
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
+<<<<<<< HEAD
         if (isFromBank && targetItemsInCurrentSchedule.length > 0) {
             MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่าง หรือย้ายรายวิชาเดิมออกก่อน' });
             return;
         }
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         // 2. Global Conflict Checks (School Master Schedule)
         const targetOccupancies = (schoolMasterSchedule[overId] || []).filter(occ => {
@@ -200,7 +206,11 @@ export const useDragAndDrop = ({
                         schoolMasterSchedule
                     );
                     
+<<<<<<< HEAD
                     if (!partnerCheck.forbidden && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
+=======
+                    if (!partnerCheck.forbidden && !schedule[potPartnerId]) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         partnerSlotId = potPartnerId;
                     } else if (asgnCst.type === 'double') {
                         MySwal.fire({ 
@@ -221,8 +231,13 @@ export const useDragAndDrop = ({
             const next = { ...prev };
 
             if (isFromBank) {
+<<<<<<< HEAD
                 // Remove the exact number of periods placed. Double periods consume two bank instances.
                 removeInstancesFromBank(activeId, activeItem!, partnerSlotId ? 2 : 1);
+=======
+                // Remove from bank
+                setAvailableCourseInstances((list: CourseInstance[]) => list.filter(c => c.instanceId !== activeId));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 
                 // Primary Slot
                 const newInstance = { ...activeItem!, instanceId: `${activeItem!.id}-${overId}-${Date.now()}`, locked: false };
@@ -328,10 +343,13 @@ export const useDragAndDrop = ({
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถเพิ่มได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
+<<<<<<< HEAD
         if (targetItemsInCurrentSchedule.length > 0) {
             MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่างก่อนเพิ่มรายวิชา' });
             return;
         }
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         // 2. Constraints Check
         const { forbidden, message } = checkConstraints(
@@ -399,7 +417,18 @@ export const useDragAndDrop = ({
         setSchedule((prev: Schedule) => {
             const next = { ...prev };
             
+<<<<<<< HEAD
             removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
+=======
+            // Remove from bank
+            setAvailableCourseInstances((list: CourseInstance[]) => {
+                const index = list.findIndex(c => c.instanceId === activeItem.instanceId);
+                if (index === -1) return list;
+                const newList = [...list];
+                newList.splice(index, 1);
+                return newList;
+            });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             
             // Primary Slot
             const newInstance = { ...activeItem, instanceId: `${activeItem.id}-${slotId}-${Date.now()}`, locked: false };

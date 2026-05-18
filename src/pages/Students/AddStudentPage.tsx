@@ -3,7 +3,11 @@ import MainLayout from "@/layouts/MainLayout";
 import { useParams, Link } from "react-router-dom";
 // 💡 สำคัญ: ต้องมั่นใจว่า "@/firebase" มีการ export 'storage' และ 'firestore' อย่างถูกต้อง
 import { firestore, storage, auth } from "@/firebase";
+<<<<<<< HEAD
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc, where } from "firebase/firestore";
+=======
+import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 // 💡 Import FirebaseError และ StorageErrorCode สำหรับการจัดการข้อผิดพลาด Storage
 import { FirebaseError } from "firebase/app";
@@ -14,8 +18,11 @@ import { FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap,
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -62,7 +69,10 @@ const statusColorMap: { [key: string]: { bg: string; hover: string; text: string
   "พักการเรียน": { bg: "bg-yellow-500", hover: "hover:bg-yellow-600", text: "text-gray-900" },
   "ย้าย": { bg: "bg-blue-600", hover: "hover:bg-blue-700", text: "text-white" },
   "ลาออก": { bg: "bg-red-600", hover: "hover:bg-red-700", text: "text-white" },
+<<<<<<< HEAD
   "จำหน่าย": { bg: "bg-gray-600", hover: "hover:bg-gray-700", text: "text-white" },
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 // Component ย่อยสำหรับ Status Switch (ไม่มีการเปลี่ยนแปลง)
@@ -129,9 +139,12 @@ const initialState = {
   room: "",
   studentNumber: "",
   studentStatus: "เรียนอยู่",
+<<<<<<< HEAD
   exitDate: "",
   exitReason: "",
   exitDestinationSchool: "",
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   studentType: "ปกติ",
   gpa: "",
   gpax: "",
@@ -251,9 +264,13 @@ export default function AddStudentPage() {
     { id: "travel", label: "การเดินทาง", icon: <FaBus /> },
   ];
 
+<<<<<<< HEAD
   const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
+=======
+  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก"] as const;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   useEffect(() => {
     // ถ้ามี schoolId จาก URL ให้ตั้งค่าในฟอร์มเลย
@@ -373,6 +390,7 @@ export default function AddStudentPage() {
 
   // เพิ่ม: ฟังก์ชันสำหรับจัดการการเปลี่ยนแปลงค่าจาก StatusSwitch หรือ Custom Select โดยเฉพาะ
   function handleStatusChange(name: string, value: any) {
+<<<<<<< HEAD
     setForm((prev) => ({
       ...prev,
       [name]: value,
@@ -380,6 +398,9 @@ export default function AddStudentPage() {
         ? new Date().toISOString().split('T')[0]
         : prev.exitDate,
     }));
+=======
+    setForm((prev) => ({ ...prev, [name]: value }));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -432,6 +453,7 @@ export default function AddStudentPage() {
         return;
       }
 
+<<<<<<< HEAD
       // --- 🔍 Check for Duplicates (By studentId or idCardNumber) ---
       const studentsRef = collection(firestore, 'school-settings', schoolId, 'students');
       let conflictDoc: any = null;
@@ -469,6 +491,8 @@ export default function AddStudentPage() {
       }
 
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const roles = ["student"];
       if (studentData.fatherPhone || studentData.motherPhone || studentData.guardianPhone) {
         roles.push("parent");
@@ -477,7 +501,10 @@ export default function AddStudentPage() {
       const dataToSave: any = {
         ...studentData,
         schoolId: schoolId,
+<<<<<<< HEAD
         status: studentData.studentStatus,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         role: roles,
         createdAt: serverTimestamp(),
         // DMC Extra Fields (Defaults)
@@ -489,6 +516,7 @@ export default function AddStudentPage() {
         youngerSisterCount1: studentData.youngerSisterCount1 || "0",
       };
 
+<<<<<<< HEAD
       if (isExitStudentStatus(studentData.studentStatus)) {
         dataToSave.exitDetails = {
           exitDate: studentData.exitDate || "",
@@ -498,6 +526,8 @@ export default function AddStudentPage() {
         };
       }
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       // 💡 ปรับปรุง: จัดการการอัปโหลดรูปภาพแยกต่างหาก
       // เพื่อให้แม้ว่ารูปจะอัปโหลดไม่สำเร็จ แต่ข้อมูลหลักยังคงบันทึกได้
       if (imageFile) {
@@ -582,6 +612,7 @@ export default function AddStudentPage() {
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<<<<<<< HEAD
             <div className="flex items-center gap-4">
               <BackButton to="/academic/hub/students" />
               <div>
@@ -605,6 +636,19 @@ export default function AddStudentPage() {
                 เพิ่มนักเรียนด่วน
               </Link>
             </div>
+=======
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลนักเรียนใหม่</h1>
+              <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของนักเรียนให้ครบถ้วน</p>
+            </div>
+            <Link
+              to={`/school/${schoolId}/students/quick-add`}
+              className="flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-200 dark:shadow-none transition-all hover:scale-105"
+            >
+              <FaUserPlus />
+              เพิ่มนักเรียนด่วน
+            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -842,6 +886,7 @@ export default function AddStudentPage() {
                     </div>
 
                     <div className="mt-4">
+<<<<<<< HEAD
 	                      <StatusSwitch
 	                        label="สถานะนักเรียน"
 	                        name="studentStatus"
@@ -866,6 +911,19 @@ export default function AddStudentPage() {
 	                  </InfoCard>
 	                </div>
 	              )}
+=======
+                      <StatusSwitch
+                        label="สถานะนักเรียน"
+                        name="studentStatus"
+                        options={studentStatusOptions}
+                        value={form.studentStatus}
+                        onChange={handleStatusChange}
+                      />
+                    </div>
+                  </InfoCard>
+                </div>
+              )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
               {activeTab === "family" && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

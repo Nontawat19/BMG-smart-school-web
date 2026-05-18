@@ -21,7 +21,10 @@ interface GradeBookToolbarProps {
     academicYear?: string;
     selectedClass: string;
     selectedRoom: string;
+<<<<<<< HEAD
     selectedGroup: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     selectedSemester: string;
     isPdfValidating: boolean;
     handleCreatePdf: () => void;
@@ -37,7 +40,10 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
     academicYear,
     selectedClass,
     selectedRoom,
+<<<<<<< HEAD
     selectedGroup,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     selectedSemester,
     isPdfValidating,
     handleCreatePdf,
@@ -54,16 +60,37 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
         { id: 'readingWriting', label: 'อ่าน/เขียน', icon: FileText },
     ];
 
+<<<<<<< HEAD
     const progress = completenessStats?.percentage || 0;
     const totalCount = completenessStats?.total || 0;
     const filledCount = completenessStats?.filled || 0;
     const canDownloadPdf = Boolean(completenessStats?.isReadyForPdf) && !isPdfValidating;
+=======
+    const progress = activeTab === 'grades' 
+        ? (completenessStats?.percentGrades || 0)
+        : activeTab === 'characteristics'
+        ? (completenessStats?.percentChar || 0)
+        : (completenessStats?.percentRW || 0);
+
+    const totalCount = activeTab === 'grades'
+        ? (completenessStats?.totalGrades || 0)
+        : activeTab === 'characteristics'
+        ? (completenessStats?.totalChar || 0)
+        : (completenessStats?.totalRW || 0);
+
+    const filledCount = activeTab === 'grades'
+        ? (completenessStats?.filledGrades || 0)
+        : activeTab === 'characteristics'
+        ? (completenessStats?.filledChar || 0)
+        : (completenessStats?.filledRW || 0);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleNavigateToHistory = () => {
         const params = new URLSearchParams();
         if (academicYear) params.set('year', academicYear);
         if (selectedSemester) params.set('semester', selectedSemester);
         if (selectedClass) params.set('classId', selectedClass);
+<<<<<<< HEAD
         
         // Extract room number from selectedGroup (e.g. "กลุ่ม 1" -> "1")
         let roomNum = selectedRoom;
@@ -74,6 +101,9 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
         }
         
         if (roomNum) params.set('roomNumber', roomNum);
+=======
+        if (selectedRoom) params.set('roomNumber', selectedRoom);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (selectedCourse) params.set('courseId', selectedCourse);
         
         navigate(`/academic/classroom-attendance-history?${params.toString()}`);
@@ -150,6 +180,7 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
                         
                         <button
                             onClick={handleCreatePdf}
+<<<<<<< HEAD
                             disabled={!canDownloadPdf}
                             title={canDownloadPdf ? 'ดาวน์โหลด PDF' : 'ต้องกรอกคะแนน คุณลักษณะ อ่าน/คิด/เขียน และเช็คชื่อให้ครบ 100% ก่อน'}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border ${
@@ -157,6 +188,11 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
                                     ? 'bg-white dark:bg-gray-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-gray-100 dark:border-gray-700'
                                     : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-70'
                             }`}
+=======
+                            disabled={isPdfValidating}
+                            title="ดาวน์โหลด PDF"
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-gray-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all border border-gray-100 dark:border-gray-700 disabled:opacity-50"
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         >
                             {isPdfValidating ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
                             {isCollapsed && <span className="text-[10px] font-black hidden lg:inline">ดาวน์โหลด PDF</span>}

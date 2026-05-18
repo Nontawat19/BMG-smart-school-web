@@ -27,6 +27,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
     // 🏷️ จัดการ Dynamic Title ตาม Path
     const path = window.location.pathname;
+<<<<<<< HEAD
     let pageName = "";
     
     // ตั้งชื่อหน้าตาม Path
@@ -48,6 +49,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     } else {
       document.title = "Epp5 Online I BMG Soft tech";
     }
+=======
+    let title = "Easy School Management";
+    if (path.includes("official-travel-request")) title = "สร้างคำขอไปราชการ | ESM";
+    else if (path.includes("official-travel-history")) title = "ประวัติการไปราชการ | ESM";
+    else if (path.includes("academic/enrollment-list")) title = "สรุปการลงทะเบียนรายวิชา | ESM";
+    else if (path.includes("profile")) title = "โปรไฟล์ส่วนตัว | ESM";
+    else if (path.includes("home")) title = "หน้าแรก | ESM";
+
+    document.title = title;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }, [isDarkMode, window.location.pathname]);
 
   return (

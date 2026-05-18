@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+<<<<<<< HEAD
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { RootState } from '@/store';
@@ -26,6 +27,22 @@ interface CourseAssignmentDoc {
     academicYear: string;
     semester: string;
     teacherAssignments: TeacherAssignment[];
+=======
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { firestore as db } from '@/firebase';
+import { doc, getDoc, setDoc, collection, onSnapshot, getDocs, serverTimestamp } from 'firebase/firestore';
+import { ArrowLeft, Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users } from 'lucide-react';
+import MainLayout from "@/layouts/MainLayout";
+import Swal from 'sweetalert2';
+import { useTheme } from '@/ThemeContext';
+import { isAcademicCourse, getPartnerIndex } from './utils';
+
+interface GroupAssignment {
+    groupNumber: number;
+    teacherId: string;
+    roomIds: string[];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Course {
@@ -39,6 +56,10 @@ interface Course {
     hoursPerWeek?: number;
     credits?: number | string;
     type?: string;
+<<<<<<< HEAD
+=======
+    teacherAssignments?: GroupAssignment[];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Teacher {
@@ -47,10 +68,15 @@ interface Teacher {
 }
 
 interface AssignmentRow extends Course {
+<<<<<<< HEAD
     assignment: TeacherAssignment;
     academicYear: string;
     semester: string;
     compositeId: string; // courseId + "_" + groupNumber
+=======
+    assignment: GroupAssignment;
+    compositeId: string; // course.id + "_" + groupNumber
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface PeriodConstraint {
@@ -91,6 +117,7 @@ const DEFAULT_PERIODS: PeriodSettingItem[] = [
     { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
 ];
 
+<<<<<<< HEAD
 const getRequiredWeeklyPeriods = (course: Pick<Course, 'credits' | 'hoursPerWeek'>) => {
     const hours = Number(course.hoursPerWeek || 0);
     if (hours > 0) return Math.round(hours);
@@ -99,12 +126,17 @@ const getRequiredWeeklyPeriods = (course: Pick<Course, 'credits' | 'hoursPerWeek
     return credits > 0 ? Math.round(credits * 2) : 0;
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 const PeriodConstraintPage: React.FC = () => {
     const { isDarkMode } = useTheme();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
+<<<<<<< HEAD
     const dispatch = useDispatch();
     const { academicYear: calYear, terms: calTerms, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const [courses, setCourses] = useState<Course[]>([]);
     const [constraints, setConstraints] = useState<Record<string, PeriodConstraint>>({});
@@ -117,9 +149,13 @@ const PeriodConstraintPage: React.FC = () => {
     
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
+<<<<<<< HEAD
     const [selectedYear, setSelectedYear] = useState<string>("");
     const [filterSemester, setFilterSemester] = useState('1');
     const [courseAssignments, setCourseAssignments] = useState<CourseAssignmentDoc[]>([]);
+=======
+    const [filterSemester, setFilterSemester] = useState('1');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [filterClass, setFilterClass] = useState('all');
     const [filterGroup, setFilterGroup] = useState('all');
     const [filterSubjectGroup, setFilterSubjectGroup] = useState('all');
@@ -150,6 +186,7 @@ const PeriodConstraintPage: React.FC = () => {
         'SENIOR_HIGH': 'ม.ปลาย',
     };
 
+<<<<<<< HEAD
     useEffect(() => {
         if (schoolId && calendarStatus === 'idle') {
             dispatch(fetchCalendar(schoolId) as any);
@@ -169,6 +206,8 @@ const PeriodConstraintPage: React.FC = () => {
             }
         }
     }, [calYear, calTerms, selectedYear, filterSemester]);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const buildClassList = (levelRange: string) => {
         const allKeys = ['k1','k2','k3','p1','p2','p3','p4','p5','p6','m1','m2','m3','m4','m5','m6'];
         const labelToKey: Record<string, string> = {};
@@ -217,6 +256,7 @@ const PeriodConstraintPage: React.FC = () => {
                 const coursesData = coursesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Course));
                 setCourses(coursesData);
 
+<<<<<<< HEAD
                 // 1.1 Load Course Assignments (Filtered by year and semester)
                 const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
                 const q = query(assignmentsRef, 
@@ -227,6 +267,8 @@ const PeriodConstraintPage: React.FC = () => {
                 const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CourseAssignmentDoc));
                 setCourseAssignments(assignmentsData);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 // 2. Load Existing Constraints
                 const constraintDocRef = doc(db, 'school-settings', schoolId, 'configs', 'period_constraints');
                 const constraintSnap = await getDoc(constraintDocRef);
@@ -273,6 +315,7 @@ const PeriodConstraintPage: React.FC = () => {
             }
         };
         loadData();
+<<<<<<< HEAD
     }, [schoolId, selectedYear, filterSemester]);
 
     const showLimitWarning = (title: string, text: string) => {
@@ -301,13 +344,22 @@ const PeriodConstraintPage: React.FC = () => {
             return;
         }
 
+=======
+    }, [schoolId]);
+
+    const handleConstraintChange = (assignmentId: string, type: 'any' | 'single' | 'double' | 'mixed') => {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         setConstraints(prev => ({
             ...prev,
             [assignmentId]: {
                 ...(prev[assignmentId] || { isLocked: false, doublePreference: 'any', singlePreference: 'any', excludedDays: [] }),
+<<<<<<< HEAD
                 type,
                 doublePreference: type === 'single' ? 'any' : (prev[assignmentId]?.doublePreference || 'any'),
                 singlePreference: type === 'double' ? 'any' : (prev[assignmentId]?.singlePreference || 'any'),
+=======
+                type
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }
         }));
     };
@@ -348,6 +400,7 @@ const PeriodConstraintPage: React.FC = () => {
     };
 
     const toggleSlot = useCallback((assignmentId: string, slotId: string, totalPeriods: number, totalHoursNeeded: number) => {
+<<<<<<< HEAD
         const existing = constraints[assignmentId] || { type: 'any' as const, isLocked: false, lockedSlots: [] };
         const slots = existing.lockedSlots || [];
         const type = existing.type || 'any';
@@ -439,6 +492,66 @@ const PeriodConstraintPage: React.FC = () => {
             return;
         }
 
+=======
+        const teachingPeriods = periodSettings.filter(p => p.isTeachingPeriod);
+        setConstraints(prev => {
+            const existing = prev[assignmentId] || { type: 'any', isLocked: false, lockedSlots: [] };
+            const slots = existing.lockedSlots || [];
+            const type = existing.type;
+            
+            const [dayKey, indexStr] = slotId.split('-');
+            const index = parseInt(indexStr);
+            const isRemoving = slots.includes(slotId);
+
+            let targets = [slotId];
+            
+            // Intelligent pairing logic
+            if (!isRemoving && (type === 'double' || type === 'mixed')) {
+                const currentCount = slots.length;
+                const remaining = totalHoursNeeded - currentCount;
+                
+                const shouldPair = type === 'double' || (type === 'mixed' && remaining >= 2);
+
+                if (shouldPair) {
+                    const partnerIndex = getPartnerIndex(index);
+                    if (partnerIndex !== -1 && partnerIndex < totalPeriods) {
+                        const p1 = periodSettings[index];
+                        const p2 = periodSettings[partnerIndex];
+                        if (p1 && p2 && p2.isTeachingPeriod) {
+                            targets.push(`${dayKey}-${partnerIndex}`);
+                        }
+                    }
+                }
+            } else if (isRemoving) {
+                // If removing, also check if it was part of a standard pair
+                const partnerIndex = getPartnerIndex(index);
+                if (partnerIndex !== -1) {
+                    const partnerId = `${dayKey}-${partnerIndex}`;
+                    if (slots.includes(partnerId)) {
+                        targets.push(partnerId);
+                    }
+                }
+            }
+
+            let newSlots = [...slots];
+            if (isRemoving) {
+                newSlots = newSlots.filter(s => !targets.includes(s));
+            } else {
+                targets.forEach(t => {
+                    if (!newSlots.includes(t)) newSlots.push(t);
+                });
+            }
+
+            return {
+                ...prev,
+                [assignmentId]: { ...existing, isLocked: newSlots.length > 0, lockedSlots: newSlots }
+            };
+        });
+    }, [periodSettings]);
+
+    const handleSave = async () => {
+        if (!schoolId) return;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         setIsSubmitting(true);
         try {
             const constraintDocRef = doc(db, 'school-settings', schoolId, 'configs', 'period_constraints');
@@ -468,6 +581,7 @@ const PeriodConstraintPage: React.FC = () => {
 
     // Create a flattened list of all assignments (rows)
     const allAssignments = useMemo(() => {
+<<<<<<< HEAD
         return courseAssignments.flatMap(courseDoc => {
             const course = courses.find(c => c.id === courseDoc.courseId);
             if (!course) return [];
@@ -481,6 +595,17 @@ const PeriodConstraintPage: React.FC = () => {
             } as AssignmentRow));
         });
     }, [courses, courseAssignments]);
+=======
+        return courses.flatMap(course => {
+            if (!course.teacherAssignments || course.teacherAssignments.length === 0) return [];
+            return course.teacherAssignments.map(asgn => ({
+                ...course,
+                assignment: asgn,
+                compositeId: `${course.id}_${asgn.groupNumber}`
+            } as AssignmentRow));
+        });
+    }, [courses]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const filteredAssignments = useMemo(() => {
         return allAssignments.filter(asgn => {
@@ -540,6 +665,7 @@ const PeriodConstraintPage: React.FC = () => {
                 <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#07090e]/95 backdrop-blur-2xl border-b border-slate-200 dark:border-white/[0.03] shadow-lg px-6 py-5">
                     <div className="max-w-[1600px] mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-5">
+<<<<<<< HEAD
                                 <BackButton to="/academic/hub/scheduling" />
                                 <div className="flex flex-col">
                                     <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase leading-none">จัดการรูปแบบคาบเรียน</h1>
@@ -568,6 +694,21 @@ const PeriodConstraintPage: React.FC = () => {
 
                             <div className="h-8 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
 
+=======
+                            <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)]">
+                                <Settings size={26} className="text-white" />
+                            </div>
+                            <div className="flex flex-col">
+                                <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase leading-none">จัดการรูปแบบคาบเรียน</h1>
+                                <Link to="/academic/teacher-schedule" className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 hover:text-indigo-500 transition-all uppercase tracking-[0.2em] mt-2">
+                                    <ArrowLeft size={12} />
+                                    <span>กลับไปหน้าจัดตารางสอน</span>
+                                </Link>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <button className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all text-[11px] font-black uppercase tracking-widest shadow-lg">
                                 <Zap size={16} />
                                 <span>กำหนดรูปแบบคาบอัตโนมัติ</span>
@@ -589,6 +730,7 @@ const PeriodConstraintPage: React.FC = () => {
                     {/* 2. FILTER BAR SECTION */}
                     <section className="relative z-10 bg-white dark:bg-[#0a0c10]/50 border border-slate-200 dark:border-white/[0.03] rounded-2xl p-8 shadow-xl mb-8">
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-8 items-end">
+<<<<<<< HEAD
 
                             {/* Search */}
                             <div className="space-y-3">
@@ -605,6 +747,8 @@ const PeriodConstraintPage: React.FC = () => {
                                 </div>
                             </div>
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             {/* Semester */}
                             <div className="space-y-3">
                                 <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ภาคเรียน</label>
@@ -616,6 +760,10 @@ const PeriodConstraintPage: React.FC = () => {
                                     >
                                         <option value="1" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 1</option>
                                         <option value="2" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 2</option>
+<<<<<<< HEAD
+=======
+                                        <option value="0" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทั้งปีการศึกษา</option>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </select>
                                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
@@ -691,6 +839,23 @@ const PeriodConstraintPage: React.FC = () => {
                                 </div>
                             </div>
 
+<<<<<<< HEAD
+=======
+                            {/* Search */}
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ค้นหา</label>
+                                <div className="relative group">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
+                                    <input 
+                                        type="text" 
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="รหัส, ชื่อวิชา..."
+                                        className="w-full h-12 pl-12 pr-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
+                                    />
+                                </div>
+                            </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
 
                         <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
@@ -738,17 +903,24 @@ const PeriodConstraintPage: React.FC = () => {
                                     paginatedAssignments.map(asgn => {
                                         const current = constraints[asgn.compositeId] || { type: 'any', isLocked: false };
                                         const teacherName = teacherMap[asgn.assignment.teacherId]?.name || 'ไม่ระบุครู';
+<<<<<<< HEAD
                                         const requiredPeriods = getRequiredWeeklyPeriods(asgn);
                                         const lockedCount = current.lockedSlots?.length || 0;
                                         const isOverLocked = requiredPeriods > 0 && lockedCount > requiredPeriods;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         return (
                                             <tr key={asgn.compositeId} className={`group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors border-b border-slate-100 dark:border-white/5 last:border-0 ${openExcludedMenu === asgn.compositeId ? 'relative z-50' : ''}`}>
                                                 <td className="px-4 py-3.5">
                                                     <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-500 text-[10px] font-black uppercase">
+<<<<<<< HEAD
                                                         {(() => {
                                                             const classLevels = asgn.assignment.classLevels || (Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId]);
                                                             return classLevels.map(id => ALL_CLASSES[id] || id).join(', ');
                                                         })()}
+=======
+                                                        {Array.isArray(asgn.classId) ? asgn.classId.map(id => ALL_CLASSES[id] || id).join(', ') : (ALL_CLASSES[asgn.classId] || asgn.classId)}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3.5">
@@ -779,17 +951,25 @@ const PeriodConstraintPage: React.FC = () => {
                                                 </td>
                                                 <td className="px-4 py-3.5 text-center">
                                                     <div className="flex flex-col items-center">
+<<<<<<< HEAD
                                                         <span className={`text-xs font-black ${isOverLocked || (asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2)) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
                                                             {requiredPeriods}
+=======
+                                                        <span className={`text-xs font-black ${asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                                                            {asgn.hoursPerWeek || 0}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         </span>
                                                         {asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2) && (
                                                             <span className="text-[8px] text-red-400 font-bold">ควรเป็น {Math.round(Number(asgn.credits) * 2)}</span>
                                                         )}
+<<<<<<< HEAD
                                                         {lockedCount > 0 && (
                                                             <span className={`text-[8px] font-bold ${isOverLocked ? 'text-red-500' : 'text-amber-500'}`}>
                                                                 ล็อก {lockedCount}/{requiredPeriods || '-'}
                                                             </span>
                                                         )}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3.5">
@@ -1022,11 +1202,17 @@ const PeriodConstraintPage: React.FC = () => {
                 const c = slotModalCourse;
                 const cst = constraints[c.compositeId] || { type: 'any', isLocked: false, lockedSlots: [] };
                 const locked = cst.lockedSlots || [];
+<<<<<<< HEAD
                 const displayPeriods = periodSettings.filter(p => p.isTeachingPeriod || p.id === 'lunch');
                 const classLabel = ALL_CLASSES[c.classId] || c.classId;
                 const totalHours = getRequiredWeeklyPeriods(c);
                 const hasReachedLimit = totalHours > 0 && locked.length >= totalHours;
                 const isOverLimit = totalHours > 0 && locked.length > totalHours;
+=======
+                const teachingPeriods = periodSettings.filter(p => p.isTeachingPeriod);
+                const displayPeriods = periodSettings.filter(p => p.isTeachingPeriod || p.id === 'lunch');
+                const classLabel = ALL_CLASSES[c.classId] || c.classId;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 // Build merged columns: teaching periods + special periods mapped by position
                 // Special periods that match a teaching period's time slot get overlaid
@@ -1051,7 +1237,11 @@ const PeriodConstraintPage: React.FC = () => {
                                     <span className="text-xs font-black text-amber-500">{c.code}</span>
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-300">{c.title}</span>
                                     <span className="text-xs font-bold text-slate-400">•</span>
+<<<<<<< HEAD
                                     <span className={`text-xs font-bold ${isOverLimit ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>{locked.length}/{totalHours || '-'} คาบ</span>
+=======
+                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{c.hoursPerWeek || 0} คาบ</span>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </div>
                                 <button onClick={() => setSlotModalCourse(null)} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all shrink-0">
                                     <X size={14} />
@@ -1092,7 +1282,10 @@ const PeriodConstraintPage: React.FC = () => {
                                                     const isSelected = locked.includes(slotId);
                                                     const sp = getSpecialForDayAndPeriod(day.key, p.id);
                                                     const isDayExcluded = cst.excludedDays?.includes(day.key);
+<<<<<<< HEAD
                                                     const isDisabledByLimit = hasReachedLimit && !isSelected;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     
                                                     if (sp) {
                                                         return (
@@ -1113,10 +1306,15 @@ const PeriodConstraintPage: React.FC = () => {
                                                             </td>
                                                         );
                                                     }
+<<<<<<< HEAD
+=======
+                                                    const totalHours = Math.round(Number(c.credits || 0) * 2) || Number(c.hoursPerWeek || 0);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     return (
                                                         <td key={p.id} className="px-0.5 py-1.5">
                                                             <button
                                                                 onClick={() => toggleSlot(c.compositeId, slotId, periodSettings.length, totalHours)}
+<<<<<<< HEAD
                                                                 disabled={isDisabledByLimit}
                                                                 title={isDisabledByLimit ? `เลือกครบ ${totalHours} คาบ/สัปดาห์แล้ว` : undefined}
                                                                 className={`w-full h-9 rounded-lg border transition-all flex items-center justify-center ${
@@ -1124,6 +1322,11 @@ const PeriodConstraintPage: React.FC = () => {
                                                                         ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
                                                                         : isDisabledByLimit
                                                                             ? 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 opacity-35 cursor-not-allowed'
+=======
+                                                                className={`w-full h-9 rounded-lg border transition-all flex items-center justify-center ${
+                                                                    isSelected
+                                                                        ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                                         : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:border-amber-400/50 hover:bg-amber-50 dark:hover:bg-amber-500/5'
                                                                 }`}
                                                             >
@@ -1140,6 +1343,7 @@ const PeriodConstraintPage: React.FC = () => {
 
                             {/* Footer */}
                             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] shrink-0">
+<<<<<<< HEAD
                                 <div className="flex flex-col">
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
                                         คาบที่ล็อกไว้: <span className={isOverLimit ? 'text-red-500 font-black' : 'text-amber-500 font-black'}>{locked.length}</span>
@@ -1160,6 +1364,16 @@ const PeriodConstraintPage: React.FC = () => {
                                     >
                                         <Unlock size={14} />
                                         <span>ล้างคาบที่ล็อกไว้</span>
+=======
+                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">คาบที่ล็อกไว้: <span className="text-amber-500 font-black">{locked.length}</span> คาบ</span>
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => { setConstraints(prev => ({ ...prev, [c.compositeId]: { ...cst, lockedSlots: [], isLocked: false } })); }}
+                                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-black hover:bg-emerald-500/20 transition-all"
+                                    >
+                                        <Lock size={14} />
+                                        <span>บังคับจัดลงตารางในคาบนี้เท่านั้น</span>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </button>
                                     <button 
                                         onClick={() => setSlotModalCourse(null)} 

@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+<<<<<<< HEAD
+=======
+# Environment variables
+.env
+.env.*
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -23,6 +30,7 @@ dist-ssr
 *.sln
 *.sw?
 
+<<<<<<< HEAD
 # Firebase
 .firebase
 firestore.indexes.json
@@ -40,3 +48,21 @@ ui-debug.log
 
 # Vite
 tsconfig.tsbuildinfo
+=======
+# Agent files
+.agent/
+.agents/
+.gemini/
+
+# Temporary files
+*.txt
+*.tsbuildinfo
+dist_old/
+temp_*.tsx
+temp_*.txt
+old_*.tsx
+rewrite.cjs
+patched_*.txt
+target_*.txt
+debug_*.txt
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

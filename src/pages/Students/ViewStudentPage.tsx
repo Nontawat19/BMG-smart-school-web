@@ -1,20 +1,33 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+<<<<<<< HEAD
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+=======
+import { useSelector } from "react-redux";
+import { RootState } from "@/store";
+import MainLayout from "@/layouts/MainLayout";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy } from "firebase/firestore";
 import Swal from 'sweetalert2';
+<<<<<<< HEAD
 import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap } from "react-icons/fa";
+=======
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap } from "react-icons/fa";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
+<<<<<<< HEAD
 import { getCurrentThaiYear } from "@/utils/dateUtils";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Type Definition ---
 interface StudentData {
@@ -101,7 +114,10 @@ interface StudentData {
   lineId?: string;
   studentStatus: string;
   profileImageUrl: string;
+<<<<<<< HEAD
   rfid?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   behaviorScore?: number;
@@ -149,8 +165,13 @@ const statusColorMap: { [key: string]: string } = {
 };
 
 // --- Reusable Components ---
+<<<<<<< HEAD
 const InfoCard: React.FC<{ title: string; children: React.ReactNode; className?: string }> = ({ title, children, className = "" }) => (
   <div className={`bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none ${className}`}>
+=======
+const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-600 pb-2">{title}</h2>
     <div className="space-y-4">{children}</div>
   </div>
@@ -349,6 +370,7 @@ export default function ViewStudentPage() {
   const [activeTab, setActiveTab] = useState("general");
   const [attendanceTrendData, setAttendanceTrendData] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
+<<<<<<< HEAD
   const dispatch = useDispatch();
   const calendarState = useSelector((state: RootState) => state.calendar);
   const academicYear = calendarState.academicYear || String(getCurrentThaiYear());
@@ -358,6 +380,9 @@ export default function ViewStudentPage() {
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [schoolId, dispatch]);
+=======
+  const [academicYear, setAcademicYear] = useState<string>("");
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [calculatedStats, setCalculatedStats] = useState<{
     present: number; late: number; leave: number; absent: number; early: number; noCheckout: number; official_travel_days?: number;
   } | null>(null);
@@ -372,6 +397,7 @@ export default function ViewStudentPage() {
     personnelHeadName: "",
     affiliation: ""
   });
+<<<<<<< HEAD
   
   // Navigation State
   const [allStudentIds, setAllStudentIds] = useState<string[]>([]);
@@ -401,6 +427,8 @@ export default function ViewStudentPage() {
 
 
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const { isDarkMode, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const profile = useSelector((state: RootState) => state.profile);
@@ -456,7 +484,23 @@ export default function ViewStudentPage() {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
+<<<<<<< HEAD
             // Logic handled by calendarSlice
+=======
+            if (sData.academicYear) {
+              setAcademicYear(sData.academicYear);
+            }
+          }
+
+          // Also check calendar for year (fallback)
+          const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
+          const calendarSnap = await getDoc(calendarDocRef);
+          if (calendarSnap.exists()) {
+            const data = calendarSnap.data();
+            if (data.academicYear && !schoolInfo.schoolName) {
+              setAcademicYear(data.academicYear || "");
+            }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -474,6 +518,7 @@ export default function ViewStudentPage() {
           // 1. Get Term Dates
           let startDate = "";
           let endDate = "";
+<<<<<<< HEAD
 
           if (calendarState.status === 'succeeded') {
             startDate = calendarState.terms[0]?.startDate || "";
@@ -493,6 +538,21 @@ export default function ViewStudentPage() {
               startDate = data.terms?.term1?.startDate || "";
               endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
             }
+=======
+          const yearDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", academicYear);
+          let yearSnap = await getDoc(yearDocRef);
+
+          if (!yearSnap.exists()) {
+            const defaultDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
+            yearSnap = await getDoc(defaultDocRef);
+          }
+
+          if (yearSnap.exists()) {
+            const data = yearSnap.data();
+            // ดึงช่วงเวลาทั้งปีการศึกษา (เริ่มเทอม 1 ถึง จบเทอม 2)
+            startDate = data.terms?.term1?.startDate || "";
+            endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
 
           if (!startDate || !endDate) {
@@ -940,6 +1000,7 @@ export default function ViewStudentPage() {
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <header className="mb-8">
             <div className="flex justify-between items-center">
+<<<<<<< HEAD
               <div className="flex items-center gap-4">
                 {!isStudentLogin && <BackButton to="/academic/hub/students" />}
                 <div>
@@ -972,6 +1033,16 @@ export default function ViewStudentPage() {
                   </div>
                 )}
                 {!isStudentLogin && (
+=======
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">ข้อมูลนักเรียน</h1>
+                <p className="mt-1 text-gray-500 dark:text-gray-400">
+                  รายละเอียดข้อมูลของ: <span className="font-semibold text-indigo-400">{student.firstName} {student.lastName}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-x-4">
+                {!isStudentLogin && (
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <button onClick={() => navigate(-1)} className="inline-flex items-center gap-x-2 rounded-md bg-gray-600/50 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700/50 transition-colors">
                     <FaArrowLeft />
                     กลับ
@@ -1459,7 +1530,11 @@ export default function ViewStudentPage() {
                 {activeTab === "attendance" && (
                   <div className="animate-fade-in space-y-6">
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
+<<<<<<< HEAD
                       <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear})</h2>
+=======
+                      <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear || new Date().getFullYear() + 543})</h2>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                       {isStatsLoading ? (
                         <div className="py-10 text-center text-gray-500">กำลังประมวลผลข้อมูล...</div>

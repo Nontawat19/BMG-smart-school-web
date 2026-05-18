@@ -1,7 +1,10 @@
 import React from 'react';
 import MainLayout from "@/layouts/MainLayout";
 import { Link } from 'react-router-dom';
+<<<<<<< HEAD
 import BackButton from '@/components/Shared/BackButton';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import {
     User,
     GraduationCap,
@@ -45,6 +48,7 @@ const SDQPage: React.FC = () => {
                 <div className="max-w-7xl mx-auto">
                     {/* Header */}
                     <div className="mb-8">
+<<<<<<< HEAD
                         <div className="flex items-center gap-4 mb-2">
                             <BackButton />
                             <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
@@ -52,6 +56,12 @@ const SDQPage: React.FC = () => {
                                 ระบบคัดกรองนักเรียน (SDQ)
                             </h1>
                         </div>
+=======
+                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mb-2">
+                            <ClipboardList className="text-indigo-600" size={36} />
+                            ระบบคัดกรองนักเรียน (SDQ)
+                        </h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         <p className="text-gray-500 dark:text-gray-400 text-lg">
                             เลือกหัวข้อการประเมินตามผู้ประเมิน
                         </p>

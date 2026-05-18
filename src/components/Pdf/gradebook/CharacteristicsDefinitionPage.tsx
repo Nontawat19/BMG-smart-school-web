@@ -1,7 +1,10 @@
 import React from 'react';
 import { Text, View, StyleSheet } from '@react-pdf/renderer';
 import PdfPage from './PdfPage';
+<<<<<<< HEAD
 import { DESIRED_CHARACTERISTICS } from './constants';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface CharacteristicCriteria {
     id: string;
@@ -144,7 +147,11 @@ const CharacteristicsDefinitionPage: React.FC<CharacteristicsDefinitionPageProps
                     </View>
                 </View>
 
+<<<<<<< HEAD
                 {DESIRED_CHARACTERISTICS.map((item, idx) => (
+=======
+                {criteria.map((item, idx) => (
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     <View key={item.id} style={styles.tableRow} wrap={false}>
                         {/* คอลัมน์ซ้าย: จัดชื่อหัวข้อไว้บน และคะแนนไว้ตรงกลางพื้นที่ที่เหลือ */}
                         <View style={styles.col1}>

@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
+<<<<<<< HEAD
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
+=======
+import { useSelector } from "react-redux";
+import { RootState } from "../../store";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore } from "@/firebase";
 import {
   collection,
@@ -21,9 +26,13 @@ import Swal from "sweetalert2";
 import Select, { StylesConfig } from "react-select";
 import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
+=======
+import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // ... (Interface StudentOption และ CustomStyles ไม่มีการเปลี่ยนแปลง)
 
@@ -152,8 +161,12 @@ const ThaiDatePicker: React.FC<{
   const displayValue = value
     ? (() => {
       const [y, m, d] = value.split('-').map(Number);
+<<<<<<< HEAD
       const date = new Date(y, m - 1, d);
       return `${d} ${thaiMonths[m - 1]} ${getThaiYear(date)}`;
+=======
+      return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     })()
     : '';
 
@@ -172,7 +185,11 @@ const ThaiDatePicker: React.FC<{
           <div className="flex justify-between items-center mb-4">
             <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
             <span className="font-bold text-gray-900 dark:text-white">
+<<<<<<< HEAD
               {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
+=======
+              {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             </span>
             <button type="button" onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
           </div>
@@ -193,6 +210,7 @@ const ThaiDatePicker: React.FC<{
 };
 
 const LeaveRequestPage: React.FC = () => {
+<<<<<<< HEAD
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
@@ -200,11 +218,19 @@ const LeaveRequestPage: React.FC = () => {
   // Redux Calendar State
   const calendarState = useSelector((state: RootState) => state.calendar);
   const reduxRawData = calendarState.rawData;
+=======
+  const { user } = useSelector((state: RootState) => state.auth);
+  const schoolId = user?.schoolId;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [students, setStudents] = useState<StudentOption[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<StudentOption | null>(
     null
   );
+<<<<<<< HEAD
   const currentAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
+=======
+  const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [leaveType, setLeaveType] = useState<"ลากิจ" | "ลาป่วย">("ลาป่วย");
   const [startDate, setStartDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -284,6 +310,7 @@ const LeaveRequestPage: React.FC = () => {
     fetchStudents();
   }, [schoolId]);
 
+<<<<<<< HEAD
   // Fetch calendar data
   useEffect(() => {
     if (schoolId) {
@@ -307,6 +334,37 @@ const LeaveRequestPage: React.FC = () => {
       }
     }
   }, [schoolId, calendarEvents]);
+=======
+  // Fetch calendar data (Firestore first, then Google Calendar API fallback)
+  useEffect(() => {
+    if (!schoolId) return;
+
+    const fetchCalendar = async () => {
+      try {
+        const docRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.events) {
+            setCalendarEvents(data.events);
+          }
+          if (data.academicYear) {
+            setCurrentAcademicYear(data.academicYear);
+          }
+        }
+
+        // Fallback: Fetch from Google Calendar API if Firestore is empty/missing or no events
+        const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
+        if (apiKey) {
+          fetchGoogleCalendar(apiKey);
+        }
+      } catch (error) {
+        console.error("Error fetching calendar:", error);
+      }
+    };
+    fetchCalendar();
+  }, [schoolId]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchGoogleCalendar = async (apiKey: string) => {
     try {
@@ -655,12 +713,18 @@ const LeaveRequestPage: React.FC = () => {
       <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 mb-6 shadow-sm dark:shadow-none">
+<<<<<<< HEAD
             <div className="flex items-center gap-4 mb-1">
               <BackButton />
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
                 ยื่นใบลากิจ/ลาป่วย
               </h1>
             </div>
+=======
+            <h1 className="text-2xl sm:text-3xl font-bold mb-1 text-gray-900 dark:text-white">
+              ยื่นใบลากิจ/ลาป่วย
+            </h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <p className="text-gray-500 dark:text-gray-400">
               กรอกแบบฟอร์มเพื่อบันทึกการลาของนักเรียน
             </p>

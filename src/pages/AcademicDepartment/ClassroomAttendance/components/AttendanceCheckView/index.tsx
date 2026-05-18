@@ -23,7 +23,10 @@ interface AttendanceCheckViewProps {
         ลา: number;
         ขาด: number;
     };
+<<<<<<< HEAD
     children?: React.ReactNode;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
@@ -40,7 +43,10 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     onSave,
     onToggleStatus,
     attendanceSummary,
+<<<<<<< HEAD
     children,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }) => {
     return (
         <div className="space-y-6">
@@ -103,8 +109,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                 </div>
             </div>
 
+<<<<<<< HEAD
             {children}
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             {/* Summary Cards */}
             <AttendanceSummary summary={attendanceSummary} />
 

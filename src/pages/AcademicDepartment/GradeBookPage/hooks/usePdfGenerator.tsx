@@ -6,6 +6,7 @@ import { collection, query, orderBy, limit, getDocs, collectionGroup, where } fr
 import { firestore as db, storage } from '@/firebase';
 import { pdf } from '@react-pdf/renderer';
 
+<<<<<<< HEAD
 const GRADEBOOK_PDF_TEMPLATE_VERSION = '2026-05-08-attendance-sequential-week-labels-v18';
 const pdfUploadMetadata = {
     customMetadata: {
@@ -13,6 +14,8 @@ const pdfUploadMetadata = {
     }
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 export const usePdfGenerator = (
     setIsPdfValidating: React.Dispatch<React.SetStateAction<boolean>>,
     setPdfProgress: React.Dispatch<React.SetStateAction<number>>,
@@ -26,8 +29,11 @@ export const usePdfGenerator = (
     selectedClass: string,
     selectedRoom: string,
     schoolId: string,
+<<<<<<< HEAD
     year: string,
     semester: string,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     students: any[],
     qrRef: React.RefObject<HTMLDivElement | null>
 ) => {
@@ -38,6 +44,7 @@ export const usePdfGenerator = (
         setIsPdfValidating(true);
         setPdfProgress(0);
 
+<<<<<<< HEAD
         const isReadyToGenerate = validateDataCompleteness();
         if (!isReadyToGenerate) {
             setIsPdfValidating(false);
@@ -47,6 +54,10 @@ export const usePdfGenerator = (
         const roomSlug = selectedRoom ? `_${selectedRoom}` : '';
         const semesterPath = `year_${year}/semester_${semester}`;
         const filePath = `school-settings/${schoolId}/grading/courses/${selectedCourse}/${semesterPath}/ปพ5_${selectedCourse}_${selectedClass}${roomSlug}.pdf`;
+=======
+        const roomSlug = selectedRoom ? `_${selectedRoom}` : '';
+        const filePath = `school-settings/${schoolId}/grading/courses/${selectedCourse}/ปพ5_${selectedCourse}_${selectedClass}${roomSlug}.pdf`;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const storageRef = ref(storage, filePath);
 
         let existingMetadata: any = null;
@@ -94,9 +105,13 @@ export const usePdfGenerator = (
 
                 const pdfUpdateTime = new Date(existingMetadata.updated).getTime();
 
+<<<<<<< HEAD
                 const existingTemplateVersion = existingMetadata?.customMetadata?.templateVersion || '';
 
                 if (existingTemplateVersion === GRADEBOOK_PDF_TEMPLATE_VERSION && pdfUpdateTime > latestUpdate) {
+=======
+                if (pdfUpdateTime > latestUpdate) {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     console.log("Existing PDF is fresh. Skipping generation.");
 
                     const response = await fetch(storageUrl);
@@ -128,9 +143,12 @@ export const usePdfGenerator = (
                     });
                     return;
                 }
+<<<<<<< HEAD
                 if (existingTemplateVersion !== GRADEBOOK_PDF_TEMPLATE_VERSION) {
                     console.log("Existing PDF template is outdated. Regenerating.");
                 }
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             } catch (checkError) {
                 console.error("Error checking for fresh PDF:", checkError);
             }
@@ -172,13 +190,21 @@ export const usePdfGenerator = (
         try {
             updateUI(10, 'กำลังรวบรวมข้อมูลหน่วยเรียน...');
 
+<<<<<<< HEAD
             const verificationUrl = `${window.location.origin}/verify-doc?s=${schoolId}&c=${selectedCourse}&cl=${selectedClass}&r=${selectedRoom || 'all'}&y=${year}&sem=${semester}`;
+=======
+            const verificationUrl = `${window.location.origin}/verify-doc?s=${schoolId}&c=${selectedCourse}&cl=${selectedClass}&r=${selectedRoom || 'all'}`;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             if (!storageUrl) {
                 updateUI(12, 'เตรียมพื้นที่จัดเก็บสำหรับครั้งแรก...');
                 const placeholderDoc = <GradeBookDocument {...incomingPdfProps} students={students.slice(0, 1)} qrCodeDataUrl={undefined} />;
                 const placeholderBlob = await pdf(placeholderDoc).toBlob();
+<<<<<<< HEAD
                 await uploadBytes(storageRef, placeholderBlob, pdfUploadMetadata);
+=======
+                await uploadBytes(storageRef, placeholderBlob);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 storageUrl = await getDownloadURL(storageRef);
             }
 
@@ -214,7 +240,18 @@ export const usePdfGenerator = (
                 console.log("QR Code captured successfully");
             }
 
+<<<<<<< HEAD
             updateUI(40, 'ตรวจสอบความครบถ้วนเรียบร้อย...');
+=======
+            updateUI(40, 'กำลังตรวจสอบความถูกต้องของข้อมูล...');
+            const isValid = validateDataCompleteness();
+
+            if (!isValid) {
+                console.warn("Data validation failed. Aborting PDF generation.");
+                setIsPdfValidating(false);
+                return;
+            }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             updateUI(65, 'กำลังประมวลผลไฟล์ PDF (อาจใช้เวลาสักครู่)...');
 
@@ -229,7 +266,11 @@ export const usePdfGenerator = (
 
             updateUI(90, 'กำลังจัดเก็บเอกสารเข้าฐานข้อมูลกลาง...');
             try {
+<<<<<<< HEAD
                 await uploadBytes(storageRef, blob, pdfUploadMetadata);
+=======
+                await uploadBytes(storageRef, blob);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 console.log("Final PDF uploaded to Storage");
             } catch (storageError) {
                 console.error("Failed to upload final PDF:", storageError);
@@ -280,7 +321,11 @@ export const usePdfGenerator = (
             setIsPdfValidating(false);
         }
     }, [
+<<<<<<< HEAD
         schoolId, selectedCourse, selectedClass, selectedRoom, year, semester,
+=======
+        schoolId, selectedCourse, selectedClass, selectedRoom,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         students, currentCourse, qrRef,
         setIsPdfValidating, setPdfProgress, setPdfUrl, setLiveQrUrl, setQrCodeDataUrl, setIsPdfReady, validateDataCompleteness
     ]);

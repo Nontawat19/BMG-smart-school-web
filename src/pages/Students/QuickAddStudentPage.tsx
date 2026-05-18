@@ -2,14 +2,21 @@ import React, { useState, FormEvent, useEffect } from "react";
 import MainLayout from "@/layouts/MainLayout";
 import { useParams, useNavigate } from "react-router-dom";
 import { firestore, storage, auth } from "@/firebase";
+<<<<<<< HEAD
 import { collection, addDoc, serverTimestamp, getDocs, query, doc, getDoc, where } from "firebase/firestore";
+=======
+import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
 import { FaIdCard, FaInfoCircle, FaUserPlus, FaArrowLeft } from "react-icons/fa";
 import { getLevelsByRange } from "@/utils/schoolUtils";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const InputField: React.FC<{ label: string; name: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; placeholder?: string; maxLength?: number; required?: boolean }> = ({ label, name, value, onChange, type = "text", placeholder, maxLength, required }) => (
   <div>
@@ -32,7 +39,10 @@ const statusColorMap: { [key: string]: { bg: string; text: string } } = {
   "พักการเรียน": { bg: "bg-yellow-500", text: "text-gray-900" },
   "ย้าย": { bg: "bg-blue-600", text: "text-white" },
   "ลาออก": { bg: "bg-red-600", text: "text-white" },
+<<<<<<< HEAD
   "จำหน่าย": { bg: "bg-gray-600", text: "text-white" },
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 const StatusSwitch: React.FC<{
@@ -69,7 +79,10 @@ const initialState = {
   ageYear: "", ageMonth: "", bloodType: "", birthProvince: "", nationality: "ไทย",
   race: "ไทย", religion: "พุทธ", schoolId: "", classLevel: "", room: "",
   studentNumber: "", studentStatus: "เรียนอยู่", studentType: "ปกติ", gpa: "", gpax: "",
+<<<<<<< HEAD
   exitDate: "", exitReason: "", exitDestinationSchool: "",
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   elderBrotherCount: "0", youngerBrotherCount: "0", elderSisterCount: "0", youngerSisterCount: "0",
   childOrder: "1", childOrderInCategory: "1", studyingSiblingCount: "0",
   parentsMaritalStatus: "อยู่ด้วยกัน", fatherIdNumber: "", fatherTitle: "", fatherFirstName: "",
@@ -99,9 +112,13 @@ export default function QuickAddStudentPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
 
+<<<<<<< HEAD
   const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
+=======
+  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก"] as const;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   useEffect(() => {
     if (schoolId) setForm(prev => ({ ...prev, schoolId: schoolId }));
@@ -129,6 +146,7 @@ export default function QuickAddStudentPage() {
   };
 
   const handleStatusChange = (name: string, value: string) => {
+<<<<<<< HEAD
     setForm(prev => ({
       ...prev,
       [name]: value,
@@ -136,6 +154,9 @@ export default function QuickAddStudentPage() {
         ? new Date().toISOString().split('T')[0]
         : prev.exitDate,
     }));
+=======
+    setForm(prev => ({ ...prev, [name]: value }));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,6 +185,7 @@ export default function QuickAddStudentPage() {
         setIsLoading(false);
         return;
       }
+<<<<<<< HEAD
 
       const studentsRef = collection(firestore, 'school-settings', formSchoolId, 'students');
       let conflictDoc: any = null;
@@ -201,6 +223,9 @@ export default function QuickAddStudentPage() {
           status: studentData.studentStatus,
         };
       }
+=======
+      const dataToSave: any = { ...studentData, schoolId: formSchoolId, role: ["student"], createdAt: serverTimestamp() };
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       if (imageFile) {
         const fileExtension = '.webp';
         let storagePath = `school-settings/${formSchoolId}/students/${studentData.classLevel}/${studentData.room}/${studentData.studentId}${fileExtension}`;
@@ -228,7 +253,13 @@ export default function QuickAddStudentPage() {
           {/* Compact Header */}
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
             <div className="flex items-center gap-3">
+<<<<<<< HEAD
               <BackButton to="/academic/hub/students" />
+=======
+              <button onClick={() => navigate(-1)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors">
+                <FaArrowLeft className="text-gray-500" size={14} />
+              </button>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                 <FaUserPlus className="text-indigo-600" size={18} />
                 เพิ่มนักเรียนด่วน
@@ -306,6 +337,7 @@ export default function QuickAddStudentPage() {
                 </div>
               </div>
 
+<<<<<<< HEAD
 	              <div className="pt-2">
 	                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
 	              </div>
@@ -324,6 +356,13 @@ export default function QuickAddStudentPage() {
 	              )}
 
 	            </div>
+=======
+              <div className="pt-2">
+                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
+              </div>
+
+            </div>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             {/* Compact Footer */}
             <div className="p-4 sm:p-6 bg-gray-50 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-700 flex justify-end items-center gap-4">

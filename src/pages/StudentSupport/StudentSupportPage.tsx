@@ -2,7 +2,10 @@ import React from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { RootState } from "../../store";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import {
   Home,
@@ -64,6 +67,7 @@ const StudentSupportPage: React.FC = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div>
+<<<<<<< HEAD
               <div className="flex items-center gap-4 mb-2">
                 <BackButton />
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
@@ -71,6 +75,12 @@ const StudentSupportPage: React.FC = () => {
                   ระบบดูแลช่วยเหลือนักเรียน
                 </h1>
               </div>
+=======
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
+                <HeartHandshake className="text-pink-600 dark:text-pink-400" size={32} />
+                ระบบดูแลช่วยเหลือนักเรียน
+              </h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <p className="text-gray-500 dark:text-gray-400 text-lg">
                 ยินดีต้อนรับ, <span className="text-pink-600 dark:text-pink-400 font-semibold">{userName}</span>
               </p>

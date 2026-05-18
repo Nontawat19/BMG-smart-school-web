@@ -8,7 +8,10 @@ import { collection, query, where, getDocs, orderBy, collectionGroup, doc, getDo
 import { FaPlane, FaSearch, FaFilePdf, FaPlus } from "react-icons/fa";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { useTheme } from "../../ThemeContext";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface TravelRequest {
     id: string;
@@ -129,13 +132,19 @@ const OfficialTravelHistoryPage: React.FC = () => {
             <div className="max-w-6xl mx-auto px-4 py-8">
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                     <div>
+<<<<<<< HEAD
                     <div className="flex items-center gap-4">
                         <BackButton />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <FaPlane className="text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
                             ประวัติการขอไปราชการ
                         </h1>
+<<<<<<< HEAD
                     </div>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         <p className="text-gray-500 dark:text-gray-400 mt-1">
                             รายการคำขอและสถานะการอนุมัติทั้งหมดของคุณ
                         </p>

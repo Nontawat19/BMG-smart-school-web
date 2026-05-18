@@ -86,6 +86,7 @@ export const getClassKeysByRange = (levelRange: string): string[] => {
     }
 };
 
+<<<<<<< HEAD
 export const getEffectiveLevelRange = (levelRange?: string, schoolType?: string): string => {
     if (levelRange) return levelRange;
 
@@ -111,5 +112,7 @@ export const getClassOptionsBySchoolSettings = (
     return Object.entries(CLASS_MAPPING).filter(([, label]) => levels.includes(label));
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 // Aliases for backward compatibility or easier usage
 export const CLASSES = CLASS_MAPPING;

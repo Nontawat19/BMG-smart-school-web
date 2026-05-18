@@ -6,7 +6,10 @@ import { ToastContainer, toast } from "react-toastify";
 import ToastContent from "../../components/ToastContent";
 import { showFirebaseError } from "../../utils/showFirebaseError";
 import { FaBookOpen, FaEnvelope, FaArrowRight, FaCheckCircle } from "react-icons/fa";
+<<<<<<< HEAD
 import BackButton from "../../components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 import "react-toastify/dist/ReactToastify.css";
 
@@ -85,10 +88,13 @@ const ForgotPasswordPage: React.FC = () => {
 
         {/* Right Side - Form */}
         <div className="w-full lg:w-1/2 p-6 sm:p-8 lg:p-10 flex flex-col justify-center relative">
+<<<<<<< HEAD
           {/* Back Button */}
           <div className="absolute top-4 left-4">
             <BackButton to="/login" />
           </div>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           {/* Mobile Logo (Visible only on Mobile) */}
           <div className="lg:hidden flex flex-col items-center mb-4 text-center">
             <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center mb-2 shadow-lg transform rotate-3">

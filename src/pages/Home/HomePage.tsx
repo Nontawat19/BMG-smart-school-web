@@ -5,14 +5,22 @@ import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, collectionGroup, Timestamp, getDoc, updateDoc, increment } from 'firebase/firestore';
+<<<<<<< HEAD
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, Rectangle, Sector } from 'recharts';
+=======
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from "../../firebase";
 
 import { X, ChevronLeft, ChevronRight, Award, CalendarX, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
 
 const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+<<<<<<< HEAD
 const DAY_MAP: Record<string, string> = { sun: 'อาทิตย์', mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์', sat: 'เสาร์' };
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+=======
+const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์' };
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { CLASSES } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -22,6 +30,7 @@ interface AttendanceItem { name: string; present?: number; late?: number; leave?
 interface StatItem { title: string; value: string; change: any; color: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
 interface ActivityItem { id: string; name: string; date: string; }
+<<<<<<< HEAD
 interface ScheduleItem {
     period: string;
     subject: string;
@@ -142,6 +151,9 @@ const isLearnerActivityPeriod = (period: any) => {
     const title = String(period?.title || '').toLowerCase();
     return !['ชุมนุม', 'club', 'โฮมรูม', 'homeroom', 'พักกลางวัน', 'พักเที่ยง'].some(keyword => title.includes(keyword));
 };
+=======
+interface ScheduleItem { period: string; subject: string; class: string; room: string; startTime?: string; endTime?: string; subjectCode?: string; }
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const checkIsWorkingDay = (dateStr: string, events: Record<string, CalendarEvent>) => {
     const event = events[dateStr];
@@ -209,6 +221,7 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
 
 
 
+<<<<<<< HEAD
 
 // --- Custom Tooltip for Chart ---
 const CustomTooltip = ({ active, payload, isPie }: any) => {
@@ -255,10 +268,16 @@ const renderActiveShape = (props: any) => {
 // ==================== MAIN COMPONENT ====================
 const HomePage = () => {
     const { user: currentUser, ACADEMIC_ACCESS, isSuperAdmin } = usePermissions();
+=======
+// ==================== MAIN COMPONENT ====================
+const HomePage = () => {
+    const { user: currentUser, ACADEMIC_ACCESS } = usePermissions();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const navigate = useNavigate();
     const [userProfile, setUserProfile] = useState<any>(null);
 
     useEffect(() => {
+<<<<<<< HEAD
         if (isSuperAdmin) {
             navigate("/owner/hub", { replace: true });
         } else {
@@ -273,6 +292,8 @@ const HomePage = () => {
     }, [isSuperAdmin, currentUser, navigate]);
 
     useEffect(() => {
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const fetchProfile = async () => {
             const uid = currentUser?.uid;
             if (!uid) return;
@@ -328,13 +349,17 @@ const HomePage = () => {
     const [leaveReport, setLeaveReport] = useState<any>({ studentLeaves: 0, teacherLeaves: 0, studentSick: 0, studentPersonal: 0, teacherSick: 0, teacherPersonal: 0, recentLeaves: [] });
     const [academicReport, setAcademicReport] = useState<any>({ totalCourses: 0, totalClubs: 0, totalEnrollments: 0, todaySchedules: [] });
     const [attendanceData, setAttendanceData] = useState<any[]>([]);
+<<<<<<< HEAD
     const [studentAttendanceStats, setStudentAttendanceStats] = useState<any>(null);
     const [teacherAttendanceStats, setTeacherAttendanceStats] = useState<any>(null);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [attendanceLoading, setAttendanceLoading] = useState(true);
 
     const [todayTeacherLeaves, setTodayTeacherLeaves] = useState<any[]>([]);
     const [todayTeacherLeavesLoading, setTodayTeacherLeavesLoading] = useState(true);
 
+<<<<<<< HEAD
     // --- Dashboard Real-time Logic ---
     const [stats, setStats] = useState<StatItem[]>([
         { title: "มาเรียนวันนี้", value: "...", change: "กำลังโหลด...", color: "bg-blue-500" },
@@ -397,10 +422,16 @@ const HomePage = () => {
     );
 
     // 1. Real-time Summary Listeners
+=======
+
+
+    // === EFFECT: Student Attendance By Class (From ClassroomAttendance Real Data) ===
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     useEffect(() => {
         const schoolId = currentUser?.schoolId;
         if (!schoolId) return;
 
+<<<<<<< HEAD
         const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 
         // A. Student Summary
@@ -479,6 +510,145 @@ const HomePage = () => {
         });
 
         return () => { unsubStudentSummary(); unsubTeacherSummary(); unsubDocs(); };
+=======
+        setAttendanceLoading(true);
+
+        // Create start and end of today for query
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const startTimestamp = Timestamp.fromDate(today);
+        const endTimestamp = Timestamp.fromDate(tomorrow);
+
+        // Real-time listener for Classroom Attendance
+        // Note: This requires a composite index on Firestore (schoolId ASC, date ASC)
+        const q = query(
+            collectionGroup(db, 'ClassroomAttendance'),
+            where('schoolId', '==', schoolId),
+            where('date', '>=', startTimestamp),
+            where('date', '<=', endTimestamp)
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const rawData: Record<string, any> = {};
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                // Ensure we have a grouping key. 
+                // Using 'className' (e.g., "ม.1/1") or 'subjectCode' if class is not available.
+                // Fallback to "ไม่ระบุห้อง"
+                const groupKey = data.className || data.roomName || data.subjectCode || "อื่นๆ";
+                const status = data.status || 'absent'; // 'present', 'late', 'leave', 'absent', etc.
+
+                if (!rawData[groupKey]) {
+                    rawData[groupKey] = {
+                        name: groupKey,
+                        present: 0,
+                        late: 0,
+                        leave: 0,
+                        absent: 0,
+                        officialTravel: 0,
+                        earlyReturn: 0,
+                        noCheckout: 0
+                    };
+                }
+
+                if (status === 'present') rawData[groupKey].present++;
+                else if (status === 'late') rawData[groupKey].late++;
+                else if (status === 'leave') rawData[groupKey].leave++;
+                else if (status === 'absent') rawData[groupKey].absent++;
+                else if (status === 'officialTravel') rawData[groupKey].officialTravel++;
+                else if (status === 'earlyReturn' || status === 'escape') rawData[groupKey].earlyReturn++; // Mapping 'escape' to earlyReturn for now if needed, or just grouping
+                // Add more mappings as per ClassroomAttendancePage constants
+            });
+
+            // Convert to array and sort
+            const processed = Object.values(rawData).sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+            setAttendanceData(processed);
+            setAttendanceLoading(false);
+        }, (error) => {
+            console.error("Error fetching classroom attendance:", error);
+            setAttendanceLoading(false);
+            // Optionally set mock data here if query fails due to missing index, so UI doesn't break
+            // But user asked for REAL data.
+        });
+
+        return () => unsubscribe();
+    }, [currentUser]);
+
+
+
+    // === EFFECT: Teacher Leaves Today ===
+    useEffect(() => {
+        const schoolId = currentUser?.schoolId;
+        if (!schoolId) return;
+
+        const fetchTodayTeacherLeaves = async () => {
+            setTodayTeacherLeavesLoading(true);
+            try {
+                const now = new Date();
+                const nowMillis = now.getTime();
+
+                const teachersRef = collection(db, 'school-settings', schoolId, 'teachers');
+                const teachersSnap = await getDocs(teachersRef);
+
+                const promises = teachersSnap.docs.map(async (teacherDoc) => {
+                    const teacherData = teacherDoc.data();
+                    const profileImageUrl = teacherData.profileImageUrl || teacherData.photoURL || null;
+
+                    const leavesRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'leave_summary');
+                    const leavesSnap = await getDocs(leavesRef);
+                    const leavesData = leavesSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'leave_summary', ...doc.data() } as any));
+
+                    const travelsRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'travel_summary');
+                    const travelsSnap = await getDocs(travelsRef);
+                    const travelsData = travelsSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'travel_summary', ...doc.data() } as any));
+
+                    return [...leavesData, ...travelsData];
+                });
+
+                const results = await Promise.all(promises);
+                const allLeaves = results.flat();
+
+                const todayLeaves = allLeaves.filter(data => {
+                    if (data.status === 'rejected') return false;
+
+                    if (!data.startDate || !data.endDate) return false;
+                    const startDateObj = data.startDate?.toDate ? data.startDate.toDate() : new Date(data.startDate);
+                    const endDateObj = data.endDate?.toDate ? data.endDate.toDate() : new Date(data.endDate);
+
+                    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) return false;
+
+                    const startDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate()).getTime();
+                    const endDay = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate(), 23, 59, 59, 999).getTime();
+
+                    return nowMillis >= startDay && nowMillis <= endDay;
+                });
+
+                const processedLeaves = todayLeaves.map(data => ({
+                    id: data.id,
+                    teacherName: data.teacherName || data.requesterName || "ไม่ระบุชื่อ",
+                    leaveType: data.leaveType || (data.collection === 'travel_summary' ? 'ไปราชการ' : 'ลา'),
+                    reason: data.reason || '-',
+                    status: data.status,
+                    startDate: data.startDate,
+                    endDate: data.endDate,
+                    profileImageUrl: data.profileImageUrl || null
+                }));
+
+                setTodayTeacherLeaves(processedLeaves);
+            } catch (e) {
+                console.error("Error fetching today teacher leaves", e);
+            } finally {
+                setTodayTeacherLeavesLoading(false);
+            }
+        };
+
+        fetchTodayTeacherLeaves();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     }, [currentUser]);
 
 
@@ -574,6 +744,7 @@ const HomePage = () => {
                     let todaySchedules: ScheduleItem[] = [];
                     const uid = currentUser?.uid;
                     if (uid) {
+<<<<<<< HEAD
                         const now = new Date();
                         const todayStr = toBangkokDateString(now);
                         let dayKey = getDayKeyFromDateString(todayStr);
@@ -582,17 +753,36 @@ const HomePage = () => {
                         let shouldLoadTodaySchedule = true;
 
                         try {
+=======
+                        // 1. Determine standard Day Key
+                        const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+                        const now = new Date();
+                        let dayKey = dayNames[now.getDay()];
+
+                        // 2. Check for "Compensation Day" Override
+                        // We fetch the calendar doc to check if today has a specific schedule override
+                        try {
+                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             const calDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
                             const calDocSnap = await getDoc(calDocRef);
 
                             if (calDocSnap.exists()) {
                                 const calData = calDocSnap.data();
+<<<<<<< HEAD
                                 activeAcademicYear = String(calData.academicYear || calData.year || '');
                                 activeSemester = getSemesterForDate(calData, todayStr);
                                 const todayEvent = calData.events?.[todayStr];
                                 shouldLoadTodaySchedule = shouldShowScheduleForDate(todayStr, calData);
                                 if (todayEvent?.type === 'schoolDay' && todayEvent?.scheduleDay) {
                                     dayKey = todayEvent.scheduleDay;
+=======
+                                const todayEvent = calData.events?.[todayStr];
+                                // If today is marked as a school day AND has a specific scheduleDay override (e.g., 'mon')
+                                if (todayEvent?.type === 'schoolDay' && todayEvent?.scheduleDay) {
+                                    dayKey = todayEvent.scheduleDay;
+                                    console.log(`[Schedule Override] Using ${dayKey} schedule for ${todayStr}`);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 }
                             }
                         } catch (err) {
@@ -601,6 +791,7 @@ const HomePage = () => {
 
                         const teacherQ = query(collection(db, "school-settings", schoolId, "teachers"), where("uid", "==", uid));
                         const teacherSnap = await getDocs(teacherQ);
+<<<<<<< HEAD
                         if (!teacherSnap.empty && shouldLoadTodaySchedule) {
                             const teacherDocId = teacherSnap.docs[0].id;
 
@@ -611,6 +802,17 @@ const HomePage = () => {
                                 getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'learner-activities'))
+=======
+                        if (!teacherSnap.empty) {
+                            const teacherDocId = teacherSnap.docs[0].id;
+
+                            // 3. Fetch period settings & courses & rooms to enrich schedule data
+                            let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
+                            const [periodSnap, coursesSnap, roomsSnap] = await Promise.all([
+                                getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
+                                getDocs(collection(db, 'school-settings', schoolId, 'courses')),
+                                getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms'))
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             ]);
 
                             // 3.1 Map Periods
@@ -630,9 +832,15 @@ const HomePage = () => {
                             // 3.2 Map Courses for Assignments
                             const courseDataMap: Record<string, any> = {};
                             coursesSnap.forEach(cdoc => {
+<<<<<<< HEAD
                                 courseDataMap[cdoc.id] = { id: cdoc.id, ...cdoc.data() };
                                 // Also map by code for easier lookup
                                 if (cdoc.data().code) courseDataMap[cdoc.data().code] = { id: cdoc.id, ...cdoc.data() };
+=======
+                                courseDataMap[cdoc.id] = cdoc.data();
+                                // Also map by code for easier lookup
+                                if (cdoc.data().code) courseDataMap[cdoc.data().code] = cdoc.data();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             });
 
                             // 3.3 Map Rooms for Display Names
@@ -646,6 +854,7 @@ const HomePage = () => {
                                 };
                             });
 
+<<<<<<< HEAD
                             const assignmentMap: Record<string, any> = {};
                             if (activeAcademicYear && activeSemester) {
                                 try {
@@ -670,6 +879,14 @@ const HomePage = () => {
                                 if (!isScheduleDocForCurrentTerm(data, activeAcademicYear, activeSemester)) return;
 
                                 const sch = data.schedule || {};
+=======
+                            const schedSnap = await getDocs(query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId)));
+                            schedSnap.forEach(sdoc => {
+                                const data = sdoc.data();
+                                const sch = data.schedule || {};
+                                const classId = Array.isArray(data.classId) ? data.classId[0] : data.classId;
+                                const baseClassName = CLASSES[classId] || classId || "ไม่ระบุชั้น";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 Object.keys(sch).forEach(key => {
                                     // Key format is typically "day-periodId" (e.g., "mon-period-1", "mon-homeroom")
                                     if (key.startsWith(dayKey + '-') && sch[key]) {
@@ -682,7 +899,10 @@ const HomePage = () => {
                                         const pTime = periodSettings[periodId];
                                         const startTime = pTime?.startTime || '';
                                         const endTime = pTime?.endTime || '';
+<<<<<<< HEAD
                                         const startMinutes = timeToMinutes(startTime);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                                         if (periodId === 'homeroom') {
                                             displayPeriod = 'โฮมรูม';
@@ -701,6 +921,7 @@ const HomePage = () => {
 
                                         const rawCourse = sch[key];
                                         const coursesArray = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
+<<<<<<< HEAD
                                         coursesArray.forEach((course: any, courseIndex: number) => {
                                             if (!course || course === '-') return; // Skip free periods
 
@@ -834,6 +1055,68 @@ const HomePage = () => {
                                 (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) ||
                                 (a._sortIndex ?? 999) - (b._sortIndex ?? 999)
                             );
+=======
+                                        const course = coursesArray[0];
+
+                                        if (!course || course === '-') return; // Skip free periods
+
+                                        const subjectName = typeof course === 'string' ? '-' : (course?.title || course?.subjectName || course?.name || '-');
+                                        if (subjectName === '-') return; // Double check for empty subjects
+
+                                        const subjectCode = typeof course === 'string' ? '' : (course?.code || course?.subjectCode || '');
+                                        const courseId = typeof course === 'string' ? null : (course?.id || course?.courseId);
+
+                                        // --- Advanced Logic for Class/Room based on Teacher Assignments ---
+                                        let finalClassName = baseClassName;
+                                        let finalRoom = course?.room || data.room || '-';
+
+                                        // Lookup Course Document to find Assignments
+                                        const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
+
+                                        if (fullCourseData && fullCourseData.teacherAssignments) {
+                                            // Find the assignment for THIS teacher
+                                            const myAssignment = fullCourseData.teacherAssignments.find((a: any) =>
+                                                String(a.teacherId) === String(teacherDocId)
+                                            );
+
+                                            if (myAssignment) {
+                                                // 1. Format Class Name (e.g., ม.1/1)
+                                                if (myAssignment.groupNumber) {
+                                                    finalClassName = `${baseClassName}/${myAssignment.groupNumber}`;
+                                                }
+
+                                                // 2. Format Room Name (from Physical Rooms map)
+                                                if (myAssignment.roomIds && myAssignment.roomIds.length > 0) {
+                                                    const roomDisplays = myAssignment.roomIds.map((rid: string) => {
+                                                        const r = roomDataMap[rid];
+                                                        if (!r) return rid;
+                                                        return r.code ? `${r.name} (${r.code})` : r.name;
+                                                    });
+                                                    finalRoom = roomDisplays.join(', ');
+                                                }
+                                            }
+                                        } else if (course?.groupName) {
+                                            // Fallback to groupName in schedule if available
+                                            const groupNum = course.groupName.match(/\d+/);
+                                            if (groupNum) finalClassName = `${baseClassName}/${groupNum[0]}`;
+                                        }
+
+                                        todaySchedules.push({
+                                            period: displayPeriod,
+                                            subject: subjectName,
+                                            subjectCode: subjectCode,
+                                            class: finalClassName,
+                                            room: finalRoom,
+                                            startTime,
+                                            endTime,
+                                            _sortIndex: sortIndex
+                                        } as any);
+                                    }
+                                });
+                            });
+                            // Sort based on the calculated sortIndex
+                            todaySchedules.sort((a: any, b: any) => a._sortIndex - b._sortIndex);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         }
                     }
                     setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules });
@@ -947,6 +1230,7 @@ const HomePage = () => {
                         <div className="mb-8">
                             <div className="flex items-center gap-2 mb-5"><div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" /><h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2><span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span></div>
                             {
+<<<<<<< HEAD
                                         reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
                             <div className="grid grid-cols-3 gap-2 mb-6">
                                 {isLoading ? (
@@ -972,10 +1256,20 @@ const HomePage = () => {
                                     ))
                                 )}
                             </div></>)}
+=======
+                                reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform"><Users size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">นักเรียน</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{studentReport.total.toLocaleString()}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-md font-semibold">เรียนอยู่ {studentReport.active}</span>{studentReport.paused > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 rounded-md font-semibold">พัก {studentReport.paused}</span>}{studentReport.transferred > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-md font-semibold">ย้าย {studentReport.transferred}</span>}{studentReport.resigned > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-md font-semibold">ลาออก {studentReport.resigned}</span>}</div></div>
+                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform"><GraduationCap size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">บุคลากร</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{teacherReport.total}</div><div className="flex flex-wrap gap-1 mt-2">{Object.entries(teacherReport.byDepartment).slice(0, 3).map(([dept, count]) => <span key={dept} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md font-semibold truncate max-w-[100px]">{dept} {count as number}</span>)}{Object.keys(teacherReport.byDepartment).length > 3 && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md font-semibold">+{Object.keys(teacherReport.byDepartment).length - 3}ฝ่าย</span>}</div></div>
+                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform"><FileText size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">สถิติการลา</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{leaveReport.studentLeaves + leaveReport.teacherLeaves}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-md font-semibold">นร.ลาป่วย {leaveReport.studentSick}</span><span className="text-[10px] px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 rounded-md font-semibold">นร.ลากิจ {leaveReport.studentPersonal}</span></div></div>
+                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform"><BookOpen size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">วิชาการ</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{academicReport.totalCourses}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 rounded-md font-semibold">รายวิชา {academicReport.totalCourses}</span><span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md font-semibold">ชุมนุม {academicReport.totalClubs}</span></div></div>
+                                    </div></>)}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </CanAccess>
 
                     <CanAccess roles={ACADEMIC_ACCESS}>
+<<<<<<< HEAD
                         <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:gap-6 mb-8">
                             {/* Student Attendance Donut */}
                             <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
@@ -1231,6 +1525,202 @@ const HomePage = () => {
                                     </div>
                                 )}
                             </div>
+=======
+                        <div className="mb-10">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-600/20">
+                                    <BarChart3 className="text-white w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">สถิติการมาเรียนวันนี้</h3>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">ข้อมูล Real-time ทั้งโรงเรียน</p>
+                                </div>
+                            </div>
+
+                            {attendanceLoading ? (
+                                <div className="bg-white dark:bg-[#2a2b2f] p-8 rounded-2xl shadow-sm"><SkeletonLoader height="250px" className="rounded-xl" /></div>
+                            ) : attendanceData.length > 0 ? (
+                                (() => {
+                                    const schoolTotal = attendanceData.reduce((acc, item) => ({
+                                        present: acc.present + (item.present || 0),
+                                        late: acc.late + (item.late || 0),
+                                        leave: acc.leave + (item.leave || 0),
+                                        absent: acc.absent + (item.absent || 0),
+                                        officialTravel: acc.officialTravel + (item.officialTravel || 0),
+                                        earlyReturn: acc.earlyReturn + (item.earlyReturn || 0),
+                                        noCheckout: acc.noCheckout + (item.noCheckout || 0),
+                                    }), { present: 0, late: 0, leave: 0, absent: 0, officialTravel: 0, earlyReturn: 0, noCheckout: 0 });
+
+                                    const totalStudents = schoolTotal.present + schoolTotal.late + schoolTotal.leave + schoolTotal.absent + schoolTotal.officialTravel + schoolTotal.earlyReturn + schoolTotal.noCheckout;
+                                    const presentPercentage = totalStudents > 0 ? Math.round((schoolTotal.present / totalStudents) * 100) : 0;
+
+                                    // Prepare Chart Data
+                                    const chartData = [
+                                        { name: 'มาเรียน', value: schoolTotal.present, color: '#10b981', gradient: ['#10b981', '#34d399'] },
+                                        { name: 'มาสาย', value: schoolTotal.late, color: '#f59e0b', gradient: ['#f59e0b', '#fbbf24'] },
+                                        { name: 'ลา', value: schoolTotal.leave, color: '#a855f7', gradient: ['#a855f7', '#c084fc'] },
+                                        { name: 'ขาด', value: schoolTotal.absent, color: '#ef4444', gradient: ['#ef4444', '#f87171'] },
+                                        { name: 'ราชการ/อื่นๆ', value: schoolTotal.officialTravel + schoolTotal.earlyReturn, color: '#6366f1', gradient: ['#6366f1', '#818cf8'] }
+                                    ].filter(d => d.value > 0);
+
+                                    if (chartData.length === 0) {
+                                        chartData.push({ name: 'ไม่มีข้อมูล', value: 1, color: '#e5e7eb', gradient: ['#e5e7eb', '#f3f4f6'] });
+                                    }
+
+                                    const StatCard = ({ label, value, total, color, bgClass, textClass, icon }: any) => {
+                                        const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+                                        const colorName = textClass.split('-')[1]; // e.g., 'emerald', 'amber', 'purple', etc.
+
+                                        return (
+                                            <div className={`relative overflow-hidden bg-white dark:bg-[#1e1f21] border border-gray-100 dark:border-gray-800/60 p-5 rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group dark:hover:border-${colorName}-500/30`}>
+                                                <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500 bg-${colorName}-500`}></div>
+
+                                                <div className="flex justify-between items-start mb-1 relative z-10">
+                                                    <p className="text-sm font-bold text-gray-500 dark:text-gray-400">{label}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-xs font-black px-2 py-0.5 rounded-full ${bgClass} ${textClass}`}>
+                                                            {percent}%
+                                                        </span>
+                                                        <div className={`opacity-20 group-hover:opacity-100 transition-opacity ${textClass} scale-75 origin-right transform`}>
+                                                            {icon}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mb-2 relative z-10">
+                                                    <h4 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight drop-shadow-sm">{value}</h4>
+                                                </div>
+
+                                                {/* Progress Bar */}
+                                                <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-full overflow-hidden mt-4 relative z-10">
+                                                    <div
+                                                        className={`h-full rounded-full shadow-[0_0_10px_rgba(0,0,0,0.1)] bg-${colorName}-500`}
+                                                        style={{ width: `${percent}%`, transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    };
+
+                                    return (
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-white dark:bg-[#2a2b2f] p-6 lg:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800">
+                                            {/* Left: Chart & Overview */}
+                                            <div className="lg:col-span-1 flex flex-col items-center justify-center relative min-h-[280px]">
+                                                <div className="w-full h-[260px] relative">
+                                                    {totalStudents > 0 ? (
+                                                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
+                                                            <PieChart width={260} height={260}>
+                                                                <Pie
+                                                                    data={chartData}
+                                                                    cx="50%"
+                                                                    cy="50%"
+                                                                    innerRadius={85}
+                                                                    outerRadius={115}
+                                                                    paddingAngle={4}
+                                                                    dataKey="value"
+                                                                    stroke="none"
+                                                                    cornerRadius={6}
+                                                                >
+                                                                    {chartData.map((entry, index) => (
+                                                                        <Cell
+                                                                            key={`cell-${index}`}
+                                                                            fill={entry.color}
+                                                                            className="hover:opacity-80 transition-opacity cursor-pointer"
+                                                                        />
+                                                                    ))}
+                                                                </Pie>
+                                                                <RechartsTooltip
+                                                                    formatter={(value: any) => [value, 'จำนวน']}
+                                                                    contentStyle={{
+                                                                        borderRadius: '12px',
+                                                                        border: 'none',
+                                                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                                                                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                                                        color: '#333'
+                                                                    }}
+                                                                    itemStyle={{ color: '#000', fontWeight: 600 }}
+                                                                />
+                                                            </PieChart>
+                                                        </ResponsiveContainer>
+                                                    ) : (
+                                                        <div className="flex items-center justify-center h-full text-gray-400">ยังไม่มีข้อมูลวันนี้</div>
+                                                    )}
+                                                    {/* Center Stat */}
+                                                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                                                        <div className="text-5xl font-black bg-gradient-to-br from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 bg-clip-text text-transparent drop-shadow-sm">
+                                                            {presentPercentage}%
+                                                        </div>
+                                                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">เข้าเรียน</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Right: Detailed Grid */}
+                                            <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-4 content-center">
+                                                <StatCard
+                                                    label="มาเรียน"
+                                                    value={schoolTotal.present}
+                                                    total={totalStudents}
+                                                    bgClass="bg-emerald-100 dark:bg-emerald-900/20"
+                                                    textClass="text-emerald-600 dark:text-emerald-400"
+                                                    icon={<Check size={24} />}
+                                                />
+                                                <StatCard
+                                                    label="มาสาย"
+                                                    value={schoolTotal.late}
+                                                    total={totalStudents}
+                                                    bgClass="bg-amber-100 dark:bg-amber-900/20"
+                                                    textClass="text-amber-600 dark:text-amber-400"
+                                                    icon={<Clock size={24} />}
+                                                />
+                                                <StatCard
+                                                    label="ลา"
+                                                    value={schoolTotal.leave}
+                                                    total={totalStudents}
+                                                    bgClass="bg-purple-100 dark:bg-purple-900/20"
+                                                    textClass="text-purple-600 dark:text-purple-400"
+                                                    icon={<FileText size={24} />}
+                                                />
+                                                <StatCard
+                                                    label="ขาด"
+                                                    value={schoolTotal.absent}
+                                                    total={totalStudents}
+                                                    bgClass="bg-red-100 dark:bg-red-900/20"
+                                                    textClass="text-red-600 dark:text-red-400"
+                                                    icon={<X size={24} />}
+                                                />
+                                                <StatCard
+                                                    label="ราชการ/อื่นๆ"
+                                                    value={schoolTotal.officialTravel + schoolTotal.earlyReturn}
+                                                    total={totalStudents}
+                                                    bgClass="bg-indigo-100 dark:bg-indigo-900/20"
+                                                    textClass="text-indigo-600 dark:text-indigo-400"
+                                                    icon={<Award size={24} />}
+                                                />
+
+                                                {/* Summary Total Card */}
+                                                <div className="hidden md:flex flex-col justify-center items-center p-5 bg-gradient-to-br from-gray-50/50 to-gray-100/50 dark:from-[#1e1f21]/30 dark:to-[#1e1f21]/80 rounded-2xl border border-gray-100 dark:border-gray-800/60 text-center shadow-inner relative overflow-hidden group hover:border-gray-200 dark:hover:border-gray-700/50 transition-colors">
+                                                    <div className="absolute inset-0 bg-white/20 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1 relative z-10 uppercase tracking-wide">นักเรียนทั้งหมดที่เช็คชื่อ</p>
+                                                    <div className="text-5xl font-black text-slate-800 dark:text-slate-200 relative z-10 drop-shadow-sm my-1">{totalStudents}</div>
+                                                    <div className="text-[10px] text-gray-400 font-bold relative z-10 uppercase tracking-widest">คน</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()
+                            ) : (
+                                <div className="p-12 text-center bg-white dark:bg-[#2a2b2f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm">
+                                    <div className="w-16 h-16 bg-gray-50 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <CalendarX className="w-8 h-8 text-gray-400" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">ยังไม่มีข้อมูลการเช็คชื่อวันนี้</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 max-w-xs mx-auto">
+                                        เมื่อคุณครูเริ่มเช็คชื่อ ข้อมูลสถิติจะปรากฏที่นี่โดยอัตโนมัติ
+                                    </p>
+                                </div>
+                            )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </CanAccess>
 
@@ -1304,6 +1794,7 @@ const HomePage = () => {
                                                             {s.subjectCode && <span className="text-[8px] font-medium text-gray-400 dark:text-gray-500 truncate">({s.subjectCode})</span>}
                                                         </div>
                                                         <div className="flex items-center gap-1.5 mt-0">
+<<<<<<< HEAD
                                                             <span className={`text-[8px] font-semibold px-1 py-0 rounded border ${
                                                                 s.type === 'club'
                                                                     ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100/20 dark:border-emerald-800/10'
@@ -1311,6 +1802,9 @@ const HomePage = () => {
                                                                         ? 'text-teal-600 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-900/10 border-teal-100/20 dark:border-teal-800/10'
                                                                         : 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/20 dark:border-blue-800/10'
                                                             }`}>{s.class}</span>
+=======
+                                                            <span className="text-[8px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 px-1 py-0 rounded border border-blue-100/20 dark:border-blue-800/10">{s.class}</span>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             {s.room !== '-' && (
                                                                 <span className="text-[8px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 px-1 py-0 rounded border border-emerald-100/20 dark:border-emerald-800/10">{s.room}</span>
                                                             )}
@@ -1320,8 +1814,13 @@ const HomePage = () => {
                                                         </div>
                                                     </div>
 
+<<<<<<< HEAD
                                                     <button onClick={() => navigate(s.actionPath || '/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
                                                         <CheckCircle size={12} /> {s.actionLabel || 'เช็คชื่อ'}
+=======
+                                                    <button onClick={() => navigate('/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
+                                                        <CheckCircle size={12} /> เช็คชื่อ
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </button>
                                                 </div>
                                             </div>

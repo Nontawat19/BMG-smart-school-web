@@ -2,7 +2,11 @@ import React, { useState, useEffect, FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import { firestore, storage } from "@/firebase";
+<<<<<<< HEAD
 import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, deleteField } from "firebase/firestore";
+=======
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
@@ -10,8 +14,11 @@ import { FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaBus, FaArrowLeft, FaS
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { isExitStudentStatus } from "@/utils/studentStatusUtils";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Reusable Components (from AddStudentPage) ---
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -76,7 +83,10 @@ const initialState = {
   // 2. ข้อมูลการเรียน (Educational Info)
   studentId: "", studentNumber: "", classLevel: "", room: "",
   studentStatus: "เรียนอยู่", enrollmentDate: "",
+<<<<<<< HEAD
   exitDate: "", exitReason: "", exitDestinationSchool: "",
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   gpa: "", gpax: "", behaviorScore: 100,
   subSchoolId: "", subSchoolName: "",
 
@@ -140,8 +150,11 @@ export default function EditStudentPage() {
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [subSchools, setSubSchools] = useState<{ id: string, name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<string>("general");
+<<<<<<< HEAD
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const tabs = [
     { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
@@ -219,9 +232,12 @@ export default function EditStudentPage() {
             ...prev,
             ...data,
             birthDate: formattedBirthDate || data.birthDate || "", // Use formatted or original
+<<<<<<< HEAD
             exitDate: data.exitDetails?.exitDate || data.exitDate || "",
             exitReason: data.exitDetails?.reason || data.exitReason || "",
             exitDestinationSchool: data.exitDetails?.destinationSchool || data.exitDestinationSchool || "",
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }));
           if (data.profileImageUrl) {
             setImagePreview(data.profileImageUrl);
@@ -303,6 +319,7 @@ export default function EditStudentPage() {
   }
 
   function handleStatusChange(name: string, value: string) {
+<<<<<<< HEAD
     setForm((prev) => ({
       ...prev,
       [name]: value,
@@ -310,6 +327,9 @@ export default function EditStudentPage() {
         ? new Date().toISOString().split('T')[0]
         : prev.exitDate,
     }));
+=======
+    setForm((prev) => ({ ...prev, [name]: value }));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -362,11 +382,15 @@ export default function EditStudentPage() {
 
       const dataToUpdate: any = {
         ...studentData,
+<<<<<<< HEAD
         status: studentData.studentStatus,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         role: roles,
         updatedAt: serverTimestamp(),
       };
 
+<<<<<<< HEAD
       if (isExitStudentStatus(studentData.studentStatus)) {
         dataToUpdate.exitDetails = {
           exitDate: studentData.exitDate || "",
@@ -378,6 +402,8 @@ export default function EditStudentPage() {
         dataToUpdate.exitDetails = deleteField();
       }
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       // Handle image upload
       if (imageFile) {
         const fileExtension = '.webp';
@@ -474,6 +500,7 @@ export default function EditStudentPage() {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+<<<<<<< HEAD
           <header className="mb-8 flex items-center gap-4">
             <BackButton to="/academic/hub/students" />
             <div>
@@ -482,6 +509,13 @@ export default function EditStudentPage() {
                 คุณกำลังแก้ไขข้อมูลของ: <span className="font-semibold text-indigo-400">{form.firstName} {form.lastName}</span>
               </p>
             </div>
+=======
+          <header className="mb-8">
+            <h1 className="text-3xl font-bold tracking-tight">แก้ไขข้อมูลนักเรียน</h1>
+            <p className="mt-1 text-gray-500 dark:text-gray-400">
+              คุณกำลังแก้ไขข้อมูลของ: <span className="font-semibold text-indigo-400">{form.firstName} {form.lastName}</span>
+            </p>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -633,6 +667,7 @@ export default function EditStudentPage() {
                       <InputField label="เกรดเฉลี่ยสะสม (GPAX)" name="gpax" value={form.gpax} onChange={handleChange} />
                     </div>
 
+<<<<<<< HEAD
 	                    <div className="mt-6">
 	                      <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
 	                    </div>
@@ -652,6 +687,14 @@ export default function EditStudentPage() {
 	                  </InfoCard>
 	                </div>
 	              )}
+=======
+                    <div className="mt-6">
+                      <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
+                    </div>
+                  </InfoCard>
+                </div>
+              )}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
               {activeTab === "family" && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -931,4 +974,8 @@ export default function EditStudentPage() {
       </div>
     </MainLayout>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

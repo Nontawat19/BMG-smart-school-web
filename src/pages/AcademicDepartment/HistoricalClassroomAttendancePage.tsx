@@ -2,7 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from '@/components/Shared/BackButton';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from '@/firebase';
 import { collection, query, where, getDocs, doc, getDoc, collectionGroup, writeBatch, Timestamp } from 'firebase/firestore';
 import Swal from 'sweetalert2';
@@ -30,8 +33,11 @@ import * as XLSX from 'xlsx';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
 import Select from 'react-select';
+<<<<<<< HEAD
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Interfaces ---
 interface Student {
@@ -44,9 +50,12 @@ interface Student {
     prefix?: string;
     profileImageUrl?: string;
     nickname?: string;
+<<<<<<< HEAD
     room?: string;
     groupName?: string;
     classLevel?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Course {
@@ -56,7 +65,10 @@ interface Course {
     classId: string | string[];
     credits?: string | number;
     hoursPerWeek?: number;
+<<<<<<< HEAD
     teacherAssignments?: any[];
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface CalendarEvent {
@@ -75,6 +87,7 @@ interface LeaveRecord {
     description: string;
 }
 
+<<<<<<< HEAD
 type DateReason = 'holiday' | 'special_holiday' | 'weekend' | 'term_break' | 'schoolDay' | 'historical_locked' | 'not_scheduled' | 'specialHoliday';
 
 interface DateMetadata {
@@ -85,6 +98,14 @@ interface DateMetadata {
     periodCount?: number;
     periodNumber?: number;
     displayDate?: string;
+=======
+interface DateMetadata {
+    isCheckable: boolean;
+    isRelevant?: boolean;
+    reason?: 'holiday' | 'special_holiday' | 'weekend' | 'term_break' | 'schoolDay' | 'historical_locked' | 'not_scheduled';
+    description?: string;
+    periodCount?: number;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 
@@ -96,6 +117,7 @@ const DAY_KEY_MAP: Record<number, string> = {
 
 const THAI_DAY_NAMES = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
 
+<<<<<<< HEAD
 const normalizeRoom = (value: unknown) => {
     const raw = String(value ?? '').trim();
     if (!raw) return '';
@@ -142,12 +164,15 @@ const displayDateToISO = (displayDate: string) => {
     return `${yy}-${mm}-${dd}`;
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 // Dark mode styles for react-select
 const selectStyles = {
     control: (base: any, state: any) => ({
         ...base,
         backgroundColor: 'var(--select-bg)',
         borderColor: state.isFocused ? '#6366f1' : 'var(--select-border)',
+<<<<<<< HEAD
         boxShadow: state.isFocused ? '0 0 0 3px rgba(99, 102, 241, 0.18)' : 'none',
         '&:hover': {
             borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover)'
@@ -162,31 +187,56 @@ const selectStyles = {
         padding: '0 12px',
         minWidth: 0,
         flexWrap: 'nowrap',
+=======
+        boxShadow: state.isFocused ? '0 0 0 1px #6366f1' : 'none',
+        '&:hover': {
+            borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover)'
+        },
+        padding: '0px',
+        borderRadius: '0.5rem',
+        fontSize: '0.75rem',
+        minHeight: '34px',
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     }),
     menu: (base: any) => ({
         ...base,
         backgroundColor: 'var(--select-menu-bg)',
         border: '1px solid var(--select-border)',
+<<<<<<< HEAD
         borderRadius: '0.75rem',
         overflow: 'hidden',
         zIndex: 100
     }),
     menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
+=======
+        borderRadius: '0.5rem',
+        zIndex: 50
+    }),
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     option: (base: any, state: any) => ({
         ...base,
         backgroundColor: state.isSelected ? '#6366f1' : state.isFocused ? 'var(--select-option-hover)' : 'transparent',
         color: state.isSelected ? 'white' : 'var(--select-text)',
+<<<<<<< HEAD
         padding: '10px 12px',
         fontSize: '0.8125rem',
+=======
+        padding: '8px 12px',
+        fontSize: '0.75rem',
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         cursor: 'pointer',
     }),
     singleValue: (base: any) => ({
         ...base,
+<<<<<<< HEAD
         color: 'var(--select-text)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
         maxWidth: '100%',
+=======
+        color: 'var(--select-text)'
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     }),
     input: (base: any) => ({
         ...base,
@@ -195,6 +245,7 @@ const selectStyles = {
     placeholder: (base: any) => ({
         ...base,
         color: '#9ca3af'
+<<<<<<< HEAD
     }),
     indicatorsContainer: (base: any) => ({
         ...base,
@@ -285,6 +336,9 @@ const calculateCalendarYear = (acadYearStr: string, semester: string, monthIdx: 
     } else {
         return acadYearAD;
     }
+=======
+    })
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 const HistoricalClassroomAttendancePage: React.FC = () => {
@@ -312,7 +366,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const yearParam = searchParams.get('year');
         const semesterParam = searchParams.get('semester');
         const classParam = searchParams.get('classId');
+<<<<<<< HEAD
         const roomParam = searchParams.get('roomNumber') || searchParams.get('room');
+=======
+        const roomParam = searchParams.get('roomNumber');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const courseParam = searchParams.get('courseId');
 
         if (yearParam) setAcademicYear(yearParam);
@@ -342,15 +400,36 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
     const [annualRecordedDays, setAnnualRecordedDays] = useState<number>(0);
 
+<<<<<<< HEAD
 
     const calculatedYearAD = useMemo(() => {
         return calculateCalendarYear(academicYear, semester, selectedMonth, terms);
     }, [academicYear, semester, selectedMonth, terms]);
+=======
+    // Calculate Calendar Year based on Academic Year + Semester + Month
+    const calculateCalendarYear = (acadYearStr: string, monthIdx: number): number => {
+        const acadYearBE = parseInt(acadYearStr);
+        if (isNaN(acadYearBE)) return new Date().getFullYear();
+
+        const acadYearAD = acadYearBE - 543;
+        // If Jan(0) - Apr(3) -> Next Year (Semester 2 continued)
+        if (monthIdx >= 0 && monthIdx <= 3) {
+            return acadYearAD + 1;
+        } else {
+            return acadYearAD;
+        }
+    };
+
+    const calculatedYearAD = useMemo(() => {
+        return calculateCalendarYear(academicYear, selectedMonth);
+    }, [academicYear, selectedMonth]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const dispatch = useDispatch();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
     const { availableClassOptions } = useSelector((state: RootState) => state.schoolSettings);
+<<<<<<< HEAD
     
     // Redux Calendar State
     const calendarState = useSelector((state: RootState) => state.calendar);
@@ -358,6 +437,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const reduxTerms = calendarState.terms;
     const reduxRawData = calendarState.rawData;
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const schoolId = (currentUser as any)?.schoolId;
 
     const classOptions = useMemo(() => {
@@ -380,6 +461,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
             try {
                 const currentCourse = courses.find(c => c.id === selectedCourse || c.code === selectedCourse);
+<<<<<<< HEAD
+=======
+                const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+                const classTitle = CLASSES[selectedClass] || selectedClass;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 // Identify target codes (ID, Code, and Title for max robustness)
                 const targetCodes = new Set<string>();
@@ -401,10 +487,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                 snap.forEach(doc => {
                     const data = doc.data();
+<<<<<<< HEAD
                     const matchesClass = matchesClassValue(data.classId, selectedClass) ||
                         matchesClassValue(data.className, selectedClass);
 
                     const matchesRoom = matchesRoomGroup(data, selectedRoomNumber);
+=======
+                    const matchesClass = data.classId === classKey ||
+                        data.className === classTitle ||
+                        data.classId === classTitle ||
+                        (Array.isArray(data.classId) && data.classId.includes(classKey)) ||
+                        (data.className && classTitle && (data.className.includes(classTitle) || classTitle.includes(data.className)));
+
+                    const matchesRoom = !selectedRoomNumber ||
+                        String(data.room || data.roomNumber || '') === String(selectedRoomNumber) ||
+                        String(data.className || '').endsWith('/' + selectedRoomNumber);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                     if (matchesClass && matchesRoom) {
                         const dateObj = data.date?.toDate();
@@ -412,6 +510,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             const y = dateObj.getFullYear();
                             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
                             const d = String(dateObj.getDate()).padStart(2, '0');
+<<<<<<< HEAD
                             const isoStr = `${y}-${m}-${d}`;
 
                             // --- USER REQUEST: Restrict count to term boundaries ---
@@ -425,14 +524,21 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 // Fallback if no term data
                                 uniqueDates.add(isoStr);
                             }
+=======
+                            uniqueDates.add(`${y}-${m}-${d}`);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         }
                     }
                 });
 
                 // Calculate stats for warning
                 const totalDays = uniqueDates.size;
+<<<<<<< HEAD
                 const classLabel = CLASSES[selectedClass] || selectedClass;
                 const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
+=======
+                const isPrimary = selectedClass.includes('ป.') || selectedClass.toLowerCase().includes('p');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const courseAny = currentCourse as any;
                 const credits = courseAny?.credits ? Number(courseAny.credits) : 1;
 
@@ -442,7 +548,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
         };
         fetchAnnualAttendanceCount();
+<<<<<<< HEAD
     }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, terms, courses, isModified]);
+=======
+    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, courses, isModified]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     // Refresh when isModified becomes false (usually after save) ou trigger it manually
 
     const months = [
@@ -453,11 +563,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     useEffect(() => {
         if (schoolId) {
             dispatch(fetchTeachersMap(schoolId) as any);
+<<<<<<< HEAD
             dispatch(fetchCalendar(schoolId) as any);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             fetchSchoolSettings();
         }
     }, [schoolId, dispatch]);
 
+<<<<<<< HEAD
     // Sync from Redux Calendar
     useEffect(() => {
         if (calendarState.status === 'succeeded') {
@@ -489,6 +603,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         }
     }, [calendarState.status, reduxAcademicYear, reduxTerms, reduxRawData, searchParams]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const monthPickerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -533,6 +649,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const fetchSchoolSettings = async () => {
         if (!schoolId) return;
         try {
+<<<<<<< HEAD
             // Fetch root settings for feature toggles (academicSettings)
             const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
             if (schoolSnap.exists()) {
@@ -543,6 +660,42 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
         } catch (error) {
             console.error("Error fetching school settings:", error);
+=======
+            // Fetch base calendar data from Firestore matching GradeBookPage logic
+            const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
+            const calendarDocSnap = await getDoc(calendarDocRef);
+
+            if (calendarDocSnap.exists()) {
+                const firestoreData = calendarDocSnap.data();
+                setAcademicYear(firestoreData.academicYear || '2567');
+
+                if (firestoreData.events) setCalendarEvents(firestoreData.events);
+                if (firestoreData.terms) setTerms(firestoreData.terms);
+
+                // Calculate current term based on date
+                const today = new Date().toISOString().split('T')[0];
+                if (firestoreData.terms?.term2?.startDate && today >= firestoreData.terms.term2.startDate) {
+                    setSemester('2');
+                } else {
+                    setSemester('1');
+                }
+            } else {
+                // Fallback if main_calendar doesn't exist, try root settings
+                const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
+                if (schoolSnap.exists()) {
+                    const data = schoolSnap.data();
+                    setAcademicYear(data.currentAcademicYear || '2567');
+                    setSemester(data.currentSemester || '1');
+
+                    // Fetch academic settings for feature toggles
+                    if (data.academicSettings) {
+                        setAcademicSettings(data.academicSettings);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching settings:", error);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
     };
 
@@ -553,12 +706,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             try {
                 const q = query(collection(db, 'school-settings', schoolId, 'courses'));
                 const snap = await getDocs(q);
+<<<<<<< HEAD
                 const list = snap.docs.map(doc => ({ 
                     id: doc.id, 
                     ...doc.data(),
                     // Ensure teacherAssignments is present
                     teacherAssignments: doc.data().teacherAssignments || []
                 } as Course));
+=======
+                const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course));
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setCourses(list);
             } catch (error) {
                 console.error("Error fetching courses:", error);
@@ -589,6 +746,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: []
                 };
 
+<<<<<<< HEAD
                 snap.forEach(doc => {
                     const data = doc.data();
                     const docClassId = data.classId;
@@ -602,6 +760,27 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         docRoom === normalizeRoom(selectedRoomNumber) ||
                         docRoom === 'all' ||
                         matchesRoomGroup(data, selectedRoomNumber);
+=======
+                const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+                const classTitle = (CLASSES[selectedClass] || selectedClass).toLowerCase().replace(/\s/g, '');
+
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const docClassId = data.classId;
+                    const docClassName = (data.className || "").toLowerCase().replace(/\s/g, '');
+
+                    // Robust class matching
+                    const matchesClass =
+                        docClassId === classKey ||
+                        docClassId === selectedClass ||
+                        docClassName === classTitle ||
+                        (Array.isArray(docClassId) && docClassId.includes(classKey)) ||
+                        (docClassName && classTitle && (docClassName.includes(classTitle) || classTitle.includes(docClassName)));
+
+                    const matchesRoom = !selectedRoomNumber ||
+                        String(data.room || data.roomNumber || '') === String(selectedRoomNumber) ||
+                        String(data.className || '').endsWith('/' + selectedRoomNumber);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                     if (!matchesClass || !matchesRoom) return;
 
@@ -613,6 +792,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             if (!c) return false;
                             const sid = c.id || c.courseId;
                             const scode = (c.code || c.subjectCode || "").replace(/\s/g, '').toLowerCase();
+<<<<<<< HEAD
                             const matchesId = sid === targetId || (scode && targetCode && scode === targetCode);
                             if (!matchesId) return false;
                             
@@ -638,6 +818,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 ));
 
                             return matchesGroup;
+=======
+                            return sid === targetId || (scode && targetCode && scode === targetCode);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         });
 
                         if (isTarget) {
@@ -661,8 +844,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     }, [schoolId, selectedCourse, selectedClass, selectedRoomNumber, courses]);
 
     // Generate valid dates
+<<<<<<< HEAD
     const generateDates = React.useCallback((acadYearStr: string, monthIdx: number, hasDataDates?: Set<string>) => {
         const year = calculateCalendarYear(acadYearStr, semester, monthIdx, terms);
+=======
+    const generateDates = (acadYearStr: string, monthIdx: number) => {
+        const year = calculateCalendarYear(acadYearStr, monthIdx);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const dates: string[] = [];
         const metadata: Record<string, DateMetadata> = {};
 
@@ -687,7 +875,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
             let isCheckable = true;
+<<<<<<< HEAD
             let reason: DateReason | undefined = undefined;
+=======
+            let reason: DateMetadata['reason'] = undefined;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const description = event?.description;
 
             // 1. Determine Day Type & Checkability
@@ -709,11 +901,19 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 isCheckable = true;
             }
 
+<<<<<<< HEAD
             // 2. Determine Relevance & Periods
+=======
+            // 2. Determine Relevance for this subject
+            let isRelevant = false;
+            let periodCount = 0;
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             let dayKey = DAY_KEY_MAP[dayOfWeek];
             if (event?.type === 'schoolDay' && event?.scheduleDay) {
                 dayKey = event.scheduleDay;
             }
+<<<<<<< HEAD
             
             const scheduledPeriods: number[] = courseSchedule[dayKey] || [];
             
@@ -800,10 +1000,59 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         }
         return { dates, metadata };
     }, [semester, terms, calendarEvents, courseSchedule, academicSettings]);
+=======
+
+            const periodsToday = courseSchedule[dayKey] || [];
+            if (periodsToday.length > 0) {
+                isRelevant = true;
+                periodCount = periodsToday.length;
+            }
+
+            // --- USER REQUEST: Restrict to teaching days ---
+            if (isCheckable && !isRelevant) {
+                isCheckable = false;
+                if (!reason) reason = 'not_scheduled';
+            }
+
+            // 3. Term Boundaries
+            if (hasTermData) {
+                // Normalize dates for safe comparison
+                const currentStr = dateStrLookup;
+                const start = termData.startDate!;
+                const end = termData.endDate!;
+                if (currentStr < start || currentStr > end) {
+                    isCheckable = false;
+                    if (!reason) reason = 'term_break';
+                }
+            }
+
+            // 4. Historical Settings
+            if (isCheckable && academicSettings?.allowHistoricalAttendance === true) {
+                const start = academicSettings.historicalAttendanceStartDate;
+                const end = academicSettings.historicalAttendanceEndDate;
+                if ((start && dateStrLookup < start) || (end && dateStrLookup > end)) {
+                    isCheckable = false;
+                    reason = 'historical_locked';
+                }
+            }
+
+            dates.push(dateStrDisplay);
+            metadata[dateStrDisplay] = {
+                isCheckable,
+                isRelevant,
+                reason,
+                description,
+                periodCount
+            };
+        }
+        return { dates, metadata };
+    };
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Filter Courses based on Selected Class
     const filteredCourses = useMemo(() => {
         if (!selectedClass) return [];
+<<<<<<< HEAD
 
         return courses.filter(c => {
             // Handle both string and array formats for classId
@@ -835,6 +1084,26 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             setSelectedCourse(filteredCourses[0].code);
         }
     }, [filteredCourses, selectedCourse]);
+=======
+        // selectedClass is now usually the key (p1, m1)
+        const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+
+        return courses.filter(c => {
+            // Handle both string and array formats for classId
+            if (Array.isArray(c.classId)) {
+                return c.classId.includes(classKey);
+            }
+            return c.classId === classKey;
+        });
+    }, [courses, selectedClass]);
+
+    // Auto-select course if only one option available
+    useEffect(() => {
+        if (filteredCourses.length === 1) {
+            setSelectedCourse(filteredCourses[0].code);
+        }
+    }, [filteredCourses]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Fetch Data
     const handleFetchData = React.useCallback(async () => {
@@ -847,7 +1116,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
         try {
             // 1. Calculate Year & Dates
+<<<<<<< HEAD
             const yearAD = calculateCalendarYear(academicYear, semester, selectedMonth, terms);
+=======
+            const yearAD = calculateCalendarYear(academicYear, selectedMonth);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const { dates: generatedDates, metadata } = generateDates(academicYear, selectedMonth);
             setDates(generatedDates);
             setDateMetadata(metadata);
@@ -866,6 +1139,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 targetCodes.add(courseObj.code.replace(/\s/g, ''));
             }
             const finalSubjectCodes = Array.from(targetCodes).filter(Boolean) as string[];
+<<<<<<< HEAD
             // Class identifiers for lookup
             const currentClassKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
             const currentClassTitle = (CLASSES[selectedClass] || selectedClass);
@@ -929,10 +1203,46 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     const data = doc.data();
                     if (!data.classLevel) return true; 
                     return matchesClassValue(data.classLevel, selectedClass);
+=======
+
+            let studentList: Student[] = [];
+
+            // Class identifiers for lookup
+            const currentClassKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+            const currentClassTitle = (CLASSES[selectedClass] || selectedClass);
+
+            // Attempt to fetch from Enrollments first
+            let enrollConstraints = [
+                where('courseCode', '==', subjectCode),
+                where('academicYear', '==', academicYear),
+                where('semester', '==', semester)
+            ];
+
+            // If classLevel is filtered
+            if (selectedClass) {
+                enrollConstraints.push(where('classLevel', 'in', [currentClassKey, currentClassTitle].filter(Boolean)));
+            }
+
+            const enrollQ = query(
+                collection(db, 'school-settings', schoolId, 'enrollments'),
+                ...enrollConstraints
+            );
+
+            const enrollSnap = await getDocs(enrollQ);
+
+            // Filter by room locally if needed or add to query if room is stored in enrollments
+            let filteredEnrollDocs = enrollSnap.docs;
+            if (selectedRoomNumber) {
+                filteredEnrollDocs = filteredEnrollDocs.filter(d => {
+                    const data = d.data();
+                    return String(data.room || data.roomNumber || '') === String(selectedRoomNumber) ||
+                        String(data.className || '').endsWith('/' + selectedRoomNumber);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
             }
 
             if (filteredEnrollDocs.length > 0) {
+<<<<<<< HEAD
                 const enrolledStudentIds = Array.from(new Set(filteredEnrollDocs.map(d => d.data().studentId).filter(Boolean)));
                 
                 const studentsRef = collection(db, 'school-settings', schoolId, 'students');
@@ -966,6 +1276,30 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const classLevelValues = currentClassVariants.length > 0 ? currentClassVariants : [currentClassKey, currentClassTitle].filter(Boolean);
                 const studentConstraints = [
                     where('classLevel', 'in', classLevelValues.slice(0, 30))
+=======
+                const studentMap = new Map<string, Student>();
+                filteredEnrollDocs.forEach(d => {
+                    const data = d.data();
+                    const sid = data.studentId || d.id;
+                    if (!studentMap.has(sid)) {
+                        studentMap.set(sid, {
+                            id: sid,
+                            firstName: data.studentName?.split(' ')[0] || data.firstName || '',
+                            lastName: data.studentName?.split(' ').slice(1).join(' ') || data.lastName || '',
+                            number: data.number || data.studentNumber || '',
+                            studentNumber: data.studentCode || data.studentId || '',
+                            gender: data.gender || '',
+                            prefix: data.prefix || data.title || '',
+                            profileImageUrl: data.profileImageUrl || ''
+                        });
+                    }
+                });
+                studentList = Array.from(studentMap.values());
+            } else {
+                // Fallback to Class Level
+                const studentConstraints = [
+                    where('classLevel', 'in', [currentClassKey, currentClassTitle].filter(Boolean))
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 ];
 
                 const studentQ = query(
@@ -986,6 +1320,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             gender: data.gender || '',
                             prefix: data.title || data.prefix || '',
                             profileImageUrl: data.profileImageUrl || '',
+<<<<<<< HEAD
                             roomNumber: data.room || data.roomNumber || '',
                             room: data.room || data.roomNumber || '',
                             groupName: data.groupName || '',
@@ -1006,6 +1341,21 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 if (roomA !== roomB) return roomA - roomB;
 
                 return (a.firstName || "").localeCompare(b.firstName || "", 'th');
+=======
+                            roomNumber: data.room || data.roomNumber || ''
+                        } as Student & { roomNumber: string };
+                    })
+                    .filter(s => {
+                        if (!selectedRoomNumber) return true;
+                        return String(s.roomNumber) === String(selectedRoomNumber);
+                    });
+            }
+
+            studentList.sort((a, b) => {
+                const nA = parseInt(a.number || a.studentNumber || '0');
+                const nB = parseInt(b.number || b.studentNumber || '0');
+                return nA - nB;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             });
             setStudents(studentList);
 
@@ -1032,6 +1382,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                     // Check intersection with generatedDates (which are DD-MM-YYYY)
                     // We need to convert generatedDates to YYYY-MM-DD for comparison
+<<<<<<< HEAD
                     generatedDates.forEach(slotKey => {
                         const datePart = getDateDisplayPart(slotKey);
                         const dISO = displayDateToISO(datePart);
@@ -1039,6 +1390,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         if (dISO >= startStr && dISO <= endStr) {
                             if (!leavesMap[st.id]) leavesMap[st.id] = {};
                             leavesMap[st.id][datePart] = {
+=======
+                    generatedDates.forEach(dDisplay => {
+                        const [dd, mm, yy] = dDisplay.split('-');
+                        const dISO = `${yy}-${mm}-${dd}`;
+
+                        if (dISO >= startStr && dISO <= endStr) {
+                            if (!leavesMap[st.id]) leavesMap[st.id] = {};
+                            leavesMap[st.id][dDisplay] = {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 type: lData.leaveType,
                                 description: lData.reason || lData.leaveType
                             };
@@ -1049,10 +1409,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             setStudentLeaves(leavesMap);
 
             // 4. Fetch Attendance using robust matching (consistent with fetchAnnualAttendanceCount)
+<<<<<<< HEAD
+=======
+            // currentClassKey and currentClassTitle already defined above
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const attRef = collectionGroup(db, 'ClassroomAttendance');
             const q = query(
                 attRef,
                 where('schoolId', '==', schoolId),
+<<<<<<< HEAD
                 where('subjectCode', 'in', finalSubjectCodes),
                 where('academicYear', '==', academicYear),
                 where('semester', '==', semester)
@@ -1144,6 +1510,52 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             setDateMetadata(finalMetadata);
 
             // 6. Merge Leaves into Attendance Data (if no existing attendance)
+=======
+                // academicYear is filtered locally or handled by month/year AD match for safety
+                where('subjectCode', 'in', finalSubjectCodes)
+            );
+
+            const attSnap = await getDocs(q);
+            const dataMap: Record<string, Record<string, string>> = {};
+
+            attSnap.docs.forEach(doc => {
+                const d = doc.data();
+
+                // Robust class matching (consistent with fetchAnnualAttendanceCount)
+                const matchesClass = d.classId === currentClassKey ||
+                    d.className === currentClassTitle ||
+                    d.classId === currentClassTitle ||
+                    (Array.isArray(d.classId) && d.classId.includes(currentClassKey)) ||
+                    (d.className && currentClassTitle && (d.className.includes(currentClassTitle) || currentClassTitle.includes(d.className)));
+
+                const matchesRoom = !selectedRoomNumber ||
+                    String(d.room || d.roomNumber || '') === String(selectedRoomNumber) ||
+                    String(d.className || '').endsWith('/' + selectedRoomNumber);
+
+                if (!matchesClass || !matchesRoom) return;
+
+                let dateStr = '';
+                if (d.date?.toDate) {
+                    const doObj = d.date.toDate();
+                    // Filter by month match (Year is already handled by academicYear query usually, but keep for safety)
+                    if (doObj.getMonth() === selectedMonth && doObj.getFullYear() === yearAD) {
+                        const day = String(doObj.getDate()).padStart(2, '0');
+                        const month = String(doObj.getMonth() + 1).padStart(2, '0');
+                        const year = doObj.getFullYear();
+                        dateStr = `${day}-${month}-${year}`;
+                    }
+                }
+
+                if (dateStr && generatedDates.includes(dateStr)) {
+                    if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
+                    // If multiple periods exist for the same day, take the last one or priority?
+                    // Usually we take the latest or any existing one.
+                    dataMap[d.studentId][dateStr] = d.status;
+                }
+            });
+
+            // 5. Merge Leaves into Attendance Data (if no existing attendance)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             // If there is a leave record, and NO attendance record, set it.
             // If there IS attendance record, we keep it (user manual override).
             // BUT, for the UI, we might want to show the 'default' as leave if undefined.
@@ -1154,8 +1566,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             const mergedData = JSON.parse(JSON.stringify(dataMap));
 
             studentList.forEach(st => {
+<<<<<<< HEAD
                 finalDates.forEach(date => {
                     const leaveRec = leavesMap[st.id]?.[date] || leavesMap[st.id]?.[getDateDisplayPart(date)];
+=======
+                generatedDates.forEach(date => {
+                    const leaveRec = leavesMap[st.id]?.[date];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     if (leaveRec) {
                         if (!mergedData[st.id]) mergedData[st.id] = {};
 
@@ -1179,7 +1596,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         } finally {
             setLoading(false);
         }
+<<<<<<< HEAD
     }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, selectedMonth, courses, generateDates]);
+=======
+    }, [schoolId, selectedClass, selectedRoomNumber, selectedCourse, academicYear, semester, selectedMonth, courses]);////, calculateCalendarYear, generateDates]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Auto-Fetch Effect
     useEffect(() => {
@@ -1202,8 +1623,18 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const handleCellClick = (studentId: string, date: string, multiSelect: boolean = false) => {
         const meta = dateMetadata[date];
 
+<<<<<<< HEAD
         // Calendar metadata is the source of truth, so makeup school days can override weekends/holidays.
         const isLocked = meta && !meta.isCheckable;
+=======
+        // Redundant Safety Check: Calculate Day of Week
+        const [d, m, y] = date.split('-').map(Number);
+        const dayOfWeek = new Date(y, m - 1, d).getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        // Enforce checkability based on metadata OR strict weekend rule (unless schoolDay)
+        const isLocked = (meta && !meta.isCheckable) || (isWeekend && meta?.reason !== 'schoolDay');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         if (isLocked) {
             // Only show warning if trying to interact directly
@@ -1212,7 +1643,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 Swal.fire({
                     icon: 'warning',
                     title: 'ไม่สามารถเช็คชื่อได้',
+<<<<<<< HEAD
                     text: getReasonText(meta?.reason),
+=======
+                    text: getReasonText(meta?.reason || (isWeekend ? 'weekend' : undefined)),
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     timer: 1500,
                     showConfirmButton: false,
                     toast: true,
@@ -1385,6 +1820,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                     if (newVal !== oldVal) {
                         changesCount++;
+<<<<<<< HEAD
                         // Use the shared ClassroomAttendance format. Room stays in its own field.
                         const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
                         const datePartForId = dateStr.split('_')[0];
@@ -1415,28 +1851,54 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
 
                             const attendancePayload = {
+=======
+                        const attendanceId = `${dateStr}_${subjectCode}_${classKey}`;
+                        const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+
+                        if (!newVal) {
+                            batch.delete(ref);
+                        } else {
+                            const [d, m, y] = dateStr.split('-').map(Number);
+                            const dateObj = new Date(y, m - 1, d, 12, 0, 0);
+
+                            // Derived className from CLASSES map to be consistent with ClassroomAttendancePage
+                            const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
+
+                            batch.set(ref, {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 schoolId,
                                 studentId: student.id,
                                 date: Timestamp.fromDate(dateObj),
                                 classId: classKey,
                                 className: derivedClassName,
+<<<<<<< HEAD
                                 room: selectedRoomNumber || null,
                                 period: periodNum, 
                                 subjectName,
                                 subjectCode,
                                 courseId: courseObj?.id || null,
+=======
+                                period: 0, // ใน Historical จะบันทึกเป็นคาบที่ 0 เพื่อเป็นสรุปประจำวันของวิชานั้น
+                                subjectName,
+                                subjectCode,
+                                courseId: courseObj?.id || null, // เพิ่ม courseId เพื่อให้หน้า GradeBook ดึงข้อมูลได้ถูกต้อง
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 teacherId: currentTeacher?.id || (currentUser as any)?.uid || 'unknown',
                                 teacherName: currentTeacher?.name || (currentUser as any)?.displayName || '',
                                 status: newVal,
                                 academicYear,
                                 semester,
                                 updatedAt: Timestamp.now()
+<<<<<<< HEAD
                             };
 
                             batch.set(ref, attendancePayload, { merge: true });
                             batch.delete(oldRef);
                             if (legacyRoomRef) batch.delete(legacyRoomRef);
                             if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
+=======
+                            }, { merge: true });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         }
                     }
                 });
@@ -1481,12 +1943,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const wb = XLSX.utils.book_new();
         const wsData = [];
 
+<<<<<<< HEAD
         const excelHeaders = dates.map(d => {
             const meta = dateMetadata[d];
             const day = d.split('-')[0];
             return meta?.periodNumber ? `${day} (ค.${meta.periodNumber})` : day;
         });
         const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...excelHeaders, 'มา', 'สาย', 'ลา', 'ขาด', 'ร้อยละการมาเรียน'];
+=======
+        const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...dates, 'มา', 'สาย', 'ลา', 'ขาด', 'ร้อยละการมาเรียน'];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         wsData.push(header);
 
         students.forEach(s => {
@@ -1522,7 +1988,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     const getStatusBadge = (studentId: string, date: string, status?: string, isCheckable: boolean = true, tooltip?: string, reason?: string) => {
         // Handle locked records (leaves) regardless of date checkability
+<<<<<<< HEAD
         const leaveRec = studentLeaves[studentId]?.[date] || studentLeaves[studentId]?.[getDateDisplayPart(date)];
+=======
+        const leaveRec = studentLeaves[studentId]?.[date];
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const isLockedRecord = !!leaveRec;
 
         let content;
@@ -1535,8 +2005,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 );
             } else {
                 content = (
+<<<<<<< HEAD
                     <div className="w-[10px] h-[10px] rounded-[2px] bg-gray-100/20 dark:bg-gray-800/20 flex items-center justify-center text-gray-500/70 dark:text-gray-300/75 transition-all border border-gray-400/50 dark:border-white/55">
                         <FaLock size={6} />
+=======
+                    <div className="w-[14px] h-[14px] rounded-sm bg-gray-100/30 dark:bg-gray-800/30 flex items-center justify-center text-black dark:text-white transition-all border border-black dark:border-white">
+                        <FaLock size={8} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
                 );
             }
@@ -1648,6 +2123,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         return ((presentCount / totalRecorded) * 100).toFixed(1);
     };
 
+<<<<<<< HEAD
     const getDateCheckProgress = (date: string) => {
         const meta = dateMetadata[date];
         if (!meta?.isCheckable || students.length === 0) {
@@ -1680,6 +2156,29 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             year: academicYear
         };
     }, [selectedClass, selectedRoomNumber, selectedCourse, semester, academicYear, courses]);
+=======
+    // Resolve back to IDs for the navigation link
+    const backNavParams = useMemo(() => {
+        const foundCourse = courses.find(c => c.code === selectedCourse || c.id === selectedCourse);
+
+        // Split "ม.1/1" -> label "ม.1" and room "1"
+        let levelPart = selectedClass;
+        let roomPart = '';
+        if (selectedClass.includes('/')) {
+            [levelPart, roomPart] = selectedClass.split('/');
+        }
+
+        // Find ID for the level label
+        const levelID = Object.keys(CLASSES).find(key => CLASSES[key] === levelPart) || levelPart;
+
+        return {
+            levelID,
+            roomPart,
+            courseId: foundCourse?.id || selectedCourse,
+            semester: semester
+        };
+    }, [selectedClass, selectedCourse, semester, courses]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     return (
         <MainLayout>
@@ -1690,12 +2189,18 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                         <div>
                             <div className="flex items-center gap-2 mb-1">
+<<<<<<< HEAD
                                 <div className="flex items-center gap-3">
                                     <BackButton to={searchParams.get('courseId') ? `/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.room}&groupId=${backNavParams.groupId}&year=${backNavParams.year}` : '/academic/hub/attendance'} />
                                     <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">
                                         {searchParams.get('courseId') ? 'กลับไปยังสมุดประจำวิชา (Grade Book)' : 'กลับไปยังระบบเช็คชื่อ'}
                                     </span>
                                 </div>
+=======
+                                <Link to={`/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.roomPart}`} className="text-gray-500 hover:text-indigo-600 flex items-center gap-1 text-[10px]">
+                                    <ChevronLeft size={14} /> กลับไปยังสมุดประจำวิชา (Grade Book)
+                                </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                             <h1 className="text-xl font-bold flex items-center gap-2">
                                 <Users className="text-indigo-600" size={20} />
@@ -1764,8 +2269,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                         {/* Attendance Warning Logic Based on Level */}
                         {(() => {
+<<<<<<< HEAD
                             const classLabel = CLASSES[selectedClass] || selectedClass;
                             const isPrimary = classLabel.includes('ป.') || selectedClass.toLowerCase().startsWith('p');
+=======
+                            const isPrimary = selectedClass.includes('ป.');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             const credits = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.credits;
                             const hoursPerWeek = filteredCourses.find(c => c.code === selectedCourse || c.id === selectedCourse)?.hoursPerWeek || (Number(credits) * 2);
 
@@ -1817,6 +2326,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
 
                     {/* Filters & Controls */}
+<<<<<<< HEAD
                     <div className="bg-white dark:bg-[#1a1b1e] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 animate-in slide-in-from-top-4 duration-500">
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(120px,0.75fr)_minmax(140px,0.9fr)_minmax(130px,0.8fr)_minmax(260px,1.65fr)_minmax(220px,1fr)_48px] 2xl:grid-cols-[minmax(130px,160px)_minmax(150px,180px)_minmax(140px,170px)_minmax(300px,1fr)_minmax(240px,280px)_52px] gap-3 xl:gap-4 items-end min-w-0">
                             {/* Term Selector */}
@@ -1830,13 +2340,34 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     </select>
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                                         <ChevronDown size={14} />
+=======
+                    <div className="bg-white dark:bg-[#1a1b1e] p-3 rounded-xl shadow-sm border border-gray-100 dark:border-white/5 flex flex-col lg:flex-row gap-4 items-end lg:items-center animate-in slide-in-from-top-4 duration-500">
+
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 w-full">
+                            {/* Term Selector */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                    <Filter size={10} /> ภาคเรียน
+                                </label>
+                                <div className="relative">
+                                    <select value={semester} onChange={e => setSemester(e.target.value)} className="w-full pl-2 pr-8 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none appearance-none font-medium text-xs text-gray-700 dark:text-gray-200">
+                                        {TERMS.map(t => <option key={t} value={t}>เทอม {t}</option>)}
+                                    </select>
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                        <ChevronDown size={12} />
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </div>
                                 </div>
                             </div>
 
                             {/* Class Selector */}
+<<<<<<< HEAD
                             <div className="space-y-1.5 min-w-0">
                                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ระดับชั้น</label>
+=======
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ระดับชั้น</label>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <Select
                                     options={classOptions}
                                     isClearable
@@ -1844,14 +2375,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={classOptions.find(opt => opt.value === selectedClass || opt.label === selectedClass)}
                                     onChange={(val) => setSelectedClass(val ? val.value : '')}
                                     styles={selectStyles}
+<<<<<<< HEAD
                                     menuPortalTarget={document.body}
                                     menuPosition="fixed"
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 />
                             </div>
 
                             {/* Room Selector */}
+<<<<<<< HEAD
                             <div className="space-y-1.5 min-w-0">
                                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ห้อง</label>
+=======
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ห้อง</label>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <Select
                                     options={roomOptions}
                                     isClearable
@@ -1859,14 +2398,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={roomOptions.find(opt => opt.value === selectedRoomNumber)}
                                     onChange={(val) => setSelectedRoomNumber(val ? val.value : '')}
                                     styles={selectStyles}
+<<<<<<< HEAD
                                     menuPortalTarget={document.body}
                                     menuPosition="fixed"
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 />
                             </div>
 
                             {/* Course Selector */}
+<<<<<<< HEAD
                             <div className="space-y-1.5 min-w-0 sm:col-span-2 xl:col-span-1">
                                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
+=======
+                            <div className="space-y-1 lg:col-span-2">
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <Select
                                     options={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }))}
                                     isClearable
@@ -1875,6 +2422,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     value={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` })).find(opt => opt.value === selectedCourse)}
                                     onChange={(val) => setSelectedCourse(val ? val.value : '')}
                                     styles={selectStyles}
+<<<<<<< HEAD
                                     menuPortalTarget={document.body}
                                     menuPosition="fixed"
                                 />
@@ -1982,6 +2530,91 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-b-white"></div> : <Search size={20} />}
                             </button>
                         </div>
+=======
+                                />
+                            </div>
+                        </div>
+
+                        <div className="h-10 w-px bg-gray-200 dark:bg-gray-700 hidden lg:block"></div>
+
+                        {/* Month Navigation with Grid Picker */}
+                        <div className="relative" ref={monthPickerRef}>
+                            <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-700/50 p-1 rounded-lg border border-gray-100 dark:border-gray-700 w-full lg:w-auto justify-between lg:justify-start">
+                                <button
+                                    onClick={() => setSelectedMonth(p => p === 0 ? 11 : p - 1)}
+                                    className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+
+                                <button
+                                    onClick={() => setIsMonthPickerOpen(!isMonthPickerOpen)}
+                                    className={`flex flex-col items-center px-3 min-w-[120px] hover:bg-white dark:hover:bg-gray-600 rounded transition-all py-0.5 ${isMonthPickerOpen ? 'bg-white dark:bg-gray-600 ring-2 ring-indigo-500/20' : ''}`}
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-base text-gray-800 dark:text-gray-100">{months[selectedMonth]}</span>
+                                        <ChevronDown size={12} className={`text-gray-400 transition-transform duration-300 ${isMonthPickerOpen ? 'rotate-180' : ''}`} />
+                                    </div>
+                                    <span className="text-[9px] uppercase font-bold text-indigo-500 tracking-wider">ปี ค.ศ. {calculatedYearAD}</span>
+                                </button>
+
+                                <button
+                                    onClick={() => setSelectedMonth(p => p === 11 ? 0 : p + 1)}
+                                    className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+
+                            {/* Month Grid Picker Dropdown */}
+                            {isMonthPickerOpen && (
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-2xl border border-gray-100 dark:border-white/5 p-4 z-[100] animate-in fade-in zoom-in duration-200">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {months.map((month, idx) => (
+                                            <button
+                                                key={month}
+                                                onClick={() => {
+                                                    setSelectedMonth(idx);
+                                                    setIsMonthPickerOpen(false);
+                                                }}
+                                                className={`
+                                                    py-3 rounded-xl text-sm font-semibold transition-all
+                                                    ${selectedMonth === idx
+                                                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none'
+                                                        : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-gray-600 dark:text-gray-300'}
+                                                `}
+                                            >
+                                                {month.replace('มกราคม', 'ม.ค.')
+                                                    .replace('กุมภาพันธ์', 'ก.พ.')
+                                                    .replace('มีนาคม', 'มี.ค.')
+                                                    .replace('เมษายน', 'เม.ย.')
+                                                    .replace('พฤษภาคม', 'พ.ค.')
+                                                    .replace('มิถุนายน', 'มิ.ย.')
+                                                    .replace('กรกฎาคม', 'ก.ค.')
+                                                    .replace('สิงหาคม', 'ส.ค.')
+                                                    .replace('กันยายน', 'ก.ย.')
+                                                    .replace('ตุลาคม', 'ต.ค.')
+                                                    .replace('พฤศจิกายน', 'พ.ย.')
+                                                    .replace('ธันวาคม', 'ธ.ค.')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={handleFetchData}
+                            disabled={loading || !selectedCourse}
+                            className={`
+                                h-[38px] w-[38px] rounded-lg font-bold text-white shadow-md transition-all flex items-center justify-center
+                                ${loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}
+                            `}
+                            title="รีเฟรชข้อมูล"
+                        >
+                            {loading ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-b-white"></div> : <Search size={18} />}
+                        </button>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
 
 
@@ -2038,16 +2671,23 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     <div className="bg-white dark:bg-[#1a1b1e] rounded-xl shadow-xl shadow-indigo-500/5 border border-gray-100 dark:border-white/5 overflow-hidden flex flex-col h-[calc(100vh-320px)] border-b-0">
 
                         <div className="overflow-auto flex-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
+<<<<<<< HEAD
                             <table
                                 className="w-full text-left border-collapse table-fixed"
                                 style={{ zoom: 1.5 } as React.CSSProperties}
                             >
                                 <thead className="bg-[#f8fafc] dark:bg-[#1e1f21] text-gray-600 dark:text-gray-300 sticky top-0 z-20 shadow-sm border-b border-gray-100 dark:border-white/5">
                                     <tr className="h-12">
+=======
+                            <table className="w-full text-left border-collapse table-fixed">
+                                <thead className="bg-[#f8fafc] dark:bg-[#1e1f21] text-gray-600 dark:text-gray-300 sticky top-0 z-20 shadow-sm border-b border-gray-100 dark:border-white/5">
+                                    <tr className="h-10">
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <th style={{ left: 0, width: '18px', minWidth: '18px' }} className="p-0 text-center sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-100 dark:border-white/5 text-[8px] font-bold">#</th>
                                         <th style={{ left: '18px', width: '42px', minWidth: '42px' }} className="p-0 text-left sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-100 dark:border-white/5 text-[7px] font-bold pl-1">รหัส</th>
                                         <th style={{ left: '60px', width: '70px', minWidth: '70px' }} className="p-0 sticky bg-[#f8fafc] dark:bg-[#1e1f21] z-30 border-r border-gray-200 dark:border-white/5 shadow-[1px_0_2px_-1px_rgba(0,0,0,0.1)] text-[8px] font-bold text-center">ชื่อ</th>
                                         {dates.map(date => {
+<<<<<<< HEAD
                                             const meta = dateMetadata[date];
                                             const displayDate = meta?.displayDate || date;
                                             const [dayNum, monthNum, yearNum] = displayDate.split('-');
@@ -2062,6 +2702,17 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                             const isTeachingDate = Boolean(isCheckable && (isRelevant || periodNum !== undefined));
                                             const checkProgress = getDateCheckProgress(date);
                                             const progressColorClass = 'bg-emerald-400';
+=======
+                                            const [dayNum, monthNum, yearNum] = date.split('-');
+                                            const dayIndex = new Date(parseInt(yearNum), parseInt(monthNum) - 1, parseInt(dayNum)).getDay();
+                                            const dayName = (['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'])[dayIndex];
+                                            const isWeekend = dayIndex === 0 || dayIndex === 6;
+
+                                            const meta = dateMetadata[date];
+                                            const isCheckable = meta?.isCheckable;
+                                            const isRelevant = meta?.isRelevant;
+                                            const reason = meta?.reason;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                                             // Determine Header Style
                                             let bgClass = 'bg-white dark:bg-gray-900';
@@ -2072,16 +2723,23 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                 else if (reason === 'holiday' || reason === 'special_holiday') bgClass = 'bg-rose-50/50 dark:bg-rose-900/10';
                                                 else if (reason === 'term_break') bgClass = 'bg-gray-100 dark:bg-gray-800';
                                                 else if (reason === 'not_scheduled') bgClass = 'bg-gray-50/20 dark:bg-gray-800/10';
+<<<<<<< HEAD
                                             } else if (isTeachingDate) {
                                                 bgClass = 'bg-white dark:bg-gray-900';
                                                 textClass = 'text-gray-600 dark:text-gray-300';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             } else if (reason === 'schoolDay') {
                                                 bgClass = 'bg-indigo-50/50 dark:bg-indigo-900/10';
                                                 textClass = 'text-indigo-500';
                                             }
 
                                             // If it's a school day but subject is NOT taught, make it dimmer
+<<<<<<< HEAD
                                             const opacityClass = (isCheckable && !isTeachingDate) ? 'opacity-30 grayscale' : '';
+=======
+                                            const opacityClass = (isCheckable && !isRelevant) ? 'opacity-30 grayscale' : '';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                                             // Tooltip Content Resolution
                                             const event = calendarEvents[yearNum + '-' + monthNum + '-' + dayNum];
@@ -2106,13 +2764,18 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     key={date}
                                                     onClick={() => handleColumnSelect(date)}
                                                     className={`
+<<<<<<< HEAD
                                                         group relative p-0 text-center min-w-[22px] w-[22px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
+=======
+                                                        group relative p-0 text-center min-w-[18px] w-[18px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         transition-all cursor-pointer select-none
                                                         ${bgClass} hover:bg-opacity-90
                                                         ${opacityClass}
                                                         ${isColumnSelected ? 'ring-2 ring-indigo-500 z-10' : ''}
                                                     `}
                                                 >
+<<<<<<< HEAD
                                                     <div className={`flex flex-col items-center justify-center h-full ${textClass} scale-90 pt-1 pb-1.5`}>
                                                         <span className="text-[7px] opacity-70 leading-none">{dayName}</span>
                                                         <span className={`text-[11px] font-black leading-none ${isTeachingDate ? 'text-gray-900 dark:text-white' : ''}`}>{dayNum}</span>
@@ -2144,6 +2807,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     {/* Selection Indicator */}
                                                     {isColumnSelected && <div className="absolute inset-0 rounded-[2px] ring-2 ring-indigo-500 pointer-events-none"></div>}
 
+=======
+                                                    <div className={`flex flex-col items-center justify-center h-full ${textClass} scale-90`}>
+                                                        <span className="text-[7px] opacity-70 leading-none">{dayName}</span>
+                                                        <span className="text-[10px] font-bold leading-none">{dayNum}</span>
+                                                        {isRelevant && <div className="w-1 h-1 bg-emerald-500 rounded-full mt-0.5"></div>}
+                                                        {!isRelevant && isCheckable && <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mt-0.5"></div>}
+                                                    </div>
+
+                                                    {/* Selection Indicator */}
+                                                    {isColumnSelected && (
+                                                        <div className="absolute top-0 right-0 p-0.5">
+                                                            <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                                                        </div>
+                                                    )}
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     {/* Custom Tooltip on Hover */}
                                                     {fullTooltip && (
                                                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 dark:bg-gray-700 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-600">
@@ -2230,7 +2909,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                                 key={date}
                                                                 onClick={() => handleCellClick(student.id, date)}
                                                                 className={`
+<<<<<<< HEAD
                                                                     p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[22px] w-[22px]
+=======
+                                                                    p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[18px] w-[18px]
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                                     ${isCheckable ? 'cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50' : 'cursor-not-allowed bg-gray-50/30 dark:bg-gray-800/20'}
                                                                     ${isSelected ? 'bg-indigo-100/30 dark:bg-indigo-900/30 ring-inset ring-1 ring-indigo-500/50 z-10' : ''}
                                                                 `}

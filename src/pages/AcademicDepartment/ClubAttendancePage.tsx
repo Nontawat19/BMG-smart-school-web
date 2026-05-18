@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from '../../firebase';
 import { collection, getDocs, doc, getDoc, setDoc, query, where, Timestamp } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
+<<<<<<< HEAD
 import { fetchCalendar } from '@/store/slices/calendarSlice';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import Swal from 'sweetalert2';
 import {
   Users,
@@ -19,7 +25,12 @@ import {
   AlertCircle,
   CheckCircle2,
   LayoutGrid,
+<<<<<<< HEAD
   RefreshCw
+=======
+  RefreshCw,
+  ArrowLeft
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from 'lucide-react';
 import SkeletonLoader from "@/components/SkeletonLoader";
 
@@ -27,11 +38,14 @@ interface Club {
   id: string;
   name: string;
   responsibleTeacherIds: string[];
+<<<<<<< HEAD
   specialPeriodId?: string;
   specialPeriodTitle?: string;
   specialPeriodDay?: string;
   specialPeriodStartTime?: string;
   specialPeriodEndTime?: string;
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Student {
@@ -62,6 +76,7 @@ const DAY_MAP: Record<string, string> = {
   sun: 'อาทิตย์'
 };
 
+<<<<<<< HEAD
 const toIsoDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -79,6 +94,12 @@ const ClubAttendancePage: React.FC = () => {
   const [myClubs, setMyClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
+=======
+const ClubAttendancePage: React.FC = () => {
+  const [myClubs, setMyClubs] = useState<Club[]>([]);
+  const [selectedClub, setSelectedClub] = useState<Club | null>(null);
+  const [clubSpecialPeriod, setClubSpecialPeriod] = useState<SpecialPeriod | null>(null);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -91,7 +112,10 @@ const ClubAttendancePage: React.FC = () => {
   const dispatch = useDispatch();
 
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+<<<<<<< HEAD
   const calendarState = useSelector((state: RootState) => state.calendar);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const currentTeacherId = useMemo(() => {
     if (!teacherMap || !currentUser) return null;
@@ -106,12 +130,15 @@ const ClubAttendancePage: React.FC = () => {
   }, [schoolId, teacherMapStatus, dispatch]);
 
   useEffect(() => {
+<<<<<<< HEAD
     if (schoolId && calendarState.status === 'idle') {
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [schoolId, calendarState.status, dispatch]);
 
   useEffect(() => {
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     if (!schoolId || !currentTeacherId) return;
 
     const fetchData = async () => {
@@ -128,7 +155,12 @@ const ClubAttendancePage: React.FC = () => {
 
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SpecialPeriod));
+<<<<<<< HEAD
         setSpecialPeriods(periods);
+=======
+        const clubPeriod = periods.find(p => p.title.includes('ชุมนุม'));
+        setClubSpecialPeriod(clubPeriod || null);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       } catch (error) {
         console.error("Error fetching initial data:", error);
@@ -140,6 +172,7 @@ const ClubAttendancePage: React.FC = () => {
     fetchData();
   }, [schoolId, currentTeacherId]);
 
+<<<<<<< HEAD
   const clubSpecialPeriod = useMemo(() => {
     if (!selectedClub) return null;
     return specialPeriods.find(period => period.id === selectedClub.specialPeriodId) ||
@@ -147,6 +180,8 @@ const ClubAttendancePage: React.FC = () => {
       null;
   }, [selectedClub, specialPeriods]);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   useEffect(() => {
     if (!schoolId || !selectedClub) {
       setStudents([]);
@@ -174,6 +209,7 @@ const ClubAttendancePage: React.FC = () => {
         const initialAtt: Record<string, any> = {};
         memberList.forEach(s => initialAtt[s.id] = 'present');
 
+<<<<<<< HEAD
         const dateStr = toIsoDate(currentDate);
         const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
         const legacyAttDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
@@ -182,6 +218,14 @@ const ClubAttendancePage: React.FC = () => {
 
         if (attSnap.exists() || legacyAttSnap?.exists()) {
           const data = (attSnap.exists() ? attSnap.data() : legacyAttSnap?.data()) || {};
+=======
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
+        const attSnap = await getDoc(attDocRef);
+
+        if (attSnap.exists()) {
+          const data = attSnap.data();
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           setAttendance(data.records || initialAtt);
           setIsSubmitted(true);
         } else {
@@ -195,27 +239,40 @@ const ClubAttendancePage: React.FC = () => {
     };
 
     fetchMembers();
+<<<<<<< HEAD
   }, [schoolId, selectedClub, currentDate, clubSpecialPeriod?.id]);
+=======
+  }, [schoolId, selectedClub, currentDate]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const handleSaveAttendance = async () => {
     if (!schoolId || !selectedClub || isSaving) return;
 
     setIsSaving(true);
     try {
+<<<<<<< HEAD
       const dateStr = toIsoDate(currentDate);
       const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
+=======
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       await setDoc(attDocRef, {
         records: attendance,
         updatedAt: Timestamp.now(),
         updatedBy: currentUser?.uid,
         clubName: selectedClub.name,
+<<<<<<< HEAD
         date: dateStr,
         specialPeriodId: clubSpecialPeriod?.id || '',
         specialPeriodTitle: clubSpecialPeriod?.title || '',
         specialPeriodDay: clubSpecialPeriod?.day || 'all',
         startTime: clubSpecialPeriod?.startTime || '',
         endTime: clubSpecialPeriod?.endTime || ''
+=======
+        date: dateStr
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       });
 
       Swal.fire({
@@ -239,6 +296,7 @@ const ClubAttendancePage: React.FC = () => {
     setAttendance(prev => ({ ...prev, [studentId]: status }));
   };
 
+<<<<<<< HEAD
   const currentDateEvent = useMemo(() => {
     return calendarState.rawData?.events?.[toIsoDate(currentDate)];
   }, [calendarState.rawData, currentDate]);
@@ -251,13 +309,23 @@ const ClubAttendancePage: React.FC = () => {
 
   const isCompensationScheduleDay = currentDateEvent?.type === 'schoolDay' && Boolean(currentDateEvent.scheduleDay);
   const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === effectiveDayKey) : false;
+=======
+  const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][currentDate.getDay()];
+  const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === dayKey) : false;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   return (
     <MainLayout>
       <div className="p-4 sm:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white">
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+<<<<<<< HEAD
             <BackButton to="/academic/hub/attendance" className="mb-2" />
+=======
+            <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
+              <ArrowLeft size={16} className="mr-1" /> กลับหน้าบริหารวิชาการ
+            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
               <ClipboardCheck className="text-emerald-500" size={32} />
               เช็คชื่อเข้าชุมนุม
@@ -317,11 +385,14 @@ const ClubAttendancePage: React.FC = () => {
                       <span className="text-gray-500">วันทำกิจกรรม:</span>
                       <span className="font-bold">{clubSpecialPeriod.day === 'all' || !clubSpecialPeriod.day ? 'ทุกวัน' : `วัน${DAY_MAP[clubSpecialPeriod.day] || clubSpecialPeriod.day}`}</span>
                     </div>
+<<<<<<< HEAD
                     {isCompensationScheduleDay && (
                       <div className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
                         วันนี้เป็นวันเรียนชดเชย ใช้ตารางวัน{DAY_MAP[effectiveDayKey] || effectiveDayKey} จากปฏิทินโรงเรียน
                       </div>
                     )}
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">ช่วงเวลา:</span>
                       <span className="font-bold">{clubSpecialPeriod.startTime} - {clubSpecialPeriod.endTime} น.</span>
@@ -415,4 +486,8 @@ const ClubAttendancePage: React.FC = () => {
   );
 };
 
+<<<<<<< HEAD
 export default ClubAttendancePage;
+=======
+export default ClubAttendancePage;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

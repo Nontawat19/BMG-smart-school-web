@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
@@ -8,10 +11,15 @@ import { doc, getDoc, collection, query, where, getDocs, Timestamp, writeBatch }
 import Swal from 'sweetalert2';
 import { Calendar } from 'lucide-react';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
+<<<<<<< HEAD
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+=======
+import { isNonOfficialHoliday } from '@/utils/calendarUtils';
+import { CLASSES } from '@/utils/schoolUtils';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // Sub-components and Utilities from the same folder
 import { Student, CourseSchedule } from './types';
@@ -21,6 +29,7 @@ import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
 
+<<<<<<< HEAD
 const normalizeRoom = (value: unknown) => {
     const raw = String(value ?? '').trim();
     if (!raw) return '';
@@ -92,6 +101,8 @@ const getStableClassKey = (value: unknown) => {
     return String(value || '');
 };
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 const ClassroomAttendancePage: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [schedules, setSchedules] = useState<CourseSchedule[]>([]);
@@ -120,8 +131,13 @@ const ClassroomAttendancePage: React.FC = () => {
     const [isHoliday, setIsHoliday] = useState(false);
     const [holidayName, setHolidayName] = useState('');
     const [scheduleDayOverride, setScheduleDayOverride] = useState<string | null>(null);
+<<<<<<< HEAD
     const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [academicYear, setAcademicYear] = useState<string>(reduxAcademicYear);
+=======
+    const [refreshTick, setRefreshTick] = useState(0);
+    const [academicYear, setAcademicYear] = useState<string>("");
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [semester, setSemester] = useState<string>("");
 
     const dispatch = useDispatch();
@@ -150,6 +166,7 @@ const ClassroomAttendancePage: React.FC = () => {
         }
     }, [schoolId, teacherMapStatus, dispatch]);
 
+<<<<<<< HEAD
     const calendarState = useSelector((state: RootState) => state.calendar);
 
     // --- 1. Fetch Current Settings (Academic Year) ---
@@ -166,6 +183,32 @@ const ClassroomAttendancePage: React.FC = () => {
             setAcademicYear(reduxAcademicYear);
         }
     }, [calendarState.status, calendarState.academicYear, reduxAcademicYear]);
+=======
+    // --- 1. Fetch Current Settings (Academic Year) ---
+    useEffect(() => {
+        const fetchSettings = async () => {
+            if (!schoolId) return;
+            try {
+                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
+                const calendarSnap = await getDoc(calendarRef);
+
+                if (calendarSnap.exists()) {
+                    const calendarData = calendarSnap.data();
+                    setAcademicYear(calendarData.academicYear || "");
+                } else {
+                    const settingsRef = doc(db, 'school-settings', schoolId);
+                    const settingsSnap = await getDoc(settingsRef);
+                    if (settingsSnap.exists()) {
+                        setAcademicYear(settingsSnap.data().currentAcademicYear || "");
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching school settings:", error);
+            }
+        };
+        fetchSettings();
+    }, [schoolId]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // --- 1.1 Fetch Courses to find inactive ones ---
     useEffect(() => {
@@ -187,6 +230,7 @@ const ClassroomAttendancePage: React.FC = () => {
 
     // --- 1.2 Check for Holidays ---
     useEffect(() => {
+<<<<<<< HEAD
         if (!schoolId) return;
         setIsHoliday(false);
         setHolidayName('');
@@ -248,11 +292,77 @@ const ClassroomAttendancePage: React.FC = () => {
     useEffect(() => {
         const checkGoogleHoliday = async () => {
             if (!schoolId || isHoliday) return;
+=======
+        const checkHoliday = async () => {
+            if (!schoolId) return;
+            setIsHoliday(false);
+            setHolidayName('');
+            setScheduleDayOverride(null);
+
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const year = currentDate.getFullYear();
             const month = String(currentDate.getMonth() + 1).padStart(2, '0');
             const day = String(currentDate.getDate()).padStart(2, '0');
             const dateStr = `${year}-${month}-${day}`;
 
+<<<<<<< HEAD
+=======
+            // 1.1 Check Firestore School Calendar
+            try {
+                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
+                const calendarSnap = await getDoc(calendarRef);
+                if (calendarSnap.exists()) {
+                    const calendarData = calendarSnap.data();
+                    const events = calendarData.events || {};
+                    const terms = calendarData.terms || {};
+                    const event = events[dateStr];
+
+                    // 1. Determine local semester for this calculation
+                    let localSemester = "1";
+                    if (terms.term2?.startDate && dateStr >= terms.term2.startDate) {
+                        localSemester = "2";
+                    }
+                    setSemester(localSemester);
+
+                    // 1. Priority: Check if it's a Makeup School Day (Overrides everything)
+                    if (event && event.type === 'schoolDay') {
+                        if (event.scheduleDay) setScheduleDayOverride(event.scheduleDay);
+                        return;
+                    }
+
+                    // 2. Term Boundaries: Check if within the 100-day term period
+                    const currentSemKey = `term${localSemester}` as 'term1' | 'term2';
+                    const termData = terms[currentSemKey];
+                    if (termData && termData.startDate && termData.endDate) {
+                        if (dateStr < termData.startDate || dateStr > termData.endDate) {
+                            setIsHoliday(true);
+                            setHolidayName('อยู่นอกภาคเรียน (ไม่อยู่ในช่วงวันเรียน 100 วัน)');
+                        }
+                    }
+
+                    // 3. Regular Weekend: Saturday (6) and Sunday (0) are non-school days unless schoolDay
+                    const dayOfWeek = currentDate.getDay();
+                    if (dayOfWeek === 0 || dayOfWeek === 6) {
+                        if (!isHoliday) { // Only set if not already set by semester boundary
+                            setIsHoliday(true);
+                            setHolidayName(dayOfWeek === 0 ? 'วันอาทิตย์' : 'วันเสาร์');
+                        }
+                    }
+
+                    // 4. Calendar Events: Specific holidays or special closures
+                    if (event) {
+                        if (event.type === 'holiday' || event.type === 'specialHoliday') {
+                            setIsHoliday(true);
+                            setHolidayName(event.description || 'วันหยุดโรงเรียน');
+                        }
+                    }
+                }
+            } catch (error: any) {
+                console.error("Error checking Firestore calendar:", error);
+            }
+
+            // 1.2 Check Google Calendar API (Fallback)
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
             if (apiKey) {
                 try {
@@ -280,8 +390,14 @@ const ClassroomAttendancePage: React.FC = () => {
                 }
             }
         };
+<<<<<<< HEAD
         checkGoogleHoliday();
     }, [currentDate, schoolId, isHoliday]);
+=======
+
+        checkHoliday();
+    }, [currentDate, schoolId]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // --- 2. Fetch Teacher's Schedule for the Day ---
     useEffect(() => {
@@ -300,12 +416,15 @@ const ClassroomAttendancePage: React.FC = () => {
 
                 querySnapshot.forEach(doc => {
                     const data = doc.data();
+<<<<<<< HEAD
                     const dataYear = String(data.academicYear || "");
                     const dataSemester = String(data.semester || "");
                     const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
                     const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`);
                     if (!yearMatches || !semesterMatches) return;
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const scheduleMap = data.schedule || {};
 
                     for (let i = 1; i <= 8; i++) {
@@ -323,22 +442,45 @@ const ClassroomAttendancePage: React.FC = () => {
 
                                 if (isMyCourse) {
                                     const timeInfo = PERIOD_TIMES.find(p => p.period === i);
+<<<<<<< HEAD
                                     const courseClassId = course.classId || data.classId;
                                     const groupNumber = Number(course.groupNumber || course.group || 1) || 1;
                                     const levelName = formatClassDisplay(courseClassId);
 
                                     dailySchedules.push({
                                         id: `${doc.id}-${slotKey}-${course.id || course.courseId || course.code || 'course'}-${groupNumber}`,
+=======
+                                    const levelName = CLASSES[data.classId] || data.classId || course.className || "ไม่ระบุชั้น";
+
+                                    const rawRoom = course.room || course.roomIds || course.classroom || data.room || "";
+                                    let room = "";
+
+                                    if (Array.isArray(rawRoom)) {
+                                        const firstValid = rawRoom.find(r => r && String(r).toLowerCase() !== 'all');
+                                        room = firstValid ? String(firstValid) : "";
+                                    } else if (rawRoom && String(rawRoom).toLowerCase() !== 'all') {
+                                        room = String(rawRoom);
+                                    }
+
+                                    dailySchedules.push({
+                                        id: doc.id,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         courseId: course.id || course.courseId,
                                         subjectCode: course.code || course.subjectCode || "",
                                         subjectName: course.title || course.subjectName || "ไม่ระบุชื่อวิชา",
                                         period: i,
                                         startTime: timeInfo?.start || '',
                                         endTime: timeInfo?.end || '',
+<<<<<<< HEAD
                                         classId: courseClassId,
                                         className: levelName,
                                         room: String(groupNumber),
                                         groupNumber,
+=======
+                                        classId: data.classId || course.classId,
+                                        className: levelName,
+                                        room: room,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         day: dayKey,
                                         isChecked: false
                                     });
@@ -379,7 +521,10 @@ const ClassroomAttendancePage: React.FC = () => {
 
                         dailySchedules.push({
                             id: `sub-${doc.id}`,
+<<<<<<< HEAD
                             courseId: data.courseId || data.originalCourseId,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             subjectCode: data.subjectCode || "",
                             subjectName: data.subjectName || "สอนแทน",
                             period: data.period,
@@ -388,7 +533,10 @@ const ClassroomAttendancePage: React.FC = () => {
                             classId: data.classId,
                             className: subLevelName,
                             room: subRoom,
+<<<<<<< HEAD
                             groupNumber: Number(data.groupNumber || data.group || subRoom || 1) || 1,
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             day: dayKey,
                             isChecked: false,
                             isSubstitute: true,
@@ -413,7 +561,11 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         fetchSchedule();
+<<<<<<< HEAD
     }, [currentDate, schoolId, currentTeacher, scheduleDayOverride, academicYear, semester]);
+=======
+    }, [currentDate, schoolId, currentTeacher, scheduleDayOverride]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const isCurrentPeriod = (start: string, end: string) => {
         const now = new Date();
@@ -432,6 +584,7 @@ const ClassroomAttendancePage: React.FC = () => {
             setIsSubmitted(false);
 
             try {
+<<<<<<< HEAD
                 const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
                 const groupNumber = selectedClass.groupNumber || (Number(selectedClass.room) || 1);
                 const enrollmentQueries = [];
@@ -519,17 +672,70 @@ const ClassroomAttendancePage: React.FC = () => {
                                 prefix: data.prefix || data.title || '',
                                 profileImageUrl: data.profileImageUrl || '',
                                 nickname: data.nickname || '',
+=======
+                // 3.1 Check Enrollments First
+                const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
+                let enrollmentQ = query(enrollmentsRef);
+
+                if (selectedClass.subjectCode) {
+                    const constraints = [
+                        where('courseCode', '==', selectedClass.subjectCode),
+                        where('classLevel', '==', selectedClass.className)
+                    ];
+
+                    if (selectedClass.room && selectedClass.room !== 'all') {
+                        constraints.push(where('room', '==', selectedClass.room));
+                    }
+
+                    if (academicYear) constraints.push(where('academicYear', '==', academicYear));
+                    if (semester) constraints.push(where('semester', '==', semester));
+
+                    enrollmentQ = query(enrollmentsRef, ...constraints);
+                }
+
+                const enrollSnap = await getDocs(enrollmentQ);
+
+                let studentList: Student[] = [];
+
+                if (!enrollSnap.empty) {
+                    const studentMap = new Map<string, Student>();
+                    enrollSnap.docs.forEach(doc => {
+                        const data = doc.data();
+                        const sId = data.studentId || doc.id;
+                        if (!studentMap.has(sId)) {
+                            studentMap.set(sId, {
+                                id: sId,
+                                firstName: data.studentName?.split(' ')[0] || data.firstName || "",
+                                lastName: data.studentName?.split(' ').slice(1).join(' ') || data.lastName || "",
+                                number: data.number || data.studentNumber || "",
+                                studentNumber: data.studentCode || data.studentId || "",
+                                studentId: data.studentId || data.studentCode || "",
+                                gender: data.gender || "",
+                                prefix: data.prefix || data.title || "",
+                                profileImageUrl: data.profileImageUrl || "",
+                                nickname: data.nickname || "",
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             } as Student);
                         }
                     });
                     studentList = Array.from(studentMap.values());
                 } else {
                     const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+<<<<<<< HEAD
                     const classVariants = getClassVariants(selectedClass.classId);
                     const snapshot = classVariants.length > 0
                         ? await getDocs(query(studentsRef, where('classLevel', 'in', classVariants.slice(0, 30))))
                         : await getDocs(query(studentsRef, where('classLevel', '==', selectedClass.className)));
 
+=======
+                    let q;
+                    if (selectedClass.room && selectedClass.room !== 'all') {
+                        q = query(studentsRef, where('classLevel', '==', selectedClass.className), where('room', '==', selectedClass.room));
+                    } else {
+                        q = query(studentsRef, where('classLevel', '==', selectedClass.className));
+                    }
+                    const snapshot = await getDocs(q);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     studentList = snapshot.docs.map(doc => {
                         const data = doc.data() as any;
                         return {
@@ -541,7 +747,11 @@ const ClassroomAttendancePage: React.FC = () => {
                             prefix: data.title || data.prefix || "",
                             nickname: data.nickname || ""
                         } as Student;
+<<<<<<< HEAD
                     }).filter(student => matchesClassValue((student as any).classLevel || selectedClass.className, selectedClass.classId));
+=======
+                    });
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
 
                 studentList.sort((a, b) => {
@@ -603,6 +813,7 @@ const ClassroomAttendancePage: React.FC = () => {
 
                 // Check if attendance already exists
                 const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${currentDate.getFullYear()}`;
+<<<<<<< HEAD
                 const attendancePromises = studentList.map(async (student) => {
                     const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
                     const classKey = getStableClassKey(selectedClass.classId);
@@ -641,6 +852,15 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
 
                     return null;
+=======
+                const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
+                const attendanceId = `${dateStr}_${stableSubjectCode}_${selectedClass.classId}`;
+
+                const attendancePromises = studentList.map(async (student) => {
+                    const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+                    const snap = await getDoc(ref);
+                    return snap.exists() ? { id: student.id, status: snap.data().status } : null;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
 
                 const results = await Promise.all(attendancePromises);
@@ -671,7 +891,11 @@ const ClassroomAttendancePage: React.FC = () => {
         };
 
         if (selectedClass) fetchStudents();
+<<<<<<< HEAD
     }, [selectedClass, schoolId, currentDate, academicYear, semester]);
+=======
+    }, [selectedClass, schoolId, currentDate, refreshTick, academicYear, semester]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // --- ปิดระบบ Auto-Refresh เมื่อสลับแท็บตามที่ผู้ใช้แจ้ง (ลดภาระการโหลดซ้ำ) ---
     /*
@@ -697,6 +921,7 @@ const ClassroomAttendancePage: React.FC = () => {
             const normalizedDateObj = new Date(year, currentDate.getMonth(), currentDate.getDate(), 12, 0, 0);
 
             // Generate stable subject code and class key
+<<<<<<< HEAD
             const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
             const classKey = getStableClassKey(selectedClass.classId);
             const periodNum = selectedClass.period || 0;
@@ -705,10 +930,20 @@ const ClassroomAttendancePage: React.FC = () => {
             // Format ID consistently: DD-MM-YYYY_SubjectCode_ClassId_P{Period}
             const attendanceId = `${dateStr}_${stableSubjectCode}_${classKey}_P${periodNum}`;
             const derivedClassName = selectedClass.className || CLASSES[classKey] || formatClassDisplay(selectedClass.classId);
+=======
+            const courseObj = schedules.find(s => s.courseId === selectedClass.courseId || s.subjectCode === selectedClass.subjectCode);
+            const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || '';
+            const classKey = selectedClass.classId || '';
+
+            // Format ID consistently: DD-MM-YYYY_SubjectCode_ClassId
+            const attendanceId = `${dateStr}_${stableSubjectCode}_${classKey}`;
+            const derivedClassName = selectedClass.className || CLASSES[classKey] || classKey || 'ไม่ระบุ';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             const batch = writeBatch(db);
             students.forEach(student => {
                 const studentRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+<<<<<<< HEAD
                 const legacyRoomRef = roomKey
                     ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}_P${periodNum}`)
                     : null;
@@ -717,14 +952,20 @@ const ClassroomAttendancePage: React.FC = () => {
                     : null;
                 const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}`);
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 batch.set(studentRef, {
                     schoolId,
                     studentId: student.id,
                     date: Timestamp.fromDate(normalizedDateObj),
                     classId: classKey,
                     className: derivedClassName,
+<<<<<<< HEAD
                     room: selectedClass.room || null, // ADDED: Critical for historical matching
                     period: selectedClass.period || 0,
+=======
+                    period: selectedClass.period || 0, // Store actual period, but historical will see it by ID
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     subjectName: selectedClass.subjectName,
                     subjectCode: stableSubjectCode,
                     courseId: selectedClass.courseId || null,
@@ -735,10 +976,13 @@ const ClassroomAttendancePage: React.FC = () => {
                     semester,
                     updatedAt: Timestamp.now(),
                 }, { merge: true });
+<<<<<<< HEAD
 
                 batch.delete(oldRef);
                 if (legacyRoomRef) batch.delete(legacyRoomRef);
                 if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             });
 
             await batch.commit();
@@ -774,14 +1018,20 @@ const ClassroomAttendancePage: React.FC = () => {
         <MainLayout>
             <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300 min-h-screen">
                 <div className="max-w-5xl mx-auto">
+<<<<<<< HEAD
                     <BackButton to="/academic/hub/attendance" className="mb-4" />
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}
                         academicYear={academicYear}
                         semester={semester}
                         onDateChange={setCurrentDate}
+<<<<<<< HEAD
                         title="ระบบเช็คชื่อเข้าเรียน"
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     />
 
                     {isHoliday && schedules.length === 0 ? (

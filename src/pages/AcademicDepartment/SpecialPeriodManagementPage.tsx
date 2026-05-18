@@ -6,7 +6,10 @@ import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface SpecialPeriod {
   id: string;
@@ -275,7 +278,13 @@ const SpecialPeriodManagementPage: React.FC = () => {
           </div>
 
           <div className="mb-6">
+<<<<<<< HEAD
             <BackButton to="/academic/hub/scheduling" />
+=======
+            <Link to="/academic-admin" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
+              &larr; กลับไปหน้าบริหารงานวิชาการ
+            </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </div>
 
           {/* Special Period Management Section */}

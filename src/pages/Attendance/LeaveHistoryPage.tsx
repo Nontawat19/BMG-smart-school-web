@@ -19,9 +19,13 @@ import { FaFilePdf, FaSearch, FaPhone, FaLine, FaFilter } from 'react-icons/fa';
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { getThaiYear } from '@/utils/dateUtils';
+=======
+import SkeletonLoader from '@/components/SkeletonLoader';
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface LeaveRequest {
   id: string;
@@ -190,7 +194,11 @@ const LeaveHistoryPage: React.FC = () => {
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('th-TH', { month: 'long' }),
+<<<<<<< HEAD
       year: getThaiYear(d),
+=======
+      year: d.getFullYear() + 543,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     };
   })();
 
@@ -317,10 +325,14 @@ const LeaveHistoryPage: React.FC = () => {
     <MainLayout>
       <div className="p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+<<<<<<< HEAD
           <div className="flex items-center gap-4">
             <BackButton />
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา</h1>
           </div>
+=======
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา</h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
             <div className="relative min-w-[150px]">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

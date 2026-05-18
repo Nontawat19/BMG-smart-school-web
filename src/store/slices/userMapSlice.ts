@@ -56,8 +56,13 @@ export const fetchTeachersMap = createAsyncThunk(
           uid: data.uid || '',
           isHeadOfLearningArea: data.isHeadOfLearningArea || false,
           isHeadOfAssessment: data.isHeadOfAssessment || false,
+<<<<<<< HEAD
           learningArea: data.learningArea || data.subjectGroup || '',
           subjectGroup: data.subjectGroup || data.learningArea || '',
+=======
+          learningArea: data.learningArea || '',
+          subjectGroup: data.subjectGroup || '',
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           department: data.department || '',
           position: data.position || '',
           firstName: data.firstName || '',
@@ -85,4 +90,8 @@ const userMapSlice = createSlice({
   },
 });
 
+<<<<<<< HEAD
 export default userMapSlice.reducer;
+=======
+export default userMapSlice.reducer;
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+<<<<<<< HEAD
 import { usePermissions } from '@/hooks/usePermissions';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { Link } from 'react-router-dom';
 import { firestore } from '@/firebase';
 import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, collectionGroup } from 'firebase/firestore';
@@ -9,7 +12,10 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import Swal from 'sweetalert2';
 import { FaSearch, FaShieldAlt, FaSchool, FaChalkboardTeacher, FaUserGraduate, FaPencilAlt, FaTrash, FaBriefcase, FaIdBadge, FaUserPlus, FaChevronDown } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Type Definitions ---
 interface User {
@@ -73,8 +79,11 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
     school_admin: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
     teacher: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
     student: { icon: <FaUserGraduate />, text: 'นักเรียน (Student)', className: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20' },
+<<<<<<< HEAD
     school_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)', className: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' },
     student_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลา (Student Attendance)', className: 'bg-cyan-50 text-cyan-600 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20' },
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   };
 
   const safeRoles = (Array.isArray(roles) ? roles : [roles])
@@ -131,7 +140,10 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
 };
 
 const UserListPage: React.FC = () => {
+<<<<<<< HEAD
   const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -184,11 +196,14 @@ const UserListPage: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
+<<<<<<< HEAD
       // Security: School admin and Teacher only sees users in their school
       if ((isSchoolAdmin || isTeacher) && user.schoolId !== currentUser?.schoolId) {
         return false;
       }
 
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const userRoles = Array.isArray(user.role) ? user.role : [user.role];
       const matchesRole = roleFilter === 'all' || userRoles.includes(roleFilter);
       const matchesSearch = searchTerm === '' ||
@@ -197,7 +212,11 @@ const UserListPage: React.FC = () => {
         (user.schoolName || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesRole && matchesSearch;
     });
+<<<<<<< HEAD
   }, [users, searchTerm, roleFilter, isSchoolAdmin, currentUser]);
+=======
+  }, [users, searchTerm, roleFilter]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -393,10 +412,14 @@ const UserListPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
+<<<<<<< HEAD
             <div className="flex items-center gap-4">
               <BackButton />
               <h1 className="text-3xl font-bold tracking-tight">ผู้ใช้ทั้งหมดในระบบ</h1>
             </div>
+=======
+              <h1 className="text-3xl font-bold tracking-tight">ผู้ใช้ทั้งหมดในระบบ</h1>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <p className="mt-1 text-gray-500 dark:text-gray-400">
                 จัดการและตรวจสอบข้อมูลผู้ใช้ทั้งหมด
               </p>
@@ -425,9 +448,12 @@ const UserListPage: React.FC = () => {
                   <option value="school_admin">ผู้ดูแลระบบโรงเรียน (School Admin)</option>
                   <option value="teacher">ครู (Teacher)</option>
                   <option value="student">นักเรียน (Student)</option>
+<<<<<<< HEAD
                   <option value="school_attendance">เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)</option>
                   <option value="student_attendance">เจ้าหน้าที่ลงเวลา (Student Attendance)</option>
                   <option value="teacher_attendance">เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)</option>
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </select>
               </div>
               <Link

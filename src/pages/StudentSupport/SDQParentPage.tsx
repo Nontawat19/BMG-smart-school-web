@@ -9,7 +9,10 @@ import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { saveSDQAssessment, getSDQAssessments, SDQAssessment, SDQScore, getSchoolLevels } from '@/services/sdqService';
 import SDQAssessmentModal from '@/components/SDQ/SDQAssessmentModal';
+<<<<<<< HEAD
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const SDQParentPage: React.FC = () => {
     const [selectedClass, setSelectedClass] = useState<string>('');
@@ -25,24 +28,59 @@ const SDQParentPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
 
+<<<<<<< HEAD
     const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [academicYear, setAcademicYear] = useState<string>(reduxAcademicYear);
     const [systemYear, setSystemYear] = useState<string>(reduxAcademicYear);
+=======
+    const [academicYear, setAcademicYear] = useState<string>(''); // Default empty
+    const [systemYear, setSystemYear] = useState<string>('');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         const fetchLevels = async () => {
             if (schoolId) {
                 const levels = await getSchoolLevels(schoolId);
                 setAvailableLevels(levels);
+<<<<<<< HEAD
                 if (!selectedClass && levels.length > 0) setSelectedClass(levels[0]);
                 if (!academicYear) {
                     setAcademicYear(reduxAcademicYear);
                     setSystemYear(reduxAcademicYear);
+=======
+                // Set default if not set
+                if (!selectedClass && levels.length > 0) setSelectedClass(levels[0]);
+
+                try {
+                    const calendarDoc = await import('firebase/firestore').then(fs =>
+                        fs.getDoc(fs.doc(db, 'school-settings', schoolId, 'main_calendar', 'default'))
+                    );
+                    if (calendarDoc.exists()) {
+                        const y = calendarDoc.data().academicYear;
+                        if (y) {
+                            setSystemYear(y);
+                            setAcademicYear(y); // Strictly use system default
+                        } else {
+                            setAcademicYear('2567');
+                            setSystemYear('2567');
+                        }
+                    } else {
+                        setAcademicYear('2567');
+                        setSystemYear('2567');
+                    }
+                } catch (e) {
+                    console.error("Error fetching calendar:", e);
+                    setAcademicYear('2567');
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
             }
         };
         fetchLevels();
+<<<<<<< HEAD
     }, [schoolId, reduxAcademicYear]);
+=======
+    }, [schoolId]);
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         if (students.length > 0) {

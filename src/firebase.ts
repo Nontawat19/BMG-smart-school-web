@@ -5,7 +5,11 @@ import { getAuth } from "firebase/auth";
 import { getFirestore, initializeFirestore } from "firebase/firestore"; // เปลี่ยนจาก database เป็น firestore
 import { getStorage } from "firebase/storage";
 
+<<<<<<< HEAD
 export const firebaseConfig = {
+=======
+const firebaseConfig = {
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,

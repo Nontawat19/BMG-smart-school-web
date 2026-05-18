@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+=======
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from '../../firebase';
 import { collection, getDocs, doc, query, where, writeBatch, deleteDoc, onSnapshot, orderBy, addDoc, getDoc } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
@@ -13,6 +16,10 @@ import {
   Users,
   UserPlus,
   Trash2,
+<<<<<<< HEAD
+=======
+  ArrowLeft,
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   Search,
   CheckCircle2,
   AlertCircle,
@@ -335,7 +342,13 @@ const ClubMemberManagementPage: React.FC = () => {
 
         {/* Header */}
         <div className="mb-8">
+<<<<<<< HEAD
           <BackButton to="/academic/hub/activities" className="mb-2" />
+=======
+          <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
+            <ArrowLeft size={16} className="mr-1" /> กลับหน้าบริหารวิชาการ
+          </Link>
+>>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
             <Users className="text-violet-500" size={32} />
             จัดการสมาชิกชุมนุม
