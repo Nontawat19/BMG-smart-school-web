@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { firestore as db } from '../../firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaUserClock, FaLayerGroup } from 'react-icons/fa';
+import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+import {
+  buildFirebaseMonthlyUsageSummary,
+  fetchSchoolDashboardSummary,
+  formatOps,
+  formatTHB,
+  getCurrentUsageMonth,
+} from '@/utils/ownerStatsUtils';
 
 interface SchoolInfo {
   schoolName?: string;
@@ -33,8 +40,11 @@ interface SchoolInfo {
   storageUsage?: string;
   firestoreReads?: string;
   firestoreWrites?: string;
+  firestoreUpdates?: string;
   firestoreDeletes?: string;
-  onlineUsers?: number;
+  firebaseMonthlyCost?: string;
+  firebaseCostBreakdown?: string;
+  usageMonth?: string;
   schoolType?: string;
   opportunityExpansionLevel?: string;
 }
@@ -93,23 +103,34 @@ const SchoolDetailsPage: React.FC = () => {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as SchoolInfo;
-
-        // Fetch counts from subcollections
-        const teachersSnapshot = await getDocs(collection(db, collectionName, schoolId, 'teachers'));
-        const studentsSnapshot = await getDocs(collection(db, collectionName, schoolId, 'students'));
-        const teacherCount = teachersSnapshot.size;
-        const studentCount = studentsSnapshot.size;
+        const summary = await fetchSchoolDashboardSummary(db, schoolId, data);
+        const usageMonth = getCurrentUsageMonth();
+        const monthlyUsage = summary.monthlyUsage?.[usageMonth] || buildFirebaseMonthlyUsageSummary({
+          month: usageMonth,
+          readOps: summary.firestoreDocumentCount || 0,
+          updateOps: 2,
+          firestoreUsageBytes: summary.firestoreUsageBytes || 0,
+          storageUsageBytes: summary.storageUsageBytes || 0,
+        });
 
         setInfo({
           ...data,
-          teacherCount: teacherCount,
-          studentCount: studentCount,
-          firestoreUsage: data.firestoreUsage,
-          storageUsage: data.storageUsage,
-          firestoreReads: data.firestoreReads,
-          firestoreWrites: data.firestoreWrites,
-          firestoreDeletes: data.firestoreDeletes,
-          onlineUsers: data.onlineUsers,
+          teacherCount: summary.teacherCount,
+          studentCount: summary.studentCount,
+          firestoreUsage: summary.firestoreUsage,
+          storageUsage: summary.storageUsage,
+          firestoreReads: formatOps(monthlyUsage.readOps),
+          firestoreWrites: formatOps(monthlyUsage.createOps),
+          firestoreUpdates: formatOps(monthlyUsage.updateOps),
+          firestoreDeletes: formatOps(monthlyUsage.deleteOps),
+          firebaseMonthlyCost: formatTHB(monthlyUsage.cost.totalTHB),
+          firebaseCostBreakdown: [
+            `Firestore ops ${formatTHB(monthlyUsage.cost.firestoreOperationsTHB)}`,
+            `Firestore storage ${formatTHB(monthlyUsage.cost.firestoreStorageTHB)}`,
+            `Storage ${formatTHB(monthlyUsage.cost.storageTHB)}`,
+            `Hosting storage ${formatTHB(monthlyUsage.cost.hostingStorageTHB)}`,
+          ].join(' / '),
+          usageMonth,
         });
       } else {
         setInfo(null); // No data found
@@ -217,13 +238,14 @@ const SchoolDetailsPage: React.FC = () => {
                       <InfoRow icon={<FaUserGraduate size={20} />} label="จำนวนนักเรียน" value={`${info.studentCount || 0} คน`} />
                       <InfoRow icon={<FaDatabase size={20} />} label="การใช้ข้อมูล (Firestore)" value={info.firestoreUsage} />
                       <InfoRow icon={<FaHdd size={20} />} label="พื้นที่จัดเก็บ (Storage)" value={info.storageUsage} />
-                      <InfoRow icon={<FaCloudDownloadAlt size={20} />} label="การอ่านข้อมูล (ประมาณ)" value={info.firestoreReads} />
-                      <InfoRow icon={<FaCloudUploadAlt size={20} />} label="การเขียนข้อมูล (ประมาณ)" value={info.firestoreWrites} />
-                      <InfoRow icon={<FaTrashAlt size={20} />} label="การลบข้อมูล (ประมาณ)" value={info.firestoreDeletes} />
-                      <InfoRow icon={<FaUserClock size={20} />} label="ผู้ใช้งานออนไลน์ (ขณะนี้)" value={`${info.onlineUsers || 0} คน`} />
+                      <InfoRow icon={<FaCloudDownloadAlt size={20} />} label={`การอ่านข้อมูล (${info.usageMonth || 'เดือนนี้'})`} value={info.firestoreReads} />
+                      <InfoRow icon={<FaCloudUploadAlt size={20} />} label={`การเขียนข้อมูล - เพิ่ม (${info.usageMonth || 'เดือนนี้'})`} value={info.firestoreWrites} />
+                      <InfoRow icon={<FaEdit size={20} />} label={`การอัปเดตข้อมูล (${info.usageMonth || 'เดือนนี้'})`} value={info.firestoreUpdates} />
+                      <InfoRow icon={<FaTrashAlt size={20} />} label={`การลบข้อมูล (${info.usageMonth || 'เดือนนี้'})`} value={info.firestoreDeletes} />
+                      <InfoRow icon={<FaMoneyBillWave size={20} />} label="ต้นทุน Firebase (ประมาณ/เดือน)" value={info.firebaseMonthlyCost} />
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
-                      * ops = operations (จำนวนการทำงานของระบบต่อวันโดยประมาณ)
+                      * ops = operations สรุปรายเดือนจาก summaries; ต้นทุนเป็นค่าประมาณหลังหัก free tier และรวม Firestore, Storage, Hosting storage ({info.firebaseCostBreakdown || '-'})
                     </p>
                   </div>
                 </div>

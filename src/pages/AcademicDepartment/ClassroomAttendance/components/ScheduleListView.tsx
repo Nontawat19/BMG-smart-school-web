@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, ChevronLeft } from 'lucide-react';
+import { Clock, ChevronLeft, MapPin } from 'lucide-react';
 import { CourseSchedule } from '../types';
 import { ScheduleCardSkeleton } from './Skeletons';
 
@@ -37,12 +37,14 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
         );
     }
 
-    const filteredSchedules = schedules.filter(s => !s.courseId || !inactiveCourseIds.has(s.courseId));
+    const filteredSchedules = schedules.filter(s => s.isSubstitute || !s.courseId || !inactiveCourseIds.has(s.courseId));
 
     return (
         <div className="grid grid-cols-1 gap-4">
             {filteredSchedules.map((schedule) => {
                 const isNow = isCurrentPeriod(schedule.startTime, schedule.endTime) && currentDate.toDateString() === new Date().toDateString();
+                const displayPeriod = schedule.isSubstitute && schedule.period === 0 ? 1 : schedule.period;
+                const timeLabel = schedule.startTime || schedule.endTime ? `${schedule.startTime || '-'}-${schedule.endTime || '-'}` : '-';
                 return (
                     <div
                         key={schedule.id + schedule.period}
@@ -57,25 +59,27 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
                         {isNow && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-600 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>}
                         <div className={`flex items-center gap-4 ${isNow ? 'pl-2' : ''}`}>
                             <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${isNow ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
-<<<<<<< HEAD
-                                {schedule.period === 0 ? 'ฮ' : schedule.period}
-=======
-                                {schedule.period}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                {!schedule.isSubstitute && schedule.period === 0 ? 'ฮ' : displayPeriod}
                             </div>
                             <div>
                                 <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                                    {schedule.subjectName} ชั้น {schedule.className}{schedule.room && schedule.room !== 'all' ? `/${schedule.room}` : ''}
+                                    {schedule.subjectName} ชั้น {schedule.className}
                                     {schedule.isSubstitute && (
                                         <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full border border-orange-200">
-                                            แทน: {schedule.originalTeacherName}
+                                            สอนแทน: {schedule.originalTeacherName}
                                         </span>
                                     )}
                                 </h3>
-                                <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2 text-sm">
-                                    <span className="font-medium text-indigo-600 dark:text-indigo-400">{schedule.subjectCode}</span>
-                                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                                    <Clock size={14} /> {schedule.startTime} - {schedule.endTime}
+                                <p className="text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-2 text-sm">
+                                    {schedule.subjectCode && <span className="font-medium text-indigo-600 dark:text-indigo-400">{schedule.subjectCode}</span>}
+                                    {schedule.subjectCode && <span className="w-1 h-1 bg-gray-300 rounded-full"></span>}
+                                    <span className="inline-flex items-center gap-1"><Clock size={14} /> {timeLabel}</span>
+                                    {schedule.room && schedule.room !== 'all' && (
+                                        <>
+                                            <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                            <span className="inline-flex items-center gap-1"><MapPin size={14} /> {schedule.room}</span>
+                                        </>
+                                    )}
                                 </p>
                             </div>
                         </div>

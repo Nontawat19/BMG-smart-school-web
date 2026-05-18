@@ -37,16 +37,10 @@ export async function syncHeadOfLearningArea(
                 // Setting as new head: update subject_groups with new head info
                 // First, check if there was a previous head and clear their teacher profile
                 const prevData = matchedDoc.data();
-<<<<<<< HEAD
                 const previousHeadId = prevData.headId || prevData.headTeacherId;
                 if (previousHeadId && previousHeadId !== teacherDocId) {
                     try {
                         const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', previousHeadId);
-=======
-                if (prevData.headId && prevData.headId !== teacherDocId) {
-                    try {
-                        const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', prevData.headId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         batch.update(prevTeacherRef, {
                             isHeadOfLearningArea: false
                         });
@@ -58,18 +52,13 @@ export async function syncHeadOfLearningArea(
                 // Update the subject_group document
                 batch.update(doc(db, 'school-settings', schoolId, 'subject_groups', matchedDoc.id), {
                     headId: teacherDocId,
-<<<<<<< HEAD
                     headName: teacherFullName,
                     headTeacherId: teacherDocId,
                     headTeacherName: teacherFullName
-=======
-                    headName: teacherFullName
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
             } else {
                 // Removing as head: clear the subject_groups headId/headName only if this teacher IS the current head
                 const currentData = matchedDoc.data();
-<<<<<<< HEAD
                 const currentHeadId = currentData.headId || currentData.headTeacherId;
                 if (currentHeadId === teacherDocId) {
                     batch.update(doc(db, 'school-settings', schoolId, 'subject_groups', matchedDoc.id), {
@@ -77,12 +66,6 @@ export async function syncHeadOfLearningArea(
                         headName: '',
                         headTeacherId: '',
                         headTeacherName: ''
-=======
-                if (currentData.headId === teacherDocId) {
-                    batch.update(doc(db, 'school-settings', schoolId, 'subject_groups', matchedDoc.id), {
-                        headId: '',
-                        headName: ''
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     });
                 }
             }

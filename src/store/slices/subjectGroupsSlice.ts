@@ -16,11 +16,8 @@ export interface SubjectGroup {
     code?: string;
     headTeacherId?: string;
     headTeacherName?: string;
-<<<<<<< HEAD
     headId?: string;
     headName?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 export interface SubjectGroupsState {
@@ -39,6 +36,7 @@ const DEFAULT_GROUPS = [
     { name: "การงานอาชีพ", code: "7" },
     { name: "ภาษาต่างประเทศ", code: "8" },
     { name: "กิจกรรมพัฒนาผู้เรียน", code: "9" },
+    { name: "กลุ่มสาระค้นคว้า", code: "I" },
 ];
 
 const initialState: SubjectGroupsState = {
@@ -62,15 +60,10 @@ export const fetchSubjectGroups = createAsyncThunk(
                 id: d.id,
                 name: d.data().name || "",
                 code: d.data().code || "",
-<<<<<<< HEAD
                 headTeacherId: d.data().headTeacherId || d.data().headId || "",
                 headTeacherName: d.data().headTeacherName || d.data().headName || "",
                 headId: d.data().headId || d.data().headTeacherId || "",
                 headName: d.data().headName || d.data().headTeacherName || "",
-=======
-                headTeacherId: d.data().headTeacherId || "",
-                headTeacherName: d.data().headTeacherName || "",
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }));
 
             // สร้าง default groups ถ้ายังไม่มี (logic เดียวกับ useSubjectGroups hook)
@@ -95,12 +88,8 @@ export const fetchSubjectGroups = createAsyncThunk(
                 data = [...data, ...addedData];
             }
 
-            // เรียงตาม code
-            data.sort((a, b) => {
-                const codeA = parseInt(a.code || "999");
-                const codeB = parseInt(b.code || "999");
-                return codeA - codeB;
-            });
+            // เรียงตาม code (รองรับทั้งตัวเลข และตัวอักษรอย่าง I)
+            data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
 
             return data;
         } catch (error) {
@@ -125,11 +114,7 @@ const subjectGroupsSlice = createSlice({
         },
         addSubjectGroup(state, action) {
             state.groups.push(action.payload);
-            state.groups.sort((a, b) => {
-                const codeA = parseInt(a.code || "999");
-                const codeB = parseInt(b.code || "999");
-                return codeA - codeB;
-            });
+            state.groups.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
         },
         updateSubjectGroup(state, action) {
             const { id, ...updates } = action.payload;

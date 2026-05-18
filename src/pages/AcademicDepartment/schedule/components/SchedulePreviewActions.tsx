@@ -4,7 +4,7 @@ import { Cpu, Trash2, X, Zap } from 'lucide-react';
 interface SchedulePreviewActionsProps {
     selectedTeacher: string;
     isAutoScheduling: boolean;
-    handleRemoveCourse: (teacherId: string, instanceId: string) => void;
+    handleClearSchedule: () => void;
     handleClearAllSchedules: () => void;
     handleAutoScheduleForTeacherAndClasses: () => void;
     handleGenerateSchoolTimetable: () => void;
@@ -13,7 +13,7 @@ interface SchedulePreviewActionsProps {
 export const SchedulePreviewActions: React.FC<SchedulePreviewActionsProps> = ({
     selectedTeacher,
     isAutoScheduling,
-    handleRemoveCourse,
+    handleClearSchedule,
     handleClearAllSchedules,
     handleAutoScheduleForTeacherAndClasses,
     handleGenerateSchoolTimetable
@@ -26,7 +26,7 @@ export const SchedulePreviewActions: React.FC<SchedulePreviewActionsProps> = ({
             </div>
             <div className="flex flex-wrap items-center gap-3">
                 {selectedTeacher && (
-                    <button onClick={() => handleRemoveCourse(selectedTeacher, "")} className="flex items-center gap-2 px-5 py-3 rounded-2xl border border-rose-500/10 bg-rose-500/5 text-rose-500 hover:bg-rose-500/10 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg">
+                    <button onClick={handleClearSchedule} className="flex items-center gap-2 px-5 py-3 rounded-2xl border border-rose-500/10 bg-rose-500/5 text-rose-500 hover:bg-rose-500/10 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg">
                         <Trash2 size={16} /> <span>ลบตารางเฉพาะคนนี้</span>
                     </button>
                 )}

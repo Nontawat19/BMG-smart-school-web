@@ -21,10 +21,6 @@ import {
     Search,
     Download,
     Filter,
-<<<<<<< HEAD
-=======
-    ArrowLeft,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     Clock,
     User,
     ChevronDown,
@@ -33,20 +29,16 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import * as XLSX from 'xlsx';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
-<<<<<<< HEAD
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { getSubjectGroupInfo, normalizeSubjectGroupValue, SubjectGroupLike } from '@/utils/subjectGroupUtils';
 
 interface AttendanceRecord {
     studentId: string;
@@ -82,6 +74,9 @@ interface Course {
     id: string;
     code: string;
     title: string;
+    subjectGroup?: string;
+    learningArea?: string;
+    groupName?: string;
     teacherId?: string;
     teacherIds?: string[];
     teacherAssignments?: { teacherId: string; roomIds?: string[]; classLevels?: string[] }[];
@@ -124,16 +119,12 @@ const AttendanceSummaryPage: React.FC = () => {
     const dispatch = useDispatch();
     const { user: currentUser, ACADEMIC_ACCESS, hasRole } = usePermissions();
     const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+    const subjectGroups = useSelector((state: RootState) => state.subjectGroups.groups);
     const schoolId = (currentUser as any)?.schoolId;
 
-<<<<<<< HEAD
     const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [loading, setLoading] = useState(false);
     const [academicYear, setAcademicYear] = useState<string>(() => sessionStorage.getItem('as_year') || reduxAcademicYear);
-=======
-    const [loading, setLoading] = useState(false);
-    const [academicYear, setAcademicYear] = useState<string>(() => sessionStorage.getItem('as_year') || '');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [semester, setSemester] = useState<string>(() => sessionStorage.getItem('as_semester') || '');
     const [selectedCourse, setSelectedCourse] = useState<any>(() => {
         const saved = sessionStorage.getItem('as_course');
@@ -223,31 +214,7 @@ const AttendanceSummaryPage: React.FC = () => {
         })
     }), [isDarkMode]);
 
-<<<<<<< HEAD
 
-=======
-    const fetchSettings = async () => {
-        if (!schoolId) return;
-        try {
-            const settingsRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-            const snap = await getDoc(settingsRef);
-            if (snap.exists()) {
-                const data = snap.data();
-                setAcademicYear(data.academicYear || '2567');
-                if (!semester) {
-                    const today = new Date().toISOString().split('T')[0];
-                    if (data.terms?.term2?.startDate && today >= data.terms.term2.startDate) {
-                        setSemester('2');
-                    } else {
-                        setSemester('1');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching settings:", error);
-        }
-    };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const fetchCourses = async () => {
         if (!schoolId) return;
@@ -262,11 +229,48 @@ const AttendanceSummaryPage: React.FC = () => {
                     isActive: data.isActive ?? true
                 } as any;
             });
-            setCourses(list.filter(c => c.isActive).sort((a, b) => a.code.localeCompare(b.code)));
+            setCourses(list.filter(c => c.isActive));
         } catch (error) {
             console.error("Error fetching courses:", error);
         }
     };
+
+    const getCourseSubjectGroupOrder = useMemo(() => {
+        const groups = [...(subjectGroups || [])].sort((a, b) =>
+            (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' })
+        );
+        const groupIndex = new Map<string, number>();
+
+        groups.forEach((group, index) => {
+            [group.id, group.code, group.name].filter(Boolean).forEach(value => {
+                groupIndex.set(normalizeSubjectGroupValue(String(value)), index);
+            });
+        });
+
+        const fallbackByCodePrefix: Record<string, number> = {
+            'ท': groupIndex.get(normalizeSubjectGroupValue('ภาษาไทย')) ?? 0,
+            'ค': groupIndex.get(normalizeSubjectGroupValue('คณิตศาสตร์')) ?? 1,
+            'ว': groupIndex.get(normalizeSubjectGroupValue('วิทยาศาสตร์และเทคโนโลยี')) ?? 2,
+            'ส': groupIndex.get(normalizeSubjectGroupValue('สังคมศึกษา ศาสนา และวัฒนธรรม')) ?? 3,
+            'พ': groupIndex.get(normalizeSubjectGroupValue('สุขศึกษาและพลศึกษา')) ?? 4,
+            'ศ': groupIndex.get(normalizeSubjectGroupValue('ศิลปะ')) ?? 5,
+            'ง': groupIndex.get(normalizeSubjectGroupValue('การงานอาชีพ')) ?? 6,
+            'อ': groupIndex.get(normalizeSubjectGroupValue('ภาษาต่างประเทศ')) ?? 7,
+            'ก': groupIndex.get(normalizeSubjectGroupValue('กิจกรรมพัฒนาผู้เรียน')) ?? 8,
+            'I': groupIndex.get(normalizeSubjectGroupValue('กลุ่มสาระค้นคว้า')) ?? 9,
+        };
+
+        return (course: Course) => {
+            const groupValue = course.subjectGroup || course.learningArea || course.groupName;
+            const groupInfo = getSubjectGroupInfo(groupValue, groups as SubjectGroupLike[]);
+            if (groupInfo) {
+                return groupIndex.get(normalizeSubjectGroupValue(groupInfo.name || groupInfo.code || groupInfo.id || '')) ?? 999;
+            }
+
+            const firstChar = String(course.code || '').trim().charAt(0).toUpperCase();
+            return fallbackByCodePrefix[firstChar] ?? 999;
+        };
+    }, [subjectGroups]);
 
     const handleFetchData = async () => {
         if (!schoolId || !academicYear || !semester || !selectedCourse) return;
@@ -416,25 +420,16 @@ const AttendanceSummaryPage: React.FC = () => {
         if (schoolId && teacherMapStatus === 'idle') {
             dispatch(fetchTeachersMap(schoolId) as any);
         }
-<<<<<<< HEAD
         if (!academicYear) setAcademicYear(reduxAcademicYear);
         fetchCourses();
     }, [schoolId, teacherMapStatus, dispatch, reduxAcademicYear]);
-=======
-        fetchSettings();
-        fetchCourses();
-    }, [schoolId, teacherMapStatus, dispatch]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         handleFetchData();
     }, [schoolId, academicYear, semester, selectedCourse]);
 
     const teacherOptions = useMemo(() => {
-        const allTeachers = Object.values(teacherMap || {});
-        const sorted = allTeachers.sort((a: any, b: any) => a.name.localeCompare(b.name, 'th'));
-
-        const options = sorted.map((t: any) => {
+        const options = getActiveSortedTeachers(Object.values(teacherMap || {})).map((t: any) => {
             const tId = t.teacherId || '';
             const tName = t.name || t.displayName || 'ไม่ระบุ';
             return {
@@ -575,7 +570,16 @@ const AttendanceSummaryPage: React.FC = () => {
             return myIds.some((id: string) => courseTeacherIds.has(String(id)));
         });
 
-        const options = filtered.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }));
+        const sorted = [...filtered].sort((a, b) => {
+            const groupOrderA = getCourseSubjectGroupOrder(a);
+            const groupOrderB = getCourseSubjectGroupOrder(b);
+            if (groupOrderA !== groupOrderB) return groupOrderA - groupOrderB;
+            const codeCompare = String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true, sensitivity: 'base' });
+            if (codeCompare !== 0) return codeCompare;
+            return String(a.title || '').localeCompare(String(b.title || ''), 'th', { numeric: true, sensitivity: 'base' });
+        });
+
+        const options = sorted.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }));
 
         // Auto-select first course only if NOTHING is selected AND we have options
         if (options.length > 0 && !selectedCourse) {
@@ -588,7 +592,7 @@ const AttendanceSummaryPage: React.FC = () => {
         }
 
         return options;
-    }, [courses, userPrivileges, semester, selectedCourse]);
+    }, [courses, userPrivileges, semester, selectedCourse, getCourseSubjectGroupOrder]);
 
     const roomOptions = useMemo(() => {
         // สร้างรายการห้อง 1-20 เป็นค่าตั้งต้นตามความต้องการของผู้ใช้
@@ -667,14 +671,7 @@ const AttendanceSummaryPage: React.FC = () => {
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-baseline gap-4">
                             <div className="space-y-2">
-<<<<<<< HEAD
                                 <BackButton to="/academic/hub/attendance" className="mb-2" />
-=======
-                                <Link to="/academic-admin" className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:gap-2 transition-all group">
-                                    <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
-                                    <span>กลับหน้าบริหารวิชาการ</span>
-                                </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <div className="flex items-center gap-4 mt-2">
                                     <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
                                         <BarChart3 size={24} />

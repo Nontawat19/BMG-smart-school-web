@@ -1,5 +1,5 @@
 // src/utils/studentLookupUtils.ts
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { firestore } from "@/firebase";
 
 /**
@@ -47,4 +47,21 @@ export async function updateStudentLookup(
         studentDocId,
         updatedAt: serverTimestamp()
     }, { merge: true });
+}
+
+/**
+ * ลบข้อมูลใน student-lookups
+ * @param idCardNumber เลขบัตรประชาชน
+ * @param studentId รหัสนักเรียน
+ */
+export async function deleteStudentLookup(
+    idCardNumber: string,
+    studentId: string
+): Promise<void> {
+    if (!idCardNumber || !studentId) return;
+    
+    const lookupKey = await generateStudentLookupKey(idCardNumber, studentId);
+    const lookupRef = doc(firestore, "student-lookups", lookupKey);
+    
+    await deleteDoc(lookupRef);
 }

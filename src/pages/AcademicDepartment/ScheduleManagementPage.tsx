@@ -130,11 +130,7 @@ const ScheduleManagementPage: React.FC = () => {
     <MainLayout>
       <div className="p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="flex justify-between mb-6">
-<<<<<<< HEAD
           <Link to="/academic/hub/scheduling" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-=======
-          <Link to="/academic-admin" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             &larr; กลับหน้าบริหารวิชาการ
           </Link>
 

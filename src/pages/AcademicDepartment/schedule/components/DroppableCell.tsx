@@ -16,7 +16,7 @@ export interface DroppableCellProps {
     isOccupiedByOtherClass: boolean;
     occupiedByOtherClassInfo: { classId: string | string[]; courseTitle: string } | null;
     occupiedByAnotherTeacherInfo: { classId: string; courseTitle: string; teacherName: string; isLocked: boolean; } | null;
-    onClick: () => void;
+    onToggleUnavailable?: () => void;
     onLockToggle?: (slotId: string, instanceId: string) => void;
     isDraggingOver: boolean;
     isDropForbidden: boolean;
@@ -30,6 +30,7 @@ export interface DroppableCellProps {
     onHover?: (rect: DOMRect | null) => void;
     selectedCourseCode?: string;
     onCellClick?: (slotId: string) => void;
+    span?: number;
 }
 
 export const DroppableCell: React.FC<DroppableCellProps> = ({
@@ -44,7 +45,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     isOccupiedByOtherClass,
     occupiedByOtherClassInfo,
     occupiedByAnotherTeacherInfo,
-    onClick,
+    onToggleUnavailable,
     onLockToggle,
     isDraggingOver,
     isDropForbidden,
@@ -58,6 +59,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     onHover,
     selectedCourseCode,
     onCellClick,
+    span = 1,
 }) => {
     const { setNodeRef, isOver } = useDroppable({ 
         id,
@@ -126,17 +128,25 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     } else if (courses.length > 0) {
         cellClass = 'bg-white dark:bg-white/[0.02] border-gray-100 dark:border-white/5 shadow-sm';
         content = (
-            <div className={`h-full w-full relative`}>
+            <div className={`h-full w-full flex flex-col gap-0.5 p-0.5`}>
                 {courses.map(c => (
-                    <DraggableCourse 
-                        key={c.instanceId} 
-                        course={c} 
-                        showRemove={true} 
-                        onRemove={() => handleRemoveCourse?.(rawSlotId, c.instanceId)} 
-                        onLockToggle={() => onLockToggle?.(rawSlotId, c.instanceId)}
-                        viewType={type}
-                        teachers={teachers}
-                    />
+                    <div key={c.instanceId} className="flex-1 min-h-0 w-full relative">
+                        <DraggableCourse 
+                            course={c} 
+                            showRemove={true} 
+                            onRemove={() => handleRemoveCourse?.(rawSlotId, c.instanceId)} 
+                            onLockToggle={() => onLockToggle?.(rawSlotId, c.instanceId)}
+                            viewType={type}
+                            teachers={teachers}
+                            onHover={(rect) => {
+                                if (!rect) {
+                                    onHover?.(null);
+                                } else {
+                                    onHover?.(rect);
+                                }
+                            }}
+                        />
+                    </div>
                 ))}
             </div>
         );
@@ -147,13 +157,13 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
         content = (
             <div className={`
                 flex items-center justify-center h-full transition-all duration-300
-                ${(isDraggingOver || selectedCourseCode) ? 'opacity-100 scale-100' : 'opacity-[0.03] group-hover:opacity-20'}
+                ${(isDraggingOver || selectedCourseCode) ? 'opacity-100 scale-100' : 'opacity-[0.03] group-hover:opacity-10'}
             `}>
                 <div className={`
                     flex items-center justify-center rounded-full border-2 border-dashed
-                    ${(isDraggingOver || selectedCourseCode) ? 'w-8 h-8 animate-pulse border-indigo-500/50 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'w-6 h-6 border-gray-400 dark:border-gray-500'}
+                    ${(isDraggingOver || selectedCourseCode) ? 'w-8 h-8 animate-pulse border-indigo-500/50 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'w-6 h-6 border-gray-300 dark:border-gray-600'}
                 `}>
-                    <Plus size={(isDraggingOver || selectedCourseCode) ? 18 : 14} className={(isDraggingOver || selectedCourseCode) ? 'text-indigo-500' : 'text-gray-400'} />
+                    <Plus size={(isDraggingOver || selectedCourseCode) ? 18 : 14} className={(isDraggingOver || selectedCourseCode) ? 'text-indigo-500' : 'text-gray-400 dark:text-gray-500'} />
                 </div>
             </div>
         );
@@ -162,40 +172,36 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     return (
         <div
             ref={setNodeRef}
-            onClick={onClick}
-            onMouseEnter={(e) => onHover?.(e.currentTarget.getBoundingClientRect())}
-            onMouseLeave={() => onHover?.(null)}
+            onClick={() => {
+                if (selectedCourseCode) {
+                    onCellClick?.(rawSlotId);
+                }
+            }}
             className={`
                 group relative h-full rounded-lg border transition-all duration-500
                 ${cellClass} 
                 ${selectedCourseCode && courses.length === 0 ? 'cursor-pointer hover:border-indigo-500/50 hover:ring-2 hover:ring-indigo-500/20 active:scale-95' : ''}
             `}
+            style={{ gridColumn: span > 1 ? `span ${span}` : undefined }}
         >
-            {/* 1. SLOT LOCK TRIGGER (Top-Left) - Shifted slightly inside to avoid collision */}
-            {type === 'teacher' && !isSpecialPeriod && courses.length === 0 && !isDynamicUnavailable && (
+            {/* 1. SLOT LOCK TRIGGER (Top-Left) */}
+            {type === 'teacher' && !isSpecialPeriod && courses.length === 0 && (
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        onClick();
+                        onToggleUnavailable?.();
                     }}
-                    className="absolute top-0 left-0 z-40 w-4 h-4 rounded-tl-lg rounded-br-md bg-amber-500/40 hover:bg-amber-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-60 hover:opacity-100 group-hover:opacity-100"
-                    title="ล็อคคาบว่าง"
+                    className={`
+                        absolute top-0 left-0 z-40 w-4 h-4 rounded-tl-lg rounded-br-md 
+                        flex items-center justify-center transition-all shadow-sm 
+                        hover:scale-110 active:scale-95 
+                        ${isDynamicUnavailable 
+                            ? 'bg-rose-500/60 hover:bg-rose-600 text-white opacity-90' 
+                            : 'bg-amber-500/40 hover:bg-amber-600 text-white opacity-40 hover:opacity-100 group-hover:opacity-80'}
+                    `}
+                    title={isDynamicUnavailable ? "ยกเลิกการล็อคคาบว่าง" : "ล็อคคาบว่าง (ไม่ให้จัดตารางลงคาบนี้)"}
                 >
-                    <Lock size={7} strokeWidth={4} />
-                </button>
-            )}
-
-            {/* 2. CANCEL LOCK TRIGGER (Top-Right) */}
-            {type === 'teacher' && isDynamicUnavailable && (
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onClick();
-                    }}
-                    className="absolute top-0 right-0 z-40 w-4 h-4 rounded-tr-lg rounded-bl-md bg-rose-500/40 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-60 hover:opacity-100 group-hover:opacity-100"
-                    title="ยกเลิกคาบว่าง"
-                >
-                    <Trash2 size={7} strokeWidth={4} />
+                    {isDynamicUnavailable ? <Unlock size={7} strokeWidth={4} /> : <Lock size={7} strokeWidth={4} />}
                 </button>
             )}
 

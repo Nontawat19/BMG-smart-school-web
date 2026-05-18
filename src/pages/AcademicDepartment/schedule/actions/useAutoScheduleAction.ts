@@ -3,8 +3,8 @@ import withReactContent from 'sweetalert2-react-content';
 import { useRef } from 'react';
 import { collection, doc, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
-import { Course, CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, SchedulingMetrics, SchoolSettings, AssignmentConstraintMap } from '../types';
-import { checkConstraints, getClassDisplayName, IndexedTimetable, DAYS, isAcademicCourse, isDoublePeriodStart } from '../utils';
+import { Course, CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, SchedulingMetrics, SchoolSettings, AssignmentConstraintMap, getAssignmentTeacherIds } from '../types';
+import { checkConstraints, getClassDisplayName, IndexedTimetable, DAYS, isAcademicCourse, isDoublePeriodStart, getRequiredWeeklyPeriods } from '../utils';
 import { runSchedulingEngine, SchedulingEngineInput, SchedulingEngineResult } from '../engine/schedulerEngine';
 
 const MySwal = withReactContent(Swal);
@@ -13,11 +13,13 @@ const getScheduleDocId = (teacherId: string, academicYear: string, semester: str
     return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
 };
 
-const getRequiredWeeklyPeriods = (course: Pick<Course, 'credits' | 'hoursPerWeek'>) => {
-    const hours = Number(course.hoursPerWeek || 0);
-    if (hours > 0) return Math.round(hours);
-    const credits = Number(course.credits || 0);
-    return credits > 0 ? Math.round(credits * 2) : 1;
+const normalizeGroupNumber = (groupNumber?: number | string) => {
+    const normalized = Number(groupNumber || 1);
+    return Number.isFinite(normalized) && normalized > 0 ? normalized : 1;
+};
+
+const getAssignmentCompositeId = (courseId: string, groupNumber?: number | string) => {
+    return `${courseId}_${normalizeGroupNumber(groupNumber)}`;
 };
 
 interface UseAutoScheduleActionProps {
@@ -42,6 +44,10 @@ interface UseAutoScheduleActionProps {
     scheduleSectionRef: React.RefObject<HTMLDivElement | null>;
     assignmentConstraints: AssignmentConstraintMap;
 }
+
+const getTaskTeacherIds = (task: { teacherId: string; teacherIds?: string[] }) => (
+    Array.from(new Set((task.teacherIds && task.teacherIds.length > 0 ? task.teacherIds : [task.teacherId]).filter(Boolean)))
+);
 
 export const useAutoScheduleAction = ({
     schoolId,
@@ -253,7 +259,9 @@ export const useAutoScheduleAction = ({
             updateProgress(10, 'กำลังโหลดข้อมูลครู...');
             const teachersCollectionRef = collection(db, 'school-settings', schoolId, 'teachers');
             const teachersSnapshot = await getDocs(teachersCollectionRef);
-            const allTeachersData = teachersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher));
+            const allTeachersData = teachersSnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() } as Teacher))
+                .filter(t => !t.status || t.status === 'อยู่');
 
             if (selectedTeacher) {
                 const currentTeacherIndex = allTeachersData.findIndex(t => t.id === selectedTeacher);
@@ -347,7 +355,7 @@ export const useAutoScheduleAction = ({
                 if (normalizedTargetTeacherId) {
                     const hasTeacher = c.teacherId === normalizedTargetTeacherId ||
                         c.teacherIds?.includes(normalizedTargetTeacherId) ||
-                        c.teacherAssignments?.some((a: any) => a.teacherId === normalizedTargetTeacherId);
+                        c.teacherAssignments?.some((a: any) => getAssignmentTeacherIds(a).includes(normalizedTargetTeacherId));
                     return hasTeacher;
                 }
                 return true;
@@ -357,9 +365,7 @@ export const useAutoScheduleAction = ({
             const coursesWithAssignmentDocs = coursesForSemester.filter(course => assignmentByCourseId.has(course.id)).length;
             const coursesWithUsableAssignments = coursesForSemester.filter(course =>
                 (course.teacherAssignments || []).some((assignment: any) =>
-                    assignment.teacherId &&
-                    assignment.teacherId !== 'pending' &&
-                    !String(assignment.teacherId).startsWith('GHOST') &&
+                    getAssignmentTeacherIds(assignment).length > 0 &&
                     (assignment.classLevels || []).filter(Boolean).length > 0
                 )
             ).length;
@@ -375,7 +381,7 @@ export const useAutoScheduleAction = ({
                 coursesWithUsableAssignments
             });
 
-            const schoolTimetable: Record<string, { teacherId: string; classId: string[]; room: string[]; courseId: string; course: Course | null; taskId?: number }[]> = {};
+            const schoolTimetable: Record<string, { teacherId: string; classId: string[]; room: string[]; courseId: string; course: Course | null; groupNumber: number; taskId?: number }[]> = {};
             let schoolTimetableRecord: Record<string, any> = {};
 
             const batchUpdates: Record<string, Schedule> = {};
@@ -417,7 +423,8 @@ export const useAutoScheduleAction = ({
                                     classId: cleanClassIds,
                                     room: lockedCourse.room || ['all'],
                                     courseId: lockedCourse.id,
-                                    course: lockedCourse
+                                    course: lockedCourse,
+                                    groupNumber: Number(lockedCourse.groupNumber || 0)
                                 });
                             }
                         }
@@ -450,13 +457,17 @@ export const useAutoScheduleAction = ({
                       }];
 
                 assignments.forEach((assign: any) => {
-                    const tId = assign.teacherId;
-                    if (!tId || (normalizedTargetTeacherId && tId !== normalizedTargetTeacherId)) return;
+                    const teacherIds = getAssignmentTeacherIds(assign);
+                    if (teacherIds.length === 0 || (normalizedTargetTeacherId && !teacherIds.includes(normalizedTargetTeacherId))) return;
+                    const tId = normalizedTargetTeacherId || teacherIds[0];
                     
                     const cLevels = (assign.classLevels || []).filter(Boolean);
-                    cLevels.forEach((classId: string) => {
-                        const docId = `${tId}_${classId}`;
-                        if (!batchUpdates[docId]) batchUpdates[docId] = {};
+                    teacherIds.forEach(teacherId => {
+                        if (normalizedTargetTeacherId && teacherId !== normalizedTargetTeacherId) return;
+                        cLevels.forEach((classId: string) => {
+                            const docId = `${teacherId}_${classId}`;
+                            if (!batchUpdates[docId]) batchUpdates[docId] = {};
+                        });
                     });
                 });
             });
@@ -468,6 +479,7 @@ export const useAutoScheduleAction = ({
             interface SchedulingTask {
                 course: Course;
                 teacherId: string;
+                teacherIds?: string[];
                 targetClasses: string[];
                 targetRooms: string[];
                 instanceCount: number;
@@ -480,6 +492,48 @@ export const useAutoScheduleAction = ({
 
             const tasks: SchedulingTask[] = [];
             const skippedCourseIssues: string[] = [];
+            const createSchedulingTask = (
+                course: Course,
+                teacherId: string,
+                teacherIds: string[],
+                targetClasses: string[],
+                targetRooms: string[],
+                groupNumber: number,
+                duration: number,
+                requiredSlot?: string
+            ): SchedulingTask => ({
+                course,
+                teacherId,
+                teacherIds,
+                targetClasses,
+                targetRooms,
+                instanceCount: 1,
+                duration,
+                originalCourseId: course.id,
+                compositeId: `${course.id}_${groupNumber}`,
+                groupNumber,
+                ...(requiredSlot ? { requiredSlot } : {})
+            });
+
+            const pushBalancedWeeklyTasks = (
+                course: Course,
+                teacherId: string,
+                teacherIds: string[],
+                targetClasses: string[],
+                targetRooms: string[],
+                groupNumber: number,
+                remainingPeriods: number,
+                totalWeeklyPeriods: number
+            ) => {
+                if (totalWeeklyPeriods >= 5 && remainingPeriods >= 2) {
+                    tasks.push(createSchedulingTask(course, teacherId, teacherIds, targetClasses, targetRooms, groupNumber, 2));
+                    remainingPeriods -= 2;
+                }
+
+                for (let i = 0; i < remainingPeriods; i++) {
+                    tasks.push(createSchedulingTask(course, teacherId, teacherIds, targetClasses, targetRooms, groupNumber, 1));
+                }
+            };
 
             coursesForSemester.forEach(course => {
                 let assignments = course.teacherAssignments || [];
@@ -506,19 +560,36 @@ export const useAutoScheduleAction = ({
                     }
                 }
 
-                const validAssignments = assignments.filter((a: any) => a.teacherId && a.teacherId !== 'pending' && !a.teacherId.startsWith('GHOST'));
+                const validAssignments = assignments.filter((a: any) => {
+                    const teacherIds = getAssignmentTeacherIds(a);
+                    if (teacherIds.length === 0) return false;
+                    return teacherIds.every(teacherId => {
+                        const teacher = teachersMap[teacherId];
+                        return !teacher || !teacher.status || teacher.status === 'อยู่';
+                    });
+                });
                 if (validAssignments.length === 0) {
                     skippedCourseIssues.push(`${course.code || '-'} ${course.title}: ยังไม่มีครูผู้สอนที่ถูกต้อง`);
                     return;
                 }
 
                 validAssignments.forEach((assign: any) => {
-                    const tId = assign.teacherId;
-                    if (!tId || (normalizedTargetTeacherId && tId !== normalizedTargetTeacherId)) return;
+                    const teacherIds = getAssignmentTeacherIds(assign);
+                    if (teacherIds.length === 0 || (normalizedTargetTeacherId && !teacherIds.includes(normalizedTargetTeacherId))) return;
+                    const tId = teacherIds[0];
+                    const groupNumber = normalizeGroupNumber(assign.groupNumber);
+                    const compositeId = getAssignmentCompositeId(course.id, groupNumber);
 
-                    const classIds = (assign.classLevels && assign.classLevels.length > 0)
+                    const baseClassIds = (assign.classLevels && assign.classLevels.length > 0)
                         ? assign.classLevels.filter(Boolean)
                         : (Array.isArray(course.classId) ? course.classId : (course.classId ? [course.classId] : [])).filter(Boolean);
+
+                    const groupRoom = assign.room;
+                    const classIds = baseClassIds.map((id: string) => {
+                        if (id.includes('/')) return id;
+                        if (groupRoom && groupRoom !== 'all') return `${id}/${groupRoom}`;
+                        return id;
+                    });
 
                     if (classIds.length === 0) {
                         skippedCourseIssues.push(`${course.code || '-'} ${course.title}: ยังไม่มีระดับชั้น/กลุ่มเรียน`);
@@ -532,13 +603,15 @@ export const useAutoScheduleAction = ({
                     const hoursPerWeek = getRequiredWeeklyPeriods(course);
 
                     const lockedSlotsForThisAssignment = new Set<string>();
-                    classIds.forEach((cId: string) => {
-                        const docId = `${tId}_${cId}`;
-                        const existing = lockedCoursesMap[docId] || {};
-                        Object.entries(existing).forEach(([slotId, courses]) => {
-                            const coursesArr = Array.isArray(courses) ? courses : [courses];
-                            const occ = coursesArr.find((c: any) => (c.id === course.id || c.courseId === course.id) && (Number(c.groupNumber) || 1) === (Number(assign.groupNumber) || 1));
-                            if (occ) lockedSlotsForThisAssignment.add(slotId);
+                    teacherIds.forEach(teacherId => {
+                        classIds.forEach((cId: string) => {
+                            const docId = `${teacherId}_${cId}`;
+                            const existing = lockedCoursesMap[docId] || {};
+                            Object.entries(existing).forEach(([slotId, courses]) => {
+                                const coursesArr = Array.isArray(courses) ? courses : [courses];
+                                const occ = coursesArr.find((c: any) => (c.id === course.id || c.courseId === course.id) && normalizeGroupNumber(c.groupNumber) === groupNumber);
+                                if (occ) lockedSlotsForThisAssignment.add(slotId);
+                            });
                         });
                     });
 
@@ -546,7 +619,7 @@ export const useAutoScheduleAction = ({
                     if (needed <= 0) {
                         console.log(`Skipping ${course.title} (Teacher: ${tId}): Already scheduled (${lockedSlotsForThisAssignment.size}/${hoursPerWeek} periods)`);
                     }
-                    const asgnCst = effectiveAssignmentConstraints[`${course.id}_${assign.groupNumber || 1}`] || { type: 'any' };
+                    const asgnCst = effectiveAssignmentConstraints[compositeId] || { type: 'any' };
                     const normalizeLockedSlotId = (slot: string | { day: string; periodId: string }) => {
                         if (typeof slot === 'string') return slot;
                         const periodIndex = periodSettings.findIndex(p => p.id === slot.periodId);
@@ -561,18 +634,16 @@ export const useAutoScheduleAction = ({
                             // Check if this slot is already physically placed (in lockedSlotsForThisAssignment)
                             // If NOT placed yet, we create a MANDATORY task for it
                             if (!lockedSlotsForThisAssignment.has(slotId)) {
-                                tasks.push({
+                                tasks.push(createSchedulingTask(
                                     course,
-                                    teacherId: tId,
-                                    targetClasses: classIds,
-                                    targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                    instanceCount: 1,
-                                    duration: 1,
-                                    originalCourseId: course.id,
-                                    compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                    groupNumber: assign.groupNumber || 1,
-                                    requiredSlot: slotId // This will force placement to this exact slot
-                                });
+                                    tId,
+                                    teacherIds,
+                                    classIds,
+                                    Array.isArray(rooms) ? rooms : [rooms],
+                                    groupNumber,
+                                    1,
+                                    slotId
+                                ));
                                 // One less period to generate freely
                                 needed--;
                             }
@@ -586,75 +657,32 @@ export const useAutoScheduleAction = ({
                         const doubleCount = Math.floor(remainingNeeded / 2);
                         const remainder = remainingNeeded % 2;
                         for (let i = 0; i < doubleCount; i++) {
-                            tasks.push({
-                                course,
-                                teacherId: tId,
-                                targetClasses: classIds,
-                                targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                instanceCount: 1,
-                                duration: 2,
-                                originalCourseId: course.id,
-                                compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                groupNumber: assign.groupNumber || 1
-                            });
+                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 2));
                         }
                         if (remainder > 0) {
-                            tasks.push({
-                                course,
-                                teacherId: tId,
-                                targetClasses: classIds,
-                                targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                instanceCount: remainder,
-                                duration: 1,
-                                originalCourseId: course.id,
-                                compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                groupNumber: assign.groupNumber || 1
-                            });
+                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 1));
                         }
                     } else if (asgnCst.type === 'mixed') {
                         let remainingMixed = remainingNeeded;
                         if (remainingMixed >= 2) {
-                            tasks.push({
-                                course,
-                                teacherId: tId,
-                                targetClasses: classIds,
-                                targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                instanceCount: 1,
-                                duration: 2,
-                                originalCourseId: course.id,
-                                compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                groupNumber: assign.groupNumber || 1
-                            });
+                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 2));
                             remainingMixed -= 2;
                         }
 
                         for (let i = 0; i < remainingMixed; i++) {
-                            tasks.push({
-                                course,
-                                teacherId: tId,
-                                targetClasses: classIds,
-                                targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                instanceCount: 1,
-                                duration: 1,
-                                originalCourseId: course.id,
-                                compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                groupNumber: assign.groupNumber || 1
-                            });
+                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 1));
                         }
                     } else {
-                        for (let i = 0; i < remainingNeeded; i++) {
-                            tasks.push({
-                                course,
-                                teacherId: tId,
-                                targetClasses: classIds,
-                                targetRooms: Array.isArray(rooms) ? rooms : [rooms],
-                                instanceCount: 1,
-                                duration: 1,
-                                originalCourseId: course.id,
-                                compositeId: `${course.id}_${assign.groupNumber || 1}`,
-                                groupNumber: assign.groupNumber || 1
-                            });
-                        }
+                        pushBalancedWeeklyTasks(
+                            course,
+                            tId,
+                            teacherIds,
+                            classIds,
+                            Array.isArray(rooms) ? rooms : [rooms],
+                            groupNumber,
+                            remainingNeeded,
+                            hoursPerWeek
+                        );
                     }
                 });
             });
@@ -674,7 +702,8 @@ export const useAutoScheduleAction = ({
 
             const taskLabel = (task: SchedulingTask) => {
                 const classes = task.targetClasses.map(getClassDisplayName).join(', ');
-                return `${task.course.code || '-'} ${task.course.title} (${teacherLabel(task.teacherId)} / ${classes || '-'})`;
+                const teacherNames = getTaskTeacherIds(task).map(teacherLabel).join(', ');
+                return `${task.course.code || '-'} ${task.course.title} (${teacherNames} / ${classes || '-'})`;
             };
 
             const showPrecheckReport = async (fatalIssues: string[], warningIssues: string[]) => {
@@ -737,10 +766,12 @@ export const useAutoScheduleAction = ({
 
             // 4. Pre-calculate valid slots and detect over-scheduling
             const validSlotsCache = new Map<SchedulingTask, Set<string>>();
+            const relaxedValidSlotsCache = new Map<SchedulingTask, Set<string>>();
             const tasksPerClass: Record<string, number> = {};
             const tasksPerTeacher: Record<string, number> = {};
             const tasksPerRoom: Record<string, number> = {};
             const relaxedConstraintCache = new Map<string, AssignmentConstraintMap>();
+            const softRelaxedConstraintCache = new Map<string, AssignmentConstraintMap>();
             const getConstraintMapForTask = (targetTask: SchedulingTask) => {
                 const constraint = effectiveAssignmentConstraints[targetTask.compositeId];
                 const shouldRelax = targetTask.requiredSlot || constraint?.isLocked;
@@ -763,63 +794,103 @@ export const useAutoScheduleAction = ({
                 }
                 return relaxedConstraintCache.get(cacheKey)!;
             };
+            const getSoftConstraintMapForTask = (targetTask: SchedulingTask) => {
+                const baseMap = getConstraintMapForTask(targetTask);
+                const constraint = baseMap[targetTask.compositeId];
+                if (!constraint) return baseMap;
 
-            for (const task of tasks) {
-                task.targetClasses.forEach(c => {
-                    tasksPerClass[c] = (tasksPerClass[c] || 0) + task.duration;
-                });
-                tasksPerTeacher[task.teacherId] = (tasksPerTeacher[task.teacherId] || 0) + task.duration;
-                task.targetRooms
-                    .filter(roomId => roomId && roomId.toLowerCase() !== 'all')
-                    .forEach(roomId => {
-                        tasksPerRoom[roomId] = (tasksPerRoom[roomId] || 0) + task.duration;
+                const cacheKey = `${targetTask.compositeId}:${targetTask.requiredSlot ? 'required' : 'free'}:soft`;
+                if (!softRelaxedConstraintCache.has(cacheKey)) {
+                    softRelaxedConstraintCache.set(cacheKey, {
+                        ...baseMap,
+                        [targetTask.compositeId]: {
+                            ...constraint,
+                            singlePreference: 'any' as const,
+                            doublePreference: 'any' as const
+                        }
                     });
+                }
+                return softRelaxedConstraintCache.get(cacheKey)!;
+            };
 
+            const buildValidSlotsForTask = (
+                task: SchedulingTask,
+                getMap: (targetTask: SchedulingTask) => AssignmentConstraintMap
+            ) => {
                 const validSlots = new Set<string>();
+                const taskTeacherIds = getTaskTeacherIds(task);
                 const teacher = teachersMap[task.teacherId];
 
                 for (const slotInfo of allTeachingSlots) {
                     const { slotId, dayKey, periodSetting } = slotInfo;
+                    const constraintMap = getMap(task);
                     const { forbidden: hardForbidden } = checkConstraints(
                         { ...task.course, compositeId: task.compositeId, classId: task.targetClasses } as CourseInstance,
                         slotId,
                         teacher,
                         periodSettings,
                         specialPeriods,
-                        getConstraintMapForTask(task),
+                        constraintMap,
                         dynamicUnavailableSlots,
                         schoolTimetable,
                         task.duration
                     );
 
-                    if (!hardForbidden) {
-                        if (task.requiredSlot && slotId !== task.requiredSlot) continue;
+                    if (hardForbidden) continue;
+                    const coTeacherUnavailable = taskTeacherIds.some(teacherId => {
+                        const coTeacher = teachersMap[teacherId];
+                        return coTeacher?.preferences?.unavailableDays?.includes(dayKey) ||
+                            coTeacher?.preferences?.unavailableSlots?.includes(slotId) ||
+                            (selectedTeacher === teacherId && dynamicUnavailableSlots.includes(slotId));
+                    });
+                    if (coTeacherUnavailable) continue;
+                    if (task.requiredSlot && slotId !== task.requiredSlot) continue;
 
-                        if (task.duration > 1) {
-                            let blockValid = true;
-                            const pIdx = periodSettings.indexOf(periodSetting);
-                            if (!isDoublePeriodStart(pIdx)) continue;
-                            const taskConstraints = getConstraintMapForTask(task)[task.compositeId];
-                            
-                            for (let d = 1; d < task.duration; d++) {
-                                const nextSlotId = `${dayKey}-${pIdx + d}`;
-                                const nextPeriod = periodSettings[pIdx + d];
-                                const isTeacherUnavailable = teacher?.preferences?.unavailableDays?.includes(dayKey) ||
-                                    teacher?.preferences?.unavailableSlots?.includes(nextSlotId) ||
-                                    (selectedTeacher === task.teacherId && dynamicUnavailableSlots.includes(nextSlotId));
-                                const isDayExcluded = taskConstraints?.excludedDays?.includes(dayKey);
-                                if (!nextPeriod?.isTeachingPeriod || isTeacherUnavailable || isDayExcluded) {
-                                    blockValid = false;
-                                    break;
-                                }
+                    if (task.duration > 1) {
+                        let blockValid = true;
+                        const pIdx = periodSettings.indexOf(periodSetting);
+                        if (!isDoublePeriodStart(pIdx)) continue;
+                        const taskConstraints = constraintMap[task.compositeId];
+
+                        for (let d = 1; d < task.duration; d++) {
+                            const nextSlotId = `${dayKey}-${pIdx + d}`;
+                            const nextPeriod = periodSettings[pIdx + d];
+                            const isTeacherUnavailable = taskTeacherIds.some(teacherId => {
+                                const coTeacher = teachersMap[teacherId];
+                                return coTeacher?.preferences?.unavailableDays?.includes(dayKey) ||
+                                    coTeacher?.preferences?.unavailableSlots?.includes(nextSlotId) ||
+                                    (selectedTeacher === teacherId && dynamicUnavailableSlots.includes(nextSlotId));
+                            });
+                            const isDayExcluded = taskConstraints?.excludedDays?.includes(dayKey);
+                            if (!nextPeriod?.isTeachingPeriod || isTeacherUnavailable || isDayExcluded) {
+                                blockValid = false;
+                                break;
                             }
-                            if (blockValid) validSlots.add(slotId);
-                        } else {
-                            validSlots.add(slotId);
                         }
+                        if (blockValid) validSlots.add(slotId);
+                    } else {
+                        validSlots.add(slotId);
                     }
                 }
-                validSlotsCache.set(task, validSlots);
+
+                return validSlots;
+            };
+
+            for (const task of tasks) {
+                task.targetClasses.forEach(c => {
+                    tasksPerClass[c] = (tasksPerClass[c] || 0) + task.duration;
+                });
+                getTaskTeacherIds(task).forEach(teacherId => {
+                    tasksPerTeacher[teacherId] = (tasksPerTeacher[teacherId] || 0) + task.duration;
+                });
+                task.targetRooms
+                    .filter(roomId => roomId && roomId.toLowerCase() !== 'all')
+                    .forEach(roomId => {
+                        tasksPerRoom[roomId] = (tasksPerRoom[roomId] || 0) + task.duration;
+                    });
+
+                validSlotsCache.set(task, buildValidSlotsForTask(task, getConstraintMapForTask));
+                relaxedValidSlotsCache.set(task, buildValidSlotsForTask(task, getSoftConstraintMapForTask));
             }
 
             console.log("Auto-schedule: Tasks per class analysis:", tasksPerClass);
@@ -866,8 +937,10 @@ export const useAutoScheduleAction = ({
 
             tasks.filter(task => task.requiredSlot).forEach(task => {
                 const slotId = task.requiredSlot!;
-                const teacherKey = `${task.teacherId}|${slotId}`;
-                requiredTeacherSlot.set(teacherKey, [...(requiredTeacherSlot.get(teacherKey) || []), task]);
+                getTaskTeacherIds(task).forEach(teacherId => {
+                    const teacherKey = `${teacherId}|${slotId}`;
+                    requiredTeacherSlot.set(teacherKey, [...(requiredTeacherSlot.get(teacherKey) || []), task]);
+                });
 
                 task.targetClasses.forEach(classId => {
                     const classKey = `${classId}|${slotId}`;
@@ -903,7 +976,7 @@ export const useAutoScheduleAction = ({
             tasks.forEach(task => {
                 const validSlotCount = validSlotsCache.get(task)?.size || 0;
                 if (validSlotCount === 0) {
-                    fatalPrecheckIssues.push(`${taskLabel(task)} ไม่มีช่องว่างที่ผ่านเงื่อนไขสำหรับจัดตาราง`);
+                    warningPrecheckIssues.push(`${taskLabel(task)} ไม่มีช่องที่ผ่านเงื่อนไขปกติ ระบบจะลองวางในช่องสอนว่างที่ไม่ชนกันเป็นทางเลือกสุดท้าย`);
                 } else if (validSlotCount <= 2) {
                     warningPrecheckIssues.push(`${taskLabel(task)} มีช่องที่เป็นไปได้เพียง ${validSlotCount} ช่อง`);
                 }
@@ -946,8 +1019,8 @@ export const useAutoScheduleAction = ({
                 if (!a.requiredSlot && b.requiredSlot) return 1;
                 if (a.duration !== b.duration) return b.duration - a.duration;
 
-	                const asgnA = effectiveAssignmentConstraints[a.compositeId];
-	                const asgnB = effectiveAssignmentConstraints[b.compositeId];
+                const asgnA = effectiveAssignmentConstraints[a.compositeId];
+                const asgnB = effectiveAssignmentConstraints[b.compositeId];
                 const prefA = a.duration >= 2 ? asgnA?.doublePreference : asgnA?.singlePreference;
                 const prefB = b.duration >= 2 ? asgnB?.doublePreference : asgnB?.singlePreference;
                 const hasPrefA = !!prefA && prefA !== 'any';
@@ -959,16 +1032,18 @@ export const useAutoScheduleAction = ({
             });
 
             const validSlotsByTaskIndex = tasks.map(task => Array.from(validSlotsCache.get(task) || []));
-            const maxRuns = normalizedTargetTeacherId ? 5 : 15;
+            const relaxedValidSlotsByTaskIndex = tasks.map(task => Array.from(relaxedValidSlotsCache.get(task) || []));
+            const maxRuns = normalizedTargetTeacherId ? 8 : Math.min(35, Math.max(20, Math.ceil(tasks.length / 18)));
             const engineInput: SchedulingEngineInput = {
                 tasks,
                 initialTimetable: schoolTimetable,
                 initialBatchUpdates: batchUpdates,
                 allTeachingSlots,
                 validSlotsByTaskIndex,
-	                assignmentConstraints: effectiveAssignmentConstraints,
+                relaxedValidSlotsByTaskIndex,
+                assignmentConstraints: effectiveAssignmentConstraints,
                 maxRuns,
-                maxRepairAttempts: 1000
+                maxRepairAttempts: Math.max(1200, tasks.length * 8)
             };
 
             const runEngineWithWorker = async (): Promise<SchedulingEngineResult> => {

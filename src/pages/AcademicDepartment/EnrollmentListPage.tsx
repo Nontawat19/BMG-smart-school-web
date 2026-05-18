@@ -1,17 +1,9 @@
-<<<<<<< HEAD
 import React, { useState, useEffect, useMemo, useRef } from "react";
-=======
-import React, { useState, useEffect, useMemo } from "react";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { useSelector, useDispatch } from "react-redux";
 import { RootState, AppDispatch } from "@/store";
 import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import { firestore as db } from "../../firebase";
-<<<<<<< HEAD
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
-=======
-import { collection, query, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "../../layouts/MainLayout";
 import {
     Search,
@@ -31,163 +23,86 @@ import {
     ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-<<<<<<< HEAD
+import Select from "react-select";
 import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 
-const PaginatedDropdown = ({
-    label,
-    value,
-    options,
-    onChange,
-    icon: Icon,
-    placeholder,
-    renderOption = (opt) => opt,
-    itemsPerPage = 10
-}: {
-    label: string;
-    value: string;
-    options: any[];
-    onChange: (val: string) => void;
-    icon: any;
-    placeholder: string;
-    renderOption?: (opt: any) => React.ReactNode;
-    itemsPerPage?: number;
-}) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const totalPages = Math.ceil(options.length / itemsPerPage);
-    const currentOptions = options.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [options.length, isOpen]);
-
-    const displayValue = useMemo(() => {
-        if (value === "ทั้งหมด") return placeholder;
-        const found = options.find(o => {
-            if (typeof o === 'string') return o === value;
-            return o.id === value || o.name === value;
-        });
-        return found ? renderOption(found) : value;
-    }, [value, options, renderOption, placeholder]);
-
-    return (
-        <div className="relative group" ref={dropdownRef}>
-            <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 mb-2 uppercase tracking-[0.1em] ml-1">
-                {label}
-            </label>
-            <div className="relative">
-                <Icon className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500/60 pointer-events-none" size={16} />
-                <div
-                    onClick={() => setIsOpen(!isOpen)}
-                    className={`w-full pl-11 pr-10 h-11 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-bold flex items-center cursor-pointer text-slate-700 dark:text-slate-200 ${isOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
-                >
-                    <span className="truncate">{displayValue}</span>
-                </div>
-                <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} size={14} />
-            </div>
-
-            <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                        className="absolute z-[60] mt-2 w-full min-w-[220px] bg-white dark:bg-[#2a2b2f] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                    >
-                        <div className="p-1 max-h-[350px] overflow-y-auto custom-scrollbar">
-                            {currentOptions.length === 0 ? (
-                                <div className="px-4 py-8 text-center text-slate-400 text-xs italic">ไม่พบข้อมูล</div>
-                            ) : (
-                                currentOptions.map((opt, idx) => {
-                                    const optValue = typeof opt === 'string' ? opt : (opt.name || opt.id);
-                                    const isSelected = optValue === value;
-                                    return (
-                                        <div
-                                            key={idx}
-                                            onClick={() => {
-                                                onChange(optValue);
-                                                setIsOpen(false);
-                                            }}
-                                            className={`px-4 py-2.5 text-sm font-medium rounded-xl cursor-pointer transition-all flex items-center justify-between mb-0.5 last:mb-0 ${
-                                                isSelected 
-                                                ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
-                                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
-                                            }`}
-                                        >
-                                            <span className="truncate">{renderOption(opt)}</span>
-                                            {isSelected && (
-                                                <motion.div layoutId="activeOption" className="w-1.5 h-1.5 rounded-full bg-white shadow-sm" />
-                                            )}
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-
-                        {totalPages > 1 && (
-                            <div className="flex items-center justify-between px-3 py-2.5 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02]">
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setCurrentPage(p => Math.max(1, p - 1)); }}
-                                    disabled={currentPage === 1}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-500 disabled:opacity-20 transition-colors rounded-lg hover:bg-white dark:hover:bg-white/5 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-white/5"
-                                >
-                                    <ChevronLeft size={14} />
-                                </button>
-                                
-                                <div className="flex items-center gap-1">
-                                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                        .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                                        .map((p, i, arr) => {
-                                            const showEllipsis = i > 0 && p - arr[i-1] > 1;
-                                            return (
-                                                <React.Fragment key={p}>
-                                                    {showEllipsis && <span className="text-slate-300 dark:text-slate-600 text-[10px]">...</span>}
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setCurrentPage(p); }}
-                                                        className={`w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${
-                                                            currentPage === p 
-                                                            ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20' 
-                                                            : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'
-                                                        }`}
-                                                    >
-                                                        {p}
-                                                    </button>
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                </div>
-
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
-                                    disabled={currentPage === totalPages}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-500 disabled:opacity-20 transition-colors rounded-lg hover:bg-white dark:hover:bg-white/5 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-white/5"
-                                >
-                                    <ChevronRight size={14} />
-                                </button>
-                            </div>
-                        )}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
-    );
+// Premium Dark mode styles for react-select (Same as other pages)
+const compactSelectStyles = {
+    control: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-bg, #f8fafc)',
+        borderColor: state.isFocused ? '#6366f1' : 'var(--select-border, #e2e8f0)',
+        boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.1)' : 'none',
+        borderRadius: '1rem',
+        padding: '0 4px',
+        fontSize: '13px',
+        minHeight: '44px',
+        height: '44px',
+        '&:hover': {
+            borderColor: '#6366f1'
+        },
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+    }),
+    valueContainer: (base: any) => ({
+        ...base,
+        padding: '0 8px',
+    }),
+    menu: (base: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-menu-bg, #ffffff)',
+        borderRadius: '1.25rem',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+        padding: '8px',
+        border: '1px solid var(--select-border, #f1f5f9)',
+        zIndex: 100,
+        overflow: 'hidden',
+        width: 'max-content',
+        minWidth: '100%'
+    }),
+    option: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: state.isSelected 
+            ? '#6366f1' 
+            : state.isFocused 
+                ? 'rgba(99, 102, 241, 0.08)' 
+                : 'transparent',
+        color: state.isSelected ? '#ffffff' : 'var(--select-text, #475569)',
+        borderRadius: '0.75rem',
+        margin: '2px 0',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontWeight: state.isSelected ? '700' : '500',
+        padding: '10px 12px',
+        whiteSpace: 'nowrap',
+        '&:active': {
+            backgroundColor: '#6366f1'
+        }
+    }),
+    singleValue: (base: any) => ({ 
+        ...base, 
+        color: 'var(--select-text, #1e293b)', 
+        fontWeight: '700',
+        whiteSpace: 'nowrap'
+    }),
+    menuList: (base: any) => ({
+        ...base,
+        maxHeight: '800px', 
+        padding: '4px',
+        overflow: 'hidden', // Remove native scrollbar
+        '::-webkit-scrollbar': {
+            display: 'none' // Hide scrollbar for webkit
+        },
+        msOverflowStyle: 'none', // IE/Edge
+        scrollbarWidth: 'none' // Firefox
+    }),
+    indicatorSeparator: () => ({ display: 'none' }),
+    dropdownIndicator: (base: any) => ({
+        ...base,
+        color: '#94a3b8'
+    })
 };
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface Enrollment {
     id: string;
@@ -203,10 +118,7 @@ interface Enrollment {
     enrolledAt: any;
     courseId?: string;
     subjectGroup?: string;
-<<<<<<< HEAD
     courseCategory?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Course {
@@ -222,20 +134,14 @@ interface Course {
         groupNumber?: string | number;
     }[];
     subjectGroup?: string;
-<<<<<<< HEAD
     category?: string;
 }
 
 const EnrollmentListPage: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
-=======
-}
-
-const EnrollmentListPage: React.FC = () => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const { user } = useSelector((state: RootState) => state.auth);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
-    const { currentAcademicYear: schoolYear } = useSelector((state: RootState) => state.schoolSettings);
+    const { currentAcademicYear: schoolYear, availableClassOptions, classKeys } = useSelector((state: RootState) => state.schoolSettings);
     const { terms, academicYear: calYear } = useSelector((state: RootState) => state.calendar);
     const schoolId = user?.schoolId;
 
@@ -251,12 +157,9 @@ const EnrollmentListPage: React.FC = () => {
     const [activeSemester, setActiveSemester] = useState("1");
     const [activeYear, setActiveYear] = useState("");
     const [schoolInfo, setSchoolInfo] = useState<any>(null);
-<<<<<<< HEAD
     const [subjectGroups, setSubjectGroups] = useState<any[]>([]);
     const [categoryFilter, setCategoryFilter] = useState("ทั้งหมด");
     const [subjectGroupFilter, setSubjectGroupFilter] = useState("ทั้งหมด");
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -321,7 +224,6 @@ const EnrollmentListPage: React.FC = () => {
 
     useEffect(() => {
         if (schoolId) {
-<<<<<<< HEAD
             dispatch(fetchTeachersMap(schoolId));
             fetchEnrollments();
             
@@ -341,17 +243,6 @@ const EnrollmentListPage: React.FC = () => {
             fetchExtraData();
         }
     }, [schoolId, dispatch]);
-=======
-            fetchEnrollments();
-            const fetchSchoolInfo = async () => {
-                const docRef = doc(db, 'school-settings', schoolId);
-                const snap = await getDoc(docRef);
-                if (snap.exists()) setSchoolInfo(snap.data());
-            };
-            fetchSchoolInfo();
-        }
-    }, [schoolId]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const fetchEnrollments = async () => {
         setLoading(true);
@@ -359,7 +250,6 @@ const EnrollmentListPage: React.FC = () => {
             const enrollRef = collection(db, 'school-settings', schoolId!, 'enrollments');
             const coursesRef = collection(db, 'school-settings', schoolId!, 'courses');
             const studentsRef = collection(db, 'school-settings', schoolId!, 'students');
-<<<<<<< HEAD
             const assignmentsRef = collection(db, 'school-settings', schoolId!, 'course_assignments');
             
             const [enrollSnap, courseSnap, studentSnap, assignmentSnap, teacherSnap, roomSnap] = await Promise.all([
@@ -369,13 +259,6 @@ const EnrollmentListPage: React.FC = () => {
                 getDocs(assignmentsRef),
                 getDocs(collection(db, 'school-settings', schoolId!, 'teachers')),
                 getDocs(collection(db, 'school-settings', schoolId!, 'physical-rooms'))
-=======
-
-            const [enrollSnap, courseSnap, studentSnap] = await Promise.all([
-                getDocs(enrollRef),
-                getDocs(coursesRef),
-                getDocs(studentsRef)
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             ]);
 
             const cMap: Record<string, Course> = {};
@@ -388,7 +271,6 @@ const EnrollmentListPage: React.FC = () => {
                 sMap[doc.id] = { id: doc.id, ...doc.data() };
             });
 
-<<<<<<< HEAD
             // Map teachers by id
             const localTeacherMap: Record<string, string> = {};
             teacherSnap.docs.forEach(doc => {
@@ -411,8 +293,6 @@ const EnrollmentListPage: React.FC = () => {
                 aMap[key] = data.teacherAssignments || [];
             });
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             const data = enrollSnap.docs.map(doc => {
                 const d = doc.data();
                 const relatedCourse = cMap[d.courseId];
@@ -420,18 +300,14 @@ const EnrollmentListPage: React.FC = () => {
 
                 if (!relatedCourse || !relatedStudent) return null;
 
-<<<<<<< HEAD
                 const enrollmentYear = d.academicYear || activeYear;
                 const enrollmentSemester = d.semester || activeSemester;
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 let computedTeacherName = "";
                 const studentRoom = relatedStudent.room;
                 const studentLevel = relatedStudent.classLevel;
                 const foundTeacherIds = new Set<string>();
 
-<<<<<<< HEAD
                 // 1. Check specialized assignments for this semester
                 const assignmentKey = `${d.courseId}_${enrollmentYear}_${enrollmentSemester}`;
                 const semesterAssignments = aMap[assignmentKey] || [];
@@ -470,13 +346,6 @@ const EnrollmentListPage: React.FC = () => {
                             d.groupNum === assign.groupNumber ||
                             d.groupNum === String(assign.groupNumber)
                         ) : false;
-=======
-                if (relatedCourse.teacherAssignments && relatedCourse.teacherAssignments.length > 0) {
-                    relatedCourse.teacherAssignments.forEach(assign => {
-                        const matchRoom = assign.roomIds && assign.roomIds.includes(studentRoom);
-                        const matchLevel = assign.classLevels && assign.classLevels.includes(studentLevel);
-                        const matchGroup = assign.groupNumber ? (d.groupName === `กลุ่ม ${assign.groupNumber}` || d.groupName === String(assign.groupNumber)) : false;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                         if (matchRoom || matchLevel || matchGroup) {
                             foundTeacherIds.add(assign.teacherId);
@@ -484,10 +353,7 @@ const EnrollmentListPage: React.FC = () => {
                     });
                 }
 
-<<<<<<< HEAD
                 // 3. Fallback to global teacherIds if still none found
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (foundTeacherIds.size === 0) {
                     if (relatedCourse.teacherIds && relatedCourse.teacherIds.length > 0) {
                         relatedCourse.teacherIds.forEach(id => foundTeacherIds.add(id));
@@ -497,11 +363,7 @@ const EnrollmentListPage: React.FC = () => {
                 }
 
                 if (foundTeacherIds.size > 0) {
-<<<<<<< HEAD
                     const names = Array.from(foundTeacherIds).map(tid => localTeacherMap[tid]).filter(Boolean);
-=======
-                    const names = Array.from(foundTeacherIds).map(tid => teacherMap[tid]?.name).filter(Boolean);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     if (names.length > 0) computedTeacherName = names.join(', ');
                 }
 
@@ -515,10 +377,7 @@ const EnrollmentListPage: React.FC = () => {
                     number: relatedStudent.studentNumber || "",
                     courseCode: relatedCourse.code || "",
                     courseTitle: relatedCourse.title || "",
-<<<<<<< HEAD
                     courseCategory: relatedCourse.category || "พื้นฐาน",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     teacherName: computedTeacherName || "ไม่ระบุ",
                     groupName: d.groupName || d.groupNum || "-",
                     subjectGroup: relatedCourse?.subjectGroup || "ทั่วไป"
@@ -557,39 +416,22 @@ const EnrollmentListPage: React.FC = () => {
         });
     }, [enrollments, activeSemester, activeYear]);
 
-    const levels = useMemo(() => {
-        const uniqueLevelsInTable = Array.from(new Set(filteredForMetadata.map(e => e.classLevel)));
-        const allPossibleLevels = [
-            {id: 'k1', name: 'อ.1', full: 'อนุบาล 1'}, {id: 'k2', name: 'อ.2', full: 'อนุบาล 2'}, {id: 'k3', name: 'อ.3', full: 'อนุบาล 3'},
-            {id: 'p1', name: 'ป.1', full: 'ป.1'}, {id: 'p2', name: 'ป.2', full: 'ป.2'}, {id: 'p3', name: 'ป.3', full: 'ป.3'},
-            {id: 'p4', name: 'ป.4', full: 'ป.4'}, {id: 'p5', name: 'ป.5', full: 'ป.5'}, {id: 'p6', name: 'ป.6', full: 'ป.6'},
-            {id: 'm1', name: 'ม.1', full: 'ม.1'}, {id: 'm2', name: 'ม.2', full: 'ม.2'}, {id: 'm3', name: 'ม.3', full: 'ม.3'},
-            {id: 'm4', name: 'ม.4', full: 'ม.4'}, {id: 'm5', name: 'ม.5', full: 'ม.5'}, {id: 'm6', name: 'ม.6', full: 'ม.6'}
-        ];
+    const dynamicLevelOptions = useMemo(() => {
+        const options = [{ value: 'ทั้งหมด', label: 'ทุกระดับชั้น' }];
+        
+        availableClassOptions.forEach(([key, label]) => {
+            options.push({ value: key, label });
+        });
 
-        const exp = schoolInfo?.opportunityExpansionLevel || "";
-        let result: string[] = ["ทั้งหมด"];
+        // Add Groups if they exist
+        const hasJunior = classKeys.some(k => ['m1', 'm2', 'm3'].includes(k));
+        const hasSenior = classKeys.some(k => ['m4', 'm5', 'm6'].includes(k));
 
-        if (exp) {
-            const start = exp.split('-')[0]?.trim();
-            const end = exp.split('-')[1]?.trim();
-            let startIndex = allPossibleLevels.findIndex(l => l.name === start || l.id === start || l.full === start);
-            let endIndex = allPossibleLevels.findIndex(l => l.name === end || l.id === end || l.full === end);
-            if (startIndex === -1) startIndex = 0;
-            if (endIndex === -1) endIndex = allPossibleLevels.length - 1;
-            const sliced = allPossibleLevels.slice(startIndex, endIndex + 1);
-            sliced.forEach(l => {
-                result.push(l.id);
-                if (l.id === 'm3') result.push('junior_high');
-                if (l.id === 'm6') result.push('senior_high');
-            });
-        } else {
-            const baseOrder = allPossibleLevels.map(l => l.id).concat(['junior_high', 'senior_high']);
-            const sortedUnique = uniqueLevelsInTable.sort((a, b) => baseOrder.indexOf(a) - baseOrder.indexOf(b));
-            result = ["ทั้งหมด", ...sortedUnique];
-        }
-        return Array.from(new Set(result));
-    }, [filteredForMetadata, schoolInfo]);
+        if (hasJunior) options.push({ value: 'junior_high', label: 'ม.ต้น' });
+        if (hasSenior) options.push({ value: 'senior_high', label: 'ม.ปลาย' });
+
+        return options;
+    }, [availableClassOptions, classKeys]);
 
     const courses = useMemo(() => ["ทั้งหมด", ...Array.from(new Set(filteredForMetadata.map(e => `${e.courseCode} ${e.courseTitle}`)))].sort(), [filteredForMetadata]);
     const teachers = useMemo(() => ["ทั้งหมด", ...Array.from(new Set(filteredForMetadata.map(e => e.teacherName)))].sort(), [filteredForMetadata]);
@@ -607,24 +449,15 @@ const EnrollmentListPage: React.FC = () => {
             const matchCourse = courseFilter === "ทั้งหมด" || `${e.courseCode} ${e.courseTitle}` === courseFilter;
             const matchTeacher = teacherFilter === "ทั้งหมด" || e.teacherName === teacherFilter;
             const matchGroup = groupFilter === "ทั้งหมด" || (e.groupName || "ไม่ระบุกลุ่ม") === groupFilter;
-<<<<<<< HEAD
             const matchCategory = categoryFilter === "ทั้งหมด" || e.courseCategory === categoryFilter;
             const matchSubjGroup = subjectGroupFilter === "ทั้งหมด" || e.subjectGroup === subjectGroupFilter;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             const dataSemester = (e as any).semester || '1';
             const dataYear = (e as any).academicYear || activeYear;
 
-<<<<<<< HEAD
             return matchSearch && matchLevel && matchCourse && matchTeacher && matchGroup && matchCategory && matchSubjGroup && (dataSemester === activeSemester) && (dataYear === activeYear);
         });
     }, [enrollments, searchTerm, levelFilter, courseFilter, teacherFilter, groupFilter, categoryFilter, subjectGroupFilter, activeSemester, activeYear]);
-=======
-            return matchSearch && matchLevel && matchCourse && matchTeacher && matchGroup && (dataSemester === activeSemester) && (dataYear === activeYear);
-        });
-    }, [enrollments, searchTerm, levelFilter, courseFilter, teacherFilter, groupFilter, activeSemester, activeYear]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const totalPages = Math.ceil(filteredData.length / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -633,11 +466,7 @@ const EnrollmentListPage: React.FC = () => {
 
     useEffect(() => {
         setCurrentPage(1);
-<<<<<<< HEAD
     }, [searchTerm, levelFilter, courseFilter, teacherFilter, groupFilter, categoryFilter, subjectGroupFilter, activeSemester, activeYear]);
-=======
-    }, [searchTerm, levelFilter, courseFilter, teacherFilter, groupFilter, activeSemester, activeYear]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     return (
         <MainLayout>
@@ -645,15 +474,14 @@ const EnrollmentListPage: React.FC = () => {
                 <div className="w-full pl-12 pr-2 sm:pl-14 sm:pr-4 md:pl-16 md:pr-6 py-4 sm:py-6 lg:py-8">
                     <header className="mb-6 space-y-4">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div>
-<<<<<<< HEAD
-                                <BackButton to="/academic/hub/registration" className="mb-4" />
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">สรุปรายชื่อการลงทะเบียน</h1>
-                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    แสดงข้อมูลการลงทะเบียนรายวิชาแยกตามระดับชั้นและกลุ่มเรียนในภาคเรียนปัจจุบัน
-                                </p>
+                            <div className="flex items-center gap-4">
+                                <BackButton to="/academic/hub/registration" />
+                                <div className="flex flex-col">
+                                    <h1 className="text-lg sm:text-xl font-black text-black dark:text-white leading-none">สรุปรายชื่อการลงทะเบียน</h1>
+                                    <p className="text-[9px] text-black/60 dark:text-white/60 font-bold mt-1 uppercase tracking-wider">
+                                        แสดงข้อมูลการลงทะเบียนรายวิชาแยกตามระดับชั้นและกลุ่มเรียนในภาคเรียนปัจจุบัน
+                                    </p>
+                                </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f] px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
@@ -681,14 +509,19 @@ const EnrollmentListPage: React.FC = () => {
                                 />
                             </div>
                             <div className="flex items-center gap-2">
-                                <select
-                                    value={activeSemester}
-                                    onChange={(e) => setActiveSemester(e.target.value)}
-                                    className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white"
-                                >
-                                    <option value="1">ภาคเรียนที่ 1</option>
-                                    <option value="2">ภาคเรียนที่ 2</option>
-                                </select>
+                                <Select
+                                    options={[
+                                        { value: '1', label: 'ภาคเรียนที่ 1' },
+                                        { value: '2', label: 'ภาคเรียนที่ 2' }
+                                    ]}
+                                    value={[
+                                        { value: '1', label: 'ภาคเรียนที่ 1' },
+                                        { value: '2', label: 'ภาคเรียนที่ 2' }
+                                    ].find(opt => opt.value === activeSemester)}
+                                    onChange={(opt: any) => setActiveSemester(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={false}
+                                />
                                 <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xs h-full">
                                     <Users size={14} />
                                     <span>พบ {filteredData.length} รายการ</span>
@@ -698,145 +531,80 @@ const EnrollmentListPage: React.FC = () => {
                     </header>
 
                     <div className="bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-xl rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl shadow-indigo-500/5 p-6 mb-8">
-<<<<<<< HEAD
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
-                            <PaginatedDropdown
-                                label="ระดับชั้น"
-                                value={levelFilter}
-                                options={levels}
-                                onChange={setLevelFilter}
-                                icon={Filter}
-                                placeholder="ทุกระดับชั้น"
-                                renderOption={(opt) => opt === "ทั้งหมด" ? "ทุกระดับชั้น" : getLevelLabel(opt)}
-                            />
-
-                            <PaginatedDropdown
-                                label="ประเภทวิชา"
-                                value={categoryFilter}
-                                options={["ทั้งหมด", "พื้นฐาน", "เพิ่มเติม"]}
-                                onChange={setCategoryFilter}
-                                icon={BookOpen}
-                                placeholder="ทุกประเภทวิชา"
-                                renderOption={(opt) => opt === "ทั้งหมด" ? "ทุกประเภทวิชา" : `วิชา${opt}`}
-                            />
-
-                            <PaginatedDropdown
-                                label="กลุ่มสาระ"
-                                value={subjectGroupFilter}
-                                options={[{id: "ทั้งหมด", name: "ทั้งหมด"}, ...subjectGroups]}
-                                onChange={setSubjectGroupFilter}
-                                icon={LayoutGrid}
-                                placeholder="ทุกกลุ่มสาระ"
-                                renderOption={(opt) => opt.name === "ทั้งหมด" ? "ทุกกลุ่มสาระ" : opt.name}
-                            />
-
-                            <PaginatedDropdown
-                                label="กลุ่มเรียน"
-                                value={groupFilter}
-                                options={groups}
-                                onChange={setGroupFilter}
-                                icon={LayoutGrid}
-                                placeholder="ทั้งหมด"
-                                renderOption={(opt) => opt === "ทั้งหมด" ? "ทั้งหมด" : opt.replace(/[^0-9]/g, '') || opt}
-                            />
-
-                            <PaginatedDropdown
-                                label="รายวิชา"
-                                value={courseFilter}
-                                options={courses}
-                                onChange={setCourseFilter}
-                                icon={BookOpen}
-                                placeholder="ทุกรายวิชา"
-                                renderOption={(opt) => opt === "ทั้งหมด" ? "ทุกรายวิชา" : opt}
-                            />
-
-                            <PaginatedDropdown
-                                label="ครูผู้สอน"
-                                value={teacherFilter}
-                                options={teachers}
-                                onChange={setTeacherFilter}
-                                icon={UserCircle}
-                                placeholder="ครูทุกคน"
-                                renderOption={(opt) => opt === "ทั้งหมด" ? "ครูทุกคน" : opt}
-                            />
-=======
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                            <div className="group">
-                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 mb-2 uppercase tracking-[0.1em] ml-1">
-                                    ระดับชั้น
-                                </label>
-                                <div className="relative">
-                                    <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500/60 pointer-events-none" size={16} />
-                                    <select
-                                        value={levelFilter}
-                                        onChange={(e) => setLevelFilter(e.target.value)}
-                                        className="w-full pl-11 pr-10 h-11 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-bold appearance-none cursor-pointer text-slate-700 dark:text-slate-200"
-                                    >
-                                        {levels.map(l => (
-                                            <option key={l} value={l} className="dark:bg-slate-900">
-                                                {l === "ทั้งหมด" ? "ทุกระดับชั้น" : getLevelLabel(l)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">ระดับชั้น</label>
+                                <Select
+                                    options={dynamicLevelOptions}
+                                    value={dynamicLevelOptions.find(opt => opt.value === levelFilter)}
+                                    onChange={(opt: any) => setLevelFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={false}
+                                />
                             </div>
 
-                            <div className="group">
-                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 mb-2 uppercase tracking-[0.1em] ml-1">
-                                    กลุ่มเรียน
-                                </label>
-                                <div className="relative">
-                                    <LayoutGrid className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500/60 pointer-events-none" size={16} />
-                                    <select
-                                        value={groupFilter}
-                                        onChange={(e) => setGroupFilter(e.target.value)}
-                                        className="w-full pl-11 pr-10 h-11 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-bold appearance-none cursor-pointer text-slate-700 dark:text-slate-200"
-                                    >
-                                        {groups.map(g => (
-                                            <option key={g} value={g} className="dark:bg-slate-900">
-                                                {g === "ทั้งหมด" ? "ทั้งหมด" : g.replace(/[^0-9]/g, '') || g}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">ประเภทวิชา</label>
+                                <Select
+                                    options={[
+                                        { value: 'ทั้งหมด', label: 'ทุกประเภทวิชา' },
+                                        { value: 'พื้นฐาน', label: 'วิชาพื้นฐาน' },
+                                        { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' }
+                                    ]}
+                                    value={[
+                                        { value: 'ทั้งหมด', label: 'ทุกประเภทวิชา' },
+                                        { value: 'พื้นฐาน', label: 'วิชาพื้นฐาน' },
+                                        { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' }
+                                    ].find(opt => opt.value === categoryFilter)}
+                                    onChange={(opt: any) => setCategoryFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={false}
+                                />
                             </div>
 
-                            <div className="group lg:col-span-1">
-                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 mb-2 uppercase tracking-[0.1em] ml-1">
-                                    รายวิชา
-                                </label>
-                                <div className="relative">
-                                    <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500/60 pointer-events-none" size={16} />
-                                    <select
-                                        value={courseFilter}
-                                        onChange={(e) => setCourseFilter(e.target.value)}
-                                        className="w-full pl-11 pr-10 h-11 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-bold appearance-none cursor-pointer text-slate-700 dark:text-slate-200 truncate"
-                                    >
-                                        {courses.map(c => <option key={c} value={c} className="dark:bg-slate-900">{c === "ทั้งหมด" ? "ทุกรายวิชา" : c}</option>)}
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">กลุ่มสาระ</label>
+                                <Select
+                                    options={[{ value: 'ทั้งหมด', label: 'ทุกกลุ่มสาระ' }, ...subjectGroups.map(g => ({ value: g.id || g.name, label: g.name }))]}
+                                    value={[{ value: 'ทั้งหมด', label: 'ทุกกลุ่มสาระ' }, ...subjectGroups.map(g => ({ value: g.id || g.name, label: g.name }))].find(opt => opt.value === subjectGroupFilter)}
+                                    onChange={(opt: any) => setSubjectGroupFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={true}
+                                />
                             </div>
 
-                            <div className="group">
-                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 mb-2 uppercase tracking-[0.1em] ml-1">
-                                    ครูผู้สอน
-                                </label>
-                                <div className="relative">
-                                    <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500/60 pointer-events-none" size={16} />
-                                    <select
-                                        value={teacherFilter}
-                                        onChange={(e) => setTeacherFilter(e.target.value)}
-                                        className="w-full pl-11 pr-10 h-11 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-bold appearance-none cursor-pointer text-slate-700 dark:text-slate-200"
-                                    >
-                                        {teachers.map(t => <option key={t} value={t} className="dark:bg-slate-900">{t === "ทั้งหมด" ? "ครูทุกคน" : t}</option>)}
-                                    </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">กลุ่มเรียน</label>
+                                <Select
+                                    options={groups.map(g => ({ value: g, label: g === 'ทั้งหมด' ? 'ทั้งหมด' : g.replace(/[^0-9]/g, '') || g }))}
+                                    value={groups.map(g => ({ value: g, label: g === 'ทั้งหมด' ? 'ทั้งหมด' : g.replace(/[^0-9]/g, '') || g })).find(opt => opt.value === groupFilter)}
+                                    onChange={(opt: any) => setGroupFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={true}
+                                />
                             </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">รายวิชา</label>
+                                <Select
+                                    options={courses.map(c => ({ value: c, label: c === 'ทั้งหมด' ? 'ทุกรายวิชา' : c }))}
+                                    value={courses.map(c => ({ value: c, label: c === 'ทั้งหมด' ? 'ทุกรายวิชา' : c })).find(opt => opt.value === courseFilter)}
+                                    onChange={(opt: any) => setCourseFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={true}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 dark:text-slate-400/50 uppercase tracking-[0.1em] ml-1">ครูผู้สอน</label>
+                                <Select
+                                    options={teachers.map(t => ({ value: t, label: t === 'ทั้งหมด' ? 'ครูทุกคน' : t }))}
+                                    value={teachers.map(t => ({ value: t, label: t === 'ทั้งหมด' ? 'ครูทุกคน' : t })).find(opt => opt.value === teacherFilter)}
+                                    onChange={(opt: any) => setTeacherFilter(opt.value)}
+                                    styles={compactSelectStyles}
+                                    isSearchable={true}
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -850,11 +618,7 @@ const EnrollmentListPage: React.FC = () => {
                                             <th scope="col" className="py-4 px-3 text-left text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ข้อมูลนักเรียน</th>
                                             <th scope="col" className="py-4 px-3 text-left text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">รายวิชา</th>
                                             <th scope="col" className="py-4 px-3 text-center text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest w-24">กลุ่ม</th>
-<<<<<<< HEAD
                                             <th scope="col" className="py-4 px-3 text-left text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest" style={{ paddingLeft: '10%' }}>ครูผู้สอน</th>
-=======
-                                            <th scope="col" className="py-4 px-3 text-left text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">ครูผู้สอน</th>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
@@ -894,13 +658,10 @@ const EnrollmentListPage: React.FC = () => {
                                                         </td>
                                                         <td className="whitespace-nowrap py-4 px-3">
                                                             <div className="flex items-center gap-3">
-                                                                <div className="h-9 w-9 flex-shrink-0">
-                                                                    <img
-                                                                        className="h-9 w-9 rounded-full object-cover border border-gray-100 dark:border-gray-700"
-                                                                        src={`https://ui-avatars.com/api/?name=${e.studentName}&background=random&color=fff`}
-                                                                        alt=""
-                                                                    />
-                                                                </div>
+                                                                <ProfileAvatar
+                                                                    className="h-9 w-9 border border-gray-100 dark:border-gray-700"
+                                                                    src={`https://ui-avatars.com/api/?name=${e.studentName}&background=random&color=fff`}
+                                                                />
                                                                 <div className="flex flex-col">
                                                                     <span className="text-[13px] font-bold text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 transition-colors">
                                                                         {e.studentName}
@@ -914,34 +675,19 @@ const EnrollmentListPage: React.FC = () => {
                                                         <td className="whitespace-nowrap py-4 px-3">
                                                             <div className="flex flex-col">
                                                                 <span className="text-[13px] font-bold text-slate-700 dark:text-slate-300">
-<<<<<<< HEAD
                                                                     {e.courseCode} {e.courseTitle}
                                                                 </span>
                                                                 <span className="text-[10px] text-indigo-500 font-bold uppercase">
                                                                     {e.courseCategory} | {e.subjectGroup}
-=======
-                                                                    {e.courseTitle}
-                                                                </span>
-                                                                <span className="text-[11px] font-black text-indigo-500 uppercase">
-                                                                    {e.courseCode}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                                 </span>
                                                             </div>
                                                         </td>
                                                         <td className="whitespace-nowrap py-4 px-3 text-center">
-<<<<<<< HEAD
                                                             <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 font-bold text-xs">
                                                                 {e.groupName.replace(/[^0-9]/g, '') || e.groupName}
                                                             </span>
                                                         </td>
                                                         <td className="whitespace-nowrap py-4 px-3" style={{ paddingLeft: '10%' }}>
-=======
-                                                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-800">
-                                                                {e.groupName.replace(/[^0-9]/g, '') || e.groupName}
-                                                            </span>
-                                                        </td>
-                                                        <td className="whitespace-nowrap py-4 px-3">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                                                                 <UserCircle size={14} className="text-slate-400" />
                                                                 <span className="text-[12px] font-bold">{e.teacherName}</span>

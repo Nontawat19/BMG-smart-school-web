@@ -17,6 +17,7 @@ import { FaUserPlus, FaIdCard, FaEnvelope, FaLock, FaUserTie, FaArrowLeft } from
 import Swal from "sweetalert2";
 import { compressImage } from "@/utils/imageUtils";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div className="bg-white dark:bg-[#2a2b2f] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
@@ -93,7 +94,7 @@ export default function QuickAddTeacherPage() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       try {
-        const compressed = await compressImage(file, 400, 0.7, 'image/webp');
+        const compressed = await compressImage(file, 400, 0.7, 'image/jpeg');
         setImageFile(compressed);
         setImagePreview(URL.createObjectURL(compressed));
       } catch (err) {
@@ -139,7 +140,7 @@ export default function QuickAddTeacherPage() {
       // 3. Upload Image
       let profileImageUrl = "";
       if (imageFile) {
-        const imageRef = ref(storage, `school-settings/${schoolId}/teachers/${form.idCardNumber}.webp`);
+        const imageRef = ref(storage, `school-settings/${schoolId}/teachers/${form.idCardNumber}.jpg`);
         const snapshot = await uploadBytes(imageRef, imageFile);
         profileImageUrl = await getDownloadURL(snapshot.ref);
       }
@@ -151,11 +152,8 @@ export default function QuickAddTeacherPage() {
       const teacherData = {
         ...form,
         title: finalTitle,
-<<<<<<< HEAD
         learningArea: form.learningArea || "",
         subjectGroup: form.learningArea || "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         profileImageUrl,
         schoolId,
         uid: user.uid,
@@ -164,6 +162,7 @@ export default function QuickAddTeacherPage() {
       };
       
       await setDoc(doc(firestore, "school-settings", schoolId, "teachers", user.uid), teacherData);
+      await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: 1 });
 
       // 5. Save User Doc
       await setDoc(doc(firestore, "users", user.uid), {
@@ -227,13 +226,13 @@ export default function QuickAddTeacherPage() {
                 <div className="flex flex-col items-center flex-shrink-0">
                   <label htmlFor="profileImage" className="relative cursor-pointer group">
                     <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 flex items-center justify-center shadow-inner">
-                      {imagePreview ? <img src={imagePreview} className="w-full h-full object-cover" /> : <FaUserTie className="text-4xl text-gray-400" />}
+                      {imagePreview ? <img src={imagePreview} className="w-full h-full object-cover object-[center_20%]" alt="Teacher profile preview" /> : <FaUserTie className="text-4xl text-gray-400" />}
                     </div>
                     <div className="absolute bottom-0 right-0 bg-indigo-600 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-[#2a2b2f]">
                       <FaUserPlus size={12} />
                     </div>
                   </label>
-                  <input type="file" id="profileImage" onChange={handleImageChange} className="hidden" accept="image/*" />
+                  <input type="file" id="profileImage" onChange={handleImageChange} className="hidden" accept="image/jpeg,image/png" />
                   <span className="mt-1.5 text-[9px] font-bold text-gray-400 uppercase tracking-tighter">คลิกเพื่ออัปโหลด</span>
                 </div>
 

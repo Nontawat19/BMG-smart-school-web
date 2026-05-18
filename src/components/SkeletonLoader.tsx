@@ -3,6 +3,7 @@ import React from 'react';
 interface SkeletonLoaderProps {
   width?: string | number;
   height?: string | number;
+  borderRadius?: string | number;
   variant?: 'rect' | 'circle' | 'text';
   className?: string;
 }
@@ -10,6 +11,7 @@ interface SkeletonLoaderProps {
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   width,
   height,
+  borderRadius,
   variant = 'rect',
   className = '',
 }) => {
@@ -21,6 +23,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
 
   if (height !== undefined) {
     style.height = height;
+  }
+
+  if (borderRadius !== undefined) {
+    style.borderRadius = borderRadius;
   }
 
   // Fallback to defaults only if no sizing is provided via props or Tailwind classes

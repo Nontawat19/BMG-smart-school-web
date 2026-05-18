@@ -2,6 +2,7 @@ import React from 'react';
 import { DAYS, checkConstraints, getPartnerIndex } from '../utils';
 import { DroppableCell } from './DroppableCell';
 import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, AssignmentConstraintMap } from '../types';
+import { getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 
 export interface TimetableGridProps {
     title: string;
@@ -58,35 +59,52 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
     onCellClick,
     selectedCourseCode
 }) => {
-<<<<<<< HEAD
-    const displayPeriods = periodSettings
+    const normalizedPeriodSettings = normalizePeriodSettings(periodSettings);
+    const normalizedPeriods = getTimetableDisplayPeriods(normalizedPeriodSettings);
+    const displayPeriods = normalizedPeriods
         .map((period, index) => {
             const isLunch = period.id === 'lunch' || period.label?.includes('พัก');
             const match = period.id.match(/period-(\d+)/);
             return {
                 label: isLunch ? 'พ' : match?.[1] || period.label.replace('คาบที่', '').trim(),
                 time: period.startTime,
-                index,
+                index: period.index ?? index,
                 period,
             };
         })
-        .filter(({ period }) => period.id !== 'homeroom' && period.label !== 'โฮมรูม');
     const gridTemplateColumns = `35px repeat(${displayPeriods.length}, minmax(0, 1fr))`;
-=======
-    // Exact period mapping from screenshot: ฮ, 1, 2, 3, 4, พ, 5, 6, 7, 8
-    const displayPeriods = [
-        { label: 'ฮ', time: '08:30', index: 0 },
-        { label: '1', time: '08:40', index: 1 },
-        { label: '2', time: '09:30', index: 2 },
-        { label: '3', time: '10:20', index: 3 },
-        { label: '4', time: '11:10', index: 4 },
-        { label: 'พ', time: '12:00', index: 5 },
-        { label: '5', time: '13:00', index: 6 },
-        { label: '6', time: '13:50', index: 7 },
-        { label: '7', time: '14:40', index: 8 },
-        { label: '8', time: '15:30', index: 9 },
-    ];
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+    const normalizeValue = (value: unknown) => String(value || '').replace(/\s+/g, '').toLowerCase();
+    const normalizeList = (value: unknown) => {
+        const list = Array.isArray(value) ? value : [value].filter(Boolean);
+        return list.map(normalizeValue).filter(Boolean).sort().join('|');
+    };
+    const hasSameCourseIdentity = (first: CourseInstance, second: CourseInstance) => {
+        const firstComposite = normalizeValue(first.compositeId);
+        const secondComposite = normalizeValue(second.compositeId);
+        if (firstComposite && secondComposite) return firstComposite === secondComposite;
+
+        return normalizeValue(first.id) === normalizeValue(second.id) &&
+            String(first.groupNumber || 1) === String(second.groupNumber || 1);
+    };
+    const areConsecutiveCoursesMergeable = (first: CourseInstance, second: CourseInstance) => {
+        if (!hasSameCourseIdentity(first, second)) return false;
+
+        if (type === 'teacher') {
+            const firstClasses = normalizeList(first.classId);
+            const secondClasses = normalizeList(second.classId);
+            if (firstClasses || secondClasses) return firstClasses === secondClasses;
+            return normalizeValue(first.className) === normalizeValue(second.className);
+        }
+
+        if (type === 'class') {
+            const firstTeacher = normalizeValue(first.teacherId);
+            const secondTeacher = normalizeValue(second.teacherId);
+            return !firstTeacher || !secondTeacher || firstTeacher === secondTeacher;
+        }
+
+        return true;
+    };
 
     return (
         <div className="flex flex-col bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] shadow-sm dark:shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative transition-colors h-full">
@@ -95,11 +113,11 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
 
             {/* Grid Header */}
             <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-white/[0.03] backdrop-blur-md">
-                <div className="flex flex-col items-center">
-                    <h3 className="text-[9px] font-black text-indigo-500 uppercase tracking-[0.2em] leading-tight text-center drop-shadow-[0_0_10px_rgba(99,102,241,0.3)]">
+                <div className="flex flex-col items-start">
+                    <h3 className="text-sm sm:text-base font-black text-gray-950 dark:text-white tracking-wide leading-tight">
                         {title}
                     </h3>
-                    <p className="text-[7px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-[0.1em] mt-0.5 opacity-80">{subtitle}</p>
+                    <p className="text-[11px] sm:text-xs font-bold text-gray-700 dark:text-gray-200 mt-1 leading-snug">{subtitle}</p>
                 </div>
             </div>
 
@@ -107,11 +125,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                 <div className="min-w-0 flex flex-col gap-0.5 pb-2">
                         
                         {/* Days / Times Header Row - High Precision Alignment */}
-<<<<<<< HEAD
                         <div className="grid gap-0.5 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5" style={{ gridTemplateColumns }}>
-=======
-                        <div className="grid grid-cols-[35px_repeat(10,1fr)] gap-0.5 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <div className="flex items-center justify-center text-[7px] font-black text-gray-900 dark:text-gray-400 uppercase tracking-widest pb-0.5">วัน</div>
                             {displayPeriods.map((p) => (
                                 <div key={p.label} className="flex flex-col items-center justify-center">
@@ -122,22 +136,82 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                         </div>
 
                         {/* Daily Rows */}
-                        {Object.entries(DAYS).map(([dayKey, dayLabel]) => (
-<<<<<<< HEAD
-                            <div key={dayKey} className="grid gap-0.5 items-stretch h-[44px]" style={{ gridTemplateColumns }}>
-=======
-                            <div key={dayKey} className="grid grid-cols-[35px_repeat(10,1fr)] gap-0.5 items-stretch h-[38px]">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                <div className="flex items-center justify-center bg-transparent">
-                                    <span className="text-[9px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-tight">{dayLabel}</span>
-                                </div>
+                        {Object.entries(DAYS).map(([dayKey, dayLabel]) => {
+                            // Calculate spans for the current day
+                            const daySpans: { period: any; span: number; skip: boolean }[] = [];
+                            const periods = [...displayPeriods];
+                            
+                            for (let i = 0; i < periods.length; i++) {
+                                const period = periods[i];
+                                const rawSlotId = `${dayKey}-${period.index}`;
+                                const coursesInSlot = schedule[rawSlotId] || [];
                                 
-                                {displayPeriods.map((period) => {
-                                    const rawSlotId = `${dayKey}-${period.index}`;
-                                    const slotId = `${type}-${rawSlotId}`;
-                                    const coursesInSlot = schedule[rawSlotId] || [];
+                                const periodSetting = normalizedPeriodSettings[period.index];
+                                const specialPeriod = specialPeriods.find(sp => 
+                                    (sp.linkedPeriodId === periodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
+                                    (sp.startTime === periodSetting?.startTime && sp.endTime === periodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
+                                );
+
+                                const specialTitle = specialPeriod?.title || 
+                                                    (periodSetting?.id === 'homeroom' || periodSetting?.label === 'โฮมรูม' ? 'โฮมรูม' : 
+                                                    (periodSetting?.id === 'lunch' || periodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));
+
+                                let span = 1;
+                                // Look ahead for consecutive identical slots
+                                if (specialTitle !== 'พักเที่ยง' && (coursesInSlot.length === 1 || specialTitle)) {
+                                    while (i + span < periods.length) {
+                                        const nextPeriod = periods[i + span];
+                                        const nextRawSlotId = `${dayKey}-${nextPeriod.index}`;
+                                        const nextCourses = schedule[nextRawSlotId] || [];
+                                        
+                                        const nextPeriodSetting = normalizedPeriodSettings[nextPeriod.index];
+                                        const nextSpecialPeriod = specialPeriods.find(sp => 
+                                            (sp.linkedPeriodId === nextPeriodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
+                                            (sp.startTime === nextPeriodSetting?.startTime && sp.endTime === nextPeriodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
+                                        );
+                                        const nextSpecialTitle = nextSpecialPeriod?.title || 
+                                                            (nextPeriodSetting?.id === 'homeroom' || nextPeriodSetting?.label === 'โฮมรูม' ? 'โฮมรูม' : 
+                                                            (nextPeriodSetting?.id === 'lunch' || nextPeriodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));
+
+                                        if (nextSpecialTitle === 'พักเที่ยง') break;
+
+                                        let isMatch = false;
+                                        if (coursesInSlot.length === 1 && nextCourses.length === 1) {
+                                            isMatch = areConsecutiveCoursesMergeable(coursesInSlot[0], nextCourses[0]);
+                                        } else if (!coursesInSlot.length && !nextCourses.length && specialTitle && nextSpecialTitle) {
+                                            isMatch = specialTitle === nextSpecialTitle;
+                                        }
+
+                                        if (isMatch) {
+                                            span++;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                daySpans.push({ period, span, skip: false });
+                                // Mark next 'span - 1' periods as skipped
+                                for (let j = 1; j < span; j++) {
+                                    daySpans.push({ period: periods[i + j], span: 1, skip: true });
+                                }
+                                i += (span - 1);
+                            }
+
+                            return (
+                                <div key={dayKey} className="grid gap-0.5 items-stretch h-[44px]" style={{ gridTemplateColumns }}>
+                                    <div className="flex items-center justify-center bg-transparent">
+                                        <span className="text-[9px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-tight">{dayLabel}</span>
+                                    </div>
                                     
-                                    const periodSetting = periodSettings[period.index];
+                                    {daySpans.map((spanItem, sIdx) => {
+                                        if (spanItem.skip) return null;
+                                        const { period, span } = spanItem;
+                                        const rawSlotId = `${dayKey}-${period.index}`;
+                                        const slotId = `${type}-${rawSlotId}`;
+                                        const coursesInSlot = schedule[rawSlotId] || [];
+                                    
+                                    const periodSetting = normalizedPeriodSettings[period.index];
                                     const specialPeriod = specialPeriods.find(sp => 
                                         (sp.linkedPeriodId === periodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
                                         (sp.startTime === periodSetting?.startTime && sp.endTime === periodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
@@ -152,11 +226,11 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                         ? checkConstraints(
                                             activeDragItem, 
                                             rawSlotId, 
-                                            selectedTeacherData, 
+                                            teachers.find(t => t.id === activeDragItem.teacherId || (t.teacherId && t.teacherId === activeDragItem.teacherId)), 
                                             periodSettings, 
                                             specialPeriods, 
                                             assignmentConstraints, 
-                                            dynamicUnavailableSlots,
+                                            activeDragItem.teacherId === selectedTeacher ? dynamicUnavailableSlots : (teachers.find(t => t.id === activeDragItem.teacherId)?.preferences?.unavailableSlots || []),
                                             schoolMasterSchedule
                                         ) 
                                         : { forbidden: false, message: '' };
@@ -179,6 +253,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                             id={slotId}
                                             rawSlotId={rawSlotId}
                                             courses={coursesInSlot}
+                                            span={span}
                                             isTeacherPermanentUnavailable={false}
                                             isCourseDisallowedDay={false}
                                             isDynamicUnavailable={type === 'teacher' && dynamicUnavailableSlots.includes(rawSlotId)}
@@ -187,10 +262,8 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                             isOccupiedByOtherClass={false}
                                             occupiedByOtherClassInfo={null}
                                             occupiedByAnotherTeacherInfo={null}
-                                            onClick={() => {
-                                                if (selectedCourseCode) {
-                                                    onCellClick?.(rawSlotId);
-                                                } else if (type === 'teacher') {
+                                            onToggleUnavailable={() => {
+                                                if (type === 'teacher') {
                                                     if (dynamicUnavailableSlots.includes(rawSlotId)) {
                                                         setDynamicUnavailableSlots(prev => (prev as string[]).filter(s => s !== rawSlotId));
                                                     } else {
@@ -229,7 +302,8 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                     );
                                 })}
                             </div>
-                        ))}
+                        );
+                    })}
                     </div>
             </div>
         </div>

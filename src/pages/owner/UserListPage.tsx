@@ -1,21 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
-<<<<<<< HEAD
 import { usePermissions } from '@/hooks/usePermissions';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { Link } from 'react-router-dom';
 import { firestore } from '@/firebase';
-import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, collectionGroup, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import Swal from 'sweetalert2';
 import { FaSearch, FaShieldAlt, FaSchool, FaChalkboardTeacher, FaUserGraduate, FaPencilAlt, FaTrash, FaBriefcase, FaIdBadge, FaUserPlus, FaChevronDown } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
+import {
+  isActiveStudentSummaryStatus,
+  isActiveTeacherSummaryStatus,
+  updateOwnerAndSchoolCounts,
+} from "@/utils/ownerStatsUtils";
+import { ROLES } from "@/constants/roles";
 
 // --- Type Definitions ---
 interface User {
@@ -68,22 +69,23 @@ const Badge: React.FC<{ icon: React.ReactNode; text: string; className: string }
 // --- Role Badge Component ---
 const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email }) => {
   const roleHierarchy: { [key: string]: number } = {
-    super_admin: 100,
-    school_admin: 80,
-    teacher: 40,
-    student: 20,
+    [ROLES.SUPER_ADMIN]: 100,
+    [ROLES.SCHOOL_ADMIN]: 80,
+    [ROLES.TEACHER_ATTENDANCE]: 55,
+    [ROLES.STUDENT_ATTENDANCE]: 50,
+    [ROLES.SCHOOL_ATTENDANCE]: 50,
+    [ROLES.TEACHER]: 40,
+    [ROLES.STUDENT]: 20,
   };
 
   const roleStyles: { [key: string]: { icon: React.ReactNode, text: string, className: string } } = {
-    super_admin: { icon: <FaShieldAlt />, text: 'ผู้ดูแลสูงสุด (Super Admin)', className: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' },
-    school_admin: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
-    teacher: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
-    student: { icon: <FaUserGraduate />, text: 'นักเรียน (Student)', className: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20' },
-<<<<<<< HEAD
-    school_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)', className: 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20' },
-    student_attendance: { icon: <FaIdBadge />, text: 'เจ้าหน้าที่ลงเวลา (Student Attendance)', className: 'bg-cyan-50 text-cyan-600 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20' },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+    [ROLES.SUPER_ADMIN]: { icon: <FaShieldAlt />, text: 'ผู้ดูแลสูงสุด (Super Admin)', className: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' },
+    [ROLES.SCHOOL_ADMIN]: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
+    [ROLES.TEACHER]: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
+    [ROLES.STUDENT_ATTENDANCE]: { icon: <FaIdBadge />, text: 'ลงเวลานักเรียน', className: 'bg-cyan-50 text-cyan-700 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20' },
+    [ROLES.TEACHER_ATTENDANCE]: { icon: <FaBriefcase />, text: 'ลงเวลาครู', className: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20' },
+    [ROLES.SCHOOL_ATTENDANCE]: { icon: <FaIdBadge />, text: 'ลงเวลาทั้งโรงเรียน', className: 'bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/20' },
+    [ROLES.STUDENT]: { icon: <FaUserGraduate />, text: 'นักเรียน (Student)', className: 'bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20' },
   };
 
   const safeRoles = (Array.isArray(roles) ? roles : [roles])
@@ -140,10 +142,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
 };
 
 const UserListPage: React.FC = () => {
-<<<<<<< HEAD
   const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [users, setUsers] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -196,14 +195,11 @@ const UserListPage: React.FC = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-<<<<<<< HEAD
-      // Security: School admin and Teacher only sees users in their school
+      // Security: School admin or Teacher only sees users in their school
       if ((isSchoolAdmin || isTeacher) && user.schoolId !== currentUser?.schoolId) {
         return false;
       }
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const userRoles = Array.isArray(user.role) ? user.role : [user.role];
       const matchesRole = roleFilter === 'all' || userRoles.includes(roleFilter);
       const matchesSearch = searchTerm === '' ||
@@ -212,11 +208,7 @@ const UserListPage: React.FC = () => {
         (user.schoolName || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesRole && matchesSearch;
     });
-<<<<<<< HEAD
-  }, [users, searchTerm, roleFilter, isSchoolAdmin, currentUser]);
-=======
-  }, [users, searchTerm, roleFilter]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  }, [users, searchTerm, roleFilter, isSchoolAdmin, isTeacher, currentUser]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -252,6 +244,35 @@ const UserListPage: React.FC = () => {
       try {
         const deleteUserCallable = httpsCallable(functions, 'deleteUser');
         await deleteUserCallable({ userId: userId });
+
+        // Cascading Deletion for Teacher Record if applicable
+        const userToDelete = users.find(u => u.id === userId);
+        if (userToDelete?.schoolId && userToDelete.role.includes('teacher')) {
+          try {
+            const teacherRef = doc(firestore, "school-settings", userToDelete.schoolId, "teachers", userId);
+            const teacherSnap = await getDoc(teacherRef);
+            await deleteDoc(teacherRef);
+            if (!teacherSnap.exists() || isActiveTeacherSummaryStatus(teacherSnap.data().status || 'อยู่')) {
+              await updateOwnerAndSchoolCounts(firestore, userToDelete.schoolId, { teachers: -1 });
+            }
+          } catch (e) {
+            console.warn("Could not delete associated teacher record:", e);
+          }
+        }
+        if (userToDelete?.schoolId && userToDelete.role.includes('student')) {
+          try {
+            const studentRef = doc(firestore, "school-settings", userToDelete.schoolId, "students", userId);
+            const studentSnap = await getDoc(studentRef);
+            await deleteDoc(studentRef);
+            const data = studentSnap.data();
+            if (!studentSnap.exists() || isActiveStudentSummaryStatus(data?.status || data?.studentStatus)) {
+              await updateOwnerAndSchoolCounts(firestore, userToDelete.schoolId, { students: -1 });
+            }
+          } catch (e) {
+            console.warn("Could not delete associated student record:", e);
+          }
+        }
+
         setUsers(currentUsers => currentUsers.filter(user => user.id !== userId));
         Swal.fire('ลบสำเร็จ!', `ผู้ใช้ ${userFullName} ถูกลบออกจากระบบโดยสมบูรณ์แล้ว`, 'success');
       } catch (error) {
@@ -278,8 +299,8 @@ const UserListPage: React.FC = () => {
           {currentItems.map((user) => (
             <div key={user.id} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-lg border border-gray-100 dark:border-gray-700/50 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col">
               <div className="flex items-start gap-4">
-                <img
-                  className="h-16 w-16 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
+                <ProfileAvatar
+                  className="h-16 w-16 border-2 border-gray-200 dark:border-gray-600"
                   src={user.profileUrl || `https://ui-avatars.com/api/?name=${user.fullName}&background=random`}
                   alt={user.fullName}
                 />
@@ -412,14 +433,10 @@ const UserListPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-<<<<<<< HEAD
             <div className="flex items-center gap-4">
               <BackButton />
               <h1 className="text-3xl font-bold tracking-tight">ผู้ใช้ทั้งหมดในระบบ</h1>
             </div>
-=======
-              <h1 className="text-3xl font-bold tracking-tight">ผู้ใช้ทั้งหมดในระบบ</h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <p className="mt-1 text-gray-500 dark:text-gray-400">
                 จัดการและตรวจสอบข้อมูลผู้ใช้ทั้งหมด
               </p>
@@ -444,16 +461,12 @@ const UserListPage: React.FC = () => {
                   className="w-full pl-4 pr-10 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white"
                 >
                   <option value="all">ทุกบทบาท</option>
-                  <option value="super_admin">ผู้ดูแลระบบสูงสุด (Super Admin)</option>
-                  <option value="school_admin">ผู้ดูแลระบบโรงเรียน (School Admin)</option>
-                  <option value="teacher">ครู (Teacher)</option>
-                  <option value="student">นักเรียน (Student)</option>
-<<<<<<< HEAD
-                  <option value="school_attendance">เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)</option>
-                  <option value="student_attendance">เจ้าหน้าที่ลงเวลา (Student Attendance)</option>
-                  <option value="teacher_attendance">เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)</option>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                  <option value={ROLES.SUPER_ADMIN}>ผู้ดูแลระบบสูงสุด (Super Admin)</option>
+                  <option value={ROLES.SCHOOL_ADMIN}>ผู้ดูแลระบบโรงเรียน (School Admin)</option>
+                  <option value={ROLES.TEACHER}>ครู (Teacher)</option>
+                  <option value={ROLES.STUDENT_ATTENDANCE}>ลงเวลานักเรียน (Student Attendance)</option>
+                  <option value={ROLES.TEACHER_ATTENDANCE}>ลงเวลาครู (Teacher Attendance)</option>
+                  <option value={ROLES.STUDENT}>นักเรียน (Student)</option>
                 </select>
               </div>
               <Link

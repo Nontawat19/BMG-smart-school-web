@@ -5,11 +5,12 @@ import {
   signOut,
 } from "firebase/auth";
 import { auth, firestore } from "../../firebase";
-import { collection, collectionGroup, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
+import { collection, collectionGroup, query, where, getDocs, orderBy, doc, getDoc, limit } from "firebase/firestore";
 import { ToastContainer, toast } from "react-toastify";
 import ToastContent from "../../components/ToastContent";
 import { showFirebaseError } from "../../utils/showFirebaseError";
 import { FaBookOpen, FaUserTie, FaUserGraduate, FaIdCard, FaLock, FaEnvelope, FaArrowRight, FaCheckCircle } from "react-icons/fa";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -86,8 +87,33 @@ const LoginPage: React.FC = () => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // ตรวจสอบว่า user นี้เป็นครูในระบบหรือไม่
-      const teachersQuery = query(collectionGroup(firestore, 'teachers'), where('uid', '==', user.uid));
+      // 1. ตรวจสอบจากคอลเลกชัน 'users' โดยตรง (รวดเร็วและไม่ต้องใช้ index พิเศษ)
+      const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const roles = Array.isArray(userData.role) ? userData.role : [userData.role];
+        if (isAttendanceEntryOnly(roles)) {
+          navigate("/attendance/checkin-out", { replace: true });
+          return;
+        }
+
+        const isStaff = roles.some((r: any) => 
+          ['teacher', 'school_admin', 'academic_admin', 'super_admin', 'owner'].includes(r)
+        );
+        
+        if (isStaff) {
+          navigate("/home", { state: { fromLogin: true }, replace: true });
+          return;
+        }
+      }
+
+      // 2. Fallback: กรณีข้อมูลเก่าที่อาจจะไม่มีใน 'users' แต่มีใน 'teachers'
+      const teachersQuery = query(
+        collectionGroup(firestore, 'teachers'), 
+        where('uid', '==', user.uid),
+        limit(1)
+      );
       const teacherSnapshots = await getDocs(teachersQuery);
 
       if (teacherSnapshots.empty) {

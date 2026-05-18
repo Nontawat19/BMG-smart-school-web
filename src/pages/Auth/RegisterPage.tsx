@@ -9,10 +9,7 @@ import ToastContent from "../../components/ToastContent";
 import ProfilePlaceholder from "../../assets/profile.png";
 import { showFirebaseError } from "../../utils/showFirebaseError";
 import { FaBookOpen } from "react-icons/fa";
-<<<<<<< HEAD
 import BackButton from "../../components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 import "react-toastify/dist/ReactToastify.css";
 import { FirebaseError } from 'firebase/app';
@@ -74,8 +71,7 @@ const RegisterPage: React.FC = () => {
             }
 
             try {
-                // Compress and convert to WebP
-                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
                 setSelectedFile(compressedFile);
                 setPreviewImage(URL.createObjectURL(compressedFile));
             } catch (error) {
@@ -199,15 +195,11 @@ const RegisterPage: React.FC = () => {
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 dark:from-gray-900 dark:to-gray-800 px-4 py-10 transition-colors duration-300 relative">
             <ToastContainer position="top-center" autoClose={3000} hideProgressBar />
 
-<<<<<<< HEAD
             <div className="w-full max-w-md bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-lg p-8 space-y-6 animate-fadeIn transition-colors duration-300 relative">
                 {/* Back Button */}
                 <div className="absolute top-4 left-4">
                     <BackButton to="/login" />
                 </div>
-=======
-            <div className="w-full max-w-md bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-lg p-8 space-y-6 animate-fadeIn transition-colors duration-300">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <div className="flex flex-col items-center justify-center mb-4 gap-2">
                     <FaBookOpen className="w-12 h-12 text-sky-500 dark:text-sky-400" />
                     <h1 className="text-2xl font-bold text-gray-800 dark:text-white text-center">Easy School Management</h1>
@@ -217,7 +209,7 @@ const RegisterPage: React.FC = () => {
                 <div className="flex justify-center">
                     <label htmlFor="profileUpload" className="cursor-pointer">
                         {previewImage ? (
-                            <img src={previewImage} alt="Profile" className="w-24 h-24 rounded-full object-cover border" />
+                            <img src={previewImage} alt="Profile" className="w-24 h-24 rounded-full object-cover object-[center_20%] border" />
                         ) : (
                             <div
                                 className="w-24 h-24 rounded-full border bg-center bg-cover bg-no-repeat"
@@ -225,7 +217,7 @@ const RegisterPage: React.FC = () => {
                             />
                         )}
                     </label>
-                    <input id="profileUpload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                    <input id="profileUpload" type="file" accept="image/jpeg,image/png" onChange={handleImageChange} className="hidden" />
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
@@ -278,6 +270,7 @@ const RegisterPage: React.FC = () => {
                             <option value="งานบริหารงบประมาณ">งานบริหารงบประมาณ</option>
                             <option value="งานบริหารบุคคล">งานบริหารบุคคล</option>
                             <option value="งานบริหารทั่วไป">งานบริหารทั่วไป</option>
+                            <option value="งานบริหารกิจการนักเรียน">งานบริหารกิจการนักเรียน</option>
                         </select>
                     </div>
 

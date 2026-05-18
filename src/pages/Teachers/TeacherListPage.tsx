@@ -3,20 +3,24 @@ import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { Link, useParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage, auth } from "@/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, updateDoc } from "firebase/firestore";
-=======
-import { firestore, storage, auth } from "@/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc } from "firebase/firestore";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { collection, getDocs, query, where, Timestamp, doc, deleteDoc, getDoc, updateDoc, setDoc } from "firebase/firestore";
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ref, deleteObject } from "firebase/storage";
-import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaCloudUploadAlt, FaCheck, FaTimes, FaEye, FaEyeSlash, FaIdCard, FaFileExcel } from "react-icons/fa";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaCloudUploadAlt, FaFileExcel, FaCheck, FaTimes } from "react-icons/fa";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, MoreVertical, ChevronDown } from "lucide-react";
+import { syncHeadOfLearningArea } from "@/utils/subjectGroupSync";
 import Swal from 'sweetalert2';
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useTheme } from "@/ThemeContext";
+import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import Select, { StylesConfig, components } from "react-select";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { isActiveTeacherSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 // กำหนด Type สำหรับข้อมูลครู
 interface Teacher {
@@ -33,12 +37,56 @@ interface Teacher {
   subject?: string; // 📌 เพิ่มวิชาที่สอนหลัก
   subjects?: string[];
   academicStanding?: string;
-  rfid?: string;
-<<<<<<< HEAD
   status?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  isHeadOfLearningArea?: boolean;
+  learningArea?: string;
+  subjectGroup?: string;
 }
+
+const STAFF_ROLES = new Set([
+  'teacher',
+  'school_admin',
+  'academic_admin',
+  'super_admin',
+  'admin',
+  'academic',
+]);
+
+const toRoleArray = (role: unknown): string[] => {
+  if (Array.isArray(role)) {
+    return role.filter((item): item is string => typeof item === 'string');
+  }
+  return typeof role === 'string' ? [role] : [];
+};
+
+const hasStaffRole = (role: unknown) =>
+  toRoleArray(role).some(roleName => STAFF_ROLES.has(roleName.toLowerCase()));
+
+const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): Teacher => {
+  const roles = toRoleArray(data.role);
+  const isSchoolAdmin = roles.some(role => role.toLowerCase() === 'school_admin');
+  const isSuperAdmin = roles.some(role => role.toLowerCase() === 'super_admin');
+  const nameParts = (data.fullName || '').trim().split(/\s+/).filter(Boolean);
+
+  return {
+    id,
+    uid: data.uid || id,
+    schoolId,
+    title: data.title || '',
+    firstName: data.firstName || nameParts[0] || data.fullName || data.email || 'ไม่ระบุชื่อ',
+    lastName: data.lastName || nameParts.slice(1).join(' '),
+    email: data.email || '',
+    role: roles,
+    profileImageUrl: data.profileImageUrl || data.profileUrl || '',
+    teacherId: data.teacherId || '',
+    position: data.position || (isSuperAdmin ? 'ผู้ดูแลระบบสูงสุด' : isSchoolAdmin ? 'ผู้ดูแลระบบโรงเรียน' : 'ครู'),
+    department: data.department || 'งานบริหารทั่วไป',
+    status: data.status || 'อยู่',
+    learningArea: data.learningArea || '',
+    subjectGroup: data.subjectGroup || '',
+    createdAt: data.createdAt || data.updatedAt || Timestamp.fromMillis(0),
+  } as Teacher;
+};
 
 
 // --- Skeleton Loader Component ---
@@ -51,7 +99,7 @@ const SkeletonLoader = () => (
           <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-600 dark:text-gray-300 sm:pl-6">ชื่อ-สกุล</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">วิทยฐานะ</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
-          <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">ฝ่ายงาน</th>
+          <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">กลุ่มสาระ</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อ</th>
           <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6"><span className="sr-only">Actions</span></th>
         </tr>
@@ -91,23 +139,228 @@ export default function TeacherListPage() {
   const { ADMIN_ACCESS } = usePermissions();
   const profile = useSelector((state: RootState) => state.profile);
 
-<<<<<<< HEAD
-=======
-  // RFID Edit State
-  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
-  const [rfidInputValue, setRfidInputValue] = useState<string>('');
-  const [isSavingRfid, setIsSavingRfid] = useState(false);
-  const [isRfidVisible, setIsRfidVisible] = useState(false);
-
-  // Bulk RFID state
-  const [isBulkRfidMode, setIsBulkRfidMode] = useState(false);
-  const [bulkRfidData, setBulkRfidData] = useState<Record<string, string>>({});
-  const [isSavingBulkRfid, setIsSavingBulkRfid] = useState(false);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
+
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+  const [tempTeacherId, setTempTeacherId] = useState("");
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+
+  const { subjectGroups } = useSubjectGroups(schoolId || undefined);
+
+  const statusOptions = [
+    { value: 'อยู่', label: 'อยู่' },
+    { value: 'ย้าย', label: 'ย้าย' },
+    { value: 'เกษียณ', label: 'เกษียณ' },
+    { value: 'ศึกษาต่อ', label: 'ศึกษาต่อ' },
+    { value: 'ช่วยราชการ', label: 'ช่วยราชการ' },
+    { value: 'ออก', label: 'ออก' },
+    { value: 'ถึงแก่กรรม', label: 'ถึงแก่กรรม' },
+  ];
+
+  const departmentOptions = [
+    { value: '', label: 'ไม่ระบุ' },
+    { value: 'งานบริหารวิชาการ', label: 'งานบริหารวิชาการ' },
+    { value: 'งานบริหารงบประมาณ', label: 'งานบริหารงบประมาณ' },
+    { value: 'งานบริหารบุคคล', label: 'งานบริหารบุคคล' },
+    { value: 'งานบริหารทั่วไป', label: 'งานบริหารทั่วไป' },
+    { value: 'งานบริหารกิจการนักเรียน', label: 'งานบริหารกิจการนักเรียน' },
+  ];
+
+  const getStatusStyles = (status: string) => {
+    switch (status) {
+      case 'ย้าย': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
+      case 'เกษียณ': return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300';
+      case 'ศึกษาต่อ': 
+      case 'ลาศึกษาต่อ': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'ช่วยราชการ': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
+      case 'ออก': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+      case 'ถึงแก่กรรม': return 'bg-black text-white';
+      default: return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+    }
+  };
+
+  const { isDarkMode } = useTheme();
+
+  const selectStyles: StylesConfig<any, false> = {
+    control: (provided) => ({
+      ...provided,
+      backgroundColor: 'transparent',
+      border: 'none',
+      boxShadow: 'none',
+      minHeight: 'unset',
+      cursor: 'pointer',
+      padding: 0,
+      margin: 0,
+      width: '100%',
+      display: 'flex',
+      justifyContent: 'space-between',
+    }),
+    valueContainer: (provided) => ({
+      ...provided,
+      padding: 0,
+      flex: 1,
+      display: 'flex',
+    }),
+    input: (provided) => ({
+      ...provided,
+      margin: 0,
+      padding: 0,
+      color: isDarkMode ? '#fff' : '#374151',
+    }),
+    indicatorsContainer: (provided) => ({
+      ...provided,
+      padding: 0,
+      marginLeft: 'auto',
+    }),
+    dropdownIndicator: (provided) => ({
+      ...provided,
+      padding: '0 0 0 4px',
+      color: 'inherit',
+      '&:hover': {
+        color: 'inherit',
+      },
+    }),
+    menu: (provided) => ({
+      ...provided,
+      backgroundColor: isDarkMode ? '#2a2b2f' : '#ffffff',
+      border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      zIndex: 50,
+      width: 'max-content',
+      minWidth: '160px',
+      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    }),
+    option: (provided, state) => ({
+      ...provided,
+      backgroundColor: state.isSelected ? '#4f46e5' : state.isFocused ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') : 'transparent',
+      color: state.isSelected ? '#fff' : isDarkMode ? '#fff' : '#374151',
+      cursor: 'pointer',
+      fontSize: '12px',
+      padding: '8px 12px',
+      '&:active': {
+        backgroundColor: '#4f46e5',
+      },
+    }),
+    singleValue: (provided) => ({
+      ...provided,
+      color: 'inherit',
+      margin: 0,
+    }),
+    menuList: (provided) => ({
+      ...provided,
+      maxHeight: 'none',
+      padding: 0,
+      '&::-webkit-scrollbar': {
+        width: '0px',
+        display: 'none',
+      },
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+    }),
+  };
+
+  const CustomDropdownIndicator = (props: any) => {
+    return (
+      <components.DropdownIndicator {...props}>
+        <ChevronDown size={8} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+      </components.DropdownIndicator>
+    );
+  };
+
+  const handleUpdateField = async (teacherId: string, updates: Record<string, any>) => {
+    if (!schoolId) return;
+    setIsUpdating(teacherId);
+    try {
+      const teacherDocRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
+      const teacherSnap = await getDoc(teacherDocRef);
+      const teacherObj = teachers.find(t => t.id === teacherId);
+      const previousStatus = teacherSnap.exists()
+        ? String(teacherSnap.data().status || teacherObj?.status || "อยู่").trim()
+        : String(teacherObj?.status || "อยู่").trim();
+      const nextStatus = String(updates.status || previousStatus).trim();
+      
+      let dataToSave = { ...updates };
+      
+      if (!teacherSnap.exists()) {
+        if (teacherObj) {
+          dataToSave = {
+            uid: teacherId,
+            firstName: teacherObj.firstName || "",
+            lastName: teacherObj.lastName || "",
+            title: teacherObj.title || "",
+            email: (teacherObj as any).email || "",
+            role: (teacherObj as any).role || ["teacher"],
+            schoolId: schoolId,
+            profileImageUrl: teacherObj.profileImageUrl || "",
+            teacherId: teacherObj.teacherId || "",
+            position: (teacherObj as any).position || "ครู",
+            department: teacherObj.department || "งานบริหารทั่วไป",
+            status: teacherObj.status || "อยู่",
+            isHomeroomTeacher: (teacherObj as any).isHomeroomTeacher || false,
+            gender: (teacherObj as any).gender || "",
+            learningArea: teacherObj.learningArea || "",
+            subjectGroup: teacherObj.subjectGroup || "",
+            createdAt: teacherObj.createdAt || Timestamp.now(),
+            ...updates,
+          };
+        }
+      }
+      
+      await setDoc(teacherDocRef, dataToSave, { merge: true });
+      const wasActive = isActiveTeacherSummaryStatus(previousStatus);
+      const isActive = isActiveTeacherSummaryStatus(nextStatus);
+      if (wasActive !== isActive) {
+        await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: isActive ? 1 : -1 });
+      }
+      setTeachers(prev => prev.map(t => t.id === teacherId ? { ...t, ...updates } : t));
+      toast.success("อัปเดตข้อมูลเรียบร้อยแล้ว", {
+        position: "top-right",
+        autoClose: 2000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        theme: "dark",
+      });
+    } catch (err) {
+      console.error("Error updating teacher field: ", err);
+      toast.error("ไม่สามารถอัปเดตข้อมูลได้", {
+        position: "top-right",
+        theme: "dark",
+      });
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  const handleIdUpdate = (teacherId: string) => {
+    const newId = tempTeacherId.trim();
+    if (!newId) {
+      setEditingTeacherId(null);
+      return;
+    }
+
+    // Check if duplicate
+    const isDuplicate = teachers.some(t => t.teacherId === newId && t.id !== teacherId);
+    if (isDuplicate) {
+      toast.error(`รหัสครู "${newId}" มีอยู่ในระบบแล้ว`, {
+        position: "top-center",
+        theme: isDarkMode ? "dark" : "light",
+      });
+      return;
+    }
+
+    const currentTeacher = teachers.find(t => t.id === teacherId);
+    if (currentTeacher && newId !== currentTeacher.teacherId) {
+      handleUpdateField(teacherId, { teacherId: newId });
+    }
+    setEditingTeacherId(null);
+  };
+
+  const functions = getFunctions();
 
   const handleDelete = async (teacher: Teacher) => {
     Swal.fire({
@@ -133,7 +386,32 @@ export default function TeacherListPage() {
         });
 
         try {
+          // 1. Delete User Account and Users collection (via Cloud Function)
+          try {
+            const deleteUserCallable = httpsCallable(functions, 'deleteUser');
+            await deleteUserCallable({ userId: teacher.id });
+          } catch (error) {
+            console.warn("Could not delete teacher user account (might not exist):", error);
+            // If the user doc exists but the callable failed, try deleting the user doc manually
+            // although the callable is preferred as it handles Auth too.
+          }
+
+          // 2. Clear Head of Learning Area if applicable
+          if (teacher.isHeadOfLearningArea && teacher.learningArea) {
+            try {
+              await syncHeadOfLearningArea(teacher.schoolId, teacher.id, '', teacher.learningArea, false);
+            } catch (error) {
+              console.warn("Could not clear head of learning area:", error);
+            }
+          }
+
+          // 3. Delete teacher doc
           await deleteDoc(doc(firestore, "school-settings", teacher.schoolId, "teachers", teacher.id));
+          if (isActiveTeacherSummaryStatus(teacher.status || "อยู่")) {
+            await updateOwnerAndSchoolCounts(firestore, teacher.schoolId, { teachers: -1 });
+          }
+
+          // 4. Delete from Storage if image exists
           if (teacher.profileImageUrl) {
             const imageRef = ref(storage, teacher.profileImageUrl);
             await deleteObject(imageRef);
@@ -148,118 +426,74 @@ export default function TeacherListPage() {
     });
   };
 
-<<<<<<< HEAD
-=======
-  const handleStartEditRfid = (teacher: Teacher) => {
-    setEditingTeacherId(teacher.id);
-    setRfidInputValue(teacher.rfid || '');
-    setIsRfidVisible(false);
-  };
-
-  const handleCancelEditRfid = () => {
-    setEditingTeacherId(null);
-    setRfidInputValue('');
-  };
-
-  const handleSaveRfidForTeacher = async () => {
-    if (!editingTeacherId || !schoolId) return;
-    setIsSavingRfid(true);
-    try {
-      const { doc, updateDoc } = await import("firebase/firestore");
-      const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", editingTeacherId);
-      await updateDoc(teacherRef, { rfid: rfidInputValue });
-
-      setTeachers(prevTeachers =>
-        prevTeachers.map(t => t.id === editingTeacherId ? { ...t, rfid: rfidInputValue } : t)
-      );
-
-      setEditingTeacherId(null);
-      setRfidInputValue('');
-      Swal.fire({ 
-        icon: 'success', 
-        title: 'บันทึกสำเร็จ', 
-        timer: 1500, 
-        showConfirmButton: false,
-        background: '#2a2b2f',
-        color: '#ffffff'
-      });
-    } catch (err) {
-      console.error("Error updating teacher RFID: ", err);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอัปเดตข้อมูล RFID ได้', 'error');
-    } finally {
-      setIsSavingRfid(false);
-    }
-  };
-
-  const handleSaveBulkRfid = async () => {
-    if (!schoolId) return;
-    setIsSavingBulkRfid(true);
-    try {
-      const { writeBatch, doc } = await import("firebase/firestore");
-      const batch = writeBatch(firestore);
-      let changedCount = 0;
-
-      Object.entries(bulkRfidData).forEach(([teacherId, rfidValue]) => {
-        const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
-        batch.update(teacherRef, { rfid: rfidValue });
-        changedCount++;
-      });
-
-      if (changedCount > 0) {
-        await batch.commit();
-        setTeachers(prevTeachers =>
-          prevTeachers.map(t => bulkRfidData[t.id] !== undefined ? { ...t, rfid: bulkRfidData[t.id] } : t)
-        );
-        Swal.fire({
-          icon: 'success',
-          title: 'บันทึกสำเร็จ',
-          text: `บันทึกข้อมูล RFID ครูทั้งหมด ${changedCount} รายการเรียบร้อยแล้ว`,
-          timer: 2000,
-          showConfirmButton: false,
-          background: '#2a2b2f',
-          color: '#ffffff'
-        });
-      }
-      setIsBulkRfidMode(false);
-      setBulkRfidData({});
-    } catch (err) {
-      console.error("Error saving bulk teacher RFID: ", err);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลแบบกลุ่มได้', 'error');
-    } finally {
-      setIsSavingBulkRfid(false);
-    }
-  };
-
-  const handleToggleBulkRfidMode = () => {
-    if (isBulkRfidMode) {
-      setIsBulkRfidMode(false);
-      setBulkRfidData({});
-    } else {
-      setIsBulkRfidMode(true);
-      const initialData: Record<string, string> = {};
-      teachers.forEach(t => {
-        if (t.rfid) initialData[t.id] = t.rfid;
-      });
-      setBulkRfidData(initialData);
-    }
-  };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-
   const fetchTeachers = useCallback(async (currentSchoolId: string) => {
     setIsLoading(true);
     setError(null);
     try {
       const teachersCollection = collection(firestore, "school-settings", currentSchoolId, "teachers");
-      // เรียงข้อมูลตามวันที่สร้างล่าสุดมาไว้บนสุด
-      const q = query(teachersCollection, orderBy("createdAt", "desc"));
-      const querySnapshot = await getDocs(q);
+      const usersCollection = collection(firestore, "users");
+      const usersQuery = query(usersCollection, where("schoolId", "==", currentSchoolId));
+      const [querySnapshot, usersSnapshot] = await Promise.all([
+        getDocs(teachersCollection),
+        getDocs(usersQuery),
+      ]);
 
-      const teachersData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        schoolId: currentSchoolId, // 📌 เพิ่ม schoolId เข้าไปใน object
-        ...doc.data(),
-      })) as Teacher[];
-      setTeachers(teachersData);
+      const usersDataMap = new Map(usersSnapshot.docs.map(doc => [doc.id, doc.data()]));
+      const teachersData = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        const userData = usersDataMap.get(doc.id) || {};
+        
+        const firstName = data.firstName || userData.firstName || '';
+        const lastName = data.lastName || userData.lastName || '';
+        const title = data.title || userData.title || '';
+        
+        return {
+          id: doc.id,
+          schoolId: currentSchoolId,
+          teacherId: data.teacherId || userData.teacherId || '',
+          title,
+          firstName,
+          lastName,
+          status: data.status || userData.status || 'อยู่',
+          profileImageUrl: data.profileImageUrl || userData.profileImageUrl || userData.profileUrl || '',
+          department: data.department || userData.department || 'งานบริหารทั่วไป',
+          contact: data.contact || userData.contact || '',
+          isHeadOfLearningArea: data.isHeadOfLearningArea || userData.isHeadOfLearningArea || false,
+          learningArea: data.learningArea || data.subjectGroup || userData.learningArea || userData.subjectGroup || '',
+          subjectGroup: data.subjectGroup || data.learningArea || userData.subjectGroup || userData.learningArea || '',
+          isHomeroomTeacher: data.isHomeroomTeacher || userData.isHomeroomTeacher || false,
+          homeroomGrade: data.homeroomGrade || userData.homeroomGrade || '',
+          homeroomRoom: data.homeroomRoom || userData.homeroomRoom || '',
+          createdAt: data.createdAt || userData.createdAt || Timestamp.fromMillis(0),
+          ...data,
+        } as Teacher;
+      });
+
+      const teachersById = new Map(teachersData.map(teacher => [teacher.id, teacher]));
+      usersSnapshot.docs.forEach(userDoc => {
+        if (teachersById.has(userDoc.id)) return;
+
+        const userData = userDoc.data();
+        if (!hasStaffRole(userData.role)) return;
+
+        teachersById.set(userDoc.id, buildFallbackTeacherFromUser(userDoc.id, userData, currentSchoolId));
+      });
+
+      // เรียงลำดับ: "อยู่" มาก่อนสถานะอื่น และเรียงตามวันที่สร้างล่าสุดในแต่ละกลุ่ม
+      const sortedTeachers = Array.from(teachersById.values()).sort((a, b) => {
+        const statusA = a.status || 'อยู่';
+        const statusB = b.status || 'อยู่';
+
+        if (statusA === 'อยู่' && statusB !== 'อยู่') return -1;
+        if (statusA !== 'อยู่' && statusB === 'อยู่') return 1;
+
+        // ถ้าสถานะเหมือนกัน (หรือเป็นกลุ่มสถานะอื่นเหมือนกัน) ให้เรียงตามวันที่สร้างล่าสุด
+        const dateA = a.createdAt?.toMillis() || 0;
+        const dateB = b.createdAt?.toMillis() || 0;
+        return dateB - dateA;
+      });
+
+      setTeachers(sortedTeachers);
     } catch (err) {
       console.error("Error fetching teachers: ", err);
       setError("เกิดข้อผิดพลาดในการดึงข้อมูลครูของโรงเรียนนี้");
@@ -310,7 +544,7 @@ export default function TeacherListPage() {
 
     const filteredTeachers = teachers.filter(teacher => {
       const matchesSearch = `${teacher.title}${teacher.firstName} ${teacher.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        teacher.teacherId.toLowerCase().includes(searchTerm.toLowerCase());
+        (teacher.teacherId || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
 
@@ -324,24 +558,14 @@ export default function TeacherListPage() {
         <table className="min-w-full divide-y divide-gray-700">
           <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
             <tr>
-<<<<<<< HEAD
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
               <th scope="col" className="py-3 px-2 text-xs font-semibold text-gray-600 dark:text-gray-300 w-12 text-center">ลำดับ</th>
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
               <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">วิทยฐานะ</th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">กลุ่มสาระ</th>
               <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ฝ่ายงาน</th>
               <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อ</th>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">RFID</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
-=======
-              <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-12 text-center">ลำดับ</th>
-              <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
-              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">วิทยฐานะ</th>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
-              <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ฝ่ายงาน</th>
-              <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อ</th>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-32 sm:w-40">RFID</th>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <CanAccess roles={ADMIN_ACCESS}>
                 <th scope="col" className="py-3 pl-3 pr-4 sm:pr-6 text-right text-xs font-semibold text-gray-600 dark:text-gray-300">
                   ดำเนินการ
@@ -352,98 +576,127 @@ export default function TeacherListPage() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
             {currentTeachers.map((teacher, index) => (
               <tr key={teacher.id} className="hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors">
-<<<<<<< HEAD
-                <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400 font-medium">{teacher.teacherId}</td>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  <CanAccess roles={ADMIN_ACCESS} fallback={<span>{teacher.teacherId}</span>}>
+                    {editingTeacherId === teacher.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          type="text"
+                          className="w-20 px-2 py-1 bg-gray-50 dark:bg-white/5 border border-indigo-500 rounded-lg outline-none text-xs"
+                          value={tempTeacherId}
+                          onChange={(e) => setTempTeacherId(e.target.value)}
+                          onBlur={() => handleIdUpdate(teacher.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleIdUpdate(teacher.id);
+                            if (e.key === 'Escape') setEditingTeacherId(null);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                        <button
+                          onClick={() => {
+                            setEditingTeacherId(teacher.id);
+                            setTempTeacherId(teacher.teacherId);
+                          }}
+                          className="flex items-center gap-1 hover:text-indigo-500 hover:bg-indigo-500/10 px-2 py-1 rounded transition-colors group"
+                          title="คลิกเพื่อแก้ไขรหัส"
+                        >
+                          <span>{teacher.teacherId}</span>
+                          <ChevronDown size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                    )}
+                  </CanAccess>
+                </td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
                   <Link to={`/school/${teacher.schoolId}/teachers/view/${teacher.id}`} className="flex items-center group">
-                    <div className="h-8 w-8 flex-shrink-0">
-                      <img
-                        className="h-8 w-8 rounded-full object-cover"
-                        src={teacher.profileImageUrl || `https://ui-avatars.com/api/?name=${teacher.firstName}+${teacher.lastName}&background=random`}
-                        alt={`${teacher.firstName} ${teacher.lastName}`}
-                      />
-                    </div>
-<<<<<<< HEAD
-                    <div className="ml-3 font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                      {`${teacher.title || ''}${teacher.firstName} ${teacher.lastName}`}
-=======
-                    <div className="ml-3">
-                      <div className="font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    <ProfileAvatar
+                      className="h-8 w-8 shadow-sm border border-gray-200 dark:border-white/10"
+                      src={teacher.profileImageUrl || `https://ui-avatars.com/api/?name=${teacher.firstName}+${teacher.lastName}&background=random`}
+                      alt={`${teacher.firstName} ${teacher.lastName}`}
+                    />
+                      <div className="ml-3 font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                         {`${teacher.title || ''}${teacher.firstName} ${teacher.lastName}`}
                       </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                    </div>
                   </Link>
                 </td>
                 <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.academicStanding || '-'}</td>
-<<<<<<< HEAD
-                <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.department || '-'}</td>
-                <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.contact}</td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs">
-                  <span className="text-gray-500 dark:text-gray-400 font-mono text-[10px] tracking-wider">{teacher.rfid ? '••••••••' : 'ไม่มีข้อมูล'}</span>
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 text-xs">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                      teacher.status === 'ย้าย' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' :
-                      teacher.status === 'เกษียณ' ? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' :
-                      teacher.status === 'ลาศึกษาต่อ' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
-                      teacher.status === 'ช่วยราชการ' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' :
-                      teacher.status === 'ออก' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' :
-                      teacher.status === 'ถึงแก่กรรม' ? 'bg-black text-white' :
-                      'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                    }`}>
-                      {teacher.status || 'อยู่'}
+                  <CanAccess roles={ADMIN_ACCESS} fallback={
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {teacher.learningArea || teacher.subjectGroup || '-'}
                     </span>
-                  </td>
-                  <CanAccess roles={ADMIN_ACCESS}>
-=======
-                <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.teacherId}</td>
-                <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.department || '-'}</td>
-                <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.contact}</td>
-                <td className="whitespace-nowrap px-2 py-3 text-xs">
-                  {isBulkRfidMode ? (
-                    <div className="flex items-center gap-2 w-full max-w-[150px]">
-                      <input
-                        type="text"
-                        value={bulkRfidData[teacher.id] || ''}
-                        onChange={(e) => setBulkRfidData(prev => ({ ...prev, [teacher.id]: e.target.value }))}
-                        placeholder="สแกน..."
-                        className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
+                  }>
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[140px]`}>
+                      <Select
+                        className="w-full"
+                        options={[
+                          { value: '', label: 'ไม่ระบุ' },
+                          ...subjectGroups.map(g => ({ value: g.name, label: g.name }))
+                        ]}
+                        styles={selectStyles}
+                        components={{ DropdownIndicator: CustomDropdownIndicator }}
+                        value={teacher.learningArea || teacher.subjectGroup ? { value: teacher.learningArea || teacher.subjectGroup, label: teacher.learningArea || teacher.subjectGroup } : { value: '', label: 'ไม่ระบุ' }}
+                        onChange={(newValue: any) => {
+                          handleUpdateField(teacher.id, {
+                            learningArea: newValue.value,
+                            subjectGroup: newValue.value
+                          });
+                        }}
+                        placeholder="เลือกกลุ่มสาระ"
+                        isSearchable={true}
+                        menuPortalTarget={document.body}
+                        classNamePrefix="learning-area-select"
                       />
                     </div>
-                  ) : editingTeacherId === teacher.id ? (
-                    <div className="flex items-center gap-2 w-full max-w-[150px]">
-                      <div className="relative flex-grow">
-                        <input
-                          type={isRfidVisible ? "text" : "password"}
-                          value={rfidInputValue}
-                          onChange={(e) => setRfidInputValue(e.target.value)}
-                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 pr-6 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
-                          autoFocus
-                        />
-                        <button type="button" onClick={() => setIsRfidVisible(!isRfidVisible)} className="absolute inset-y-0 right-0 flex items-center pr-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                          {isRfidVisible ? <FaEyeSlash size={10} /> : <FaEye size={10} />}
-                        </button>
-                      </div>
-                      <button onClick={handleSaveRfidForTeacher} disabled={isSavingRfid} className="text-green-500 hover:text-green-400"><FaCheck size={12} /></button>
-                      <button onClick={handleCancelEditRfid} className="text-red-500 hover:text-red-400"><FaTimes size={12} /></button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 group">
-                      <span className="text-gray-500 dark:text-gray-400 font-mono text-[10px] tracking-wider">{teacher.rfid ? '••••••••' : 'ไม่มีข้อมูล'}</span>
-                      <CanAccess roles={ADMIN_ACCESS}>
-                        <button onClick={() => handleStartEditRfid(teacher)} className="text-gray-400 opacity-0 group-hover:opacity-100 hover:text-indigo-400 transition-all" title="แก้ไข RFID">
-                          <FaIdCard size={12} />
-                        </button>
-                      </CanAccess>
-                    </div>
-                  )}
+                  </CanAccess>
                 </td>
-                <CanAccess roles={ADMIN_ACCESS}>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs">
+                  <CanAccess roles={ADMIN_ACCESS} fallback={
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {teacher.department || '-'}
+                    </span>
+                  }>
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[140px]`}>
+                      <Select
+                        className="w-full"
+                        options={departmentOptions}
+                        styles={selectStyles}
+                        components={{ DropdownIndicator: CustomDropdownIndicator }}
+                        value={teacher.department ? departmentOptions.find(opt => opt.value === teacher.department) : { value: '', label: 'ไม่ระบุ' }}
+                        onChange={(newValue: any) => handleUpdateField(teacher.id, { department: newValue.value })}
+                        placeholder="เลือกฝ่ายงาน"
+                        isSearchable={false}
+                        menuPortalTarget={document.body}
+                        classNamePrefix="department-select"
+                      />
+                    </div>
+                  </CanAccess>
+                </td>
+                <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.contact}</td>
+                <td className="whitespace-nowrap px-2 py-3 text-xs">
+                    <CanAccess roles={ADMIN_ACCESS} fallback={
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusStyles(teacher.status || 'อยู่')}`}>
+                        {teacher.status || 'อยู่'}
+                      </span>
+                    }>
+                      <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${getStatusStyles(teacher.status || 'อยู่')} ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:ring-1 hover:ring-indigo-500'} group cursor-pointer min-w-[100px] justify-between`}>
+                        <Select
+                          className="w-full"
+                          options={statusOptions}
+                          styles={selectStyles}
+                          components={{ DropdownIndicator: CustomDropdownIndicator }}
+                          value={statusOptions.find(opt => opt.value === (teacher.status || 'อยู่'))}
+                          onChange={(newValue: any) => handleUpdateField(teacher.id, { status: newValue.value })}
+                          isSearchable={false}
+                          menuPortalTarget={document.body}
+                          classNamePrefix="status-select"
+                        />
+                      </div>
+                    </CanAccess>
+                  </td>
+                  <CanAccess roles={ADMIN_ACCESS}>
                   <td className="relative whitespace-nowrap py-3 pl-3 pr-4 text-right text-xs font-medium sm:pr-6">
                     <div className="flex justify-end items-center gap-x-3">
                       <Link to={`/school/${teacher.schoolId}/teachers/edit/${teacher.id}`} className="text-indigo-400 hover:text-indigo-300 transition-colors" title="แก้ไข">
@@ -547,14 +800,10 @@ export default function TeacherListPage() {
           <header className="mb-6 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-<<<<<<< HEAD
                 <div className="flex items-center gap-4">
                   <BackButton to="/academic/hub/personnel_info" />
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลครูทั้งหมด</h1>
                 </div>
-=======
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลครูทั้งหมด</h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   แสดง, จัดการ, และเพิ่มข้อมูลครูในระบบ
                 </p>
@@ -577,20 +826,12 @@ export default function TeacherListPage() {
 
               <div className="flex flex-wrap gap-2 ml-auto">
                 <CanAccess roles={ADMIN_ACCESS}>
-<<<<<<< HEAD
                   <Link
                     to={schoolId ? `/school/${schoolId}/teachers/add` : '#'}
                     className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
                   >
                     <FaPlus size={12} />
                     <span>เพิ่มครู</span>
-                  </Link>
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/map-rfid/teachers` : '#'}
-                    className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <FaIdCard size={12} />
-                    <span>จับคู่ RFID</span>
                   </Link>
                   <Link
                     to={schoolId ? `/school/${schoolId}/teachers/quick-add` : '#'}
@@ -613,58 +854,6 @@ export default function TeacherListPage() {
                     <FaCloudUploadAlt size={14} />
                     <span>อัปโหลดรูป</span>
                   </Link>
-=======
-                  {isBulkRfidMode ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSaveBulkRfid}
-                        disabled={isSavingBulkRfid}
-                        className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        {isSavingBulkRfid ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <FaCheck size={12} />}
-                        <span>บันทึกทั้งหมด</span>
-                      </button>
-                      <button
-                        onClick={handleToggleBulkRfidMode}
-                        className="flex items-center justify-center gap-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaTimes size={12} />
-                        <span>ยกเลิก</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Link
-                        to={schoolId ? `/school/${schoolId}/teachers/add` : '#'}
-                        className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaPlus size={12} />
-                        <span>เพิ่มครู</span>
-                      </Link>
-                      <button
-                        onClick={handleToggleBulkRfidMode}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaIdCard size={12} />
-                        <span>จับคู่ RFID</span>
-                      </button>
-                      <Link
-                        to={schoolId ? `/school/${schoolId}/teachers/quick-add` : '#'}
-                        className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaUserPlus size={12} />
-                        <span>เพิ่มด่วน</span>
-                      </Link>
-                      <Link
-                        to={schoolId ? `/school/${schoolId}/teachers/bulk-upload-images` : '#'}
-                        className="hidden md:flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaCloudUploadAlt size={14} />
-                        <span>อัปโหลดรูป</span>
-                      </Link>
-                    </>
-                  )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </CanAccess>
               </div>
             </div>
@@ -674,6 +863,7 @@ export default function TeacherListPage() {
             <div className="bg-white dark:bg-[#2a2b2f]/60 rounded-2xl shadow-lg ring-1 ring-black/5 dark:ring-white/5">
               {renderContent()}
             </div>
+            <ToastContainer />
           </main>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, Edit, Save } from 'lucide-react';
+import { ChevronLeft, Clock, Edit, MapPin, Save } from 'lucide-react';
 import { CourseSchedule, Student } from '../../types';
 import AttendanceSummary from './AttendanceSummary';
 import StudentGrid from './StudentGrid';
@@ -23,10 +23,7 @@ interface AttendanceCheckViewProps {
         ลา: number;
         ขาด: number;
     };
-<<<<<<< HEAD
     children?: React.ReactNode;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
@@ -43,11 +40,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     onSave,
     onToggleStatus,
     attendanceSummary,
-<<<<<<< HEAD
     children,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }) => {
+    const displayPeriod = selectedClass.isSubstitute && selectedClass.period === 0 ? 1 : selectedClass.period;
+    const timeLabel = selectedClass.startTime || selectedClass.endTime ? `${selectedClass.startTime || '-'}-${selectedClass.endTime || '-'}` : '-';
+
     return (
         <div className="space-y-6">
             {/* Header Bar - Increased size by ~10% */}
@@ -67,16 +64,21 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                         <h2 className="font-extrabold text-base sm:text-xl text-gray-800 dark:text-white truncate leading-tight">
                             {selectedClass.subjectName}
                             <span className="ml-1.5 text-indigo-600 dark:text-indigo-400">
-                                {selectedClass.className}{selectedClass.room && selectedClass.room !== 'all' ? `/${selectedClass.room}` : ''}
+                                {selectedClass.className}
                             </span>
                         </h2>
-                        <div className="flex items-center justify-center gap-2 mt-1">
-                            <p className="text-[11px] sm:text-sm text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
-                                คาบ {selectedClass.period} ({selectedClass.startTime}-{selectedClass.endTime})
+                        <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                            <p className="inline-flex items-center gap-1 text-[11px] sm:text-sm text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
+                                <Clock size={14} /> คาบ {displayPeriod} ({timeLabel})
                             </p>
+                            {selectedClass.room && selectedClass.room !== 'all' && (
+                                <p className="inline-flex items-center gap-1 text-[11px] sm:text-sm text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
+                                    <MapPin size={14} /> {selectedClass.room}
+                                </p>
+                            )}
                             {selectedClass.isSubstitute && (
                                 <span className="bg-orange-500/20 text-orange-600 dark:text-orange-400 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md border border-orange-500/30 font-black uppercase">
-                                    สอนแทน
+                                    สอนแทน{selectedClass.originalTeacherName ? `: ${selectedClass.originalTeacherName}` : ''}
                                 </span>
                             )}
                         </div>
@@ -109,11 +111,8 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                 </div>
             </div>
 
-<<<<<<< HEAD
             {children}
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             {/* Summary Cards */}
             <AttendanceSummary summary={attendanceSummary} />
 

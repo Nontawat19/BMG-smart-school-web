@@ -11,9 +11,10 @@ interface Props {
     student: Student;
     schoolId: string;
     teacherName?: string;
+    className?: string;
 }
 
-const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName }) => {
+const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, className }) => {
     const [loading, setLoading] = useState(false);
     const [visitData, setVisitData] = useState<HomeVisitData | null>(null);
     const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
@@ -86,15 +87,43 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName })
         }
     };
 
+    const baseClass = "p-3 rounded-full transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-md hover:shadow-blue-500/5 shrink-0 active:scale-90 border";
+    
+    // Intelligent theme transition for the custom class passed
+    const getDynamicClass = (status: 'pending' | 'success') => {
+        if (className) {
+            if (status === 'success') {
+                return className
+                    .replace(/bg-slate-50|bg-blue-50/g, 'bg-emerald-50')
+                    .replace(/dark:bg-\[#272930\]/g, 'dark:bg-emerald-950/20')
+                    .replace(/text-slate-500|text-slate-600/g, 'text-emerald-600')
+                    .replace(/dark:text-slate-300|dark:text-slate-400/g, 'dark:text-emerald-400')
+                    .replace(/border-slate-200|border-blue-200/g, 'border-emerald-100')
+                    .replace(/dark:border-slate-700/g, 'dark:border-emerald-900/40')
+                    .replace(/hover:bg-slate-100|hover:bg-blue-50/g, 'hover:bg-emerald-100/80')
+                    .replace(/hover:text-blue-600/g, 'hover:text-emerald-700')
+                    .replace(/hover:border-blue-200/g, 'hover:border-emerald-200')
+                    .replace(/dark:hover:bg-slate-800/g, 'dark:hover:bg-emerald-950/40')
+                    .replace(/dark:hover:text-blue-400/g, 'dark:hover:text-emerald-300')
+                    .replace(/dark:hover:border-blue-900/g, 'dark:hover:border-emerald-800/60');
+            }
+            return className;
+        }
+        
+        return status === 'success'
+            ? `${baseClass} bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-100/80 hover:text-emerald-700 dark:hover:text-emerald-300 hover:shadow-emerald-500/5`
+            : `${baseClass} bg-blue-50/60 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/30 hover:bg-blue-100/80 hover:text-blue-700 dark:hover:text-blue-300 hover:shadow-blue-500/5`;
+    };
+
     if (!visitData) {
         return (
             <button
                 onClick={fetchData}
                 disabled={loading}
-                className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-800 transition-all flex items-center justify-center"
-                title="เตรียมไฟล์ PDF"
+                className={getDynamicClass('pending')}
+                title="เตรียมไฟล์ PDF รายงานการเยี่ยมบ้าน"
             >
-                {loading ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}
+                {loading ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
             </button>
         );
     }
@@ -111,10 +140,10 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName })
                 />
             }
             fileName={`รายงานการเยี่ยมบ้าน_${student.firstName}_${student.lastName}.pdf`}
-            className="p-3 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-2xl hover:bg-green-200 dark:hover:bg-green-800 transition-all flex items-center justify-center"
+            className={getDynamicClass('success')}
         >
             {({ loading: pdfLoading }) => (
-                pdfLoading ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />
+                pdfLoading ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />
             )}
         </PDFDownloadLink>
     );

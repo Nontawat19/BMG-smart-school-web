@@ -1,6 +1,19 @@
 import React from 'react';
-import { Course, Teacher } from '../types';
+import { Course, Teacher, getAssignmentTeacherIds } from '../types';
 import { getClassDisplayName } from '../utils';
+
+const formatClassWithGroup = (course?: Course) => {
+    if (!course) return '';
+
+    const className = getClassDisplayName(course.classId);
+    const groupNumber = Number(course.groupNumber);
+
+    if (Number.isFinite(groupNumber) && groupNumber > 0) {
+        return `${className} กลุ่ม ${groupNumber}`;
+    }
+
+    return className;
+};
 
 interface HoveredSlotTooltipProps {
     hoveredSlot: any;
@@ -37,22 +50,24 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                             const c = hoveredSlot.courses[0];
                             if (!c) return '(ไม่ระบุ)';
 
-                            let teacherId = c.teacherId;
-                            if (!teacherId || teacherId === 'pending' || teacherId.startsWith('GHOST')) {
-                                const courseDoc = allCourses.find(doc => doc.id === c.id);
-                                const assign = courseDoc?.teacherAssignments?.find(a => a.groupNumber === c.groupNumber);
-                                if (assign?.teacherId) teacherId = assign.teacherId;
-                            }
+                            const courseDoc = allCourses.find(doc => doc.id === c.id);
+                            const assign = courseDoc?.teacherAssignments?.find(a => a.groupNumber === c.groupNumber);
+                            const teacherIds = getAssignmentTeacherIds(c).length > 0
+                                ? getAssignmentTeacherIds(c)
+                                : (assign ? getAssignmentTeacherIds(assign) : (c.teacherId ? [c.teacherId] : []));
 
-                            const teacher = teachers?.find(t => t.id === teacherId || t.teacherId === teacherId);
-                            if (teacher) {
-                                const fullName = `${teacher.title || 'ครู'}${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
-                                return fullName.replace(/\$$/, '') || teacher.name?.replace(/\$$/, '') || '(ไม่ระบุ)';
-                            }
-                            return (teacherId === 'pending' || teacherId?.startsWith('GHOST') ? 'รอระบุครู' : (teacherId?.replace(/\$$/, '') || '(ไม่ระบุ)'));
+                            if (teacherIds.length === 0) return '(ไม่ระบุ)';
+                            return teacherIds.map(teacherId => {
+                                const teacher = teachers?.find(t => t.id === teacherId || t.teacherId === teacherId);
+                                if (teacher) {
+                                    const fullName = `${teacher.title || 'ครู'}${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
+                                    return fullName.replace(/\$$/, '') || teacher.name?.replace(/\$$/, '') || '(ไม่ระบุ)';
+                                }
+                                return (teacherId === 'pending' || teacherId?.startsWith('GHOST') ? 'รอระบุครู' : (teacherId?.replace(/\$$/, '') || '(ไม่ระบุ)'));
+                            }).join(', ');
                         })()}
                     </span></div>
-                    <div className="flex"><span className="w-20 text-gray-500">ชั้น:</span><span className="flex-1">{hoveredSlot.isDynamicUnavailable ? 'global' : getClassDisplayName(hoveredSlot.courses[0]?.classId)}</span></div>
+                    <div className="flex"><span className="w-20 text-gray-500">ชั้น:</span><span className="flex-1">{hoveredSlot.isDynamicUnavailable ? 'global' : formatClassWithGroup(hoveredSlot.courses[0])}</span></div>
                     <div className="flex"><span className="w-20 text-gray-500">สถานที่:</span><span className="flex-1 text-[#4ade80]">
                         {(() => {
                             if (hoveredSlot.isDynamicUnavailable) return '(คาบว่าง)';

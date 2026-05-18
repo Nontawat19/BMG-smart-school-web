@@ -1,18 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { firestore as db } from '../../firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { setSubjectGroups, updateSubjectGroup } from '@/store/slices/subjectGroupsSlice';
-=======
-import { firestore as db } from '../../firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import { CLASSES } from '@/utils/schoolUtils';
 import {
@@ -66,11 +59,8 @@ interface SubjectGroup {
     code?: string;
     headId?: string;
     headName?: string;
-<<<<<<< HEAD
     headTeacherId?: string;
     headTeacherName?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Teacher {
@@ -91,6 +81,7 @@ const GROUP_ICONS: Record<string, any> = {
     "การงานอาชีพ": Dribbble,
     "ภาษาต่างประเทศ": Music,
     "กิจกรรมพัฒนาผู้เรียน": Users,
+    "กลุ่มสาระค้นคว้า": Search,
 };
 
 const GROUP_COLORS: Record<string, string> = {
@@ -103,6 +94,7 @@ const GROUP_COLORS: Record<string, string> = {
     "การงานอาชีพ": "orange",
     "ภาษาต่างประเทศ": "sky",
     "กิจกรรมพัฒนาผู้เรียน": "teal",
+    "กลุ่มสาระค้นคว้า": "violet",
 };
 
 const DEFAULT_GROUPS = [
@@ -115,6 +107,7 @@ const DEFAULT_GROUPS = [
     { name: "การงานอาชีพ", code: "7" },
     { name: "ภาษาต่างประเทศ", code: "8" },
     { name: "กิจกรรมพัฒนาผู้เรียน", code: "9" },
+    { name: "กลุ่มสาระค้นคว้า", code: "I" },
 ];
 
 
@@ -144,10 +137,7 @@ const SubjectGroupManagementPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState("");
 
     const currentUser = useSelector((state: RootState) => state.auth.user);
-<<<<<<< HEAD
     const dispatch = useDispatch();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const schoolId = (currentUser as any)?.schoolId;
 
     useEffect(() => {
@@ -203,12 +193,7 @@ const SubjectGroupManagementPage: React.FC = () => {
                 data = [...data, ...addedData];
             }
 
-<<<<<<< HEAD
-            const sortedData = data.sort((a, b) => {
-                const codeA = parseInt(a.code || "999");
-                const codeB = parseInt(b.code || "999");
-                return codeA - codeB;
-            });
+            const sortedData = data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
 
             const normalizedGroups = sortedData.map(g => ({
                 ...g,
@@ -220,13 +205,6 @@ const SubjectGroupManagementPage: React.FC = () => {
 
             setGroups(normalizedGroups);
             dispatch(setSubjectGroups(normalizedGroups));
-=======
-            setGroups(data.sort((a, b) => {
-                const codeA = parseInt(a.code || "999");
-                const codeB = parseInt(b.code || "999");
-                return codeA - codeB;
-            }));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             if (data.length > 0 && !selectedGroupId && window.innerWidth >= 1024) {
                 setSelectedGroupId(data[0].id);
             }
@@ -246,8 +224,8 @@ const SubjectGroupManagementPage: React.FC = () => {
             html:
                 `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ชื่อกลุ่มสาระการเรียนรู้</div>` +
                 `<input id="swal-group-name" class="swal2-input !m-0 !mb-4 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="เช่น ภาษาไทย, คณิตศาสตร์...">` +
-                `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">รหัส Mapping (ตัวเลข)</div>` +
-                `<input id="swal-group-code" class="swal2-input !m-0 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="รหัสตัวเลข">`,
+                `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">รหัส Mapping (ตัวเลข หรือตัวอักษร)</div>` +
+                `<input id="swal-group-code" class="swal2-input !m-0 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="เช่น 1, 2, I">`,
             focusConfirm: false,
             showCancelButton: true,
             confirmButtonText: 'ยืนยันเพิ่มข้อมูล',
@@ -289,8 +267,8 @@ const SubjectGroupManagementPage: React.FC = () => {
             html:
                 `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ชื่อกลุ่มสาระการเรียนรู้</div>` +
                 `<input id="swal-input1" class="swal2-input !m-0 !mb-4 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="ชื่อกลุ่มสาระฯ" value="${group.name}">` +
-                `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">รหัส Mapping (ตัวเลข)</div>` +
-                `<input id="swal-input2" class="swal2-input !m-0 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="รหัสตัวเลข (Mapping)" value="${group.code || ''}">`,
+                `<div class="text-left mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">รหัส Mapping (ตัวเลข หรือตัวอักษร)</div>` +
+                `<input id="swal-input2" class="swal2-input !m-0 !w-full !px-4 !h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-sm font-semibold rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="รหัสตัวเลข หรือตัวอักษร (Mapping)" value="${group.code || ''}">`,
             focusConfirm: false,
             showCancelButton: true,
             confirmButtonText: 'บันทึกการแก้ไข',
@@ -393,14 +371,9 @@ const SubjectGroupManagementPage: React.FC = () => {
             let newHeadName = "";
 
             // 1. If there's a previous head, remove their status from the teachers collection
-<<<<<<< HEAD
             const previousHeadId = group.headId || group.headTeacherId;
             if (previousHeadId) {
                 const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', previousHeadId);
-=======
-            if (group.headId) {
-                const prevTeacherRef = doc(db, 'school-settings', schoolId, 'teachers', group.headId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 // Check if they are still head of THIS group before removing (insurance)
                 batch.update(prevTeacherRef, {
                     isHeadOfLearningArea: false
@@ -426,19 +399,14 @@ const SubjectGroupManagementPage: React.FC = () => {
             // 3. Update the group document
             batch.update(groupRef, {
                 headId: newHeadId,
-<<<<<<< HEAD
                 headName: newHeadName,
                 headTeacherId: newHeadId,
                 headTeacherName: newHeadName
-=======
-                headName: newHeadName
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             });
 
             await batch.commit();
 
             // Update local state
-<<<<<<< HEAD
             setGroups(groups.map(g => g.id === targetGroupId ? {
                 ...g,
                 headId: newHeadId,
@@ -453,9 +421,6 @@ const SubjectGroupManagementPage: React.FC = () => {
                 headTeacherId: newHeadId,
                 headTeacherName: newHeadName
             }));
-=======
-            setGroups(groups.map(g => g.id === targetGroupId ? { ...g, headId: newHeadId, headName: newHeadName } : g));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             Swal.fire({
                 icon: 'success',
@@ -489,11 +454,7 @@ const SubjectGroupManagementPage: React.FC = () => {
                 ['', '-- ไม่ระบุ --'],
                 ...sortedTeachers.map(t => [t.id, `${t.title || ''}${t.firstName} ${t.lastName}`])
             ]),
-<<<<<<< HEAD
             inputValue: group?.headId || group?.headTeacherId || '',
-=======
-            inputValue: group?.headId || '',
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             showCancelButton: true,
             confirmButtonText: 'ยืนยันการแต่งตั้ง',
             cancelButtonText: 'ยกเลิก',
@@ -528,7 +489,6 @@ const SubjectGroupManagementPage: React.FC = () => {
 
     return (
         <MainLayout>
-<<<<<<< HEAD
             <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e14] text-slate-600 dark:text-slate-300 font-sans flex flex-col">
                 {/* Premium Header Bar */}
                 <div className="sticky top-[60px] z-40 px-4 lg:pl-16 py-3 bg-white/90 dark:bg-[#0b0e14]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
@@ -544,43 +504,11 @@ const SubjectGroupManagementPage: React.FC = () => {
                                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
                                     <span>{groups.length} กลุ่มสาระ • {courses.length} รายวิชา</span>
                                 </div>
-=======
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
-                {/* Top Simple Navigation */}
-                <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 shadow-sm transition-colors">
-                    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Link
-                                to="/academic-admin"
-                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500 transition-colors"
-                            >
-                                <ArrowLeft size={20} />
-                            </Link>
-                            <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-700"></div>
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white">
-                                    <BookOpen size={18} />
-                                </div>
-                                <h1 className="text-lg font-bold text-slate-900 dark:text-white">จัดการกลุ่มสาระ & ตัวชี้วัด</h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-<<<<<<< HEAD
                             {/* Actions or Stats if needed */}
-=======
-                            <div className="hidden sm:flex items-center gap-4 text-xs font-semibold text-slate-500 mr-4">
-                                <span className="flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                                    {groups.length} กลุ่มสาระ
-                                </span>
-                                <span className="flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                    {courses.length} รายวิชา
-                                </span>
-                            </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </div>
                 </div>
@@ -620,14 +548,12 @@ const SubjectGroupManagementPage: React.FC = () => {
                                         orange: { bg: 'bg-orange-50/50 dark:bg-orange-500/10', text: 'text-orange-700 dark:text-orange-400', icon: 'bg-orange-600', border: 'border-orange-100 dark:border-orange-500/20' },
                                         sky: { bg: 'bg-sky-50/50 dark:bg-sky-500/10', text: 'text-sky-700 dark:text-sky-400', icon: 'bg-sky-600', border: 'border-sky-100 dark:border-sky-500/20' },
                                         teal: { bg: 'bg-teal-50/50 dark:bg-teal-500/10', text: 'text-teal-700 dark:text-teal-400', icon: 'bg-teal-600', border: 'border-teal-100 dark:border-teal-500/20' },
+                                        violet: { bg: 'bg-violet-50/50 dark:bg-violet-500/10', text: 'text-violet-700 dark:text-violet-400', icon: 'bg-violet-600', border: 'border-violet-100 dark:border-violet-500/20' },
                                     };
 
                                     const colors = colorClasses[colorKey];
-<<<<<<< HEAD
                                     const headId = group.headId || group.headTeacherId;
                                     const headName = group.headName || group.headTeacherName;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                                     return (
                                         <div key={group.id} className="group/item relative px-1">
@@ -647,21 +573,13 @@ const SubjectGroupManagementPage: React.FC = () => {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className={`text-xs font-black truncate leading-tight ${isActive ? colors.text : 'text-slate-700 dark:text-slate-300'}`}>{group.name}</div>
-<<<<<<< HEAD
                                                     {headId ? (
-=======
-                                                    {group.headId ? (
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         <div
                                                             className={`text-[9px] font-bold flex items-center gap-1 mt-1 transition-colors w-fit ${isActive ? colors.text : 'text-slate-400'}`}
                                                             onClick={(e) => { e.stopPropagation(); handleShowTeacherPicker(group.id); }}
                                                         >
                                                             <div className={`w-1 h-1 rounded-full ${isActive ? colors.icon : 'bg-slate-300 dark:bg-slate-600'}`}></div>
-<<<<<<< HEAD
                                                             <span className="truncate max-w-[130px] opacity-70">หัวหน้า: {headName}</span>
-=======
-                                                            <span className="truncate max-w-[130px] opacity-70">หัวหน้า: {group.headName}</span>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         </div>
                                                     ) : (
                                                         <div

@@ -83,7 +83,7 @@ export default function BulkUploadTeacherImagesPage() {
         }
 
         setUploading(true);
-        const results: { fileName: string; idCard: string; status: 'success' | 'error'; error?: string }[] = [];
+        const results: { fileName: string; idCard: string; status: 'success' | 'error'; wasUpdate?: boolean; error?: string }[] = [];
 
         const filesToUpload = files.filter(f => uploadProgress[f.name] !== 'success');
 
@@ -118,6 +118,7 @@ export default function BulkUploadTeacherImagesPage() {
                 const teacherDoc = querySnapshot.docs[0];
                 const teacherData = teacherDoc.data();
                 const teacherUid = teacherDoc.id; // Usually teacher document ID is their UID
+                const wasUpdate = Boolean(teacherData.profileImageUrl);
 
                 // 2. Delete Old Image if exists
                 if (teacherData.profileImageUrl && (teacherData.profileImageUrl.includes('firebasestorage') || teacherData.profileImageUrl.includes('googleap'))) {
@@ -132,9 +133,9 @@ export default function BulkUploadTeacherImagesPage() {
                 }
 
                 // 3. Upload New Image
-                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
                 const storagePath = `school-settings/${schoolId}/teachers`;
-                const newFileName = `${idCardNumber}.webp`;
+                const newFileName = `${idCardNumber}.jpg`;
                 const finalRef = ref(storage, `${storagePath}/${newFileName}`);
 
                 await uploadBytes(finalRef, compressedFile);
@@ -152,7 +153,7 @@ export default function BulkUploadTeacherImagesPage() {
                 });
 
                 setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
-                results.push({ fileName: file.name, idCard: idCardNumber, status: 'success' });
+                results.push({ fileName: file.name, idCard: idCardNumber, status: 'success', wasUpdate });
 
                 // Update local list for feedback
                 setTeachersList(prev => prev.map(t => 
@@ -175,11 +176,13 @@ export default function BulkUploadTeacherImagesPage() {
 
         const successCount = results.filter(r => r.status === 'success').length;
         const errorCount = results.filter(r => r.status === 'error').length;
+        const newCount = results.filter(r => r.status === 'success' && !r.wasUpdate).length;
+        const updateCount = results.filter(r => r.status === 'success' && r.wasUpdate).length;
 
         if (errorCount > 0) {
             Swal.fire({
                 title: 'ดำเนินการเสร็จสิ้น',
-                html: `สำเร็จ: ${successCount} รายการ<br/>ล้มเหลว: ${errorCount} รายการ<br/><br/>${results.filter(r => r.status === 'error').map(r => `<span class="text-red-500 text-xs">${r.idCard}: ${r.error}</span>`).join('<br/>')}`,
+                html: `สำเร็จ: ${successCount} รายการ<br/>เพิ่มใหม่: ${newCount} รายการ<br/>อัปเดต: ${updateCount} รายการ<br/>ล้มเหลว: ${errorCount} รายการ<br/><br/>${results.filter(r => r.status === 'error').map(r => `<span class="text-red-500 text-xs">${r.idCard}: ${r.error}</span>`).join('<br/>')}`,
                 icon: 'info',
                 confirmButtonText: 'รับทราบ',
                 background: '#2a2b2f',
@@ -188,7 +191,13 @@ export default function BulkUploadTeacherImagesPage() {
         } else {
             Swal.fire({
                 title: 'สำเร็จ!',
-                text: `อัปโหลดรูปภาพครูสำเร็จทั้งหมด ${successCount} รายการ`,
+                html: `
+                    <p>อัปโหลดรูปภาพครูสำเร็จทั้งหมด ${successCount} รายการ</p>
+                    <div class="mt-2 text-sm flex justify-center gap-4">
+                        <span class="text-green-400 font-bold">เพิ่มใหม่: ${newCount}</span>
+                        <span class="text-blue-400 font-bold">อัปเดต: ${updateCount}</span>
+                    </div>
+                `,
                 icon: 'success',
                 timer: 2000,
                 showConfirmButton: false,
@@ -244,7 +253,7 @@ export default function BulkUploadTeacherImagesPage() {
                                     <input 
                                         type="file" 
                                         multiple 
-                                        accept="image/*" 
+                                        accept="image/jpeg,image/png" 
                                         onChange={handleFileChange}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                     />
@@ -254,7 +263,7 @@ export default function BulkUploadTeacherImagesPage() {
                                         </div>
                                         <div className="text-center">
                                             <p className="text-sm font-bold">เลือกรูปภาพ</p>
-                                            <p className="text-xs text-gray-400 mt-1">ไฟล์ .jpg, .png, .webp</p>
+                                            <p className="text-xs text-gray-400 mt-1">ไฟล์ .jpg, .png</p>
                                         </div>
                                     </div>
                                 </div>
@@ -331,7 +340,7 @@ export default function BulkUploadTeacherImagesPage() {
                                                     <div className="relative">
                                                         <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-100 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 flex items-center justify-center">
                                                             {teacher.profileImageUrl ? (
-                                                                <img src={teacher.profileImageUrl} className="w-full h-full object-cover" />
+                                                                <img src={teacher.profileImageUrl} className="w-full h-full object-cover object-[center_20%]" alt={`${teacher.firstName} ${teacher.lastName}`} />
                                                             ) : (
                                                                 <FaUserTie className="text-gray-300 text-xl" />
                                                             )}

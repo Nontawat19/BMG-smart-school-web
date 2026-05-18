@@ -1,33 +1,23 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-<<<<<<< HEAD
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
-=======
-import { useSelector } from "react-redux";
-import { RootState } from "@/store";
-import MainLayout from "@/layouts/MainLayout";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy } from "firebase/firestore";
+import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot } from "firebase/firestore";
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap } from "react-icons/fa";
-=======
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap } from "react-icons/fa";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
-<<<<<<< HEAD
 import { getCurrentThaiYear } from "@/utils/dateUtils";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { formatStudentBirthDateThai } from "@/utils/birthDateUtils";
+import { formatClassLevelRange, isClassLevelInRange } from "@/utils/schoolUtils";
 
 // --- Type Definition ---
 interface StudentData {
@@ -114,10 +104,6 @@ interface StudentData {
   lineId?: string;
   studentStatus: string;
   profileImageUrl: string;
-<<<<<<< HEAD
-  rfid?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   behaviorScore?: number;
@@ -158,20 +144,16 @@ interface CourseData {
 }
 
 const statusColorMap: { [key: string]: string } = {
-  "เรียนอยู่": "bg-green-500/20 text-green-400 border-green-500/30",
+  "กำลังศึกษา": "bg-green-500/20 text-green-400 border-green-500/30",
   "พักการเรียน": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  "แขวนลอย": "bg-amber-500/20 text-amber-400 border-amber-500/30",
   "ย้าย": "bg-blue-500/20 text-blue-400 border-blue-500/30",
   "ลาออก": "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
 // --- Reusable Components ---
-<<<<<<< HEAD
 const InfoCard: React.FC<{ title: string; children: React.ReactNode; className?: string }> = ({ title, children, className = "" }) => (
   <div className={`bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none ${className}`}>
-=======
-const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-600 pb-2">{title}</h2>
     <div className="space-y-4">{children}</div>
   </div>
@@ -366,11 +348,11 @@ export default function ViewStudentPage() {
   const [isTransferEnabled, setIsTransferEnabled] = useState(false);
   const [isClubLoading, setIsClubLoading] = useState(false);
   const [showTransferList, setShowTransferList] = useState(false);
+  const completedClubRequestIdsRef = useRef<Set<string>>(new Set());
   const [clubPage, setClubPage] = useState(1);
   const [activeTab, setActiveTab] = useState("general");
   const [attendanceTrendData, setAttendanceTrendData] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
-<<<<<<< HEAD
   const dispatch = useDispatch();
   const calendarState = useSelector((state: RootState) => state.calendar);
   const academicYear = calendarState.academicYear || String(getCurrentThaiYear());
@@ -380,9 +362,6 @@ export default function ViewStudentPage() {
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [schoolId, dispatch]);
-=======
-  const [academicYear, setAcademicYear] = useState<string>("");
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [calculatedStats, setCalculatedStats] = useState<{
     present: number; late: number; leave: number; absent: number; early: number; noCheckout: number; official_travel_days?: number;
   } | null>(null);
@@ -397,14 +376,12 @@ export default function ViewStudentPage() {
     personnelHeadName: "",
     affiliation: ""
   });
-<<<<<<< HEAD
   
   // Navigation State
   const [allStudentIds, setAllStudentIds] = useState<string[]>([]);
   const currentIndex = allStudentIds.indexOf(studentId || "");
   const nextStudentId = currentIndex < allStudentIds.length - 1 ? allStudentIds[currentIndex + 1] : null;
   const prevStudentId = currentIndex > 0 ? allStudentIds[currentIndex - 1] : null;
-
 
   useEffect(() => {
     const fetchAllIds = async () => {
@@ -425,10 +402,6 @@ export default function ViewStudentPage() {
     fetchAllIds();
   }, [schoolId, student]);
 
-
-
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const { isDarkMode, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const profile = useSelector((state: RootState) => state.profile);
@@ -461,6 +434,45 @@ export default function ViewStudentPage() {
     // Let's matching Admin Page logic: "ไม่ระบุเวลา"
     return { text: 'ไม่ระบุเวลา', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', isOpen: true }; // Allowing for now if not set, or we can close it. 
   };
+
+  const canStudentJoinClub = (club: any) => {
+    return isClassLevelInRange(student?.classLevel, club.allowedClassLevelFrom, club.allowedClassLevelTo);
+  };
+
+  const pendingClubRequestStorageKey = useMemo(() => {
+    return schoolId && studentId ? `pendingClubRequest:${schoolId}:${studentId}` : '';
+  }, [schoolId, studentId]);
+
+  const savePendingClubRequest = (request: any | null) => {
+    if (!pendingClubRequestStorageKey) return;
+    if (!request) {
+      localStorage.removeItem(pendingClubRequestStorageKey);
+      return;
+    }
+    localStorage.setItem(pendingClubRequestStorageKey, JSON.stringify({
+      id: request.id,
+      studentId: request.studentId,
+      type: request.type,
+      currentClubId: request.currentClubId || null,
+      currentClubName: request.currentClubName || null,
+      targetClubId: request.targetClubId,
+      targetClubName: request.targetClubName,
+      exitStatus: request.exitStatus,
+      entryStatus: request.entryStatus,
+      status: request.status || 'pending'
+    }));
+  };
+
+  const restorePendingClubRequest = () => {
+    if (!pendingClubRequestStorageKey) return null;
+    try {
+      const raw = localStorage.getItem(pendingClubRequestStorageKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      localStorage.removeItem(pendingClubRequestStorageKey);
+      return null;
+    }
+  };
   // 📌 เพิ่มการตรวจสอบสิทธิ์การเข้าถึง (เนื่องจากถอด ProtectedRoute ออกจาก App.tsx)
   useEffect(() => {
     const isStudent = localStorage.getItem('currentUserType') === 'student';
@@ -484,23 +496,7 @@ export default function ViewStudentPage() {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-<<<<<<< HEAD
             // Logic handled by calendarSlice
-=======
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const data = calendarSnap.data();
-            if (data.academicYear && !schoolInfo.schoolName) {
-              setAcademicYear(data.academicYear || "");
-            }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -518,7 +514,6 @@ export default function ViewStudentPage() {
           // 1. Get Term Dates
           let startDate = "";
           let endDate = "";
-<<<<<<< HEAD
 
           if (calendarState.status === 'succeeded') {
             startDate = calendarState.terms[0]?.startDate || "";
@@ -538,21 +533,6 @@ export default function ViewStudentPage() {
               startDate = data.terms?.term1?.startDate || "";
               endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
             }
-=======
-          const yearDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", academicYear);
-          let yearSnap = await getDoc(yearDocRef);
-
-          if (!yearSnap.exists()) {
-            const defaultDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-            yearSnap = await getDoc(defaultDocRef);
-          }
-
-          if (yearSnap.exists()) {
-            const data = yearSnap.data();
-            // ดึงช่วงเวลาทั้งปีการศึกษา (เริ่มเทอม 1 ถึง จบเทอม 2)
-            startDate = data.terms?.term1?.startDate || "";
-            endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
 
           if (!startDate || !endDate) {
@@ -682,7 +662,7 @@ export default function ViewStudentPage() {
       try {
         const clubsRef = collection(firestore, "school-settings", schoolId, "clubs");
         const clubsSnap = await getDocs(clubsRef);
-        const clubsList = clubsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const clubsList = clubsSnap.docs.map(clubDoc => ({ id: clubDoc.id, ...clubDoc.data() }));
         setAllClubs(clubsList);
 
         let foundClub = null;
@@ -695,23 +675,38 @@ export default function ViewStudentPage() {
         }
         setMyClub(foundClub);
 
-        const requestsRef = collection(firestore, "school-settings", schoolId, "club_requests");
-        const q = query(requestsRef, where("studentId", "==", studentId), where("status", "==", "pending"));
-        const reqSnap = await getDocs(q);
-        if (!reqSnap.empty) {
-          setPendingRequest({ id: reqSnap.docs[0].id, ...reqSnap.docs[0].data() });
-        } else {
-          setPendingRequest(null);
+        // ตรวจสอบการตั้งค่าการย้ายชุมนุมจากฝ่ายวิชาการ
+        try {
+          const configRef = doc(firestore, "school-settings", schoolId, "configs", "club_settings");
+          const configSnap = await getDoc(configRef);
+          if (configSnap.exists()) {
+            const data = configSnap.data();
+            setIsTransferEnabled(data.allowTransfer || false);
+            setGlobalClubStartDate(data.registrationStartDate || '');
+            setGlobalClubEndDate(data.registrationEndDate || '');
+          } else {
+            setIsTransferEnabled(false);
+          }
+        } catch (configError) {
+          console.warn("Could not fetch club settings:", configError);
+          setIsTransferEnabled(false);
         }
 
-        // ตรวจสอบการตั้งค่าการย้ายชุมนุมจากฝ่ายวิชาการ
-        const configRef = doc(firestore, "school-settings", schoolId, "configs", "club_settings");
-        const configSnap = await getDoc(configRef);
-        if (configSnap.exists()) {
-          const data = configSnap.data();
-          setIsTransferEnabled(data.allowTransfer || false);
-          setGlobalClubStartDate(data.registrationStartDate || '');
-          setGlobalClubEndDate(data.registrationEndDate || '');
+        try {
+          const requestsRef = collection(firestore, "school-settings", schoolId, "club_requests");
+          const q = query(requestsRef, where("studentId", "==", studentId), where("status", "==", "pending"));
+          const reqSnap = await getDocs(q);
+          if (!reqSnap.empty) {
+            const request = { id: reqSnap.docs[0].id, ...reqSnap.docs[0].data() };
+            setPendingRequest(request);
+            savePendingClubRequest(request);
+          } else {
+            setPendingRequest(null);
+            savePendingClubRequest(null);
+          }
+        } catch (requestError) {
+          console.warn("Could not fetch pending club request:", requestError);
+          setPendingRequest(restorePendingClubRequest());
         }
       } catch (err) {
         console.error("Error fetching club info:", err);
@@ -721,6 +716,89 @@ export default function ViewStudentPage() {
     };
     fetchClubInfo();
   }, [activeTab, schoolId, studentId]);
+
+  useEffect(() => {
+    if (activeTab !== 'club' || !schoolId || !studentId || !pendingRequest?.id || !pendingRequest?.targetClubId) return;
+
+    savePendingClubRequest(pendingRequest);
+    const requestId = pendingRequest.id;
+    const targetClubId = pendingRequest.targetClubId;
+    const targetClub = allClubs.find(club => club.id === targetClubId) || null;
+    const unsubs: Array<() => void> = [];
+    let deletionTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const completeAsApproved = () => {
+      if (completedClubRequestIdsRef.current.has(requestId)) return;
+      completedClubRequestIdsRef.current.add(requestId);
+      if (deletionTimer) clearTimeout(deletionTimer);
+      if (targetClub) setMyClub(targetClub);
+      setPendingRequest(null);
+      savePendingClubRequest(null);
+      setShowTransferList(false);
+      Swal.fire({
+        icon: 'success',
+        title: 'คำขอชุมนุมได้รับอนุมัติแล้ว',
+        text: targetClub ? `คุณอยู่ในชุมนุม "${targetClub.name}" แล้ว` : 'ระบบอัปเดตชุมนุมของคุณเรียบร้อยแล้ว',
+        timer: 2200,
+        showConfirmButton: false,
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+    };
+
+    const completeAsClosed = () => {
+      if (completedClubRequestIdsRef.current.has(requestId)) return;
+      setPendingRequest((prev: any) => {
+        if (prev?.id !== requestId) return prev;
+        savePendingClubRequest(null);
+        return null;
+      });
+      setShowTransferList(false);
+      Swal.fire({
+        icon: 'info',
+        title: 'คำขอชุมนุมสิ้นสุดแล้ว',
+        text: 'คำขออาจถูกปฏิเสธหรือถูกยกเลิกโดยผู้ดูแล',
+        timer: 2200,
+        showConfirmButton: false,
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+    };
+
+    unsubs.push(onSnapshot(
+      doc(firestore, "school-settings", schoolId, "clubs", targetClubId, "members", studentId),
+      (memberSnap) => {
+        if (memberSnap.exists()) completeAsApproved();
+      },
+      (error) => {
+        console.warn("Could not listen to target club membership:", error);
+      }
+    ));
+
+    unsubs.push(onSnapshot(
+      doc(firestore, "school-settings", schoolId, "club_requests", requestId),
+      (requestSnap) => {
+        if (!requestSnap.exists()) {
+          deletionTimer = setTimeout(() => {
+            if (!completedClubRequestIdsRef.current.has(requestId)) completeAsClosed();
+          }, 800);
+          return;
+        }
+
+        const data = requestSnap.data();
+        setPendingRequest((prev: any) => prev?.id === requestId ? { ...prev, ...data } : prev);
+        if (data.status === 'rejected') completeAsClosed();
+      },
+      (error) => {
+        console.warn("Could not listen to club request status:", error);
+      }
+    ));
+
+    return () => {
+      if (deletionTimer) clearTimeout(deletionTimer);
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [activeTab, schoolId, studentId, pendingRequest?.id, pendingRequest?.targetClubId, allClubs, isDarkMode]);
 
   useEffect(() => {
     if (!schoolId || !studentId) {
@@ -738,20 +816,31 @@ export default function ViewStudentPage() {
           const studentData = docSnap.data() as StudentData;
           setStudent(studentData);
 
-          // Fetch courses for the student's class
-          if (studentData.classLevel) {
-            try {
-              const coursesRef = collection(firestore, "school-settings", schoolId, "courses");
-              const q = query(coursesRef, where("classId", "==", studentData.classLevel.replace('ป.', 'p').replace('ม.', 'm')));
-              const querySnapshot = await getDocs(q);
-              const coursesData = querySnapshot.docs.map(doc => {
-                const data = doc.data();
-                return { id: doc.id, ...data } as CourseData;
-              });
+          // Fetch enrolled courses for the student in the current academic year
+          try {
+            const enrollmentsRef = collection(firestore, "school-settings", schoolId, "enrollments");
+            const q = query(
+              enrollmentsRef,
+              where("studentId", "==", studentId),
+              where("academicYear", "==", academicYear)
+            );
+            const querySnapshot = await getDocs(q);
+            const enrolledCourseIds = Array.from(new Set(querySnapshot.docs.map(doc => doc.data().courseId)));
+
+            if (enrolledCourseIds.length > 0) {
+              const courseDocsPromises = enrolledCourseIds.map(id =>
+                getDoc(doc(firestore, "school-settings", schoolId, "courses", id))
+              );
+              const courseDocsSnaps = await Promise.all(courseDocsPromises);
+              const coursesData = courseDocsSnaps
+                .filter(snap => snap.exists())
+                .map(snap => ({ id: snap.id, ...snap.data() } as CourseData));
               setCourses(coursesData);
-            } catch (err) {
-              console.error("Error fetching courses:", err);
+            } else {
+              setCourses([]);
             }
+          } catch (err) {
+            console.error("Error fetching enrolled courses:", err);
           }
         } else {
           Swal.fire({ icon: 'error', title: 'ไม่พบข้อมูล', text: 'ไม่พบข้อมูลนักเรียนที่ต้องการ', background: '#2a2b2f', color: '#ffffff' });
@@ -766,7 +855,7 @@ export default function ViewStudentPage() {
     };
 
     fetchStudentData();
-  }, [schoolId, studentId, navigate]);
+  }, [schoolId, studentId, academicYear, navigate]);
 
   useEffect(() => {
     if (activeTab === 'official_travel' && schoolId && studentId) {
@@ -790,6 +879,51 @@ export default function ViewStudentPage() {
   const handleClubRequest = async (targetClub: any, type: 'apply' | 'transfer') => {
     if (!schoolId || !studentId || !student) return;
 
+    const status = getClubStatus(targetClub);
+    if (!status.isOpen) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ยังไม่สามารถส่งคำขอได้',
+        text: status.text || 'ระบบยังไม่เปิดรับสมัครชุมนุม',
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    if (type === 'transfer' && (!myClub || !isTransferEnabled)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ยังไม่เปิดให้ย้ายชุมนุม',
+        text: 'ขณะนี้ฝ่ายวิชาการยังไม่อนุญาตให้นักเรียนส่งคำขอย้ายชุมนุมด้วยตนเอง',
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    if (!canStudentJoinClub(targetClub)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ไม่อยู่ในช่วงระดับชั้นที่กำหนด',
+        text: `ชุมนุมนี้เปิดรับ ${formatClassLevelRange(targetClub.allowedClassLevelFrom, targetClub.allowedClassLevelTo)} เท่านั้น`,
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    if ((targetClub.memberCount || 0) >= (targetClub.capacity || 0)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ชุมนุมเต็มแล้ว',
+        text: `ชุมนุม "${targetClub.name}" รับได้สูงสุด ${targetClub.capacity || 0} คน`,
+        background: isDarkMode ? '#2a2b2f' : '#fff',
+        color: isDarkMode ? '#fff' : '#000'
+      });
+      return;
+    }
+
     const result = await Swal.fire({
       title: type === 'apply' ? 'ยืนยันการสมัครชุมนุม' : 'ยืนยันการขอย้ายชุมนุม',
       text: `คุณต้องการส่งคำขอเข้าชุมนุม "${targetClub.name}" ใช่หรือไม่?`,
@@ -803,7 +937,7 @@ export default function ViewStudentPage() {
 
     if (result.isConfirmed) {
       try {
-        await addDoc(collection(firestore, "school-settings", schoolId, "club_requests"), {
+        const requestData = {
           studentId,
           studentName: `${student.firstName} ${student.lastName}`,
           studentNumber: student.studentNumber,
@@ -818,10 +952,15 @@ export default function ViewStudentPage() {
           entryStatus: 'pending',
           status: 'pending',
           createdAt: serverTimestamp()
-        });
+        };
+        const requestRef = await addDoc(collection(firestore, "school-settings", schoolId, "club_requests"), requestData);
+        const localRequest = { id: requestRef.id, ...requestData, createdAt: new Date() };
+        setPendingRequest(localRequest);
+        savePendingClubRequest(localRequest);
+        setShowTransferList(false);
         Swal.fire({ icon: 'success', title: 'ส่งคำขอสำเร็จ', text: 'กรุณารอครูผู้รับผิดชอบอนุมัติ', timer: 2000, showConfirmButton: false });
-        setActiveTab('club'); // Refresh
       } catch (err) {
+        console.error("Error creating club request:", err);
         Swal.fire('ผิดพลาด', 'ไม่สามารถส่งคำขอได้', 'error');
       }
     }
@@ -832,6 +971,7 @@ export default function ViewStudentPage() {
     try {
       await deleteDoc(doc(firestore, "school-settings", schoolId, "club_requests", pendingRequest.id));
       setPendingRequest(null);
+      savePendingClubRequest(null);
       Swal.fire({ icon: 'success', title: 'ยกเลิกคำขอแล้ว', timer: 1500, showConfirmButton: false });
     } catch (err) {
       Swal.fire('ผิดพลาด', 'ไม่สามารถยกเลิกได้', 'error');
@@ -898,7 +1038,7 @@ export default function ViewStudentPage() {
           <div className="flex items-center gap-2 cursor-pointer">
             <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
             <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
-              Easy School Management
+              EPP.5 Online
             </span>
           </div>
         </div>
@@ -915,10 +1055,10 @@ export default function ViewStudentPage() {
             <span className="font-bold text-sm text-gray-800 dark:text-white truncate max-w-[200px]">
               {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
             </span>
-            <img
+            <ProfileAvatar
               src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
               alt="Profile"
-              className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+              className="w-10 h-10 border border-gray-200 dark:border-gray-700"
             />
           </div>
         </div>
@@ -943,10 +1083,10 @@ export default function ViewStudentPage() {
             </button>
           </div>
           <div className="flex flex-col items-center mb-8">
-            <img
+            <ProfileAvatar
               src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
               alt="Profile"
-              className="w-20 h-20 rounded-full object-cover border-4 border-indigo-100 dark:border-gray-700 mb-4"
+              className="w-20 h-20 border-4 border-indigo-100 dark:border-gray-700 mb-4"
             />
             <h3 className="text-lg font-bold text-gray-900 dark:text-white text-center">
               {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
@@ -1000,7 +1140,6 @@ export default function ViewStudentPage() {
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <header className="mb-8">
             <div className="flex justify-between items-center">
-<<<<<<< HEAD
               <div className="flex items-center gap-4">
                 {!isStudentLogin && <BackButton to="/academic/hub/students" />}
                 <div>
@@ -1033,16 +1172,6 @@ export default function ViewStudentPage() {
                   </div>
                 )}
                 {!isStudentLogin && (
-=======
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">ข้อมูลนักเรียน</h1>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">
-                  รายละเอียดข้อมูลของ: <span className="font-semibold text-indigo-400">{student.firstName} {student.lastName}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-x-4">
-                {!isStudentLogin && (
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <button onClick={() => navigate(-1)} className="inline-flex items-center gap-x-2 rounded-md bg-gray-600/50 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700/50 transition-colors">
                     <FaArrowLeft />
                     กลับ
@@ -1060,16 +1189,19 @@ export default function ViewStudentPage() {
             {/* Left Sidebar */}
             <aside className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 self-start">
               <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
-                <img
+                <ProfileAvatar
                   src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
                   alt="Student profile"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
+                  className="w-32 h-32 border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
                 />
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">{student.title}{student.firstName} {student.lastName}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">รหัสนักเรียน: {student.studentId}</p>
-                <div className="mt-4">
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
                   <span className={`inline-flex items-center rounded-md px-3 py-1 text-sm font-medium border ${statusColorMap[student.studentStatus] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
                     {student.studentStatus}
+                  </span>
+                  <span className={`inline-flex items-center rounded-md px-3 py-1 text-sm font-medium border ${(student.behaviorScore ?? 100) >= 80 ? 'bg-green-500/20 text-green-400 border-green-500/30' : (student.behaviorScore ?? 100) >= 50 ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
+                    คะแนนความประพฤติ: {student.behaviorScore ?? 100} คะแนน
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap justify-center gap-1">
@@ -1151,7 +1283,7 @@ export default function ViewStudentPage() {
                         <div className="space-y-4">
                           <DetailField label="ชื่อจริง (อังกฤษ)" value={student.firstNameEn} />
                           <DetailField label="นามสกุล (อังกฤษ)" value={student.lastNameEn} />
-                          <DetailField label="วันเกิด" value={student.birthDate ? new Date(student.birthDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : "-"} />
+                          <DetailField label="วันเกิด" value={formatStudentBirthDateThai(student.birthDate)} />
                           <div className="grid grid-cols-2 gap-4">
                             <DetailField label="เพศ" value={student.gender} />
                             <DetailField label="หมู่เลือด" value={student.bloodType} />
@@ -1189,11 +1321,6 @@ export default function ViewStudentPage() {
                         <DetailField label="เกรดเฉลี่ยสะสม (GPAX)" value={student.gpax} />
                         <DetailField label="วันที่เข้าเรียน" value={student.enrollmentDate ? new Date(student.enrollmentDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : "-"} />
                         <DetailField label="คะแนนความประพฤติ" value={`${student.behaviorScore ?? 100} คะแนน`} />
-                      </div>
-                      <div className="mt-4">
-                        <span className={`inline-flex items-center rounded-md px-3 py-1 text-sm font-medium border ${statusColorMap[student.studentStatus] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
-                          {student.studentStatus}
-                        </span>
                       </div>
                     </InfoCard>
                   </div>
@@ -1437,15 +1564,18 @@ export default function ViewStudentPage() {
                               </span>
                               <button onClick={handleCancelRequest} className="text-xs text-red-500 hover:underline">ยกเลิกคำขอ</button>
                             </div>
-                          ) : isTransferEnabled && myClub && !showTransferList && (
+                          ) : isTransferEnabled && myClub && !showTransferList ? (
                             <button
                               onClick={() => { setShowTransferList(true); setClubPage(1); }}
                               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-2"
                             >
                               <FaExchangeAlt size={14} /> ขอย้ายชุมนุม
                             </button>
-                          )
-                          }
+                          ) : myClub && !isTransferEnabled ? (
+                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                              ระบบยังไม่เปิดให้ย้ายชุมนุมด้วยตนเอง
+                            </div>
+                          ) : null}
                         </div>
                       )}
                     </InfoCard>
@@ -1453,7 +1583,7 @@ export default function ViewStudentPage() {
                 )}
 
                 {/* Available Clubs List */}
-                {(!pendingRequest && (!myClub || showTransferList)) && (
+                {activeTab === "club" && !isClubLoading && !pendingRequest && (!myClub || showTransferList) && (
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-md font-bold text-gray-700 dark:text-gray-300">
@@ -1465,7 +1595,9 @@ export default function ViewStudentPage() {
                     </div>
 
                     {(() => {
-                      const availableClubs = allClubs.filter(c => c.id !== myClub?.id);
+                      const availableClubs = allClubs
+                        .filter(c => c.id !== myClub?.id && canStudentJoinClub(c))
+                        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
                       const clubsPerPage = 1;
                       const totalPages = Math.ceil(availableClubs.length / clubsPerPage);
                       const currentClubs = availableClubs.slice((clubPage - 1) * clubsPerPage, clubPage * clubsPerPage);
@@ -1473,8 +1605,16 @@ export default function ViewStudentPage() {
                       return (
                         <div className="space-y-6">
                           <div className="grid grid-cols-1 gap-4">
+                            {availableClubs.length === 0 && (
+                              <div className="p-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 text-center text-sm font-medium text-gray-500 dark:text-gray-400">
+                                ไม่พบชุมนุมที่เปิดรับสำหรับระดับชั้นของคุณ
+                              </div>
+                            )}
                             {currentClubs.map(club => {
                               const status = getClubStatus(club);
+                              const classRange = formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo);
+                              const isFull = (club.memberCount || 0) >= (club.capacity || 0);
+                              const canRequest = status.isOpen && !isFull;
                               return (
                                 <div key={club.id} className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 flex flex-col gap-4 hover:shadow-lg transition-all animate-in fade-in zoom-in-95 duration-300">
                                   <div className="flex items-start gap-4">
@@ -1485,19 +1625,22 @@ export default function ViewStudentPage() {
                                       </div>
                                       <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{club.description || 'ไม่มีรายละเอียด'}</p>
                                       <div className="mt-2 flex items-center gap-2">
-                                        <span className="text-xs px-2 py-1 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-lg font-bold">รับสมัคร: {club.capacity || 0} คน</span>
+                                        <span className={`text-xs px-2 py-1 rounded-lg font-bold ${isFull ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
+                                          สมาชิก: {club.memberCount || 0}/{club.capacity || 0} คน
+                                        </span>
+                                        <span className="text-xs px-2 py-1 bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 rounded-lg font-bold">ระดับชั้น: {classRange}</span>
                                       </div>
                                     </div>
                                   </div>
                                   <button
                                     onClick={() => handleClubRequest(club, myClub ? 'transfer' : 'apply')}
-                                    disabled={!status.isOpen}
+                                    disabled={!canRequest}
                                     className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${myClub
                                       ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white border border-amber-200'
                                       : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none'
                                       }`}
                                   >
-                                    {myClub ? <><FaExchangeAlt /> ขอย้ายมาที่นี่</> : <><FaUserPlus /> สมัครเข้าชุมนุม</>}
+                                    {isFull ? 'ชุมนุมเต็มแล้ว' : myClub ? <><FaExchangeAlt /> ขอย้ายมาที่นี่</> : <><FaUserPlus /> สมัครเข้าชุมนุม</>}
                                   </button>
                                 </div>
                               )
@@ -1530,11 +1673,7 @@ export default function ViewStudentPage() {
                 {activeTab === "attendance" && (
                   <div className="animate-fade-in space-y-6">
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
-<<<<<<< HEAD
                       <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear})</h2>
-=======
-                      <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">สถิติการลงเวลา (ปีการศึกษา {academicYear || new Date().getFullYear() + 543})</h2>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                       {isStatsLoading ? (
                         <div className="py-10 text-center text-gray-500">กำลังประมวลผลข้อมูล...</div>

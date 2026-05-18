@@ -1,19 +1,12 @@
 import { useMemo, useCallback } from 'react';
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Course } from '../types';
-=======
-import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria } from '../types';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const THAI_WEEKDAYS_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const DAY_KEY_MAP = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-<<<<<<< HEAD
 const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
 const isFilledScore = (value: unknown) => value !== undefined && value !== null && value !== '';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 export const useGradeBookAttendance = (
     calendarData: any,
@@ -22,11 +15,8 @@ export const useGradeBookAttendance = (
     selectedClass: string,
     students: Student[],
     selectedCourse: string,
-<<<<<<< HEAD
     currentCourse: Course | undefined,
     maxScores: { formative: number; midterm: number; final: number },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
     grades: Record<string, GradeRecord>,
@@ -42,16 +32,12 @@ export const useGradeBookAttendance = (
         let annualHourCounter = 0;
         let weekCounter = 1;
 
-<<<<<<< HEAD
         const termsToProcess =
             selectedSemester === '2'
                 ? ['term2']
                 : selectedSemester === '1'
                     ? ['term1']
                     : ['term1', 'term2'];
-=======
-        const termsToProcess = selectedSemester === '2' ? ['term2'] : ['term1', 'term2'];
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         for (const termKey of termsToProcess) {
             const termData = calendarData.terms[termKey];
@@ -85,16 +71,15 @@ export const useGradeBookAttendance = (
                     dayKey = event.scheduleDay;
                 }
 
-                const periodsToday = courseSchedule[dayKey] || [];
+                const termSemester = termKey === 'term1' ? '1' : '2';
+                const periodsToday = selectedSemester === 'annual'
+                    ? (courseSchedule[`${termSemester}:${dayKey}`] || courseSchedule[`all:${dayKey}`] || [])
+                    : (courseSchedule[dayKey] || []);
                 const hasAttendanceRecord = Object.values(studentCourseDailyStatus || {}).some(dates => dates && dates[dateStr]);
 
                 const isActuallyHoliday = isHoliday;
-<<<<<<< HEAD
                 // Allow sessions even outside term boundaries or on holidays IF there is an actual attendance record
                 const isSession = (!isActuallyHoliday && periodsToday.length > 0) || hasAttendanceRecord;
-=======
-                const isSession = !isBeforeTerm && ((!isActuallyHoliday && periodsToday.length > 0) || hasAttendanceRecord);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 if (isSession) {
                     const periodsToSession = periodsToday.length > 0 ? periodsToday : [0];
@@ -150,25 +135,15 @@ export const useGradeBookAttendance = (
                 for (let wIdx = 0; wIdx < 4; wIdx++) {
                     const weekChunk = chunk.slice(wIdx * 7, (wIdx + 1) * 7).filter(s => s);
                     if (weekChunk.length > 0) {
-<<<<<<< HEAD
                         // Number the visible 7-day blocks sequentially. The first block may begin
                         // before the official term start so the calendar aligns to Sunday.
                         weeks.push(Math.floor(i / 7) + wIdx + 1);
-=======
-                        const firstDate = weekChunk[0].date;
-                        const weekNum = Math.floor((firstDate.getTime() - termStartDate.getTime()) / (7 * 86400000)) + 1;
-                        weeks.push(weekCounter + weekNum - 1);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                         const firstMonth = weekChunk[0].monthIndex;
                         const lastMonth = weekChunk[weekChunk.length - 1].monthIndex;
                         months.push(firstMonth === lastMonth ? THAI_MONTHS_SHORT[firstMonth] : `${THAI_MONTHS_SHORT[firstMonth]}-${THAI_MONTHS_SHORT[lastMonth]}`);
                     } else {
-<<<<<<< HEAD
                         weeks.push(i / 7 + 1); // Fallback to sequential numbering if chunk is empty
-=======
-                        weeks.push(0);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         months.push('');
                     }
                 }
@@ -191,7 +166,6 @@ export const useGradeBookAttendance = (
     const completenessStats = useMemo(() => {
         if (!students.length || !selectedCourse) return null;
 
-<<<<<<< HEAD
         const formativeAssessments = (currentCourse?.formativeAssessments || []).filter(a => (Number(a.maxScore) || 0) > 0);
         const gradeRequirements = [
             ...(formativeAssessments.length > 0
@@ -205,10 +179,6 @@ export const useGradeBookAttendance = (
 
         // 1. Grades Progress: every configured score field per student
         const totalGradesFields = students.length * gradeRequirements.length;
-=======
-        // 1. Grades Progress: formative, midterm, final (3 fields per student)
-        const totalGradesFields = students.length * 3;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         let filledGradesFields = 0;
 
         // 2. Characteristics Progress
@@ -225,29 +195,18 @@ export const useGradeBookAttendance = (
             const record = grades[student.id];
             if (!record) return;
 
-<<<<<<< HEAD
             gradeRequirements.forEach(requirement => {
                 const val = requirement.type === 'formativeDetail'
                     ? record.formativeDetails?.[requirement.key]
                     : (record as any)[requirement.key];
                 if (isFilledScore(val)) filledGradesFields++;
             });
-=======
-            // Grades Check - use typeof to be safe with numbers including 0
-            if (record.formative !== undefined && record.formative !== null && record.formative !== ('' as any)) filledGradesFields++;
-            if (record.midterm !== undefined && record.midterm !== null && record.midterm !== ('' as any)) filledGradesFields++;
-            if (record.final !== undefined && record.final !== null && record.final !== ('' as any)) filledGradesFields++;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             // Characteristics Check (Strict per Criteria)
             characteristicsCriteria.forEach(c => {
                 (c.indicators || []).forEach((_, iIdx) => {
                     const val = record.characteristicsScores?.[`${c.id}_${iIdx}`];
-<<<<<<< HEAD
                     if (isFilledScore(val)) filledCharFields++;
-=======
-                    if (val !== undefined && val !== null && val !== ('' as any)) filledCharFields++;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
             });
 
@@ -255,11 +214,7 @@ export const useGradeBookAttendance = (
             readingWritingCriteria.forEach(c => {
                 (c.indicators || []).forEach((_, iIdx) => {
                     const val = record.readingWritingScores?.[`${c.id}_${iIdx}`];
-<<<<<<< HEAD
                     if (isFilledScore(val)) filledRWFields++;
-=======
-                    if (val !== undefined && val !== null && val !== ('' as any)) filledRWFields++;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 });
             });
         });
@@ -268,7 +223,6 @@ export const useGradeBookAttendance = (
         const percentChar = totalCharFields > 0 ? Math.round((filledCharFields / totalCharFields) * 100) : 0;
         const percentRW = totalRWFields > 0 ? Math.round((filledRWFields / totalRWFields) * 100) : 0;
 
-<<<<<<< HEAD
         // Attendance Stats: every student must have a recorded status for every course session.
         const sessionDays = attendancePages.flatMap(page => (page.days || []).filter((day: any) => day && day.isSession));
         const totalAttendanceFields = students.length * sessionDays.length;
@@ -292,32 +246,6 @@ export const useGradeBookAttendance = (
         attendancePages.forEach(page => {
             page.days.forEach((day: any) => {
                 if (day && day.isSession && students.some(student => !isFilledScore(studentCourseDailyStatus?.[student.id]?.[day.dateStr]))) {
-=======
-        const total = totalGradesFields + totalCharFields + totalRWFields;
-        const filled = filledGradesFields + filledCharFields + filledRWFields;
-        const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
-
-        // Attendance Stats
-        const recordedDatesMap = new Set<string>();
-        Object.values(studentCourseDailyStatus || {}).forEach(dates => {
-            Object.keys(dates).forEach(d => recordedDatesMap.add(d));
-        });
-
-        const recordedSessionsCount = Array.from(recordedDatesMap).reduce((acc, dStr) => {
-            let sessionsOnThisDate = 0;
-            attendancePages.forEach(p => {
-                p.days.forEach((day: any) => {
-                    if (day && day.dateStr === dStr && day.isSession) sessionsOnThisDate++;
-                });
-            });
-            return acc + (sessionsOnThisDate || 1);
-        }, 0);
-
-        const missingSessionsByMonth: Record<string, string[]> = {};
-        attendancePages.forEach(page => {
-            page.days.forEach((day: any) => {
-                if (day && day.isSession && !recordedDatesMap.has(day.dateStr)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const parts = day.dateStr.split('-');
                     const monthKey = `${parts[1]}-${parts[0]}`;
                     if (!missingSessionsByMonth[monthKey]) missingSessionsByMonth[monthKey] = [];
@@ -327,7 +255,6 @@ export const useGradeBookAttendance = (
         });
 
         const missingSessionsCount = Object.values(missingSessionsByMonth).reduce((acc, list) => acc + list.length, 0);
-<<<<<<< HEAD
         const missingAttendanceFields = totalAttendanceFields - filledAttendanceFields;
         const percentAttendance = totalAttendanceFields > 0 ? Math.round((filledAttendanceFields / totalAttendanceFields) * 100) : 0;
         const total = totalGradesFields + totalCharFields + totalRWFields + totalAttendanceFields;
@@ -349,11 +276,6 @@ export const useGradeBookAttendance = (
             && percentChar >= 100
             && percentRW >= 100
             && percentAttendance >= 100;
-=======
-
-        // Readiness check
-        const isReadyForPdf = (percentChar >= 100) && (percentRW >= 100) && (recordedSessionsCount >= 1) && (students.length > 0);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         return {
             total,
@@ -362,27 +284,18 @@ export const useGradeBookAttendance = (
             percentGrades,
             percentChar,
             percentRW,
-<<<<<<< HEAD
             percentAttendance,
             isComplete: isReadyForPdf,
-=======
-            isComplete: percentage === 100 && missingSessionsCount === 0,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             isReadyForPdf,
             missingGrades: totalGradesFields - filledGradesFields,
             missingChar: totalCharFields - filledCharFields,
             missingRW: totalRWFields - filledRWFields,
             missingAttendanceDays: missingSessionsCount,
-<<<<<<< HEAD
             missingAttendanceFields,
             missingDatesByMonth: missingSessionsByMonth,
             recordedDaysCount: fullyRecordedSessionsCount,
             totalAttendance: totalAttendanceFields,
             filledAttendance: filledAttendanceFields,
-=======
-            missingDatesByMonth: missingSessionsByMonth,
-            recordedDaysCount: recordedSessionsCount,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             totalGrades: totalGradesFields,
             filledGrades: filledGradesFields,
             totalChar: totalCharFields,
@@ -390,11 +303,7 @@ export const useGradeBookAttendance = (
             totalRW: totalRWFields,
             filledRW: filledRWFields
         };
-<<<<<<< HEAD
     }, [students, grades, characteristicsCriteria, readingWritingCriteria, selectedCourse, currentCourse, maxScores, studentCourseDailyStatus, attendancePages]);
-=======
-    }, [students, grades, characteristicsCriteria, readingWritingCriteria, selectedCourse, studentCourseDailyStatus, attendancePages]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const validateDataCompleteness = useCallback(() => {
         if (!students.length) {
@@ -403,7 +312,6 @@ export const useGradeBookAttendance = (
         }
 
         const missingData: string[] = [];
-<<<<<<< HEAD
         const formativeAssessments = (currentCourse?.formativeAssessments || []).filter(a => (Number(a.maxScore) || 0) > 0);
         const gradeRequirements = [
             ...(formativeAssessments.length > 0
@@ -419,8 +327,6 @@ export const useGradeBookAttendance = (
             ...(maxScores.final > 0 ? [{ type: 'field' as const, key: 'final', label: 'ปลายภาค' }] : []),
         ];
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         students.forEach(student => {
             const record = grades[student.id];
             const name = `${student.firstName} ${student.lastName}`;
@@ -430,7 +336,6 @@ export const useGradeBookAttendance = (
                 return;
             }
 
-<<<<<<< HEAD
             gradeRequirements.forEach(requirement => {
                 const val = requirement.type === 'formativeDetail'
                     ? record.formativeDetails?.[requirement.key]
@@ -444,12 +349,6 @@ export const useGradeBookAttendance = (
                 (c.indicators || []).forEach((_, iIdx) => {
                     const val = record.characteristicsScores?.[`${c.id}_${iIdx}`];
                     if (!isFilledScore(val)) {
-=======
-            characteristicsCriteria.forEach(c => {
-                (c.indicators || []).forEach((_, iIdx) => {
-                    const val = record.characteristicsScores?.[`${c.id}_${iIdx}`];
-                    if (val === undefined || val === null || val === ('' as any)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         missingData.push(`${student.studentNumber}: ${name} (ขาดคะแนนคุณลักษณะฯ: ${c.title})`);
                     }
                 });
@@ -458,18 +357,13 @@ export const useGradeBookAttendance = (
             readingWritingCriteria.forEach(c => {
                 (c.indicators || []).forEach((_, iIdx) => {
                     const val = record.readingWritingScores?.[`${c.id}_${iIdx}`];
-<<<<<<< HEAD
                     if (!isFilledScore(val)) {
-=======
-                    if (val === undefined || val === null || val === ('' as any)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         missingData.push(`${student.studentNumber}: ${name} (ขาดคะแนนอ่าน/คิด/เขียน: ${c.standard})`);
                     }
                 });
             });
         });
 
-<<<<<<< HEAD
         const missingSessions: string[] = [];
         let missingAttendancePoints = 0;
         attendancePages.forEach(page => {
@@ -485,17 +379,6 @@ export const useGradeBookAttendance = (
                 });
 
                 if (sessionHasMissingStudent) {
-=======
-        const recordedDatesSet = new Set<string>();
-        Object.values(studentCourseDailyStatus || {}).forEach(dates => {
-            Object.keys(dates).forEach(d => recordedDatesSet.add(d));
-        });
-
-        const missingSessions: string[] = [];
-        attendancePages.forEach(page => {
-            page.days.forEach((day: any) => {
-                if (day && day.isSession && !recordedDatesSet.has(day.dateStr)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     missingSessions.push(`${day.dateStr} (คาบที่ ${day.hourLabel})`);
                 }
             });
@@ -514,23 +397,11 @@ export const useGradeBookAttendance = (
                 .map(([name, count]) => `${name} (${count} คาบ)`)
                 .join(', ');
 
-<<<<<<< HEAD
             missingData.push(`ขาดการเช็คชื่อรวม ${missingSessions.length} คาบ / ${missingAttendancePoints.toLocaleString()} รายการนักเรียน${breakdown ? `: ${breakdown}` : ''}`);
         }
 
         if (missingData.length > 0) {
             const completeness = Math.max(0, Math.min(99, completenessStats?.percentage || 0));
-=======
-            missingData.push(`ขาดการเช็คชื่อรวม ${missingSessions.length} คาบ${breakdown ? `: ${breakdown}` : ''}`);
-        }
-
-        if (missingData.length > 0) {
-            const totalChar = characteristicsCriteria.reduce((sum, c) => sum + (c.indicators?.length || 0), 0);
-            const totalRW = readingWritingCriteria.reduce((sum, c) => sum + (c.indicators?.length || 0), 0);
-            const totalPointsPerStudent = totalChar + totalRW;
-            const totalPointsPossible = students.length * totalPointsPerStudent;
-            const completeness = Math.max(0, Math.min(99, Math.round(((totalPointsPossible - missingData.length) / totalPointsPossible) * 100)));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             Swal.fire({
                 title: 'ข้อมูลยังไม่ครบถ้วน',
@@ -562,11 +433,7 @@ export const useGradeBookAttendance = (
         }
 
         return true;
-<<<<<<< HEAD
     }, [students, grades, currentCourse, maxScores, characteristicsCriteria, readingWritingCriteria, studentCourseDailyStatus, attendancePages, completenessStats]);
-=======
-    }, [students, grades, characteristicsCriteria, readingWritingCriteria, studentCourseDailyStatus, attendancePages]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const studentAttendanceSummaries = useMemo(() => {
         const summaries: Record<string, any> = {};

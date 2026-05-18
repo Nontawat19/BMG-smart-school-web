@@ -13,6 +13,7 @@ export interface AnnouncementPageProps {
   selectedClass: string;
   FULL_CLASSES: Record<string, string>;
   currentCourse: any;
+  resolvedSubjectGroupName?: string;
   courseTeacherName: string;
   homeroomTeacher: any;
   announcementChunk: Student[];
@@ -188,6 +189,7 @@ const AnnouncementPage: React.FC<AnnouncementPageProps> = ({
   selectedClass,
   FULL_CLASSES,
   currentCourse,
+  resolvedSubjectGroupName,
   courseTeacherName,
   homeroomTeacher,
   announcementChunk,
@@ -274,11 +276,7 @@ const AnnouncementPage: React.FC<AnnouncementPageProps> = ({
 
           <Text style={styles.headerLineDetail}>
             <Text>
-<<<<<<< HEAD
-              <Text style={styles.boldText}>กลุ่มสาระฯ</Text> {currentCourse?.subjectGroup || currentCourse?.learningArea || '...'}
-=======
-              <Text style={styles.boldText}>กลุ่มสาระฯ</Text> {currentCourse?.subjectGroup || '...'}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+              <Text style={styles.boldText}>กลุ่มสาระฯ</Text> {resolvedSubjectGroupName || currentCourse?.subjectGroup || currentCourse?.learningArea || '...'}
               <Text style={styles.boldText}> รายวิชา</Text> {currentCourse?.title}
               <Text style={styles.boldText}> รหัสวิชา</Text> {currentCourse?.code}
               <Text style={styles.boldText}> เวลาเรียน</Text> {currentCourse?.hoursPerWeek} ชม./สัปดาห์
@@ -420,8 +418,4 @@ const AnnouncementPage: React.FC<AnnouncementPageProps> = ({
   );
 };
 
-<<<<<<< HEAD
 export default AnnouncementPage;
-=======
-export default AnnouncementPage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

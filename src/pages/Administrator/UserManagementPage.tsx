@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { firestore } from "@/firebase";
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { getAuth, sendPasswordResetEmail } from "firebase/auth";
@@ -18,11 +19,9 @@ import {
 import Swal from "sweetalert2";
 import { RootState } from "../../store";
 import MainLayout from "../../layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { ROLES } from "@/constants/roles";
-<<<<<<< HEAD
-import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 import {
   Users,
   UserPlus,
@@ -35,6 +34,7 @@ import {
   Briefcase,
   School,
   Key,
+  Home,
 } from "lucide-react";
 import ProfilePlaceholder from "../../assets/profile.png";
 
@@ -210,6 +210,7 @@ const UserManagementPage: React.FC = () => {
         // Add New
         const colRef = collection(firestore, "school-settings", targetSchoolId, "teachers");
         await addDoc(colRef, formData);
+        await updateOwnerAndSchoolCounts(firestore, targetSchoolId, { teachers: 1 });
         Swal.fire("Success", "เพิ่มผู้ใช้ใหม่สำเร็จ", "success");
       }
       handleCloseModal();
@@ -241,6 +242,7 @@ const UserManagementPage: React.FC = () => {
           return;
         }
         await deleteDoc(doc(firestore, "school-settings", userSchoolId, "teachers", userId));
+        await updateOwnerAndSchoolCounts(firestore, userSchoolId, { teachers: -1 });
         Swal.fire("Deleted!", "ลบผู้ใช้เรียบร้อยแล้ว", "success");
         fetchUsers();
       } catch (error) {
@@ -314,12 +316,13 @@ const UserManagementPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
             <div>
-<<<<<<< HEAD
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-4">
-                <BackButton />
-=======
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                <Link 
+                  to="/home"
+                  className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
+                >
+                  <Home size={20} />
+                </Link>
                 <Users className="w-8 h-8 text-indigo-600" />
                 {currentSchoolId ? `จัดการผู้ใช้งาน (${getSchoolName(currentSchoolId)})` : 'จัดการผู้ใช้งาน (ทุกโรงเรียน)'}
               </h1>
@@ -392,10 +395,10 @@ const UserManagementPage: React.FC = () => {
                         <td className="px-6 py-4 text-gray-900 dark:text-white text-sm text-center">{index + 1}</td>
                         <td className="px-6 py-4 text-gray-900 dark:text-white font-medium">
                           <div className="flex items-center gap-3">
-                            <img
+                            <ProfileAvatar
                               src={user.profileImageUrl || ProfilePlaceholder}
                               alt="Profile"
-                              className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-600"
+                              className="w-10 h-10 border border-gray-200 dark:border-gray-600"
                             />
                             <span>{user.title}{user.firstName} {user.lastName}</span>
                           </div>
@@ -591,6 +594,7 @@ const UserManagementPage: React.FC = () => {
                         <option value="งานบริหารงบประมาณ">งานบริหารงบประมาณ</option>
                         <option value="งานบริหารบุคคล">งานบริหารบุคคล</option>
                         <option value="งานบริหารทั่วไป">งานบริหารทั่วไป</option>
+                        <option value="งานบริหารกิจการนักเรียน">งานบริหารกิจการนักเรียน</option>
                       </select>
                     </div>
                     <div>

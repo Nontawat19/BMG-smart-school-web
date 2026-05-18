@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { firestore } from "@/firebase";
 
 interface ProfileState {
@@ -36,16 +36,29 @@ export const fetchUserProfile = createAsyncThunk(
         const schoolId = userData.schoolId;
 
         if (schoolId) {
-          const teacherDocRef = doc(firestore, "school-settings", schoolId, "teachers", uid);
+          const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
           const schoolDocRef = doc(firestore, "school-settings", schoolId);
 
-          const [teacherDocSnap, schoolDocSnap] = await Promise.all([
-            getDoc(teacherDocRef),
-            getDoc(schoolDocRef)
-          ]);
+          let teacherDocSnap = await getDoc(doc(firestore, "school-settings", schoolId, "teachers", uid));
+
+          if (!teacherDocSnap.exists()) {
+            const byUidSnap = await getDocs(query(teachersRef, where("uid", "==", uid), limit(1)));
+            teacherDocSnap = byUidSnap.docs[0] || teacherDocSnap;
+          }
+
+          if (!teacherDocSnap.exists() && userData.email) {
+            const byEmailSnap = await getDocs(query(teachersRef, where("email", "==", userData.email), limit(1)));
+            teacherDocSnap = byEmailSnap.docs[0] || teacherDocSnap;
+          }
+
+          if (!teacherDocSnap.exists() && userData.teacherId) {
+            const byTeacherIdSnap = await getDocs(query(teachersRef, where("teacherId", "==", userData.teacherId), limit(1)));
+            teacherDocSnap = byTeacherIdSnap.docs[0] || teacherDocSnap;
+          }
 
           if (teacherDocSnap.exists()) {
             const teacherData = teacherDocSnap.data();
+            const schoolDocSnap = await getDoc(schoolDocRef);
             const schoolData = schoolDocSnap.exists() ? schoolDocSnap.data() : {};
             return {
               title: teacherData.title || "",

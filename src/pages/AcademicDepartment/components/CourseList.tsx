@@ -15,6 +15,7 @@ import {
     ChevronRight,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 
 // --- Configuration from ImportCoursePage ---
 const CLASS_MAPPING: Record<string, string> = {
@@ -244,14 +245,11 @@ const CourseList: React.FC<CourseListProps> = ({
     groupedCourses
 }) => {
     // --- Computed ---
-    const teachersList = useMemo(() => Object.values(teacherMap || {}).map((t: any) => ({
+    const teachersList = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})).map((t: any) => ({
         id: t.id,
         name: t.name,
-<<<<<<< HEAD
+        teacherId: t.teacherId,
         subjectGroup: t.subjectGroup || t.learningArea || "ทั่วไป"
-=======
-        subjectGroup: t.subjectGroup || "ทั่วไป"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     })), [teacherMap]);
 
     // --- Pagination ---

@@ -35,6 +35,7 @@ import {
   LeaveRecord
 } from "../../../utils/attendanceLogic";
 import { ROLES } from "../../../constants/roles";
+import { applyAttendanceBehaviorScore } from "../../../utils/behaviorScoreUtils";
 
 const CheckinOutPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
@@ -154,7 +155,7 @@ const CheckinOutPage: React.FC = () => {
         if (isFullAdmin || isStudentAdmin || isTeacherAdmin) {
           setIsAttendanceAdmin(true);
           setCanScanStudents(isFullAdmin || isStudentAdmin);
-          setCanScanTeachers(isFullAdmin || isTeacherAdmin);
+          setCanScanTeachers(isFullAdmin || isTeacherAdmin || isStudentAdmin);
           return;
         }
 
@@ -177,7 +178,7 @@ const CheckinOutPage: React.FC = () => {
               if (isFullAdminT || isStudentAdminT || isTeacherAdminT) {
                 setIsAttendanceAdmin(true);
                 setCanScanStudents(isFullAdminT || isStudentAdminT);
-                setCanScanTeachers(isFullAdminT || isTeacherAdminT);
+                setCanScanTeachers(isFullAdminT || isTeacherAdminT || isStudentAdminT);
               }
             }
           } catch (error) {
@@ -1155,8 +1156,28 @@ const CheckinOutPage: React.FC = () => {
 
     const batch = writeBatch(firestore);
     batch.set(attendanceRef, attendanceData, { merge: true });
+    let behaviorScoreAfterUpdate = user.behaviorScore;
 
     if (user.type === "student") {
+      const studentRef = doc(
+        firestore,
+        "school-settings",
+        schoolId,
+        "students",
+        user.id
+      );
+      const behaviorScoreResult = applyAttendanceBehaviorScore({
+        batch,
+        studentRef,
+        currentScore: user.behaviorScore,
+        oldStatus,
+        newStatus: status,
+        config: schoolSettings?.behaviorScoreConfig,
+      });
+      if (behaviorScoreResult) {
+        behaviorScoreAfterUpdate = behaviorScoreResult.nextScore;
+      }
+
       updatePeriodSummaries(
         firestore,
         batch,
@@ -1187,6 +1208,7 @@ const CheckinOutPage: React.FC = () => {
     setLatestUsers((prev) => {
       const newUserAction: FoundUser = {
         ...user,
+        behaviorScore: behaviorScoreAfterUpdate,
         latestActionTime: timeStr,
         status: status,
       };
@@ -1212,7 +1234,9 @@ const CheckinOutPage: React.FC = () => {
       position: "top-end",
     });
 
-    if (user.type === "student") sendLineNotification(user, status, timeStr);
+    if (user.type === "student") {
+      sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr);
+    }
     setSpeechTrigger({ user, type, timestamp: Date.now(), status: 'success' });
   };
 
@@ -1230,6 +1254,7 @@ const CheckinOutPage: React.FC = () => {
       let count = 0;
 
       for (const uDoc of snap.docs) {
+        const userData = uDoc.data();
         const attRef = doc(
           firestore,
           "school-settings",
@@ -1248,6 +1273,16 @@ const CheckinOutPage: React.FC = () => {
             userType: targetType,
             updatedAt: serverTimestamp(),
           });
+          if (targetType === "student") {
+            applyAttendanceBehaviorScore({
+              batch,
+              studentRef: doc(firestore, "school-settings", schoolId, "students", uDoc.id),
+              currentScore: userData.behaviorScore,
+              oldStatus: null,
+              newStatus: "ขาด",
+              config: schoolSettings?.behaviorScoreConfig,
+            });
+          }
           count++;
         }
       }

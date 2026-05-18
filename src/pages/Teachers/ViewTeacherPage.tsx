@@ -3,14 +3,11 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore } from "@/firebase";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, orderBy, documentId } from "firebase/firestore";
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import { FaPen, FaArrowLeft, FaBook, FaUser, FaBriefcase, FaInfoCircle, FaChevronRight, FaChevronLeft, FaClock, FaChalkboard, FaExchangeAlt, FaPlane } from "react-icons/fa";
-=======
-import { FaPen, FaArrowLeft, FaBook, FaUser, FaBriefcase, FaInfoCircle, FaChevronRight, FaClock, FaChalkboard, FaExchangeAlt, FaPlane } from "react-icons/fa";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
@@ -44,11 +41,9 @@ interface TeacherData {
   advisorRole?: string;
   learningArea?: string;
   isHeadOfLearningArea?: boolean;
-<<<<<<< HEAD
+  isHeadOfAssessment?: boolean;
+  isGuidanceTeacher?: boolean;
   status?: string;
-  rfid?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   attendanceStats?: {
     present: number;
     late: number;
@@ -100,13 +95,8 @@ const formatGradeLevel = (grade?: string) => {
 };
 
 // --- Reusable Components ---
-<<<<<<< HEAD
 const InfoCard: React.FC<{ title: string; children: React.ReactNode; className?: string }> = ({ title, children, className = "" }) => (
   <div className={`bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none ${className}`}>
-=======
-const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm dark:shadow-none">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-600 pb-2">{title}</h2>
     <div className="space-y-4">{children}</div>
   </div>
@@ -204,7 +194,6 @@ export default function ViewTeacherPage() {
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
   const [substitutionsCurrentPage, setSubstitutionsCurrentPage] = useState(1);
   const [substitutionsItemsPerPage, setSubstitutionsItemsPerPage] = useState(10);
-<<<<<<< HEAD
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
   const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
   
@@ -214,11 +203,6 @@ export default function ViewTeacherPage() {
   const nextTeacherId = currentIndex < allTeacherIds.length - 1 ? allTeacherIds[currentIndex + 1] : null;
   const prevTeacherId = currentIndex > 0 ? allTeacherIds[currentIndex - 1] : null;
 
-
-=======
-  const [academicYear, setAcademicYear] = useState<string>("");
-  const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
     schoolName: "",
     directorName: "",
@@ -228,7 +212,6 @@ export default function ViewTeacherPage() {
   });
 
   useEffect(() => {
-<<<<<<< HEAD
     const fetchAllIds = async () => {
       if (!schoolId) return;
       try {
@@ -242,11 +225,7 @@ export default function ViewTeacherPage() {
     fetchAllIds();
   }, [schoolId]);
 
-
-
   useEffect(() => {
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     if (activeTab === 'official_travel' && schoolId && teacherId) {
       const fetchTravelRequests = async () => {
         try {
@@ -375,22 +354,6 @@ export default function ViewTeacherPage() {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-<<<<<<< HEAD
-=======
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const cData = calendarSnap.data();
-            if (cData.academicYear && !schoolInfo.schoolName) { // Only update if not already set by school-settings
-              setAcademicYear(cData.academicYear);
-            }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -412,8 +375,40 @@ export default function ViewTeacherPage() {
       try {
         const docRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
         const docSnap = await getDoc(docRef);
+        let teacherData: TeacherData | null = null;
+
         if (docSnap.exists()) {
-          const teacherData = docSnap.data() as TeacherData;
+          teacherData = docSnap.data() as TeacherData;
+        } else {
+          const userDocRef = doc(firestore, "users", teacherId);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const nameParts = (userData.fullName || '').trim().split(/\s+/).filter(Boolean);
+            const roles = Array.isArray(userData.role) ? userData.role : (typeof userData.role === 'string' ? [userData.role] : []);
+            const isSchoolAdmin = roles.some((role: string) => role.toLowerCase() === 'school_admin');
+            const isSuperAdmin = roles.some((role: string) => role.toLowerCase() === 'super_admin');
+
+            teacherData = {
+              title: userData.title || '',
+              firstName: userData.firstName || nameParts[0] || userData.fullName || userData.email || 'ไม่ระบุชื่อ',
+              lastName: userData.lastName || nameParts.slice(1).join(' '),
+              email: userData.email || '',
+              profileImageUrl: userData.profileImageUrl || userData.profileUrl || '',
+              teacherId: userData.teacherId || '',
+              position: userData.position || (isSuperAdmin ? 'ผู้ดูแลระบบสูงสุด' : isSchoolAdmin ? 'ผู้ดูแลระบบโรงเรียน' : 'ครู'),
+              department: userData.department || 'งานบริหารทั่วไป',
+              status: userData.status || 'อยู่',
+              learningArea: userData.learningArea || '',
+              dob: userData.dob || '',
+              gender: userData.gender || '',
+              contact: userData.contact || '',
+              address: userData.address || '',
+            } as TeacherData;
+          }
+        }
+
+        if (teacherData) {
           setTeacher(teacherData);
 
           // Fetch courses taught by this teacher
@@ -506,7 +501,6 @@ export default function ViewTeacherPage() {
                 </p>
               </div>
               <div className="flex items-center gap-x-4">
-<<<<<<< HEAD
                 <div className="flex items-center bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 p-1 mr-2">
                   <button 
                     disabled={!prevTeacherId} 
@@ -526,8 +520,6 @@ export default function ViewTeacherPage() {
                     <FaChevronRight size={20} />
                   </button>
                 </div>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <button onClick={() => navigate(-1)} className="inline-flex items-center gap-x-2 rounded-md bg-gray-600/50 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700/50 transition-colors">
                   <FaArrowLeft />
                   กลับ
@@ -544,13 +536,12 @@ export default function ViewTeacherPage() {
             {/* Left Sidebar */}
             <aside className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 self-start">
               <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
-                <img
+                <ProfileAvatar
                   src={teacher.profileImageUrl || `https://ui-avatars.com/api/?name=${teacher.firstName}+${teacher.lastName}&background=random`}
-                  alt="Teacher profile"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
+                  alt={`${teacher.firstName} ${teacher.lastName}`}
+                  className="w-32 h-32 border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
                 />
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">{teacher.title}{teacher.firstName} {teacher.lastName}</h2>
-<<<<<<< HEAD
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{teacher.email}</p>
                 
                 <div className="flex justify-center mb-4">
@@ -575,9 +566,6 @@ export default function ViewTeacherPage() {
                     </span>
                   )}
                 </div>
-=======
-                <p className="text-sm text-gray-500 dark:text-gray-400">{teacher.email}</p>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500 space-y-1">
                   <p>สร้างเมื่อ: {teacher.createdAt ? new Date(teacher.createdAt.seconds * 1000).toLocaleString('th-TH') : '-'}</p>
@@ -632,9 +620,7 @@ export default function ViewTeacherPage() {
               </div>
               <div className="space-y-6">
                 {activeTab === "general" && (
-<<<<<<< HEAD
                   <div className="space-y-6 animate-fade-in">
-
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800">
                       <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ข้อมูลส่วนตัวและวุฒิการศึกษา</h2>
                       <div className="space-y-4">
@@ -654,26 +640,6 @@ export default function ViewTeacherPage() {
                           <DetailField label="วุฒิการศึกษา" value={teacher.educationLevel} />
                           <DetailField label="วิชาเอก" value={teacher.major} />
                         </div>
-=======
-                  <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
-                    <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ข้อมูลส่วนตัวและวุฒิการศึกษา</h2>
-                    <div className="space-y-4">
-                      <div>
-                        <DetailField label="ชื่อ-นามสกุล" value={`${teacher.title}${teacher.firstName} ${teacher.lastName}`} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <DetailField label="วันเกิด" value={teacher.dob} />
-                        <DetailField label="เพศ" value={teacher.gender} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <DetailField label="เลขที่ใบประกอบวิชาชีพ" value={teacher.licenseNumber} />
-                        <DetailField label="วิทยฐานะ" value={teacher.academicStanding} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <DetailField label="วันที่เริ่มงาน/บรรจุ" value={teacher.startDate} />
-                        <DetailField label="วุฒิการศึกษา" value={teacher.educationLevel} />
-                        <DetailField label="วิชาเอก" value={teacher.major} />
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                       </div>
                     </div>
                   </div>
@@ -689,12 +655,26 @@ export default function ViewTeacherPage() {
                         <DetailField label="ฝ่ายงาน" value={teacher.department} />
                         <DetailField label="กลุ่มสาระการเรียนรู้" value={teacher.learningArea} />
 
-                        {teacher.isHeadOfLearningArea && (
+                        {(teacher.isHeadOfLearningArea || teacher.isHeadOfAssessment || teacher.isGuidanceTeacher) && (
                           <div>
                             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">บทบาทพิเศษ</label>
-                            <span className="mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
-                              หัวหน้ากลุ่มสาระ
-                            </span>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {teacher.isHeadOfLearningArea && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+                                  หัวหน้ากลุ่มสาระ
+                                </span>
+                              )}
+                              {teacher.isHeadOfAssessment && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                  หัวหน้างานวัดและประเมินผล
+                                </span>
+                              )}
+                              {teacher.isGuidanceTeacher && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                                  ครูแนะแนว
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )}
                         {teacher.advisorRole ? (
@@ -798,11 +778,7 @@ export default function ViewTeacherPage() {
 
                 {activeTab === "attendance" && (
                   <div className="animate-fade-in space-y-6">
-<<<<<<< HEAD
                     <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear})`}>
-=======
-                    <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || new Date().getFullYear() + 543})`}>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
                         <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800">
                           <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.present || 0}</div>
@@ -1057,13 +1033,8 @@ export default function ViewTeacherPage() {
                                 <th className="px-6 py-4 rounded-r-xl text-right w-[20%]">การจัดการ</th>
                               </tr>
                             </thead>
-<<<<<<< HEAD
                              <tbody className="bg-white dark:bg-[#2a2b2f] divide-y divide-gray-200 dark:divide-gray-700">
                                {officialTravelRequests.map((req: any) => (
-=======
-                            <tbody className="bg-white dark:bg-[#2a2b2f] divide-y divide-gray-200 dark:divide-gray-700">
-                              {officialTravelRequests.map((req) => (
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <tr key={req.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5 transition-all">
                                   <td className="px-6 py-5 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
                                     <div className="flex flex-col">

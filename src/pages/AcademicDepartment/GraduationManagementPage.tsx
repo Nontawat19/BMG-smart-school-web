@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useSelector, useDispatch } from 'react-redux';
@@ -11,65 +8,67 @@ import { RootState } from '@/store';
 import { fetchSchoolSettings } from '@/store/slices/schoolSettingsSlice';
 import {
     FaGraduationCap, FaSearch, FaUserGraduate, FaCheckCircle,
-    FaChevronRight, FaInfoCircle, FaFilter, FaUsers, FaArrowRight,
-    FaIdCard, FaSortNumericDown
+    FaChevronRight, FaInfoCircle, FaFilter, FaUsers, FaArrowUp,
+    FaSync, FaClock, FaUserMinus, FaIdCard, FaSortNumericDown,
+    FaUserCheck, FaTimesCircle
 } from 'react-icons/fa';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import Swal from 'sweetalert2';
 import Select from 'react-select';
-import { CLASS_FULL_NAMES, CLASSES } from '@/utils/schoolUtils';
+import { CLASSES } from '@/utils/schoolUtils';
+import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
 
-// Premium Dark mode styles for react-select
-const selectStyles = {
+const compactSelectStyles = {
     control: (base: any, state: any) => ({
         ...base,
-        backgroundColor: 'var(--select-bg)',
-        borderColor: state.isFocused ? '#6366f1' : 'var(--select-border)',
-        boxShadow: state.isFocused ? '0 0 0 1px #6366f1' : 'none',
+        backgroundColor: 'var(--select-bg, #ffffff)',
+        borderColor: state.isFocused ? '#6366f1' : 'var(--select-border, #e5e7eb)',
+        boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
         '&:hover': {
-            borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover)'
+            borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover, #d1d5db)'
         },
-        padding: '2px',
-        borderRadius: '1rem',
-        fontSize: '0.875rem',
-        minHeight: '48px'
+        padding: '0 4px',
+        borderRadius: '0.75rem',
+        fontSize: '0.75rem',
+        minHeight: '32px',
+        height: '32px',
+        transition: 'all 0.2s ease'
     }),
+    valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
+    indicatorsContainer: (base: any) => ({ ...base, height: '30px' }),
     menu: (base: any) => ({
         ...base,
-        backgroundColor: 'var(--select-menu-bg)',
-        border: '1px solid var(--select-border)',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-        borderRadius: '1.25rem',
-        overflow: 'hidden',
-        zIndex: 50,
-        padding: '4px'
+        backgroundColor: 'var(--select-menu-bg, #ffffff)',
+        border: '1px solid var(--select-border, #e5e7eb)',
+        borderRadius: '1rem',
+        fontSize: '0.75rem',
+        zIndex: 9999,
+        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+        overflow: 'hidden'
     }),
     option: (base: any, state: any) => ({
         ...base,
-        backgroundColor: state.isSelected
-            ? '#6366f1'
-            : state.isFocused
-                ? 'var(--select-option-hover)'
-                : 'transparent',
-        color: state.isSelected ? 'white' : 'var(--select-text)',
-        borderRadius: '0.75rem',
-        margin: '2px 0',
+        backgroundColor: state.isSelected ? '#6366f1' : state.isFocused ? 'var(--select-option-hover, #f3f4f6)' : 'transparent',
+        color: state.isSelected ? 'white' : 'var(--select-text, #1f2937)',
+        padding: '8px 12px',
         cursor: 'pointer',
-        fontSize: '0.875rem',
-        '&:active': {
-            backgroundColor: '#4f46e5'
-        }
+        fontWeight: '500',
+        '&:active': { backgroundColor: '#4f46e5' }
     }),
-    singleValue: (base: any) => ({
-        ...base,
-        color: 'var(--select-text)',
-        fontWeight: '600'
+    singleValue: (base: any) => ({ 
+        ...base, 
+        color: 'var(--select-text, #1f2937)', 
+        fontWeight: '600',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
     }),
-    placeholder: (base: any) => ({
+    menuList: (base: any) => ({
         ...base,
-        color: '#9ca3af',
-        fontWeight: '500'
-    })
+        maxHeight: '600px', // เพิ่มความสูงให้เห็นครบทุกชั้นโดยไม่ต้องสกอร์
+        padding: '4px'
+    }),
+    placeholder: (base: any) => ({ ...base, color: '#9ca3af' })
 };
 
 interface Student {
@@ -83,8 +82,6 @@ interface Student {
     classLevel: string;
     roomNumber: string;
     status: string;
-<<<<<<< HEAD
-    // New fields for graduation/exit
     graduationDetails?: {
         date?: string;
         certificateNo?: string;
@@ -100,23 +97,6 @@ interface Student {
 
 type TransitionType = 'promote' | 'repeat' | 'graduate' | 'pending_grad' | 'exit';
 
-interface TransitionData {
-    docId: string;
-    studentName: string;
-    currentClass: string;
-    type: TransitionType;
-    nextClass?: string;
-    nextRoom?: string;
-    gradDate?: string;
-    certNo?: string;
-    gpax?: string;
-    remark?: string;
-    exitReason?: string;
-    destination?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-}
-
 const GraduationManagementPage: React.FC = () => {
     const [students, setStudents] = useState<Student[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -124,20 +104,22 @@ const GraduationManagementPage: React.FC = () => {
     const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
-<<<<<<< HEAD
-    const [showTransitionModal, setShowTransitionModal] = useState(false);
-    const [transitionList, setTransitionList] = useState<TransitionData[]>([]);
+    const [batchActionType, setBatchActionType] = useState<TransitionType>('promote');
+    const [batchDetails] = useState({
+        nextRoom: '',
+        gradDate: new Date().toISOString().split('T')[0],
+        certNo: '',
+        gpax: '',
+        remark: '',
+        exitReason: '',
+        destination: ''
+    });
+
+    const [individualActions, setIndividualActions] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 30;
-=======
-    
-    // Pagination State
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 20;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const { user } = useSelector((state: RootState) => state.auth);
     const { availableClassOptions, classKeys, status: settingsStatus } = useSelector((state: RootState) => state.schoolSettings);
@@ -149,6 +131,11 @@ const GraduationManagementPage: React.FC = () => {
             dispatch(fetchSchoolSettings(schoolId) as any);
         }
     }, [schoolId, settingsStatus, dispatch]);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, selectedClassLevel, selectedRoomNumber]);
 
     const classOptions = useMemo(() => {
         return availableClassOptions.map(([val, label]) => ({
@@ -179,9 +166,17 @@ const GraduationManagementPage: React.FC = () => {
                 classLevel: doc.data().classLevel || '',
                 roomNumber: doc.data().room || doc.data().roomNumber || '',
                 status: doc.data().status || doc.data().studentStatus || 'active',
+                graduationDetails: doc.data().graduationDetails || {}
             })).filter(s => {
                 const sStatus = String(s.status).toLowerCase();
-                return sStatus === 'active' || sStatus === 'ปกติ' || sStatus === 'เรียนอยู่';
+                const isPendingWithIssues = sStatus === 'รออนุมัติจบ' && s.graduationDetails?.remark === 'ติด 0, ร, มส';
+                const isActive = isActiveStudentStatus(s.status) || sStatus === 'ซ้ำชั้น' || isPendingWithIssues;
+                
+                // 📌 Filter by configured levels
+                const levelKey = Object.keys(CLASSES).find(k => k === s.classLevel.toLowerCase() || CLASSES[k as keyof typeof CLASSES] === s.classLevel);
+                const isInRange = levelKey ? classKeys.includes(levelKey) : false;
+
+                return isActive && isInRange;
             });
             setStudents(studentDocs);
         } catch (error) {
@@ -195,7 +190,6 @@ const GraduationManagementPage: React.FC = () => {
         fetchStudents();
     }, [schoolId]);
 
-    // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, selectedClassLevel, selectedRoomNumber]);
@@ -210,7 +204,7 @@ const GraduationManagementPage: React.FC = () => {
             const cleanClass = String(s.classLevel || '').trim();
             const matchClass = !selectedClassLevel ||
                 cleanClass === selectedClassLevel ||
-                cleanClass === CLASSES[selectedClassLevel];
+                cleanClass === CLASSES[selectedClassLevel as keyof typeof CLASSES];
 
             const cleanRoom = String(s.roomNumber || '').trim();
             const targetRoom = String(selectedRoomNumber || '').trim();
@@ -222,10 +216,9 @@ const GraduationManagementPage: React.FC = () => {
             return matchSearch && matchClass && matchRoom;
         });
 
-        // Helper functions
         const getKey = (val: string) => {
             const cleanVal = String(val || "").trim();
-            return Object.keys(CLASSES).find(k => k === cleanVal.toLowerCase() || CLASSES[k] === cleanVal) || cleanVal.toLowerCase();
+            return Object.keys(CLASSES).find(k => k === cleanVal.toLowerCase() || CLASSES[k as keyof typeof CLASSES] === cleanVal) || cleanVal.toLowerCase();
         };
 
         const getNum = (val: string | number) => {
@@ -249,7 +242,6 @@ const GraduationManagementPage: React.FC = () => {
         });
     }, [students, searchTerm, selectedClassLevel, selectedRoomNumber, classKeys]);
 
-    // Pagination Calculations
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentStudents = filteredStudents.slice(indexOfFirstItem, indexOfLastItem);
@@ -270,53 +262,43 @@ const GraduationManagementPage: React.FC = () => {
         }
     };
 
-<<<<<<< HEAD
-    const openTransitionModal = () => {
-=======
-    const handlePromotion = async () => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-        if (selectedStudents.size === 0) {
-            Swal.fire({
-                title: 'โปรดเลือกนักเรียน',
-                text: 'กรุณาเลือกนักเรียนที่ต้องการเลื่อนชั้นอย่างน้อย 1 รายชื่อ',
-                icon: 'warning',
-                confirmButtonColor: '#6366f1',
-                customClass: { popup: 'rounded-[2rem]' }
-            });
-            return;
-        }
+    const actionOptions = [
+        { value: 'promote', label: 'เลื่อนชั้นเรียน (ปกติ)', icon: <FaArrowUp size={12} className="text-emerald-500" /> },
+        { value: 'repeat', label: 'ซ้ำชั้นเรียน (สอบไม่ผ่าน)', icon: <FaSync size={12} className="text-orange-500" /> },
+        { value: 'graduate', label: 'สำเร็จการศึกษา (รอดำเนินการ)', icon: <FaUserGraduate size={12} className="text-indigo-500" /> },
+        { value: 'pending_grad', label: 'รออนุมัติจบ (ติด 0,ร,มส)', icon: <FaClock size={12} className="text-amber-500" /> },
+        { value: 'exit', label: 'จำหน่ายชื่อ / ย้ายออก', icon: <FaUserMinus size={12} className="text-rose-500" /> },
+    ];
 
-<<<<<<< HEAD
-        const selectedList: TransitionData[] = Array.from(selectedStudents).map(docId => {
-            const s = students.find(item => item.docId === docId);
-            const currentClassKey = s ? Object.keys(CLASSES).find(k => k === String(s.classLevel).toLowerCase() || CLASSES[k as keyof typeof CLASSES] === s.classLevel) || s.classLevel.toLowerCase() : '';
-            const currentIndex = classKeys.indexOf(currentClassKey);
-            const isLastClass = currentIndex === classKeys.length - 1;
+    const filteredActionOptions = useMemo(() => {
+        const isFinalYear = ['p6', 'm3', 'm6'].includes(selectedClassLevel.toLowerCase());
+        if (!selectedClassLevel) return actionOptions;
+        return actionOptions.filter(opt => isFinalYear ? opt.value !== 'promote' : opt.value !== 'graduate');
+    }, [selectedClassLevel]);
 
-            return {
-                docId,
-                studentName: s ? `${s.firstName} ${s.lastName}` : 'ไม่ทราบชื่อ',
-                currentClass: s ? `${CLASSES[s.classLevel as keyof typeof CLASSES] || s.classLevel}/${s.roomNumber}` : '',
-                type: isLastClass ? 'graduate' : 'promote',
-                nextClass: !isLastClass ? (CLASSES[classKeys[currentIndex + 1] as keyof typeof CLASSES] || classKeys[currentIndex + 1]) : undefined,
-                nextRoom: s?.roomNumber || '1',
-                gradDate: new Date().toISOString().split('T')[0],
-            };
-        });
+    useEffect(() => {
+        if (!selectedClassLevel) return;
+        const isFinalYear = ['p6', 'm3', 'm6'].includes(selectedClassLevel.toLowerCase());
+        const isCurrentActionValid = filteredActionOptions.some(opt => opt.value === batchActionType);
+        if (!isCurrentActionValid) setBatchActionType(isFinalYear ? 'graduate' : 'promote');
+    }, [selectedClassLevel, batchActionType, filteredActionOptions]);
 
-        setTransitionList(selectedList);
-        setShowTransitionModal(true);
+    const handleSingleActionChange = (docId: string, action: string) => {
+        setIndividualActions(prev => ({ ...prev, [docId]: action }));
     };
 
-    const handleBatchTransition = async () => {
+    const handleSingleUpdate = async (student: Student) => {
         if (!schoolId) return;
-        
+        const action = individualActions[student.docId];
+        if (!action) return;
+
+        const actionLabel = actionOptions.find(o => o.value === action)?.label;
         const confirm = await Swal.fire({
-            title: 'ยืนยันดำเนินการ?',
-            text: `คุณกำลังจะปรับปรุงข้อมูลนักเรียนจำนวน ${transitionList.length} คน`,
+            title: 'ยืนยันดำเนินการรายบุคคล?',
+            text: `ดำเนินการ "${actionLabel}" สำหรับ ${student.firstName} ${student.lastName} ใช่หรือไม่?`,
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: 'ยืนยันบันทึก',
+            confirmButtonText: 'ยืนยัน',
             cancelButtonText: 'ยกเลิก',
             confirmButtonColor: '#4f46e5',
             customClass: { popup: 'rounded-[2rem]' }
@@ -326,319 +308,195 @@ const GraduationManagementPage: React.FC = () => {
 
         setIsSubmitting(true);
         try {
-            const promises = transitionList.map(item => {
-                const studentRef = doc(firestore, 'school-settings', schoolId, 'students', item.docId);
-                let updateData: any = {
-                    updatedAt: new Date().toISOString()
-                };
+            const studentRef = doc(firestore, 'school-settings', schoolId, 'students', student.docId);
+            const currentClassKey = Object.keys(CLASSES).find(k => k === String(student.classLevel).toLowerCase() || CLASSES[k as keyof typeof CLASSES] === student.classLevel) || student.classLevel.toLowerCase();
+            const currentIndex = classKeys.indexOf(currentClassKey);
+            const nextClass = currentIndex < classKeys.length - 1 ? (CLASSES[classKeys[currentIndex + 1] as keyof typeof CLASSES] || classKeys[currentIndex + 1]) : student.classLevel;
 
-                switch (item.type) {
-                    case 'promote':
-                        updateData = {
-                            ...updateData,
-                            classLevel: item.nextClass,
-                            room: item.nextRoom,
-                            roomNumber: item.nextRoom,
-                            status: 'เรียนอยู่',
-                            studentStatus: 'เรียนอยู่'
-                        };
-                        break;
-                    case 'repeat':
-                        updateData = {
-                            ...updateData,
-                            room: item.nextRoom,
-                            roomNumber: item.nextRoom,
-                            status: 'ซ้ำชั้น',
-                            studentStatus: 'ซ้ำชั้น'
-                        };
-                        break;
-                    case 'graduate':
-                        updateData = {
-                            ...updateData,
-                            status: 'สำเร็จการศึกษา',
-                            studentStatus: 'สำเร็จการศึกษา',
-                            graduationDetails: {
-                                date: item.gradDate,
-                                certificateNo: item.certNo || '',
-                                gpax: item.gpax || '',
-                                remark: item.remark || ''
-                            }
-                        };
-                        break;
-                    case 'pending_grad':
-                        updateData = {
-                            ...updateData,
-                            status: 'รออนุมัติจบ',
-                            studentStatus: 'รออนุมัติจบ',
-                            graduationDetails: {
-                                remark: item.remark || 'ติด 0, ร, มส'
-                            }
-                        };
-                        break;
-                    case 'exit':
-                        updateData = {
-                            ...updateData,
-                            status: 'จำหน่ายชื่อออก',
-                            studentStatus: 'จำหน่ายชื่อออก',
-                            exitDetails: {
-                                reason: item.exitReason || '',
-                                destinationSchool: item.destination || '',
-                                exitDate: item.gradDate || new Date().toISOString().split('T')[0]
-                            }
-                        };
-                        break;
-                }
+            let updateData: any = { updatedAt: new Date().toISOString() };
+            switch (action) {
+                case 'promote': updateData = { ...updateData, classLevel: nextClass, status: 'เรียนอยู่', studentStatus: 'เรียนอยู่' }; break;
+                case 'repeat': updateData = { ...updateData, status: 'ซ้ำชั้น', studentStatus: 'ซ้ำชั้น' }; break;
+                case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'สำเร็จการศึกษา (รอดำเนินการ)', date: new Date().toISOString().split('T')[0] } }; break;
+                case 'pending_grad': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'ติด 0, ร, มส' } }; break;
+                case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก', studentStatus: 'จำหน่ายชื่อออก' }; break;
+            }
 
-                return updateDoc(studentRef, updateData);
-            });
-
-            await Promise.all(promises);
-            
-            setShowTransitionModal(false);
-            Swal.fire({
-                title: 'สำเร็จ!',
-                text: 'ปรับปรุงข้อมูลนักเรียนเรียบร้อยแล้ว',
-                icon: 'success',
-                customClass: { popup: 'rounded-[2rem]' }
-            });
+            await updateDoc(studentRef, updateData);
+            Swal.fire({ title: 'สำเร็จ!', icon: 'success', timer: 1500, showConfirmButton: false });
             fetchStudents();
+            setIndividualActions(prev => { const newState = { ...prev }; delete newState[student.docId]; return newState; });
         } catch (error) {
-            console.error("Transition error:", error);
-            Swal.fire({
-                title: 'ข้อผิดพลาด',
-                text: 'ไม่สามารถบันทึกข้อมูลได้',
-                icon: 'error',
-                customClass: { popup: 'rounded-[2rem]' }
-            });
+            Swal.fire('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
         } finally {
             setIsSubmitting(false);
-=======
-        const confirm = await Swal.fire({
-            title: 'ยืนยันเลื่อนชั้นนักเรียน?',
-            html: `เตรียมปรับระดับชั้นนักเรียนจำนวน <b class="text-indigo-600 text-xl font-black">${selectedStudents.size}</b> คน <br/> ข้อมูลจะถูกปรับปรุงในฐานข้อมูลทันที`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'ยืนยันดำเนินการ',
-            cancelButtonText: 'ยกเลิก',
-            confirmButtonColor: '#4f46e5',
-            customClass: { popup: 'rounded-[2rem]', confirmButton: 'rounded-xl px-8 py-3', cancelButton: 'rounded-xl px-8 py-3' }
-        });
-
-        if (confirm.isConfirmed) {
-            if (!schoolId) return;
-            setLoading(true);
-            try {
-                const promises = Array.from(selectedStudents).map(docId => {
-                    const studentRef = doc(firestore, 'school-settings', schoolId, 'students', docId);
-                    const userStudent = students.find(s => s.docId === docId);
-                    if (!userStudent) return Promise.resolve();
-
-                    // ✅ ใช้ classKeys จาก Redux ในการคำนวณลำดับการเลื่อนชั้น (ข้าม Virtual Levels อัตโนมัติ)
-                    const getKey = (val: string) => {
-                        const cleanVal = String(val || "").trim();
-                        return Object.keys(CLASSES).find(k => k === cleanVal.toLowerCase() || CLASSES[k] === cleanVal) || cleanVal.toLowerCase();
-                    };
-                    const currentClassKey = getKey(userStudent.classLevel);
-                    const currentIndex = classKeys.indexOf(currentClassKey);
-
-                    let updateData: any = {};
-
-                    // 1. ถ้าไม่พบชั้นเรียนในระบบ หรือ อยู่ชั้นสุดท้ายของโรงเรียนจริงๆ -> สำเร็จการศึกษา
-                    if (currentIndex === -1 || currentIndex === classKeys.length - 1) {
-                        updateData = { status: 'สำเร็จการศึกษา' };
-                    } 
-                    // 2. ถ้ายังมีชั้นถัดไป -> เลื่อนชั้นตามลำดับใน classKeys (บันทึกเป็นชื่อชั้นเรียน เช่น ม.2)
-                    else {
-                        const nextKey = classKeys[currentIndex + 1];
-                        const nextLabel = CLASSES[nextKey] || nextKey;
-                        updateData = { classLevel: nextLabel };
-                    }
-
-                    return updateDoc(studentRef, updateData);
-                });
-                await Promise.all(promises);
-                Swal.fire({ title: 'สำเร็จ!', text: 'เลื่อนชั้นนักเรียนเรียบร้อยแล้ว', icon: 'success', customClass: { popup: 'rounded-[2rem]' } });
-                fetchStudents();
-            } catch (error) {
-                Swal.fire({ title: 'ข้อผิดพลาด', text: 'ไม่สามารถบันทึกได้', icon: 'error', customClass: { popup: 'rounded-[2rem]' } });
-            } finally { setLoading(false); }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
     };
 
-    const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
-    useEffect(() => {
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.attributeName === 'class') {
-                    setIsDarkMode(document.documentElement.classList.contains('dark'));
-                }
-            });
+    const handleBatchTransition = async () => {
+        if (!schoolId || selectedStudents.size === 0) return;
+        const confirm = await Swal.fire({
+            title: 'ยืนยันดำเนินการ?',
+            text: `ปรับปรุงข้อมูลนักเรียน ${selectedStudents.size} คน`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'ยืนยันบันทึก'
         });
-        observer.observe(document.documentElement, { attributes: true });
-        return () => observer.disconnect();
+
+        if (!confirm.isConfirmed) return;
+        setIsSubmitting(true);
+        try {
+            const promises = Array.from(selectedStudents).map(docId => {
+                const s = students.find(item => item.docId === docId);
+                if (!s) return Promise.resolve();
+                const studentRef = doc(firestore, 'school-settings', schoolId, 'students', docId);
+                const currentClassKey = Object.keys(CLASSES).find(k => k === String(s.classLevel).toLowerCase() || CLASSES[k as keyof typeof CLASSES] === s.classLevel) || s.classLevel.toLowerCase();
+                const currentIndex = classKeys.indexOf(currentClassKey);
+                const nextClass = currentIndex < classKeys.length - 1 ? (CLASSES[classKeys[currentIndex + 1] as keyof typeof CLASSES] || classKeys[currentIndex + 1]) : s.classLevel;
+
+                let updateData: any = { updatedAt: new Date().toISOString() };
+                switch (batchActionType) {
+                    case 'promote': updateData = { ...updateData, classLevel: nextClass, room: batchDetails.nextRoom || s.roomNumber, status: 'เรียนอยู่' }; break;
+                    case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', graduationDetails: { date: batchDetails.gradDate } }; break;
+                    case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก' }; break;
+                }
+                return updateDoc(studentRef, updateData);
+            });
+            await Promise.all(promises);
+            Swal.fire({ title: 'สำเร็จ!', icon: 'success' });
+            fetchStudents();
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const [isDarkMode, setIsDarkMode] = useState(false);
+    useEffect(() => {
+        const checkDark = () => setIsDarkMode(document.documentElement.classList.contains('dark'));
+        checkDark();
+        const obs = new MutationObserver(checkDark);
+        obs.observe(document.documentElement, { attributes: true });
+        return () => obs.disconnect();
     }, []);
 
     const darkVariables = {
         '--select-bg': isDarkMode ? '#232429' : '#ffffff',
         '--select-border': isDarkMode ? '#30323a' : '#e5e7eb',
-        '--select-border-hover': isDarkMode ? '#4b5563' : '#d1d5db',
         '--select-menu-bg': isDarkMode ? '#1c1c24' : '#ffffff',
-        '--select-option-hover': isDarkMode ? '#2a2b2f' : '#f3f4f6',
         '--select-text': isDarkMode ? '#f3f4f6' : '#111827',
-        '--select-height': '40px',
     } as React.CSSProperties;
-
-    const compactSelectStyles = {
-        ...selectStyles,
-        control: (base: any, state: any) => ({
-            ...base,
-            ...selectStyles.control(base, state),
-            minHeight: '40px',
-            height: '40px',
-            borderRadius: '0.75rem',
-        }),
-        valueContainer: (base: any) => ({
-            ...base,
-            padding: '0 12px',
-        }),
-        input: (base: any) => ({
-            ...base,
-            margin: '0',
-            padding: '0',
-        }),
-    };
 
     return (
         <MainLayout>
-            <div className="min-h-screen bg-gray-50/50 dark:bg-[#0f1014] p-4 sm:p-6 space-y-4 sm:space-y-5" style={darkVariables}>
-
-                {/* 1. Ultra Compact Header Row */}
+            <div className="min-h-screen bg-gray-50/50 dark:bg-[#0f1014] p-4 sm:p-6 space-y-4" style={darkVariables}>
+                {/* Header Section */}
                 <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm">
                     <div className="flex items-center gap-3">
-<<<<<<< HEAD
-                        <BackButton to="/academic/hub/registration" className="mr-2" />
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
-                            <FaGraduationCap className="text-white text-xl" />
-                        </div>
+                        <BackButton to="/academic/hub/registration" />
                         <div>
-                            <h1 className="text-lg font-black tracking-tight text-gray-900 dark:text-white leading-none">เลื่อนชั้น & สำเร็จการศึกษา</h1>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Promotion Management System</p>
+                            <h1 className="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
+                                <FaGraduationCap className="text-indigo-600" />
+                                บริหารการจบการศึกษา
+                            </h1>
+                            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                                Graduation & Promotion Management
+                            </p>
                         </div>
-                    </div>
-                    <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
-                        <FaUsers size={12} className="text-indigo-600 dark:text-indigo-400" />
-                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 tabular-nums">{students.length} รายชื่อในระบบ</span>
                     </div>
                 </div>
 
-                {/* 2. Super Compact Integrated Control Bar */}
-                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-xl p-3 sm:p-4 shadow-sm">
-                    <div className="grid grid-cols-12 gap-2 sm:gap-3">
-                        <div className="col-span-12 lg:col-span-4">
-                            <div className="relative group">
-                                <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={11} />
+                {/* Filter & Search Bar */}
+                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div className="md:col-span-2 relative">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">ค้นหารายชื่อ</label>
+                            <div className="relative">
+                                <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                                 <input
                                     type="text"
-                                    placeholder="ชื่อ / สกุล / รหัสประจำตัว..."
-                                    className="w-full h-9 pl-10 pr-4 bg-gray-50/50 dark:bg-[#232429] border border-gray-100 dark:border-[#2a2b36] rounded-lg focus:border-indigo-500 outline-none text-xs font-bold transition-all placeholder:text-[10px] placeholder:font-medium"
+                                    placeholder="ค้นหาชื่อ, นามสกุล หรือรหัสนักเรียน..."
+                                    className="w-full pl-11 pr-4 py-2.5 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-800 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all dark:text-white font-medium"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
                         </div>
-                        <div className="col-span-6 lg:col-span-3">
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">ระดับชั้น</label>
                             <Select
                                 options={classOptions}
+                                placeholder="เลือกชั้นเรียน..."
                                 isClearable
-                                placeholder="ชั้นเรียน..."
-                                onChange={(val) => setSelectedClassLevel(val ? val.value : '')}
-                                styles={{
-                                    ...compactSelectStyles,
-                                    control: (base: any, state: any) => ({
-                                        ...base,
-                                        ...compactSelectStyles.control(base, state),
-                                        height: '36px',
-                                        minHeight: '36px',
-                                        borderRadius: '0.6rem',
-                                        fontSize: '0.75rem'
-                                    }),
-                                    valueContainer: (base: any) => ({ ...base, padding: '0 8px' })
-                                }}
+                                onChange={(opt) => setSelectedClassLevel(opt?.value || '')}
+                                value={classOptions.find(o => o.value === selectedClassLevel)}
+                                styles={compactSelectStyles}
+                                menuPortalTarget={document.body}
                             />
                         </div>
-                        <div className="col-span-6 lg:col-span-2">
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">ห้องเรียน</label>
                             <Select
                                 options={roomOptions}
+                                placeholder="เลือกห้อง..."
                                 isClearable
-                                placeholder="ห้อง..."
-                                value={roomOptions.find(opt => opt.value === selectedRoomNumber)}
-                                onChange={(val) => setSelectedRoomNumber(val ? val.value : '')}
-                                styles={{
-                                    ...compactSelectStyles,
-                                    control: (base: any, state: any) => ({
-                                        ...base,
-                                        ...compactSelectStyles.control(base, state),
-                                        height: '36px',
-                                        minHeight: '36px',
-                                        borderRadius: '0.6rem',
-                                        fontSize: '0.75rem'
-                                    }),
-                                    valueContainer: (base: any) => ({ ...base, padding: '0 8px' })
-                                }}
+                                onChange={(opt) => setSelectedRoomNumber(opt?.value || '')}
+                                value={roomOptions.find(o => o.value === selectedRoomNumber)}
+                                styles={compactSelectStyles}
+                                menuPortalTarget={document.body}
                             />
-                        </div>
-                        <div className="col-span-12 lg:col-span-3">
-                            <button
-<<<<<<< HEAD
-                                onClick={openTransitionModal}
-=======
-                                onClick={handlePromotion}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                disabled={loading || selectedStudents.size === 0}
-                                className={`w-full h-9 rounded-lg font-black text-[11px] flex items-center justify-center gap-2 transition-all active:scale-95 ${selectedStudents.size > 0
-                                    ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed border border-gray-100 dark:border-gray-800'
-                                    }`}
-                            >
-                                {loading ? '...' : `ดำเนินการ ${selectedStudents.size > 0 ? `(${selectedStudents.size} คน)` : ''}`}
-                                <FaArrowRight size={9} />
-                            </button>
                         </div>
                     </div>
                 </div>
 
-                {/* 3. Student List Container */}
-                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-[2.5rem] overflow-hidden shadow-sm">
-
-                    {/* List Header */}
-                    <div className="px-6 sm:px-10 py-5 bg-gray-50/50 dark:bg-[#1a1b21] border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                            <span className="text-xs sm:text-sm font-black text-gray-700 dark:text-gray-200 uppercase tracking-tight">
-                                พบทั้งหมด {filteredStudents.length} รายชื่อ
-                            </span>
+                {/* Batch Action Bar */}
+                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
+                            <FaFilter size={18} />
                         </div>
-                        <button
-                            onClick={toggleAll}
-                            className="text-[10px] font-black px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/20"
-                        >
-                            {selectedStudents.size === filteredStudents.length ? 'ยกเลิกการเลือก' : 'เลือกทั้งหมด'}
-                        </button>
+                        <div>
+                            <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider">ดำเนินการแบบกลุ่ม</h3>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Selected: {selectedStudents.size} students</p>
+                        </div>
                     </div>
 
-                    {/* Desktop View Table */}
-                    <div className="hidden md:block overflow-x-auto">
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <div className="w-full md:w-64">
+                            <Select
+                                options={filteredActionOptions}
+                                placeholder="เลือกสิ่งที่ต้องการดำเนินการ..."
+                                onChange={(opt) => opt && setBatchActionType(opt.value as TransitionType)}
+                                value={filteredActionOptions.find(o => o.value === batchActionType)}
+                                styles={compactSelectStyles}
+                                menuPortalTarget={document.body}
+                            />
+                        </div>
+                        <button
+                            onClick={handleBatchTransition}
+                            disabled={selectedStudents.size === 0 || isSubmitting}
+                            className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-sm ${
+                                selectedStudents.size > 0 
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-emerald-500/20' 
+                                : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
+                            }`}
+                        >
+                            <FaCheckCircle size={14} />
+                            ยืนยันบันทึกแบบกลุ่ม
+                        </button>
+                    </div>
+                </div>
+
+                {/* Main Content Table */}
+                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-[2rem] shadow-sm overflow-hidden">
+                    <div className="hidden md:block">
                         {loading ? (
                             <LoadingState />
                         ) : filteredStudents.length === 0 ? (
                             <EmptyState />
                         ) : (
                             <table className="w-full text-left border-collapse">
-                                <thead className="bg-gray-50/50 dark:bg-[#1a1b21] sticky top-0 z-20 border-b border-gray-100 dark:border-gray-800">
-                                    <tr>
+                                <thead>
+                                    <tr className="bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-gray-800">
                                         <th className="pl-10 pr-4 py-4 w-20 text-center">
                                             <input
                                                 type="checkbox"
@@ -647,18 +505,18 @@ const GraduationManagementPage: React.FC = () => {
                                                 onChange={toggleAll}
                                             />
                                         </th>
-                                        <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">เลขที่</th>
-                                        <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">รหัสประจำตัว</th>
-                                        <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">ชื่อ - นามสกุล</th>
-                                        <th className="px-10 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">ชั้น / ห้อง</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest text-center">เลขที่</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">รหัสประจำตัว</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">ชื่อ - นามสกุล</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest text-center">ระดับชั้น/ห้อง</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest text-right w-[320px]">การดำเนินการรายบุคคล</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
                                     {currentStudents.map(student => (
                                         <tr
                                             key={student.docId}
-                                            onClick={() => toggleStudent(student.docId)}
-                                            className={`group cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-indigo-500/5 ${selectedStudents.has(student.docId) ? 'bg-indigo-50/30 dark:bg-indigo-500/10' : ''}`}
+                                            className={`group transition-colors hover:bg-gray-50 dark:hover:bg-indigo-500/5 ${selectedStudents.has(student.docId) ? 'bg-indigo-50/30 dark:bg-indigo-500/10' : ''}`}
                                         >
                                             <td className="pl-10 pr-4 py-5 text-center">
                                                 <input
@@ -668,15 +526,57 @@ const GraduationManagementPage: React.FC = () => {
                                                     onChange={(e) => { e.stopPropagation(); toggleStudent(student.docId); }}
                                                 />
                                             </td>
-                                            <td className="px-6 py-5 font-bold text-gray-900 dark:text-gray-100 tabular-nums">{student.studentNumber}</td>
-                                            <td className="px-6 py-5 text-xs font-mono font-bold text-gray-500 dark:text-gray-400">{student.studentId}</td>
-                                            <td className="px-6 py-5 font-extrabold text-gray-800 dark:text-gray-100">{student.firstName} {student.lastName}</td>
-                                            <td className="px-10 py-5 text-right font-black text-indigo-600 dark:text-indigo-400 text-lg">
-<<<<<<< HEAD
-                                                {CLASSES[student.classLevel as keyof typeof CLASSES] || student.classLevel}/{student.roomNumber}
-=======
-                                                {(CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel).replace('มัธยมศึกษาปีที่', 'ม.')}/{student.roomNumber}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                            <td className="px-6 py-4 text-[13px] font-bold text-gray-800 dark:text-gray-200 tabular-nums text-center">{student.studentNumber}</td>
+                                            <td className="px-6 py-4">
+                                                <span className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-[11px] font-bold text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                                                    {student.studentId}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-[13px] font-extrabold text-gray-800 dark:text-white">
+                                                <div className="flex flex-col">
+                                                    <span>{student.firstName} {student.lastName}</span>
+                                                    <div className="flex gap-1 mt-0.5">
+                                                        {student.status === 'ซ้ำชั้น' && (
+                                                            <span className="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500 text-[9px] font-bold">ซ้ำชั้นเรียน</span>
+                                                        )}
+                                                        {student.graduationDetails?.remark === 'ติด 0, ร, มส' && (
+                                                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[9px] font-bold">ติด 0, ร, มส</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
+                                                    {CLASSES[student.classLevel as keyof typeof CLASSES] || student.classLevel}/{student.roomNumber}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <div className="w-56 text-left">
+                                                        <Select
+                                                            options={filteredActionOptions}
+                                                            placeholder="เลือกการดำเนินการ..."
+                                                            onChange={(opt) => {
+                                                                if (opt) handleSingleActionChange(student.docId, opt.value);
+                                                            }}
+                                                            value={filteredActionOptions.find(o => o.value === (individualActions[student.docId] || ''))}
+                                                            styles={compactSelectStyles}
+                                                            menuPortalTarget={document.body}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleSingleUpdate(student)}
+                                                        disabled={!individualActions[student.docId] || isSubmitting}
+                                                        className={`p-2 rounded-xl transition-all shadow-sm ${
+                                                            individualActions[student.docId] 
+                                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-500/20' 
+                                                            : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
+                                                        }`}
+                                                        title="บันทึกรายบุคคล"
+                                                    >
+                                                        <FaCheckCircle size={16} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -706,8 +606,14 @@ const GraduationManagementPage: React.FC = () => {
                                             onChange={(e) => { e.stopPropagation(); toggleStudent(student.docId); }}
                                         />
                                         <div>
-                                            <div className="font-black text-gray-900 dark:text-gray-100 leading-tight">
+                                            <div className="font-black text-gray-900 dark:text-gray-100 leading-tight flex items-center gap-2">
                                                 {student.firstName} {student.lastName}
+                                                {student.status === 'ซ้ำชั้น' && (
+                                                    <span className="px-1 py-0.5 rounded bg-orange-500/10 text-orange-500 text-[8px] font-bold">ซ้ำชั้น</span>
+                                                )}
+                                                {student.graduationDetails?.remark === 'ติด 0, ร, มส' && (
+                                                    <span className="px-1 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[8px] font-bold">ติด 0, ร, มส</span>
+                                                )}
                                             </div>
                                             <div className="text-[10px] font-bold text-gray-400 mt-1 flex gap-2">
                                                 <span>เลขที่ {student.studentNumber}</span>
@@ -717,11 +623,7 @@ const GraduationManagementPage: React.FC = () => {
                                     </div>
                                     <div className="text-right">
                                         <div className="text-indigo-600 dark:text-indigo-400 font-black text-lg">
-<<<<<<< HEAD
                                             {CLASSES[student.classLevel as keyof typeof CLASSES] || student.classLevel}/{student.roomNumber}
-=======
-                                            {(CLASS_FULL_NAMES[student.classLevel as keyof typeof CLASS_FULL_NAMES] || student.classLevel).replace('มัธยมศึกษาปีที่', 'ม.')}/{student.roomNumber}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         </div>
                                     </div>
                                 </div>
@@ -729,7 +631,7 @@ const GraduationManagementPage: React.FC = () => {
                         )}
                     </div>
 
-                    {/* Pagination Menu (From StudentListPage.tsx) */}
+                    {/* Pagination Menu */}
                     {totalPages > 1 && (
                         <div className="px-6 py-4 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-gray-800">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -741,7 +643,6 @@ const GraduationManagementPage: React.FC = () => {
                                         onClick={() => setCurrentPage(1)}
                                         disabled={currentPage === 1}
                                         className="px-2.5 py-1.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-white dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-[10px] font-black text-gray-600 dark:text-gray-400 flex items-center gap-1"
-                                        title="หน้าแรก"
                                     >
                                         <ChevronsLeft size={14} />
                                         <span className="hidden sm:inline text-[9px] uppercase tracking-wider">หน้าแรก</span>
@@ -751,7 +652,6 @@ const GraduationManagementPage: React.FC = () => {
                                         onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                                         disabled={currentPage === 1}
                                         className="px-2.5 py-1.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-white dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-[10px] font-black text-gray-600 dark:text-gray-400 flex items-center gap-1"
-                                        title="ย้อนกลับ"
                                     >
                                         <ChevronLeft size={14} />
                                         <span className="hidden sm:inline text-[9px] uppercase tracking-wider">ย้อนกลับ</span>
@@ -787,7 +687,6 @@ const GraduationManagementPage: React.FC = () => {
                                         onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                         disabled={currentPage === totalPages}
                                         className="px-2.5 py-1.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-white dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-[10px] font-black text-gray-600 dark:text-gray-400 flex items-center gap-1"
-                                        title="ถัดไป"
                                     >
                                         <span className="hidden sm:inline text-[9px] uppercase tracking-wider">ถัดไป</span>
                                         <ChevronRight size={14} />
@@ -797,7 +696,6 @@ const GraduationManagementPage: React.FC = () => {
                                         onClick={() => setCurrentPage(totalPages)}
                                         disabled={currentPage === totalPages}
                                         className="px-2.5 py-1.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 hover:bg-white dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-[10px] font-black text-gray-600 dark:text-gray-400 flex items-center gap-1"
-                                        title="หน้าสุดท้าย"
                                     >
                                         <span className="hidden sm:inline text-[9px] uppercase tracking-wider">หน้าสุดท้าย</span>
                                         <ChevronsRight size={14} />
@@ -808,7 +706,7 @@ const GraduationManagementPage: React.FC = () => {
                     )}
                 </div>
 
-                {/* 4. กฎระเบียบและคำแนะนำ (Promotion Rules) */}
+                {/* Regulation Tips */}
                 <div className="bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-amber-100 dark:border-amber-900/20 p-5 sm:p-6 flex flex-col md:flex-row gap-5 items-center md:items-start text-center md:text-left transition-all hover:shadow-md">
                     <div className="p-4 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-500/20 shrink-0">
                         <FaInfoCircle size={24} />
@@ -819,8 +717,8 @@ const GraduationManagementPage: React.FC = () => {
                         </h4>
                         <p className="text-xs sm:text-sm text-amber-800/80 dark:text-amber-200/60 font-medium leading-relaxed">
                             ระบบจะตรวจสอบระดับชั้นปัจจุบันของนักเรียนโดยอัตโนมัติ หากเป็นชั้นสูงสุดของช่วงชั้น (เช่น <span className="font-bold text-amber-600 dark:text-amber-500">ป.6, ม.3 หรือ ม.6</span>)
-                            สถานะจะถูกเปลี่ยนเป็น <span className="px-2 py-0.5 bg-amber-200 dark:bg-amber-800/40 rounded-md font-bold text-amber-900 dark:text-amber-300">"สำเร็จการศึกษา"</span> ทันที
-                            สำหรับชั้นอื่นๆ ระบบจะทำการปรับระดับขึ้นไปอีก 1 ระดับชั้นตามโครงสร้างมาตรฐานของโรงเรียน
+                            สถานะจะถูกเปลี่ยนเป็น <span className="px-2 py-0.5 bg-amber-200 dark:bg-amber-800/40 rounded-md font-bold text-amber-900 dark:text-amber-300">"สำเร็จการศึกษา (รอดำเนินการ)"</span> ทันที
+                            เพื่อส่งต่อไปยังหน้าตรวจสอบและอนุมัติจบการศึกษา ก่อนจะลงข้อมูลในทำเนียบศิษย์เก่า
                         </p>
                     </div>
                 </div>
@@ -829,237 +727,15 @@ const GraduationManagementPage: React.FC = () => {
                 {selectedStudents.size > 0 && (
                     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 md:hidden w-[calc(100%-3rem)]">
                         <button
-<<<<<<< HEAD
-                            onClick={openTransitionModal}
-                            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm"
+                            onClick={handleBatchTransition}
+                            disabled={isSubmitting}
+                            className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm"
                         >
-                            ยืนยันดำเนินการ ({selectedStudents.size} รายชื่อ)
-=======
-                            onClick={handlePromotion}
-                            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-sm"
-                        >
-                            ยืนยันเลื่อนชั้น ({selectedStudents.size} รายชื่อ)
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                            <FaArrowRight size={10} className="animate-bounce-x" />
+                            {isSubmitting ? 'กำลังบันทึก...' : `ยืนยันบันทึก (${selectedStudents.size} รายชื่อ)`}
+                            <FaCheckCircle size={10} />
                         </button>
                     </div>
                 )}
-<<<<<<< HEAD
-
-                {/* Transition Modal */}
-                {showTransitionModal && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="bg-white dark:bg-[#1c1c24] w-full max-w-5xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-gray-100 dark:border-white/5">
-                            {/* Modal Header */}
-                            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-                                <div>
-                                    <h2 className="text-xl font-black text-gray-900 dark:text-white">ยืนยันผลการเรียนและเลื่อนชั้น</h2>
-                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Batch Student Transition</p>
-                                </div>
-                                <div className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-600/20">
-                                    {transitionList.length} นักเรียนที่เลือก
-                                </div>
-                            </div>
-
-                            {/* Modal Content */}
-                            <div className="flex-grow overflow-y-auto p-6 sm:p-8 space-y-6">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="border-b border-gray-100 dark:border-gray-800">
-                                                <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">นักเรียน</th>
-                                                <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">ชั้นปัจจุบัน</th>
-                                                <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">ผลการประเมิน / เส้นทาง</th>
-                                                <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">รายละเอียดเพิ่มเติม</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
-                                            {transitionList.map((item, idx) => (
-                                                <tr key={item.docId} className="group hover:bg-gray-50 dark:hover:bg-white/5">
-                                                    <td className="px-4 py-4">
-                                                        <div className="font-bold text-gray-900 dark:text-gray-100">{item.studentName}</div>
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <div className="text-xs font-black text-indigo-600 dark:text-indigo-400">{item.currentClass}</div>
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <select
-                                                            value={item.type}
-                                                            onChange={(e) => {
-                                                                const newList = [...transitionList];
-                                                                newList[idx].type = e.target.value as TransitionType;
-                                                                setTransitionList(newList);
-                                                            }}
-                                                            className="w-full h-10 px-3 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
-                                                        >
-                                                            <option value="promote">✅ เลื่อนชั้นเรียน (ปกติ)</option>
-                                                            <option value="repeat">🔁 ซ้ำชั้นเรียน</option>
-                                                            <option value="graduate">🎓 สำเร็จการศึกษา</option>
-                                                            <option value="pending_grad">⏳ รออนุมัติจบ (ติด 0,ร,มส)</option>
-                                                            <option value="exit">🚫 จำหน่ายชื่อ / ย้ายออก</option>
-                                                        </select>
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <div className="space-y-2 min-w-[200px]">
-                                                            {item.type === 'promote' && (
-                                                                <div className="flex gap-2">
-                                                                    <div className="flex-1">
-                                                                        <div className="text-[9px] font-black text-gray-400 mb-1">ชั้นถัดไป</div>
-                                                                        <input 
-                                                                            type="text" 
-                                                                            readOnly 
-                                                                            value={item.nextClass} 
-                                                                            className="w-full h-8 px-2 bg-gray-100 dark:bg-black/20 border border-transparent rounded-lg text-[11px] font-bold outline-none opacity-60"
-                                                                        />
-                                                                    </div>
-                                                                    <div className="w-20">
-                                                                        <div className="text-[9px] font-black text-gray-400 mb-1">ห้อง</div>
-                                                                        <input 
-                                                                            type="text" 
-                                                                            value={item.nextRoom} 
-                                                                            onChange={(e) => {
-                                                                                const newList = [...transitionList];
-                                                                                newList[idx].nextRoom = e.target.value;
-                                                                                setTransitionList(newList);
-                                                                            }}
-                                                                            className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[11px] font-bold outline-none focus:border-indigo-500"
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                            {item.type === 'repeat' && (
-                                                                <div className="w-20">
-                                                                    <div className="text-[9px] font-black text-gray-400 mb-1">ห้องเรียน</div>
-                                                                    <input 
-                                                                        type="text" 
-                                                                        value={item.nextRoom} 
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].nextRoom = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[11px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                            {item.type === 'graduate' && (
-                                                                <div className="grid grid-cols-2 gap-2">
-                                                                    <input 
-                                                                        type="date" 
-                                                                        value={item.gradDate}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].gradDate = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                    <input 
-                                                                        type="text" 
-                                                                        placeholder="เลขที่ประกาศ..."
-                                                                        value={item.certNo}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].certNo = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                    <input 
-                                                                        type="number" 
-                                                                        step="0.01"
-                                                                        placeholder="GPAX..."
-                                                                        value={item.gpax}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].gpax = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                    <input 
-                                                                        type="text" 
-                                                                        placeholder="หมายเหตุ..."
-                                                                        value={item.remark}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].remark = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                            {item.type === 'pending_grad' && (
-                                                                <input 
-                                                                    type="text" 
-                                                                    placeholder="เหตุผลที่ยังไม่จบ (เช่น ติด มส)"
-                                                                    value={item.remark}
-                                                                    onChange={(e) => {
-                                                                        const newList = [...transitionList];
-                                                                        newList[idx].remark = e.target.value;
-                                                                        setTransitionList(newList);
-                                                                    }}
-                                                                    className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[11px] font-bold outline-none focus:border-indigo-500"
-                                                                />
-                                                            )}
-                                                            {item.type === 'exit' && (
-                                                                <div className="space-y-1">
-                                                                    <input 
-                                                                        type="text" 
-                                                                        placeholder="เหตุผลที่ย้าย/ลาออก"
-                                                                        value={item.exitReason}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].exitReason = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                    <input 
-                                                                        type="text" 
-                                                                        placeholder="โรงเรียนเป้าหมาย"
-                                                                        value={item.destination}
-                                                                        onChange={(e) => {
-                                                                            const newList = [...transitionList];
-                                                                            newList[idx].destination = e.target.value;
-                                                                            setTransitionList(newList);
-                                                                        }}
-                                                                        className="w-full h-8 px-2 bg-white dark:bg-[#232429] border border-gray-200 dark:border-gray-700 rounded-lg text-[10px] font-bold outline-none focus:border-indigo-500"
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* Modal Footer */}
-                            <div className="px-8 py-6 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-gray-800 flex justify-end items-center gap-4">
-                                <button
-                                    onClick={() => setShowTransitionModal(false)}
-                                    className="px-6 py-2.5 text-xs font-black text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all uppercase tracking-widest"
-                                >
-                                    ยกเลิก
-                                </button>
-                                <button
-                                    onClick={handleBatchTransition}
-                                    disabled={isSubmitting}
-                                    className="px-10 py-3 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2"
-                                >
-                                    {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกข้อมูลทั้งหมด'}
-                                    {!isSubmitting && <FaCheckCircle size={14} />}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             </div>
         </MainLayout>
     );

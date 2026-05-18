@@ -19,6 +19,7 @@ interface AttendanceRecord {
   checkOutTime?: string;
   status?: string;
   userType?: string;
+  teacherId?: string;
 }
 
 const TeacherAttendanceTodayPage: React.FC = () => {
@@ -71,7 +72,10 @@ const TeacherAttendanceTodayPage: React.FC = () => {
         }
 
         // 1. ดึงรายชื่อครูทั้งหมดจาก school-settings
-        const teachersQuery = query(collection(firestore, "school-settings", schoolId, "teachers"));
+        const teachersQuery = query(
+          collection(firestore, "school-settings", schoolId, "teachers"),
+          where("status", "==", "อยู่")
+        );
         const teachersSnap = await getDocs(teachersQuery);
         
         const records: AttendanceRecord[] = [];
@@ -105,7 +109,8 @@ const TeacherAttendanceTodayPage: React.FC = () => {
             checkInTime,
             checkOutTime,
             status,
-            userType: 'teacher'
+            userType: 'teacher',
+            teacherId: teacherData.teacherId || "",
           });
         }));
 
@@ -196,6 +201,8 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-gray-50 dark:bg-[#323338] border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-center">ลำดับ</th>
+                                <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
                                 <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">ชื่อ - นามสกุล</th>
                                 <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-center">เวลาเข้า</th>
                                 <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-center">เวลาออก</th>
@@ -205,19 +212,25 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                         กำลังโหลดข้อมูล...
                                     </td>
                                 </tr>
                             ) : filteredData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                         ไม่พบข้อมูลการลงเวลาในวันนี้
                                     </td>
                                 </tr>
                             ) : (
-                                paginatedData.map((record) => (
+                                paginatedData.map((record, index) => (
                                     <tr key={record.id} className="hover:bg-gray-50 dark:hover:bg-[#323338]/50 transition-colors">
+                                        <td className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400 font-medium">
+                                            {(currentPage - 1) * itemsPerPage + index + 1}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">
+                                            {record.teacherId || "-"}
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <img 
@@ -249,11 +262,23 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             {record.status === 'Late' ? (
-                                                <span className="text-red-500 text-sm font-medium">สาย</span>
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800">
+                                                    สาย
+                                                </span>
                                             ) : record.status === 'OnTime' ? (
-                                                <span className="text-green-500 text-sm font-medium">ปกติ</span>
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
+                                                    ปกติ
+                                                </span>
+                                            ) : record.status ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                                                    {record.status}
+                                                </span>
+                                            ) : record.checkInTime ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 border border-green-100 dark:border-green-900">
+                                                    มา
+                                                </span>
                                             ) : (
-                                                <span className="text-gray-500 text-sm">-</span>
+                                                <span className="text-gray-400 text-sm font-medium">ยังไม่มา</span>
                                             )}
                                         </td>
                                     </tr>

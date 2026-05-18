@@ -18,6 +18,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
+import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
 import {
   calculateAttendanceStatus,
   GateRecord,
@@ -26,12 +27,11 @@ import {
   TravelRecord
 } from "@/utils/attendanceLogic";
 import Swal from "sweetalert2";
-import { FaCheck, FaTimes, FaClock, FaUserSlash, FaUserGraduate, FaLock } from "react-icons/fa";
+import { FaCheck, FaTimes, FaClock, FaUserSlash, FaUserGraduate } from "react-icons/fa";
 import { CalendarOff, Sparkles, School } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
-import { Link } from "react-router-dom";
 
 interface Student {
   id: string;
@@ -42,6 +42,11 @@ interface Student {
   attendanceStatus?: "มา" | "สาย" | "ลา" | "ขาด";
   isLeave: boolean; // 📌 เพิ่ม: property สำหรับตรวจสอบว่านักเรียนลาหรือไม่
   parentLineUserIds?: string[]; // 📌 เพิ่ม: เก็บ ID ผู้ปกครองเพื่อลดการ Query ซ้ำ
+  behaviorScore?: number;
+  flagAction?: FlagAction;
+  existingDailyStatus?: string | null;
+  existingBehaviorScoreStatus?: string | null;
+  existingFlagBehaviorScoreStatus?: string | null;
 }
 
 interface FoundUser {
@@ -63,6 +68,66 @@ const ATTENDANCE_STATUS = {
 } as const;
 
 type AttendanceStatus = (typeof ATTENDANCE_STATUS)[keyof typeof ATTENDANCE_STATUS];
+
+type FlagAction =
+  | "normal"
+  | "sickLeave"
+  | "personalLeave"
+  | "cancelFlag"
+  | "noScanPresentNoDeduct"
+  | "noScanPresentDeduct"
+  | "scannedAbsentDeduct"
+  | "cancelFlagKeepGate";
+
+const FLAG_ACTION_OPTIONS: { value: FlagAction; label: string }[] = [
+  { value: "normal", label: "เข้าแถวปกติ" },
+  { value: "sickLeave", label: "ลาป่วย" },
+  { value: "personalLeave", label: "ลากิจ" },
+  { value: "cancelFlag", label: "ยกเลิกการเช็คแถว" },
+  { value: "noScanPresentNoDeduct", label: "ไม่สแกนแต่มาเข้าแถวไม่หักคะแนน (ลงเวลาปกติ)" },
+  { value: "noScanPresentDeduct", label: "ไม่สแกนแต่มาเข้าแถวและหักคะแนน (ไม่ลงเวลา บัตร Lock)" },
+  { value: "scannedAbsentDeduct", label: "สแกนแต่ไม่มาเข้าแถวหักคะแนน" },
+  { value: "cancelFlagKeepGate", label: "ยกเลิกการเช็คแถว และเวลาสแกนเข้า" },
+];
+
+const getDefaultFlagAction = (status?: AttendanceStatus): FlagAction => {
+  if (status === ATTENDANCE_STATUS.LEAVE) return "sickLeave";
+  return "normal";
+};
+
+const getFlagActionLabel = (action?: FlagAction) => (
+  FLAG_ACTION_OPTIONS.find(option => option.value === action)?.label || ""
+);
+
+const getStatusFromAction = (action: FlagAction): AttendanceStatus => {
+  switch (action) {
+    case "sickLeave":
+    case "personalLeave":
+      return ATTENDANCE_STATUS.LEAVE;
+    case "scannedAbsentDeduct":
+      return ATTENDANCE_STATUS.ABSENT;
+    default:
+      return ATTENDANCE_STATUS.PRESENT;
+  }
+};
+
+const toThaiAttendanceStatus = (statusKey?: string | null) => {
+  switch (statusKey) {
+    case "present": return ATTENDANCE_STATUS.PRESENT;
+    case "late": return ATTENDANCE_STATUS.LATE;
+    case "leave": return ATTENDANCE_STATUS.LEAVE;
+    case "officialTravel": return "ไปราชการ";
+    default: return ATTENDANCE_STATUS.ABSENT;
+  }
+};
+
+const getFlagBehaviorStatus = (action?: FlagAction | null) => (
+  action ? `flag:${action}` : null
+);
+
+const isFlagDeductionAction = (action?: FlagAction | null) => (
+  action === "noScanPresentDeduct" || action === "scannedAbsentDeduct"
+);
 
 // Helper: แปลงสถานะเป็น Key ภาษาอังกฤษสำหรับ Aggregation
 const getFlagStatusKey = (status?: AttendanceStatus | null) => {
@@ -145,6 +210,9 @@ const FlagCeremonyPage: React.FC = () => {
   const todayEvent = calendarEvents[todayStr];
   const [studentCheckinEnd, setStudentCheckinEnd] = useState("08:00"); // Default fallback
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
+  const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
+  const [selectedFlagAction, setSelectedFlagAction] = useState<FlagAction>("normal");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   const dayOfWeek = new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' });
   const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
@@ -190,6 +258,20 @@ const FlagCeremonyPage: React.FC = () => {
     };
     checkTeacherStatus();
   }, [user, schoolId]);
+
+  // Synchronize manual class level and room selectors with selectedClass
+  useEffect(() => {
+    if (!isHomeroom) {
+      if (selectedClassLevel && selectedRoom) {
+        setSelectedClass(`${selectedClassLevel}/${selectedRoom}`);
+      } else if (selectedClassLevel) {
+        setSelectedClass(selectedClassLevel);
+      } else {
+        setSelectedClass("");
+      }
+    }
+  }, [selectedClassLevel, selectedRoom, isHomeroom]);
+
 
   useEffect(() => {
     const fetchLevels = async () => {
@@ -239,6 +321,7 @@ const FlagCeremonyPage: React.FC = () => {
         if (data.attendanceConfig?.studentLateTime) {
           setStudentCheckinEnd(data.attendanceConfig.studentLateTime);
         }
+        setBehaviorScoreConfig(data.behaviorScoreConfig || null);
       }
     });
 
@@ -306,6 +389,7 @@ const FlagCeremonyPage: React.FC = () => {
   useEffect(() => {
     if (!selectedClass || !schoolId) {
       setStudents([]);
+      setSelectedStudentIds(new Set());
       setIsAlreadySaved(false);
       return;
     }
@@ -314,6 +398,7 @@ const FlagCeremonyPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       setIsAlreadySaved(false);
+      setSelectedStudentIds(new Set());
       setOriginalAttendanceMap(new Map());
       try {
         // 1. ดึงข้อมูลนักเรียนเฉพาะห้องที่เลือก (ยังคงจำเป็นเพื่อแสดงรายชื่อทั้งหมด)
@@ -362,6 +447,10 @@ const FlagCeremonyPage: React.FC = () => {
           attendanceStatus: ATTENDANCE_STATUS.PRESENT,
           isLeave: false,
           parentLineUserIds: doc.data().parentLineUserIds || [],
+          behaviorScore: doc.data().behaviorScore ?? 100,
+          flagAction: "normal",
+          existingDailyStatus: null,
+          existingBehaviorScoreStatus: null,
         }));
 
         // 2. ดึงข้อมูลการเข้าแถวของนักเรียนทีละคน (วิธีนี้ไม่ต้องสร้าง Index ใน Firebase)
@@ -372,10 +461,12 @@ const FlagCeremonyPage: React.FC = () => {
           const attendanceSnap = await getDoc(attendanceRef);
           if (attendanceSnap.exists()) {
             hasBeenSaved = true;
-            const status = attendanceSnap.data().status;
+            const data = attendanceSnap.data();
+            const status = data.status;
+            const action = data.action || getDefaultFlagAction(status);
             if (status) {
               attendanceMapForOriginals.set(student.id, status);
-              return { ...student, attendanceStatus: status, isLeave: status === ATTENDANCE_STATUS.LEAVE };
+              return { ...student, attendanceStatus: status, flagAction: action, isLeave: status === ATTENDANCE_STATUS.LEAVE };
             }
           }
           return student;
@@ -403,22 +494,44 @@ const FlagCeremonyPage: React.FC = () => {
         // 1. Get Flag Status (Existing)
         let flagRecord: FlagRecord | null = null;
         let originalStatus = undefined;
+        let originalAction: FlagAction | undefined;
 
         const flagRef = doc(firestore, "school-settings", schoolId, "students", student.id, "flag_ceremony_summary", todayStr);
         const flagSnap = await getDoc(flagRef);
         if (flagSnap.exists()) {
-          flagRecord = { status: flagSnap.data().status };
-          originalStatus = flagSnap.data().status;
+          const flagData = flagSnap.data();
+          flagRecord = { status: flagData.status };
+          originalStatus = flagData.status;
+          originalAction = flagData.action;
         }
 
         // 2. Get Gate Attendance
         let gateRecord: GateRecord | null = null;
+        let existingDailyStatus: string | null = null;
+        let existingBehaviorScoreStatus: string | null = null;
+        let existingFlagBehaviorScoreStatus: string | null = null;
         const paramDate = todayStr; // Or use date picker
         const gateRef = doc(firestore, "school-settings", schoolId, "students", student.id, "attendance", paramDate);
         const gateSnap = await getDoc(gateRef);
         if (gateSnap.exists()) {
           const d = gateSnap.data();
-          gateRecord = { checkinTime: d.time || "", status: d.status }; // Adjust based on actual field names
+          const checkinSource = d.checkinTime || d.time || null;
+          const checkinTime = checkinSource?.toDate
+            ? checkinSource.toDate().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+            : typeof checkinSource === "string"
+              ? checkinSource
+              : "";
+          gateRecord = { checkinTime, status: d.status };
+          (gateRecord as any).rawCheckinTime = checkinSource;
+          existingDailyStatus = d.status || null;
+          const legacyBehaviorScoreStatus = d.metadata?.behaviorScoreStatus || d.behaviorScoreStatus || null;
+          existingBehaviorScoreStatus = d.metadata?.attendanceBehaviorScoreStatus
+            || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? d.status : legacyBehaviorScoreStatus)
+            || d.status
+            || null;
+          existingFlagBehaviorScoreStatus = d.metadata?.flagBehaviorScoreStatus
+            || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? legacyBehaviorScoreStatus : null)
+            || null;
         }
 
         // 4. Get Leave Data
@@ -487,6 +600,10 @@ const FlagCeremonyPage: React.FC = () => {
         return {
           ...student,
           attendanceStatus: displayStatus,
+          flagAction: originalAction || getDefaultFlagAction(displayStatus),
+          existingDailyStatus,
+          existingBehaviorScoreStatus,
+          existingFlagBehaviorScoreStatus,
           // Attach extra data for Save Logic
           _gateData: gateRecord,
           _leaveData: leaveRecord,
@@ -642,23 +759,224 @@ const FlagCeremonyPage: React.FC = () => {
     }
   };
 
-  const handleStatusChange = async (studentId: string, newStatus: AttendanceStatus) => {
-    // อัปเดตสถานะในหน้าจอทันที แต่ยังไม่บันทึกลง Firestore
+  const applySelectedActionToStudent = (studentId: string) => {
+    setSelectedStudentIds((prev) => new Set(prev).add(studentId));
     setStudents((prevStudents) =>
       prevStudents.map((s) =>
-        s.id === studentId ? { ...s, attendanceStatus: newStatus } : s
+        s.id === studentId && !s.isLeave
+          ? { ...s, flagAction: selectedFlagAction, attendanceStatus: getStatusFromAction(selectedFlagAction) }
+          : s
       )
     );
+  };
+
+  const resolveFlagActionResult = (
+    student: Student,
+    gateData: GateRecord | null,
+    leaveData: LeaveRecord | null,
+    travelData: TravelRecord | null
+  ) => {
+    const action = student.flagAction || getDefaultFlagAction(student.attendanceStatus);
+    const rawGateCheckinTime = (gateData as any)?.rawCheckinTime || null;
+
+    if (action === "cancelFlag") {
+      return {
+        action,
+        shouldDeleteFlag: true,
+        shouldWriteDaily: false,
+        shouldNotify: false,
+        flagStatus: null as AttendanceStatus | null,
+        finalStatusKey: null as string | null,
+        dailyStatus: null as string | null,
+        behaviorStatus: student.existingBehaviorScoreStatus || student.existingDailyStatus || null,
+        checkinTime: null as any,
+        checkinDevice: undefined as string | undefined,
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    if (action === "cancelFlagKeepGate") {
+      const gateStatus = gateData?.status === "สาย" || gateData?.status === "late" ? "late" : "present";
+      return {
+        action,
+        shouldDeleteFlag: true,
+        shouldWriteDaily: !!gateData?.checkinTime,
+        shouldNotify: false,
+        flagStatus: null as AttendanceStatus | null,
+        finalStatusKey: gateStatus,
+        dailyStatus: toThaiAttendanceStatus(gateStatus),
+        behaviorStatus: toThaiAttendanceStatus(gateStatus),
+        checkinTime: rawGateCheckinTime || null,
+        checkinDevice: undefined as string | undefined,
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    if (action === "sickLeave" || action === "personalLeave") {
+      return {
+        action,
+        shouldDeleteFlag: false,
+        shouldWriteDaily: true,
+        shouldNotify: true,
+        flagStatus: ATTENDANCE_STATUS.LEAVE,
+        finalStatusKey: "leave",
+        dailyStatus: ATTENDANCE_STATUS.LEAVE,
+        behaviorStatus: ATTENDANCE_STATUS.LEAVE,
+        checkinTime: null,
+        checkinDevice: undefined as string | undefined,
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    if (action === "noScanPresentNoDeduct") {
+      return {
+        action,
+        shouldDeleteFlag: false,
+        shouldWriteDaily: true,
+        shouldNotify: true,
+        flagStatus: ATTENDANCE_STATUS.PRESENT,
+        finalStatusKey: "present",
+        dailyStatus: ATTENDANCE_STATUS.PRESENT,
+        behaviorStatus: ATTENDANCE_STATUS.PRESENT,
+        checkinTime: rawGateCheckinTime || Timestamp.now(),
+        checkinDevice: rawGateCheckinTime ? undefined : "FlagCeremony",
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    if (action === "noScanPresentDeduct") {
+      return {
+        action,
+        shouldDeleteFlag: false,
+        shouldWriteDaily: true,
+        shouldNotify: true,
+        flagStatus: ATTENDANCE_STATUS.PRESENT,
+        finalStatusKey: "late",
+        dailyStatus: ATTENDANCE_STATUS.LATE,
+        behaviorStatus: "flag:noScanPresentDeduct",
+        checkinTime: null,
+        checkinDevice: undefined as string | undefined,
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    if (action === "scannedAbsentDeduct") {
+      const finalStatusKey = gateData?.checkinTime
+        ? (gateData.status === "สาย" || gateData.status === "late" ? "late" : "present")
+        : "absent";
+      return {
+        action,
+        shouldDeleteFlag: false,
+        shouldWriteDaily: true,
+        shouldNotify: !gateData?.checkinTime,
+        flagStatus: ATTENDANCE_STATUS.ABSENT,
+        finalStatusKey,
+        dailyStatus: toThaiAttendanceStatus(finalStatusKey),
+        behaviorStatus: "flag:scannedAbsentDeduct",
+        checkinTime: rawGateCheckinTime || null,
+        checkinDevice: undefined as string | undefined,
+        description: getFlagActionLabel(action),
+      };
+    }
+
+    const flagRecord: FlagRecord = { status: student.attendanceStatus };
+    const result = calculateAttendanceStatus(gateData, flagRecord, leaveData, travelData, { studentLateTime: studentCheckinEnd });
+    const dailyStatus = toThaiAttendanceStatus(result.finalStatus);
+
+    return {
+      action,
+      shouldDeleteFlag: false,
+      shouldWriteDaily: true,
+      shouldNotify: !gateData?.checkinTime,
+      flagStatus: student.attendanceStatus || ATTENDANCE_STATUS.PRESENT,
+      finalStatusKey: result.finalStatus,
+      dailyStatus,
+      behaviorStatus: dailyStatus,
+      checkinTime: rawGateCheckinTime || (result.finalStatus === "present" || result.finalStatus === "late" ? Timestamp.now() : null),
+      checkinDevice: rawGateCheckinTime ? undefined : "FlagCeremony",
+      description: result.description,
+    };
+  };
+
+  const getBehaviorScorePreview = (student: Student) => {
+    if (!selectedStudentIds.has(student.id)) return null;
+
+    const gateData = (student as any)._gateData;
+    const leaveData = (student as any)._leaveData;
+    const travelData = (student as any)._travelData;
+    const resolved = resolveFlagActionResult(student, gateData, leaveData, travelData);
+    if (!resolved.shouldWriteDaily || !resolved.dailyStatus) return null;
+
+    let previewScore = student.behaviorScore ?? 100;
+    let totalDelta = 0;
+
+    const attendancePreview = calculateAttendanceBehaviorScoreChange({
+      currentScore: previewScore,
+      oldStatus: student.existingBehaviorScoreStatus || student.existingDailyStatus,
+      newStatus: isFlagDeductionAction(resolved.action)
+        ? (student.existingBehaviorScoreStatus || student.existingDailyStatus)
+        : resolved.behaviorStatus,
+      config: behaviorScoreConfig,
+    });
+
+    if (attendancePreview) {
+      previewScore = attendancePreview.summary.nextScore;
+      totalDelta += attendancePreview.summary.delta;
+    }
+
+    const nextFlagBehaviorStatus = isFlagDeductionAction(resolved.action)
+      ? getFlagBehaviorStatus(resolved.action)
+      : null;
+
+    if (student.existingFlagBehaviorScoreStatus || nextFlagBehaviorStatus) {
+      const flagPreview = calculateAttendanceBehaviorScoreChange({
+        currentScore: previewScore,
+        oldStatus: student.existingFlagBehaviorScoreStatus,
+        newStatus: nextFlagBehaviorStatus,
+        config: behaviorScoreConfig,
+      });
+
+      if (flagPreview) {
+        previewScore = flagPreview.summary.nextScore;
+        totalDelta += flagPreview.summary.delta;
+      }
+    }
+
+    if (totalDelta === 0) return null;
+
+    return {
+      nextScore: previewScore,
+      delta: totalDelta,
+    };
   };
 
   // 📌 เพิ่ม: ฟังก์ชันสำหรับบันทึกข้อมูลทั้งหมด
   const handleSaveAll = async () => {
     if (!schoolId) return;
+    const selectedStudents = students.filter((student) => selectedStudentIds.has(student.id));
+    if (selectedStudents.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ยังไม่ได้เลือกนักเรียน',
+        text: 'กรุณาเลือกคำสั่งด้านบน แล้วคลิกการ์ดนักเรียนที่ต้องการบันทึก',
+        background: '#2a2b2f',
+        color: '#ffffff',
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const batch = writeBatch(firestore);
       // 📌 เพิ่ม: สร้าง list ของนักเรียนที่ต้องแจ้งเตือน
       const studentsToNotify: { student: Student, status: AttendanceStatus }[] = [];
+      const behaviorScoreUpdates = new Map<string, number>();
+      const savedStatusUpdates = new Map<string, {
+        flagStatus: AttendanceStatus | null;
+        dailyStatus: string | null;
+        attendanceBehaviorStatus: string | null;
+        flagBehaviorStatus: string | null;
+      }>();
 
       // 📌 เพิ่ม: ดึงข้อมูลครูประจำชั้น (LINE Config) เพียงครั้งเดียว
       let teacherConfig = null;
@@ -693,17 +1011,23 @@ const FlagCeremonyPage: React.FC = () => {
       }
 
       // 📌 Prepare Loop for Async Operations
-      const promises = students.map(async (student) => {
+      const promises = selectedStudents.map(async (student) => {
 
         // 1. Calculate Logic-based Status
         const gateData = (student as any)._gateData;
         const leaveData = (student as any)._leaveData;
         const travelData = (student as any)._travelData;
 
-        const flagRecord: FlagRecord = { status: student.attendanceStatus };
-
-        const result = calculateAttendanceStatus(gateData, flagRecord, leaveData, travelData, { studentLateTime: studentCheckinEnd });
-        const finalStatusKey = result.finalStatus; // 'present' | 'late' | 'leave' | ...
+        const resolved = resolveFlagActionResult(student, gateData, leaveData, travelData);
+        const finalStatusKey = resolved.finalStatusKey; // 'present' | 'late' | 'leave' | ...
+        savedStatusUpdates.set(student.id, {
+          flagStatus: resolved.flagStatus,
+          dailyStatus: resolved.dailyStatus,
+          attendanceBehaviorStatus: isFlagDeductionAction(resolved.action)
+            ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
+            : resolved.behaviorStatus,
+          flagBehaviorStatus: isFlagDeductionAction(resolved.action) ? getFlagBehaviorStatus(resolved.action) : null,
+        });
 
         // 2. Save Flag Ceremony Record (What the teacher selected)
         // 📌 Path: students/{id}/flag_ceremony_summary/{date} 
@@ -716,34 +1040,33 @@ const FlagCeremonyPage: React.FC = () => {
           "flag_ceremony_summary",
           todayStr
         );
-        const attendanceData = {
-          studentId: student.studentId,
-          studentDocId: student.id,
-          status: student.attendanceStatus, // Keep what teacher explicitly selected
-          date: todayStr,
-          timestamp: Timestamp.now(),
-        };
-        batch.set(attendanceRef, attendanceData, { merge: true });
+        if (resolved.shouldDeleteFlag) {
+          batch.delete(attendanceRef);
+        } else {
+          const attendanceData = {
+            studentId: student.studentId,
+            studentDocId: student.id,
+            status: resolved.flagStatus, // Keep what teacher explicitly selected
+            action: resolved.action,
+            actionLabel: getFlagActionLabel(resolved.action),
+            date: todayStr,
+            timestamp: Timestamp.now(),
+          };
+          batch.set(attendanceRef, attendanceData, { merge: true });
+        }
 
         // --- START: Aggregation Logic ---
         const studentRef = doc(firestore, "school-settings", schoolId, "students", student.id);
-        const newStatus = student.attendanceStatus; // Flag status for stats
+        const newStatus = resolved.flagStatus; // Flag status for stats
         const newStatusKey = getFlagStatusKey(newStatus);
-        const classKey = selectedClass.split('/')[0] || "ไม่ระบุชั้น";
 
         if (isAlreadySaved) {
           const oldFlagStatus = originalAttendanceMap.get(student.id);
 
-          // Re-calculate OLD Final Status to decrement correctly
-          // We need the OLD Gate/Leave/Travel data. 
-          // Assuming Gate/Leave/Travel didn't change *during* this session, 
-          // we can use the same `gateData`, `leaveData` with `oldFlagStatus`.
-          const oldFlagRecord: FlagRecord = { status: oldFlagStatus };
-          const oldResult = calculateAttendanceStatus(gateData, oldFlagRecord, leaveData, travelData, { studentLateTime: studentCheckinEnd });
-          const oldFinalStatusKey = oldResult.finalStatus;
+          const oldFinalStatusKey = getFlagStatusKey(student.existingDailyStatus as AttendanceStatus) || getFlagStatusKey(oldFlagStatus);
 
           // Only update if status has changed
-          if (finalStatusKey !== oldFinalStatusKey) {
+          if (newStatusKey !== oldFinalStatusKey) {
             const oldStatusKey = getFlagStatusKey(oldFlagStatus); // For FlagStats
             const statsUpdate: any = {};
 
@@ -779,18 +1102,20 @@ const FlagCeremonyPage: React.FC = () => {
             batch.update(studentRef, { [`flagCeremonyStats.${newStatusKey}`]: increment(1) });
           }
           // Bulk Update Summaries
-          updatePeriodSummaries(
-            firestore,
-            batch,
-            schoolId,
-            student.id,
-            'students',
-            todayStr,
-            null,
-            finalStatusKey,
-            undefined,
-            currentAcademicYear
-          );
+          if (finalStatusKey) {
+            updatePeriodSummaries(
+              firestore,
+              batch,
+              schoolId,
+              student.id,
+              'students',
+              todayStr,
+              null,
+              finalStatusKey,
+              undefined,
+              currentAcademicYear
+            );
+          }
         }
         // --- END: Aggregation Logic ---
 
@@ -798,43 +1123,97 @@ const FlagCeremonyPage: React.FC = () => {
         // Logic ใหม่ (2025-02-08):
         // 1. ถ้าลงเวลาที่ประตูแล้ว (gateData.checkinTime มีค่า) -> ไม่ต้องแจ้งเตือนซ้ำ (ถือว่าแจ้งตอนเช้าแล้ว)
         // 2. ถ้ายังไม่ลงเวลาที่ประตู -> ให้แจ้งเตือนสถานะจากหน้าเสาธง (มา/สาย/ลา/ขาด)
-        if (!gateData?.checkinTime && student.attendanceStatus) {
+        if (resolved.shouldNotify && resolved.flagStatus) {
           // แจ้งเตือนทุกกรณีหากยังไม่ได้ลงเวลาที่ประตู รวมถึง "มา" (เช็คหน้าเสาธง)
-          studentsToNotify.push({ student, status: student.attendanceStatus });
+          studentsToNotify.push({ student, status: resolved.flagStatus });
         }
 
         // 📌 Create/Update Daily Attendance (Unified Record)
         const dailyAttendanceRef = doc(firestore, "school-settings", schoolId, "students", student.id, "attendance", todayStr);
-        // We always overwrite/merge with the Calculated Final Status
+        if (resolved.shouldWriteDaily && resolved.dailyStatus) {
+          const dailyAttendanceData: Record<string, any> = {
+            schoolId,
+            date: todayStr,
+            userType: 'student',
+            classLevel: student.class?.split('/')[0] || "",
+            status: resolved.dailyStatus,
+            checkinTime: resolved.checkinTime,
+            updatedAt: serverTimestamp(),
+            metadata: {
+              gate: gateData?.status || 'none',
+              flag: resolved.flagStatus,
+              action: resolved.action,
+              actionLabel: getFlagActionLabel(resolved.action),
+              leave: leaveData?.type || 'none',
+              description: resolved.description,
+              behaviorScoreStatus: resolved.behaviorStatus,
+              attendanceBehaviorScoreStatus: isFlagDeductionAction(resolved.action)
+                ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
+                : resolved.behaviorStatus,
+              flagBehaviorScoreStatus: getFlagBehaviorStatus(resolved.action),
+            }
+          };
 
-        batch.set(dailyAttendanceRef, {
-          schoolId,
-          date: todayStr,
-          userType: 'student',
-          classLevel: student.class?.split('/')[0] || "",
-
-          // Mapping:
-          status: finalStatusKey === 'present' ? 'มา' :
-            finalStatusKey === 'late' ? 'สาย' :
-              finalStatusKey === 'leave' ? 'ลา' :
-                finalStatusKey === 'officialTravel' ? 'ไปราชการ' : 'ขาด',
-
-          checkinTime: gateData?.checkinTime || (finalStatusKey === 'present' || finalStatusKey === 'late' ? Timestamp.now() : null),
-          checkinDevice: gateData?.checkinTime ? undefined : 'FlagCeremony', // Only set if not from Gate
-          updatedAt: serverTimestamp(),
-          // Add metadata
-          metadata: {
-            gate: gateData?.status || 'none',
-            flag: student.attendanceStatus,
-            leave: leaveData?.type || 'none',
-            description: result.description
+          if (resolved.checkinDevice) {
+            dailyAttendanceData.checkinDevice = resolved.checkinDevice;
           }
-        }, { merge: true });
+
+          let behaviorScoreAfterUpdate = student.behaviorScore;
+          const attendanceBehaviorScoreResult = applyAttendanceBehaviorScore({
+            batch,
+            studentRef,
+            currentScore: behaviorScoreAfterUpdate,
+            oldStatus: student.existingBehaviorScoreStatus || student.existingDailyStatus,
+            newStatus: isFlagDeductionAction(resolved.action)
+              ? (student.existingBehaviorScoreStatus || student.existingDailyStatus)
+              : resolved.behaviorStatus,
+            config: behaviorScoreConfig,
+          });
+          if (attendanceBehaviorScoreResult) {
+            behaviorScoreAfterUpdate = attendanceBehaviorScoreResult.nextScore;
+          }
+
+          const nextFlagBehaviorStatus = isFlagDeductionAction(resolved.action)
+            ? getFlagBehaviorStatus(resolved.action)
+            : null;
+          if (student.existingFlagBehaviorScoreStatus || nextFlagBehaviorStatus) {
+            const flagBehaviorScoreResult = applyAttendanceBehaviorScore({
+              batch,
+              studentRef,
+              currentScore: behaviorScoreAfterUpdate,
+              oldStatus: student.existingFlagBehaviorScoreStatus,
+              newStatus: nextFlagBehaviorStatus,
+              config: behaviorScoreConfig,
+            });
+            if (flagBehaviorScoreResult) {
+              behaviorScoreAfterUpdate = flagBehaviorScoreResult.nextScore;
+            }
+          }
+
+          if (behaviorScoreAfterUpdate !== student.behaviorScore) {
+            behaviorScoreUpdates.set(student.id, behaviorScoreAfterUpdate ?? 100);
+          }
+
+          batch.set(dailyAttendanceRef, dailyAttendanceData, { merge: true });
+        }
 
       });
 
       await Promise.all(promises);
       await batch.commit();
+
+      setStudents((prevStudents) =>
+        prevStudents.map((student) => {
+          const savedStatus = savedStatusUpdates.get(student.id);
+          return {
+            ...student,
+            behaviorScore: behaviorScoreUpdates.get(student.id) ?? student.behaviorScore,
+            existingDailyStatus: savedStatus?.dailyStatus ?? student.existingDailyStatus,
+            existingBehaviorScoreStatus: savedStatus?.attendanceBehaviorStatus ?? student.existingBehaviorScoreStatus,
+            existingFlagBehaviorScoreStatus: savedStatus?.flagBehaviorStatus ?? null,
+          };
+        })
+      );
 
       // 📌 เพิ่ม: ส่งแจ้งเตือนหลังจากบันทึกข้อมูลสำเร็จ
       const notificationPromises = studentsToNotify.map(item => {
@@ -868,14 +1247,25 @@ const FlagCeremonyPage: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'บันทึกข้อมูลสำเร็จ',
-        text: 'ระบบได้บันทึกข้อมูลการเข้าแถวของนักเรียนทุกคนแล้ว',
+        text: `ระบบได้บันทึกข้อมูลการเข้าแถวของนักเรียนที่เลือก ${selectedStudents.length} คนแล้ว`,
         background: '#2a2b2f',
         color: '#ffffff',
         timer: 2000,
         showConfirmButton: false,
       });
       setIsAlreadySaved(true);
-      setOriginalAttendanceMap(new Map(students.map(s => [s.id, s.attendanceStatus!]))); // Update original map to current state
+      setOriginalAttendanceMap((prev) => {
+        const next = new Map(prev);
+        savedStatusUpdates.forEach((value, studentId) => {
+          if (value.flagStatus) {
+            next.set(studentId, value.flagStatus);
+          } else {
+            next.delete(studentId);
+          }
+        });
+        return next;
+      });
+      setSelectedStudentIds(new Set());
     } catch (error) {
       console.error("Error saving all attendance:", error);
       Swal.fire({
@@ -907,37 +1297,6 @@ const FlagCeremonyPage: React.FC = () => {
       default: return 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f]';
     }
   };
-
-  const statusOptions = [
-    {
-      status: ATTENDANCE_STATUS.PRESENT,
-      label: 'มา',
-      colorClass: 'text-emerald-600 dark:text-emerald-400',
-      bgClass: 'bg-emerald-100 dark:bg-emerald-900/30',
-      activeClass: 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200 dark:ring-emerald-900 transform scale-105'
-    },
-    {
-      status: ATTENDANCE_STATUS.LATE,
-      label: 'สาย',
-      colorClass: 'text-amber-600 dark:text-amber-400',
-      bgClass: 'bg-amber-100 dark:bg-amber-900/30',
-      activeClass: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30 ring-2 ring-amber-200 dark:ring-amber-900 transform scale-105'
-    },
-    {
-      status: ATTENDANCE_STATUS.LEAVE,
-      label: 'ลา',
-      colorClass: 'text-blue-600 dark:text-blue-400',
-      bgClass: 'bg-blue-100 dark:bg-blue-900/30',
-      activeClass: 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-200 dark:ring-blue-900 transform scale-105'
-    },
-    {
-      status: ATTENDANCE_STATUS.ABSENT,
-      label: 'ขาด',
-      colorClass: 'text-rose-600 dark:text-rose-400',
-      bgClass: 'bg-rose-100 dark:bg-rose-900/30',
-      activeClass: 'bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-200 dark:ring-rose-900 transform scale-105'
-    },
-  ];
 
   return (
     <MainLayout>
@@ -1103,22 +1462,42 @@ const FlagCeremonyPage: React.FC = () => {
                   </div>
 
                   {/* Sticky Action Bar */}
-                  <div className="flex justify-between items-center bg-white dark:bg-[#2a2b2f] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 sticky top-[70px] z-10 backdrop-blur-md bg-white/90 dark:bg-[#2a2b2f]/90">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
-                        <FaUserGraduate />
-                      </div>
-                      <span className="text-gray-600 dark:text-gray-300 font-medium">
-                        นักเรียนทั้งหมด <span className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">{students.length}</span> คน
-                      </span>
-                    </div>
+                  <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 sticky top-[70px] z-10 backdrop-blur-md bg-white/90 dark:bg-[#2a2b2f]/90">
+                    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+                            <FaUserGraduate />
+                          </div>
+                          <span className="text-gray-600 dark:text-gray-300 font-medium">
+                            นักเรียนทั้งหมด <span className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">{students.length}</span> คน
+                          </span>
+                        </div>
 
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-2">
+                        <label className="block text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                          คำสั่งรวมสำหรับเช็คแถว
+                        </label>
+                        <select
+                          value={selectedFlagAction}
+                          onChange={(e) => setSelectedFlagAction(e.target.value as FlagAction)}
+                          className="w-full lg:max-w-2xl px-4 py-3 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-base font-bold text-gray-900 dark:text-white"
+                        >
+                          <option value="" disabled>กรุณาเลือกสถานะ</option>
+                          {FLAG_ACTION_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                          เลือกคำสั่งด้านบน แล้วคลิกการ์ดนักเรียนเพื่อกำหนดสถานะ
+                        </p>
+                      </div>
+
                       <button
                         onClick={handleSaveAll}
                         disabled={isLoading}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-200 flex items-center gap-2 disabled:bg-gray-400 disabled:shadow-none transform active:scale-95"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-200 flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:shadow-none transform active:scale-95"
                       >
                         <FaCheck /> {isAlreadySaved ? 'อัปเดตข้อมูล' : 'บันทึกข้อมูล'}
                       </button>
@@ -1130,19 +1509,34 @@ const FlagCeremonyPage: React.FC = () => {
                     {students.map((student) => (
                       <div
                         key={student.id}
-                        className={`relative group rounded-2xl p-4 sm:p-6 border-2 transition-all duration-300 hover:shadow-lg ${getStatusStyle(student.attendanceStatus)}`}
+                        role="button"
+                        tabIndex={student.isLeave ? -1 : 0}
+                        onClick={() => applySelectedActionToStudent(student.id)}
+                        onKeyDown={(e) => {
+                          if ((e.key === "Enter" || e.key === " ") && !student.isLeave) {
+                            e.preventDefault();
+                            applySelectedActionToStudent(student.id);
+                          }
+                        }}
+                        className={`relative group rounded-2xl p-4 sm:p-6 border-2 transition-all duration-300 hover:shadow-lg ${student.isLeave ? "cursor-not-allowed opacity-80" : "cursor-pointer active:scale-[0.98]"} ${selectedStudentIds.has(student.id) ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#1e1f21]" : ""} ${getStatusStyle(student.attendanceStatus)}`}
                       >
+                        {selectedStudentIds.has(student.id) && (
+                          <div className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-1 text-xs font-bold text-white shadow-lg">
+                            <FaCheck className="w-3 h-3" />
+                            เลือกแล้ว
+                          </div>
+                        )}
                         <div className="flex flex-row sm:flex-col items-center gap-4">
                           {/* Avatar with Status Dot */}
                           <div className="relative flex-shrink-0">
-                            <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block relative">
+                            <div className="block relative">
                               <div className="absolute -inset-1 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur"></div>
                               <img
                                 src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.name}&background=random`}
                                 alt={student.name}
                                 className="relative w-16 h-16 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105"
                               />
-                            </Link>
+                            </div>
                             <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${student.attendanceStatus === 'มา' ? 'bg-green-500' :
                               student.attendanceStatus === 'สาย' ? 'bg-yellow-500' :
                                 student.attendanceStatus === 'ลา' ? 'bg-blue-500' : 'bg-red-500'
@@ -1151,11 +1545,9 @@ const FlagCeremonyPage: React.FC = () => {
 
                           {/* Info */}
                           <div className="flex-grow min-w-0 text-left sm:text-center">
-                            <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors">
-                              <h3 className="font-bold text-lg sm:text-xl text-gray-900 dark:text-white truncate" title={student.name}>
-                                {student.name}
-                              </h3>
-                            </Link>
+                            <h3 className="font-bold text-lg sm:text-xl text-gray-900 dark:text-white truncate" title={student.name}>
+                              {student.name}
+                            </h3>
                             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-2">
                               <span className="inline-block bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono text-xs sm:text-sm">
                                 {student.studentId}
@@ -1163,34 +1555,52 @@ const FlagCeremonyPage: React.FC = () => {
                             </p>
                           </div>
 
-                          {/* Controls */}
-                          <div className="w-full grid grid-cols-4 gap-2 mt-4 sm:mt-2">
-                            {statusOptions.map(opt => {
-                              // Logic for locking:
-                              // If student is on leave (from LeaveRequestPage), lock everything to 'Leave'.
-                              const isLocked = student.isLeave;
+                          <div
+                            className="w-full mt-3 sm:mt-2 rounded-xl bg-white/70 dark:bg-black/20 border border-gray-200 dark:border-gray-700 px-3 py-2"
+                            title={getFlagActionLabel(student.flagAction)}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`shrink-0 inline-flex items-center justify-center min-w-10 rounded-lg px-2 py-1 text-sm font-extrabold ${student.attendanceStatus === ATTENDANCE_STATUS.PRESENT
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                                : student.attendanceStatus === ATTENDANCE_STATUS.LATE
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
+                                  : student.attendanceStatus === ATTENDANCE_STATUS.LEAVE
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                                    : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'
+                                }`}>
+                                {student.attendanceStatus || ATTENDANCE_STATUS.ABSENT}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900 dark:text-white">
+                                {getFlagActionLabel(student.flagAction)}
+                              </span>
+                            </div>
+                          </div>
 
+                          <div className="w-full flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+                            <span>คะแนนความประพฤติ</span>
+                            {(() => {
+                              const preview = getBehaviorScorePreview(student);
+                              const currentScore = student.behaviorScore ?? 100;
                               return (
-                                <button
-                                  key={opt.status}
-                                  onClick={() => !isLocked && handleStatusChange(student.id, opt.status)}
-                                  disabled={isLocked}
-                                  className={`
-                                flex flex-col items-center justify-center py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 relative
-                                ${student.attendanceStatus === opt.status
-                                      ? `${opt.activeClass} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#2a2b2f] transform scale-105 shadow-md`
-                                      : 'bg-white/50 dark:bg-black/20 text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300'
-                                    }
-                                disabled:opacity-50 disabled:cursor-not-allowed
-                              `}
-                                >
-                                  {opt.label}
-                                  {isLocked && student.attendanceStatus === opt.status && (
-                                    <FaLock className="absolute top-0.5 right-1 w-3 h-3 text-current opacity-70" />
+                                <span className="flex items-center gap-2 font-bold">
+                                  <span className="text-emerald-600 dark:text-emerald-400">{currentScore}</span>
+                                  {preview && (
+                                    <>
+                                      <span className="text-gray-400 dark:text-gray-500">→</span>
+                                      <span className={preview.delta < 0 ? "text-rose-500 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}>
+                                        {preview.nextScore}
+                                      </span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${preview.delta < 0
+                                        ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                                        }`}>
+                                        {preview.delta > 0 ? "+" : ""}{preview.delta}
+                                      </span>
+                                    </>
                                   )}
-                                </button>
+                                </span>
                               );
-                            })}
+                            })()}
                           </div>
                         </div>
                       </div>

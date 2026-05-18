@@ -2,21 +2,15 @@ import React, { useState, FormEvent, useEffect } from "react";
 import MainLayout from "@/layouts/MainLayout";
 import { useParams, useNavigate } from "react-router-dom";
 import { firestore, storage, auth } from "@/firebase";
-<<<<<<< HEAD
 import { collection, addDoc, serverTimestamp, getDocs, query, doc, getDoc, where } from "firebase/firestore";
-=======
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
 import { FaIdCard, FaInfoCircle, FaUserPlus, FaArrowLeft } from "react-icons/fa";
 import { getLevelsByRange } from "@/utils/schoolUtils";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 const InputField: React.FC<{ label: string; name: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; placeholder?: string; maxLength?: number; required?: boolean }> = ({ label, name, value, onChange, type = "text", placeholder, maxLength, required }) => (
   <div>
@@ -35,14 +29,12 @@ const InputField: React.FC<{ label: string; name: string; value: string; onChang
 );
 
 const statusColorMap: { [key: string]: { bg: string; text: string } } = {
-  "เรียนอยู่": { bg: "bg-green-600", text: "text-white" },
+  "กำลังศึกษา": { bg: "bg-green-600", text: "text-white" },
   "พักการเรียน": { bg: "bg-yellow-500", text: "text-gray-900" },
+  "แขวนลอย": { bg: "bg-amber-600", text: "text-white" },
   "ย้าย": { bg: "bg-blue-600", text: "text-white" },
   "ลาออก": { bg: "bg-red-600", text: "text-white" },
-<<<<<<< HEAD
   "จำหน่าย": { bg: "bg-gray-600", text: "text-white" },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 const StatusSwitch: React.FC<{
@@ -78,11 +70,8 @@ const initialState = {
   firstNameEn: "", lastNameEn: "", nickname: "", gender: "", birthDate: "",
   ageYear: "", ageMonth: "", bloodType: "", birthProvince: "", nationality: "ไทย",
   race: "ไทย", religion: "พุทธ", schoolId: "", classLevel: "", room: "",
-  studentNumber: "", studentStatus: "เรียนอยู่", studentType: "ปกติ", gpa: "", gpax: "",
-<<<<<<< HEAD
+  studentNumber: "", studentStatus: "กำลังศึกษา", studentType: "ปกติ", gpa: "", gpax: "",
   exitDate: "", exitReason: "", exitDestinationSchool: "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   elderBrotherCount: "0", youngerBrotherCount: "0", elderSisterCount: "0", youngerSisterCount: "0",
   childOrder: "1", childOrderInCategory: "1", studyingSiblingCount: "0",
   parentsMaritalStatus: "อยู่ด้วยกัน", fatherIdNumber: "", fatherTitle: "", fatherFirstName: "",
@@ -112,13 +101,9 @@ export default function QuickAddStudentPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
 
-<<<<<<< HEAD
-  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+  const studentStatusOptions = ["กำลังศึกษา", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
-=======
-  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก"] as const;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   useEffect(() => {
     if (schoolId) setForm(prev => ({ ...prev, schoolId: schoolId }));
@@ -146,7 +131,6 @@ export default function QuickAddStudentPage() {
   };
 
   const handleStatusChange = (name: string, value: string) => {
-<<<<<<< HEAD
     setForm(prev => ({
       ...prev,
       [name]: value,
@@ -154,16 +138,13 @@ export default function QuickAddStudentPage() {
         ? new Date().toISOString().split('T')[0]
         : prev.exitDate,
     }));
-=======
-    setForm(prev => ({ ...prev, [name]: value }));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       try {
-        const compressedFile = await compressImage(file, 400, 0.7, 'image/webp');
+        const compressedFile = await compressImage(file, 400, 0.7, 'image/jpeg');
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -185,7 +166,6 @@ export default function QuickAddStudentPage() {
         setIsLoading(false);
         return;
       }
-<<<<<<< HEAD
 
       const studentsRef = collection(firestore, 'school-settings', formSchoolId, 'students');
       let conflictDoc: any = null;
@@ -223,17 +203,17 @@ export default function QuickAddStudentPage() {
           status: studentData.studentStatus,
         };
       }
-=======
-      const dataToSave: any = { ...studentData, schoolId: formSchoolId, role: ["student"], createdAt: serverTimestamp() };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       if (imageFile) {
-        const fileExtension = '.webp';
+        const fileExtension = '.jpg';
         let storagePath = `school-settings/${formSchoolId}/students/${studentData.classLevel}/${studentData.room}/${studentData.studentId}${fileExtension}`;
         const imageRef = ref(storage, storagePath);
         const snapshot = await uploadBytes(imageRef, imageFile);
         dataToSave.profileImageUrl = await getDownloadURL(snapshot.ref);
       }
       const docRef = await addDoc(collection(firestore, "school-settings", formSchoolId, "students"), dataToSave);
+      if (isActiveStudentSummaryStatus(studentData.studentStatus)) {
+        await updateOwnerAndSchoolCounts(firestore, formSchoolId, { students: 1 });
+      }
       const { updateStudentLookup } = await import("@/utils/studentLookupUtils");
       await updateStudentLookup(studentData.idCardNumber, studentData.studentId, formSchoolId, docRef.id);
       Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ!', timer: 1500, showConfirmButton: false, background: '#2a2b2f', color: '#ffffff' });
@@ -253,13 +233,7 @@ export default function QuickAddStudentPage() {
           {/* Compact Header */}
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
             <div className="flex items-center gap-3">
-<<<<<<< HEAD
               <BackButton to="/academic/hub/students" />
-=======
-              <button onClick={() => navigate(-1)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors">
-                <FaArrowLeft className="text-gray-500" size={14} />
-              </button>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                 <FaUserPlus className="text-indigo-600" size={18} />
                 เพิ่มนักเรียนด่วน
@@ -276,13 +250,13 @@ export default function QuickAddStudentPage() {
                 <div className="flex flex-col items-center flex-shrink-0">
                   <label htmlFor="profileImage" className="relative cursor-pointer group">
                     <div className="w-28 h-28 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 flex items-center justify-center shadow-inner">
-                      {imagePreview ? <img src={imagePreview} className="w-full h-full object-cover" /> : <FaIdCard className="text-4xl text-gray-400" />}
+                      {imagePreview ? <img src={imagePreview} className="w-full h-full object-cover object-[center_20%]" alt="Student profile preview" /> : <FaIdCard className="text-4xl text-gray-400" />}
                     </div>
                     <div className="absolute bottom-0 right-0 bg-indigo-600 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-[#2a2b2f]">
                       <FaUserPlus size={12} />
                     </div>
                   </label>
-                  <input type="file" id="profileImage" onChange={handleImageChange} className="hidden" accept="image/*" />
+                  <input type="file" id="profileImage" onChange={handleImageChange} className="hidden" accept="image/jpeg,image/png" />
                   <span className="mt-1.5 text-[9px] font-bold text-gray-400 uppercase tracking-tighter">คลิกเพื่ออัปโหลด</span>
                 </div>
 
@@ -337,7 +311,6 @@ export default function QuickAddStudentPage() {
                 </div>
               </div>
 
-<<<<<<< HEAD
 	              <div className="pt-2">
 	                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
 	              </div>
@@ -356,13 +329,6 @@ export default function QuickAddStudentPage() {
 	              )}
 
 	            </div>
-=======
-              <div className="pt-2">
-                <StatusSwitch label="สถานะนักเรียน" name="studentStatus" options={studentStatusOptions} value={form.studentStatus} onChange={handleStatusChange} />
-              </div>
-
-            </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             {/* Compact Footer */}
             <div className="p-4 sm:p-6 bg-gray-50 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-700 flex justify-end items-center gap-4">

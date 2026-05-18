@@ -15,24 +15,19 @@ import {
   FileText,
   CalendarX2,
   Save,
-<<<<<<< HEAD
   Lock,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import BackButton from "@/components/Shared/BackButton";
-=======
-  ArrowLeft,
-  Lock,
-} from "lucide-react";
-import Swal from "sweetalert2";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getClassKeysByRange, CLASS_FULL_NAMES } from "@/utils/schoolUtils";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
+import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 
 interface Teacher {
   id: string;
   name: string;
+  teacherId?: string;
 }
 
 const DAYS_OF_WEEK = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัสบดี', fri: 'ศุกร์' };
@@ -123,13 +118,8 @@ const CourseManagementPage: React.FC = () => {
   const [courseCode, setCourseCode] = useState("");
   const [subjectGroup, setSubjectGroup] = useState("");
   const [courseType, setCourseType] = useState("พื้นฐาน");
-<<<<<<< HEAD
   const [formativeWeight, setFormativeWeight] = useState(0); // New state for formative score weight
   const [midtermWeight, setMidtermWeight] = useState(0);   // New state for midterm score weight
-=======
-  const [formativeWeight, setFormativeWeight] = useState(60); // New state for formative score weight
-  const [midtermWeight, setMidtermWeight] = useState(20);   // New state for midterm score weight
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [indicators, setIndicators] = useState("");
   const [expectedOutcomes, setExpectedOutcomes] = useState("");
   const [targetClasses, setTargetClasses] = useState<string[]>([]);
@@ -220,11 +210,11 @@ const CourseManagementPage: React.FC = () => {
     { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' }
   ];
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
-  const teachers = useMemo(() => Object.values(teacherMap || {}), [teacherMap]);
+  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})), [teacherMap]);
   const teacherOptions = useMemo(() => {
     const list = [{ value: '', label: '-- ไม่ระบุ (Pending) --' }];
     if (teachers) {
-      list.push(...teachers.map(t => ({ value: t.id, label: t.name })));
+      list.push(...teachers.map(t => ({ value: t.id, label: `${t.teacherId ? `${t.teacherId} ` : ''}${t.name}` })));
     }
     return list;
   }, [teachers]);
@@ -402,13 +392,8 @@ const CourseManagementPage: React.FC = () => {
       setCourseCode("");
       setSubjectGroup("");
       setCourseType("พื้นฐาน");
-<<<<<<< HEAD
       setFormativeWeight(0);
       setMidtermWeight(0);
-=======
-      setFormativeWeight(60);
-      setMidtermWeight(20);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       setIndicators("");
       setExpectedOutcomes("");
       setTargetClasses([]);
@@ -439,16 +424,10 @@ const CourseManagementPage: React.FC = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-<<<<<<< HEAD
               <div className="flex items-center gap-4 mb-2">
                 <BackButton to="/academic/hub/registration" />
                 <span className="text-gray-500 dark:text-gray-400 font-medium">กลับไปหน้าบริหารงานวิชาการ</span>
               </div>
-=======
-              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors">
-                <ArrowLeft size={18} className="mr-1" /> กลับไปหน้าบริหารงานวิชาการ
-              </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                 <PlusCircle className="text-indigo-600 dark:text-indigo-400" size={32} />
                 เพิ่มหลักสูตรใหม่
@@ -774,11 +753,7 @@ const CourseManagementPage: React.FC = () => {
                     </div>
 
                     <div>
-<<<<<<< HEAD
                       <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
-=======
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         ล็อคตำแหน่งคาบ (เลือกคาบที่ต้องสอนแน่นอน)
                         <span className="text-xs font-normal text-gray-500">(คลิกเพื่อล็อคคาบเฉพาะ)</span>
                       </label>
@@ -866,8 +841,4 @@ const CourseManagementPage: React.FC = () => {
   );
 };
 
-<<<<<<< HEAD
 export default CourseManagementPage;
-=======
-export default CourseManagementPage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

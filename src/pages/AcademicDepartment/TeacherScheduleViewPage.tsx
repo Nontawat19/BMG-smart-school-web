@@ -6,19 +6,19 @@ import { RootState } from '@/store';
 import { firestore as db } from '../../firebase';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
-<<<<<<< HEAD
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { Loader2, FileDown, Calendar, User, Printer, Search } from 'lucide-react';
 import BackButton from '@/components/Shared/BackButton';
-=======
-import { Loader2, FileDown, Calendar, User, Printer, ArrowLeft, Search } from 'lucide-react';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
 import { TeacherSchedulePDF, BulkTeacherSchedulePDF, Teacher, Course, Schedule, ScheduleEntry, SpecialPeriod, PeriodSetting, SchoolInfo, Club } from '@/components/Pdf/TeacherScheduleDocument';
 import { pdf } from '@react-pdf/renderer';
+import Select, { StylesConfig } from 'react-select';
+import { useTheme } from '@/ThemeContext';
 import toast from 'react-hot-toast';
 import { saveAs } from 'file-saver';
 import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
+import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 
 // Types imported from @/components/pdf/TeacherScheduleDocument
 
@@ -32,17 +32,37 @@ const DAYS: Record<string, string> = {
 };
 const FULL_CLASS_NAMES = CLASS_FULL_NAMES;
 
+const getAssignmentTeacherIds = (assignment: any): string[] => {
+  const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+    ? assignment.teacherIds
+    : (assignment?.teacherId ? [assignment.teacherId] : []);
+  return Array.from(new Set(ids.filter(Boolean)));
+};
+
+const assignmentIncludesTeacher = (assignment: any, teacherId: string) => {
+  const ids = getAssignmentTeacherIds(assignment);
+  return ids.length === 0 || ids.includes(teacherId);
+};
+
+const matchesYearTermValue = (data: any, year: string, term: string): boolean => {
+  const dataYear = String(data.academicYear || '');
+  const dataTerm = String(data.semester || '');
+  const yearMatches = !year || !dataYear || dataYear === String(year);
+  const termMatches = !term || !dataTerm || dataTerm === String(term) || dataTerm.startsWith(`${term}/`) || String(term).startsWith(`${dataTerm}/`);
+  return yearMatches && termMatches;
+};
+
 const DEFAULT_PERIODS: PeriodSetting[] = [
-  { id: 'homeroom', label: 'โฮมรูม', startTime: '08:30', endTime: '08:40', isTeachingPeriod: false, isFixed: true },
-  { id: 'period-1', label: 'คาบที่ 1', startTime: '08:40', endTime: '09:30', isTeachingPeriod: true },
-  { id: 'period-2', label: 'คาบที่ 2', startTime: '09:30', endTime: '10:20', isTeachingPeriod: true },
-  { id: 'period-3', label: 'คาบที่ 3', startTime: '10:20', endTime: '11:10', isTeachingPeriod: true },
-  { id: 'period-4', label: 'คาบที่ 4', startTime: '11:10', endTime: '12:00', isTeachingPeriod: true },
-  { id: 'lunch', label: 'พักกลางวัน', startTime: '12:00', endTime: '13:00', isTeachingPeriod: false, isFixed: true },
-  { id: 'period-5', label: 'คาบที่ 5', startTime: '13:00', endTime: '13:50', isTeachingPeriod: true },
-  { id: 'period-6', label: 'คาบที่ 6', startTime: '13:50', endTime: '14:40', isTeachingPeriod: true },
-  { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true },
-  { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true },
+  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, isFixed: true },
+  { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true },
+  { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true },
+  { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true },
+  { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true },
+  { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false, isFixed: true },
+  { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true },
+  { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true },
+  { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true },
+  { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
 ];
 
 /* ===================== PDF STYLES & COMPONENT ===================== */
@@ -70,21 +90,144 @@ const TeacherScheduleViewPage: React.FC = () => {
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
-  const teachers = useMemo(() => Object.values(teacherMap || {}), [teacherMap]);
+  const teachers = useMemo(() => 
+    getActiveSortedTeachers(Object.values(teacherMap)),
+    [teacherMap]
+  );
   const schoolId = (currentUser as any)?.schoolId;
+  const { isDarkMode } = useTheme();
   const dispatch = useDispatch();
+
+  const teacherOptions = useMemo(() => 
+    teachers.map((t: Teacher) => ({
+      value: t.id,
+      label: `${t.teacherId ? `${t.teacherId} ` : ''}${t.name}`,
+      teacher: t
+    })),
+    [teachers]
+  );
+
+  const selectedOption = useMemo(() => 
+    teacherOptions.find(opt => opt.value === selectedTeacher) || null,
+    [teacherOptions, selectedTeacher]
+  );
+
+  const termOptions = [
+    { value: '1', label: 'ภาคเรียนที่ 1' },
+    { value: '2', label: 'ภาคเรียนที่ 2' },
+  ];
+
+  const selectedTermOption = useMemo(() => 
+    termOptions.find(opt => opt.value === currentTerm) || null,
+    [currentTerm]
+  );
+
+  const selectStyles: StylesConfig<any> = {
+    control: (base, state) => ({
+      ...base,
+      backgroundColor: isDarkMode ? '#1e1f21' : '#f9fafb',
+      borderColor: state.isFocused ? '#6366f1' : (isDarkMode ? '#4b5563' : '#d1d5db'),
+      borderRadius: '0.75rem',
+      paddingLeft: '2.5rem',
+      paddingRight: '0.5rem',
+      minHeight: '3rem',
+      boxShadow: state.isFocused ? (isDarkMode ? '0 0 0 1px #6366f1' : '0 0 0 1px #6366f1') : 'none',
+      borderWidth: '1px',
+      '&:hover': {
+        borderColor: '#6366f1',
+      },
+      transition: 'all 0.2s',
+      cursor: 'pointer',
+    }),
+    singleValue: (base) => ({
+      ...base,
+      color: isDarkMode ? '#f3f4f6' : '#111827',
+      fontWeight: '500',
+    }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDarkMode ? '#2a2b2f' : 'white',
+      borderRadius: '1rem',
+      border: isDarkMode ? '1px solid #4b5563' : '1px solid #e5e7eb',
+      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+      marginTop: '0.5rem',
+      overflow: 'hidden',
+      zIndex: 50,
+    }),
+    menuList: (base) => ({
+      ...base,
+      padding: '0.5rem',
+      '::-webkit-scrollbar': {
+        width: '6px',
+      },
+      '::-webkit-scrollbar-track': {
+        background: 'transparent',
+      },
+      '::-webkit-scrollbar-thumb': {
+        background: isDarkMode ? '#4b5563' : '#d1d5db',
+        borderRadius: '10px',
+      },
+      '::-webkit-scrollbar-thumb:hover': {
+        background: isDarkMode ? '#6b7280' : '#9ca3af',
+      },
+    }),
+    option: (base, { isFocused, isSelected }) => ({
+      ...base,
+      backgroundColor: isSelected 
+        ? '#6366f1' 
+        : isFocused 
+          ? (isDarkMode ? 'rgba(99, 102, 241, 0.1)' : '#f3f4f6') 
+          : 'transparent',
+      color: isSelected ? 'white' : (isDarkMode ? '#e5e7eb' : '#374151'),
+      padding: '0.75rem 1rem',
+      borderRadius: '0.5rem',
+      margin: '2px 0',
+      cursor: 'pointer',
+      fontWeight: isSelected ? '600' : '400',
+      '&:active': {
+        backgroundColor: '#4f46e5',
+      },
+    }),
+    input: (base) => ({
+      ...base,
+      color: isDarkMode ? 'white' : 'black',
+    }),
+    placeholder: (base) => ({
+      ...base,
+      color: isDarkMode ? '#9ca3af' : '#6b7280',
+    }),
+    indicatorSeparator: () => ({ display: 'none' }),
+    dropdownIndicator: (base) => ({
+      ...base,
+      color: isDarkMode ? '#9ca3af' : '#6b7280',
+      '&:hover': {
+        color: isDarkMode ? '#f3f4f6' : '#111827',
+      }
+    }),
+    clearIndicator: (base) => ({
+      ...base,
+      color: isDarkMode ? '#9ca3af' : '#6b7280',
+      '&:hover': {
+        color: '#ef4444',
+      }
+    }),
+  };
 
   const selectedTeacherData = (teacherMap[selectedTeacher] as Teacher) || null;
 
-<<<<<<< HEAD
-  const formatClassNames = (classIds: any): string => {
+  const formatClassNames = (classIds: any, groupNum?: number, roomNum?: string | number): string => {
     const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
-    return ids.map(c => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
+    const groupSuffix = groupNum ? ` (กลุ่ม ${groupNum})` : '';
+    const roomSuffix = roomNum ? `/${roomNum}` : '';
+    return ids.map(c => {
+      const baseName = CLASSES[c as keyof typeof CLASSES] || c;
+      return `${baseName}${roomSuffix}${groupSuffix}`;
+    }).join(', ');
   };
 
   const matchesSelectedYearTerm = (data: any): boolean => {
     if (!academicYear || !currentTerm) return false;
-    return String(data.academicYear || '') === String(academicYear) && String(data.semester || '') === String(currentTerm);
+    return matchesYearTermValue(data, academicYear, currentTerm);
   };
 
   const fetchAssignmentMap = async (): Promise<Record<string, any>> => {
@@ -109,7 +252,7 @@ const TeacherScheduleViewPage: React.FC = () => {
     const semesterAssignment = assignmentMap[course.id]?.teacherAssignments || [];
     const courseAssignment = coursesMap[course.id]?.teacherAssignments || [];
     return [...semesterAssignment, ...courseAssignment].find((a: any) =>
-      a.teacherId === teacherId && Number(a.groupNumber || 1) === Number(groupNumber)
+      assignmentIncludesTeacher(a, teacherId) && Number(a.groupNumber || 1) === Number(groupNumber)
     );
   };
 
@@ -123,8 +266,6 @@ const TeacherScheduleViewPage: React.FC = () => {
     }
   }, [schoolId, dispatch]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   /* ===================== FETCH DATA ===================== */
   useEffect(() => {
     if (!schoolId) return;
@@ -142,7 +283,6 @@ const TeacherScheduleViewPage: React.FC = () => {
     };
 
     const fetchCalendarSettings = async () => {
-<<<<<<< HEAD
       if (calendarState.status === 'succeeded' && calendarState.academicYear) {
         setAcademicYear(calendarState.academicYear);
         
@@ -160,31 +300,6 @@ const TeacherScheduleViewPage: React.FC = () => {
         setCurrentTerm('1'); // Fallback
       } else if (calendarState.status === 'idle' && schoolId) {
         dispatch(fetchCalendar(schoolId) as any);
-=======
-      const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-      const docSnap = await getDoc(calendarDocRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setAcademicYear(data.academicYear || '');
-
-        const today = new Date().toISOString().split('T')[0];
-        const term1 = data.terms?.term1;
-        const term2 = data.terms?.term2;
-
-        if (term1 && term1.startDate && term1.endDate) {
-          if (today >= term1.startDate && today <= term1.endDate) {
-            setCurrentTerm('1');
-            return;
-          }
-        }
-        if (term2 && term2.startDate && term2.endDate) {
-          if (today >= term2.startDate && today <= term2.endDate) {
-            setCurrentTerm('2');
-            return;
-          }
-        }
-        setCurrentTerm('');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       }
     };
 
@@ -207,9 +322,9 @@ const TeacherScheduleViewPage: React.FC = () => {
         const docRef = doc(db, 'school-settings', currentSchoolId, 'configs', 'schedule_settings');
         const docSnap = await getDoc(docRef);
         if (docSnap.exists() && docSnap.data().periods) {
-          setPeriodSettings(docSnap.data().periods);
+          setPeriodSettings(normalizePeriodSettings(docSnap.data().periods));
         } else {
-          setPeriodSettings(DEFAULT_PERIODS);
+          setPeriodSettings(normalizePeriodSettings(DEFAULT_PERIODS));
         }
       } catch (error) {
         console.error("Error fetching period settings: ", error);
@@ -281,10 +396,7 @@ const TeacherScheduleViewPage: React.FC = () => {
       const merged: Schedule = {};
 
       try {
-<<<<<<< HEAD
         const assignmentMap = await fetchAssignmentMap();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const q = query(
           collection(db, 'school-settings', schoolId, 'schedules'),
           where('teacherId', '==', selectedTeacher)
@@ -293,14 +405,9 @@ const TeacherScheduleViewPage: React.FC = () => {
 
         snap.forEach(doc => {
           const data = doc.data();
-<<<<<<< HEAD
           if (!matchesSelectedYearTerm(data)) return;
 
-          const scheduleClassName = formatClassNames(data.classId);
-=======
-          const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-          const className = classIds.map(c => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+          const scheduleClassName = formatClassNames(data.classId, (Object.values(data.schedule || {})[0] as any)?.groupNumber);
 
           const sch = data.schedule as Record<string, any>;
 
@@ -310,17 +417,9 @@ const TeacherScheduleViewPage: React.FC = () => {
               courses.forEach((course: Course) => {
                 if (!course) return;
 
-<<<<<<< HEAD
                 const groupNum = (course as any).groupNumber || 1;
                 const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
                 const courseWithGroup = { ...course, groupNumber: groupNum };
-=======
-                const latestCourse = coursesMap[course.id];
-                const groupNum = (course as any).groupNumber || 1;
-                const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                  a.teacherId === data.teacherId && (a.groupNumber === groupNum)
-                );
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 const roomIds = assignment?.roomIds || course.room || [];
                 let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
@@ -332,28 +431,18 @@ const TeacherScheduleViewPage: React.FC = () => {
                   roomDisplay = String(groupNum);
                 }
 
-<<<<<<< HEAD
                 const displayClassName = assignment?.classLevels?.length
-                  ? formatClassNames(assignment.classLevels)
-                  : scheduleClassName; 
+                  ? formatClassNames(assignment.classLevels, groupNum, assignment.room)
+                  : formatClassNames(data.classId, groupNum, (course as any).room); 
 
                 if (merged[slot] && merged[slot]!.course.id === course.id && merged[slot]!.course.groupNumber === groupNum) {
-=======
-                const displayClassName = className; 
-
-                if (merged[slot] && merged[slot]!.course.code === course.code) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   // Same slot, same course -> Merge classes
                   const existingClass = merged[slot]!.className;
                   if (!existingClass.includes(displayClassName)) {
                     merged[slot]!.className = `${existingClass}, ${displayClassName}`;
                   }
                 } else {
-<<<<<<< HEAD
                   merged[slot] = { course: courseWithGroup, className: displayClassName, roomDisplay };
-=======
-                  merged[slot] = { course, className: displayClassName, roomDisplay };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
               });
             }
@@ -372,38 +461,24 @@ const TeacherScheduleViewPage: React.FC = () => {
     };
 
     fetchSchedule();
-<<<<<<< HEAD
   }, [selectedTeacher, schoolId, clubs, academicYear, currentTerm, coursesMap, roomMap]);
-=======
-  }, [selectedTeacher, schoolId, clubs]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const prepareBulkExport = async () => {
     if (!schoolId) return;
     setIsPreparingBulk(true);
     try {
-<<<<<<< HEAD
       const assignmentMap = await fetchAssignmentMap();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const q = query(collection(db, 'school-settings', schoolId, 'schedules'));
       const snap = await getDocs(q);
       const allSchedules: Record<string, any> = {};
 
       snap.forEach(doc => {
         const data = doc.data();
-<<<<<<< HEAD
         if (!matchesSelectedYearTerm(data)) return;
 
         if (!allSchedules[data.teacherId]) allSchedules[data.teacherId] = {};
 
         const scheduleClassName = formatClassNames(data.classId);
-=======
-        if (!allSchedules[data.teacherId]) allSchedules[data.teacherId] = {};
-
-        const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-        const className = classIds.map((c: any) => CLASSES[c as keyof typeof CLASSES] || c).join(', ');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         const sch = data.schedule;
         Object.entries(sch).forEach(([slot, courseData]: [string, any]) => {
@@ -412,17 +487,9 @@ const TeacherScheduleViewPage: React.FC = () => {
             courses.forEach((course: Course) => {
               if (!course) return;
 
-<<<<<<< HEAD
               const groupNum = (course as any).groupNumber || 1;
               const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
               const courseWithGroup = { ...course, groupNumber: groupNum };
-=======
-              const latestCourse = coursesMap[course.id];
-              const groupNum = (course as any).groupNumber || 1;
-              const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                a.teacherId === data.teacherId && (a.groupNumber === groupNum)
-              );
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
               const roomIds = assignment?.roomIds || course.room || [];
               let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
@@ -434,26 +501,17 @@ const TeacherScheduleViewPage: React.FC = () => {
                 roomDisplay = String(groupNum);
               }
 
-<<<<<<< HEAD
               const className = assignment?.classLevels?.length
-                ? formatClassNames(assignment.classLevels)
-                : scheduleClassName;
+                ? formatClassNames(assignment.classLevels, groupNum, assignment.room)
+                : formatClassNames(data.classId, groupNum, (course as any).room);
 
               const currentEntry = allSchedules[data.teacherId][slot];
               if (currentEntry && currentEntry.course.id === course.id && currentEntry.course.groupNumber === groupNum) {
-=======
-              const currentEntry = allSchedules[data.teacherId][slot];
-              if (currentEntry && currentEntry.course.code === course.code) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (!currentEntry.className.includes(className)) {
                   currentEntry.className = `${currentEntry.className}, ${className}`;
                 }
               } else {
-<<<<<<< HEAD
                 allSchedules[data.teacherId][slot] = { course: courseWithGroup, className, roomDisplay };
-=======
-                allSchedules[data.teacherId][slot] = { course, className, roomDisplay };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               }
             });
           }
@@ -483,55 +541,76 @@ const TeacherScheduleViewPage: React.FC = () => {
 
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-<<<<<<< HEAD
-              <BackButton to="/academic/hub/scheduling" />
-=======
-              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors font-medium">
-                <ArrowLeft size={20} className="mr-1" /> กลับหน้าบริหารงานวิชาการ
-              </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
-                <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
-                ดูตารางสอนครู
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1 text-base">
-                ตรวจสอบและพิมพ์ตารางสอนรายบุคคล หรือพิมพ์รวมทั้งโรงเรียน
-              </p>
+            <div className="flex items-center gap-4">
+              <div className="ml-10"> {/* Shift right to avoid sidebar toggle */}
+                <BackButton to="/academic/hub/scheduling" />
+              </div>
+              <div className="flex flex-col">
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                  <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
+                  ดูตารางสอนครู
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1 text-base">
+                  ตรวจสอบและพิมพ์ตารางสอนรายบุคคล หรือพิมพ์รวมทั้งโรงเรียน
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Control Bar */}
-          <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 sticky top-[70px] z-30">
-            <div className="flex flex-col lg:flex-row gap-6 items-center justify-between">
+          <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 sticky top-[70px] z-30">
+            <div className="flex flex-col lg:flex-row gap-6 items-end justify-between">
 
-              {/* Teacher Selector */}
-              <div className="w-full lg:w-1/3 relative">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  เลือกครูผู้สอน
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-5 w-5 text-gray-400" />
+              <div className="flex flex-col md:flex-row gap-6 w-full lg:w-2/3">
+                {/* Teacher Selector */}
+                <div className="w-full md:w-3/5 relative">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    เลือกครูผู้สอน
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <User className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <Select
+                      value={selectedOption}
+                      onChange={(option: any) => setSelectedTeacher(option?.value || '')}
+                      options={teacherOptions}
+                      placeholder="-- กรุณาเลือกครู --"
+                      isClearable
+                      isSearchable
+                      maxMenuHeight={400}
+                      className="react-select-container"
+                      classNamePrefix="react-select"
+                      styles={selectStyles}
+                      noOptionsMessage={() => "ไม่พบข้อมูลครู"}
+                    />
                   </div>
-                  <select
-                    value={selectedTeacher}
-                    onChange={e => setSelectedTeacher(e.target.value)}
-                    className="block w-full pl-10 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none"
-                  >
-                    <option value="">-- กรุณาเลือกครู --</option>
-                    {teachers.map((t: Teacher) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <Search className="h-4 w-4 text-gray-400" />
+                </div>
+
+                {/* Semester Selector */}
+                <div className="w-full md:w-2/5 relative">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    เลือกภาคเรียน
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Calendar className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <Select
+                      value={selectedTermOption}
+                      onChange={(option: any) => setCurrentTerm(option?.value || '1')}
+                      options={termOptions}
+                      placeholder="-- เลือกภาคเรียน --"
+                      className="react-select-container"
+                      classNamePrefix="react-select"
+                      styles={selectStyles}
+                    />
                   </div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-end">
+              <div className="flex flex-row gap-3 w-full lg:w-auto justify-end mt-4 lg:mt-0">
                 {selectedTeacher && (
                   <PDFDownloadLink
                     document={
@@ -548,7 +627,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                       />
                     }
                     fileName={`ตารางสอน_${selectedTeacherData?.name || 'teacher'}.pdf`}
-                    className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200 dark:shadow-none transform hover:-translate-y-0.5"
+                    className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 h-12 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200 dark:shadow-none transform hover:-translate-y-0.5 whitespace-nowrap"
                   >
                     {/* @ts-ignore */}
                     {({ loading }) => loading ? <><Loader2 className="animate-spin" size={20} /> กำลังสร้าง PDF...</> : <><Printer size={20} /> พิมพ์ตารางสอน</>}
@@ -559,7 +638,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                   <button
                     onClick={prepareBulkExport}
                     disabled={isPreparingBulk || teachers.length === 0}
-                    className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-emerald-200 dark:shadow-none transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                    className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-12 rounded-xl font-medium transition-all shadow-lg shadow-emerald-200 dark:shadow-none transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none whitespace-nowrap"
                   >
                     {isPreparingBulk ? <><Loader2 className="animate-spin" size={20} /> กำลังเตรียมข้อมูล...</> : <><FileDown size={20} /> โหลดรวมทุกท่าน</>}
                   </button>
@@ -577,7 +656,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                       />
                     }
                     fileName="ตารางสอนครูทั้งหมด.pdf"
-                    className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-emerald-200 dark:shadow-none transform hover:-translate-y-0.5"
+                    className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-12 rounded-xl font-medium transition-all shadow-lg shadow-emerald-200 dark:shadow-none transform hover:-translate-y-0.5 whitespace-nowrap"
                   >
                     {/* @ts-ignore */}
                     {({ loading }) => loading ? <><Loader2 className="animate-spin" size={20} /> กำลังสร้าง PDF รวม...</> : <><FileDown size={20} /> ดาวน์โหลด PDF รวม</>}
@@ -629,8 +708,4 @@ const TeacherScheduleViewPage: React.FC = () => {
   );
 };
 
-<<<<<<< HEAD
 export default TeacherScheduleViewPage;
-=======
-export default TeacherScheduleViewPage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

@@ -8,10 +8,7 @@ import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import {
   Search,
   Filter,
@@ -21,10 +18,6 @@ import {
   Clock,
   Calendar,
   Users,
-<<<<<<< HEAD
-=======
-  ArrowLeft,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   MoreHorizontal,
   LayoutGrid,
   ChevronDown,
@@ -44,10 +37,8 @@ import { motion } from 'framer-motion';
 import { EditCourseModal } from './components/EditCourseModal';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
-<<<<<<< HEAD
 import { usePermissions } from '@/hooks/usePermissions';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 
 // Interfaces
 interface Course {
@@ -100,10 +91,7 @@ const ViewCoursesPage: React.FC = () => {
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
   const [selectedActiveFilter, setSelectedActiveFilter] = useState<string>('all'); // 'all', 'active', 'inactive'
-<<<<<<< HEAD
   const [selectedSubjectGroupFilter, setSelectedSubjectGroupFilter] = useState<string>('all');
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [periodSettings, setPeriodSettings] = useState<any[]>([]);
 
   // Modal State
@@ -119,11 +107,8 @@ const ViewCoursesPage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
-<<<<<<< HEAD
   const { hasRole, ACADEMIC_MANAGEMENT } = usePermissions();
   const canManage = hasRole(ACADEMIC_MANAGEMENT);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const isDark = document.documentElement.classList.contains('dark');
 
@@ -250,7 +235,6 @@ const ViewCoursesPage: React.FC = () => {
   // ✅ ดึง calendar (ภาคเรียนปัจจุบัน) จาก Redux
   const reduxCalendar = useSelector((state: RootState) => state.calendar);
   useEffect(() => {
-<<<<<<< HEAD
     if (reduxCalendar.status === 'succeeded' && reduxCalendar.terms.length > 0) {
       const today = new Date().toISOString().split('T')[0];
       const currentTerm = reduxCalendar.terms.find(t => 
@@ -258,27 +242,12 @@ const ViewCoursesPage: React.FC = () => {
       );
       if (currentTerm) {
         setSelectedSemester(currentTerm.id === 'term1' ? '1' : '2');
-=======
-    if (reduxCalendar.status === 'succeeded' && reduxCalendar.rawData?.terms) {
-      const today = new Date().toISOString().split('T')[0];
-      const term1 = reduxCalendar.rawData.terms?.term1;
-      const term2 = reduxCalendar.rawData.terms?.term2;
-      if (term1 && term1.startDate && term1.endDate) {
-        if (today >= term1.startDate && today <= term1.endDate) {
-          setSelectedSemester('1'); return;
-        }
-      }
-      if (term2 && term2.startDate && term2.endDate) {
-        if (today >= term2.startDate && today <= term2.endDate) {
-          setSelectedSemester('2'); return;
-        }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       }
     }
   }, [reduxCalendar.status, reduxCalendar.rawData]);
 
   // Sync Teacher Processing Logic from CourseEnrollmentPage.tsx
-  const teachers = useMemo(() => Object.values(teacherMap || {}).map(t => {
+  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})).map(t => {
     const anyT = t as any;
     let groupName = anyT.subjectGroup || anyT.learningArea || "ทั่วไป"; // Check learningArea as fallback
 
@@ -372,11 +341,7 @@ const ViewCoursesPage: React.FC = () => {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-<<<<<<< HEAD
   }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedRoomFilter, selectedSemester, selectedSubjectGroupFilter]);
-=======
-  }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedRoomFilter, selectedSemester]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const handleEdit = (course: Course) => {
     setEditingCourse(course);
@@ -685,7 +650,6 @@ const ViewCoursesPage: React.FC = () => {
 
       const matchesSemester = course.semester === selectedSemester || !course.semester; // Filter by semester
 
-<<<<<<< HEAD
       const matchesSubjectGroup = selectedSubjectGroupFilter === 'all' ||
         course.subjectGroup === selectedSubjectGroupFilter ||
         (course.subjectGroup && subjectGroupMap[course.subjectGroup] === selectedSubjectGroupFilter) ||
@@ -739,16 +703,6 @@ const ViewCoursesPage: React.FC = () => {
       uniqueTeachers: teachersSet.size
     };
   }, [filteredCourses, subjectGroupMap]);
-=======
-      return matchesSearch && matchesClass && matchesTeacher && matchesRoom && matchesSemester;
-    });
-  }, [courses, searchTerm, selectedClassFilter, selectedTeacherFilter, teacherMap, selectedRoomFilter, selectedSemester]);
-
-  // Statistics
-  const totalCourses = filteredCourses.length;
-  const totalHours = filteredCourses.reduce((sum, course) => sum + (course.hoursPerWeek || 0), 0);
-  const uniqueTeachers = new Set(filteredCourses.map(c => c.teacherId)).size;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -762,17 +716,9 @@ const ViewCoursesPage: React.FC = () => {
         <div className="page-container">
 
           {/* Header Section */}
-<<<<<<< HEAD
           <div className="flex items-center gap-4 mb-8">
             <BackButton to="/academic/hub/registration" />
             <div>
-=======
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors text-sm">
-                <ArrowLeft size={16} className="mr-1" /> กลับไปหน้าบริหารงานวิชาการ
-              </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <BookOpen className="text-indigo-600 dark:text-indigo-400" size={28} />
                 ทำเนียบหลักสูตร
@@ -782,17 +728,12 @@ const ViewCoursesPage: React.FC = () => {
           </div>
 
           {/* Stats Cards */}
-<<<<<<< HEAD
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-=======
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <LayoutGrid size={20} />
               </div>
               <div>
-<<<<<<< HEAD
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">รายวิชาทั้งหมด</p>
                 <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{totalCourses.toLocaleString()} <span className="text-[10px] font-medium text-gray-400 uppercase">วิชา</span></h3>
               </div>
@@ -808,48 +749,29 @@ const ViewCoursesPage: React.FC = () => {
               </div>
             </div>
 
-=======
-                <p className="text-xs text-gray-500 dark:text-gray-400">รายวิชาทั้งหมด</p>
-                <h3 className="text-xl font-bold">{totalCourses} <span className="text-xs font-normal text-gray-400">วิชา</span></h3>
-              </div>
-            </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <Clock size={20} />
               </div>
               <div>
-<<<<<<< HEAD
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">ภาระการสอนรวม</p>
                 <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{totalHours.toLocaleString()} <span className="text-[10px] font-medium text-gray-400 uppercase">คาบ/สัปดาห์</span></h3>
               </div>
             </div>
 
-=======
-                <p className="text-xs text-gray-500 dark:text-gray-400">จำนวนคาบรวม</p>
-                <h3 className="text-xl font-bold">{totalHours} <span className="text-xs font-normal text-gray-400">คาบ/สัปดาห์</span></h3>
-              </div>
-            </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             <div className="group bg-white dark:bg-[#2a2b2f] rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
               <div className="p-2.5 rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]">
                 <Users size={20} />
               </div>
               <div>
-<<<<<<< HEAD
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold">บุคลากรผู้สอน</p>
                 <h3 className="text-xl font-black text-gray-900 dark:text-white leading-none mt-1">{uniqueTeachers} <span className="text-[10px] font-medium text-gray-400 uppercase">คน</span></h3>
-=======
-                <p className="text-xs text-gray-500 dark:text-gray-400">ครูผู้สอน</p>
-                <h3 className="text-xl font-bold">{uniqueTeachers} <span className="text-xs font-normal text-gray-400">คน</span></h3>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               </div>
             </div>
           </div>
 
           {/* Filters & Search */}
           <div className="sticky top-[60px] z-30 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
-<<<<<<< HEAD
             <div className="flex flex-col xl:flex-row gap-4">
               <div className="flex-1 relative min-w-full xl:min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -864,101 +786,47 @@ const ViewCoursesPage: React.FC = () => {
               
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:flex xl:flex-row gap-3 w-full xl:w-auto">
                 <div className="relative">
-=======
-            <div className="flex flex-col lg:flex-row gap-3">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type="text"
-                  placeholder="ค้นหาชื่อวิชา, รหัสวิชา..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="pl-9 pr-4 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative min-w-[180px]">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedSemester}
                     onChange={(e) => setSelectedSemester(e.target.value)}
-<<<<<<< HEAD
                     className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
-=======
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   >
                     <option value="1">ภาคเรียนที่ 1</option>
                     <option value="2">ภาคเรียนที่ 2</option>
                   </select>
-<<<<<<< HEAD
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
 
                 <div className="relative">
-=======
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-                </div>
-                <div className="relative min-w-[180px]">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedClassFilter}
                     onChange={(e) => setSelectedClassFilter(e.target.value)}
-<<<<<<< HEAD
                     className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
-=======
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   >
                     <option value="all">ทุกระดับชั้น</option>
                     {availableClassOptions.map(([key, name]: [string, string]) => (
                       <option key={key} value={key}>{name}</option>
                     ))}
                   </select>
-<<<<<<< HEAD
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
 
 
 
                 <div className="relative">
-=======
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-                </div>
-                <div className="relative min-w-[150px]">
-                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <select
-                    value={selectedRoomFilter}
-                    onChange={(e) => setSelectedRoomFilter(e.target.value)}
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
-                  >
-                    <option value="all">ทุกห้อง</option>
-                    {Array.from({ length: 24 }, (_, i) => i + 1).map(r => (
-                      <option key={r} value={String(r)}>ห้อง {r}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
-                </div>
-                <div className="relative min-w-[180px]">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <select
                     value={selectedTeacherFilter}
                     onChange={(e) => setSelectedTeacherFilter(e.target.value)}
-<<<<<<< HEAD
                     className="pl-9 pr-8 py-2 w-full text-[11px] bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer font-bold"
-=======
-                    className="pl-9 pr-8 py-2 w-full text-sm bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   >
                     <option value="all">ครูทุกคน</option>
                     {teachers.map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
-<<<<<<< HEAD
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
                 </div>
 
@@ -991,9 +859,6 @@ const ViewCoursesPage: React.FC = () => {
                     <option value="inactive">ปิดใช้งาน</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
-=======
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </div>
 
               </div>
@@ -1120,37 +985,20 @@ const ViewCoursesPage: React.FC = () => {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
-<<<<<<< HEAD
                               <span className="font-medium text-sm text-gray-900 dark:text-white">
                                 {course.credits ? Math.round(Number(course.credits) * 2) : (course.hoursPerWeek || 0)}
                               </span>
-=======
-                              <div className="flex flex-col items-center">
-                                <span className={`font-medium text-sm ${(course.credits && course.hoursPerWeek !== Math.round(Number(course.credits) * 2)) ? 'text-red-500 font-bold' : 'text-gray-900 dark:text-white'}`}>
-                                  {course.hoursPerWeek}
-                                </span>
-                                {course.credits && course.hoursPerWeek !== Math.round(Number(course.credits) * 2) && (
-                                  <span className="text-[9px] text-red-400 font-bold animate-pulse">ควรเป็น {Math.round(Number(course.credits) * 2)}</span>
-                                )}
-                              </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <div
                                   onClick={(e) => {
                                     e.stopPropagation();
-<<<<<<< HEAD
                                     if (canManage) {
                                       handleToggleActive(course.id, !course.isActive);
                                     }
                                   }}
                                   className={`relative w-9 h-5 rounded-full ${canManage ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} transition-all duration-300 ease-in-out border ${course.isActive
-=======
-                                    handleToggleActive(course.id, !course.isActive);
-                                  }}
-                                  className={`relative w-9 h-5 rounded-full cursor-pointer transition-all duration-300 ease-in-out border ${course.isActive
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     ? 'bg-emerald-500 border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
                                     : 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
                                     }`}
@@ -1168,7 +1016,6 @@ const ViewCoursesPage: React.FC = () => {
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-2">
 
-<<<<<<< HEAD
                                 {canManage && (
                                   <>
                                     <button
@@ -1187,22 +1034,6 @@ const ViewCoursesPage: React.FC = () => {
                                     </button>
                                   </>
                                 )}
-=======
-                                <button
-                                  onClick={() => handleEdit(course)}
-                                  className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 rounded-lg transition-all shadow-sm transform hover:scale-110"
-                                  title="แก้ไข"
-                                >
-                                  <Edit2 size={16} />
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(course.id)}
-                                  className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 dark:text-red-400 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded-lg transition-all shadow-sm transform hover:scale-110"
-                                  title="ลบ"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                               </div>
                             </td>
                           </tr>

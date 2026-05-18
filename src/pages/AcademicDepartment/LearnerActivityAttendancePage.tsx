@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import BackButton from '@/components/Shared/BackButton';
+import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore as db } from '@/firebase';
 import { RootState } from '@/store';
@@ -505,7 +506,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
                             <article key={student.id} className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-[#1e1f21] sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex min-w-0 items-center gap-3">
                                 <span className="w-6 text-center text-xs font-black text-gray-400">{index + 1}</span>
-                                <img src={student.profileImageUrl || avatarUrl(student)} className="h-11 w-11 rounded-full object-cover" alt="" />
+                                <ProfileAvatar src={student.profileImageUrl || avatarUrl(student)} className="h-11 w-11" />
                                 <div className="min-w-0">
                                   <p className="truncate font-black text-gray-900 dark:text-white">{student.title || student.prefix || ''}{student.firstName || ''} {student.lastName || ''}</p>
                                   <p className="truncate text-xs text-gray-500">รหัส: {student.studentId || '-'} | ชั้น {student.classLevel || '-'}/{student.room || '-'}</p>
@@ -630,7 +631,7 @@ const formatClassIds = (classId?: string | string[]) => {
 };
 
 const isActiveStudent = (student: Student) => {
-  const status = String(student.status || 'เรียนอยู่').trim();
+  const status = String(student.status || 'กำลังศึกษา').trim();
   return !['ย้าย', 'ลาออก', 'จำหน่าย', 'สำเร็จการศึกษา', 'ศิษย์เก่า'].includes(status);
 };
 

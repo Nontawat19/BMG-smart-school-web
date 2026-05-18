@@ -1,21 +1,31 @@
 import React from 'react';
-import { Users, Lock, MapPin } from 'lucide-react';
+import { Users, Lock, MapPin, AlertCircle } from 'lucide-react';
 import { CourseInstance } from '../types';
-import { formatClassDisplay, getClassDisplayName } from '../utils';
+import { formatClassDisplay, getClassDisplayName, thaiFormatClass } from '../utils';
 
 export interface CourseCardProps {
     course: CourseInstance;
     isOverlay?: boolean;
     viewType?: 'teacher' | 'class' | 'room';
     teachers?: any[];
+    onHover?: (rect: DOMRect | null) => void;
 }
 
-export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [] }) => {
+export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [], onHover }) => {
     const isLocked = course.locked || (course.constraints?.lockedSlots && course.constraints.lockedSlots.length > 0);
     
     // Determine primary label based on view type
+    const courseTeacherIds = Array.isArray(course.teacherIds) && course.teacherIds.length > 0 ? course.teacherIds : [course.teacherId];
     const teacher = teachers.find(t => t.id === course.teacherId || (t.teacherId && t.teacherId === course.teacherId));
     const teacherDisplay = (() => {
+        if (courseTeacherIds.length > 1) {
+            return courseTeacherIds.map(id => {
+                const item = teachers.find(t => t.id === id || (t.teacherId && t.teacherId === id));
+                if (!item) return id;
+                const raw = item.firstName || (item.name ? item.name.split(' ')[0] : '');
+                return raw.replace(/^(นาย|นาง|นางสาว|น\.ส\.|อาจารย์|อ\.|ครู)\s?/, '').trim();
+            }).join(', ');
+        }
         if (!teacher) {
             return (course.teacherId === 'pending' || !course.teacherId || course.teacherId.startsWith('GHOST') ? 'รอระบุครู' : course.teacherId);
         }
@@ -32,22 +42,27 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
     const classDisplay = Array.isArray(course.classId) 
         ? formatClassDisplay(course.classId)[0] + (course.classId.length > 1 ? ` +${course.classId.length - 1}` : '')
-        : course.className || getClassDisplayName(course.classId);
+        : thaiFormatClass(course.className || getClassDisplayName(course.classId));
 
     const mainLabel = viewType === 'teacher' ? classDisplay : teacherDisplay;
     
     // Improved labeling for Groups/Rooms
     const getGroupLabel = (cDisplay: string, gNum: number) => {
-        // If it's a standard class like "ม.1", "ป.2", return "ม.1/1"
-        if (cDisplay && !cDisplay.includes('+') && !cDisplay.includes(',')) {
-            return `${cDisplay}/${gNum}`;
+        if (!cDisplay) return `ก.${gNum}`;
+        
+        const hasSlash = cDisplay.includes('/');
+        
+        // If it already has a slash (e.g. ม.1/1), just append group if not all-groups
+        if (hasSlash) {
+            return gNum > 0 ? `${cDisplay} ก.${gNum}` : cDisplay;
         }
-        return `กลุ่ม ${gNum}`;
+        
+        // If it's just a level (e.g. ม.1), and we have a group but no room info in display
+        // We'll show as ม.1 ก.{gNum}
+        return gNum > 0 ? `${cDisplay} ก.${gNum}` : cDisplay;
     };
 
-    const secondaryLabel = viewType === 'teacher' 
-        ? getGroupLabel(classDisplay, course.groupNumber || 1) 
-        : classDisplay;
+    const secondaryLabel = getGroupLabel(classDisplay, course.groupNumber || 1);
 
     return (
         <div className={`
@@ -94,6 +109,21 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                     <Lock size={7} className={isOverlay ? 'text-white/40' : 'text-amber-500/60'} />
                 </div>
             )}
+
+            {/* Info Indicator - Bottom Right */}
+            <div 
+                className="absolute bottom-1 right-1 opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
+                onMouseEnter={(e) => {
+                    e.stopPropagation();
+                    onHover?.(e.currentTarget.getBoundingClientRect());
+                }}
+                onMouseLeave={(e) => {
+                    e.stopPropagation();
+                    onHover?.(null);
+                }}
+            >
+                <AlertCircle size={7} className={isOverlay ? 'text-white/40' : 'text-indigo-500/60'} />
+            </div>
         </div>
     );
 };

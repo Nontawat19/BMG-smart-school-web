@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MainLayout from "@/layouts/MainLayout";
 import { auth, firestore, firebaseConfig } from '@/firebase';
-import { collection, doc, setDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import * as XLSX from 'xlsx';
@@ -14,6 +14,7 @@ import {
 } from 'react-icons/fa';
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import BackButton from "@/components/Shared/BackButton";
+import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 // --- Configuration ---
 const REQUIRED_FIELDS = [
@@ -253,20 +254,49 @@ export default function ImportTeacherPage() {
         for (let i = 0; i < readyData.length; i++) {
             const teacher = readyData[i];
             try {
-                // 1. Check for existing ID Card
+                // 1. Check for existing ID Card in THIS school
                 const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
                 const qIdCard = query(teachersRef, where("idCardNumber", "==", teacher.idCardNumber));
                 const idCardSnap = await getDocs(qIdCard);
                 
                 if (!idCardSnap.empty) {
-                    throw new Error("เลขบัตรประชาชนนี้มีอยู่ในระบบแล้ว");
+                    throw new Error("เลขบัตรประชาชนนี้มีอยู่ในโรงเรียนนี้แล้ว");
                 }
 
-                // 2. Create Auth User (using secondary auth to avoid session swap)
-                const userCredential = await createUserWithEmailAndPassword(secondaryAuth, teacher.email, teacher.password);
-                const user = userCredential.user;
+                // 2. Check for existing user by email globally
+                const usersRef = collection(firestore, "users");
+                const qEmail = query(usersRef, where("email", "==", teacher.email));
+                const emailSnap = await getDocs(qEmail);
+                
+                let uid = "";
+                let isExistingUser = false;
 
-                // 3. Save Teacher Doc
+                if (!emailSnap.empty) {
+                    uid = emailSnap.docs[0].id;
+                    isExistingUser = true;
+                    
+                    // Check if already a teacher in this school
+                    const teacherDocRef = doc(firestore, "school-settings", schoolId, "teachers", uid);
+                    const teacherDocSnap = await getDoc(teacherDocRef);
+                    if (teacherDocSnap.exists()) {
+                        throw new Error("อีเมลนี้ถูกใช้งานโดยครูในโรงเรียนนี้แล้ว");
+                    }
+                } else {
+                    // 3. Create Auth User (using secondary auth to avoid session swap)
+                    try {
+                        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, teacher.email, teacher.password);
+                        uid = userCredential.user.uid;
+                    } catch (authError: any) {
+                        if (authError.code === 'auth/email-already-in-use') {
+                            // Rare case: exists in Auth but not in 'users' collection
+                            // We can't get the UID from the client side if this happens
+                            throw new Error("อีเมลนี้มีอยู่ในระบบแล้ว (Auth) แต่ไม่พบข้อมูลโปรไฟล์ กรุณาตรวจสอบข้อมูล");
+                        }
+                        throw authError;
+                    }
+                }
+
+                // 4. Save/Update Teacher Doc
                 const teacherData = {
                     title: teacher.title,
                     firstName: teacher.firstName,
@@ -278,20 +308,34 @@ export default function ImportTeacherPage() {
                     email: teacher.email,
                     teacherId: teacher.teacherId,
                     schoolId,
-                    uid: user.uid,
+                    uid: uid,
                     role: ["teacher"],
+                    status: "อยู่",
                     createdAt: serverTimestamp(),
                 };
-                await setDoc(doc(firestore, "school-settings", schoolId, "teachers", user.uid), teacherData);
+                await setDoc(doc(firestore, "school-settings", schoolId, "teachers", uid), teacherData, { merge: true });
 
-                // 4. Save User Doc
-                await setDoc(doc(firestore, "users", user.uid), {
-                    fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
-                    email: teacher.email,
-                    schoolId: schoolId,
-                    role: ["teacher"],
-                    createdAt: serverTimestamp(),
-                });
+                // 5. Save/Update User Doc
+                if (isExistingUser) {
+                    const existingData = emailSnap.docs[0].data();
+                    const existingRoles = Array.isArray(existingData.role) ? existingData.role : [existingData.role || "teacher"];
+                    const updatedRoles = Array.from(new Set([...existingRoles, "teacher"]));
+                    
+                    await setDoc(doc(firestore, "users", uid), {
+                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
+                        role: updatedRoles,
+                        schoolId: existingData.schoolId || schoolId,
+                        updatedAt: serverTimestamp(),
+                    }, { merge: true });
+                } else {
+                    await setDoc(doc(firestore, "users", uid), {
+                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
+                        email: teacher.email,
+                        schoolId: schoolId,
+                        role: ["teacher"],
+                        createdAt: serverTimestamp(),
+                    });
+                }
 
                 successCount++;
             } catch (error: any) {
@@ -308,6 +352,9 @@ export default function ImportTeacherPage() {
         }
 
         setIsProcessing(false);
+        if (successCount > 0) {
+            await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: successCount });
+        }
         Swal.fire({
             icon: successCount > 0 ? 'success' : 'error',
             title: 'นำเข้าข้อมูลเสร็จสิ้น!',

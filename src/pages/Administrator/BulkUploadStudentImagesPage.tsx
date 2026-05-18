@@ -143,8 +143,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
         onDrop,
         accept: {
             'image/jpeg': ['.jpg', '.jpeg'],
-            'image/png': ['.png'],
-            'image/webp': ['.webp']
+            'image/png': ['.png']
         }
     });
 
@@ -168,7 +167,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
         }
 
         setUploading(true);
-        const results: { fileName: string; studentId: string; status: 'success' | 'error'; error?: string }[] = [];
+        const results: { fileName: string; studentId: string; status: 'success' | 'error'; wasUpdate?: boolean; error?: string }[] = [];
 
         // Identify files to process (skip already successful ones)
         const filesToUpload = files.filter(f => uploadProgress[f.name] !== 'success');
@@ -207,6 +206,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                 const studentDoc = querySnapshot.docs[0];
                 const studentData = studentDoc.data();
                 const studentDocId = studentDoc.id;
+                const wasUpdate = Boolean(studentData.profileImageUrl);
 
                 // 2. Space Efficiency: Delete Old Image if exists (Before uploading new one)
                 // We check studentData from the first query or from studentsInGroup
@@ -225,11 +225,11 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                 }
 
                 // 3. Upload New Image
-                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
 
                 // Construct Path
                 const storagePath = `school-settings/${schoolId}/students/${studentData.classLevel}/${studentData.room || "unknown"}`;
-                const newFileName = `${studentId}.webp`;
+                const newFileName = `${studentId}.jpg`;
                 const finalRef = ref(storage, `${storagePath}/${newFileName}`);
 
                 await uploadBytes(finalRef, compressedFile);
@@ -247,7 +247,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                 ));
 
                 setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
-                results.push({ fileName: file.name, studentId, status: 'success' });
+                results.push({ fileName: file.name, studentId, status: 'success', wasUpdate });
 
             } catch (error: any) {
                 console.error(`Error uploading ${file.name}:`, error);
@@ -269,10 +269,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
 
         if (results.length > 0) {
             if (errorCount === 0) {
-                const updateCount = results.filter(r => {
-                    const student = studentsInGroup.find(s => s.studentId === r.studentId);
-                    return student && student.profileImageUrl;
-                }).length;
+                const updateCount = results.filter(r => r.status === 'success' && r.wasUpdate).length;
                 const newCount = successCount - updateCount;
 
                 Swal.fire({
@@ -298,6 +295,8 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                     html: `
                         <div style="text-align: left;">
                             <p><b>สำเร็จ:</b> ${successCount} รายการ</p>
+                            <p><b>เพิ่มใหม่:</b> ${results.filter(r => r.status === 'success' && !r.wasUpdate).length} รายการ</p>
+                            <p><b>อัปเดต:</b> ${results.filter(r => r.status === 'success' && r.wasUpdate).length} รายการ</p>
                             <p><b>ล้มเหลว:</b> ${errorCount} รายการ</p>
                             <hr style="margin: 10px 0;">
                             <div style="max-height: 150px; overflow-y: auto; font-size: 0.9em;">
@@ -367,11 +366,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                                         </button>
                                     </>
                                 ) : (
-<<<<<<< HEAD
                                     <div className="items-center gap-6 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 py-2 px-4 rounded-lg border border-gray-100 dark:border-gray-700 hidden lg:flex">
-=======
-                                    <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 py-2 px-4 rounded-lg border border-gray-100 dark:border-gray-700 hidden lg:flex">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <div className="flex items-center gap-2">
                                             <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold text-xs">1</span>
                                             <span>เลือกห้องเรียน</span>
@@ -517,7 +512,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                                                 * ชื่อไฟล์ต้องเป็นตัวเลขล้วนเท่านั้น
                                             </span>
                                             <span className="block mt-1">
-                                                * นามสกุลที่รองรับ: .jpg, .jpeg, .png, .webp
+                                                * นามสกุลที่รองรับ: .jpg, .jpeg, .png
                                             </span>
                                         </p>
                                         <div className="mt-4 bg-white dark:bg-[#1e1f21] p-3 rounded-lg border border-indigo-100 dark:border-indigo-800 shadow-sm">
@@ -681,5 +676,3 @@ const BulkUploadStudentImagesPage: React.FC = () => {
 };
 
 export default BulkUploadStudentImagesPage;
-
-

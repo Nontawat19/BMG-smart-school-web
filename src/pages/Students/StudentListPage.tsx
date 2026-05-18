@@ -1,60 +1,69 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage, auth } from "@/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, updateDoc, where } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, where, updateDoc } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
-import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaIdCard, FaCheck, FaTimes, FaFileExcel, FaFilter, FaEye, FaEyeSlash } from "react-icons/fa";
-<<<<<<< HEAD
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History } from "lucide-react";
-=======
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaFileExcel, FaFilter, FaSortNumericDown } from "react-icons/fa";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown } from "lucide-react";
+import { deleteStudentLookup } from "@/utils/studentLookupUtils";
 import Swal from 'sweetalert2';
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
-<<<<<<< HEAD
 import { getStudentStatus, isCurrentStudent } from "@/utils/studentStatusUtils";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import Select, { StylesConfig, components } from "react-select";
+import { useTheme } from "@/ThemeContext";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 // กำหนด Type สำหรับข้อมูลนักเรียน
 interface Student {
   id: string;
   profileImageUrl?: string;
   studentId: string;
+  idCardNumber?: string;
+  gender?: string;
   title: string;
   firstName: string;
   lastName: string;
   classLevel: string;
   room: string;
   schoolId: string; // เพิ่ม schoolId
-<<<<<<< HEAD
   status?: string;
   studentStatus: string;
-=======
-  studentStatus: "เรียนอยู่" | "พักการเรียน" | "ย้าย" | "ลาออก";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   contact?: string;
   phoneNumber?: string;
   lineId?: string;
   createdAt: Timestamp;
   behaviorScore?: number;
-  rfid?: string;
   role?: string[];
+  studentNumber?: string;
 }
 
 const statusColorMap: { [key: string]: string } = {
-  "เรียนอยู่": "bg-green-500/20 text-green-400 border-green-500/30",
+  "กำลังศึกษา": "bg-green-500/20 text-green-400 border-green-500/30",
+  "ปกติ": "bg-green-500/20 text-green-400 border-green-500/30",
   "พักการเรียน": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  "แขวนลอย": "bg-amber-500/20 text-amber-400 border-amber-500/30",
   "ย้าย": "bg-blue-500/20 text-blue-400 border-blue-500/30",
   "ลาออก": "bg-red-500/20 text-red-400 border-red-500/30",
+  "จำหน่าย": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  "สำเร็จการศึกษา": "bg-purple-500/20 text-purple-400 border-purple-500/30",
 };
+
+const statusOptions = [
+  { value: 'กำลังศึกษา', label: 'กำลังศึกษา' },
+  { value: 'พักการเรียน', label: 'พักการเรียน' },
+  { value: 'แขวนลอย', label: 'แขวนลอย' },
+  { value: 'ย้าย', label: 'ย้าย' },
+  { value: 'ลาออก', label: 'ลาออก' },
+  { value: 'จำหน่าย', label: 'จำหน่าย' },
+  { value: 'สำเร็จการศึกษา', label: 'สำเร็จการศึกษา' },
+];
 
 // --- Skeleton Loader Component ---
 const SkeletonLoader = () => (
@@ -106,29 +115,139 @@ export default function StudentListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [schoolId, setSchoolId] = useState<string | null>(null);
-<<<<<<< HEAD
-=======
-  // State for inline editing
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
-  const [rfidInputValue, setRfidInputValue] = useState<string>('');
-  const [isSavingRfid, setIsSavingRfid] = useState(false);
-  const [isRfidVisible, setIsRfidVisible] = useState(false); // New state for RFID visibility
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [selectedClassLevel, setSelectedClassLevel] = useState<string>('');
   const [selectedRoom, setSelectedRoom] = useState<string>('');
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
+  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const { isDarkMode } = useTheme();
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
-<<<<<<< HEAD
-=======
-  
-  // Bulk RFID state
-  const [isBulkRfidMode, setIsBulkRfidMode] = useState(false);
-  const [bulkRfidData, setBulkRfidData] = useState<Record<string, string>>({});
-  const [isSavingBulkRfid, setIsSavingBulkRfid] = useState(false);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  const [sortBy, setSortBy] = useState<'studentNumber' | 'studentId' | 'latest'>('studentNumber');
+  const [editingStudentNumberId, setEditingStudentNumberId] = useState<string | null>(null);
+
+  const selectStyles: StylesConfig<any, false> = {
+    control: (provided) => ({
+      ...provided,
+      backgroundColor: 'transparent',
+      border: 'none',
+      boxShadow: 'none',
+      minHeight: 'unset',
+      cursor: 'pointer',
+      padding: 0,
+      margin: 0,
+      width: '100%',
+      display: 'flex',
+      justifyContent: 'space-between',
+    }),
+    valueContainer: (provided) => ({
+      ...provided,
+      padding: 0,
+      flex: 1,
+      display: 'flex',
+    }),
+    input: (provided) => ({
+      ...provided,
+      margin: 0,
+      padding: 0,
+      color: isDarkMode ? '#fff' : '#374151',
+    }),
+    indicatorsContainer: (provided) => ({
+      ...provided,
+      padding: 0,
+      marginLeft: 'auto',
+    }),
+    dropdownIndicator: (provided) => ({
+      ...provided,
+      padding: '0 0 0 4px',
+      color: 'inherit',
+      '&:hover': {
+        color: 'inherit',
+      },
+    }),
+    menu: (provided) => ({
+      ...provided,
+      backgroundColor: isDarkMode ? '#2a2b2f' : '#ffffff',
+      border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      zIndex: 50,
+      width: 'max-content',
+      minWidth: '160px',
+      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    }),
+    option: (provided, state) => ({
+      ...provided,
+      backgroundColor: state.isSelected ? '#4f46e5' : state.isFocused ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') : 'transparent',
+      color: state.isSelected ? '#fff' : isDarkMode ? '#fff' : '#374151',
+      cursor: 'pointer',
+      fontSize: '12px',
+      padding: '8px 12px',
+      '&:active': {
+        backgroundColor: '#4f46e5',
+      },
+    }),
+    singleValue: (provided) => ({
+      ...provided,
+      color: 'inherit',
+      margin: 0,
+    }),
+    menuList: (provided) => ({
+      ...provided,
+      maxHeight: 'none',
+      padding: 0,
+      '&::-webkit-scrollbar': {
+        width: '0px',
+        display: 'none',
+      },
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+    }),
+  };
+
+  const CustomDropdownIndicator = (props: any) => {
+    return (
+      <components.DropdownIndicator {...props}>
+        <ChevronDown size={8} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+      </components.DropdownIndicator>
+    );
+  };
+
+  const handleUpdateField = async (studentId: string, updates: Record<string, any>) => {
+    if (!schoolId) return;
+    setIsUpdating(studentId);
+    try {
+      const studentDocRef = doc(firestore, "school-settings", schoolId, "students", studentId);
+      const currentStudent = students.find(s => s.id === studentId);
+      const previousStatus = getStudentStatus(currentStudent);
+      const nextStatus = String(updates.status || updates.studentStatus || previousStatus).trim();
+      await updateDoc(studentDocRef, updates);
+      const wasActive = isActiveStudentSummaryStatus(previousStatus);
+      const isActive = isActiveStudentSummaryStatus(nextStatus);
+      if (wasActive !== isActive) {
+        await updateOwnerAndSchoolCounts(firestore, schoolId, { students: isActive ? 1 : -1 });
+      }
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
+      toast.success("อัปเดตสถานะเรียบร้อยแล้ว", {
+        position: "top-right",
+        autoClose: 2000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        theme: "dark",
+      });
+    } catch (err) {
+      console.error("Error updating student field: ", err);
+      toast.error("ไม่สามารถอัปเดตข้อมูลได้", {
+        position: "top-right",
+        theme: "dark",
+      });
+    } finally {
+      setIsUpdating(null);
+    }
+  };
 
   const handleDelete = async (student: Student) => {
     Swal.fire({
@@ -156,7 +275,22 @@ export default function StudentListPage() {
         });
 
         try {
+          // 1. Delete lookup data if exists
+          if (student.idCardNumber && student.studentId) {
+            try {
+              await deleteStudentLookup(student.idCardNumber, student.studentId);
+            } catch (error) {
+              console.warn("Could not delete student lookup:", error);
+            }
+          }
+
+          // 2. Delete student doc
           await deleteDoc(doc(firestore, "school-settings", student.schoolId, "students", student.id));
+          if (isActiveStudentSummaryStatus(getStudentStatus(student))) {
+            await updateOwnerAndSchoolCounts(firestore, student.schoolId, { students: -1 });
+          }
+
+          // 3. Delete from Storage if image exists
           if (student.profileImageUrl) {
             const imageRef = ref(storage, student.profileImageUrl);
             await deleteObject(imageRef);
@@ -171,116 +305,143 @@ export default function StudentListPage() {
     });
   };
 
-<<<<<<< HEAD
-=======
-  const handleStartEditRfid = (student: Student) => {
-    setEditingStudentId(student.id);
-    setRfidInputValue(student.rfid || '');
-    setIsRfidVisible(false); // Reset visibility on new edit
-  };
+  const handleBulkAssignNumbers = async () => {
+    if (!schoolId) return;
 
-  const handleCancelEditRfid = () => {
-    setEditingStudentId(null);
-    setRfidInputValue('');
-    setIsRfidVisible(false); // Reset visibility on cancel
-  };
+    let targetStudents: Student[] = [];
+    let titleText = "";
 
-  const handleSaveRfidForStudent = async () => {
-    if (!editingStudentId || !schoolId) return;
+    if (selectedClassLevel) {
+      if (selectedRoom) {
+        // เฉพาะห้องเรียนที่เลือก (เช่น ม.1/1)
+        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room === selectedRoom);
+        titleText = `จัดเลขที่ห้อง ${selectedClassLevel}/${selectedRoom}`;
+      } else {
+        // ทั้งระดับชั้น ทุกห้องเรียน (เช่น ม.1 ทุกห้อง)
+        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room);
+        titleText = `จัดเลขที่ชั้น ${selectedClassLevel} ทุกห้องเรียน`;
+      }
+    } else {
+      // ทั้งโรงเรียน ทุกชั้นและทุกห้องเรียน
+      targetStudents = students.filter(s => s.classLevel && s.room);
+      titleText = "จัดเลขที่ทั้งโรงเรียน";
+    }
 
-    setIsSavingRfid(true);
-
-    const isDuplicate = students.some(
-      student => student.id !== editingStudentId && student.rfid === rfidInputValue && rfidInputValue.trim() !== ''
-    );
-
-    if (isDuplicate) {
-      Swal.fire('ข้อมูลซ้ำซ้อน', 'รหัส RFID นี้ถูกใช้กับนักเรียนคนอื่นแล้ว', 'warning');
-      setIsSavingRfid(false);
+    if (targetStudents.length === 0) {
+      Swal.fire({
+        title: "ไม่พบนักเรียน",
+        text: "ไม่พบรายชื่อนักเรียนที่มีการระบุระดับชั้นและห้องเรียนตามขอบเขตที่เลือก",
+        icon: "warning",
+        confirmButtonText: "ตกลง",
+        background: '#2a2b2f',
+        color: '#ffffff'
+      });
       return;
     }
 
-    try {
-      const studentRef = doc(firestore, "school-settings", schoolId, "students", editingStudentId);
-      await updateDoc(studentRef, { rfid: rfidInputValue });
-
-      setStudents(prevStudents =>
-        prevStudents.map(student =>
-          student.id === editingStudentId ? { ...student, rfid: rfidInputValue } : student
-        )
-      );
-
-      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'บันทึก RFID สำเร็จ', showConfirmButton: false, timer: 1500 });
-      handleCancelEditRfid();
-    } catch (err) {
-      console.error("Error saving RFID data: ", err);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
-    } finally {
-      setIsSavingRfid(false);
-    }
-  };
-
-  const handleSaveBulkRfid = async () => {
-    if (!schoolId) return;
-    
-    setIsSavingBulkRfid(true);
-    
-    try {
-      const { writeBatch, doc } = await import("firebase/firestore");
-      const batch = writeBatch(firestore);
-      
-      let changedCount = 0;
-      Object.entries(bulkRfidData).forEach(([studentId, rfidValue]) => {
-        const studentRef = doc(firestore, "school-settings", schoolId, "students", studentId);
-        batch.update(studentRef, { rfid: rfidValue });
-        changedCount++;
-      });
-      
-      if (changedCount > 0) {
-        await batch.commit();
-        
-        setStudents(prevStudents =>
-          prevStudents.map(student =>
-            bulkRfidData[student.id] !== undefined ? { ...student, rfid: bulkRfidData[student.id] } : student
-          )
-        );
-        
-        Swal.fire({ 
-          icon: 'success', 
-          title: 'บันทึกสำเร็จ', 
-          text: `บันทึกข้อมูล RFID ทั้งหมด ${changedCount} รายการเรียบร้อยแล้ว`,
-          timer: 2000,
-          showConfirmButton: false,
-          background: '#2a2b2f',
-          color: '#ffffff'
-        });
+    const sortResult = await Swal.fire({
+      title: titleText,
+      text: "โปรดเลือกรูปแบบการจัดลำดับเลขที่ (แยกชายนำหน้า - หญิงตามหลัง และเริ่มต้นนับเลขที่ 1 ใหม่ในแต่ละห้องเรียน):",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "เรียงตาม รหัสนักเรียน ก-ฮ (ชาย-หญิง)",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#4f46e5",
+      cancelButtonColor: "#ef4444",
+      background: '#2a2b2f',
+      color: '#ffffff',
+      customClass: {
+        confirmButton: "mx-1 my-1 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-all active:scale-95",
+        cancelButton: "mx-1 my-1 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-all active:scale-95"
       }
-      
-      setIsBulkRfidMode(false);
-      setBulkRfidData({});
-    } catch (err) {
-      console.error("Error saving bulk RFID data: ", err);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลแบบกลุ่มได้', 'error');
-    } finally {
-      setIsSavingBulkRfid(false);
-    }
-  };
+    });
 
-  const handleToggleBulkRfidMode = () => {
-    if (isBulkRfidMode) {
-      setIsBulkRfidMode(false);
-      setBulkRfidData({});
-    } else {
-      setIsBulkRfidMode(true);
-      // Initialize bulk data with current values
-      const initialData: Record<string, string> = {};
-      students.forEach(s => {
-        if (s.rfid) initialData[s.id] = s.rfid;
+    if (sortResult.isDismissed) return;
+
+    Swal.fire({
+      title: 'กำลังจัดลำดับเลขที่...',
+      text: 'กรุณารอสักครู่ ระบบกำลังบันทึกข้อมูลลงฐานข้อมูล',
+      allowOutsideClick: false,
+      background: '#2a2b2f',
+      color: '#ffffff',
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    try {
+      const isMale = (s: Student) => {
+        const title = (s.title || "").trim();
+        const gender = (s.gender || "").trim();
+        return ["นาย", "ด.ช.", "เด็กชาย"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
+      };
+
+      const sortFn = (a: Student, b: Student) => {
+        // เรียงตาม ก-ฮ (ชื่อ)
+        const nameCompare = a.firstName.localeCompare(b.firstName, 'th');
+        if (nameCompare !== 0) return nameCompare;
+        return a.lastName.localeCompare(b.lastName, 'th');
+      };
+
+      // จัดกลุ่มนักเรียนแยกตามระดับชั้นเรียนและห้องเรียน เพื่อเริ่มต้นนับ 1 ใหม่ในแต่ละห้อง
+      const groups: Record<string, Student[]> = {};
+      targetStudents.forEach(student => {
+        const key = `${student.classLevel}_${student.room}`;
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(student);
       });
-      setBulkRfidData(initialData);
+
+      const updatePromises: Promise<void>[] = [];
+      const localUpdatesMap: Record<string, string> = {};
+
+      Object.keys(groups).forEach(key => {
+        const groupStudents = groups[key];
+        const males = groupStudents.filter(isMale);
+        const females = groupStudents.filter(s => !isMale(s));
+
+        males.sort(sortFn);
+        females.sort(sortFn);
+
+        const sortedGroup = [...males, ...females];
+        sortedGroup.forEach((student, idx) => {
+          const numStr = String(idx + 1); // เริ่มนับจากเลขที่ 1 ใหม่ในแต่ละห้องเรียนเสมอ
+          localUpdatesMap[student.id] = numStr;
+
+          const studentDocRef = doc(firestore, "school-settings", schoolId, "students", student.id);
+          updatePromises.push(updateDoc(studentDocRef, { studentNumber: numStr }));
+        });
+      });
+
+      await Promise.all(updatePromises);
+
+      // อัปเดตข้อมูล State ในหน้าเว็บ
+      setStudents(prev => prev.map(s => {
+        if (localUpdatesMap[s.id] !== undefined) {
+          return { ...s, studentNumber: localUpdatesMap[s.id] };
+        }
+        return s;
+      }));
+
+      Swal.fire({
+        title: 'สำเร็จ!',
+        text: `จัดเลขที่นักเรียนจำนวน ${targetStudents.length} คน เรียบร้อยแล้ว (โดยแยกห้องและนับเลขที่ 1 ใหม่ในแต่ละห้องเรียนเรียบร้อย)`,
+        icon: 'success',
+        background: '#2a2b2f',
+        color: '#ffffff'
+      });
+    } catch (err) {
+      console.error("Error bulk assigning student numbers: ", err);
+      Swal.fire({
+        title: 'เกิดข้อผิดพลาด!',
+        text: 'ไม่สามารถบันทึกข้อมูลจัดลำดับเลขที่ได้',
+        icon: 'error',
+        background: '#2a2b2f',
+        color: '#ffffff'
+      });
     }
   };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchStudents = useCallback(async (currentSchoolId: string) => {
     setIsLoading(true);
@@ -293,11 +454,7 @@ export default function StudentListPage() {
       const studentsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-<<<<<<< HEAD
       } as Student)).filter(isCurrentStudent);
-=======
-      } as Student));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       setStudents(studentsData);
     } catch (err) {
       console.error("Error fetching students: ", err);
@@ -385,13 +542,56 @@ export default function StudentListPage() {
     })
       .filter(student => selectedRoom === '' || student.room === selectedRoom);
 
+    // Sorting Logic
+    const isMaleStudent = (s: Student) => {
+      const title = (s.title || "").trim();
+      const gender = (s.gender || "").trim();
+      return ["นาย", "ด.ช.", "เด็กชาย"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
+    };
+
+    const sortedStudents = [...filteredStudents].sort((a, b) => {
+      if (sortBy === 'latest') {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      }
+
+      if (sortBy === 'studentNumber') {
+        const hasA = !!a.studentNumber;
+        const hasB = !!b.studentNumber;
+        if (hasA !== hasB) return hasA ? -1 : 1;
+        if (hasA && hasB) {
+          const numA = parseInt(a.studentNumber || '0', 10);
+          const numB = parseInt(b.studentNumber || '0', 10);
+          if (numA !== numB) return numA - numB;
+        }
+        // Fallback to gender (male first) if numbers are missing/equal
+        const aIsMale = isMaleStudent(a);
+        const bIsMale = isMaleStudent(b);
+        if (aIsMale !== bIsMale) return aIsMale ? -1 : 1;
+        
+        const idA = a.studentId || a.idCardNumber || "";
+        const idB = b.studentId || b.idCardNumber || "";
+        return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+      }
+
+      // Default (sortBy === 'studentId' or fallback) - sort by gender first (male first, female second), then by studentId
+      const aIsMale = isMaleStudent(a);
+      const bIsMale = isMaleStudent(b);
+      if (aIsMale !== bIsMale) return aIsMale ? -1 : 1;
+      
+      const idA = a.studentId || a.idCardNumber || "";
+      const idB = b.studentId || b.idCardNumber || "";
+      return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
     // Pagination Logic
-    const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
+    const totalPages = Math.ceil(sortedStudents.length / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentStudents = filteredStudents.slice(indexOfFirstItem, indexOfLastItem);
+    const currentStudents = sortedStudents.slice(indexOfFirstItem, indexOfLastItem);
 
-    if (filteredStudents.length === 0) {
+    if (sortedStudents.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
@@ -410,6 +610,7 @@ export default function StudentListPage() {
           <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
             <tr>
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-12">ลำดับ</th>
+              <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-16">เลขที่</th>
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสนักเรียน</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชั้น/ห้อง</th>
@@ -417,11 +618,6 @@ export default function StudentListPage() {
               <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สิทธิ์ (Role)</th>
               <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">คะแนนความประพฤติ</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
-<<<<<<< HEAD
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">RFID</th>
-=======
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-32 sm:w-40">RFID</th>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <CanAccess roles={ACADEMIC_ACCESS}>
                 <th scope="col" className="py-3 pl-3 pr-4 sm:pr-6 text-right text-xs font-semibold text-gray-600 dark:text-gray-300">
                   ดำเนินการ
@@ -433,15 +629,51 @@ export default function StudentListPage() {
             {currentStudents.map((student, index) => (
               <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors">
                 <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
+                <td className="whitespace-nowrap px-2 py-3 text-xs w-20">
+                  <CanAccess roles={ACADEMIC_ACCESS} fallback={
+                    <span className="font-bold text-gray-700 dark:text-gray-300 pl-2">
+                      {student.studentNumber || "-"}
+                    </span>
+                  }>
+                    {student.studentNumber && editingStudentNumberId !== student.id ? (
+                      <div 
+                        className="w-12 text-center py-1 px-1 font-bold text-gray-700 dark:text-gray-300 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2a2b2f]/80 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        onClick={() => setEditingStudentNumberId(student.id)}
+                        title="คลิกเพื่อแก้ไขเลขที่"
+                      >
+                        {student.studentNumber}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className="w-12 text-center py-1 px-1 bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-gray-700 rounded-md focus:ring-1 focus:ring-indigo-500 outline-none text-xs font-black text-slate-800 dark:text-white"
+                        value={student.studentNumber || ""}
+                        autoFocus={editingStudentNumberId === student.id}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setStudents(prev => prev.map(s => s.id === student.id ? { ...s, studentNumber: val } : s));
+                        }}
+                        onBlur={(e) => {
+                          handleUpdateField(student.id, { studentNumber: e.target.value });
+                          setEditingStudentNumberId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        placeholder="-"
+                      />
+                    )}
+                  </CanAccess>
+                </td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
                   <Link to={`/school/${student.schoolId}/students/view/${student.id}`} className="flex items-center group">
-                    <div className="h-8 w-8 flex-shrink-0">
-                      <img
-                        className="h-8 w-8 rounded-full object-cover"
-                        src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
-                        alt={`${student.firstName} ${student.lastName}`}
-                      />
-                    </div>
+                    <ProfileAvatar
+                      className="h-8 w-8"
+                      src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
+                      alt={`${student.firstName} ${student.lastName}`}
+                    />
                     <div className="ml-3">
                       <div className="font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{`${student.title}${student.firstName} ${student.lastName}`}</div>
                     </div>
@@ -469,58 +701,26 @@ export default function StudentListPage() {
                     {student.behaviorScore ?? 100}
                   </span>
                 </td>
-                <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-300">
-<<<<<<< HEAD
-                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium border ${statusColorMap[getStudentStatus(student)] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
-                    {getStudentStatus(student)}
-                  </span>
-                </td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs">
-                  <span className="text-gray-500 dark:text-gray-400 font-mono text-[10px] tracking-wider">{student.rfid ? '••••••••' : 'ไม่มีข้อมูล'}</span>
-=======
-                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium border ${statusColorMap[student.studentStatus] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
-                    {student.studentStatus}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 text-xs">
-                  {isBulkRfidMode ? (
-                    <div className="flex items-center gap-2 w-full max-w-[150px]">
-                      <input
-                        type="text"
-                        value={bulkRfidData[student.id] || ''}
-                        onChange={(e) => setBulkRfidData(prev => ({ ...prev, [student.id]: e.target.value }))}
-                        placeholder="สแกน..."
-                        className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
+                  <CanAccess roles={ACADEMIC_ACCESS} fallback={
+                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium border ${statusColorMap[getStudentStatus(student)] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
+                      {getStudentStatus(student)}
+                    </span>
+                  }>
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-medium transition-all border ${statusColorMap[getStudentStatus(student)] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'} ${isUpdating === student.id ? 'opacity-50 pointer-events-none' : 'hover:ring-1 hover:ring-indigo-500'} group cursor-pointer min-w-[120px] justify-between`}>
+                      <Select
+                        className="w-full"
+                        options={statusOptions}
+                        styles={selectStyles}
+                        components={{ DropdownIndicator: CustomDropdownIndicator }}
+                        value={statusOptions.find(opt => opt.value === getStudentStatus(student)) || { value: getStudentStatus(student), label: getStudentStatus(student) }}
+                        onChange={(newValue: any) => handleUpdateField(student.id, { status: newValue.value, studentStatus: newValue.value })}
+                        isSearchable={false}
+                        menuPortalTarget={document.body}
+                        classNamePrefix="status-select"
                       />
                     </div>
-                  ) : editingStudentId === student.id ? (
-                    <div className="flex items-center gap-2 w-full max-w-[150px]">
-                      <div className="relative flex-grow">
-                        <input
-                          type={isRfidVisible ? "text" : "password"}
-                          value={rfidInputValue}
-                          onChange={(e) => setRfidInputValue(e.target.value)}
-                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-2 pr-6 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
-                          autoFocus
-                        />
-                        <button type="button" onClick={() => setIsRfidVisible(!isRfidVisible)} className="absolute inset-y-0 right-0 flex items-center pr-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                          {isRfidVisible ? <FaEyeSlash size={10} /> : <FaEye size={10} />}
-                        </button>
-                      </div>
-                      <button onClick={handleSaveRfidForStudent} disabled={isSavingRfid} className="text-green-500 hover:text-green-400"><FaCheck size={12} /></button>
-                      <button onClick={handleCancelEditRfid} className="text-red-500 hover:text-red-400"><FaTimes size={12} /></button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 group">
-                      <span className="text-gray-500 dark:text-gray-400 font-mono text-[10px] tracking-wider">{student.rfid ? '••••••••' : 'ไม่มีข้อมูล'}</span>
-                      <CanAccess roles={ACADEMIC_ACCESS}>
-                        <button onClick={() => handleStartEditRfid(student)} className="text-gray-400 opacity-0 group-hover:opacity-100 hover:text-indigo-400 transition-all" title="แก้ไข RFID">
-                          <FaIdCard size={12} />
-                        </button>
-                      </CanAccess>
-                    </div>
-                  )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                  </CanAccess>
                 </td>
                 <CanAccess roles={ACADEMIC_ACCESS}>
                   <td className="relative whitespace-nowrap py-3 pl-3 pr-4 text-right text-xs font-medium sm:pr-6">
@@ -544,7 +744,7 @@ export default function StudentListPage() {
           <div className="px-6 py-4 bg-gray-50 dark:bg-white/5 border-t border-gray-200 dark:border-gray-800">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                แสดง {indexOfFirstItem + 1} ถึง {Math.min(indexOfLastItem, filteredStudents.length)} จาก {filteredStudents.length} รายการ
+                แสดง {indexOfFirstItem + 1} ถึง {Math.min(indexOfLastItem, sortedStudents.length)} จาก {sortedStudents.length} รายการ
               </div>
               <div className="flex flex-wrap items-center justify-center gap-1.5 p-1 bg-gray-50/50 dark:bg-black/20 rounded-xl border border-gray-200/50 dark:border-white/5">
                 <button
@@ -627,14 +827,10 @@ export default function StudentListPage() {
           <header className="mb-6 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-<<<<<<< HEAD
                 <div className="flex items-center gap-4">
                   <BackButton to="/academic/hub/students" />
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลนักเรียนทั้งหมด</h1>
                 </div>
-=======
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลนักเรียนทั้งหมด</h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   แสดง, จัดการ, และเพิ่มข้อมูลนักเรียนในระบบ
                 </p>
@@ -642,54 +838,62 @@ export default function StudentListPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
-              <div className="relative flex-grow min-w-[240px] max-w-md">
+              <div className="relative w-44 sm:w-48 md:w-52 flex-shrink-0">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FaSearch className="text-gray-400 text-sm" />
+                  <FaSearch className="text-gray-400 text-xs" />
                 </div>
                 <input
                   type="text"
                   placeholder="ค้นหาชื่อ, รหัสนักเรียน..."
-                  className="pl-9 pr-4 py-2 w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-xs text-gray-900 dark:text-white"
+                  className="pl-8 pr-4 py-2 w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-xs text-gray-900 dark:text-white"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedClassLevel}
-                  onChange={(e) => setSelectedClassLevel(e.target.value)}
-                  className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white"
-                >
-                  <option value="">ทุกชั้น</option>
-                  {availableLevels.map(level => <option key={level} value={level}>{level}</option>)}
-                </select>
-                <select
-                  value={selectedRoom}
-                  onChange={(e) => setSelectedRoom(e.target.value)}
-                  className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white"
-                >
-                  <option value="">ทุกห้อง</option>
-                  {Array.from({ length: 20 }, (_, i) => i + 1).map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
+              <select
+                value={selectedClassLevel}
+                onChange={(e) => setSelectedClassLevel(e.target.value)}
+                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
+              >
+                <option value="">ทุกชั้น</option>
+                {availableLevels.map(level => <option key={level} value={level}>{level}</option>)}
+              </select>
+              <select
+                value={selectedRoom}
+                onChange={(e) => setSelectedRoom(e.target.value)}
+                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
+              >
+                <option value="">ทุกห้อง</option>
+                {Array.from({ length: 20 }, (_, i) => i + 1).map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
 
-              <div className="flex flex-wrap gap-2 ml-auto">
+
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
                 <CanAccess roles={ACADEMIC_ACCESS}>
-<<<<<<< HEAD
+                  {/* ปุ่มอัพเดทเลขที่ */}
+                  <button
+                    type="button"
+                    onClick={handleBulkAssignNumbers}
+                    className="flex items-center justify-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap border border-pink-400 dark:border-pink-500"
+                  >
+                    <FaSortNumericDown size={12} />
+                    <span>อัพเดทเลขที่</span>
+                  </button>
+
+                  <Link
+                    to={schoolId ? `/school/${schoolId}/students/quick-add` : '#'}
+                    className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
+                  >
+                    <FaUserPlus size={12} />
+                    <span>เพิ่มนักเรียนด่วน</span>
+                  </Link>
                   <Link
                     to={schoolId ? `/school/${schoolId}/students/add` : '#'}
                     className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
                   >
                     <FaPlus size={12} />
                     <span>เพิ่มนักเรียนใหม่</span>
-                  </Link>
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/map-rfid/students` : '#'}
-                    className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <FaIdCard size={12} />
-                    <span>จับคู่ RFID</span>
                   </Link>
                   <Link
                     to={schoolId ? `/school/${schoolId}/students/import-dmc` : '#'}
@@ -705,51 +909,6 @@ export default function StudentListPage() {
                     <History size={12} />
                     <span>ประวัติศิษย์เก่า</span>
                   </Link>
-=======
-                  {isBulkRfidMode ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSaveBulkRfid}
-                        disabled={isSavingBulkRfid}
-                        className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        {isSavingBulkRfid ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <FaCheck size={12} />}
-                        <span>บันทึกทั้งหมด</span>
-                      </button>
-                      <button
-                        onClick={handleToggleBulkRfidMode}
-                        className="flex items-center justify-center gap-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaTimes size={12} />
-                        <span>ยกเลิก</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Link
-                        to={schoolId ? `/school/${schoolId}/students/add` : '#'}
-                        className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaPlus size={12} />
-                        <span>เพิ่มนักเรียนใหม่</span>
-                      </Link>
-                      <button
-                        onClick={handleToggleBulkRfidMode}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaIdCard size={12} />
-                        <span>จับคู่ RFID</span>
-                      </button>
-                      <Link
-                        to={schoolId ? `/school/${schoolId}/students/import-dmc` : '#'}
-                        className="hidden md:flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                      >
-                        <FaFileExcel size={12} />
-                        <span>นำเข้า DMC</span>
-                      </Link>
-                    </>
-                  )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </CanAccess>
               </div>
             </div>
@@ -759,13 +918,10 @@ export default function StudentListPage() {
             <div className="bg-white dark:bg-[#2a2b2f]/60 rounded-2xl shadow-lg ring-1 ring-black/5 dark:ring-white/5">
               {renderContent()}
             </div>
+            <ToastContainer />
           </main>
         </div>
       </div>
     </MainLayout>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
 import { collection, getDocs, doc, getDoc, query, orderBy } from "firebase/firestore";
 import {
@@ -29,6 +30,8 @@ import {
 } from 'recharts';
 import { motion } from "framer-motion";
 import HomeVisitSummaryPdfButton from "@/components/Pdf/HomeVisit/HomeVisitSummaryPdfButton";
+import { getStudentStatus } from "@/utils/studentStatusUtils";
+
 
 interface Student {
     id: string;
@@ -82,8 +85,9 @@ const HomeVisitSummary: React.FC = () => {
             const user = auth.currentUser;
             if (!user) return;
             const userDoc = await getDoc(doc(firestore, "users", user.uid));
-            const sid = userDoc.data()?.schoolId;
-            const tName = userDoc.data()?.displayName || user.displayName || "";
+            const userData = userDoc.data();
+            const sid = userData?.schoolId;
+            const tName = userData?.displayName || user.displayName || "";
             setSchoolId(sid);
             setTeacherName(tName);
 
@@ -93,8 +97,36 @@ const HomeVisitSummary: React.FC = () => {
                     setSchoolName(schoolSnap.data()?.schoolName || "");
                 }
 
+                // ตรวจสอบระดับสิทธิ์ (Role Checking)
+                const roles = Array.isArray(userData?.role) ? userData.role : [userData?.role || ""];
+                const isPower = roles.some((r: string) =>
+                    r === 'admin' ||
+                    r === 'school_admin' ||
+                    r === 'super_admin' ||
+                    r === 'academic' ||
+                    r === 'academic_admin' ||
+                    r === 'director'
+                );
+
                 const studentsSnap = await getDocs(collection(firestore, "school-settings", sid, "students"));
-                const studentsList = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Student));
+                const allStudents = studentsSnap.docs
+                    .map(d => ({ id: d.id, ...d.data() } as Student))
+                    .filter(student => getStudentStatus(student) === "กำลังศึกษา");
+                
+                let studentsList: Student[] = [];
+                if (!isPower) {
+                    // จำกัดเฉพาะห้องเรียนที่ตนเองเป็นครูประจำชั้น
+                    const teacherRef = doc(firestore, "school-settings", sid, "teachers", user.uid);
+                    const teacherSnap = await getDoc(teacherRef);
+                    if (teacherSnap.exists()) {
+                        const tData = teacherSnap.data();
+                        const hrGrade = tData.homeroomGrade || "";
+                        const hrRoom = tData.homeroomRoom || "";
+                        studentsList = allStudents.filter(student => student.classLevel === hrGrade && student.room === hrRoom);
+                    }
+                } else {
+                    studentsList = allStudents;
+                }
                 setStudents(studentsList);
 
                 const allVisits: Visit[] = [];
@@ -210,7 +242,7 @@ const HomeVisitSummary: React.FC = () => {
                                     </div>
                                     <p className="text-gray-500 dark:text-gray-400 text-sm font-medium flex items-center gap-2">
                                         <Sparkles size={14} className="text-yellow-500" />
-                                        ชั้น {firstStudent?.classLevel}/{firstStudent?.room} • {schoolName}
+                                        {firstStudent ? `ชั้น ${firstStudent.classLevel}/${firstStudent.room}` : "ภาพรวมของโรงเรียน / ยังไม่ได้ระบุห้องเรียน"} • {schoolName}
                                     </p>
                                 </div>
                             </div>
@@ -222,8 +254,8 @@ const HomeVisitSummary: React.FC = () => {
                                         schoolName={schoolName}
                                         teacherName={teacherName}
                                         schoolId={schoolId}
-                                        classLevel={firstStudent?.classLevel}
-                                        room={firstStudent?.room}
+                                        classLevel={firstStudent?.classLevel || "ทั้งหมด"}
+                                        room={firstStudent?.room || ""}
                                     />
                                 )}
                             </div>
@@ -273,7 +305,7 @@ const HomeVisitSummary: React.FC = () => {
                                 </h3>
                             </div>
                             <div className="h-[240px] relative">
-                                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <ResponsiveContainer width="100%" height={240} debounce={50}>
                                     <PieChart>
                                         <Pie
                                             data={visitStatusData}
@@ -346,9 +378,9 @@ const HomeVisitSummary: React.FC = () => {
                                                 <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
-                                                            <img
+                                                            <ProfileAvatar
                                                                 src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName}+${student?.lastName}&background=4F46E5&color=fff`}
-                                                                className="w-10 h-10 rounded-full border border-gray-100 dark:border-gray-700 object-cover"
+                                                                className="w-10 h-10 border border-gray-100 dark:border-gray-700"
                                                                 alt="Avatar"
                                                             />
                                                             <div className="min-w-0">

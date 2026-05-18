@@ -1,31 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-<<<<<<< HEAD
 import { usePermissions } from "@/hooks/usePermissions";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore, storage } from '@/firebase';
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import MainLayout from '@/layouts/MainLayout';
+import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import Swal from 'sweetalert2';
 import { FaSave, FaTimes, FaKey, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaPlus, FaCamera, FaChevronDown, FaCheck, FaUserPlus } from 'react-icons/fa';
 import { compressImage } from '@/utils/imageUtils';
+import {
+  isActiveStudentSummaryStatus,
+  isActiveTeacherSummaryStatus,
+  updateOwnerAndSchoolCounts,
+} from '@/utils/ownerStatsUtils';
+import { ROLES } from '@/constants/roles';
 
 interface User {
   fullName: string;
-<<<<<<< HEAD
   firstName?: string;
   lastName?: string;
   title?: string;
   email: string;
   role: string | string[];
-=======
-  email: string;
-  role: string | string[]; // รองรับทั้ง string (แบบเก่า) และ string[] (แบบใหม่)
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   schoolId?: string;
   profileUrl?: string;
+  department?: string;
 }
 
 interface School {
@@ -33,19 +33,31 @@ interface School {
   schoolName: string;
 }
 
-<<<<<<< HEAD
 const initialTitles = ["นาย", "นาง", "นางสาว", "ครู", "อาจารย์", "ดร.", "บาทหลวง", "ซิสเตอร์", "บราเดอร์", "อื่นๆ"];
+const departmentOptions = [
+  "งานบริหารวิชาการ",
+  "งานบริหารงบประมาณ",
+  "งานบริหารบุคคล",
+  "งานบริหารทั่วไป",
+  "งานบริหารกิจการนักเรียน"
+];
+
+const STAFF_ROLES: string[] = [
+  ROLES.TEACHER,
+  ROLES.SCHOOL_ADMIN,
+  ROLES.ACADEMIC_ADMIN,
+  ROLES.SUPER_ADMIN,
+  ROLES.STUDENT_ATTENDANCE,
+  ROLES.TEACHER_ATTENDANCE,
+  ROLES.SCHOOL_ATTENDANCE,
+];
 
 const EditUserPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
-=======
-const EditUserPage: React.FC = () => {
-  const { userId } = useParams<{ userId: string }>();
-  const navigate = useNavigate();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [user, setUser] = useState<User | null>(null);
+  const [originalUser, setOriginalUser] = useState<User | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -54,10 +66,7 @@ const EditUserPage: React.FC = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
-<<<<<<< HEAD
   const [customTitle, setCustomTitle] = useState("");
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,7 +104,6 @@ const EditUserPage: React.FC = () => {
           userData.role = [];
         }
 
-<<<<<<< HEAD
         // Try to split fullName if firstName/lastName are missing
         if (!userData.firstName || !userData.lastName) {
             const nameParts = (userData.fullName || "").trim().split(/\s+/);
@@ -115,7 +123,23 @@ const EditUserPage: React.FC = () => {
             }
         }
 
+        // Fetch department from teacher document if schoolId exists
+        if (userData.schoolId) {
+          const roles = Array.isArray(userData.role) ? userData.role : [userData.role];
+          const isStaff = roles.some(r => STAFF_ROLES.includes(r));
+          if (isStaff) {
+            const teacherDocRef = doc(firestore, "school-settings", userData.schoolId, "teachers", userId);
+            const teacherSnap = await getDoc(teacherDocRef);
+            if (teacherSnap.exists()) {
+              userData.department = teacherSnap.data().department || "งานบริหารทั่วไป";
+            } else {
+              userData.department = "งานบริหารทั่วไป";
+            }
+          }
+        }
+
         setUser(userData);
+        setOriginalUser({ ...userData, role: Array.isArray(userData.role) ? [...userData.role] : userData.role });
         
         if (userData.title && !initialTitles.includes(userData.title)) {
           setCustomTitle(userData.title);
@@ -128,9 +152,6 @@ const EditUserPage: React.FC = () => {
           return;
         }
 
-=======
-        setUser(userData);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (userData.profileUrl) {
           setImagePreview(userData.profileUrl);
         }
@@ -180,13 +201,7 @@ const EditUserPage: React.FC = () => {
         return;
       }
       try {
-<<<<<<< HEAD
-        // Compress and convert to WebP to match standard
-        const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
-=======
-        // Compress and convert to PNG (for PDF compatibility)
-        const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -227,11 +242,61 @@ const EditUserPage: React.FC = () => {
     }
   };
 
+  const hasStaffRole = (roles: string[]) => {
+    return roles.some(r => STAFF_ROLES.includes(r));
+  };
+
+  const deleteTeacherDocIfActive = async (schoolId: string, uid: string) => {
+    if (!schoolId || !uid) return;
+    const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", uid);
+    const teacherSnap = await getDoc(teacherRef);
+    if (!teacherSnap.exists()) return;
+
+    const teacherData = teacherSnap.data();
+    await deleteDoc(teacherRef);
+    if (isActiveTeacherSummaryStatus(teacherData.status || "อยู่")) {
+      await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: -1 });
+    }
+  };
+
+  const deleteStaleTeacherDocs = async (uid: string, targetSchoolId: string, knownSchoolIds: string[] = []) => {
+    if (!uid) return;
+    const staleSchoolIds = new Set<string>();
+
+    knownSchoolIds.forEach((schoolId) => {
+      if (schoolId && schoolId !== targetSchoolId) {
+        staleSchoolIds.add(schoolId);
+      }
+    });
+
+    schools.forEach((school) => {
+      if (school.id && school.id !== targetSchoolId) {
+        staleSchoolIds.add(school.id);
+      }
+    });
+
+    for (const schoolId of staleSchoolIds) {
+      await deleteTeacherDocIfActive(schoolId, uid);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId || !user) return;
 
-<<<<<<< HEAD
+    const result = await Swal.fire({
+      title: 'ยืนยันการแก้ไขข้อมูล',
+      text: "คุณต้องการบันทึกการเปลี่ยนแปลงข้อมูลผู้ใช้นี้ใช่หรือไม่?",
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยันการแก้ไข',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#4f46e5',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
 
     setIsSaving(true);
     try {
@@ -240,21 +305,11 @@ const EditUserPage: React.FC = () => {
       const fullName = `${finalTitle}${user.firstName} ${user.lastName}`.trim();
 
       if (imageFile) {
-        // Use .webp extension to match standard
-        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.webp`);
-=======
-    setIsSaving(true);
-    try {
-      let profileUrl = user.profileUrl;
-
-      if (imageFile) {
-        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.png`);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        const storageRef = ref(storage, `users/${userId}/profile_${Date.now()}.jpg`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         profileUrl = await getDownloadURL(snapshot.ref);
       }
 
-<<<<<<< HEAD
       // 1. Update central 'users' collection
       const userData = {
         fullName: fullName,
@@ -270,15 +325,29 @@ const EditUserPage: React.FC = () => {
 
       // 2. Update school-specific collections if applicable
       const roles = Array.isArray(user.role) ? user.role : [user.role];
+      const previousRoles = originalUser
+        ? (Array.isArray(originalUser.role) ? originalUser.role : [originalUser.role])
+        : [];
+      const previousSchoolId = originalUser?.schoolId || "";
       if (user.schoolId) {
-        const isStaff = roles.some(r => ['teacher', 'school_admin', 'academic_admin', 'super_admin'].includes(r));
-        const isStudent = roles.includes('student');
+        const isStaff = hasStaffRole(roles);
+        const isStudent = roles.includes(ROLES.STUDENT);
 
         if (isStaff) {
           const teacherDocRef = doc(firestore, "school-settings", user.schoolId, "teachers", userId);
           const teacherSnap = await getDoc(teacherDocRef);
+          const oldTeacherDocRef = previousSchoolId
+            ? doc(firestore, "school-settings", previousSchoolId, "teachers", userId)
+            : null;
+          const oldTeacherSnap = oldTeacherDocRef && previousSchoolId !== user.schoolId
+            ? await getDoc(oldTeacherDocRef)
+            : teacherSnap;
+          const sourceTeacherData = oldTeacherSnap.exists()
+            ? oldTeacherSnap.data()
+            : (teacherSnap.exists() ? teacherSnap.data() : {});
           
           const teacherData = {
+            ...sourceTeacherData,
             uid: userId,
             firstName: user.firstName,
             lastName: user.lastName,
@@ -289,16 +358,22 @@ const EditUserPage: React.FC = () => {
             profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
             updatedAt: serverTimestamp(),
             // Preserve existing teacher-specific fields if they exist, or use defaults
-            position: teacherSnap.exists() ? (teacherSnap.data().position || (roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู")) : (roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู"),
-            department: teacherSnap.exists() ? (teacherSnap.data().department || "งานบริหารทั่วไป") : "งานบริหารทั่วไป",
-            status: teacherSnap.exists() ? (teacherSnap.data().status || "อยู่") : "อยู่",
-            isHomeroomTeacher: teacherSnap.exists() ? (teacherSnap.data().isHomeroomTeacher || false) : false,
-            gender: teacherSnap.exists() ? (teacherSnap.data().gender || "") : "",
-            learningArea: teacherSnap.exists() ? (teacherSnap.data().learningArea || "") : "",
-            subjectGroup: teacherSnap.exists() ? (teacherSnap.data().subjectGroup || "") : "",
+            position: sourceTeacherData.position 
+              ? sourceTeacherData.position
+              : (roles.includes(ROLES.SUPER_ADMIN) ? "ผู้ดูแลระบบสูงสุด" : (roles.includes(ROLES.SCHOOL_ADMIN) ? "ผู้ดูแลระบบโรงเรียน" : "ครู")),
+            department: user.department || "งานบริหารทั่วไป",
+            status: sourceTeacherData.status || "อยู่",
+            isHomeroomTeacher: sourceTeacherData.isHomeroomTeacher || false,
+            gender: sourceTeacherData.gender || "",
+            learningArea: sourceTeacherData.learningArea || "",
+            subjectGroup: sourceTeacherData.subjectGroup || "",
           };
           
           await setDoc(teacherDocRef, teacherData, { merge: true });
+          await deleteStaleTeacherDocs(userId, user.schoolId, previousSchoolId ? [previousSchoolId] : []);
+          if (!teacherSnap.exists() && isActiveTeacherSummaryStatus(teacherData.status)) {
+            await updateOwnerAndSchoolCounts(firestore, user.schoolId, { teachers: 1 });
+          }
         }
 
         if (isStudent) {
@@ -324,17 +399,17 @@ const EditUserPage: React.FC = () => {
           };
 
           await setDoc(studentDocRef, studentData, { merge: true });
+          if (!studentSnap.exists() && isActiveStudentSummaryStatus(studentData.studentStatus)) {
+            await updateOwnerAndSchoolCounts(firestore, user.schoolId, { students: 1 });
+          }
         }
+      } else if (hasStaffRole(roles)) {
+        await deleteStaleTeacherDocs(userId, "", previousSchoolId ? [previousSchoolId] : []);
       }
-=======
-      const userDocRef = doc(firestore, 'users', userId);
-      await updateDoc(userDocRef, {
-        fullName: user.fullName,
-        role: user.role,
-        schoolId: user.schoolId || null, // Ensure it's null if empty
-        profileUrl: profileUrl || null,
-      });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+      if (previousSchoolId && hasStaffRole(previousRoles) && !hasStaffRole(roles)) {
+        await deleteStaleTeacherDocs(userId, "", [previousSchoolId]);
+      }
 
       // 📌 Update Slug for the Profile
       const slugId = `profile:${userId}`;
@@ -348,11 +423,6 @@ const EditUserPage: React.FC = () => {
       }, { merge: true });
 
       // 📌 Update specific role slugs
-<<<<<<< HEAD
-      // (roles already defined above)
-=======
-      const roles = Array.isArray(user.role) ? user.role : [user.role];
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       for (const role of roles) {
         if (['student', 'teacher'].includes(role)) {
           const roleSlugId = `${role}:${userId}`;
@@ -370,14 +440,19 @@ const EditUserPage: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'บันทึกสำเร็จ',
-        text: 'ข้อมูลผู้ใช้ถูกอัปเดตเรียบร้อยแล้ว',
+        text: 'ข้อมูลผู้ใช้ได้รับการอัปเดตเรียบร้อยแล้ว',
         timer: 2000,
         showConfirmButton: false,
       });
       navigate('/owner/users');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error updating user:", err);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอัปเดตข้อมูลผู้ใช้ได้', 'error');
+      Swal.fire({
+        icon: 'error',
+        title: 'พบข้อผิดพลาด',
+        text: err.message || 'ไม่สามารถบันทึกข้อมูลได้ในขณะนี้',
+        confirmButtonColor: '#4f46e5',
+      });
     } finally {
       setIsSaving(false);
     }
@@ -408,16 +483,12 @@ const EditUserPage: React.FC = () => {
   }
 
   const userRoles = [
-    { value: 'super_admin', label: 'ผู้ดูแลระบบสูงสุด (Super Admin)' },
-    { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
-    { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
-    { value: 'student', label: 'นักเรียน (Student)' },
-<<<<<<< HEAD
-    { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
-    { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
-    { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+    { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลระบบสูงสุด (Super Admin)' },
+    { value: ROLES.SCHOOL_ADMIN, label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
+    { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
+    { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
+    { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
+    { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
   ];
 
   return (
@@ -484,8 +555,8 @@ const EditUserPage: React.FC = () => {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">รูปโปรไฟล์</label>
                           <div className="flex items-center gap-4">
                             <div className="relative group">
-                              <img
-                                className="h-24 w-24 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-md"
+                              <ProfileAvatar
+                                className="h-24 w-24 border-4 border-white dark:border-gray-700 shadow-md"
                                 src={imagePreview || `https://ui-avatars.com/api/?name=${user.fullName || 'User'}&background=random`}
                                 alt={user.fullName || 'User'}
                               />
@@ -496,7 +567,7 @@ const EditUserPage: React.FC = () => {
                                 id="profile-upload"
                                 type="file"
                                 className="hidden"
-                                accept="image/*"
+                                accept="image/jpeg,image/png"
                                 onChange={handleImageChange}
                               />
                             </div>
@@ -506,7 +577,6 @@ const EditUserPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
-<<<<<<< HEAD
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
                             <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">คำนำหน้า</label>
@@ -564,19 +634,6 @@ const EditUserPage: React.FC = () => {
                               required
                             />
                           </div>
-=======
-                        <div>
-                          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ชื่อ-สกุล</label>
-                          <input
-                            type="text"
-                            name="fullName"
-                            id="fullName"
-                            value={user.fullName}
-                            onChange={handleInputChange}
-                            className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                            required
-                          />
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                         <div className="relative" ref={dropdownRef}>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">บทบาท</label>
@@ -603,11 +660,7 @@ const EditUserPage: React.FC = () => {
 
                           {isRoleDropdownOpen && (
                             <div className="absolute z-50 mt-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in fade-in zoom-in duration-200">
-<<<<<<< HEAD
-                              {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
-=======
-                              {userRoles.map((role) => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                              {userRoles.filter(r => !isSchoolAdmin || r.value !== ROLES.SUPER_ADMIN).map((role) => {
                                 const isChecked = Array.isArray(user.role)
                                   ? user.role.includes(role.value)
                                   : user.role === role.value;
@@ -641,29 +694,37 @@ const EditUserPage: React.FC = () => {
                               name="schoolId"
                               value={user.schoolId || ''}
                               onChange={handleInputChange}
-<<<<<<< HEAD
-                              disabled={isSchoolAdmin || isTeacher}
-                              className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin || isTeacher ? 'opacity-70 cursor-not-allowed' : ''}`}
-=======
-                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                              disabled={isSchoolAdmin}
+                              className={`block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : ''}`}
                             >
                               <option value="">-- ไม่ได้กำหนด --</option>
                               {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
                             </select>
-<<<<<<< HEAD
-                            {(!isSchoolAdmin && !isTeacher) && (
+                            {!isSchoolAdmin && (
                               <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
                                 <FaPlus />
                               </Link>
                             )}
-=======
-                            <Link to="/owner/school-info" className="flex-shrink-0 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center" title="เพิ่มโรงเรียนใหม่">
-                              <FaPlus />
-                            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                           </div>
                         </div>
+
+                        {/* Department Selection */}
+                        {(Array.isArray(user.role) ? user.role : [user.role]).some(r => STAFF_ROLES.includes(r)) && (
+                          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                            <label htmlFor="department" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ฝ่ายงาน</label>
+                            <select
+                              id="department"
+                              name="department"
+                              value={user.department || "งานบริหารทั่วไป"}
+                              onChange={handleInputChange}
+                              className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                            >
+                              {departmentOptions.map(dept => (
+                                <option key={dept} value={dept}>{dept}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

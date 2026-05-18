@@ -9,10 +9,7 @@ import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { saveSDQAssessment, getSDQAssessments, SDQAssessment, SDQScore, getSchoolLevels } from '@/services/sdqService';
 import SDQAssessmentModal from '@/components/SDQ/SDQAssessmentModal';
-<<<<<<< HEAD
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const SDQTeacherPage: React.FC = () => {
     const [selectedClass, setSelectedClass] = useState<string>('');
@@ -27,64 +24,25 @@ const SDQTeacherPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
 
-<<<<<<< HEAD
     const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [academicYear, setAcademicYear] = useState<string>(reduxAcademicYear);
     const [systemYear, setSystemYear] = useState<string>(reduxAcademicYear);
-=======
-    const [academicYear, setAcademicYear] = useState<string>(''); // Start empty to enforce fetching
-    const [systemYear, setSystemYear] = useState<string>('');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Fetch School Settings & Academic Year
     useEffect(() => {
         const fetchSettings = async () => {
             if (schoolId) {
-<<<<<<< HEAD
                 const levels = await getSchoolLevels(schoolId);
                 setAvailableLevels(levels);
                 if (!selectedClass && levels.length > 0) setSelectedClass(levels[0]);
                 if (!academicYear) {
                     setAcademicYear(reduxAcademicYear);
                     setSystemYear(reduxAcademicYear);
-=======
-                // 1. Levels
-                const levels = await getSchoolLevels(schoolId);
-                setAvailableLevels(levels);
-                if (!selectedClass && levels.length > 0) setSelectedClass(levels[0]);
-
-                // 2. Academic Year from SchoolCalendarPage (main_calendar/default)
-                try {
-                    const calendarDoc = await import('firebase/firestore').then(fs =>
-                        fs.getDoc(fs.doc(db, 'school-settings', schoolId, 'main_calendar', 'default'))
-                    );
-                    if (calendarDoc.exists()) {
-                        const y = calendarDoc.data().academicYear;
-                        if (y) {
-                            setSystemYear(y);
-                            setAcademicYear(y); // Strictly use system default
-                        } else {
-                            // Fallback only if configured year is missing in DB
-                            setAcademicYear('2567');
-                            setSystemYear('2567');
-                        }
-                    } else {
-                        setAcademicYear('2567');
-                        setSystemYear('2567');
-                    }
-                } catch (e) {
-                    console.error("Error fetching calendar:", e);
-                    setAcademicYear('2567');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
             }
         };
         fetchSettings();
-<<<<<<< HEAD
     }, [schoolId, reduxAcademicYear]);
-=======
-    }, [schoolId]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         if (students.length > 0) {

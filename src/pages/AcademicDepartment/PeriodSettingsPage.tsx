@@ -5,14 +5,10 @@ import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, where
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import Swal from 'sweetalert2';
 import { Save, Clock, Plus, Trash2, Lock } from 'lucide-react';
-=======
-import Swal from 'sweetalert2';
-import { ArrowLeft, Save, Clock, Plus, Trash2, Lock } from 'lucide-react';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 
 interface PeriodSetting {
   id: string; // e.g., 'homeroom', 'period-1', 'lunch'
@@ -23,25 +19,17 @@ interface PeriodSetting {
   isFixed?: boolean; // To mark periods like homeroom/lunch as non-editable
 }
 
-const DEFAULT_PERIODS: PeriodSetting[] = [
-<<<<<<< HEAD
-  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false },
-=======
-  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, isFixed: true },
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-  { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true },
-  { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true },
-  { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true },
-  { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true },
-<<<<<<< HEAD
-  { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false },
-=======
-  { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false, isFixed: true },
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-  { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true },
-  { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true },
-  { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true },
-  { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
+const DEFAULT_PERIODS: (PeriodSetting & { index: number })[] = [
+  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, index: 0 },
+  { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true, index: 1 },
+  { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true, index: 2 },
+  { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true, index: 3 },
+  { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true, index: 4 },
+  { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false, index: 5 },
+  { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true, index: 6 },
+  { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true, index: 7 },
+  { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true, index: 8 },
+  { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true, index: 9 },
 ];
 
 const PeriodSettingsPage: React.FC = () => {
@@ -63,13 +51,13 @@ const PeriodSettingsPage: React.FC = () => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.periods) {
-          setPeriods(data.periods);
+          setPeriods(normalizePeriodSettings(data.periods));
         }
         // Load saved quick settings
         setSchoolStartTime(data.schoolStartTime || '08:40');
         setDurationPreset(data.durationPreset || 'custom');
       } else {
-        setPeriods(DEFAULT_PERIODS); // Set default if not found
+        setPeriods(normalizePeriodSettings(DEFAULT_PERIODS)); // Set default if not found
       }
     } catch (error) {
       console.error("Error fetching period settings: ", error);
@@ -100,30 +88,7 @@ const PeriodSettingsPage: React.FC = () => {
       const hNum = parseInt(h);
       const mNum = parseInt(m);
       if (!isNaN(hNum) && !isNaN(mNum) && hNum >= 0 && hNum < 24 && mNum >= 0 && mNum < 60) {
-<<<<<<< HEAD
         normalized = `${h}.${m}`;
-=======
-        // Enforce 16.00 limit check? 
-        // Logic: if start time > 16.00, maybe warn? But strictly speaking, school usually starts before.
-        // If end time > 16.00, cap it. 
-        // But for generic time input, we might just format it.
-        // Let's enforce cap if it's explicitly strictly required.
-        // For now, let's keep formatting but maybe add visual feedback if > 16.00 elsewhere changes.
-        // User asked "set up period settings... must not exceed 16.00".
-        // Let's cap if > 16.00?
-        if (hNum > 16 || (hNum === 16 && mNum > 0)) {
-          Swal.fire({
-            icon: 'warning',
-            title: 'เวลาเกินกำหนด',
-            text: 'ระบบกำหนดให้เวลาสิ้นสุดการเรียนการสอนไม่เกิน 16.00 น.',
-            timer: 2000,
-            showConfirmButton: false
-          });
-          normalized = '16.00';
-        } else {
-          normalized = `${h}.${m}`;
-        }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       }
     }
 
@@ -142,22 +107,7 @@ const PeriodSettingsPage: React.FC = () => {
       const hNum = parseInt(h);
       const mNum = parseInt(m);
       if (!isNaN(hNum) && !isNaN(mNum) && hNum >= 0 && hNum < 24 && mNum >= 0 && mNum < 60) {
-<<<<<<< HEAD
         normalized = `${h}.${m}`;
-=======
-        if (hNum > 16 || (hNum === 16 && mNum > 0)) {
-          Swal.fire({
-            icon: 'warning',
-            title: 'เวลาเกินกำหนด',
-            text: 'ระบบกำหนดให้เวลาสิ้นสุดการเรียนการสอนไม่เกิน 16.00 น.',
-            timer: 2000,
-            showConfirmButton: false
-          });
-          normalized = '16.00';
-        } else {
-          normalized = `${h}.${m}`;
-        }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       }
     }
     handlePeriodChange(index, field, normalized);
@@ -191,12 +141,7 @@ const PeriodSettingsPage: React.FC = () => {
     };
 
     const isAfter1600 = (time: string): boolean => {
-<<<<<<< HEAD
-      return false; // User requested no limit
-=======
-      const [h, m] = time.replace('.', ':').split(':').map(Number);
-      return h > 16 || (h === 16 && m > 0);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+      return isTimeAfterOrEqual(time, '16.01');
     };
 
     // 1. Homeroom (Fixed relative to start, or Fixed 08:30-08:40? Default said 08:30-08:40)
@@ -211,12 +156,7 @@ const PeriodSettingsPage: React.FC = () => {
       label: 'โฮมรูม',
       startTime: '08.30',
       endTime: '08.40',
-<<<<<<< HEAD
       isTeachingPeriod: false
-=======
-      isTeachingPeriod: false,
-      isFixed: true
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     });
 
     let currentTime = startTime.replace(':', '.');
@@ -268,12 +208,7 @@ const PeriodSettingsPage: React.FC = () => {
       label: 'พักกลางวัน',
       startTime: LUNCH_START,
       endTime: LUNCH_END,
-<<<<<<< HEAD
       isTeachingPeriod: false
-=======
-      isTeachingPeriod: false,
-      isFixed: true
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     });
 
     currentTime = LUNCH_END;
@@ -306,7 +241,8 @@ const PeriodSettingsPage: React.FC = () => {
       periodCount++;
     }
 
-    return newPeriods;
+    const finalPeriods = newPeriods.map((p, idx) => ({ ...p, index: idx }));
+    return finalPeriods;
   };
 
   const handlePresetChange = (preset: string) => {
@@ -389,13 +325,6 @@ const PeriodSettingsPage: React.FC = () => {
   };
 
   const removePeriod = (index: number) => {
-<<<<<<< HEAD
-=======
-    if (periods[index].isFixed) {
-      Swal.fire('ไม่สามารถลบได้', 'คาบเรียนนี้เป็นคาบเรียนถาวร', 'warning');
-      return;
-    }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     if (periods.length <= 1) {
       Swal.fire('ไม่สามารถลบได้', 'ต้องมีอย่างน้อย 1 คาบเรียน', 'warning');
       return;
@@ -410,35 +339,20 @@ const PeriodSettingsPage: React.FC = () => {
   const handleSave = async () => {
     if (!schoolId) return;
 
-<<<<<<< HEAD
     // No time limit validation requested
-=======
-    // Validate 16:00 limit before saving
-    const hasLatePeriods = periods.some(p => {
-      const parts = p.endTime.replace(':', '.').split('.');
-      if (parts.length === 2) {
-        const h = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        return h > 16 || (h === 16 && m > 0);
-      }
-      return false;
-    });
-
-    if (hasLatePeriods) {
-      Swal.fire({
-        icon: 'error',
-        title: 'ไม่สามารถบันทึกได้',
-        text: 'พบคาบเรียนที่มีเวลาเกิน 16.00 น. กรุณาแก้ไขก่อนบันทึก'
-      });
-      return;
-    }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     setIsSubmitting(true);
     try {
+      const indexedPeriods = normalizePeriodSettings(periods).map((p, idx) => ({
+        ...p,
+        index: idx,
+        order: idx,
+        isTeachingPeriod: !!p.isTeachingPeriod,
+        isTeaching: !!p.isTeachingPeriod,
+      }));
       const docRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
       await setDoc(docRef, {
-        periods,
+        periods: indexedPeriods,
         schoolStartTime,
         durationPreset,
         updatedAt: serverTimestamp()
@@ -494,13 +408,7 @@ const PeriodSettingsPage: React.FC = () => {
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-5xl mx-auto">
           <div className="mb-6">
-<<<<<<< HEAD
             <BackButton to="/academic/hub/settings" />
-=======
-            <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors font-medium">
-              <ArrowLeft size={20} className="mr-1" /> กลับหน้าบริหารงานวิชาการ
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </div>
 
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
@@ -587,11 +495,6 @@ const PeriodSettingsPage: React.FC = () => {
                 ) : (
                   <div className="space-y-4">
                     {periods.map((period, index) => {
-<<<<<<< HEAD
-=======
-                      const isLockedForEditing = !!period.isFixed && period.id !== 'lunch';
-                      const showLockIcon = !!period.isFixed;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                       return (
                         <div
@@ -603,14 +506,6 @@ const PeriodSettingsPage: React.FC = () => {
                               : 'bg-white dark:bg-[#2a2b2f] border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md'
                             }`}
                         >
-<<<<<<< HEAD
-=======
-                          {showLockIcon && (
-                            <div className="absolute top-3 right-3 text-gray-400 dark:text-gray-600" title="คาบนี้ถูกล็อคไว้">
-                              <Lock size={14} />
-                            </div>
-                          )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end">
                             <div className="sm:col-span-5">
@@ -619,12 +514,7 @@ const PeriodSettingsPage: React.FC = () => {
                                 type="text"
                                 value={period.label}
                                 onChange={(e) => handlePeriodChange(index, 'label', e.target.value)}
-<<<<<<< HEAD
                                 className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-=======
-                                className={`w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${isLockedForEditing ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                disabled={isLockedForEditing}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                               />
                             </div>
 
@@ -636,12 +526,7 @@ const PeriodSettingsPage: React.FC = () => {
                                 value={period.startTime}
                                 onChange={(e) => handlePeriodChange(index, 'startTime', e.target.value)}
                                 onBlur={(e) => handlePeriodTimeBlur(index, 'startTime', e.target.value)}
-<<<<<<< HEAD
                                 className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-=======
-                                className={`w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${isLockedForEditing ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                disabled={isLockedForEditing}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                               />
                             </div>
 
@@ -653,20 +538,11 @@ const PeriodSettingsPage: React.FC = () => {
                                 value={period.endTime}
                                 onChange={(e) => handlePeriodChange(index, 'endTime', e.target.value)}
                                 onBlur={(e) => handlePeriodTimeBlur(index, 'endTime', e.target.value)}
-<<<<<<< HEAD
                                 className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-=======
-                                className={`w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2.5 text-sm text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${isLockedForEditing ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                disabled={isLockedForEditing}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                               />
                             </div>
 
                             <div className="sm:col-span-1 flex justify-center sm:justify-end pb-1">
-<<<<<<< HEAD
-=======
-                              {!period.isFixed && (
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <button
                                   type="button"
                                   onClick={() => removePeriod(index)}
@@ -675,10 +551,6 @@ const PeriodSettingsPage: React.FC = () => {
                                 >
                                   <Trash2 size={18} />
                                 </button>
-<<<<<<< HEAD
-=======
-                              )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                           </div>
                         </div>

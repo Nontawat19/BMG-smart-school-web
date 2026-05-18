@@ -12,9 +12,10 @@ interface DraggableCourseProps {
     onLockToggle?: (courseId: string) => void;
     viewType?: 'teacher' | 'class' | 'room';
     teachers?: any[];
+    onHover?: (rect: DOMRect | null) => void;
 }
 
-export const DraggableCourse: React.FC<DraggableCourseProps> = ({ course, onRemove, showRemove, viewType, teachers }) => {
+export const DraggableCourse: React.FC<DraggableCourseProps> = ({ course, onRemove, showRemove, viewType, teachers, onHover }) => {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: course.instanceId,
         disabled: course.locked,
@@ -33,7 +34,7 @@ export const DraggableCourse: React.FC<DraggableCourseProps> = ({ course, onRemo
     return (
         <div ref={setNodeRef} style={style} {...attributes} className="h-full w-full relative group">
             <div {...listeners} className="h-full w-full cursor-grab active:cursor-grabbing">
-                <CourseCard course={course} viewType={viewType} teachers={teachers} />
+                <CourseCard course={course} viewType={viewType} teachers={teachers} onHover={onHover} />
             </div>
             
             {/* Remove Button - Precision Style (Matched with Lock UI) */}

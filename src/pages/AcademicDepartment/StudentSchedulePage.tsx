@@ -8,7 +8,6 @@ import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer, pdf, PDFDownloadLink } from '@react-pdf/renderer';
 import { StudentSchedulePDF, BulkStudentSchedulePDF, ScheduleEntry, SpecialPeriod } from '@/components/Pdf/StudentScheduleDocument';
-<<<<<<< HEAD
 import { Loader2, FileDown, Calendar, Users, Printer, Search } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import toast from 'react-hot-toast';
@@ -16,31 +15,24 @@ import { saveAs } from 'file-saver';
 import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-=======
-import { Loader2, FileDown, Calendar, Users, Printer, ArrowLeft, Search } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { saveAs } from 'file-saver';
-import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { classMatchesSelection, getRoomsForClass, normalizePeriodSettings, parseClassRoom } from '@/utils/scheduleDisplayUtils';
 
 // --- Types ---
 interface Course {
   id: string;
   title: string;
   code: string;
-  classId?: string; // Changed from 'string | string[]' to 'string'
+  classId?: string | string[];
   room?: string[];
   hoursPerWeek?: number;
   teacherId?: string;
+  teacherIds?: string[];
   isCombined?: boolean;
   constraints?: {
     disallowedDays?: string[];
   };
   isActive?: boolean;
-<<<<<<< HEAD
   groupNumber?: number | string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface SchoolInfo {
@@ -79,17 +71,17 @@ const HOMEROOM_GRADE_MAP: Record<string, string> = {
   m1: 'ม.1', m2: 'ม.2', m3: 'ม.3', m4: 'ม.4', m5: 'ม.5', m6: 'ม.6'
 };
 
-const DEFAULT_PERIODS: PeriodSetting[] = [
-  { id: 'homeroom', label: 'โฮมรูม', startTime: '08:30', endTime: '08:40', isTeachingPeriod: false, isFixed: true },
-  { id: 'period-1', label: 'คาบที่ 1', startTime: '08:40', endTime: '09:30', isTeachingPeriod: true },
-  { id: 'period-2', label: 'คาบที่ 2', startTime: '09:30', endTime: '10:20', isTeachingPeriod: true },
-  { id: 'period-3', label: 'คาบที่ 3', startTime: '10:20', endTime: '11:10', isTeachingPeriod: true },
-  { id: 'period-4', label: 'คาบที่ 4', startTime: '11:10', endTime: '12:00', isTeachingPeriod: true },
-  { id: 'lunch', label: 'พักกลางวัน', startTime: '12:00', endTime: '13:00', isTeachingPeriod: false, isFixed: true },
-  { id: 'period-5', label: 'คาบที่ 5', startTime: '13:00', endTime: '13:50', isTeachingPeriod: true },
-  { id: 'period-6', label: 'คาบที่ 6', startTime: '13:50', endTime: '14:40', isTeachingPeriod: true },
-  { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true },
-  { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true },
+const DEFAULT_PERIODS: (PeriodSetting & { index: number })[] = [
+  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, isFixed: true, index: 0 },
+  { id: 'period-1', label: 'คาบที่ 1', startTime: '08:40', endTime: '09:30', isTeachingPeriod: true, index: 1 },
+  { id: 'period-2', label: 'คาบที่ 2', startTime: '09:30', endTime: '10:20', isTeachingPeriod: true, index: 2 },
+  { id: 'period-3', label: 'คาบที่ 3', startTime: '10:20', endTime: '11:10', isTeachingPeriod: true, index: 3 },
+  { id: 'period-4', label: 'คาบที่ 4', startTime: '11:10', endTime: '12:00', isTeachingPeriod: true, index: 4 },
+  { id: 'lunch', label: 'พักกลางวัน', startTime: '12:00', endTime: '13:00', isTeachingPeriod: false, isFixed: true, index: 5 },
+  { id: 'period-5', label: 'คาบที่ 5', startTime: '13:00', endTime: '13:50', isTeachingPeriod: true, index: 6 },
+  { id: 'period-6', label: 'คาบที่ 6', startTime: '13:50', endTime: '14:40', isTeachingPeriod: true, index: 7 },
+  { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true, index: 8 },
+  { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true, index: 9 },
 ];
 
 // --- Register Thai Font ---
@@ -200,6 +192,73 @@ const styles = StyleSheet.create({
   }
 });
 
+// --- Helpers ---
+const formatTeacherName = (teacher: any) => {
+  if (!teacher) return 'N/A';
+  
+  if (teacher.firstName) {
+    return `คุณครู${teacher.firstName}`;
+  }
+  
+  let name = teacher.name || '';
+  // Remove common Thai prefixes and academic/military titles
+  name = name.replace(/^(นาย|นางสาว|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ว่าที่ ร\.ต\.หญิง|ว่าที่ร้อยโท|ดร\.|ผอ\.|ครู)\s*/, '');
+  
+  // Take only the first part of the name (the first name)
+  const firstName = name.trim().split(/\s+/)[0];
+  return `คุณครู${firstName}`;
+};
+
+const getAssignmentTeacherIds = (assignment: any): string[] => {
+  const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+    ? assignment.teacherIds
+    : (assignment?.teacherId ? [assignment.teacherId] : []);
+  return Array.from(new Set(ids.filter(Boolean)));
+};
+
+const assignmentIncludesTeacher = (assignment: any, teacherId: string) => {
+  const ids = getAssignmentTeacherIds(assignment);
+  return ids.length === 0 || ids.includes(teacherId);
+};
+
+const matchesYearTerm = (data: any, year: string, term: string) => {
+  const dataYear = String(data.academicYear || "");
+  const dataTerm = String(data.semester || "");
+  const yearMatches = !year || !dataYear || dataYear === String(year);
+  const termMatches = !term || !dataTerm || dataTerm === String(term) || dataTerm.startsWith(`${term}/`) || String(term).startsWith(`${dataTerm}/`);
+  return yearMatches && termMatches;
+};
+
+const asArray = (value: unknown): any[] => Array.isArray(value) ? value : [value].filter(Boolean);
+
+const assignmentClassLevels = (assignment: any) => asArray(assignment?.classLevels);
+
+const courseClassIds = (course: Course) => asArray(course.classId);
+
+const matchesSelectedClassRoom = (values: unknown[], selectedClass: string, selectedRoom?: string) => (
+  values.some(value => classMatchesSelection(value, selectedClass, selectedRoom))
+);
+
+const assignmentMatchesClassRoom = (assignment: any, selectedClass: string, selectedRoom?: string) => (
+  matchesSelectedClassRoom(assignmentClassLevels(assignment), selectedClass, selectedRoom)
+);
+
+const mergeScheduleEntry = (target: Schedule, slot: string, entry: ScheduleEntry) => {
+  const current = target[slot];
+  if (
+    current &&
+    (current.course.id || current.course.code) === (entry.course.id || entry.course.code) &&
+    Number((current.course as any).groupNumber || 1) === Number((entry.course as any).groupNumber || 1)
+  ) {
+    const names = new Set(String(current.teacherName || '').split(',').map(v => v.trim()).filter(Boolean));
+    String(entry.teacherName || '').split(',').map(v => v.trim()).filter(Boolean).forEach(name => names.add(name));
+    current.teacherName = Array.from(names).join(', ');
+    if (!current.roomCode && entry.roomCode) current.roomCode = entry.roomCode;
+    return;
+  }
+  target[slot] = entry;
+};
+
 
 
 const StudentSchedulePage: React.FC = () => {
@@ -222,8 +281,9 @@ const StudentSchedulePage: React.FC = () => {
   const [multiRoomData, setMultiRoomData] = useState<any[] | null>(null); // New state for all-rooms view
   const [roomMap, setRoomMap] = useState<Record<string, string>>({});
   const [coursesMap, setCoursesMap] = useState<Record<string, any>>({});
-<<<<<<< HEAD
-  const [availableGroups, setAvailableGroups] = useState<string[]>([]); // New state for dynamic groups
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]); // This will store Room numbers (e.g., 1, 2, 3)
+  const [availableGroupNumbers, setAvailableGroupNumbers] = useState<string[]>([]); // This will store Group numbers
+  const [selectedGroup, setSelectedGroup] = useState<string>('all');
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
@@ -233,11 +293,6 @@ const StudentSchedulePage: React.FC = () => {
   const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
   const reduxTerms = calendarState.terms;
 
-=======
-
-  const currentUser = useSelector((state: RootState) => state.auth.user);
-  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
 
@@ -258,161 +313,136 @@ const StudentSchedulePage: React.FC = () => {
 
     setIsLoading(true);
 
-<<<<<<< HEAD
     // CRITICAL: Clear previous data immediately so we don't show old room's data
     setSchedule({});
     setMultiRoomData(null);
     setTotalPeriods(0);
 
     try {
-      // Find homeroom teacher logic (simplified to finding for generic class first)
+      // Find homeroom teacher logic
       let foundHomeroomTeacher = '';
-      const gradeToFind = HOMEROOM_GRADE_MAP[selectedClass as keyof typeof HOMEROOM_GRADE_MAP];
+      const gradeLabel = HOMEROOM_GRADE_MAP[selectedClass as keyof typeof HOMEROOM_GRADE_MAP];
+      const specificGradeWithRoom = selectedRoom ? `${gradeLabel}/${selectedRoom}` : '';
 
-      // If a specific room is selected, we might want to find the teacher assigned to that specific room if data exists
-      // For now, using the general grade mapping
-=======
-    // Reset states
-    setSchedule({});
-    setMultiRoomData(null);
-
-    try {
-      // Find homeroom teacher logic (simplified to finding for generic class first)
-      // Note: Homeroom teachers might differ per room.
-      // For single room view, we find specifically.
-      // For multi-room view, the Bulk component needs per-room homeroom teachers.
-
-      let foundHomeroomTeacher = '';
-      const gradeToFind = HOMEROOM_GRADE_MAP[selectedClass as keyof typeof HOMEROOM_GRADE_MAP];
-
-      // Basic homeroom teacher fetch for single view usage (or fallback)
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       for (const teacherId in teacherMap) {
-        if (gradeToFind && teacherMap[teacherId].homeroomGrade === gradeToFind) {
-          foundHomeroomTeacher = teacherMap[teacherId].name;
+        const t = teacherMap[teacherId];
+        // Check for specific room first, then fallback to general grade
+        if (specificGradeWithRoom && t.homeroomGrade === specificGradeWithRoom) {
+          foundHomeroomTeacher = t.name;
           break;
+        } else if (!foundHomeroomTeacher && gradeLabel && t.homeroomGrade === gradeLabel) {
+          foundHomeroomTeacher = t.name;
         }
       }
       setHomeroomTeacher(foundHomeroomTeacher);
 
-      const schedulesCollectionRef = collection(db, 'school-settings', schoolId, 'schedules');
-      // Remove query constraint to fetch all and filter client-side (to handle array classId)
-      const querySnapshot = await getDocs(schedulesCollectionRef);
+      const [querySnapshot, assignmentSnap] = await Promise.all([
+        getDocs(collection(db, 'school-settings', schoolId, 'schedules')),
+        getDocs(query(
+          collection(db, 'school-settings', schoolId, 'course_assignments'),
+          where('academicYear', '==', academicYear),
+          where('semester', '==', currentTerm)
+        ))
+      ]);
+      const assignmentMap: Record<string, any> = {};
+      assignmentSnap.forEach(d => {
+        const data = d.data();
+        if (data.courseId) assignmentMap[data.courseId] = data;
+      });
 
       if (selectedRoom) {
         // --- Existing Single Room Logic ---
         const mergedSchedule: Schedule = {};
         querySnapshot.forEach((doc) => {
           const data = doc.data();
+            if (!matchesYearTerm(data, academicYear, currentTerm)) return;
 
-          // Client-side Filter
-          const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-          if (!classIds.includes(selectedClass)) return;
+            // Client-side Filter for Grade
+            const classIds = asArray(data.classId);
+            const isGradeMatch = classIds.some(id => classMatchesSelection(id, selectedClass));
+            if (!isGradeMatch) return;
 
-          const teacher = teacherMap[data.teacherId];
-          let teacherName = 'N/A';
-          if (teacher) {
-            if ((teacher as any).firstName) {
-              teacherName = `คุณครู${(teacher as any).firstName}`;
-            } else {
-              let name = teacher.name || '';
-              name = name.replace(/^(นาย|นางสาว|นาง|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ดร\.|ผอ\.)\s*/, '');
-              teacherName = `คุณครู${name.split(' ')[0]}`;
-            }
-          }
-          const scheduleData = data.schedule as Record<string, any>;
+            const teacher = teacherMap[data.teacherId];
+            const teacherName = formatTeacherName(teacher);
+            const scheduleData = data.schedule as Record<string, any>;
 
-          for (const slot in scheduleData) {
-            const courseData = scheduleData[slot];
-            if (courseData) {
-              const courses = Array.isArray(courseData) ? courseData : [courseData];
-              courses.forEach((course: Course) => {
-<<<<<<< HEAD
+            for (const slot in scheduleData) {
+              const courseData = scheduleData[slot];
+              if (courseData) {
+                const courses = Array.isArray(courseData) ? courseData : [courseData];
+                courses.forEach((course: Course) => {
                   if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
                     const latestCourse = coursesMap[course.id];
-                    const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
-                    const gNum = String(course.groupNumber || 1);
-                    const isCommon = course.room?.includes('all') && !hasAssignments;
+                    const allAssignments = [
+                      ...(assignmentMap[course.id]?.teacherAssignments || []),
+                      ...(latestCourse?.teacherAssignments || []),
+                    ];
+                    const hasAssignments = allAssignments.length > 0;
                     
-                    // Strict checking logic
-                    const isMatch = hasAssignments 
-                      ? latestCourse.teacherAssignments.some((a: any) => 
-                          String(a.groupNumber || 1) === selectedRoom && 
-                          ((a.classLevels || []).includes(selectedClass) || 
-                           (Array.isArray(course.classId) ? course.classId.includes(selectedClass) : course.classId === selectedClass))
-                        )
-                      : (course.room?.includes('all') && !selectedRoom) || (String(course.groupNumber || 1) === selectedRoom);
+                    // Room matching: check if course is for this specific room
+                    // A course matches if its classId is 'selectedClass/selectedRoom' or if it's assigned to this room
+                    const classSources = [
+                      ...courseClassIds(course),
+                      ...allAssignments.flatMap((a: any) => assignmentClassLevels(a)),
+                      ...classIds,
+                    ];
+                    const matchesRoom = !selectedRoom || selectedRoom === 'all' || matchesSelectedClassRoom(classSources, selectedClass, selectedRoom);
 
-                    if (isMatch) {
-                      const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                        String(a.groupNumber || 1) === selectedRoom && 
-                        ((a.classLevels || []).includes(selectedClass) || 
-                         (Array.isArray(course.classId) ? course.classId.includes(selectedClass) : course.classId === selectedClass))
+                    // Group matching
+                    const matchesGroup = !selectedGroup || selectedGroup === 'all' || 
+                      (hasAssignments 
+                        ? allAssignments.some((a: any) => String(a.groupNumber || 1) === selectedGroup)
+                        : String(course.groupNumber || 1) === selectedGroup
                       );
 
-                      const roomIds = assignment?.roomIds || (course.room?.includes('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
-                      const roomCode = roomIds.length > 0 
-                        ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
-                        : '';
-                      
-                      mergedSchedule[slot] = { course: course, teacherName, roomCode: String(roomCode) };
-                    }
-=======
-                if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
-                  let isMatch = true;
-                  if (course.room) {
-                    if (Array.isArray(course.room)) {
-                      isMatch = course.room.includes(selectedRoom) || course.room.includes('all');
-                    } else {
-                      isMatch = (course.room as any) === selectedRoom || (course.room as any) === 'all';
-                    }
-                  }
-                  if (isMatch) {
-                    const latestCourse = coursesMap[course.id];
-                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                      String(a.groupNumber) === selectedRoom && 
-                      (a.classLevels?.includes(selectedClass) || course.classId === selectedClass)
-                    );
+                    if (matchesRoom && matchesGroup) {
+                      // Final validation against teacherAssignments for specific room/group pairing if exists
+                      const isStrictMatch = !hasAssignments || allAssignments.some((a: any) => {
+                        const teacherMatch = assignmentIncludesTeacher(a, data.teacherId);
+                        const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
+                        const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
+                        return teacherMatch && roomMatch && groupMatch;
+                      });
 
-                    const roomIds = assignment?.roomIds || course.room || [];
-                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
-                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
-                      : selectedRoom; // Fallback to selected room if 'all' or empty
-                    mergedSchedule[slot] = { course: course, teacherName, roomCode: String(roomCode) };
+                      if (isStrictMatch) {
+                        const assignment = allAssignments.find((a: any) => {
+                          const teacherMatch = assignmentIncludesTeacher(a, data.teacherId);
+                          const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
+                          const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
+                          return teacherMatch && roomMatch && groupMatch;
+                        });
+
+                        const roomIds = assignment?.roomIds || (course.room?.includes('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
+                        const roomCode = roomIds.length > 0 
+                          ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
+                          : '';
+                        
+                        mergeScheduleEntry(mergedSchedule, slot, { course: course, teacherName, roomCode: String(roomCode) });
+                      }
+                    }
                   }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                }
-              });
+                });
+              }
             }
-          }
         });
         setSchedule(mergedSchedule);
         setTotalPeriods(Object.values(mergedSchedule).filter(Boolean).length);
 
       } else {
         // --- All Rooms (Multi-page view) ---
-        // Structure: Room -> Schedule
+        // This is used for the "View All Rooms" functionality
         const roomSchedules: Record<string, Record<string, ScheduleEntry>> = {};
         const commonSchedule: Record<string, ScheduleEntry> = {};
 
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-
-          // Client-side Filter
-          const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
-          if (!classIds.includes(selectedClass)) return;
+          if (!matchesYearTerm(data, academicYear, currentTerm)) return;
+          const classIds = asArray(data.classId);
+          const isGradeMatch = classIds.some(id => classMatchesSelection(id, selectedClass));
+          if (!isGradeMatch) return;
 
           const teacher = teacherMap[data.teacherId];
-          let teacherName = 'N/A';
-          if (teacher) {
-            if ((teacher as any).firstName) {
-              teacherName = `คุณครู${(teacher as any).firstName}`;
-            } else {
-              let name = teacher.name || '';
-              name = name.replace(/^(นาย|นางสาว|นาง|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ดร\.|ผอ\.)\s*/, '');
-              teacherName = `คุณครู${name.split(' ')[0]}`;
-            }
-          }
+          const teacherName = formatTeacherName(teacher);
           const scheduleData = data.schedule as Record<string, any>;
 
           for (const slot in scheduleData) {
@@ -421,50 +451,48 @@ const StudentSchedulePage: React.FC = () => {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
                 if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
-<<<<<<< HEAD
                   const latestCourse = coursesMap[course.id];
-                  const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
-                  const gNum = String(course.groupNumber || 1);
-                  const isCommon = course.room?.includes('all') && !hasAssignments;
+                  const allAssignments = [
+                    ...(assignmentMap[course.id]?.teacherAssignments || []),
+                    ...(latestCourse?.teacherAssignments || []),
+                  ];
+                  const hasAssignments = allAssignments.length > 0;
                   
-                  // If it's a specific group course, it only goes to that group
-                  // If it's truly common, it goes to 'all'
-                  const targetRooms = hasAssignments ? [gNum] : (isCommon ? ['all'] : ['1']);
+                  // For "All Rooms" view, we need to know which rooms this course belongs to
+                  const targetRooms = new Set<string>();
+                  const classSources = [...courseClassIds(course), ...classIds];
+                  getRoomsForClass(classSources, selectedClass).forEach(room => targetRooms.add(room));
+
+                  if (hasAssignments) {
+                    allAssignments.forEach((a: any) => {
+                      const levels = assignmentClassLevels(a);
+                      const matchesGrade = levels.some((cl: string) => classMatchesSelection(cl, selectedClass));
+                      if (matchesGrade) {
+                        getRoomsForClass(levels, selectedClass).forEach(room => targetRooms.add(room));
+                      }
+                    });
+                  }
+
+                  if (targetRooms.size === 0) targetRooms.add('1');
 
                   targetRooms.forEach((room: string) => {
-                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                      String(a.groupNumber || 1) === room && 
-                      ((a.classLevels || []).includes(selectedClass) || 
-                       (Array.isArray(course.classId) ? course.classId.includes(selectedClass) : course.classId === selectedClass))
-                    );
+                    const assignment = allAssignments.find((a: any) => {
+                      const roomMatch = room === 'all' || assignmentMatchesClassRoom(a, selectedClass, room);
+                      return roomMatch;
+                    });
 
-                    const roomIds = assignment?.roomIds || [];
-                    let roomCode = roomIds.length > 0 
+                    const roomIds = assignment?.roomIds || (course.room?.includes('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
+                    const roomCode = roomIds.length > 0 
                       ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
-                      : ''; // Don't show group number as room code
-=======
-                  const rooms = course.room && course.room.length > 0 ? course.room : ['all'];
-
-                  rooms.forEach((room: string) => {
-                    const latestCourse = coursesMap[course.id];
-                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-                      String(a.groupNumber) === room && 
-                      (a.classLevels?.includes(selectedClass) || course.classId === selectedClass)
-                    );
-
-                    const roomIds = assignment?.roomIds || course.room || [];
-                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
-                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
-                      : (room === 'all' ? '' : room); // Use specific room if available
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                      : '';
 
                     const entry: ScheduleEntry = { course: { ...course }, teacherName, roomCode: String(roomCode) };
 
                     if (room === 'all') {
-                      commonSchedule[slot] = entry;
+                      mergeScheduleEntry(commonSchedule, slot, entry);
                     } else {
                       if (!roomSchedules[room]) roomSchedules[room] = {};
-                      roomSchedules[room][slot] = entry;
+                      mergeScheduleEntry(roomSchedules[room], slot, entry);
                     }
                   });
                 }
@@ -473,33 +501,20 @@ const StudentSchedulePage: React.FC = () => {
           }
         });
 
-        // Identify all unique rooms found
-        let roomKeys = Object.keys(roomSchedules);
-
-        // If no specific rooms found but we have common classes (all rooms), ensure at least room 1 is shown
-        if (roomKeys.length === 0 && Object.keys(commonSchedule).length > 0) {
-          // Default to showing at least Room 1 if 'all' is used mostly
-          roomKeys = ['1'];
-        }
-
+        const roomKeys = Object.keys(roomSchedules).length > 0 ? Object.keys(roomSchedules) : ['1'];
         roomKeys.sort((a, b) => parseInt(a) - parseInt(b));
 
         const processedMultiData: any[] = [];
-
         for (const room of roomKeys) {
-          const specificSchedule = roomSchedules[room] || {};
-          const finalSchedule = { ...commonSchedule, ...specificSchedule };
-          const total = Object.values(finalSchedule).filter(Boolean).length;
-
+          const finalSchedule = { ...commonSchedule, ...(roomSchedules[room] || {}) };
           processedMultiData.push({
             className: CLASSES[selectedClass as keyof typeof CLASSES],
             room: room,
             schedule: finalSchedule,
             homeroomTeacher: foundHomeroomTeacher,
-            totalPeriods: total
+            totalPeriods: Object.values(finalSchedule).filter(Boolean).length
           });
         }
-
         setMultiRoomData(processedMultiData);
       }
 
@@ -509,7 +524,7 @@ const StudentSchedulePage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedClass, schoolId, dispatch, teacherMap, teacherMapStatus, selectedRoom]);
+  }, [selectedClass, schoolId, dispatch, teacherMap, teacherMapStatus, selectedRoom, selectedGroup, coursesMap, roomMap, inactiveCourseIds, academicYear, currentTerm]);
 
   const prepareBulkExport = async () => {
     if (!schoolId) return;
@@ -518,8 +533,19 @@ const StudentSchedulePage: React.FC = () => {
 
     try {
       // 1. Fetch ALL schedules for the school
-      const schedulesCollectionRef = collection(db, 'school-settings', schoolId, 'schedules');
-      const querySnapshot = await getDocs(schedulesCollectionRef);
+      const [querySnapshot, assignmentSnap] = await Promise.all([
+        getDocs(collection(db, 'school-settings', schoolId, 'schedules')),
+        getDocs(query(
+          collection(db, 'school-settings', schoolId, 'course_assignments'),
+          where('academicYear', '==', academicYear),
+          where('semester', '==', currentTerm)
+        ))
+      ]);
+      const assignmentMap: Record<string, any> = {};
+      assignmentSnap.forEach(d => {
+        const data = d.data();
+        if (data.courseId) assignmentMap[data.courseId] = data;
+      });
 
       // Map to store schedules: ClassID -> RoomNumber -> Schedule
       const schoolSchedules: Record<string, Record<string, Record<string, ScheduleEntry>>> = {};
@@ -527,28 +553,28 @@ const StudentSchedulePage: React.FC = () => {
       // 2. Process each teacher's schedule
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        if (!matchesYearTerm(data, academicYear, currentTerm)) return;
         const teacherId = data.teacherId;
         const teacher = teacherMap[teacherId];
-        let teacherName = 'N/A';
-        if (teacher) {
-          if ((teacher as any).firstName) {
-            teacherName = `คุณครู${(teacher as any).firstName}`;
-          } else {
-            let name = teacher.name || '';
-            name = name.replace(/^(นาย|นางสาว|นาง|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ดร\.|ผอ\.)\s*/, '');
-            teacherName = `คุณครู${name.split(' ')[0]}`;
-          }
-        }
+        const teacherName = formatTeacherName(teacher);
 
         const scheduleData = data.schedule as Record<string, any>;
-        const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
+        const classIdsRaw = asArray(data.classId);
+        
+        // Group by grade (e.g. m1, m2) instead of specific classId (e.g. m1/1)
+        const grades = new Set<string>();
+        classIdsRaw.forEach(id => {
+          if (!id) return;
+          const grade = parseClassRoom(id).level;
+          grades.add(grade);
+        });
 
-        classIds.forEach((classId: string) => {
-          if (!classId) return;
+        grades.forEach((grade: string) => {
+          if (!grade) return;
 
           // Initialize class map if not exists
-          if (!schoolSchedules[classId]) {
-            schoolSchedules[classId] = {};
+          if (!schoolSchedules[grade]) {
+            schoolSchedules[grade] = {};
           }
 
           for (const slot in scheduleData) {
@@ -556,54 +582,45 @@ const StudentSchedulePage: React.FC = () => {
             if (courseData) {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
-<<<<<<< HEAD
                   if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+                    const latestCourse = coursesMap[course.id];
+                    const allAssignments = [
+                      ...(assignmentMap[course.id]?.teacherAssignments || []),
+                      ...(latestCourse?.teacherAssignments || []),
+                    ];
+                    const classSources = [
+                      ...courseClassIds(course),
+                      ...classIdsRaw,
+                      ...allAssignments.flatMap((a: any) => assignmentClassLevels(a)),
+                    ];
+                    const roomSet = getRoomsForClass(classSources, grade);
+                    const isCommon = course.room?.includes('all') && !course.groupNumber && roomSet.has('all');
                     const gNum = String(course.groupNumber || '');
-                    const isCommon = course.room?.includes('all') && !course.groupNumber;
-                    
-                    const targetRoomKeys = course.groupNumber ? [gNum] : (isCommon ? ['ALL_ROOMS'] : ['1']);
+                    const targetRoomKeys = course.groupNumber
+                      ? [gNum]
+                      : (isCommon ? ['ALL_ROOMS'] : Array.from(roomSet).filter(room => room !== 'all'));
+                    if (targetRoomKeys.length === 0) targetRoomKeys.push('1');
 
-                  targetRoomKeys.forEach((targetRoomKey: string) => {
-=======
-                if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
-                  const rooms = course.room && course.room.length > 0 ? course.room : ['all'];
-
-                  rooms.forEach((room: string) => {
-                    const targetRoomKey = room === 'all' ? 'ALL_ROOMS' : room;
-
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                    if (!schoolSchedules[classId][targetRoomKey]) {
-                      schoolSchedules[classId][targetRoomKey] = {};
+          targetRoomKeys.forEach((targetRoomKey: string) => {
+                    if (!schoolSchedules[grade][targetRoomKey]) {
+                      schoolSchedules[grade][targetRoomKey] = {};
                     }
 
-                    const latestCourse = coursesMap[course.id];
-                    const assignment = latestCourse?.teacherAssignments?.find((a: any) => 
-<<<<<<< HEAD
+                    const assignment = allAssignments.find((a: any) => 
                       String(a.groupNumber || 1) === targetRoomKey && 
-                      ((a.classLevels || []).includes(classId) || 
-                       (Array.isArray(course.classId) ? course.classId.includes(classId) : course.classId === classId))
+                      (assignmentMatchesClassRoom(a, grade, targetRoomKey) || matchesSelectedClassRoom(courseClassIds(course), grade, targetRoomKey))
                     );
 
                     const roomIds = assignment?.roomIds || (course.room?.includes('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
                     let roomCode = roomIds.length > 0 
                       ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
                       : '';
-=======
-                      String(a.groupNumber) === targetRoomKey && 
-                      (a.classLevels?.includes(classId) || course.classId === classId)
-                    );
 
-                    const roomIds = assignment?.roomIds || course.room || [];
-                    let roomCode = roomIds.length > 0 && !roomIds.includes('all')
-                      ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
-                      : (targetRoomKey === 'ALL_ROOMS' ? '' : targetRoomKey);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-
-                    schoolSchedules[classId][targetRoomKey][slot] = {
+                    mergeScheduleEntry(schoolSchedules[grade][targetRoomKey], slot, {
                       course: { ...course },
                       teacherName,
                       roomCode: String(roomCode)
-                    };
+                    });
                   });
                 }
               });
@@ -689,7 +706,8 @@ const StudentSchedulePage: React.FC = () => {
             homeroomTeacher={homeroomTeacher}
             totalPeriods={totalPeriods}
             specialPeriods={specialPeriods}
-            {...(selectedRoom ? { roomName: selectedRoom } : {})}
+            roomName={selectedRoom}
+            groupName={selectedGroup}
           />
         );
       } else {
@@ -701,12 +719,15 @@ const StudentSchedulePage: React.FC = () => {
             term={currentTerm}
             specialPeriods={specialPeriods}
             periodSettings={periodSettings}
+            groupName={selectedGroup}
           />
         );
       }
 
       const blob = await pdf(docInput).toBlob();
-      saveAs(blob, `ตารางเรียน_${CLASSES[selectedClass as keyof typeof CLASSES] || 'class'}_${selectedRoom ? 'ห้อง' + selectedRoom : 'รวมทุกห้อง'}.pdf`);
+      const roomInfo = selectedRoom ? `_ห้อง${selectedRoom}` : '';
+      const groupInfo = selectedGroup && selectedGroup !== 'all' ? `_กลุ่ม${selectedGroup}` : '';
+      saveAs(blob, `ตารางเรียน_${CLASSES[selectedClass as keyof typeof CLASSES] || 'class'}${roomInfo}${groupInfo}.pdf`);
       toast.success('ดาวน์โหลดสำเร็จ', { id: toastId });
     } catch (error) {
       console.error(error);
@@ -715,7 +736,6 @@ const StudentSchedulePage: React.FC = () => {
   };
 
   useEffect(() => {
-<<<<<<< HEAD
     if (schoolId) {
       dispatch(fetchTeachersMap(schoolId) as any);
       dispatch(fetchCalendar(schoolId) as any);
@@ -744,8 +764,6 @@ const StudentSchedulePage: React.FC = () => {
   }, [calendarState.status, reduxAcademicYear, reduxTerms]);
 
   useEffect(() => {
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     fetchScheduleData();
   }, [fetchScheduleData]);
 
@@ -766,26 +784,6 @@ const StudentSchedulePage: React.FC = () => {
 
           setAvailableClassOptions(filteredLevels);
         }
-<<<<<<< HEAD
-=======
-
-        const calendarDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-        const calendarDocSnap = await getDoc(calendarDocRef);
-        if (calendarDocSnap.exists()) {
-          const data = calendarDocSnap.data();
-          setAcademicYear(data.academicYear || '');
-          const today = new Date().toISOString().split('T')[0];
-          const term1 = data.terms?.term1;
-          const term2 = data.terms?.term2;
-          if (term1 && term1.startDate && term1.endDate && today >= term1.startDate && today <= term1.endDate) {
-            setCurrentTerm('1');
-          } else if (term2 && term2.startDate && term2.endDate && today >= term2.startDate && today <= term2.endDate) {
-            setCurrentTerm('2');
-          } else {
-            setCurrentTerm('');
-          }
-        }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       } catch (e) { console.error(e); }
     };
 
@@ -807,9 +805,9 @@ const StudentSchedulePage: React.FC = () => {
         const docRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
         const docSnap = await getDoc(docRef);
         if (docSnap.exists() && docSnap.data().periods) {
-          setPeriodSettings(docSnap.data().periods);
+          setPeriodSettings(normalizePeriodSettings(docSnap.data().periods));
         } else {
-          setPeriodSettings(DEFAULT_PERIODS);
+          setPeriodSettings(normalizePeriodSettings(DEFAULT_PERIODS));
         }
       } catch (error) { console.error(error); }
     };
@@ -861,34 +859,67 @@ const StudentSchedulePage: React.FC = () => {
     fetchInactiveCourses();
   }, [schoolId]);
 
-<<<<<<< HEAD
   // Dynamic Room/Group detection
   useEffect(() => {
     if (selectedClass && Object.keys(coursesMap).length > 0) {
+      const rooms = new Set<string>();
       const groups = new Set<string>();
+      
       Object.values(coursesMap).forEach(course => {
         const classIds = Array.isArray(course.classId) ? course.classId : [course.classId];
-        if (classIds.includes(selectedClass)) {
-          if (course.room && Array.isArray(course.room)) {
-            course.room.forEach((r: string) => { if (r !== 'all') groups.add(r); });
-          }
-          course.teacherAssignments?.forEach((a: any) => {
-            if (a.groupNumber) groups.add(String(a.groupNumber));
-            if (a.classLevels?.includes(selectedClass)) {
-              if (a.groupNumber) groups.add(String(a.groupNumber));
+        const isMatch = classIds.some((id: string) => id === selectedClass || (id && id.startsWith(selectedClass + '/')));
+        
+        if (isMatch) {
+          // Extract rooms from classIds
+          classIds.forEach((id: string) => {
+            if (id && id.startsWith(selectedClass + '/') && id.includes('/')) {
+              rooms.add(id.split('/')[1]);
             }
           });
+
+          // Extract rooms and groups from assignments
+          course.teacherAssignments?.forEach((a: any) => {
+            if (a.groupNumber) groups.add(String(a.groupNumber));
+            
+            const matchesSelectedGrade = (a.classLevels || []).some((cl: string) => cl === selectedClass || cl.startsWith(selectedClass + '/'));
+            if (matchesSelectedGrade) {
+              if (a.groupNumber) groups.add(String(a.groupNumber));
+              (a.classLevels || []).forEach((cl: string) => {
+                if (cl.startsWith(selectedClass + '/') && cl.includes('/')) {
+                  rooms.add(cl.split('/')[1]);
+                }
+              });
+            }
+          });
+
+          // Legacy room detection
+          if (course.room && Array.isArray(course.room)) {
+            course.room.forEach((r: string) => { 
+              if (r !== 'all' && !isNaN(Number(r))) rooms.add(r); 
+            });
+          }
         }
       });
+
+      const sortedRooms = Array.from(rooms).sort((a, b) => {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
+        return numA - numB;
+      });
+
       const sortedGroups = Array.from(groups).sort((a, b) => {
         const numA = parseInt(a);
         const numB = parseInt(b);
         if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
         return numA - numB;
       });
-      setAvailableGroups(sortedGroups.length > 0 ? sortedGroups : ['1']);
+
+      setAvailableGroups(sortedRooms.length > 0 ? sortedRooms : ['1']);
+      setAvailableGroupNumbers(sortedGroups.length > 0 ? sortedGroups : ['1']);
     } else {
       setAvailableGroups([]);
+      setAvailableGroupNumbers([]);
     }
   }, [selectedClass, coursesMap]);
   // Auto-select first room only when class changes and NO room is selected
@@ -898,8 +929,6 @@ const StudentSchedulePage: React.FC = () => {
     }
   }, [selectedClass]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   return (
     <MainLayout>
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
@@ -908,13 +937,7 @@ const StudentSchedulePage: React.FC = () => {
           {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-<<<<<<< HEAD
               <BackButton to="/academic/hub/scheduling" className="mb-4" />
-=======
-              <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-2 transition-colors font-medium">
-                <ArrowLeft size={20} className="mr-1" /> กลับหน้าบริหารงานวิชาการ
-              </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 mt-2">
                 <Calendar className="text-indigo-600 dark:text-indigo-400" size={32} />
                 ดูตารางเรียนนักเรียน
@@ -954,38 +977,53 @@ const StudentSchedulePage: React.FC = () => {
                 </div>
               </div>
 
-<<<<<<< HEAD
-              {/* Room/Group Selector */}
-              <div className="w-full lg:w-1/4 relative">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  เลือกห้อง (กลุ่มเรียน)
-=======
               {/* Room Selector */}
-              <div className="w-full lg:w-1/4 relative">
+              <div className="w-full lg:w-1/6 relative">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   เลือกห้อง
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </label>
                 <div className="relative">
                   <select
                     value={selectedRoom}
                     onChange={e => setSelectedRoom(e.target.value)}
-<<<<<<< HEAD
                     className="block w-full pl-4 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none font-medium"
                     disabled={!selectedClass}
                   >
-                    {/* Always show 20 rooms for a consistent, standardized experience */}
-                    {Array.from({ length: 20 }, (_, i) => String(i + 1)).map(r => (
+                    <option value="all">ทุกห้อง</option>
+                    {availableGroups.map(r => (
                       <option key={r} value={r}>
-                        {r}
+                        ห้อง {r}
                       </option>
-=======
-                    className="block w-full pl-4 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none"
+                    ))}
+                    {/* Fallback if empty */}
+                    {availableGroups.length === 0 && Array.from({ length: 12 }, (_, i) => String(i + 1)).map(r => (
+                      <option key={r} value={r}>ห้อง {r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Group Selector */}
+              <div className="w-full lg:w-1/6 relative">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  เลือกกลุ่มเรียน
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedGroup}
+                    onChange={e => setSelectedGroup(e.target.value)}
+                    className="block w-full pl-4 pr-10 py-3 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-xl bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-all hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer appearance-none font-medium"
+                    disabled={!selectedClass}
                   >
-                    <option value="">-- ทุกห้อง --</option>
-                    {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
-                      <option key={r} value={r}>{r}</option>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                    <option value="all">ทุกกลุ่ม</option>
+                    {availableGroupNumbers.map(g => (
+                      <option key={g} value={g}>
+                        กลุ่ม {g}
+                      </option>
+                    ))}
+                    {/* Fallback if empty */}
+                    {availableGroupNumbers.length === 0 && [ '1', '2', '3', '4'].map(g => (
+                      <option key={g} value={g}>กลุ่ม {g}</option>
                     ))}
                   </select>
                 </div>
@@ -1054,7 +1092,6 @@ const StudentSchedulePage: React.FC = () => {
             ) : (
               <div className="w-full h-[85vh] bg-gray-100 dark:bg-gray-900">
                 {/* Prevent PDFViewer crash if data is empty for Bulk view */}
-<<<<<<< HEAD
                 {(!selectedClass) ? (
                   <div className="flex flex-col justify-center items-center h-full text-center p-8">
                     <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
@@ -1062,15 +1099,6 @@ const StudentSchedulePage: React.FC = () => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">กรุณาเลือกชั้นเรียน</h3>
                     <p className="text-gray-500 dark:text-gray-400">เลือกชั้นเรียนเพื่อดูตารางเรียน</p>
-=======
-                {(!selectedRoom && (!multiRoomData || multiRoomData.length === 0)) ? (
-                  <div className="flex flex-col justify-center items-center h-full text-center p-8">
-                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                      <Calendar className="text-gray-400" size={40} />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">ไม่พบข้อมูลตารางเรียน</h3>
-                    <p className="text-gray-500 dark:text-gray-400">ยังไม่มีการจัดตารางเรียนสำหรับชั้นเรียนนี้</p>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   </div>
                 ) : (
                   <PDFViewer width="100%" height="100%" className="w-full h-full border-none" showToolbar={true}>
@@ -1086,6 +1114,7 @@ const StudentSchedulePage: React.FC = () => {
                         totalPeriods={totalPeriods}
                         specialPeriods={specialPeriods}
                         roomName={selectedRoom}
+                        groupName={selectedGroup}
                       />
                     ) : (
                       <BulkStudentSchedulePDF

@@ -1,13 +1,10 @@
 import React, { useState, FormEvent, useEffect } from "react";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { useParams, Link } from "react-router-dom";
 // 💡 สำคัญ: ต้องมั่นใจว่า "@/firebase" มีการ export 'storage' และ 'firestore' อย่างถูกต้อง
 import { firestore, storage, auth } from "@/firebase";
-<<<<<<< HEAD
 import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc, where } from "firebase/firestore";
-=======
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, getDoc } from "firebase/firestore";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 // 💡 Import FirebaseError และ StorageErrorCode สำหรับการจัดการข้อผิดพลาด Storage
 import { FirebaseError } from "firebase/app";
@@ -18,11 +15,10 @@ import { FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap,
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { isValidBirthDate, normalizeBirthDateInput, toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
+import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -65,14 +61,12 @@ const CheckboxField: React.FC<{ label: string; name: string; checked: boolean; o
 );
 
 const statusColorMap: { [key: string]: { bg: string; hover: string; text: string } } = {
-  "เรียนอยู่": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
+  "กำลังศึกษา": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
   "พักการเรียน": { bg: "bg-yellow-500", hover: "hover:bg-yellow-600", text: "text-gray-900" },
+  "แขวนลอย": { bg: "bg-amber-600", hover: "hover:bg-amber-700", text: "text-white" },
   "ย้าย": { bg: "bg-blue-600", hover: "hover:bg-blue-700", text: "text-white" },
   "ลาออก": { bg: "bg-red-600", hover: "hover:bg-red-700", text: "text-white" },
-<<<<<<< HEAD
   "จำหน่าย": { bg: "bg-gray-600", hover: "hover:bg-gray-700", text: "text-white" },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 // Component ย่อยสำหรับ Status Switch (ไม่มีการเปลี่ยนแปลง)
@@ -138,13 +132,10 @@ const initialState = {
   classLevel: "",
   room: "",
   studentNumber: "",
-  studentStatus: "เรียนอยู่",
-<<<<<<< HEAD
+  studentStatus: "กำลังศึกษา",
   exitDate: "",
   exitReason: "",
   exitDestinationSchool: "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   studentType: "ปกติ",
   gpa: "",
   gpax: "",
@@ -264,13 +255,9 @@ export default function AddStudentPage() {
     { id: "travel", label: "การเดินทาง", icon: <FaBus /> },
   ];
 
-<<<<<<< HEAD
-  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+  const studentStatusOptions = ["กำลังศึกษา", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
-=======
-  const studentStatusOptions = ["เรียนอยู่", "พักการเรียน", "ย้าย", "ลาออก"] as const;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   useEffect(() => {
     // ถ้ามี schoolId จาก URL ให้ตั้งค่าในฟอร์มเลย
@@ -339,6 +326,8 @@ export default function AddStudentPage() {
 
     if (type === "checkbox") {
       finalValue = (e.target as HTMLInputElement).checked;
+    } else if (name === "birthDate") {
+      finalValue = normalizeBirthDateInput(value);
     } else if (name.includes("IdNumber") || name === "idCardNumber" || name.includes("ZipCode") || name.includes("Phone")) {
       finalValue = value.replace(/[^0-9]/g, "");
     }
@@ -390,7 +379,6 @@ export default function AddStudentPage() {
 
   // เพิ่ม: ฟังก์ชันสำหรับจัดการการเปลี่ยนแปลงค่าจาก StatusSwitch หรือ Custom Select โดยเฉพาะ
   function handleStatusChange(name: string, value: any) {
-<<<<<<< HEAD
     setForm((prev) => ({
       ...prev,
       [name]: value,
@@ -398,9 +386,6 @@ export default function AddStudentPage() {
         ? new Date().toISOString().split('T')[0]
         : prev.exitDate,
     }));
-=======
-    setForm((prev) => ({ ...prev, [name]: value }));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -414,8 +399,7 @@ export default function AddStudentPage() {
       }
 
       try {
-        // Compress and convert to WebP
-        const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+        const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -441,6 +425,21 @@ export default function AddStudentPage() {
 
     try {
       let { profileImageUrl, schoolId, ...studentData } = form;
+      const normalizedBirthDate = normalizeBirthDateInput(studentData.birthDate);
+
+      if (!isValidBirthDate(normalizedBirthDate)) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'ปีเกิดไม่ถูกต้อง',
+          text: 'กรุณาตรวจสอบวันเกิดนักเรียน ระบบจะแสดงในช่องวันที่เป็น ค.ศ. แต่จะบันทึกข้อมูลนักเรียนเป็น พ.ศ.',
+          background: '#2a2b2f',
+          color: '#ffffff'
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      studentData.birthDate = toBuddhistBirthDateForSave(normalizedBirthDate);
 
       // 💡 Padding Student ID: ถ้าเป็น 4 หลัก ให้เติม 0 ข้างหน้า
       if (studentData.studentId && studentData.studentId.length === 4) {
@@ -453,7 +452,6 @@ export default function AddStudentPage() {
         return;
       }
 
-<<<<<<< HEAD
       // --- 🔍 Check for Duplicates (By studentId or idCardNumber) ---
       const studentsRef = collection(firestore, 'school-settings', schoolId, 'students');
       let conflictDoc: any = null;
@@ -491,8 +489,6 @@ export default function AddStudentPage() {
       }
 
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const roles = ["student"];
       if (studentData.fatherPhone || studentData.motherPhone || studentData.guardianPhone) {
         roles.push("parent");
@@ -501,10 +497,7 @@ export default function AddStudentPage() {
       const dataToSave: any = {
         ...studentData,
         schoolId: schoolId,
-<<<<<<< HEAD
         status: studentData.studentStatus,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         role: roles,
         createdAt: serverTimestamp(),
         // DMC Extra Fields (Defaults)
@@ -516,7 +509,6 @@ export default function AddStudentPage() {
         youngerSisterCount1: studentData.youngerSisterCount1 || "0",
       };
 
-<<<<<<< HEAD
       if (isExitStudentStatus(studentData.studentStatus)) {
         dataToSave.exitDetails = {
           exitDate: studentData.exitDate || "",
@@ -526,17 +518,14 @@ export default function AddStudentPage() {
         };
       }
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       // 💡 ปรับปรุง: จัดการการอัปโหลดรูปภาพแยกต่างหาก
       // เพื่อให้แม้ว่ารูปจะอัปโหลดไม่สำเร็จ แต่ข้อมูลหลักยังคงบันทึกได้
       if (imageFile) {
         try {
-          // 1. Force WebP Extension (since we compress to webp)
-          const fileExtension = '.webp'; 
+          const fileExtension = '.jpg'; 
 
           // 2. สร้าง Path: 
-          // school-settings/{schoolId}/students/{classLevel}/{room}/{studentId}.webp
+          // school-settings/{schoolId}/students/{classLevel}/{room}/{studentId}.jpg
           let storagePath = `school-settings/${schoolId}/students/${studentData.classLevel}`;
           storagePath += `/${studentData.room}`;
 
@@ -562,6 +551,9 @@ export default function AddStudentPage() {
 
       // บันทึกข้อมูลนักเรียน (พร้อม profileImageUrl หากมีการอัปโหลดรูป) ลงใน Firestore
       const docRef = await addDoc(collection(firestore, "school-settings", schoolId, "students"), dataToSave);
+      if (isActiveStudentSummaryStatus(studentData.studentStatus)) {
+        await updateOwnerAndSchoolCounts(firestore, schoolId, { students: 1 });
+      }
 
       // --- อัปเดต Lookup Table สำหรับการ Login ที่รวดเร็ว ---
       try {
@@ -612,7 +604,6 @@ export default function AddStudentPage() {
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
           <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-<<<<<<< HEAD
             <div className="flex items-center gap-4">
               <BackButton to="/academic/hub/students" />
               <div>
@@ -636,19 +627,6 @@ export default function AddStudentPage() {
                 เพิ่มนักเรียนด่วน
               </Link>
             </div>
-=======
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลนักเรียนใหม่</h1>
-              <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของนักเรียนให้ครบถ้วน</p>
-            </div>
-            <Link
-              to={`/school/${schoolId}/students/quick-add`}
-              className="flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-200 dark:shadow-none transition-all hover:scale-105"
-            >
-              <FaUserPlus />
-              เพิ่มนักเรียนด่วน
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -687,10 +665,10 @@ export default function AddStudentPage() {
                       <div className="flex-shrink-0">
                         <label htmlFor="profileImage" className="relative cursor-pointer group block">
                           {imagePreview ? (
-                            <img
+                            <ProfileAvatar
                               src={imagePreview}
                               alt="Student profile"
-                              className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
+                              className="w-32 h-32 border-4 border-gray-200 dark:border-gray-600"
                             />
                           ) : (
                             <div className="w-32 h-32 rounded-full border-4 border-dashed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center">
@@ -710,7 +688,7 @@ export default function AddStudentPage() {
                           type="file"
                           id="profileImage"
                           name="profileImage"
-                          accept="image/*"
+                          accept="image/jpeg,image/png"
                           onChange={handleImageChange}
                           className="hidden"
                         />
@@ -886,7 +864,6 @@ export default function AddStudentPage() {
                     </div>
 
                     <div className="mt-4">
-<<<<<<< HEAD
 	                      <StatusSwitch
 	                        label="สถานะนักเรียน"
 	                        name="studentStatus"
@@ -911,19 +888,6 @@ export default function AddStudentPage() {
 	                  </InfoCard>
 	                </div>
 	              )}
-=======
-                      <StatusSwitch
-                        label="สถานะนักเรียน"
-                        name="studentStatus"
-                        options={studentStatusOptions}
-                        value={form.studentStatus}
-                        onChange={handleStatusChange}
-                      />
-                    </div>
-                  </InfoCard>
-                </div>
-              )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
               {activeTab === "family" && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

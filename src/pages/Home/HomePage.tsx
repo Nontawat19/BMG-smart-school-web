@@ -1,36 +1,30 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { useNavigate } from "react-router-dom";
 import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, collectionGroup, Timestamp, getDoc, updateDoc, increment } from 'firebase/firestore';
-<<<<<<< HEAD
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, Rectangle, Sector } from 'recharts';
-=======
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from "../../firebase";
 
 import { X, ChevronLeft, ChevronRight, Award, CalendarX, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
 
 const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-<<<<<<< HEAD
-const DAY_MAP: Record<string, string> = { sun: 'อาทิตย์', mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์', sat: 'เสาร์' };
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-=======
-const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์' };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์', sat: 'เสาร์', sun: 'อาทิตย์' };
 import { CLASSES } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
+import { getThaiYear } from "@/utils/dateUtils";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
 interface AttendanceItem { name: string; present?: number; late?: number; leave?: number; absent?: number; earlyReturn?: number; noCheckout?: number; officialTravel?: number; }
 interface StatItem { title: string; value: string; change: any; color: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
 interface ActivityItem { id: string; name: string; date: string; }
-<<<<<<< HEAD
 interface ScheduleItem {
     period: string;
     subject: string;
@@ -41,101 +35,22 @@ interface ScheduleItem {
     subjectCode?: string;
     actionPath?: string;
     actionLabel?: string;
-    type?: 'classroom' | 'club' | 'learnerActivity';
+    type?: 'classroom' | 'homeroom' | 'club' | 'learnerActivity' | 'substitute';
+    originalTeacherName?: string;
     _sortIndex?: number;
     _startMinutes?: number;
 }
-
-const toBangkokDateString = (date = new Date()) => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Bangkok',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).formatToParts(date);
-    const value = (type: string) => parts.find(part => part.type === type)?.value || '';
-    return `${value('year')}-${value('month')}-${value('day')}`;
-};
-
-const normalizeSemesterValue = (value: unknown) => String(value ?? '').trim();
-
-const getTermsArray = (termsData: any): any[] => {
-    if (Array.isArray(termsData)) return termsData;
-    if (termsData && typeof termsData === 'object') {
-        return Object.entries(termsData).map(([id, term]: [string, any]) => ({ id, ...term }));
-    }
-    return [];
-};
-
-const getSemesterForDate = (calendarData: any, dateStr: string) => {
-    const term = getTermsArray(calendarData?.terms).find((t: any) => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
-    return term?.id === 'term2' || String(term?.id || '').includes('2') ? '2' : '1';
-};
-
-const isWithinAnyTerm = (calendarData: any, dateStr: string) => {
-    const terms = getTermsArray(calendarData?.terms);
-    if (terms.length === 0) return true;
-    return terms.some((t: any) => t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate);
-};
-
-const getDayKeyFromDateString = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return DAY_KEYS[new Date(year, month - 1, day).getDay()];
-};
-
-const shouldShowScheduleForDate = (dateStr: string, calendarData: any) => {
-    const event = calendarData?.events?.[dateStr];
-    if (event?.type === 'schoolDay') return true;
-    if (event?.type === 'holiday' || event?.type === 'specialHoliday') return false;
-    if (!isWithinAnyTerm(calendarData, dateStr)) return false;
-    const dayKey = getDayKeyFromDateString(dateStr);
-    return dayKey !== 'sun' && dayKey !== 'sat';
-};
-
-const isScheduleDocForCurrentTerm = (data: any, academicYear: string, semester: string) => {
-    const dataYear = normalizeSemesterValue(data.academicYear || data.year);
-    const dataSemester = normalizeSemesterValue(data.semester || data.term);
-    const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
-    const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester === '0' || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`);
-    return yearMatches && semesterMatches;
-};
-
-const isOpaqueRoomId = (value: unknown) => {
-    const text = String(value || '').trim();
-    return /^[A-Za-z0-9_-]{16,}$/.test(text) && /[a-z]/.test(text) && /[A-Z]/.test(text) && /\d/.test(text);
-};
-
-const formatClassName = (value: unknown) => {
-    const values = Array.isArray(value) ? value : [value];
-    return values
-        .filter(Boolean)
-        .map(v => CLASSES[String(v)] || String(v))
-        .join(', ') || 'ไม่ระบุชั้น';
-};
-
-const getRoomIds = (value: unknown): string[] => {
-    if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
-    const text = String(value || '').trim();
-    return text ? [text] : [];
-};
-
-const formatRoomDisplay = (value: unknown, roomDataMap: Record<string, { name: string, code: string }>) => {
-    const displays = getRoomIds(value)
-        .filter(rid => rid.toLowerCase() !== 'all' && rid !== 'ทุกห้อง')
-        .map(rid => {
-            const room = roomDataMap[rid];
-            if (!room) return isOpaqueRoomId(rid) ? '' : rid;
-            return room.code ? `${room.name} (${room.code})` : room.name;
-        })
-        .filter(Boolean);
-
-    return displays.join(', ');
-};
 
 const timeToMinutes = (time?: string) => {
     const [hour, minute] = String(time || '').replace('.', ':').split(':').map(Number);
     if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 9999;
     return hour * 60 + minute;
+};
+
+const normalizeTeachingPeriod = (period: unknown) => {
+    const parsed = Number(period);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed === 0 ? 1 : parsed;
 };
 
 const isSpecialPeriodForDay = (period: any, dayKey: string) => {
@@ -146,14 +61,6 @@ const includesAnyKeyword = (value: string, keywords: string[]) => {
     const normalized = value.toLowerCase();
     return keywords.some(keyword => normalized.includes(keyword.toLowerCase()));
 };
-
-const isLearnerActivityPeriod = (period: any) => {
-    const title = String(period?.title || '').toLowerCase();
-    return !['ชุมนุม', 'club', 'โฮมรูม', 'homeroom', 'พักกลางวัน', 'พักเที่ยง'].some(keyword => title.includes(keyword));
-};
-=======
-interface ScheduleItem { period: string; subject: string; class: string; room: string; startTime?: string; endTime?: string; subjectCode?: string; }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const checkIsWorkingDay = (dateStr: string, events: Record<string, CalendarEvent>) => {
     const event = events[dateStr];
@@ -203,7 +110,7 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
     return (
         <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm p-5 border-none outline-none ring-0">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold">{thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}</h3>
+                <h3 className="text-lg font-semibold">{thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}</h3>
                 <div className="flex gap-1">
                     <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronLeft size={18} /></button>
                     <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronRight size={18} /></button>
@@ -215,85 +122,169 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
     );
 };
 
-
-
-
-
-
-
-<<<<<<< HEAD
-
-// --- Custom Tooltip for Chart ---
-const CustomTooltip = ({ active, payload, isPie }: any) => {
-    if (active && payload && payload.length) {
-        if (isPie) {
-            const data = payload[0].payload;
-            return (
-                <div className="relative group">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-white/20 to-transparent blur-xl opacity-50 group-hover:opacity-100 transition-opacity" />
-                    <div className="relative bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl p-4 border border-white/20 dark:border-white/5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] rounded-2xl text-sm z-50 min-w-[200px] ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                        <div className="flex items-center gap-3 mb-3 pb-2 border-b border-gray-100 dark:border-white/5">
-                            <div className="w-4 h-4 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, white, ${data.actualColor})`, boxShadow: `0 4px 12px ${data.actualColor}44, inset -2px -2px 4px rgba(0,0,0,0.2)` }} />
-                            <p className="font-black text-gray-900 dark:text-white text-lg tracking-tight">{data.name}</p>
-                        </div>
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-end">
-                                <span className="text-gray-400 dark:text-gray-500 font-bold uppercase text-[9px] tracking-widest pb-0.5">Quantity</span>
-                                <span className="font-black text-gray-900 dark:text-white text-2xl leading-none">{data.value}<span className="text-[10px] ml-1 font-bold opacity-40">PERS</span></span>
-                            </div>
-                            <div className="h-2 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden p-[1px]"><div className="h-full rounded-full transition-all duration-1000" style={{ width: `${data.percent}%`, backgroundColor: data.actualColor }} /></div>
-                            <div className="flex justify-center"><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-400 font-black text-3xl italic tracking-tighter">{data.percent}%</span></div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-    }
-    return null;
+const formatThaiDayOfWeek = (dateObj: Date) => {
+    const dayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+    return dayNames[dateObj.getDay()];
 };
 
-// --- Custom Active Shape for Pie ---
-const renderActiveShape = (props: any) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+const formatThaiShortMonth = (monthIndex: number) => {
+    const shortMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return shortMonths[monthIndex];
+};
+
+const SchoolCalendarEventsList: React.FC<{ events: Record<string, CalendarEvent>, academicYear?: string }> = ({ events, academicYear }) => {
+    const navigate = useNavigate();
+    const upcomingEvents = React.useMemo(() => {
+        const today = new Date();
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        
+        const list: any[] = [];
+        Object.entries(events || {}).forEach(([dateStr, ev]) => {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            if (!y || !m || !d) return;
+            const dateObj = new Date(y, m - 1, d);
+            if (dateObj >= todayStart) {
+                list.push({
+                    dateStr,
+                    type: ev.type || 'schoolDay',
+                    description: ev.description || '',
+                    scheduleDay: ev.scheduleDay,
+                    dateObj
+                });
+            }
+        });
+        return list.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime()).slice(0, 6);
+    }, [events]);
+
+    const getEventBadge = (type: string, scheduleDay?: string) => {
+        if (type === 'holiday') {
+            return {
+                label: 'วันหยุดราชการ',
+                badgeClass: 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 border border-red-100/50 dark:border-red-900/30',
+                bgClass: 'bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950/20 dark:to-red-900/20 text-red-600 dark:text-red-400',
+                icon: <CalendarX size={14} />
+            };
+        }
+        if (type === 'specialHoliday') {
+            return {
+                label: 'วันหยุดพิเศษ',
+                badgeClass: 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-100/50 dark:border-amber-900/30',
+                bgClass: 'bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/20 text-amber-600 dark:text-amber-400',
+                icon: <Award size={14} />
+            };
+        }
+        if (scheduleDay) {
+            return {
+                label: 'เรียนชดเชย',
+                badgeClass: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/30',
+                bgClass: 'bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-950/20 dark:to-indigo-900/20 text-indigo-600 dark:text-indigo-400',
+                icon: <RefreshCw size={14} />
+            };
+        }
+        return {
+            label: 'กิจกรรมโรงเรียน',
+            badgeClass: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-900/30',
+            bgClass: 'bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950/20 dark:to-emerald-900/20 text-emerald-600 dark:text-emerald-400',
+            icon: <CalendarCheck size={14} />
+        };
+    };
+
     return (
-        <g>
-            <filter id="shadow-active" height="200%" width="200%" x="-50%" y="-50%"><feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur" /><feOffset in="blur" dx="2" dy="2" result="offsetBlur" /><feComposite in="SourceGraphic" in2="offsetBlur" operator="over" /></filter>
-            <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 8} startAngle={startAngle} endAngle={endAngle} fill={fill} style={{ filter: 'url(#shadow-active)' }} />
-            <Sector cx={cx} cy={cy} startAngle={startAngle} endAngle={endAngle} innerRadius={outerRadius + 12} outerRadius={outerRadius + 15} fill={fill} />
-        </g>
+        <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm p-5 border-none outline-none ring-0">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+                <div>
+                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <span className="p-1.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg text-indigo-600 dark:text-indigo-400">
+                            📅
+                        </span>
+                        ปฏิทินกิจกรรม & วันหยุด
+                    </h2>
+                    {academicYear && (
+                        <p className="text-xs text-gray-400 mt-0.5">ปีการศึกษา {academicYear}</p>
+                    )}
+                </div>
+                <button
+                    onClick={() => navigate('/academic/school-calendar')}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+                >
+                    ดูทั้งหมด
+                </button>
+            </div>
+            
+            <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
+                {upcomingEvents.length > 0 ? (
+                    upcomingEvents.map((ev, idx) => {
+                        const { label, badgeClass, bgClass, icon } = getEventBadge(ev.type, ev.scheduleDay);
+                        const day = ev.dateObj.getDate();
+                        const month = formatThaiShortMonth(ev.dateObj.getMonth());
+                        const dayOfWeek = formatThaiDayOfWeek(ev.dateObj);
+                        
+                        return (
+                            <div 
+                                key={idx} 
+                                className="flex items-start gap-3 p-3 rounded-xl border border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-[#252629]/50 hover:bg-gray-100/50 dark:hover:bg-[#2e2f34]/50 transition-all duration-300 transform hover:translate-x-1"
+                            >
+                                {/* Date badge (square block) */}
+                                <div className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 shadow-sm ${bgClass}`}>
+                                    <span className="text-lg font-extrabold leading-none">{day}</span>
+                                    <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">{month}</span>
+                                </div>
+                                
+                                {/* Info */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${badgeClass} flex items-center gap-1`}>
+                                            {icon}
+                                            {label}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                                            วัน{dayOfWeek}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={ev.description}>
+                                        {ev.description.replace(/^กิจกรรม:\s*/, '') || 'กิจกรรมพิเศษ'}
+                                    </p>
+                                    {ev.scheduleDay && (
+                                        <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold mt-1 flex items-center gap-1">
+                                            🔄 ใช้ตารางสอนวัน{DAY_MAP[ev.scheduleDay] || ev.scheduleDay}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                        <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3 text-gray-300 dark:text-gray-600">
+                            📅
+                        </div>
+                        <p className="text-xs font-bold">ไม่มีกิจกรรมหรือวันหยุดเร็วๆ นี้</p>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">สามารถกำหนดกิจกรรมที่หน้าระบบงานทะเบียน</p>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 };
 
 // ==================== MAIN COMPONENT ====================
 const HomePage = () => {
     const { user: currentUser, ACADEMIC_ACCESS, isSuperAdmin } = usePermissions();
-=======
-// ==================== MAIN COMPONENT ====================
-const HomePage = () => {
-    const { user: currentUser, ACADEMIC_ACCESS } = usePermissions();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const navigate = useNavigate();
     const [userProfile, setUserProfile] = useState<any>(null);
 
     useEffect(() => {
-<<<<<<< HEAD
+        if (isAttendanceEntryOnly(currentUser?.role)) {
+            navigate("/attendance/checkin-out", { replace: true });
+            return;
+        }
+
         if (isSuperAdmin) {
             navigate("/owner/hub", { replace: true });
-        } else {
-            const userRoles = Array.isArray(currentUser?.role) ? currentUser.role : [currentUser?.role];
-            const attendanceRoles = ['school_attendance', 'student_attendance', 'teacher_attendance'];
-            
-            if (userRoles.some(role => attendanceRoles.includes(role as string))) {
-                // หากมีสิทธิ์กลุ่มลงเวลา ให้ส่งไปหน้าลงเวลาเท่านั้น
-                navigate("/attendance/checkin-out", { replace: true });
-            }
         }
-    }, [isSuperAdmin, currentUser, navigate]);
+    }, [currentUser?.role, isSuperAdmin, navigate]);
 
     useEffect(() => {
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const fetchProfile = async () => {
             const uid = currentUser?.uid;
             if (!uid) return;
@@ -344,183 +335,74 @@ const HomePage = () => {
 
     const [isLoading, setIsLoading] = useState(true);
     const [reportLoading, setReportLoading] = useState(true);
-    const [studentReport, setStudentReport] = useState<any>({ total: 0, active: 0, paused: 0, transferred: 0, resigned: 0, byLevel: {} });
+    const [studentReport, setStudentReport] = useState<any>({ total: 0, active: 0, paused: 0, suspended: 0, transferred: 0, resigned: 0, byLevel: {} });
     const [teacherReport, setTeacherReport] = useState<any>({ total: 0, byDepartment: {} });
-    const [leaveReport, setLeaveReport] = useState<any>({ studentLeaves: 0, teacherLeaves: 0, studentSick: 0, studentPersonal: 0, teacherSick: 0, teacherPersonal: 0, recentLeaves: [] });
-    const [academicReport, setAcademicReport] = useState<any>({ totalCourses: 0, totalClubs: 0, totalEnrollments: 0, todaySchedules: [] });
+    const [leaveReport, setLeaveReport] = useState<any>({ 
+        studentLeaves: 0, 
+        teacherLeaves: 0, 
+        studentSick: 0, 
+        studentPersonal: 0, 
+        teacherSick: 0, 
+        teacherPersonal: 0, 
+        officialTravel: 0,
+        recentLeaves: [] 
+    });
+    const [academicReport, setAcademicReport] = useState<any>({ totalCourses: 0, totalClubs: 0, totalEnrollments: 0, todaySchedules: [], compensationScheduleDay: '' });
     const [attendanceData, setAttendanceData] = useState<any[]>([]);
-<<<<<<< HEAD
-    const [studentAttendanceStats, setStudentAttendanceStats] = useState<any>(null);
-    const [teacherAttendanceStats, setTeacherAttendanceStats] = useState<any>(null);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [attendanceLoading, setAttendanceLoading] = useState(true);
+    const [studentTodaySummary, setStudentTodaySummary] = useState<any>(null);
+    const [teacherTodaySummary, setTeacherTodaySummary] = useState<any>(null);
+    const [refreshKey, setRefreshKey] = useState(0); // Added for manual/auto refresh
 
     const [todayTeacherLeaves, setTodayTeacherLeaves] = useState<any[]>([]);
     const [todayTeacherLeavesLoading, setTodayTeacherLeavesLoading] = useState(true);
 
-<<<<<<< HEAD
-    // --- Dashboard Real-time Logic ---
-    const [stats, setStats] = useState<StatItem[]>([
-        { title: "มาเรียนวันนี้", value: "...", change: "กำลังโหลด...", color: "bg-blue-500" },
-        { title: "ครูปฏิบัติงาน", value: "...", change: "วันนี้", color: "bg-green-500" },
-        { title: "รอการอนุมัติ", value: "...", change: "กำลังโหลด...", color: "bg-yellow-500" },
-    ]);
 
-    const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
-    const [activeBarIndex, setActiveBarIndex] = useState<number | undefined>(undefined);
-    const [attendanceView, setAttendanceView] = useState<'chart' | 'table'>('chart');
 
-    const renderStudentStats = (s: any) => (
-        <div className="grid grid-cols-5 gap-0.5 mt-2.5">
-            {[
-                { label: "มา", val: s.present, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
-                { label: "สาย", val: s.late, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-                { label: "ลา", val: s.leave, text: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
-                { label: "ไปราชการ", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
-                { label: "ขาด", val: s.absent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
-            ].map(i => (
-                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
-                    <span className={`${i.label === 'ไปราชการ' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
-                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
-                </div>
-            ))}
-        </div>
-    );
+    // === EFFECT: Refresh Tracker (Handles visibility and date changes) ===
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                console.log("[Dashboard] Tab became visible, refreshing data...");
+                setRefreshKey(prev => prev + 1);
+            }
+        };
 
-    const renderTeacherStats = (s: any) => (
-        <div className="grid grid-cols-5 gap-0.5 mt-2.5">
-            {[
-                { label: "มา", val: s.present, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
-                { label: "สาย", val: s.late, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-                { label: "ลา", val: s.leave, text: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
-                { label: "ไปราชการ", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
-                { label: "ขาด", val: s.absent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
-            ].map(i => (
-                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
-                    <span className={`${i.label === 'ไปราชการ' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
-                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
-                </div>
-            ))}
-        </div>
-    );
+        // Check for date change every minute
+        let lastDate = new Date().toDateString();
+        const dateCheckInterval = setInterval(() => {
+            const currentDate = new Date().toDateString();
+            if (currentDate !== lastDate) {
+                console.log("[Dashboard] Date changed, refreshing boundaries...");
+                lastDate = currentDate;
+                setRefreshKey(prev => prev + 1);
+            }
+        }, 60000);
 
-    const renderPendingDocs = (u: any) => (
-        <div className="grid grid-cols-4 gap-0.5 mt-2.5">
-            {[
-                { label: "ปกติ", val: u.normal, text: "text-gray-600 dark:text-gray-400", bg: "bg-gray-500/10" },
-                { label: "ด่วน", val: u.urgent, text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10" },
-                { label: "มาก", val: u.very_urgent, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-                { label: "ที่สุด", val: u.most_urgent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
-            ].map(i => (
-                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
-                    <span className="text-[6px] sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5">{i.label}</span>
-                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
-                </div>
-            ))}
-        </div>
-    );
-
-    // 1. Real-time Summary Listeners
-=======
-
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            clearInterval(dateCheckInterval);
+        };
+    }, []);
 
     // === EFFECT: Student Attendance By Class (From ClassroomAttendance Real Data) ===
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     useEffect(() => {
         const schoolId = currentUser?.schoolId;
         if (!schoolId) return;
 
-<<<<<<< HEAD
-        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
-
-        // A. Student Summary
-        const studentSummaryRef = doc(db, "school-settings", schoolId, "Todaysummary", `students_${todayStr}`);
-        const unsubStudentSummary = onSnapshot(studentSummaryRef, async (snap) => {
-            const summaryData = snap.exists() ? snap.data() : {};
-            const classes = summaryData.classes || {};
-
-            const sortOrder: Record<string, number> = { 'เตรียมอนุบาล': 0, 'อ.1': 1, 'อ.2': 2, 'อ.3': 3, 'ป.1': 11, 'ป.2': 12, 'ป.3': 13, 'ป.4': 14, 'ป.5': 15, 'ป.6': 16, 'ม.1': 21, 'ม.2': 22, 'ม.3': 23, 'ม.4': 24, 'ม.5': 25, 'ม.6': 26 };
-            const attendanceArr = Object.keys(classes)
-                .sort((a, b) => (sortOrder[a] || 900) - (sortOrder[b] || 900) || a.localeCompare(b, 'th'))
-                .map(cls => ({ name: cls, ...classes[cls] }));
-
-            setAttendanceData(attendanceArr);
-
-            // Get total student count
-            const countSnap = await getDocs(query(collection(db, "school-settings", schoolId, "students")));
-            const totalCount = countSnap.size;
-
-            const studentStats = {
-                present: Number(summaryData.present || 0),
-                late: Number(summaryData.late || 0),
-                leave: Number(summaryData.leave || 0),
-                officialTravel: Number(summaryData.officialTravel || 0),
-                absent: Math.max(0, totalCount - Number(summaryData.present || 0) - Number(summaryData.late || 0) - Number(summaryData.leave || 0) - Number(summaryData.officialTravel || 0)),
-                total: Math.max(totalCount, Number(summaryData.present || 0) + Number(summaryData.late || 0) + Number(summaryData.leave || 0) + Number(summaryData.officialTravel || 0))
-            };
-
-            const presentCount = studentStats.present + studentStats.late + studentStats.officialTravel;
-
-            setStudentAttendanceStats(studentStats);
-            setStats(prev => {
-                const ns = [...prev];
-                ns[0] = { title: "มาเรียนวันนี้", value: `${presentCount}/${totalCount}`, change: renderStudentStats(studentStats), color: "bg-blue-500" };
-                return ns;
-            });
-            setAttendanceLoading(false);
-        });
-
-        // B. Teacher Summary
-        const teacherSummaryRef = doc(db, "school-settings", schoolId, "Todaysummary", `teachers_${todayStr}`);
-        const unsubTeacherSummary = onSnapshot(teacherSummaryRef, async (snap) => {
-            const summaryData = snap.exists() ? snap.data() : { present: 0, late: 0, leave: 0, officialTravel: 0, absent: 0 };
-            const teachersSnap = await getDocs(collection(db, "school-settings", schoolId, "teachers"));
-            const totalTeachers = teachersSnap.size;
-
-            const teacherStats = {
-                present: Number(summaryData.present || 0),
-                late: Number(summaryData.late || 0),
-                leave: Number(summaryData.leave || 0),
-                officialTravel: Number(summaryData.officialTravel || 0),
-                absent: Math.max(0, totalTeachers - Number(summaryData.present || 0) - Number(summaryData.late || 0) - Number(summaryData.leave || 0) - Number(summaryData.officialTravel || 0)),
-                total: Math.max(totalTeachers, Number(summaryData.present || 0) + Number(summaryData.late || 0) + Number(summaryData.leave || 0) + Number(summaryData.officialTravel || 0))
-            };
-
-            const presentCount = teacherStats.present + teacherStats.late + teacherStats.officialTravel;
-
-            setTeacherAttendanceStats(teacherStats);
-            setStats(prev => {
-                const ns = [...prev];
-                ns[1] = { title: "ครูปฏิบัติงาน", value: `${presentCount}/${totalTeachers}`, change: renderTeacherStats(teacherStats), color: "bg-green-500" };
-                return ns;
-            });
-        });
-
-        // C. Pending Documents
-        const pendingQuery = query(collection(db, "school-settings", schoolId, "stampedDocuments"), where("status", "==", "pending_approval"));
-        const unsubDocs = onSnapshot(pendingQuery, (snap) => {
-            const ucounts = { normal: 0, urgent: 0, very_urgent: 0, most_urgent: 0 };
-            snap.forEach(d => { const u = d.data().urgency || 'normal'; if (ucounts[u as keyof typeof ucounts] !== undefined) ucounts[u as keyof typeof ucounts]++; });
-            setStats(prev => {
-                const ns = [...prev];
-                ns[2] = { title: "รอการอนุมัติ", value: snap.size.toString(), change: renderPendingDocs(ucounts), color: "bg-yellow-500" };
-                return ns;
-            });
-        });
-
-        return () => { unsubStudentSummary(); unsubTeacherSummary(); unsubDocs(); };
-=======
         setAttendanceLoading(true);
 
         // Create start and end of today for query
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
         const startTimestamp = Timestamp.fromDate(today);
         const endTimestamp = Timestamp.fromDate(tomorrow);
+
+        console.log(`[Attendance Query] Fetching for range: ${today.toLocaleString()} to ${tomorrow.toLocaleString()} (School: ${schoolId})`);
 
         // Real-time listener for Classroom Attendance
         // Note: This requires a composite index on Firestore (schoolId ASC, date ASC)
@@ -528,11 +410,12 @@ const HomePage = () => {
             collectionGroup(db, 'ClassroomAttendance'),
             where('schoolId', '==', schoolId),
             where('date', '>=', startTimestamp),
-            where('date', '<=', endTimestamp)
+            where('date', '<', endTimestamp) // Changed from <= to < for strict daily boundary
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const rawData: Record<string, any> = {};
+            console.log(`[Attendance Snapshot] Received ${snapshot.size} records`);
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
@@ -560,24 +443,28 @@ const HomePage = () => {
                 else if (status === 'leave') rawData[groupKey].leave++;
                 else if (status === 'absent') rawData[groupKey].absent++;
                 else if (status === 'officialTravel') rawData[groupKey].officialTravel++;
-                else if (status === 'earlyReturn' || status === 'escape') rawData[groupKey].earlyReturn++; // Mapping 'escape' to earlyReturn for now if needed, or just grouping
-                // Add more mappings as per ClassroomAttendancePage constants
+                else if (status === 'earlyReturn' || status === 'escape') rawData[groupKey].earlyReturn++;
             });
 
             // Convert to array and sort
-            const processed = Object.values(rawData).sort((a: any, b: any) => a.name.localeCompare(b.name));
+            const processed = Object.values(rawData).sort((a: any, b: any) => {
+                // Natural sort for class names (e.g., ม.1/1, ม.1/2, ม.2/1)
+                return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+            });
 
             setAttendanceData(processed);
             setAttendanceLoading(false);
         }, (error) => {
             console.error("Error fetching classroom attendance:", error);
+            // Check for missing index error
+            if (error.message.includes('index')) {
+                console.error("CRITICAL: Composite index (schoolId ASC, date ASC) is missing for 'ClassroomAttendance' collection group.");
+            }
             setAttendanceLoading(false);
-            // Optionally set mock data here if query fails due to missing index, so UI doesn't break
-            // But user asked for REAL data.
         });
 
         return () => unsubscribe();
-    }, [currentUser]);
+    }, [currentUser, refreshKey]);
 
 
 
@@ -640,6 +527,22 @@ const HomePage = () => {
                 }));
 
                 setTodayTeacherLeaves(processedLeaves);
+
+                // Update leaveReport for teachers
+                let tSick = 0, tPersonal = 0, tOfficial = 0;
+                processedLeaves.forEach((l: any) => {
+                    if (l.leaveType === 'ลาป่วย') tSick++;
+                    else if (l.leaveType === 'ลากิจ') tPersonal++;
+                    else if (l.leaveType === 'ไปราชการ') tOfficial++;
+                });
+
+                setLeaveReport((prev: any) => ({
+                    ...prev,
+                    teacherLeaves: processedLeaves.length,
+                    teacherSick: tSick,
+                    teacherPersonal: tPersonal,
+                    teacherOfficial: tOfficial
+                }));
             } catch (e) {
                 console.error("Error fetching today teacher leaves", e);
             } finally {
@@ -648,44 +551,77 @@ const HomePage = () => {
         };
 
         fetchTodayTeacherLeaves();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     }, [currentUser]);
 
 
 
-    // === EFFECT 1: Fetch Calendar & Activities ===
+    const dispatch = useDispatch();
+    const calendarState = useSelector((state: RootState) => state.calendar);
+    const reduxRawData = calendarState.rawData;
+
+    useEffect(() => {
+        const schoolId = currentUser?.schoolId;
+        if (schoolId) {
+            dispatch(fetchCalendar(schoolId) as any);
+        }
+    }, [currentUser, dispatch]);
+
+    // === EFFECT 1: Fetch Activities & Sync from Redux Calendar ===
     useEffect(() => {
         const schoolId = currentUser?.schoolId;
         if (!schoolId) return;
-        const fetchData = async () => {
-            setIsLoading(true);
-            try {
-                const now = new Date();
-                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                let baseEvents: Record<string, CalendarEvent> = {};
-                const calendarSnap = await getDoc(doc(db, 'school-settings', schoolId, 'main_calendar', 'default'));
-                if (calendarSnap.exists()) baseEvents = calendarSnap.data().events || {};
-                const activitiesSnapshot = await getDocs(query(collection(db, 'school-settings', schoolId, 'activities')));
-                const activityEvents: Record<string, CalendarEvent> = {};
-                activitiesSnapshot.forEach(d => { const act = d.data(); if (act.date) activityEvents[act.date] = { type: 'schoolDay', description: `กิจกรรม: ${act.name}` }; });
-                const mergedEvents = { ...baseEvents, ...activityEvents };
-                setCalendarEvents(mergedEvents);
-                const { isWorking, reason } = checkIsWorkingDay(todayStr, mergedEvents);
-                setIsTodayWorkingDay(isWorking);
-                setHolidayReason(reason);
-            } catch (error) { console.error("Error fetching calendar data:", error); }
-            finally { setIsLoading(false); }
-        };
-        fetchData();
+
+        let active = true;
+
+        if (calendarState.status === 'succeeded') {
+            const syncData = async () => {
+                try {
+                    const now = new Date();
+                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    
+                    const baseEvents = reduxRawData.events || {};
+                    
+                    // Fetch Activities
+                    const activitiesSnapshot = await getDocs(query(collection(db, 'school-settings', schoolId, 'activities')));
+                    const activityEvents: Record<string, CalendarEvent> = {};
+                    activitiesSnapshot.forEach(d => { 
+                        const act = d.data(); 
+                        if (act.date) activityEvents[act.date] = { type: 'schoolDay', description: `กิจกรรม: ${act.name}` }; 
+                    });
+                    
+                    const mergedEvents = { ...baseEvents, ...activityEvents };
+                    if (active) {
+                        setCalendarEvents(mergedEvents);
+                        
+                        const { isWorking, reason } = checkIsWorkingDay(todayStr, mergedEvents);
+                        setIsTodayWorkingDay(isWorking);
+                        setHolidayReason(reason);
+                        setIsLoading(false);
+                    }
+                } catch (err) {
+                    console.error("Error syncing calendar data:", err);
+                    if (active) setIsLoading(false);
+                }
+            };
+            syncData();
+        } else if (calendarState.status === 'failed') {
+            setIsLoading(false);
+        }
+
         const today = new Date().toISOString().split('T')[0];
         const q = query(collection(db, "school-settings", schoolId, "activities"), where("date", ">=", today), orderBy("date", "asc"), limit(5));
         const unsubActivities = onSnapshot(q, (snapshot) => {
             const upcoming = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ActivityItem));
-            if (upcoming.length > 0) setActivities(upcoming);
-            else setActivities([{ id: 'demo1', name: "วันไหว้ครู", date: "2024-06-13" }, { id: 'demo2', name: "สอบกลางภาคเรียนที่ 1", date: "2024-07-20" }, { id: 'demo3', name: "กิจกรรมวันแม่แห่งชาติ", date: "2024-08-11" }]);
+            if (active) {
+                if (upcoming.length > 0) setActivities(upcoming);
+                else setActivities([{ id: 'demo1', name: "วันไหว้ครู", date: "2024-06-13" }, { id: 'demo2', name: "สอบกลางภาคเรียนที่ 1", date: "2024-07-20" }, { id: 'demo3', name: "กิจกรรมวันแม่แห่งชาติ", date: "2024-08-11" }]);
+            }
         });
-        return () => unsubActivities();
-    }, [currentUser]);
+        return () => {
+            active = false;
+            unsubActivities();
+        };
+    }, [currentUser, calendarState.status, reduxRawData]);
 
 
 
@@ -713,76 +649,102 @@ const HomePage = () => {
                 const studentsSnap = await getDocs(collection(db, "school-settings", schoolId, "students"));
                 const studentsList = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 const byLevel: Record<string, number> = {};
-                let active = 0, paused = 0, transferred = 0, resigned = 0;
+                let active = 0, paused = 0, suspended = 0, transferred = 0, resigned = 0;
                 studentsList.forEach((s: any) => {
                     const status = s.studentStatus || 'เรียนอยู่';
-                    if (status === 'เรียนอยู่') active++; else if (status === 'พักการเรียน') paused++; else if (status === 'ย้าย') transferred++; else if (status === 'ลาออก') resigned++;
-                    const lvl = s.classLevel || 'ไม่ระบุ';
+                    if (status === 'เรียนอยู่') active++; else if (status === 'พักการเรียน') paused++; else if (status === 'แขวนลอย') suspended++; else if (status === 'ย้าย') transferred++; else if (status === 'ลาออก') resigned++;
+                    const lvl = CLASSES[s.classLevel] || s.classLevel || 'ไม่ระบุ';
                     byLevel[lvl] = (byLevel[lvl] || 0) + 1;
                 });
-                setStudentReport({ total: studentsList.length, active, paused, transferred, resigned, byLevel });
+                setStudentReport({ total: studentsList.length, active, paused, suspended, transferred, resigned, byLevel });
                 const teachersSnap = await getDocs(collection(db, "school-settings", schoolId, "teachers"));
                 const teachersList = teachersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 const byDept: Record<string, number> = {};
                 teachersList.forEach((t: any) => { const dept = t.department || 'ไม่ระบุ'; byDept[dept] = (byDept[dept] || 0) + 1; });
                 setTeacherReport({ total: teachersList.length, byDepartment: byDept });
                 try {
+                    const todayStr = new Date().toISOString().split('T')[0];
                     const studentLeaveSnap = await getDocs(query(collection(db, "school-settings", schoolId, "leave_summary"), orderBy("createdAt", "desc"), limit(50)));
                     const studentLeaveList = studentLeaveSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    let studentSick = 0, studentPersonal = 0;
-                    studentLeaveList.forEach((l: any) => { if (l.leaveType === 'ลาป่วย') studentSick++; else studentPersonal++; });
-                    let teacherSick = 0, teacherPersonal = 0;
-                    const teacherLeavePromises = teachersList.slice(0, 20).map(async (t: any) => {
-                        const lSnap = await getDocs(query(collection(db, "school-settings", schoolId, "teachers", t.id, "leave_summary"), orderBy("createdAt", "desc"), limit(10)));
-                        lSnap.forEach(d => { const data = d.data(); if (data.leaveType === 'ลาป่วย') teacherSick++; else teacherPersonal++; });
+                    
+                    let sSick = 0, sPersonal = 0, sOfficial = 0;
+                    studentLeaveList.forEach((l: any) => {
+                        const isToday = l.startDate <= todayStr && l.endDate >= todayStr;
+                        if (isToday) {
+                            if (l.leaveType === 'ลาป่วย') sSick++;
+                            else if (l.leaveType === 'ลากิจ') sPersonal++;
+                            else if (l.leaveType === 'ไปราชการ' || l.leaveType === 'ไปราชการ/กิจกรรม') sOfficial++;
+                        }
                     });
-                    await Promise.all(teacherLeavePromises);
-                    setLeaveReport({ studentLeaves: studentLeaveList.length, teacherLeaves: teacherSick + teacherPersonal, studentSick, studentPersonal, teacherSick, teacherPersonal, recentLeaves: studentLeaveList.slice(0, 5) });
+
+                    setLeaveReport((prev: any) => ({
+                        ...prev,
+                        studentLeaves: sSick + sPersonal + sOfficial,
+                        studentSick: sSick,
+                        studentPersonal: sPersonal,
+                        studentOfficial: sOfficial,
+                        recentLeaves: studentLeaveList.slice(0, 5)
+                    }));
                 } catch (e) { console.warn("Leave report fetch (partial):", e); }
+
+                try {
+                    const now = new Date();
+                    const todayStr2 = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const [stSnap, tSnap] = await Promise.all([
+                        getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `students_${todayStr2}`)),
+                        getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `teachers_${todayStr2}`))
+                    ]);
+                    setStudentTodaySummary(stSnap.exists() ? stSnap.data() : null);
+                    setTeacherTodaySummary(tSnap.exists() ? tSnap.data() : null);
+                } catch (e) { console.warn("TodaySummary fetch error:", e); }
+
                 try {
                     const [coursesSnap, clubsSnap, enrollmentsSnap] = await Promise.all([getDocs(collection(db, "school-settings", schoolId, "courses")), getDocs(collection(db, "school-settings", schoolId, "clubs")), getDocs(collection(db, "school-settings", schoolId, "enrollments"))]);
                     let todaySchedules: ScheduleItem[] = [];
+                    let compensationScheduleDay = '';
                     const uid = currentUser?.uid;
                     if (uid) {
-<<<<<<< HEAD
-                        const now = new Date();
-                        const todayStr = toBangkokDateString(now);
-                        let dayKey = getDayKeyFromDateString(todayStr);
-                        let activeAcademicYear = '';
-                        let activeSemester = '1';
-                        let shouldLoadTodaySchedule = true;
-
-                        try {
-=======
                         // 1. Determine standard Day Key
                         const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
                         const now = new Date();
                         let dayKey = dayNames[now.getDay()];
 
                         // 2. Check for "Compensation Day" Override
-                        // We fetch the calendar doc to check if today has a specific schedule override
                         try {
                             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                            const calDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-                            const calDocSnap = await getDoc(calDocRef);
+                            
+                            let todayEvent: CalendarEvent | undefined;
+                            const defaultEvents = (reduxRawData?.events || {}) as Record<string, CalendarEvent>;
+                            const academicYear = calendarState.academicYear || reduxRawData?.academicYear;
 
-                            if (calDocSnap.exists()) {
-                                const calData = calDocSnap.data();
-<<<<<<< HEAD
-                                activeAcademicYear = String(calData.academicYear || calData.year || '');
-                                activeSemester = getSemesterForDate(calData, todayStr);
-                                const todayEvent = calData.events?.[todayStr];
-                                shouldLoadTodaySchedule = shouldShowScheduleForDate(todayStr, calData);
-                                if (todayEvent?.type === 'schoolDay' && todayEvent?.scheduleDay) {
-                                    dayKey = todayEvent.scheduleDay;
-=======
-                                const todayEvent = calData.events?.[todayStr];
+                            if (calendarState.status === 'succeeded') {
+                                let yearEvents: Record<string, CalendarEvent> = {};
+                                if (academicYear) {
+                                    const yearDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', String(academicYear));
+                                    const yearDocSnap = await getDoc(yearDocRef);
+                                    if (yearDocSnap.exists()) {
+                                        yearEvents = (yearDocSnap.data().events || {}) as Record<string, CalendarEvent>;
+                                    }
+                                }
+                                todayEvent = { ...defaultEvents, ...yearEvents }[todayStr];
+                            } else {
+                                const [defaultDocSnap, yearDocSnap] = await Promise.all([
+                                    getDoc(doc(db, 'school-settings', schoolId, 'main_calendar', 'default')),
+                                    calendarState.academicYear
+                                        ? getDoc(doc(db, 'school-settings', schoolId, 'main_calendar', String(calendarState.academicYear)))
+                                        : Promise.resolve(null)
+                                ]);
+                                const fallbackDefaultEvents = defaultDocSnap.exists() ? ((defaultDocSnap.data().events || {}) as Record<string, CalendarEvent>) : {};
+                                const fallbackYearEvents = yearDocSnap && yearDocSnap.exists() ? ((yearDocSnap.data().events || {}) as Record<string, CalendarEvent>) : {};
+                                todayEvent = { ...fallbackDefaultEvents, ...fallbackYearEvents }[todayStr];
+                            }
+
+                            if (todayEvent) {
                                 // If today is marked as a school day AND has a specific scheduleDay override (e.g., 'mon')
                                 if (todayEvent?.type === 'schoolDay' && todayEvent?.scheduleDay) {
                                     dayKey = todayEvent.scheduleDay;
+                                    compensationScheduleDay = todayEvent.scheduleDay;
                                     console.log(`[Schedule Override] Using ${dayKey} schedule for ${todayStr}`);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 }
                             }
                         } catch (err) {
@@ -791,10 +753,11 @@ const HomePage = () => {
 
                         const teacherQ = query(collection(db, "school-settings", schoolId, "teachers"), where("uid", "==", uid));
                         const teacherSnap = await getDocs(teacherQ);
-<<<<<<< HEAD
-                        if (!teacherSnap.empty && shouldLoadTodaySchedule) {
+                        if (!teacherSnap.empty) {
                             const teacherDocId = teacherSnap.docs[0].id;
+                            const teacherData = teacherSnap.docs[0].data();
 
+                            // 3. Fetch period settings & courses & rooms to enrich schedule data
                             let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
                             const [periodSnap, coursesSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
                                 getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
@@ -802,17 +765,6 @@ const HomePage = () => {
                                 getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'learner-activities'))
-=======
-                        if (!teacherSnap.empty) {
-                            const teacherDocId = teacherSnap.docs[0].id;
-
-                            // 3. Fetch period settings & courses & rooms to enrich schedule data
-                            let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
-                            const [periodSnap, coursesSnap, roomsSnap] = await Promise.all([
-                                getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
-                                getDocs(collection(db, 'school-settings', schoolId, 'courses')),
-                                getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms'))
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             ]);
 
                             // 3.1 Map Periods
@@ -832,15 +784,9 @@ const HomePage = () => {
                             // 3.2 Map Courses for Assignments
                             const courseDataMap: Record<string, any> = {};
                             coursesSnap.forEach(cdoc => {
-<<<<<<< HEAD
-                                courseDataMap[cdoc.id] = { id: cdoc.id, ...cdoc.data() };
-                                // Also map by code for easier lookup
-                                if (cdoc.data().code) courseDataMap[cdoc.data().code] = { id: cdoc.id, ...cdoc.data() };
-=======
                                 courseDataMap[cdoc.id] = cdoc.data();
                                 // Also map by code for easier lookup
                                 if (cdoc.data().code) courseDataMap[cdoc.data().code] = cdoc.data();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             });
 
                             // 3.3 Map Rooms for Display Names
@@ -854,39 +800,28 @@ const HomePage = () => {
                                 };
                             });
 
-<<<<<<< HEAD
-                            const assignmentMap: Record<string, any> = {};
-                            if (activeAcademicYear && activeSemester) {
-                                try {
-                                    const assignmentSnap = await getDocs(query(
-                                        collection(db, 'school-settings', schoolId, 'course_assignments'),
-                                        where('academicYear', '==', activeAcademicYear),
-                                        where('semester', '==', activeSemester)
-                                    ));
-                                    assignmentSnap.forEach(adoc => {
-                                        const data = adoc.data();
-                                        if (data.courseId) assignmentMap[data.courseId] = data;
-                                    });
-                                } catch (err) {
-                                    console.warn("Course assignment fetch (partial):", err);
+                            const academicYear = calendarState.academicYear;
+                            let schedQuery = query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId));
+                            if (academicYear) schedQuery = query(schedQuery, where("academicYear", "==", academicYear));
+                            const schedSnap = await getDocs(schedQuery);
+                            schedSnap.forEach(sdoc => {
+                                const data = sdoc.data();
+                                const sch = data.schedule || {};
+                                const classIdRaw = Array.isArray(data.classId) ? data.classId[0] : data.classId;
+                                let baseClassName = classIdRaw || "ไม่ระบุชั้น";
+                                
+                                if (typeof classIdRaw === 'string') {
+                                    if (CLASSES[classIdRaw]) {
+                                        baseClassName = CLASSES[classIdRaw];
+                                    } else if (classIdRaw.includes('/')) {
+                                        const parts = classIdRaw.split('/');
+                                        const levelKey = parts[0];
+                                        const roomNum = parts[parts.length - 1];
+                                        if (CLASSES[levelKey]) {
+                                            baseClassName = `${CLASSES[levelKey]}/${roomNum}`;
+                                        }
+                                    }
                                 }
-                            }
-
-                            const schedSnap = await getDocs(query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId)));
-                            const scheduleByKey = new Map<string, ScheduleItem & { _sortIndex?: number }>();
-                            schedSnap.forEach(sdoc => {
-                                const data = sdoc.data();
-                                if (!isScheduleDocForCurrentTerm(data, activeAcademicYear, activeSemester)) return;
-
-                                const sch = data.schedule || {};
-=======
-                            const schedSnap = await getDocs(query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId)));
-                            schedSnap.forEach(sdoc => {
-                                const data = sdoc.data();
-                                const sch = data.schedule || {};
-                                const classId = Array.isArray(data.classId) ? data.classId[0] : data.classId;
-                                const baseClassName = CLASSES[classId] || classId || "ไม่ระบุชั้น";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 Object.keys(sch).forEach(key => {
                                     // Key format is typically "day-periodId" (e.g., "mon-period-1", "mon-homeroom")
                                     if (key.startsWith(dayKey + '-') && sch[key]) {
@@ -899,10 +834,7 @@ const HomePage = () => {
                                         const pTime = periodSettings[periodId];
                                         const startTime = pTime?.startTime || '';
                                         const endTime = pTime?.endTime || '';
-<<<<<<< HEAD
                                         const startMinutes = timeToMinutes(startTime);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                                         if (periodId === 'homeroom') {
                                             displayPeriod = 'โฮมรูม';
@@ -921,141 +853,6 @@ const HomePage = () => {
 
                                         const rawCourse = sch[key];
                                         const coursesArray = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-<<<<<<< HEAD
-                                        coursesArray.forEach((course: any, courseIndex: number) => {
-                                            if (!course || course === '-') return; // Skip free periods
-
-                                            const subjectName = typeof course === 'string' ? '-' : (course?.title || course?.subjectName || course?.name || '-');
-                                            if (subjectName === '-') return; // Double check for empty subjects
-
-                                            const subjectCode = typeof course === 'string' ? '' : (course?.code || course?.subjectCode || '');
-                                            const courseId = typeof course === 'string' ? null : (course?.id || course?.courseId);
-                                            const courseClassId = typeof course === 'string' ? data.classId : (course?.classId || data.classId);
-                                            const baseClassId = Array.isArray(courseClassId) ? courseClassId[0] : courseClassId;
-                                            const baseClassName = CLASSES[baseClassId] || baseClassId || "ไม่ระบุชั้น";
-
-                                            const courseGroupNumber = typeof course === 'string' ? null : (course?.groupNumber || course?.group || course?.roomNumber);
-                                            let finalClassName = courseGroupNumber ? `${baseClassName}/${courseGroupNumber}` : baseClassName;
-                                            let finalRoom = formatRoomDisplay(typeof course === 'string' ? data.room : (course?.room || data.room), roomDataMap) || '-';
-
-                                            const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
-                                            const assignmentCandidates = [
-                                                ...(assignmentMap[courseId || '']?.teacherAssignments || []),
-                                                ...(fullCourseData?.teacherAssignments || [])
-                                            ];
-
-                                            if (assignmentCandidates.length > 0) {
-                                                const myAssignment = assignmentCandidates.find((a: any) =>
-                                                    String(a.teacherId) === String(teacherDocId) &&
-                                                    (!courseGroupNumber || !a.groupNumber || Number(a.groupNumber) === Number(courseGroupNumber))
-                                                ) || assignmentCandidates.find((a: any) => String(a.teacherId) === String(teacherDocId));
-
-                                                if (myAssignment) {
-                                                    const assignmentClassValue = myAssignment.classLevels?.length ? myAssignment.classLevels : (myAssignment.classId || courseClassId);
-                                                    const assignmentClassName = formatClassName(assignmentClassValue) || baseClassName;
-                                                    const groupNumber = myAssignment.groupNumber || myAssignment.group || myAssignment.roomNumber;
-                                                    finalClassName = groupNumber ? `${assignmentClassName}/${groupNumber}` : assignmentClassName;
-
-                                                    finalRoom = formatRoomDisplay(myAssignment.roomIds || myAssignment.room || course?.room || data.room, roomDataMap) || '-';
-                                                }
-                                            } else if (course?.groupName) {
-                                                const groupNum = course.groupName.match(/\d+/);
-                                                if (groupNum) finalClassName = `${baseClassName}/${groupNum[0]}`;
-                                            }
-
-                                            if (isOpaqueRoomId(finalRoom)) finalRoom = '-';
-
-                                            const scheduleItem = {
-                                                period: displayPeriod,
-                                                subject: subjectName,
-                                                subjectCode: subjectCode,
-                                                class: finalClassName,
-                                                room: finalRoom,
-                                                startTime,
-                                                endTime,
-                                                actionPath: '/academic/classroom-attendance',
-                                                actionLabel: 'เช็คชื่อ',
-                                                type: 'classroom',
-                                                _sortIndex: sortIndex,
-                                                _startMinutes: startMinutes
-                                            } as any;
-                                            const uniqueKey = `${sortIndex}-${courseId || subjectCode || subjectName}-${finalClassName}-${finalRoom}-${courseIndex}`;
-                                            scheduleByKey.set(uniqueKey, scheduleItem);
-                                        });
-                                    }
-                                });
-                            });
-
-                            const specialPeriods = specialPeriodsSnap.docs.map(periodDoc => ({ id: periodDoc.id, ...periodDoc.data() } as any));
-                            const periodsForToday = specialPeriods.filter(period => isSpecialPeriodForDay(period, dayKey));
-                            const findSpecialPeriod = (keywords: string[]) => periodsForToday.find(period => includesAnyKeyword(String(period.title || ''), keywords));
-
-                            const clubPeriodFallback = findSpecialPeriod(['ชุมนุม', 'club']);
-                            clubsSnap.docs
-                                .map(clubDoc => ({ id: clubDoc.id, ...clubDoc.data() } as any))
-                                .filter(club => Array.isArray(club.responsibleTeacherIds) && (
-                                    club.responsibleTeacherIds.includes(teacherDocId) ||
-                                    club.responsibleTeacherIds.includes(uid)
-                                ))
-                                .forEach(club => {
-                                    const clubPeriod = periodsForToday.find(period => period.id === club.specialPeriodId) || clubPeriodFallback;
-                                    if (!clubPeriod) return;
-
-                                    const startTime = clubPeriod.startTime || '';
-                                    const endTime = clubPeriod.endTime || '';
-                                    const scheduleItem = {
-                                        period: 'ชุมนุม',
-                                        subject: club.name ? `ชุมนุม: ${club.name}` : 'ชุมนุม',
-                                        subjectCode: '',
-                                        class: 'ชุมนุม',
-                                        room: '-',
-                                        startTime,
-                                        endTime,
-                                        actionPath: '/academic/club-attendance',
-                                        actionLabel: 'เช็คชุมนุม',
-                                        type: 'club',
-                                        _sortIndex: 90,
-                                        _startMinutes: timeToMinutes(startTime)
-                                    } as any;
-                                    scheduleByKey.set(`club-${club.id}-${clubPeriod.id}`, scheduleItem);
-                                });
-
-                            learnerActivitiesSnap.docs
-                                .map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as any))
-                                .filter(activity => Array.isArray(activity.responsibleTeacherIds) && (
-                                    activity.responsibleTeacherIds.includes(teacherDocId) ||
-                                    activity.responsibleTeacherIds.includes(uid)
-                                ))
-                                .forEach(activity => {
-                                    const activityPeriod = periodsForToday.find(period => period.id === activity.specialPeriodId)
-                                        || periodsForToday.find(period => isLearnerActivityPeriod(period));
-                                    if (!activityPeriod) return;
-
-                                    const startTime = activity.specialPeriodStartTime || activityPeriod.startTime || '';
-                                    const endTime = activity.specialPeriodEndTime || activityPeriod.endTime || '';
-                                    const scheduleItem = {
-                                        period: activityPeriod.title || 'กิจกรรม',
-                                        subject: activity.name || 'กิจกรรมพัฒนาผู้เรียน',
-                                        subjectCode: activity.courseCode || '',
-                                        class: 'กิจกรรมพัฒนาผู้เรียน',
-                                        room: '-',
-                                        startTime,
-                                        endTime,
-                                        actionPath: '/academic/activities/attendance',
-                                        actionLabel: 'เช็คกิจกรรม',
-                                        type: 'learnerActivity',
-                                        _sortIndex: 95,
-                                        _startMinutes: timeToMinutes(startTime)
-                                    } as any;
-                                    scheduleByKey.set(`learner-${activity.id}-${activityPeriod.id}`, scheduleItem);
-                                });
-
-                            todaySchedules = Array.from(scheduleByKey.values());
-                            todaySchedules.sort((a: any, b: any) =>
-                                (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) ||
-                                (a._sortIndex ?? 999) - (b._sortIndex ?? 999)
-                            );
-=======
                                         const course = coursesArray[0];
 
                                         if (!course || course === '-') return; // Skip free periods
@@ -1068,37 +865,40 @@ const HomePage = () => {
 
                                         // --- Advanced Logic for Class/Room based on Teacher Assignments ---
                                         let finalClassName = baseClassName;
-                                        let finalRoom = course?.room || data.room || '-';
+                                        let finalRoom = '-';
 
                                         // Lookup Course Document to find Assignments
                                         const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
+                                        const assignments = fullCourseData?.teacherAssignments || course?.teacherAssignments;
 
-                                        if (fullCourseData && fullCourseData.teacherAssignments) {
-                                            // Find the assignment for THIS teacher
-                                            const myAssignment = fullCourseData.teacherAssignments.find((a: any) =>
+                                        let myAssignment = null;
+                                        if (Array.isArray(assignments)) {
+                                            myAssignment = assignments.find((a: any) =>
                                                 String(a.teacherId) === String(teacherDocId)
                                             );
+                                        }
 
-                                            if (myAssignment) {
-                                                // 1. Format Class Name (e.g., ม.1/1)
-                                                if (myAssignment.groupNumber) {
-                                                    finalClassName = `${baseClassName}/${myAssignment.groupNumber}`;
-                                                }
+                                        // 1. Format Class Name (e.g., ม.1/1)
+                                        // Removed group identifier appending as per user request to keep class names clean
 
-                                                // 2. Format Room Name (from Physical Rooms map)
-                                                if (myAssignment.roomIds && myAssignment.roomIds.length > 0) {
-                                                    const roomDisplays = myAssignment.roomIds.map((rid: string) => {
-                                                        const r = roomDataMap[rid];
-                                                        if (!r) return rid;
-                                                        return r.code ? `${r.name} (${r.code})` : r.name;
-                                                    });
-                                                    finalRoom = roomDisplays.join(', ');
-                                                }
-                                            }
-                                        } else if (course?.groupName) {
-                                            // Fallback to groupName in schedule if available
-                                            const groupNum = course.groupName.match(/\d+/);
-                                            if (groupNum) finalClassName = `${baseClassName}/${groupNum[0]}`;
+                                        // 2. Format Room Name (from Physical Rooms map)
+                                        let roomIds: string[] = [];
+                                        if (myAssignment?.roomIds && myAssignment.roomIds.length > 0) {
+                                            roomIds = myAssignment.roomIds;
+                                        } else if (course?.room) {
+                                            roomIds = Array.isArray(course.room) ? course.room : [course.room];
+                                        } else if (data.room) {
+                                            roomIds = Array.isArray(data.room) ? data.room : [data.room];
+                                        }
+
+                                        if (roomIds.length > 0) {
+                                            const roomDisplays = roomIds.map((rid: string) => {
+                                                if (rid === 'all' || rid === 'ทุกห้อง') return 'ทุกห้อง';
+                                                const r = roomDataMap[rid];
+                                                if (!r) return rid;
+                                                return r.code ? `${r.name} (${r.code})` : r.name;
+                                            });
+                                            finalRoom = roomDisplays.join(', ');
                                         }
 
                                         todaySchedules.push({
@@ -1109,23 +909,172 @@ const HomePage = () => {
                                             room: finalRoom,
                                             startTime,
                                             endTime,
-                                            _sortIndex: sortIndex
+                                            actionPath: '/academic/classroom-attendance',
+                                            actionLabel: 'เช็คชื่อ',
+                                            type: 'classroom',
+                                            _sortIndex: sortIndex,
+                                            _startMinutes: startMinutes
                                         } as any);
                                     }
                                 });
                             });
-                            // Sort based on the calculated sortIndex
-                            todaySchedules.sort((a: any, b: any) => a._sortIndex - b._sortIndex);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+                            const specialPeriods = specialPeriodsSnap.docs.map(periodDoc => ({ id: periodDoc.id, ...periodDoc.data() } as any));
+                            const periodsForToday = specialPeriods.filter(period => isSpecialPeriodForDay(period, dayKey));
+                            const findSpecialPeriod = (keywords: string[]) => periodsForToday.find(period => includesAnyKeyword(String(period.title || ''), keywords));
+
+                            const homeroomPeriod = findSpecialPeriod(['โฮมรูม', 'homeroom']);
+                            const homeroomGrade = String(teacherData.homeroomGrade || '').trim();
+                            const homeroomRoom = String(
+                                teacherData.homeroomRoom ||
+                                (homeroomGrade.includes('/') ? homeroomGrade.split('/')[1]?.trim() : '') ||
+                                ''
+                            ).trim();
+                            const gradeOnly = homeroomGrade.includes('/') ? homeroomGrade.split('/')[0]?.trim() : homeroomGrade;
+                            const classKey = Object.keys(CLASSES).find(key => key === gradeOnly || CLASSES[key] === gradeOnly) || gradeOnly;
+                            if (homeroomPeriod && classKey) {
+                                const startTime = homeroomPeriod.startTime || periodSettings.homeroom?.startTime || '08:30';
+                                const endTime = homeroomPeriod.endTime || periodSettings.homeroom?.endTime || '08:40';
+                                todaySchedules.push({
+                                    period: 'โฮมรูม',
+                                    subject: 'เช็คชื่อโฮมรูม',
+                                    subjectCode: '',
+                                    class: `${CLASSES[classKey] || classKey}${homeroomRoom ? `/${homeroomRoom}` : ''}`,
+                                    room: '-',
+                                    startTime,
+                                    endTime,
+                                    actionPath: '/academic/homeroom-attendance',
+                                    actionLabel: 'เช็คโฮมรูม',
+                                    type: 'homeroom',
+                                    _sortIndex: 0,
+                                    _startMinutes: timeToMinutes(startTime)
+                                });
+                            }
+
+                            const myClubs = clubsSnap.docs
+                                .map(clubDoc => ({ id: clubDoc.id, ...clubDoc.data() } as any))
+                                .filter(club => Array.isArray(club.responsibleTeacherIds) && (
+                                    club.responsibleTeacherIds.includes(teacherDocId) ||
+                                    club.responsibleTeacherIds.includes(uid)
+                                ));
+                            const fallbackClubPeriod = findSpecialPeriod(['ชุมนุม', 'club']);
+                            myClubs.forEach(club => {
+                                const clubPeriod = periodsForToday.find(period => period.id === club.specialPeriodId) || fallbackClubPeriod;
+                                if (!clubPeriod) return;
+                                todaySchedules.push({
+                                    period: 'ชุมนุม',
+                                    subject: `ชุมนุม${club.name ? `: ${club.name}` : ''}`,
+                                    subjectCode: '',
+                                    class: 'ครูผู้ดูแล',
+                                    room: '-',
+                                    startTime: clubPeriod.startTime,
+                                    endTime: clubPeriod.endTime,
+                                    actionPath: '/academic/club-attendance',
+                                    actionLabel: 'เช็คชุมนุม',
+                                    type: 'club',
+                                    _sortIndex: 90,
+                                    _startMinutes: timeToMinutes(clubPeriod.startTime)
+                                });
+                            });
+
+                            const learnerActivities = learnerActivitiesSnap.docs
+                                .map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as any))
+                                .filter(activity => Array.isArray(activity.responsibleTeacherIds) && (
+                                    activity.responsibleTeacherIds.includes(teacherDocId) ||
+                                    activity.responsibleTeacherIds.includes(uid)
+                                ));
+                            learnerActivities.forEach(activity => {
+                                const activityPeriod = periodsForToday.find(period => period.id === activity.specialPeriodId);
+                                if (!activityPeriod) return;
+                                todaySchedules.push({
+                                    period: activityPeriod.title || 'กิจกรรม',
+                                    subject: activity.name || 'กิจกรรมพัฒนาผู้เรียน',
+                                    subjectCode: activity.courseCode || '',
+                                    class: 'กิจกรรมพัฒนาผู้เรียน',
+                                    room: '-',
+                                    startTime: activityPeriod.startTime,
+                                    endTime: activityPeriod.endTime,
+                                    actionPath: '/academic/learner-activity-attendance',
+                                    actionLabel: 'เช็คกิจกรรม',
+                                    type: 'learnerActivity',
+                                    _sortIndex: 95,
+                                    _startMinutes: timeToMinutes(activityPeriod.startTime)
+                                });
+                            });
+
+                            const formatScheduleClassName = (classId: any, groupNumber?: string | number) => {
+                                const classIdStr = String(Array.isArray(classId) ? classId[0] : (classId || '')).trim();
+                                const groupSuffix = groupNumber ? `/${groupNumber}` : '';
+                                if (!classIdStr) return 'ไม่ระบุชั้น';
+                                if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${groupSuffix}`;
+                                if (classIdStr.includes('/')) {
+                                    const parts = classIdStr.split('/');
+                                    const levelKey = parts[0];
+                                    const roomNum = parts[parts.length - 1];
+                                    if (CLASSES[levelKey]) return `${CLASSES[levelKey]}/${roomNum}`;
+                                }
+                                return `${classIdStr}${groupSuffix}`;
+                            };
+
+                            const formatRoomDisplay = (rawRoom: any) => {
+                                if (typeof rawRoom === 'string' && rawRoom.trim()) return rawRoom;
+                                const roomIds = Array.isArray(rawRoom) ? rawRoom : (rawRoom ? [rawRoom] : []);
+                                const roomDisplays = roomIds
+                                    .filter((rid: any) => rid && String(rid).toLowerCase() !== 'all' && rid !== 'ทุกห้อง')
+                                    .map((rid: any) => {
+                                        const r = roomDataMap[String(rid)];
+                                        if (!r) return String(rid);
+                                        return r.code ? `${r.name} (${r.code})` : r.name;
+                                    });
+                                return roomDisplays.join(', ') || '-';
+                            };
+
+                            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+                            const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+                            const substitutionsSnap = await getDocs(query(
+                                collection(db, 'school-settings', schoolId, 'substitutions'),
+                                where('substituteTeacherId', '==', teacherDocId)
+                            ));
+
+                            substitutionsSnap.forEach(subDoc => {
+                                const data = subDoc.data();
+                                const subDate = data.date?.toDate ? data.date.toDate() : (data.date ? new Date(data.date) : null);
+                                if (!subDate || subDate < todayStart || subDate > todayEnd) return;
+
+                                const periodNumber = normalizeTeachingPeriod(data.period);
+                                const periodKey = periodNumber ? `period-${periodNumber}` : String(data.period || '');
+                                const periodTime = periodSettings[periodKey] || periodSettings[String(periodNumber)] || {};
+                                const startTime = data.startTime || periodTime.startTime || '';
+                                const endTime = data.endTime || periodTime.endTime || '';
+                                const roomDisplay = formatRoomDisplay(data.roomName || data.room || data.roomIds || data.classroom);
+
+                                todaySchedules.push({
+                                    period: periodNumber ? `คาบ ${periodNumber}` : 'สอนแทน',
+                                    subject: data.subjectName || 'สอนแทน',
+                                    subjectCode: data.subjectCode || '',
+                                    class: formatScheduleClassName(data.classId, data.groupNumber || data.group),
+                                    room: roomDisplay,
+                                    startTime,
+                                    endTime,
+                                    actionPath: '/academic/classroom-attendance',
+                                    actionLabel: 'เช็คสอนแทน',
+                                    type: 'substitute',
+                                    originalTeacherName: data.originalTeacherName || 'ไม่ระบุ',
+                                    _sortIndex: periodNumber ? periodNumber + 0.1 : 98,
+                                    _startMinutes: timeToMinutes(startTime)
+                                });
+                            });
+
+                            todaySchedules.sort((a: any, b: any) => (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) || (a._sortIndex ?? 999) - (b._sortIndex ?? 999));
                         }
                     }
-                    setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules });
+                    setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules, compensationScheduleDay });
                 } catch (e) { console.warn("Academic report fetch:", e); }
             } catch (error) { console.error("Error fetching report data:", error); }
             finally { setReportLoading(false); }
         };
         fetchReportData();
-    }, [currentUser]);
+    }, [currentUser, calendarState.academicYear]);
 
     // --- News handlers ---
     const closeNewsPopup = () => { newsList.forEach(news => sessionStorage.setItem(`seen_news_${news.id}`, 'true')); setShowNewsModal(false); };
@@ -1135,6 +1084,144 @@ const HomePage = () => {
     const currentNews = newsList[currentNewsIndex];
     const incrementViewCount = async (id: string) => { const schoolId = currentUser?.schoolId; if (!schoolId || !id) return; try { await updateDoc(doc(db, "school-settings", schoolId, "news", id), { viewCount: increment(1) }); } catch (error) { console.error("Error incrementing view count:", error); } };
     useEffect(() => { if (showNewsModal && currentNews && !viewedNewsIds.current.has(currentNews.id)) { incrementViewCount(currentNews.id); viewedNewsIds.current.add(currentNews.id); } }, [currentNews, showNewsModal]);
+
+    // === DERIVED STATS FOR BMG SMART SCHOOL STYLE REPORT ===
+    const totalStudents = studentReport.total || 0;
+    const stSummary = studentTodaySummary || {};
+    const sPresent = stSummary.present || 0;
+    const sLate = stSummary.late || 0;
+    const sLeave = stSummary.leave || 0;
+    const sOfficial = stSummary.officialTravel || 0;
+    const sAbsent = stSummary.absent || 0;
+    
+    // Total scans recorded
+    const sTotalScans = sPresent + sLate + sLeave + sOfficial + sAbsent;
+    
+    const studentAttendanceStats = {
+        present: sPresent,
+        late: sLate,
+        leave: sLeave,
+        officialTravel: sOfficial,
+        absent: sAbsent + Math.max(0, totalStudents - sTotalScans),
+        total: Math.max(totalStudents, sTotalScans)
+    };
+
+    const totalTeachers = teacherReport.total || 0;
+    const tSummary = teacherTodaySummary || {};
+    const tPresent = tSummary.present || 0;
+    const tLate = tSummary.late || 0;
+    const tLeave = Math.max(tSummary.leave || 0, (leaveReport.teacherSick || 0) + (leaveReport.teacherPersonal || 0));
+    const tOfficial = Math.max(tSummary.officialTravel || 0, leaveReport.teacherOfficial || 0);
+    const tAbsent = tSummary.absent || 0;
+    
+    const tTotalScans = tPresent + tLate + tLeave + tOfficial + tAbsent;
+    
+    const teacherAttendanceStats = {
+        present: tPresent,
+        late: tLate,
+        leave: tLeave,
+        officialTravel: tOfficial,
+        absent: tAbsent + Math.max(0, totalTeachers - tTotalScans),
+        total: Math.max(totalTeachers, tTotalScans)
+    };
+
+    const renderStudentStats = (s: any) => (
+        <div className="grid grid-cols-5 gap-0.5 mt-2.5">
+            {[
+                { label: "มา", val: s.present, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+                { label: "สาย", val: s.late, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+                { label: "ลา", val: s.leave, text: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
+                { label: "ไปราชการ", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
+                { label: "ขาด", val: s.absent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
+            ].map(i => (
+                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
+                    <span className={`${i.label === 'ไปราชการ' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
+                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    const renderTeacherStats = (s: any) => (
+        <div className="grid grid-cols-5 gap-0.5 mt-2.5">
+            {[
+                { label: "มา", val: s.present, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+                { label: "สาย", val: s.late, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+                { label: "ลา", val: s.leave, text: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
+                { label: "ไปราชการ", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
+                { label: "ขาด", val: s.absent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
+            ].map(i => (
+                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
+                    <span className={`${i.label === 'ไปราชการ' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
+                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    const renderPendingDocs = (u: any) => (
+        <div className="grid grid-cols-4 gap-0.5 mt-2.5">
+            {[
+                { label: "ปกติ", val: u.normal, text: "text-gray-600 dark:text-gray-400", bg: "bg-gray-500/10" },
+                { label: "ด่วน", val: u.urgent, text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10" },
+                { label: "มาก", val: u.very_urgent, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+                { label: "ที่สุด", val: u.most_urgent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
+            ].map(i => (
+                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
+                    <span className="text-[6px] sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5">{i.label}</span>
+                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    const CustomTooltip = ({ active, payload, isPie }: any) => {
+        if (active && payload && payload.length) {
+            if (isPie) {
+                const data = payload[0].payload;
+                return (
+                    <div className="relative group">
+                        <div className="absolute -inset-1 bg-gradient-to-r from-white/20 to-transparent blur-xl opacity-50 group-hover:opacity-100 transition-opacity" />
+                        <div className="relative bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl p-4 border border-white/20 dark:border-white/5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] rounded-2xl text-sm z-50 min-w-[200px] ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+                            <div className="flex items-center gap-3 mb-3 pb-2 border-b border-gray-100 dark:border-white/5">
+                                <div className="w-4 h-4 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, white, ${data.actualColor})`, boxShadow: `0 4px 12px ${data.actualColor}44, inset -2px -2px 4px rgba(0,0,0,0.2)` }} />
+                                <p className="font-black text-gray-900 dark:text-white text-lg tracking-tight">{data.name}</p>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-end">
+                                    <span className="text-gray-400 dark:text-gray-500 font-bold uppercase text-[9px] tracking-widest pb-0.5">Quantity</span>
+                                    <span className="font-black text-gray-900 dark:text-white text-2xl leading-none">{data.value}<span className="text-[10px] ml-1 font-bold opacity-40">PERS</span></span>
+                                </div>
+                                <div className="h-2 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden p-[1px]"><div className="h-full rounded-full transition-all duration-1000" style={{ width: `${data.percent}%`, backgroundColor: data.actualColor }} /></div>
+                                <div className="flex justify-center"><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-400 font-black text-3xl italic tracking-tighter">{data.percent}%</span></div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+        }
+        return null;
+    };
+
+    const getPieData = (stats: any) => {
+        if (!stats || !stats.total) return [];
+        return [
+            { name: 'มาเรียน', value: stats.present, color: '#10B981', actualColor: '#10B981', percent: Math.round((stats.present / stats.total) * 100) || 0 },
+            { name: 'สาย', value: stats.late, color: '#F59E0B', actualColor: '#F59E0B', percent: Math.round((stats.late / stats.total) * 100) || 0 },
+            { name: 'ลา/ราชการ', value: (stats.leave + stats.officialTravel), color: '#8B5CF6', actualColor: '#8B5CF6', percent: Math.round(((stats.leave + stats.officialTravel) / stats.total) * 100) || 0 },
+            { name: 'ขาดเรียน', value: stats.absent, color: '#EF4444', actualColor: '#EF4444', percent: Math.round((stats.absent / stats.total) * 100) || 0 }
+        ].filter(d => d.value > 0);
+    };
+
+    const presentStudentCount = studentAttendanceStats.present + studentAttendanceStats.late + studentAttendanceStats.officialTravel;
+    const presentTeacherCount = teacherAttendanceStats.present + teacherAttendanceStats.late + teacherAttendanceStats.officialTravel;
+
+    const stats = [
+        { title: "มาเรียนวันนี้", value: `${presentStudentCount}/${totalStudents}`, change: renderStudentStats(studentAttendanceStats), color: "bg-blue-500" },
+        { title: "ครูปฏิบัติงาน", value: `${presentTeacherCount}/${totalTeachers}`, change: renderTeacherStats(teacherAttendanceStats), color: "bg-green-500" },
+        { title: "รอการอนุมัติ", value: "0", change: renderPendingDocs({ normal: 0, urgent: 0, very_urgent: 0, most_urgent: 0 }), color: "bg-yellow-500" }
+    ];
 
 
 
@@ -1230,46 +1317,25 @@ const HomePage = () => {
                         <div className="mb-8">
                             <div className="flex items-center gap-2 mb-5"><div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" /><h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2><span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span></div>
                             {
-<<<<<<< HEAD
-                                        reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
-                            <div className="grid grid-cols-3 gap-2 mb-6">
-                                {isLoading ? (
-                                    Array.from({ length: 3 }).map((_, i) => (
-                                        <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                                            <div className="flex items-center justify-between mb-4"><SkeletonLoader width="100px" height="14px" /><SkeletonLoader width="12px" height="12px" variant="circle" /></div>
-                                            <SkeletonLoader width="60px" height="32px" className="mb-4" />
-                                            <SkeletonLoader width="100%" height="40px" className="rounded-xl" />
-                                        </div>
-                                    ))
-                                ) : (
-                                    stats.map((s, i) => (
-                                        <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 border-none outline-none ring-0 flex flex-col justify-between">
-                                            <div className="flex items-center justify-between mb-4">
-                                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.title}</h3>
-                                                <div className={`w-2 h-2 rounded-full ${s.color} shadow-sm`}></div>
+                                reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
+                                    <div className="grid grid-cols-3 gap-2 mb-6">
+                                        {stats.map((s, i) => (
+                                            <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 border-none outline-none ring-0 flex flex-col justify-between">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.title}</h3>
+                                                    <div className={`w-2 h-2 rounded-full ${s.color} shadow-sm`}></div>
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-lg sm:text-2xl font-black tracking-tight">{s.value}</span>
+                                                    <div className="mt-1">{typeof s.change === 'string' ? <span className="text-[10px] font-medium text-gray-400">{s.change}</span> : s.change}</div>
+                                                </div>
                                             </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-lg sm:text-2xl font-black tracking-tight">{s.value}</span>
-                                                <div className="mt-1">{typeof s.change === 'string' ? <span className="text-[10px] font-medium text-gray-400">{s.change}</span> : s.change}</div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div></>)}
-=======
-                                reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform"><Users size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">นักเรียน</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{studentReport.total.toLocaleString()}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-md font-semibold">เรียนอยู่ {studentReport.active}</span>{studentReport.paused > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 rounded-md font-semibold">พัก {studentReport.paused}</span>}{studentReport.transferred > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-md font-semibold">ย้าย {studentReport.transferred}</span>}{studentReport.resigned > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-md font-semibold">ลาออก {studentReport.resigned}</span>}</div></div>
-                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform"><GraduationCap size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">บุคลากร</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{teacherReport.total}</div><div className="flex flex-wrap gap-1 mt-2">{Object.entries(teacherReport.byDepartment).slice(0, 3).map(([dept, count]) => <span key={dept} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md font-semibold truncate max-w-[100px]">{dept} {count as number}</span>)}{Object.keys(teacherReport.byDepartment).length > 3 && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md font-semibold">+{Object.keys(teacherReport.byDepartment).length - 3}ฝ่าย</span>}</div></div>
-                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform"><FileText size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">สถิติการลา</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{leaveReport.studentLeaves + leaveReport.teacherLeaves}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-md font-semibold">นร.ลาป่วย {leaveReport.studentSick}</span><span className="text-[10px] px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 rounded-md font-semibold">นร.ลากิจ {leaveReport.studentPersonal}</span></div></div>
-                                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group"><div className="flex items-center justify-between mb-3"><div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform"><BookOpen size={20} /></div><span className="text-[10px] font-bold text-gray-400 uppercase">วิชาการ</span></div><div className="text-2xl font-black text-gray-900 dark:text-white">{academicReport.totalCourses}</div><div className="flex flex-wrap gap-1 mt-2"><span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 rounded-md font-semibold">รายวิชา {academicReport.totalCourses}</span><span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-md font-semibold">ชุมนุม {academicReport.totalClubs}</span></div></div>
+                                        ))}
                                     </div></>)}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </CanAccess>
 
                     <CanAccess roles={ACADEMIC_ACCESS}>
-<<<<<<< HEAD
                         <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:gap-6 mb-8">
                             {/* Student Attendance Donut */}
                             <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
@@ -1289,24 +1355,14 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {attendanceLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                        {reportLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
-                                                        data={[
-                                                            { name: 'มาเรียน', value: studentAttendanceStats?.present || 0, color: '#10B981' },
-                                                            { name: 'สาย', value: studentAttendanceStats?.late || 0, color: '#F59E0B' },
-                                                            { name: 'ลา/ราชการ', value: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
-                                                            { name: 'ขาดเรียน', value: studentAttendanceStats?.absent || 0, color: '#EF4444' }
-                                                        ].filter(d => d.value > 0)}
+                                                        data={getPieData(studentAttendanceStats)}
                                                         cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
                                                     >
-                                                        {[
-                                                            { name: 'มาเรียน', value: studentAttendanceStats?.present || 0, color: '#10B981' },
-                                                            { name: 'สาย', value: studentAttendanceStats?.late || 0, color: '#F59E0B' },
-                                                            { name: 'ลา/ราชการ', value: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
-                                                            { name: 'ขาดเรียน', value: studentAttendanceStats?.absent || 0, color: '#EF4444' }
-                                                        ].filter(d => d.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                                        {getPieData(studentAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                                     </Pie>
                                                     <RechartsTooltip content={<CustomTooltip isPie={true} />} />
                                                 </PieChart>
@@ -1355,24 +1411,14 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {attendanceLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                        {reportLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
-                                                        data={[
-                                                            { name: 'มาเรียน', value: teacherAttendanceStats?.present || 0, color: '#10B981' },
-                                                            { name: 'สาย', value: teacherAttendanceStats?.late || 0, color: '#F59E0B' },
-                                                            { name: 'ลา/ราชการ', value: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
-                                                            { name: 'ขาดเรียน', value: teacherAttendanceStats?.absent || 0, color: '#EF4444' }
-                                                        ].filter(d => d.value > 0)}
+                                                        data={getPieData(teacherAttendanceStats)}
                                                         cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
                                                     >
-                                                        {[
-                                                            { name: 'มาเรียน', value: teacherAttendanceStats?.present || 0, color: '#10B981' },
-                                                            { name: 'สาย', value: teacherAttendanceStats?.late || 0, color: '#F59E0B' },
-                                                            { name: 'ลา/ราชการ', value: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: '#8B5CF6' },
-                                                            { name: 'ขาดเรียน', value: teacherAttendanceStats?.absent || 0, color: '#EF4444' }
-                                                        ].filter(d => d.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                                        {getPieData(teacherAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                                     </Pie>
                                                     <RechartsTooltip content={<CustomTooltip isPie={true} />} />
                                                 </PieChart>
@@ -1404,135 +1450,25 @@ const HomePage = () => {
                                 </div>
                             </div>
                         </div>
+                    </CanAccess>
 
-
-                        <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm border-none outline-none ring-0 mb-8">
-                            <div className="flex justify-between items-center mb-6">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <div className="w-1 h-6 bg-indigo-500 rounded-full"></div>
-                                        <h3 className="text-lg font-bold tracking-tight">สถิติการมาเรียนรายชั้น</h3>
-                                    </div>
-                                    <p className="text-xs font-medium text-gray-400 ml-3">ข้อมูลประจำวันที่ {new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                                </div>
-                                <div className="flex bg-gray-50 dark:bg-gray-800/50 rounded-xl p-1 border border-gray-100 dark:border-gray-700">
-                                    <button onClick={() => setAttendanceView('chart')} className={`p-2 rounded-lg transition-all ${attendanceView === 'chart' ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}><BarChart3 size={18} /></button>
-                                    <button onClick={() => setAttendanceView('table')} className={`p-2 rounded-lg transition-all ${attendanceView === 'table' ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}><TableIcon size={18} /></button>
-                                </div>
-                            </div>
-                            <div className="h-72 w-full mt-4 min-w-0">
-                                {attendanceLoading ? <SkeletonLoader height="100%" className="rounded-xl" /> : (attendanceData?.length ?? 0) > 0 ? (
-                                    attendanceView === 'chart' ? (
-                                        <>
-                                            <ResponsiveContainer width="100%" height="85%" minWidth={0}>
-                                                <PieChart>
-                                                    <defs>
-                                                        <linearGradient id="3dSidePresent" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#065F46" /><stop offset="100%" stopColor="#047857" /></linearGradient>
-                                                        <linearGradient id="3dSideLate" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#92400E" /><stop offset="100%" stopColor="#B45309" /></linearGradient>
-                                                        <linearGradient id="3dSideLeave" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1E40AF" /><stop offset="100%" stopColor="#1D4ED8" /></linearGradient>
-                                                        <linearGradient id="3dSideAbsent" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#991B1B" /><stop offset="100%" stopColor="#B91C1C" /></linearGradient>
-                                                        <linearGradient id="3dSideOfficial" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#312E81" /><stop offset="100%" stopColor="#4338CA" /></linearGradient>
-                                                    </defs>
-                                                    <Pie data={[
-                                                        { name: "มาปกติ", value: attendanceData.reduce((acc, c) => acc + (c.present || 0), 0), fill: "url(#3dSidePresent)" },
-                                                        { name: "สาย", value: attendanceData.reduce((acc, c) => acc + (c.late || 0), 0), fill: "url(#3dSideLate)" },
-                                                        { name: "ลา", value: attendanceData.reduce((acc, c) => acc + (c.leave || 0), 0), fill: "url(#3dSideLeave)" },
-                                                        { name: "ไปราชการ", value: attendanceData.reduce((acc, c) => acc + (c.officialTravel || 0), 0), fill: "url(#3dSideOfficial)" },
-                                                        { name: "ขาด", value: attendanceData.reduce((acc, c) => acc + (c.absent || 0), 0), fill: "url(#3dSideAbsent)" }
-                                                    ].filter(d => d.value > 0)} cx="50%" cy="53%" innerRadius={0} outerRadius={90} dataKey="value" stroke="none" isAnimationActive={false} />
-                                                    {(Pie as any) && (
-                                                        <Pie
-                                                            data={[
-                                                                { name: "มาปกติ", value: attendanceData.reduce((acc, c) => acc + (c.present || 0), 0), fill: "#10B981", actualColor: "#10B981" },
-                                                                { name: "สาย", value: attendanceData.reduce((acc, c) => acc + (c.late || 0), 0), fill: "#F59E0B", actualColor: "#F59E0B" },
-                                                                { name: "ลา", value: attendanceData.reduce((acc, c) => acc + (c.leave || 0), 0), fill: "#3B82F6", actualColor: "#3B82F6" },
-                                                                { name: "ไปราชการ", value: attendanceData.reduce((acc, c) => acc + (c.officialTravel || 0), 0), fill: "#6366F1", actualColor: "#6366F1" },
-                                                                { name: "ขาด", value: attendanceData.reduce((acc, c) => acc + (c.absent || 0), 0), fill: "#EF4444", actualColor: "#EF4444" }
-                                                            ].filter(d => d.value > 0).map((d: any) => {
-                                                                const total = attendanceData.reduce((acc, c) => acc + (c.present || 0) + (c.late || 0) + (c.leave || 0) + (c.absent || 0) + (c.officialTravel || 0), 0);
-                                                                return { ...d, percent: total > 0 ? ((d.value / total) * 100).toFixed(1) : "0.0" };
-                                                            })}
-                                                            cx="50%"
-                                                            cy="50%"
-                                                            innerRadius={0}
-                                                            outerRadius={90}
-                                                            dataKey="value"
-                                                            stroke="none"
-                                                            {...({
-                                                                activeShape: renderActiveShape,
-                                                                activeIndex: activeBarIndex
-                                                            } as any)}
-                                                            onMouseEnter={(_, idx) => setActiveBarIndex(idx)}
-                                                            onMouseLeave={() => setActiveBarIndex(undefined)}
-                                                            labelLine={false}
-                                                            label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-                                                                if (!percent || percent < 0.05) return null;
-                                                                const RADIAN = Math.PI / 180;
-                                                                const r = (innerRadius || 0) + ((outerRadius || 0) - (innerRadius || 0)) * 0.6;
-                                                                const x = (cx || 0) + r * Math.cos(-(midAngle || 0) * RADIAN);
-                                                                const y = (cy || 0) + r * Math.sin(-(midAngle || 0) * RADIAN);
-                                                                return (
-                                                                    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="text-[10px] font-bold pointer-events-none">
-                                                                        {`${((percent || 0) * 100).toFixed(1)}%`}
-                                                                    </text>
-                                                                );
-                                                            }}
-                                                        >
-                                                            {attendanceData.map((_, i) => (
-                                                                <Cell key={i} fillOpacity={activeBarIndex === undefined || activeBarIndex === i ? 1 : 0.8} className="cursor-pointer" />
-                                                            ))}
-                                                        </Pie>
-                                                    )}
-                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} />
-                                                </PieChart>
-                                            </ResponsiveContainer>
-                                            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-2">
-                                                {[
-                                                    { label: "มาปกติ", color: "#10B981" }, { label: "สาย", color: "#F59E0B" }, { label: "ลา", color: "#3B82F6" }, { label: "ไปราชการ", color: "#6366F1" }, { label: "ขาด", color: "#EF4444" }
-                                                ].map((item, idx) => (
-                                                    <div key={idx} className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-[10px] font-bold text-gray-400">{item.label}</span></div>
-                                                ))}
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="h-full overflow-auto custom-scrollbar">
-                                            <table className="w-full text-[10px] text-left">
-                                                <thead className="text-gray-400 uppercase bg-gray-50 dark:bg-gray-800/50 sticky top-0">
-                                                    <tr>
-                                                        <th className="px-2 py-1">ชั้น</th><th className="px-2 py-1">มา</th><th className="px-2 py-1">สาย</th><th className="px-2 py-1">ลา</th><th className="px-2 py-1">ขาด</th><th className="px-2 py-1">รวม</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {attendanceData.map((item, idx) => (
-                                                        <tr key={idx} className="border-b dark:border-gray-800">
-                                                            <td className="px-2 py-1 font-bold">{item.name}</td>
-                                                            <td className="px-2 py-1 text-emerald-500">{item.present}</td>
-                                                            <td className="px-2 py-1 text-amber-500">{item.late || '-'}</td>
-                                                            <td className="px-2 py-1 text-purple-500">{item.leave || '-'}</td>
-                                                            <td className="px-2 py-1 text-red-500">{item.absent || '-'}</td>
-                                                            <td className="px-2 py-1 font-black">{(item.present || 0) + (item.late || 0) + (item.leave || 0) + (item.absent || 0)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )
-                                ) : (
-                                    <div className="p-12 text-center bg-white dark:bg-[#2a2b2f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm h-full flex flex-col items-center justify-center">
-                                        <div className="w-16 h-16 bg-gray-50 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-4"><CalendarX className="w-8 h-8 text-gray-400" /></div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">ยังไม่มีข้อมูลการเช็คชื่อวันนี้</h3>
-                                        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 max-w-xs mx-auto">เมื่อคุณครูเริ่มเช็คชื่อ ข้อมูลสถิติจะปรากฏที่นี่โดยอัตโนมัติ</p>
-                                    </div>
-                                )}
-                            </div>
-=======
+                    <CanAccess roles={ACADEMIC_ACCESS}>
                         <div className="mb-10">
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-600/20">
                                     <BarChart3 className="text-white w-5 h-5" />
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">สถิติการมาเรียนวันนี้</h3>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">สถิติการมาเรียนวันนี้</h3>
+                                        <button 
+                                            onClick={() => setRefreshKey(prev => prev + 1)}
+                                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-400 hover:text-indigo-600 transition-all duration-300"
+                                            title="รีเฟรชข้อมูล"
+                                        >
+                                            <RefreshCw size={16} className={attendanceLoading ? 'animate-spin' : ''} />
+                                        </button>
+                                    </div>
                                     <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">ข้อมูล Real-time ทั้งโรงเรียน</p>
                                 </div>
                             </div>
@@ -1608,8 +1544,8 @@ const HomePage = () => {
                                             <div className="lg:col-span-1 flex flex-col items-center justify-center relative min-h-[280px]">
                                                 <div className="w-full h-[260px] relative">
                                                     {totalStudents > 0 ? (
-                                                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-                                                            <PieChart width={260} height={260}>
+                                                        <ResponsiveContainer width="100%" height={260} debounce={50}>
+                                                            <PieChart>
                                                                 <Pie
                                                                     data={chartData}
                                                                     cx="50%"
@@ -1720,7 +1656,6 @@ const HomePage = () => {
                                     </p>
                                 </div>
                             )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
                     </CanAccess>
 
@@ -1773,15 +1708,20 @@ const HomePage = () => {
                                 </div>
                                 <span className="text-[10px] font-bold px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full">
                                     {new Date().toLocaleDateString('th-TH', { weekday: 'long' })}
+                                    {academicReport.compensationScheduleDay && (
+                                        <span> (สอนชดเชยตารางวัน{DAY_MAP[academicReport.compensationScheduleDay] || academicReport.compensationScheduleDay})</span>
+                                    )}
                                 </span>
                             </div>
 
                             <div className="flex-1 overflow-y-auto max-h-[300px] pr-1 custom-scrollbar">
                                 {academicReport.todaySchedules.length > 0 ? (
                                     <div className="space-y-4">
-                                        {academicReport.todaySchedules.map((s: ScheduleItem, idx: number) => (
-                                            <div key={idx} className="relative flex items-center gap-1.5 py-1 px-2 rounded-md bg-white dark:bg-[#1e1f21] border border-gray-100 dark:border-gray-800/60 shadow-sm hover:bg-gray-50 dark:hover:bg-[#252629] transition-all duration-200 group overflow-hidden">
-                                                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        {academicReport.todaySchedules.map((s: ScheduleItem, idx: number) => {
+                                            const isSubstitute = s.type === 'substitute';
+                                            return (
+                                            <div key={idx} className={`relative flex items-center gap-1.5 py-1.5 px-2 rounded-md bg-white dark:bg-[#1e1f21] border shadow-sm hover:bg-gray-50 dark:hover:bg-[#252629] transition-all duration-200 group overflow-hidden ${isSubstitute ? 'border-amber-200/80 dark:border-amber-800/40' : 'border-gray-100 dark:border-gray-800/60'}`}>
+                                                <div className={`absolute left-0 top-0 bottom-0 w-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isSubstitute ? 'bg-amber-500' : 'bg-indigo-500'}`}></div>
 
                                                 <div className="w-7 flex flex-col items-center justify-center shrink-0 border-r border-gray-100 dark:border-gray-800/80 pr-1.5">
                                                     <span className="text-[12px] font-black text-gray-800 dark:text-gray-100 leading-none">{s.period.replace('คาบ ', '')}</span>
@@ -1792,39 +1732,47 @@ const HomePage = () => {
                                                         <div className="flex items-center gap-1">
                                                             <span className="text-[12px] font-bold text-gray-900 dark:text-white truncate" title={s.subject}>{s.subject}</span>
                                                             {s.subjectCode && <span className="text-[8px] font-medium text-gray-400 dark:text-gray-500 truncate">({s.subjectCode})</span>}
+                                                            {isSubstitute && (
+                                                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40">
+                                                                    สอนแทน
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-1.5 mt-0">
-<<<<<<< HEAD
                                                             <span className={`text-[8px] font-semibold px-1 py-0 rounded border ${
                                                                 s.type === 'club'
                                                                     ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100/20 dark:border-emerald-800/10'
                                                                     : s.type === 'learnerActivity'
                                                                         ? 'text-teal-600 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-900/10 border-teal-100/20 dark:border-teal-800/10'
-                                                                        : 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/20 dark:border-blue-800/10'
+                                                                        : s.type === 'homeroom'
+                                                                            ? 'text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-900/10 border-purple-100/20 dark:border-purple-800/10'
+                                                                            : isSubstitute
+                                                                                ? 'text-amber-700 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-900/10 border-amber-100/40 dark:border-amber-800/20'
+                                                                                : 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/20 dark:border-blue-800/10'
                                                             }`}>{s.class}</span>
-=======
-                                                            <span className="text-[8px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 px-1 py-0 rounded border border-blue-100/20 dark:border-blue-800/10">{s.class}</span>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             {s.room !== '-' && (
-                                                                <span className="text-[8px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 px-1 py-0 rounded border border-emerald-100/20 dark:border-emerald-800/10">{s.room}</span>
+                                                                <span className="inline-flex items-center gap-0.5 text-[8px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10 px-1 py-0 rounded border border-emerald-100/20 dark:border-emerald-800/10">
+                                                                    <MapPin size={8} /> {s.room}
+                                                                </span>
                                                             )}
                                                             {(s.startTime || s.endTime) && (
                                                                 <span className="text-[8px] font-medium text-gray-500 dark:text-gray-400">{s.startTime || '-'}-{s.endTime || '-'}</span>
                                                             )}
                                                         </div>
+                                                        {isSubstitute && (
+                                                            <div className="mt-0.5 text-[8px] font-semibold text-gray-500 dark:text-gray-400 truncate">
+                                                                สอนแทน: {s.originalTeacherName || 'ไม่ระบุ'}
+                                                            </div>
+                                                        )}
                                                     </div>
 
-<<<<<<< HEAD
-                                                    <button onClick={() => navigate(s.actionPath || '/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
+                                                    <button onClick={() => navigate(s.actionPath || '/academic/classroom-attendance')} className={`shrink-0 px-3 py-1 text-white text-[10px] font-bold rounded-md transition-colors shadow-sm flex items-center gap-1.5 ${isSubstitute ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'}`}>
                                                         <CheckCircle size={12} /> {s.actionLabel || 'เช็คชื่อ'}
-=======
-                                                    <button onClick={() => navigate('/academic/classroom-attendance')} className="shrink-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-md hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-500/20 flex items-center gap-1.5">
-                                                        <CheckCircle size={12} /> เช็คชื่อ
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </button>
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-400 py-10">
@@ -1996,9 +1944,11 @@ const HomePage = () => {
                                                 <li key={idx} className="flex items-center space-x-3 pb-3 border-b border-gray-100 dark:border-gray-800/60 last:border-0 last:pb-0 group hover:bg-gray-50/80 dark:hover:bg-[#1e1f21]/80 p-3 rounded-2xl transition-all duration-300 -mx-3 hover:shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] dark:hover:shadow-none border border-transparent hover:border-gray-100 dark:hover:border-gray-700/50">
                                                     <div className="relative shrink-0">
                                                         {leave.profileImageUrl ? (
-                                                            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-[#2a2b2f] shadow-sm transform transition-transform group-hover:scale-105">
-                                                                <img src={leave.profileImageUrl} alt={leave.teacherName} className="w-full h-full object-cover" />
-                                                            </div>
+                                                            <ProfileAvatar
+                                                                src={leave.profileImageUrl}
+                                                                alt={leave.teacherName}
+                                                                className="w-12 h-12 border-2 border-white dark:border-[#2a2b2f] shadow-sm transform transition-transform group-hover:scale-105"
+                                                            />
                                                         ) : (
                                                             <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm border-2 border-white dark:border-[#2a2b2f] transform transition-transform group-hover:scale-105 ${isSick ? 'bg-gradient-to-br from-orange-100 to-orange-200 text-orange-600 dark:from-orange-900/40 dark:to-orange-800/40 dark:text-orange-400' : isTravel ? 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-600 dark:from-blue-900/40 dark:to-blue-800/40 dark:text-blue-400' : 'bg-gradient-to-br from-cyan-100 to-cyan-200 text-cyan-600 dark:from-cyan-900/40 dark:to-cyan-800/40 dark:text-cyan-400'}`}>
                                                                 {isTravel ? <Briefcase size={20} /> : <Users size={20} />}
@@ -2041,6 +1991,7 @@ const HomePage = () => {
                         </div>
                         <div className="space-y-6">
                             {isLoading ? <SkeletonLoader height="320px" className="rounded-xl" /> : <MiniCalendar events={calendarEvents} />}
+                            {isLoading ? <SkeletonLoader height="380px" className="rounded-xl" /> : <SchoolCalendarEventsList events={calendarEvents} academicYear={calendarState.academicYear} />}
                             <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm p-5 border-none outline-none ring-0">
                                 <h2 className="text-lg font-semibold mb-4">เมนูด่วน</h2>
                                 <div className="space-y-3">

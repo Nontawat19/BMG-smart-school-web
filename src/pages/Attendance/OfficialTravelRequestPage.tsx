@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from "react";
-<<<<<<< HEAD
 import { useSelector, useDispatch } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
-=======
-import { useSelector } from "react-redux";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { RootState } from "../../store";
 import { firestore } from "@/firebase";
 import {
@@ -31,17 +27,11 @@ import MainLayout from "@/layouts/MainLayout";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ThaiDatePicker from "../../components/Common/ThaiDatePicker";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
-<<<<<<< HEAD
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 import { FaPaperPlane, FaArrowLeft, FaHistory, FaUsers, FaHashtag, FaMapMarkerAlt, FaFileAlt, FaCalendarAlt, FaSpinner, FaLayerGroup, FaTimes } from "react-icons/fa";
 import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import BackButton from "@/components/Shared/BackButton";
-=======
-import { FaPaperPlane, FaArrowLeft, FaHistory, FaUsers, FaHashtag, FaMapMarkerAlt, FaFileAlt, FaCalendarAlt, FaSpinner, FaLayerGroup, FaTimes } from "react-icons/fa";
-import Select from "react-select";
-import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface TravelRequest {
     id?: string;
@@ -278,10 +268,7 @@ const StudentSelectorModal: React.FC<StudentSelectorModalProps> = ({ schoolId, o
 };
 
 const OfficialTravelRequestPage: React.FC = () => {
-<<<<<<< HEAD
     const dispatch = useDispatch();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const requesterType = (searchParams.get("type") as 'teacher' | 'student') || 'teacher';
@@ -290,7 +277,6 @@ const OfficialTravelRequestPage: React.FC = () => {
     const schoolId = user?.schoolId;
     const { isDarkMode } = useTheme();
 
-<<<<<<< HEAD
     // Redux Calendar State
     const calendarState = useSelector((state: RootState) => state.calendar);
     const reduxRawData = calendarState.rawData;
@@ -301,8 +287,6 @@ const OfficialTravelRequestPage: React.FC = () => {
         }
     }, [schoolId, dispatch]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     // Form State
     const [subject, setSubject] = useState("ขออนุญาตไปราชการ");
     const [to, setTo] = useState("");
@@ -330,13 +314,8 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [transportType, setTransportType] = useState<'public' | 'school_vehicle' | 'private_vehicle' | 'other'>('school_vehicle');
     const [transportDetail, setTransportDetail] = useState("");
     const [requiresSubstitute, setRequiresSubstitute] = useState(false); // 📌 เพิ่มสถานะการสอนแทน
-<<<<<<< HEAD
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [docNo, setDocNo] = useState(""); // 📌 เพิ่มเลขที่เอกสาร
-=======
-    const [docNo, setDocNo] = useState(""); // 📌 เพิ่มเลขที่เอกสาร
-    const [academicYear, setAcademicYear] = useState(""); // 📌 เพิ่มปีการศึกษา
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [schoolAffiliation, setSchoolAffiliation] = useState(""); // 📌 เพิ่มสังกัดโรงเรียน
 
 
@@ -355,10 +334,6 @@ const OfficialTravelRequestPage: React.FC = () => {
     });
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
-<<<<<<< HEAD
-=======
-    const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
 
     // Fetch User Info (Current Requester)
@@ -508,7 +483,6 @@ const OfficialTravelRequestPage: React.FC = () => {
     // Fetch calendar data
     useEffect(() => {
         if (!schoolId) return;
-<<<<<<< HEAD
 
         if (calendarState.status === 'succeeded' && reduxRawData.events) {
             setCalendarEvents(reduxRawData.events);
@@ -533,32 +507,6 @@ const OfficialTravelRequestPage: React.FC = () => {
                 const calendarSnap = await getDoc(calendarRef);
                 if (calendarSnap.exists()) {
                     const calendarData = calendarSnap.data();
-=======
-        const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().events) {
-                setCalendarEvents(docSnap.data().events);
-            }
-        });
-        return () => unsubscribe();
-    }, [schoolId]);
-
-    // Fetch Academic Year and Running Number
-    useEffect(() => {
-        const fetchAcademicYearAndDocNo = async () => {
-            if (!schoolId) return;
-            try {
-                // 1. Fetch Academic Year
-                const calendarRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
-                const calendarSnap = await getDoc(calendarRef);
-                let year = (new Date().getFullYear() + 543).toString();
-                if (calendarSnap.exists()) {
-                    const calendarData = calendarSnap.data();
-                    if (calendarData.academicYear) {
-                        year = calendarData.academicYear;
-                    }
-                    // 📌 ดึงข้อมูลสังกัดโรงเรียน
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     if (calendarData.affiliation) {
                         setSchoolAffiliation(calendarData.affiliation);
                     } else {
@@ -569,23 +517,14 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }
                     }
                 }
-<<<<<<< HEAD
 
                 // 2. Fetch Running Number (From Counters)
                 try {
                     const counterRef = doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${academicYear}`);
-=======
-                setAcademicYear(year);
-
-                // 2. Fetch Running Number (From Counters)
-                try {
-                    const counterRef = doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${year}`);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const counterSnap = await getDoc(counterRef);
 
                     if (counterSnap.exists()) {
                         const nextNumber = (counterSnap.data().lastNumber || 0) + 1;
-<<<<<<< HEAD
                         setDocNo(`${nextNumber}/${academicYear}`);
                     } else {
                         setDocNo(`1/${academicYear}`);
@@ -593,51 +532,18 @@ const OfficialTravelRequestPage: React.FC = () => {
                 } catch (err) {
                     console.error("Error fetching doc number:", err);
                     setDocNo(`1/${academicYear}`);
-=======
-                        setDocNo(`${nextNumber}/${year}`);
-                    } else {
-                        setDocNo(`1/${year}`);
-                    }
-                } catch (err) {
-                    console.error("Error fetching doc number:", err);
-                    setDocNo(`1/${year}`);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
             } catch (error) {
                 console.error("Error fetching academic info:", error);
             }
         };
 
-<<<<<<< HEAD
         fetchDocNoAndAffiliation();
     }, [schoolId, academicYear]);
 
 
 
 
-=======
-        fetchAcademicYearAndDocNo();
-    }, [schoolId]);
-
-
-
-    // Fetch current academic year for period summaries
-    useEffect(() => {
-        if (schoolId) {
-            // Fetch academic year
-            const calendarRef = doc(firestore, "school-settings", schoolId, "main_calendar", "default");
-            const unsubscribe = onSnapshot(calendarRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.academicYear) {
-                        setCurrentAcademicYear(data.academicYear);
-                    }
-                }
-            });
-            return () => unsubscribe();
-        }
-    }, [schoolId]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -779,11 +685,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }, { merge: true });
 
                         // Update Period Summaries (Week, Month, Year, Semester)
-<<<<<<< HEAD
                         updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'students', dateStr, 'absent', 'officialTravel', cls, academicYear);
-=======
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'students', dateStr, 'absent', 'officialTravel', cls, currentAcademicYear);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                         // For co-adventurers as well
                         if (travelDataToSave.coAdventurers) {
@@ -791,11 +693,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                                 if (adv.type === 'student') {
                                     const advClassMatch = adv.position.match(/ชั้น\s+([^/]+)/);
                                     const advCls = advClassMatch ? advClassMatch[1].trim() : "ไม่ระบุชั้น";
-<<<<<<< HEAD
                                     updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'students', dateStr, 'absent', 'officialTravel', advCls, academicYear);
-=======
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'students', dateStr, 'absent', 'officialTravel', advCls, currentAcademicYear);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 }
                             }
                         }
@@ -809,21 +707,13 @@ const OfficialTravelRequestPage: React.FC = () => {
                         }, { merge: true });
 
                         // Update Period Summaries (Week, Month, Year, Semester)
-<<<<<<< HEAD
                         updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
-=======
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'teachers', dateStr, 'absent', 'officialTravel', undefined, currentAcademicYear);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                         // For co-adventurers as well
                         if (travelDataToSave.coAdventurers) {
                             for (const adv of travelDataToSave.coAdventurers) {
                                 if (adv.type === 'teacher') {
-<<<<<<< HEAD
                                     updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
-=======
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'teachers', dateStr, 'absent', 'officialTravel', undefined, currentAcademicYear);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 }
                             }
                         }
@@ -898,13 +788,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                 <div className="max-w-4xl mx-auto">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
-<<<<<<< HEAD
                         <BackButton />
-=======
-                        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                            <FaArrowLeft /> ย้อนกลับ
-                        </button>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         <div className="flex gap-2">
                             <button
                                 onClick={() => navigate(`/school/${schoolId}/official-travel-history`)}
@@ -922,11 +806,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-6 bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm transition-all hover:shadow-md">
                                 <div className="md:col-span-3">
-<<<<<<< HEAD
                                     <label className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 flex items-center gap-2">
-=======
-                                    <label className="block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <FaHashtag className="text-indigo-500" /> ที่ (No.)
                                     </label>
                                     <div className="relative group">
@@ -990,11 +870,7 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                             {/* Multi-Select: Accompanied By */}
                             <div>
-<<<<<<< HEAD
                                 <label className="text-sm font-medium mb-1 text-gray-700 dark:text-gray-300 flex items-center justify-between gap-2">
-=======
-                                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300 flex items-center justify-between gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     <span className="flex items-center gap-2"><FaUsers className="text-indigo-500" /> พร้อมด้วย (Accompanied by)</span>
                                     <button
                                         type="button"
@@ -1102,21 +978,13 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-<<<<<<< HEAD
                                     <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-=======
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <FaCalendarAlt className="text-indigo-500 text-xs" /> ตั้งแต่วันที่ (Start Date)
                                     </label>
                                     <ThaiDatePicker value={startDate} onChange={setStartDate} events={calendarEvents} />
                                 </div>
                                 <div className="space-y-2">
-<<<<<<< HEAD
                                     <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-=======
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <FaCalendarAlt className="text-indigo-500 text-xs" /> ถึงวันที่ (End Date)
                                     </label>
                                     <ThaiDatePicker value={endDate} onChange={setEndDate} events={calendarEvents} />
@@ -1126,11 +994,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-8 bg-gray-50 dark:bg-indigo-900/5 rounded-2xl border border-gray-200/50 dark:border-indigo-900/20 shadow-inner">
                                 {/* Budget */}
                                 <div className="space-y-4">
-<<<<<<< HEAD
                                     <label className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
-=======
-                                    <label className="block text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <span className="w-1.5 h-6 bg-indigo-500 rounded-full"></span> การเบิกค่าใช้จ่าย (Budget)
                                     </label>
                                     <div className="space-y-4">
@@ -1196,11 +1060,7 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                                 {/* Transport */}
                                 <div className="space-y-4">
-<<<<<<< HEAD
                                     <label className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
-=======
-                                    <label className="block text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         <span className="w-1.5 h-6 bg-indigo-500 rounded-full"></span> การเดินทาง (Transportation)
                                     </label>
                                     <div className="space-y-3">

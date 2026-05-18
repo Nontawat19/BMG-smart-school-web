@@ -20,11 +20,7 @@ const GradeBookCompletenessBanner: React.FC<GradeBookCompletenessBannerProps> = 
                     <h4 className="font-black text-emerald-900 dark:text-emerald-100 flex items-center gap-2">
                         ข้อมูลสำคัญครบถ้วนแล้ว!
                     </h4>
-<<<<<<< HEAD
                     <p className="text-xs text-emerald-700 dark:text-emerald-400 font-bold opacity-80">คุณสามารถออกไฟล์ PDF ได้ทันที เพราะคะแนน คุณลักษณะ อ่าน/คิด/เขียน และเช็คชื่อครบ 100%</p>
-=======
-                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-bold opacity-80">คุณสามารถออกไฟล์ PDF ได้ทันที (คะแนนเก็บ/กลางภาค/ปลายภาค ได้รับยกเว้นจากการตรวจสอบเพื่อความรวดเร็ว)</p>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 </div>
             </div>
         </div>

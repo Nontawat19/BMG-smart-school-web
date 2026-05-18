@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useSubjectGroups } from '@/hooks/useSubjectGroups';
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 
 // Reuse interfaces (ideally should be in a shared types file)
 interface Course {
@@ -39,6 +40,8 @@ interface Teacher {
     teacherId?: string; // Added short code
     name: string;
     subjectGroup?: string;
+    learningArea?: string;
+    status?: string;
 }
 
 interface EditCourseModalProps {
@@ -378,7 +381,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                             <div className="mb-4">
                                                 <Select
                                                     placeholder="ค้นหาและเลือกครูผู้สอน..."
-                                                    options={teachers
+                                                    options={getActiveSortedTeachers(teachers)
                                                         .filter(t => !(formData.teacherIds || []).includes(t.id))
                                                         .map(t => ({
                                                             value: t.id,
@@ -437,7 +440,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="bg-white dark:bg-[#18181b] divide-y divide-gray-200 dark:divide-gray-700">
-                                                                {teachers.filter(t => (formData.teacherIds || []).includes(t.id)).map((teacher, index) => {
+                                                                {getActiveSortedTeachers(teachers).filter(t => (formData.teacherIds || []).includes(t.id)).map((teacher, index) => {
                                                                     const assignment = (formData.teacherAssignments || []).find(a => a.teacherId === teacher.id);
 
                                                                     const courseClasses = Array.isArray(formData.classId) ? formData.classId : (formData.classId ? [formData.classId] : []);
@@ -785,11 +788,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                             {currentStep === 4 && (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                     <div>
-<<<<<<< HEAD
                                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-=======
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             <Ban size={16} className="text-red-500" />
                                             เงื่อนไขการวันสอน (วันที่ไม่สะดวก)
                                         </label>
@@ -821,11 +820,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                     </div>
 
                                     <div>
-<<<<<<< HEAD
                                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-=======
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             <LayoutGrid size={16} className="text-emerald-500" />
                                             ยึดคาบสอน (Lock Slot)
                                             <span className="text-xs font-normal text-gray-500">(เลือกเฉพาะคาบที่ต้องการสอนแน่นอน)</span>

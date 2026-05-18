@@ -13,6 +13,7 @@ import { syncDailySummary } from "@/utils/periodSummaryUtils";
 import { getTodayString } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
 // Helper สำหรับอัปเดต dyasummary (นักเรียน)
@@ -57,6 +58,7 @@ const AttendanceConfigPage: React.FC = () => {
 
   const [enableSpeech, setEnableSpeech] = useState(true);
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
+  const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -97,6 +99,7 @@ const AttendanceConfigPage: React.FC = () => {
             setTeacherCheckoutEnd(data.attendanceConfig.teacherCheckoutEnd || "18:00");
             setEnableSpeech(data.attendanceConfig.enableSpeech !== false); // Default to true
           }
+          setBehaviorScoreConfig(data.behaviorScoreConfig || null);
         }
 
         // Fetch current academic year from calendar settings
@@ -246,7 +249,7 @@ const AttendanceConfigPage: React.FC = () => {
           const attendanceRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id, "attendance", todayStr);
           const attendanceSnap = await getDoc(attendanceRef);
 
-          if (!attendanceSnap.exists()) {
+            if (!attendanceSnap.exists()) {
             // ถ้าไม่มีเอกสาร ให้สร้างสถานะ "ขาด"
             batch.set(attendanceRef, {
               status: "ขาด",
@@ -264,6 +267,14 @@ const AttendanceConfigPage: React.FC = () => {
                 [`classes.${classKey}.absent`]: increment(1),
                 updatedAt: serverTimestamp()
               }, { merge: true });
+              applyAttendanceBehaviorScore({
+                batch,
+                studentRef: doc(firestore, "school-settings", schoolId, "students", docSnap.id),
+                currentScore: data.behaviorScore,
+                oldStatus: null,
+                newStatus: "ขาด",
+                config: behaviorScoreConfig,
+              });
             }
 
             // Update Period Summaries (Week, Month, Year, Semester)
@@ -293,6 +304,18 @@ const AttendanceConfigPage: React.FC = () => {
               const statsUpdate: any = {};
               if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
               if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
+
+              if (collectionName === "students") {
+                const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
+                  currentScore: data.behaviorScore,
+                  oldStatus,
+                  newStatus,
+                  config: behaviorScoreConfig,
+                });
+                if (behaviorScoreChange) {
+                  Object.assign(statsUpdate, behaviorScoreChange.update);
+                }
+              }
 
               if (Object.keys(statsUpdate).length > 0) {
                 batch.update(userRef, statsUpdate);

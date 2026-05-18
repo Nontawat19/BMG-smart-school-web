@@ -1,36 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore as db } from '../../firebase';
-import { collection, getDocs, doc, getDoc, setDoc, query, where, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
-<<<<<<< HEAD
 import { fetchCalendar } from '@/store/slices/calendarSlice';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import Swal from 'sweetalert2';
 import {
-  Users,
   ClipboardCheck,
   Calendar,
   Clock,
   ChevronLeft,
   Save,
   AlertCircle,
-  CheckCircle2,
   LayoutGrid,
-<<<<<<< HEAD
   RefreshCw
-=======
-  RefreshCw,
-  ArrowLeft
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from 'lucide-react';
 import SkeletonLoader from "@/components/SkeletonLoader";
 
@@ -38,14 +26,14 @@ interface Club {
   id: string;
   name: string;
   responsibleTeacherIds: string[];
-<<<<<<< HEAD
+  ownerTeacherId?: string;
+  teacherId?: string;
+  teacherIds?: string[];
   specialPeriodId?: string;
   specialPeriodTitle?: string;
   specialPeriodDay?: string;
   specialPeriodStartTime?: string;
   specialPeriodEndTime?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Student {
@@ -66,6 +54,12 @@ interface SpecialPeriod {
   day?: string;
 }
 
+interface CalendarEvent {
+  type?: string;
+  description?: string;
+  scheduleDay?: string;
+}
+
 const DAY_MAP: Record<string, string> = {
   mon: 'จันทร์',
   tue: 'อังคาร',
@@ -76,7 +70,6 @@ const DAY_MAP: Record<string, string> = {
   sun: 'อาทิตย์'
 };
 
-<<<<<<< HEAD
 const toIsoDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -94,34 +87,66 @@ const ClubAttendancePage: React.FC = () => {
   const [myClubs, setMyClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
-=======
-const ClubAttendancePage: React.FC = () => {
-  const [myClubs, setMyClubs] = useState<Club[]>([]);
-  const [selectedClub, setSelectedClub] = useState<Club | null>(null);
-  const [clubSpecialPeriod, setClubSpecialPeriod] = useState<SpecialPeriod | null>(null);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<Record<string, CalendarEvent>>({});
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
 
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
-<<<<<<< HEAD
   const calendarState = useSelector((state: RootState) => state.calendar);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const currentTeacherId = useMemo(() => {
     if (!teacherMap || !currentUser) return null;
     const teacher = Object.values(teacherMap).find((t: any) => t.uid === currentUser.uid);
     return teacher?.id || null;
   }, [teacherMap, currentUser]);
+
+  const currentTeacher = useMemo(() => {
+    if (!teacherMap || !currentUser) return null;
+    return Object.values(teacherMap).find((t: any) => t.uid === currentUser.uid || t.id === currentUser.uid) as any;
+  }, [teacherMap, currentUser]);
+
+  const teacherName = useMemo(() => {
+    if (!currentTeacher) return 'กำลังโหลด...';
+    return currentTeacher.name || `${currentTeacher.title || ''}${currentTeacher.firstName || ''} ${currentTeacher.lastName || ''}`.trim() || 'ไม่ระบุชื่อครู';
+  }, [currentTeacher]);
+
+  const currentTeacherKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if ((currentUser as any)?.uid) keys.add(String((currentUser as any).uid));
+    if ((currentUser as any)?.id) keys.add(String((currentUser as any).id));
+    if ((currentUser as any)?.teacherId) keys.add(String((currentUser as any).teacherId));
+
+    const teacher = teacherMap && currentUser
+      ? Object.values(teacherMap).find((t: any) => t.uid === currentUser.uid)
+      : null;
+
+    if (teacher) {
+      if ((teacher as any).id) keys.add(String((teacher as any).id));
+      if ((teacher as any).uid) keys.add(String((teacher as any).uid));
+      if ((teacher as any).teacherId) keys.add(String((teacher as any).teacherId));
+    }
+
+    return keys;
+  }, [teacherMap, currentUser]);
+
+  const isClubManagedByCurrentTeacher = (club: Club) => {
+    const responsibleIds = [
+      ...(Array.isArray(club.responsibleTeacherIds) ? club.responsibleTeacherIds : []),
+      ...(Array.isArray(club.teacherIds) ? club.teacherIds : []),
+      club.ownerTeacherId,
+      club.teacherId,
+    ].filter(Boolean).map(String);
+
+    return responsibleIds.some(id => currentTeacherKeys.has(id));
+  };
 
   useEffect(() => {
     if (schoolId && teacherMapStatus === 'idle') {
@@ -130,37 +155,57 @@ const ClubAttendancePage: React.FC = () => {
   }, [schoolId, teacherMapStatus, dispatch]);
 
   useEffect(() => {
-<<<<<<< HEAD
     if (schoolId && calendarState.status === 'idle') {
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [schoolId, calendarState.status, dispatch]);
 
   useEffect(() => {
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-    if (!schoolId || !currentTeacherId) return;
+    if (!schoolId || calendarState.status === 'loading') return;
+
+    const fetchCalendarEvents = async () => {
+      const defaultEvents = (calendarState.rawData?.events || {}) as Record<string, CalendarEvent>;
+      const academicYear = calendarState.academicYear || calendarState.rawData?.academicYear;
+
+      if (!academicYear) {
+        setCalendarEvents(defaultEvents);
+        return;
+      }
+
+      try {
+        const yearDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', String(academicYear));
+        const yearSnap = await getDoc(yearDocRef);
+        const yearEvents = yearSnap.exists()
+          ? ((yearSnap.data()?.events || {}) as Record<string, CalendarEvent>)
+          : {};
+
+        setCalendarEvents({ ...defaultEvents, ...yearEvents });
+      } catch (error) {
+        console.error("Error fetching academic year calendar events:", error);
+        setCalendarEvents(defaultEvents);
+      }
+    };
+
+    fetchCalendarEvents();
+  }, [schoolId, calendarState.status, calendarState.academicYear, calendarState.rawData]);
+
+  useEffect(() => {
+    if (!schoolId || currentTeacherKeys.size === 0) return;
 
     const fetchData = async () => {
       setLoading(true);
       try {
-        const clubsQ = query(
-          collection(db, 'school-settings', schoolId, 'clubs'),
-          where('responsibleTeacherIds', 'array-contains', currentTeacherId)
-        );
-        const clubsSnap = await getDocs(clubsQ);
-        const clubsData = clubsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Club));
+        const clubsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'clubs'));
+        const clubsData = clubsSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as Club))
+          .filter(isClubManagedByCurrentTeacher)
+          .sort((a, b) => a.name.localeCompare(b.name, 'th'));
         setMyClubs(clubsData);
         if (clubsData.length === 1) setSelectedClub(clubsData[0]);
 
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SpecialPeriod));
-<<<<<<< HEAD
         setSpecialPeriods(periods);
-=======
-        const clubPeriod = periods.find(p => p.title.includes('ชุมนุม'));
-        setClubSpecialPeriod(clubPeriod || null);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       } catch (error) {
         console.error("Error fetching initial data:", error);
@@ -170,9 +215,8 @@ const ClubAttendancePage: React.FC = () => {
     };
 
     fetchData();
-  }, [schoolId, currentTeacherId]);
+  }, [schoolId, currentTeacherId, currentTeacherKeys]);
 
-<<<<<<< HEAD
   const clubSpecialPeriod = useMemo(() => {
     if (!selectedClub) return null;
     return specialPeriods.find(period => period.id === selectedClub.specialPeriodId) ||
@@ -180,8 +224,6 @@ const ClubAttendancePage: React.FC = () => {
       null;
   }, [selectedClub, specialPeriods]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   useEffect(() => {
     if (!schoolId || !selectedClub) {
       setStudents([]);
@@ -209,7 +251,6 @@ const ClubAttendancePage: React.FC = () => {
         const initialAtt: Record<string, any> = {};
         memberList.forEach(s => initialAtt[s.id] = 'present');
 
-<<<<<<< HEAD
         const dateStr = toIsoDate(currentDate);
         const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
         const legacyAttDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
@@ -218,14 +259,6 @@ const ClubAttendancePage: React.FC = () => {
 
         if (attSnap.exists() || legacyAttSnap?.exists()) {
           const data = (attSnap.exists() ? attSnap.data() : legacyAttSnap?.data()) || {};
-=======
-        const dateStr = currentDate.toISOString().split('T')[0];
-        const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
-        const attSnap = await getDoc(attDocRef);
-
-        if (attSnap.exists()) {
-          const data = attSnap.data();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           setAttendance(data.records || initialAtt);
           setIsSubmitted(true);
         } else {
@@ -239,40 +272,28 @@ const ClubAttendancePage: React.FC = () => {
     };
 
     fetchMembers();
-<<<<<<< HEAD
   }, [schoolId, selectedClub, currentDate, clubSpecialPeriod?.id]);
-=======
-  }, [schoolId, selectedClub, currentDate]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const handleSaveAttendance = async () => {
     if (!schoolId || !selectedClub || isSaving) return;
 
     setIsSaving(true);
     try {
-<<<<<<< HEAD
       const dateStr = toIsoDate(currentDate);
       const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', getAttendanceDocId(dateStr, clubSpecialPeriod?.id));
-=======
-      const dateStr = currentDate.toISOString().split('T')[0];
-      const attDocRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance', dateStr);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       await setDoc(attDocRef, {
         records: attendance,
         updatedAt: Timestamp.now(),
         updatedBy: currentUser?.uid,
+        updatedByTeacherId: currentTeacherId || '',
         clubName: selectedClub.name,
-<<<<<<< HEAD
         date: dateStr,
         specialPeriodId: clubSpecialPeriod?.id || '',
         specialPeriodTitle: clubSpecialPeriod?.title || '',
         specialPeriodDay: clubSpecialPeriod?.day || 'all',
         startTime: clubSpecialPeriod?.startTime || '',
         endTime: clubSpecialPeriod?.endTime || ''
-=======
-        date: dateStr
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       });
 
       Swal.fire({
@@ -296,10 +317,9 @@ const ClubAttendancePage: React.FC = () => {
     setAttendance(prev => ({ ...prev, [studentId]: status }));
   };
 
-<<<<<<< HEAD
   const currentDateEvent = useMemo(() => {
-    return calendarState.rawData?.events?.[toIsoDate(currentDate)];
-  }, [calendarState.rawData, currentDate]);
+    return calendarEvents[toIsoDate(currentDate)];
+  }, [calendarEvents, currentDate]);
 
   const effectiveDayKey = useMemo(() => {
     return currentDateEvent?.type === 'schoolDay' && currentDateEvent.scheduleDay
@@ -309,40 +329,99 @@ const ClubAttendancePage: React.FC = () => {
 
   const isCompensationScheduleDay = currentDateEvent?.type === 'schoolDay' && Boolean(currentDateEvent.scheduleDay);
   const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === effectiveDayKey) : false;
-=======
-  const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][currentDate.getDay()];
-  const isClubDay = clubSpecialPeriod ? (!clubSpecialPeriod.day || clubSpecialPeriod.day === 'all' || clubSpecialPeriod.day === dayKey) : false;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  const attendanceSummary = useMemo(() => {
+    return students.reduce((acc, student) => {
+      const status = attendance[student.id] || 'present';
+      if (status === 'present') acc.present += 1;
+      if (status === 'late') acc.late += 1;
+      if (status === 'leave') acc.leave += 1;
+      if (status === 'absent') acc.absent += 1;
+      return acc;
+    }, { present: 0, late: 0, leave: 0, absent: 0 });
+  }, [students, attendance]);
 
   return (
     <MainLayout>
-      <div className="p-4 sm:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white">
-        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-<<<<<<< HEAD
-            <BackButton to="/academic/hub/attendance" className="mb-2" />
-=======
-            <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
-              <ArrowLeft size={16} className="mr-1" /> กลับหน้าบริหารวิชาการ
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <ClipboardCheck className="text-emerald-500" size={32} />
-              เช็คชื่อเข้าชุมนุม
-            </h1>
+      <div className="w-full max-w-[1600px] mx-auto px-4 py-4 sm:px-6 lg:px-8 xl:px-10 sm:py-8 text-gray-900 dark:text-white">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
+          <div className="space-y-1 text-left">
+            <div className="flex items-center gap-3">
+              <BackButton to="/academic/hub/attendance" />
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl shadow-sm border border-emerald-100 dark:border-emerald-500/20">
+                <ClipboardCheck className="text-emerald-600 dark:text-emerald-400" size={24} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                  ระบบเช็คชื่อชุมนุม
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 text-xs font-bold flex items-center gap-1.5 pt-0.5">
+                  <span className="opacity-60">ครูผู้ดูแล:</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">{teacherName}</span>
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 bg-white dark:bg-[#2a2b2f] p-2 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-            <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 1)))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><ChevronLeft size={20} /></button>
-            <div className="flex items-center gap-2 px-2">
-              <Calendar size={18} className="text-gray-500" />
-              <span className="font-medium">
-                {currentDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+            <div className="flex bg-gray-50 dark:bg-white/5 p-1 rounded-xl border border-gray-200 dark:border-gray-800 items-center px-4 shadow-inner">
+              <div className="flex items-baseline gap-1 py-1">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">ชุมนุม</span>
+                <span className="text-[13px] font-black text-gray-900 dark:text-white">{myClubs.length}</span>
+              </div>
+              <div className="w-[1.5px] h-3 bg-gray-200 dark:bg-gray-700 mx-3"></div>
+              <div className="flex items-baseline gap-1 py-1">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">สมาชิก</span>
+                <span className="text-[13px] font-black text-gray-900 dark:text-white">{students.length || '-'}</span>
+              </div>
             </div>
-            <button onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 1)))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg rotate-180"><ChevronLeft size={20} /></button>
+
+            <div className="flex items-center gap-2 bg-white dark:bg-[#1a1b1e] p-1 rounded-xl shadow-lg shadow-emerald-500/5 border border-gray-100 dark:border-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/30">
+              <button
+                onClick={() => {
+                  const d = new Date(currentDate);
+                  d.setDate(d.getDate() - 1);
+                  setCurrentDate(d);
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-emerald-600 active:scale-90"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <div className="flex items-center gap-2 px-1 min-w-[170px] justify-center">
+                <Calendar size={16} className="text-emerald-500/70" />
+                <span className="font-black text-xs text-gray-800 dark:text-gray-100 tracking-tight">
+                  {currentDate.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const d = new Date(currentDate);
+                  d.setDate(d.getDate() + 1);
+                  setCurrentDate(d);
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-emerald-600 rotate-180 active:scale-90"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </div>
           </div>
         </div>
+
+        {isCompensationScheduleDay && (
+          <div className="mb-6 rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-indigo-700 shadow-sm dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <Calendar className="mt-0.5 shrink-0 text-indigo-500 dark:text-indigo-300" size={20} />
+                <div>
+                  <p className="text-sm font-black">วันนี้เป็นวันสอนชดเชย</p>
+                  <p className="text-xs font-bold opacity-80">
+                    ใช้ตาราง{DAY_MAP[effectiveDayKey] || effectiveDayKey} สำหรับการเช็คชื่อชุมนุม
+                    {currentDateEvent?.description ? ` • ${currentDateEvent.description}` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <SkeletonLoader height="400px" />
@@ -352,127 +431,181 @@ const ClubAttendancePage: React.FC = () => {
             <h3 className="text-xl font-bold">ไม่พบข้อมูลชุมนุม</h3>
             <p className="text-gray-500 mt-2">คุณยังไม่ได้ถูกกำหนดให้เป็นผู้รับผิดชอบชุมนุมใดๆ</p>
           </div>
+        ) : !selectedClub ? (
+          <div className="grid grid-cols-1 gap-4">
+            {myClubs.map(club => {
+              const selectedPeriod = specialPeriods.find(period => period.id === club.specialPeriodId) ||
+                specialPeriods.find(period => String(period.title || '').includes('ชุมนุม'));
+              return (
+                <button
+                  key={club.id}
+                  onClick={() => setSelectedClub(club)}
+                  className="relative p-5 rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md flex justify-between items-center overflow-hidden bg-white dark:bg-[#2a2b2f] border-gray-100 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 text-left"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                      <LayoutGrid size={22} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                        {club.name}
+                      </h3>
+                      <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2 text-sm">
+                        <Clock size={14} />
+                        {selectedPeriod
+                          ? `${selectedPeriod.day === 'all' || !selectedPeriod.day ? 'ทุกวัน' : `วัน${DAY_MAP[selectedPeriod.day] || selectedPeriod.day}`} • ${selectedPeriod.startTime || '-'} - ${selectedPeriod.endTime || '-'}`
+                          : 'ยังไม่กำหนดคาบชุมนุม'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-emerald-600 dark:text-emerald-400">
+                    <ChevronLeft size={24} className="rotate-180" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-4 space-y-6">
-              <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">เลือกชุมนุม</label>
-                <div className="space-y-2">
-                  {myClubs.map(club => (
-                    <button
-                      key={club.id}
-                      onClick={() => setSelectedClub(club)}
-                      className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${selectedClub?.id === club.id ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-gray-100 dark:border-gray-700 hover:border-emerald-200'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <LayoutGrid size={20} />
-                        <span className="font-bold">{club.name}</span>
-                      </div>
-                      {selectedClub?.id === club.id && <CheckCircle2 size={20} />}
-                    </button>
-                  ))}
+          <div className="space-y-6">
+            <div className="sticky top-[60px] z-40 bg-white/98 dark:bg-[#1e1f23]/98 backdrop-blur-md shadow-lg border-b border-gray-100 dark:border-gray-800 p-3 sm:p-5 md:rounded-2xl transition-all duration-300">
+              <div className="flex items-center justify-between w-full gap-3">
+                <button
+                  onClick={() => setSelectedClub(null)}
+                  className="flex items-center justify-center p-2.5 sm:px-5 sm:py-2.5 text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors bg-gray-100 dark:bg-white/5 rounded-xl border border-transparent hover:border-emerald-200 dark:hover:border-emerald-800 shadow-sm"
+                >
+                  <ChevronLeft size={22} />
+                  <span className="hidden sm:inline ml-1.5 font-bold">กลับ</span>
+                </button>
+
+                <div className="flex-1 text-center min-w-0 px-2">
+                  <h2 className="font-extrabold text-base sm:text-xl text-gray-800 dark:text-white truncate leading-tight">
+                    {selectedClub.name}
+                    <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">
+                      ชุมนุม
+                    </span>
+                  </h2>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <p className="text-[11px] sm:text-sm text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
+                      {clubSpecialPeriod
+                        ? `${clubSpecialPeriod.day === 'all' || !clubSpecialPeriod.day ? 'ทุกวัน' : `วัน${DAY_MAP[clubSpecialPeriod.day] || clubSpecialPeriod.day}`} (${clubSpecialPeriod.startTime || '-'}-${clubSpecialPeriod.endTime || '-'})`
+                        : 'ยังไม่พบคาบชุมนุม'}
+                    </p>
+                    {!isClubDay && (
+                      <span className="bg-red-500/20 text-red-600 dark:text-red-400 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md border border-red-500/30 font-black uppercase">
+                        ไม่ใช่วันชุมนุม
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex-shrink-0">
+                  <button
+                    onClick={handleSaveAttendance}
+                    disabled={isSaving}
+                    className="flex items-center justify-center p-2.5 sm:px-7 sm:py-2.5 rounded-xl text-xs sm:text-base font-black transition-all shadow-md bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                    title="บันทึก"
+                  >
+                    {isSaving ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />}
+                    <span className="hidden sm:inline ml-2.5">{isSubmitted ? 'อัปเดต' : 'บันทึก'}</span>
+                  </button>
                 </div>
               </div>
-
-              {clubSpecialPeriod && (
-                <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border-2 ${isClubDay ? 'border-emerald-100 dark:border-emerald-900/30' : 'border-red-100 dark:border-red-900/30'}`}>
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <Clock className={isClubDay ? 'text-emerald-500' : 'text-red-500'} size={20} />
-                    ข้อมูลเวลาทำกิจกรรม
-                  </h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">วันทำกิจกรรม:</span>
-                      <span className="font-bold">{clubSpecialPeriod.day === 'all' || !clubSpecialPeriod.day ? 'ทุกวัน' : `วัน${DAY_MAP[clubSpecialPeriod.day] || clubSpecialPeriod.day}`}</span>
-                    </div>
-<<<<<<< HEAD
-                    {isCompensationScheduleDay && (
-                      <div className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-                        วันนี้เป็นวันเรียนชดเชย ใช้ตารางวัน{DAY_MAP[effectiveDayKey] || effectiveDayKey} จากปฏิทินโรงเรียน
-                      </div>
-                    )}
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">ช่วงเวลา:</span>
-                      <span className="font-bold">{clubSpecialPeriod.startTime} - {clubSpecialPeriod.endTime} น.</span>
-                    </div>
-                    {!isClubDay && (
-                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
-                        <AlertCircle size={14} />
-                        วันนี้ไม่ใช่กำหนดการทำกิจกรรมชุมนุม
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="lg:col-span-8">
-              {!selectedClub ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 dark:bg-gray-800/20 rounded-3xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-12">
-                  <Users size={48} className="mb-4 opacity-20" />
-                  <p>กรุณาเลือกชุมนุมเพื่อเริ่มเช็คชื่อ</p>
+            {isCompensationScheduleDay && (
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs font-bold text-indigo-600 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                วันนี้เป็นวันสอนชดเชย ใช้ตารางวัน{DAY_MAP[effectiveDayKey] || effectiveDayKey} จากปฏิทินโรงเรียน
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'มา', value: attendanceSummary.present, className: 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-300 border-green-100 dark:border-green-500/20' },
+                { label: 'สาย', value: attendanceSummary.late, className: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-300 border-yellow-100 dark:border-yellow-500/20' },
+                { label: 'ลา', value: attendanceSummary.leave, className: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 border-blue-100 dark:border-blue-500/20' },
+                { label: 'ขาด', value: attendanceSummary.absent, className: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300 border-red-100 dark:border-red-500/20' },
+              ].map(item => (
+                <div key={item.label} className={`rounded-2xl border p-4 ${item.className}`}>
+                  <p className="text-[11px] font-black uppercase opacity-70">{item.label}</p>
+                  <p className="text-2xl font-black">{item.value}</p>
                 </div>
-              ) : (
-                <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col h-full">
-                  <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-emerald-50/30 dark:bg-emerald-900/10 flex justify-between items-center">
-                    <div>
-                      <h2 className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{selectedClub.name}</h2>
-                      <p className="text-xs text-gray-500 font-bold">นักเรียนทั้งหมด: {students.length} คน</p>
-                    </div>
-                    <button
-                      onClick={handleSaveAttendance}
-                      disabled={isSaving}
-                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all shadow-lg shadow-emerald-200 dark:shadow-none disabled:opacity-50"
+              ))}
+            </div>
+
+            {students.length === 0 ? (
+              <div className="col-span-full text-center py-10 text-gray-500 bg-white dark:bg-[#2a2b2f] rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
+                ไม่พบรายชื่อนักเรียนในชุมนุมนี้
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+                {students.map((student) => {
+                  const status = attendance[student.id] || 'present';
+                  const statusStyle =
+                    status === 'present' ? 'border-green-200 dark:border-green-900 bg-green-50/30 dark:bg-green-900/5' :
+                      status === 'late' ? 'border-yellow-200 dark:border-yellow-900 bg-yellow-50/30 dark:bg-yellow-900/5' :
+                        status === 'leave' ? 'border-blue-200 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-900/5' :
+                          'border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-900/5';
+
+                  return (
+                    <div
+                      key={student.id}
+                      className={`relative group rounded-2xl p-4 sm:p-6 border-2 transition-all duration-300 hover:shadow-lg ${statusStyle}`}
                     >
-                      {isSaving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
-                      {isSubmitted ? 'อัปเดตข้อมูล' : 'บันทึกการเช็คชื่อ'}
-                    </button>
-                  </div>
+                      <div className="flex flex-row sm:flex-col items-center gap-4">
+                        <div className="relative flex-shrink-0">
+                          <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block relative">
+                            <div className="absolute -inset-1 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur"></div>
+                            <ProfileAvatar
+                              src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(`${student.firstName} ${student.lastName || ''}`.trim())}&background=random&color=fff&rounded=true&size=128&length=2`}
+                              alt={student.firstName}
+                              className="relative w-16 h-16 sm:w-24 sm:h-24 border-4 border-white dark:border-[#2a2b2f] shadow-sm"
+                              imageClassName="transition-transform group-hover:scale-105"
+                            />
+                          </Link>
+                          <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${status === 'present' ? 'bg-green-500' :
+                            status === 'late' ? 'bg-yellow-500' :
+                              status === 'leave' ? 'bg-blue-500' : 'bg-red-500'
+                            }`} />
+                        </div>
 
-                  <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                    {students.length === 0 ? (
-                      <div className="text-center py-20 text-gray-400">
-                        <p>ยังไม่มีนักเรียนในชุมนุมนี้</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-4">
-                        {students.map((student, idx) => (
-                          <div key={student.id} className="flex flex-col sm:flex-row items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl hover:shadow-md transition-all group gap-4">
-                            <div className="flex items-center gap-4 w-full sm:w-auto">
-                              <span className="text-xs font-bold text-gray-400 w-4">{idx + 1}</span>
-                              <img src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}&background=random`} className="w-12 h-12 rounded-full object-cover" alt="" />
-                              <div>
-                                <p className="font-bold text-gray-900 dark:text-white">{student.firstName} {student.lastName}</p>
-                                <p className="text-xs text-gray-500">รหัส: {student.studentId} | ชั้น {student.classLevel}/{student.room}</p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 p-1 rounded-xl border border-gray-100 dark:border-gray-700">
-                              {[
-                                { id: 'present', label: 'มา', color: 'bg-emerald-500' },
-                                { id: 'late', label: 'สาย', color: 'bg-amber-500' },
-                                { id: 'leave', label: 'ลา', color: 'bg-blue-500' },
-                                { id: 'absent', label: 'ขาด', color: 'bg-red-500' }
-                              ].map(status => (
-                                <button
-                                  key={status.id}
-                                  onClick={() => toggleStatus(student.id, status.id as any)}
-                                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${attendance[student.id] === status.id ? `${status.color} text-white shadow-sm scale-105` : 'text-gray-400 hover:bg-white dark:hover:bg-gray-700'}`}
-                                >
-                                  {status.label}
-                                </button>
-                              ))}
-                            </div>
+                        <div className="flex-grow min-w-0 text-left sm:text-center overflow-hidden w-full space-y-0.5">
+                          <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block transition-colors">
+                            <h3 className="text-gray-900 dark:text-white font-bold mb-0.5 mt-2 sm:mt-0 text-sm sm:text-base truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                              {student.firstName} {student.lastName}
+                            </h3>
+                          </Link>
+                          <div className="text-gray-500 dark:text-gray-400 mt-1 sm:mt-1.5 w-full truncate">
+                            <span className="inline-block bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono text-[10px] sm:text-[11px]">
+                              รหัส {student.studentId || '-'} | ชั้น {student.classLevel}/{student.room}
+                            </span>
                           </div>
-                        ))}
+                        </div>
+
+                        <div className="w-full grid grid-cols-4 gap-2 mt-4 sm:mt-2">
+                          {[
+                            { id: 'present', label: 'มา', activeClass: 'bg-white dark:bg-gray-700 text-green-600 shadow-sm ring-1 ring-green-200' },
+                            { id: 'late', label: 'สาย', activeClass: 'bg-white dark:bg-gray-700 text-yellow-600 shadow-sm ring-1 ring-yellow-200' },
+                            { id: 'leave', label: 'ลา', activeClass: 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm ring-1 ring-blue-200' },
+                            { id: 'absent', label: 'ขาด', activeClass: 'bg-white dark:bg-gray-700 text-red-600 shadow-sm ring-1 ring-red-200' },
+                          ].map(option => (
+                            <button
+                              key={option.id}
+                              onClick={() => toggleStatus(student.id, option.id as any)}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 ${status === option.id
+                                ? `${option.activeClass} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#2a2b2f] transform scale-105 shadow-md`
+                                : 'bg-white/50 dark:bg-black/20 text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300'
+                                }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -486,8 +619,4 @@ const ClubAttendancePage: React.FC = () => {
   );
 };
 
-<<<<<<< HEAD
 export default ClubAttendancePage;
-=======
-export default ClubAttendancePage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

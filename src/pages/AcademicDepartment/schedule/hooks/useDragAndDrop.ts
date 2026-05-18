@@ -2,7 +2,7 @@ import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
-import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndex } from '../utils';
+import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndex, getRequiredWeeklyPeriods } from '../utils';
 
 const MySwal = withReactContent(Swal);
 
@@ -12,6 +12,7 @@ interface UseDragAndDropProps {
     availableCourseInstances: CourseInstance[];
     setAvailableCourseInstances: React.Dispatch<React.SetStateAction<CourseInstance[]>>;
     schoolMasterSchedule: Record<string, any[]>;
+    setSchoolMasterSchedule: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
     selectedTeacher: string;
     selectedTeacherData: Teacher | undefined;
     teacherMap: Record<string, Teacher>;
@@ -29,6 +30,7 @@ export const useDragAndDrop = ({
     availableCourseInstances,
     setAvailableCourseInstances,
     schoolMasterSchedule,
+    setSchoolMasterSchedule,
     selectedTeacher,
     selectedTeacherData,
     teacherMap,
@@ -39,7 +41,81 @@ export const useDragAndDrop = ({
     setActiveDragItem,
     assignmentConstraints
 }: UseDragAndDropProps) => {
-<<<<<<< HEAD
+    const isSameAssignment = (a?: CourseInstance | null, b?: CourseInstance | null) => {
+        if (!a || !b) return false;
+        return a.compositeId === b.compositeId &&
+            Number(a.groupNumber || 1) === Number(b.groupNumber || 1);
+    };
+
+    const getCourseMoveKey = (teacherId: string | undefined, item?: CourseInstance | null, ignoreInstanceId = false) => {
+        if (!item) return '';
+        // instanceId is transient (slot-dependent), so for identity we use stable fields
+        if (!ignoreInstanceId && item.instanceId) return item.instanceId;
+        return `${teacherId || item.teacherId || ''}|${item.id}|${item.compositeId || ''}|${Number(item.groupNumber || 1)}|${JSON.stringify(item.classId || '')}`;
+    };
+
+    const isSameCourseInstance = (teacherId: string | undefined, a?: CourseInstance | null, b?: CourseInstance | null) => {
+        if (!a || !b) return false;
+        // If both have the same instanceId, they are definitely the same
+        if (a.instanceId && b.instanceId && a.instanceId === b.instanceId) return true;
+        // Fallback to data-based match (stable key) to ensure we find matches in the master schedule
+        return getCourseMoveKey(teacherId, a, true) === getCourseMoveKey(teacherId, b, true);
+    };
+
+    const getPairedGridMove = (item: CourseInstance, slotId?: string) => {
+        if (!slotId) return [{ slot: '', item }];
+
+        const [day, pNumStr] = slotId.split('-');
+        const periodIndex = parseInt(pNumStr);
+        const partnerIndex = getPartnerIndex(periodIndex);
+        const partnerSlotId = partnerIndex !== -1 ? `${day}-${partnerIndex}` : null;
+        const partnerItem = partnerSlotId
+            ? schedule[partnerSlotId]?.find(course => isSameAssignment(course, item))
+            : undefined;
+
+        if (!partnerSlotId || !partnerItem) return [{ slot: slotId, item }];
+
+        const asgnCst = assignmentConstraints[item.compositeId];
+        const shouldMoveAsPair = asgnCst?.type === 'double' ||
+            asgnCst?.type === 'mixed' ||
+            getRequiredWeeklyPeriods(item) >= 5;
+
+        return shouldMoveAsPair
+            ? [
+                { slot: slotId, item },
+                { slot: partnerSlotId, item: partnerItem }
+            ]
+            : [{ slot: slotId, item }];
+    };
+
+    const getDoubleTargetSlots = (slotId: string) => {
+        const [day, pNumStr] = slotId.split('-');
+        const periodIndex = parseInt(pNumStr);
+        const partnerIndex = getPartnerIndex(periodIndex);
+        if (partnerIndex === -1) return null;
+        const startIndex = Math.min(periodIndex, partnerIndex);
+        const endIndex = Math.max(periodIndex, partnerIndex);
+        return [`${day}-${startIndex}`, `${day}-${endIndex}`];
+    };
+
+    const getDoubleStartSlot = (slotId: string) => {
+        const doubleSlots = getDoubleTargetSlots(slotId);
+        return doubleSlots?.[0] || slotId;
+    };
+
+    const getConstraintMapForDoublePartner = (item: CourseInstance) => {
+        const constraint = assignmentConstraints[item.compositeId];
+        if (!constraint) return assignmentConstraints;
+
+        return {
+            ...assignmentConstraints,
+            [item.compositeId]: {
+                ...constraint,
+                singlePreference: 'any' as const
+            }
+        };
+    };
+
     const removeInstancesFromBank = (activeId: string, activeItem: CourseInstance, count: number) => {
         setAvailableCourseInstances((list: CourseInstance[]) => {
             let remainingToRemove = Math.max(1, count);
@@ -58,8 +134,6 @@ export const useDragAndDrop = ({
             return next;
         });
     };
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleDragStart = (event: DragStartEvent) => {
         const activeId = String(event.active.id);
@@ -96,15 +170,21 @@ export const useDragAndDrop = ({
         if (overId === 'course-bank') {
             const gridItem = Object.values(schedule).flat().find(c => c?.instanceId === activeId);
             if (gridItem) {
+                const originalSlot = Object.keys(schedule).find(key => schedule[key].some(c => c.instanceId === activeId));
+                const pairedMove = getPairedGridMove(gridItem, originalSlot);
                 setSchedule((prev: Schedule) => {
                     const next = { ...prev };
-                    for (const key in next) {
-                        next[key] = next[key].filter(c => c.instanceId !== activeId);
-                        if (next[key].length === 0) delete next[key];
-                    }
+                    pairedMove.forEach(move => {
+                        if (!move.slot || !next[move.slot]) return;
+                        next[move.slot] = next[move.slot].filter(c => c.instanceId !== move.item.instanceId);
+                        if (next[move.slot].length === 0) delete next[move.slot];
+                    });
                     return next;
                 });
-                setAvailableCourseInstances((prev: CourseInstance[]) => [...prev, { ...gridItem, locked: false }]);
+                setAvailableCourseInstances((prev: CourseInstance[]) => [
+                    ...prev,
+                    ...pairedMove.map(move => ({ ...move.item, locked: false }))
+                ]);
             }
             return;
         }
@@ -132,168 +212,269 @@ export const useDragAndDrop = ({
 
         const isFromBank = !!activeItemFromBank;
         const targetItemsInCurrentSchedule = schedule[overId] || [];
+        const movingItems = isFromBank ? [{ slot: originalCellKey || '', item: activeItem }] : getPairedGridMove(activeItem, originalCellKey);
+        const movingInstanceIds = new Set(movingItems.map(move => move.item.instanceId));
 
         // 1. Locked Checks
-        if (targetItemsInCurrentSchedule.some(c => c.locked)) {
+        if (targetItemsInCurrentSchedule.some(c => c.locked && !movingInstanceIds.has(c.instanceId))) {
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
-<<<<<<< HEAD
-        if (isFromBank && targetItemsInCurrentSchedule.length > 0) {
-            MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่าง หรือย้ายรายวิชาเดิมออกก่อน' });
-            return;
-        }
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
-        // 2. Global Conflict Checks (School Master Schedule)
-        const targetOccupancies = (schoolMasterSchedule[overId] || []).filter(occ => {
-            const semStr = String(occ.course?.semester || "");
-            const targetSem = String(selectedSemester || "1");
-            return !occ.course?.semester || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/');
-        });
-
-        const lockedConflict = targetOccupancies.find(occ => occ.teacherId !== selectedTeacher && occ.course?.locked);
-        if (lockedConflict) {
-            MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: `คาบนี้ถูกล็อคโดยครูท่านอื่น (${teacherMap[lockedConflict.teacherId]?.name || 'N/A'})` });
-            return;
-        }
-
-        // 3. Comprehensive Constraints Check (Availability, Master Schedule Conflicts)
-        const { forbidden, message } = checkConstraints(
-            activeItem as CourseInstance, 
-            overId, 
-            selectedTeacherData, 
-            periodSettings, 
-            specialPeriods, 
-            assignmentConstraints, 
-            dynamicUnavailableSlots,
-            schoolMasterSchedule
-        );
-        
-        if (forbidden) {
-            MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: message });
-            return;
-        }
-
-        // --- DOUBLE PERIOD AUTO-PLACEMENT ---
+        // --- DOUBLE PERIOD PARTNER CALCULATION ---
         const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
+        let forcedDoubleStartSlotId: string | null = null;
         
-        // Calculate remaining hours to see if we can do a double
-        const totalCredits = Number(activeItem.credits) || 0;
-        const standardPeriods = Math.round(totalCredits * 2);
-        const hoursPerWeek = standardPeriods > 0 ? standardPeriods : (activeItem.hoursPerWeek || 1);
+        const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
 
         const alreadyPlacedCount = Object.values(schedule).flat().filter(c => c.compositeId === activeItem!.compositeId).length;
-        const hoursRemaining = hoursPerWeek - alreadyPlacedCount;
+        const effectivePlacedCount = isFromBank ? alreadyPlacedCount : alreadyPlacedCount - movingItems.length;
+        const hoursRemaining = hoursPerWeek - effectivePlacedCount;
 
-        if (isFromBank && (asgnCst?.type === 'double' || asgnCst?.type === 'mixed') && hoursRemaining >= 2) {
-            const [day, pNumStr] = overId.split('-');
-            const pNum = parseInt(pNumStr);
-            const partnerIdx = getPartnerIndex(pNum);
-            
-                if (partnerIdx !== -1) {
-                    const potPartnerId = `${day}-${partnerIdx}`;
-                    const partnerCheck = checkConstraints(
-                        activeItem as CourseInstance, 
-                        potPartnerId, 
-                        selectedTeacherData, 
-                        periodSettings, 
-                        specialPeriods, 
-                        assignmentConstraints, 
-                        dynamicUnavailableSlots,
-                        schoolMasterSchedule
-                    );
-                    
-<<<<<<< HEAD
-                    if (!partnerCheck.forbidden && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
-=======
-                    if (!partnerCheck.forbidden && !schedule[potPartnerId]) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                        partnerSlotId = potPartnerId;
-                    } else if (asgnCst.type === 'double') {
-                        MySwal.fire({ 
-                            icon: 'warning', 
-                            title: 'ไม่สามารถวางคาบคู่ได้', 
-                            text: partnerCheck.message || 'คาบต่อเนื่องไม่ว่าง' 
-                        });
-                        return;
-                    }
-                } else if (asgnCst.type === 'double') {
+        const shouldUseDoubleTarget = movingItems.length > 1 ||
+            ((asgnCst?.type === 'double' || asgnCst?.type === 'mixed' || hoursPerWeek >= 5) && hoursRemaining >= 2);
+
+        if (shouldUseDoubleTarget) {
+            const doubleSlots = getDoubleTargetSlots(overId);
+
+            if (doubleSlots) {
+                forcedDoubleStartSlotId = doubleSlots[0];
+                overId = forcedDoubleStartSlotId;
+                partnerSlotId = doubleSlots[1];
+            } else if (movingItems.length > 1 || asgnCst?.type === 'double') {
                 MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางคาบคู่ได้', text: 'คาบนี้ไม่ได้อยู่ในบล็อกสำหรับคาบคู่' });
                 return;
             }
         }
 
-        // --- SUCCESS: UPDATE STATE ---
-        setSchedule((prev: Schedule) => {
-            const next = { ...prev };
+        // Calculate Target Slots
+        const targetSlots = [overId];
+        if (partnerSlotId) targetSlots.push(partnerSlotId);
 
-            if (isFromBank) {
-<<<<<<< HEAD
-                // Remove the exact number of periods placed. Double periods consume two bank instances.
-                removeInstancesFromBank(activeId, activeItem!, partnerSlotId ? 2 : 1);
-=======
-                // Remove from bank
-                setAvailableCourseInstances((list: CourseInstance[]) => list.filter(c => c.instanceId !== activeId));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        if (targetSlots.some(slot => (schedule[slot] || []).some(c => c.locked && !movingInstanceIds.has(c.instanceId)))) {
+            MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
+            return;
+        }
+
+        // 2. Comprehensive Constraints Check for Active Item
+        // Check constraints for active item in all target slots
+        for (let i = 0; i < targetSlots.length; i++) {
+            const slot = targetSlots[i];
+            const itemToCheck = movingItems[i]?.item || activeItem;
+            const isDoubleStartSlot = Boolean(partnerSlotId && slot === (forcedDoubleStartSlotId || overId));
+            const isDoublePartnerSlot = Boolean(partnerSlotId && slot !== (forcedDoubleStartSlotId || overId));
+            const check = checkConstraints(
+                itemToCheck as CourseInstance,
+                slot, 
+                selectedTeacherData, 
+                periodSettings, 
+                specialPeriods, 
+                isDoublePartnerSlot ? getConstraintMapForDoublePartner(itemToCheck as CourseInstance) : assignmentConstraints, 
+                dynamicUnavailableSlots,
+                schoolMasterSchedule, // check against everyone
+                isDoubleStartSlot ? 2 : 1
+            );
+            
+            // If forbidden, we only allow it if we can displace the conflict
+            if (check.forbidden) {
+                // Determine if the conflict is "soft" (displaceable) or "hard" (permanent constraint)
+                const globalConflicts = schoolMasterSchedule[slot] || [];
+                const hasHardConflict = globalConflicts.length === 0; // if no items but forbidden, it's a hard constraint (e.g. lunch)
                 
-                // Primary Slot
-                const newInstance = { ...activeItem!, instanceId: `${activeItem!.id}-${overId}-${Date.now()}`, locked: false };
-                next[overId] = [...(next[overId] || []), newInstance];
-
-                // Partner Slot (if double)
-                if (partnerSlotId) {
-                    const partnerInstance = { ...activeItem!, instanceId: `${activeItem!.id}-${partnerSlotId}-${Date.now() + 1}`, locked: false };
-                    next[partnerSlotId] = [...(next[partnerSlotId] || []), partnerInstance];
-                }
-            } else if (originalCellKey) {
-                // Moving within Grid
-                const targetSlotItems = next[overId] || [];
-                const existingItem = targetSlotItems[0]; // For now assume 1 course per slot
-
-                if (existingItem) {
-                    // SWAP: Check if the item in the target slot can move to our original slot
-                    const swapCheck = checkConstraints(
-                        existingItem, 
-                        originalCellKey, 
-                        selectedTeacherData, 
-                        periodSettings, 
-                        specialPeriods, 
-                        assignmentConstraints, 
-                        dynamicUnavailableSlots,
-                        schoolMasterSchedule
-                    );
-
-                    if (swapCheck.forbidden) {
-                        MySwal.fire({ 
-                            icon: 'warning', 
-                            title: 'ไม่สามารถสลับคาบได้', 
-                            text: `วิชาที่สลับไม่สามารถวางในคาบเดิมได้: ${swapCheck.message}` 
-                        });
-                        return prev;
-                    }
-
-                    // SWAP: Exchange positions
-                    next[originalCellKey] = next[originalCellKey].map(c => 
-                        c.instanceId === activeId ? { ...existingItem, instanceId: `${existingItem.id}-${originalCellKey}-${Date.now()}` } : c
-                    );
-                    next[overId] = targetSlotItems.map(c => 
-                        c.instanceId === existingItem.instanceId ? { ...activeItem!, instanceId: `${activeItem!.id}-${overId}-${Date.now() + 1}` } : c
-                    );
-                } else {
-                    // MOVE: Simple move to empty slot
-                    next[originalCellKey] = next[originalCellKey].filter(c => c.instanceId !== activeId);
-                    if (next[originalCellKey].length === 0) delete next[originalCellKey];
-                    
-                    const movedInstance = { ...activeItem!, instanceId: `${activeItem!.id}-${overId}-${Date.now()}`, locked: false };
-                    next[overId] = [...(next[overId] || []), movedInstance];
+                if (hasHardConflict) {
+                    MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: check.message });
+                    return;
                 }
             }
-            return next;
+        }
+
+        // --- GLOBAL CONFLICT DETECTION & RESOLUTION ---
+        const conflictingItems: { slot: string; item: CourseInstance; teacherId: string }[] = [];
+        const conflictKeys = new Set<string>();
+        const addConflict = (slot: string, item: CourseInstance, teacherId: string) => {
+            const key = `${slot}|${getCourseMoveKey(teacherId, item)}`;
+            if (conflictKeys.has(key)) return;
+            conflictKeys.add(key);
+            conflictingItems.push({ slot, item, teacherId });
+        };
+
+        targetSlots.forEach(slot => {
+            const globalItems = schoolMasterSchedule[slot] || [];
+            globalItems.forEach(gItem => {
+                if (!gItem.course) return;
+
+                const isSameTeacher = gItem.teacherId === activeItem.teacherId;
+                const draggedClasses = Array.isArray(activeItem.classId) ? activeItem.classId : [activeItem.classId];
+                const itemClasses = Array.isArray(gItem.classId) ? gItem.classId : [gItem.classId];
+                const isSameClass = draggedClasses.some(c => itemClasses.includes(c));
+                
+                const draggedRooms = Array.isArray(activeItem.room) ? activeItem.room : [activeItem.room];
+                const itemRooms = Array.isArray(gItem.course?.room) ? gItem.course?.room : [gItem.course?.room];
+                const isSameRoom = draggedRooms.some(r => itemRooms.includes(r)) && draggedRooms.length > 0;
+
+                const isSelf = gItem.teacherId === activeItem.teacherId &&
+                    gItem.course.id === activeItem.id &&
+                    movingItems.some(move => move.slot === slot && isSameAssignment(move.item, gItem.course as CourseInstance));
+
+                const isCoTeachingSameAssignment = isSameAssignment(activeItem, gItem.course as CourseInstance);
+                if ((isSameTeacher || isSameClass || isSameRoom) && !isSelf && !isCoTeachingSameAssignment) {
+                    addConflict(slot, gItem.course as CourseInstance, gItem.teacherId);
+                }
+            });
+
+            (schedule[slot] || []).forEach(localItem => {
+                if (movingInstanceIds.has(localItem.instanceId)) return;
+                if (isSameAssignment(activeItem, localItem)) return;
+                addConflict(slot, localItem, localItem.teacherId || selectedTeacher);
+            });
+        });
+
+        const displacementMoves: { teacherId: string; fromSlot: string; toSlot: string; item: CourseInstance }[] = [];
+        let canResolveAll = true;
+        const reservedDisplacementSlots = new Set<string>();
+        const slotsBeingFreedByMove = new Set(movingItems.map(move => move.slot).filter(Boolean));
+        const isSlotEmptyAfterActiveMove = (slot: string) => {
+            if (targetSlots.includes(slot)) return false;
+            if (reservedDisplacementSlots.has(slot)) return false;
+
+            const localAfterMove = (schedule[slot] || []).filter(course => !movingInstanceIds.has(course.instanceId));
+            if (localAfterMove.length > 0) return false;
+
+            const globalAfterMove = (schoolMasterSchedule[slot] || []).filter(entry => {
+                const entryCourse = entry.course as CourseInstance | null;
+                if (!entryCourse) return false;
+                return !movingItems.some(move => move.slot === slot && isSameCourseInstance(entry.teacherId, entryCourse, move.item));
+            });
+
+            return globalAfterMove.length === 0 || slotsBeingFreedByMove.has(slot);
+        };
+
+        for (const conflict of conflictingItems) {
+            const conflictTeacher = teacherMap[conflict.teacherId];
+            
+            // 1. Try to displace (find a new home)
+            const validSlots = findValidSlots(
+                conflict.item,
+                conflict.teacherId,
+                {}, // pass empty to allow searching master
+                schoolMasterSchedule,
+                conflictTeacher,
+                periodSettings,
+                specialPeriods,
+                assignmentConstraints,
+                conflictTeacher?.preferences?.unavailableSlots || []
+            );
+            
+            const filteredSlots = validSlots.filter(s => isSlotEmptyAfterActiveMove(s)); 
+            
+            if (filteredSlots.length > 0) {
+                reservedDisplacementSlots.add(filteredSlots[0]);
+                displacementMoves.push({ 
+                    teacherId: conflict.teacherId, 
+                    fromSlot: conflict.slot, 
+                    toSlot: filteredSlots[0], 
+                    item: conflict.item 
+                });
+            } else {
+                canResolveAll = false;
+                break;
+            }
+        }
+
+        if (!canResolveAll) {
+            MySwal.fire({
+                icon: 'warning',
+                title: 'ไม่สามารถย้ายได้',
+                text: 'ไม่พบคาบว่างสำหรับย้ายวิชาที่ถูกทับ ระบบจึงไม่ย้ายเพื่อป้องกันตารางหาย',
+                confirmButtonText: 'ตกลง'
+            });
+            return;
+        }
+
+        // --- APPLY STATE UPDATES ---
+        const newSchoolMaster = { ...schoolMasterSchedule };
+        const newLocalSchedule = { ...schedule };
+
+        const updateGlobal = (teacherId: string, fromSlot: string | null, toSlot: string | null, item: CourseInstance) => {
+            if (fromSlot && newSchoolMaster[fromSlot]) {
+                newSchoolMaster[fromSlot] = newSchoolMaster[fromSlot].filter(
+                    g => !(g.teacherId === teacherId && isSameCourseInstance(teacherId, g.course as CourseInstance, item))
+                );
+                if (newSchoolMaster[fromSlot].length === 0) delete newSchoolMaster[fromSlot];
+            }
+            if (toSlot) {
+                if (!newSchoolMaster[toSlot]) newSchoolMaster[toSlot] = [];
+                newSchoolMaster[toSlot].push({
+                    teacherId,
+                    classId: item.classId,
+                    groupNumber: item.groupNumber || 1,
+                    course: item
+                });
+            }
+        };
+
+        // 1. Remove active item(s)
+        if (originalCellKey) {
+            movingItems.forEach(move => {
+                updateGlobal(move.item.teacherId!, move.slot, null, move.item);
+                if (move.item.teacherId === selectedTeacher && newLocalSchedule[move.slot]) {
+                    newLocalSchedule[move.slot] = newLocalSchedule[move.slot].filter(c => c.instanceId !== move.item.instanceId);
+                    if (newLocalSchedule[move.slot].length === 0) delete newLocalSchedule[move.slot];
+                }
+            });
+        }
+
+        targetSlots.forEach(slot => {
+            if (newLocalSchedule[slot]) {
+                newLocalSchedule[slot] = newLocalSchedule[slot].filter(c => !movingInstanceIds.has(c.instanceId));
+                if (newLocalSchedule[slot].length === 0) delete newLocalSchedule[slot];
+            }
+        });
+
+        // 2. Process displacements
+        displacementMoves.forEach(move => {
+            updateGlobal(move.teacherId, move.fromSlot, move.toSlot, move.item);
+            if (move.teacherId === selectedTeacher) {
+                if (newLocalSchedule[move.fromSlot]) {
+                    newLocalSchedule[move.fromSlot] = newLocalSchedule[move.fromSlot].filter(c => !isSameCourseInstance(move.teacherId, c, move.item));
+                    if (newLocalSchedule[move.fromSlot].length === 0) delete newLocalSchedule[move.fromSlot];
+                }
+                if (!newLocalSchedule[move.toSlot]) newLocalSchedule[move.toSlot] = [];
+                newLocalSchedule[move.toSlot].push({ ...move.item, locked: false });
+            }
+        });
+
+        // 3. Place active item(s)
+        targetSlots.forEach((slot, index) => {
+            const itemToPlace = movingItems[index]?.item || activeItem;
+            updateGlobal(itemToPlace.teacherId!, null, slot, itemToPlace);
+            if (itemToPlace.teacherId === selectedTeacher) {
+                if (!newLocalSchedule[slot]) newLocalSchedule[slot] = [];
+                newLocalSchedule[slot].push({ ...itemToPlace, locked: false });
+            }
+        });
+
+        // 4. Update states
+        setSchoolMasterSchedule(newSchoolMaster);
+        if (activeItem.teacherId === selectedTeacher) {
+            setSchedule(newLocalSchedule);
+        }
+
+        if (isFromBank) {
+            removeInstancesFromBank(activeId, activeItem, targetSlots.length);
+        }
+
+        MySwal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'success',
+            title: 'ปรับเปลี่ยนตำแหน่งเรียบร้อย',
+            showConfirmButton: false,
+            timer: 1500
         });
     };
+
 
     const toggleLock = (slotId: string, instanceId: string) => {
         setSchedule((prev: Schedule) => {
@@ -343,72 +524,81 @@ export const useDragAndDrop = ({
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถเพิ่มได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
-<<<<<<< HEAD
         if (targetItemsInCurrentSchedule.length > 0) {
             MySwal.fire({ icon: 'warning', title: 'คาบนี้มีรายวิชาแล้ว', text: 'กรุณาเลือกคาบว่างก่อนเพิ่มรายวิชา' });
-            return;
-        }
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-
-        // 2. Constraints Check
-        const { forbidden, message } = checkConstraints(
-            activeItem, 
-            slotId, 
-            selectedTeacherData, 
-            periodSettings, 
-            specialPeriods, 
-            assignmentConstraints, 
-            dynamicUnavailableSlots,
-            schoolMasterSchedule
-        );
-        
-        if (forbidden) {
-            MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางได้', text: message });
             return;
         }
 
         // --- DOUBLE PERIOD AUTO-PLACEMENT ---
         const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
+        let primarySlotId = slotId;
         
-        const totalCredits = Number(activeItem.credits) || 0;
-        const standardPeriods = Math.round(totalCredits * 2);
-        const hoursPerWeek = standardPeriods > 0 ? standardPeriods : (activeItem.hoursPerWeek || 1);
+        const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
 
         const alreadyPlacedCount = Object.values(schedule).flat().filter(c => c.compositeId === activeItem.compositeId).length;
         const hoursRemaining = hoursPerWeek - alreadyPlacedCount;
+        const shouldTryDoublePlacement = (asgnCst?.type === 'double' || asgnCst?.type === 'mixed' || hoursPerWeek >= 5) && hoursRemaining >= 2;
 
-        if ((asgnCst?.type === 'double' || asgnCst?.type === 'mixed') && hoursRemaining >= 2) {
-            const [day, pNumStr] = slotId.split('-');
-            const pNum = parseInt(pNumStr);
-            const partnerIdx = getPartnerIndex(pNum);
+        if (shouldTryDoublePlacement) {
+            const doubleSlots = getDoubleTargetSlots(slotId);
             
-            if (partnerIdx !== -1) {
-                const potPartnerId = `${day}-${partnerIdx}`;
+            if (doubleSlots) {
+                primarySlotId = doubleSlots[0];
+                const potPartnerId = doubleSlots[1];
                 const partnerCheck = checkConstraints(
                     activeItem, 
                     potPartnerId, 
                     selectedTeacherData, 
                     periodSettings, 
                     specialPeriods, 
-                    assignmentConstraints, 
+                    getConstraintMapForDoublePartner(activeItem), 
                     dynamicUnavailableSlots,
                     schoolMasterSchedule
                 );
                 
-                if (!partnerCheck.forbidden && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
+                const primaryCheck = checkConstraints(
+                    activeItem,
+                    primarySlotId,
+                    selectedTeacherData,
+                    periodSettings,
+                    specialPeriods,
+                    assignmentConstraints,
+                    dynamicUnavailableSlots,
+                    schoolMasterSchedule,
+                    2
+                );
+
+                if (!primaryCheck.forbidden && !partnerCheck.forbidden && (!schedule[primarySlotId] || schedule[primarySlotId].length === 0) && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
                     partnerSlotId = potPartnerId;
-                } else if (asgnCst.type === 'double') {
+                } else if (asgnCst?.type === 'double' || hoursPerWeek >= 5) {
                     MySwal.fire({ 
                         icon: 'warning', 
                         title: 'ไม่สามารถวางคาบคู่ได้', 
-                        text: partnerCheck.message || 'คาบต่อเนื่องไม่ว่าง' 
+                        text: primaryCheck.message || partnerCheck.message || 'คาบต่อเนื่องไม่ว่าง' 
                     });
                     return;
                 }
-            } else if (asgnCst.type === 'double') {
+            } else if (asgnCst?.type === 'double' || hoursPerWeek >= 5) {
                 MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางคาบคู่ได้', text: 'คาบนี้ไม่ได้อยู่ในบล็อกสำหรับคาบคู่' });
+                return;
+            }
+        }
+
+        if (!partnerSlotId) {
+            const { forbidden, message } = checkConstraints(
+                activeItem,
+                primarySlotId,
+                selectedTeacherData,
+                periodSettings,
+                specialPeriods,
+                assignmentConstraints,
+                dynamicUnavailableSlots,
+                schoolMasterSchedule
+            );
+
+            if (forbidden) {
+                MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางได้', text: message });
                 return;
             }
         }
@@ -417,22 +607,11 @@ export const useDragAndDrop = ({
         setSchedule((prev: Schedule) => {
             const next = { ...prev };
             
-<<<<<<< HEAD
             removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
-=======
-            // Remove from bank
-            setAvailableCourseInstances((list: CourseInstance[]) => {
-                const index = list.findIndex(c => c.instanceId === activeItem.instanceId);
-                if (index === -1) return list;
-                const newList = [...list];
-                newList.splice(index, 1);
-                return newList;
-            });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             
             // Primary Slot
-            const newInstance = { ...activeItem, instanceId: `${activeItem.id}-${slotId}-${Date.now()}`, locked: false };
-            next[slotId] = [...(next[slotId] || []), newInstance];
+            const newInstance = { ...activeItem, instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}`, locked: false };
+            next[primarySlotId] = [...(next[primarySlotId] || []), newInstance];
 
             // Partner Slot (if double)
             if (partnerSlotId) {

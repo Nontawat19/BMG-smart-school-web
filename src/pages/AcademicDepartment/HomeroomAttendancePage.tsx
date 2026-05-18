@@ -403,10 +403,10 @@ const HomeroomAttendancePage: React.FC = () => {
                 'homeroom-activities',
                 academicYear || 'unknown-year',
                 dateId,
-                `${selectedClass.classId}_${roomKey || 'all'}_${Date.now()}_${index + 1}.webp`,
+                `${selectedClass.classId}_${roomKey || 'all'}_${Date.now()}_${index + 1}.jpg`,
             ].join('/');
             const imageRef = ref(storage, storagePath);
-            const snapshot = await uploadBytes(imageRef, photo.blob, { contentType: 'image/webp' });
+            const snapshot = await uploadBytes(imageRef, photo.blob, { contentType: 'image/jpeg' });
             const url = await getDownloadURL(snapshot.ref);
             return {
                 id: photo.id,
@@ -468,9 +468,9 @@ const HomeroomAttendancePage: React.FC = () => {
         if (!context) return;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp', 0.72));
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72));
         if (!blob) {
-            setCameraError('ไม่สามารถแปลงภาพเป็น WebP ได้');
+            setCameraError('ไม่สามารถบีบอัดภาพเป็น JPG ได้');
             return;
         }
 

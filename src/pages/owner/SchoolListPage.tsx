@@ -1,11 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { firestore as db, storage } from '../../firebase';
-import { collection, getDocs, QueryDocumentSnapshot, DocumentData, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import Swal from 'sweetalert2';
 import { FaPlus, FaEdit, FaTrash, FaSchool, FaUserTie, FaSearch, FaChalkboardTeacher, FaUserGraduate, FaDatabase, FaHdd, FaServer } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+import {
+  fetchSchoolDashboardSummary,
+  fetchOwnerDashboardSummary,
+  getSchoolDashboardSummaryRef,
+  isActiveStudentSummaryStatus,
+  isActiveTeacherSummaryStatus,
+  refreshOwnerDashboardSummaryFromCounts,
+  updateOwnerDashboardSummary,
+  writeOwnerDashboardSummaryFromSchools,
+} from '@/utils/ownerStatsUtils';
 
 interface SchoolInfo {
   id: string;
@@ -23,6 +33,9 @@ interface SchoolInfo {
   studentCount?: number;
   firestoreUsage?: string;
   storageUsage?: string;
+  firestoreUsageBytes?: number;
+  storageUsageBytes?: number;
+  firestoreDocumentCount?: number;
   schoolType?: string;
   opportunityExpansionLevel?: string;
 }
@@ -60,42 +73,53 @@ const SchoolListPage: React.FC = () => {
   });
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingSummary, setIsRefreshingSummary] = useState(false);
 
   const collectionName = 'school-settings';
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const querySnapshot = await getDocs(collection(db, collectionName));
+      const [ownerSummary, querySnapshot] = await Promise.all([
+        fetchOwnerDashboardSummary(db),
+        getDocs(collection(db, collectionName)),
+      ]);
 
-      const schoolsData = await Promise.all(querySnapshot.docs.map(async (doc: QueryDocumentSnapshot<DocumentData>) => {
-        const data = doc.data() as Omit<SchoolInfo, 'id'>;
-        const schoolId = doc.id;
-
-        // Fetch counts from subcollections
-        const teachersSnapshot = await getDocs(collection(db, collectionName, schoolId, 'teachers'));
-        const studentsSnapshot = await getDocs(collection(db, collectionName, schoolId, 'students'));
-
+      const schoolsData = await Promise.all(querySnapshot.docs.map(async (schoolDoc) => {
+        const data = schoolDoc.data() as Omit<SchoolInfo, 'id'> & Record<string, any>;
+        const summary = await fetchSchoolDashboardSummary(db, schoolDoc.id, data);
         return {
           ...data,
-          id: schoolId,
-          teacherCount: teachersSnapshot.size,
-          studentCount: studentsSnapshot.size,
-          firestoreUsage: data.firestoreUsage,
-          storageUsage: data.storageUsage
+          id: schoolDoc.id,
+          teacherCount: summary.teacherCount,
+          studentCount: summary.studentCount,
+          firestoreUsage: summary.firestoreUsage,
+          storageUsage: summary.storageUsage,
+          firestoreUsageBytes: summary.firestoreUsageBytes,
+          storageUsageBytes: summary.storageUsageBytes,
+          firestoreDocumentCount: summary.firestoreDocumentCount,
         };
       }));
 
-      // Calculate totals
-      const totalTeachers = schoolsData.reduce((acc, curr) => acc + (curr.teacherCount || 0), 0);
-      const totalStudents = schoolsData.reduce((acc, curr) => acc + (curr.studentCount || 0), 0);
+      const combinedSummary = await writeOwnerDashboardSummaryFromSchools(
+        db,
+        schoolsData.map((school) => ({
+          teacherCount: school.teacherCount || 0,
+          studentCount: school.studentCount || 0,
+          firestoreUsage: school.firestoreUsage || '0 MB',
+          storageUsage: school.storageUsage || '0 GB',
+          firestoreUsageBytes: school.firestoreUsageBytes || 0,
+          storageUsageBytes: school.storageUsageBytes || 0,
+          firestoreDocumentCount: school.firestoreDocumentCount || 0,
+        }))
+      );
 
       setStats({
-        totalSchools: schoolsData.length,
-        totalTeachers,
-        totalStudents,
-        firestoreUsage: '0 MB', // รอข้อมูลจริงจากระบบ
-        storageUsage: '0 GB'    // รอข้อมูลจริงจากระบบ
+        totalSchools: combinedSummary.totalSchools || ownerSummary?.totalSchools || schoolsData.length,
+        totalTeachers: combinedSummary.totalTeachers || ownerSummary?.totalTeachers || 0,
+        totalStudents: combinedSummary.totalStudents || ownerSummary?.totalStudents || 0,
+        firestoreUsage: combinedSummary.firestoreUsage || ownerSummary?.firestoreUsage || '0 MB',
+        storageUsage: combinedSummary.storageUsage || ownerSummary?.storageUsage || '0 GB'
       });
 
       setSchools(schoolsData);
@@ -110,6 +134,27 @@ const SchoolListPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleRefreshSummary = async () => {
+    setIsRefreshingSummary(true);
+    try {
+      const summary = await refreshOwnerDashboardSummaryFromCounts(db);
+      setStats(summary);
+      Swal.fire({
+        icon: 'success',
+        title: 'อัปเดตสรุปแล้ว',
+        text: `โรงเรียน ${summary.totalSchools} | ครู ${summary.totalTeachers} | นักเรียน ${summary.totalStudents}`,
+        timer: 2200,
+        showConfirmButton: false,
+      });
+      fetchData();
+    } catch (error) {
+      console.error("Error refreshing owner summary:", error);
+      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอัปเดตข้อมูลสรุปได้', 'error');
+    } finally {
+      setIsRefreshingSummary(false);
+    }
+  };
 
   const handleDeleteSchool = async (schoolId: string, logoUrl?: string) => {
     const result = await Swal.fire({
@@ -133,20 +178,57 @@ const SchoolListPage: React.FC = () => {
           }
         });
 
-        // 1. Delete logo from storage if it exists
+        // 1. Delete all teachers and their images
+        const teachersSnapshot = await getDocs(collection(db, collectionName, schoolId, 'teachers'));
+        const teacherCount = teachersSnapshot.docs.filter((teacherDoc) =>
+          isActiveTeacherSummaryStatus(teacherDoc.data().status || 'อยู่')
+        ).length;
+        for (const teacherDoc of teachersSnapshot.docs) {
+          const teacherData = teacherDoc.data();
+          if (teacherData.profileImageUrl) {
+            try {
+              await deleteObject(ref(storage, teacherData.profileImageUrl));
+            } catch (e) { console.error("Error deleting teacher image:", e); }
+          }
+          await deleteDoc(teacherDoc.ref);
+          // Note: We don't delete Auth accounts here to avoid hitting rate limits in a loop
+          // and because we might not have all UIDs easily or permissions.
+        }
+
+        // 2. Delete all students and their images
+        const studentsSnapshot = await getDocs(collection(db, collectionName, schoolId, 'students'));
+        const studentCount = studentsSnapshot.docs.filter((studentDoc) => {
+          const data = studentDoc.data();
+          return isActiveStudentSummaryStatus(data.status || data.studentStatus);
+        }).length;
+        for (const studentDoc of studentsSnapshot.docs) {
+          const studentData = studentDoc.data();
+          if (studentData.profileImageUrl) {
+            try {
+              await deleteObject(ref(storage, studentData.profileImageUrl));
+            } catch (e) { console.error("Error deleting student image:", e); }
+          }
+          await deleteDoc(studentDoc.ref);
+        }
+
+        // 3. Delete logo from storage if it exists
         if (logoUrl) {
           try {
-            // ดึง path จาก URL ของ Firebase Storage
             const logoRef = ref(storage, logoUrl);
             await deleteObject(logoRef);
           } catch (error) {
             console.error("Error deleting logo:", error);
-            // ถ้าไม่พบไฟล์ใน storage ให้ทำต่อเพื่อลบ document
           }
         }
 
-        // 2. Delete document from Firestore
+        // 4. Delete document from Firestore
+        await deleteDoc(getSchoolDashboardSummaryRef(db, schoolId));
         await deleteDoc(doc(db, collectionName, schoolId));
+        await updateOwnerDashboardSummary(db, {
+          schools: -1,
+          teachers: -teacherCount,
+          students: -studentCount,
+        });
 
         Swal.fire('ลบสำเร็จ!', 'ข้อมูลโรงเรียนถูกลบออกแล้ว', 'success');
         fetchData(); // รีเฟรชข้อมูล
@@ -194,6 +276,15 @@ const SchoolListPage: React.FC = () => {
                 <FaPlus size={10} />
                 <span>เพิ่มโรงเรียนใหม่</span>
               </Link>
+              <button
+                type="button"
+                onClick={handleRefreshSummary}
+                disabled={isRefreshingSummary}
+                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-3 py-1.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95 text-[11px] whitespace-nowrap"
+              >
+                <FaServer size={10} className={isRefreshingSummary ? 'animate-spin' : ''} />
+                <span>{isRefreshingSummary ? 'กำลังอัปเดต...' : 'อัปเดตสรุป'}</span>
+              </button>
             </div>
           </header>
 

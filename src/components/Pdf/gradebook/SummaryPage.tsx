@@ -64,7 +64,6 @@ const styles = StyleSheet.create({
     qrContainer: {
         alignItems: 'center',
         justifyContent: 'center',
-<<<<<<< HEAD
         padding: 6,
         border: '0.8px solid #e5e7eb',
         borderRadius: 4,
@@ -72,15 +71,6 @@ const styles = StyleSheet.create({
         marginLeft: 15
     },
     qrImage: { width: 65, height: 65 }
-=======
-        padding: 2,
-        border: '0.5px solid #e5e7eb',
-        borderRadius: 2,
-        backgroundColor: '#ffffff',
-        marginLeft: 10
-    },
-    qrImage: { width: 50, height: 50 }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 });
 
 const SummaryPage: React.FC<SummaryPageProps> = ({
@@ -300,11 +290,7 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                         </View>
                         <View style={[styles.flexRow, styles.itemsCenter, { justifyContent: 'center', paddingRight: 0 }]}>
                             {/* Dummy view for centering signature when QR is present */}
-<<<<<<< HEAD
                             {qrCodeDataUrl && <View style={{ width: 80 }} />}
-=======
-                            {qrCodeDataUrl && <View style={{ width: 44 }} />}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                             <View style={[styles.textCenter, { flex: 1 }]}>
                                 <Text style={[styles.textMd, { marginBottom: 2 }]}>ลงชื่อ ............................................................................................</Text>
@@ -315,7 +301,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
 
                             {qrCodeDataUrl && (
                                 <View style={styles.qrContainer}>
-<<<<<<< HEAD
                                     <View style={{ position: 'relative' }}>
                                         <Image src={qrCodeDataUrl} style={styles.qrImage} />
                                         {schoolInfo?.logoUrl && (
@@ -336,11 +321,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                                     </View>
                                     <Text style={{ fontSize: 9, marginTop: 4, color: '#374151', fontFamily: 'TH Sarabun PSK', fontWeight: 'bold' }}>ตรวจสอบเอกสาร</Text>
                                     <Text style={{ fontSize: 6, color: '#6b7280', fontFamily: 'TH Sarabun PSK' }}>Digital Reference</Text>
-=======
-                                    <Image src={qrCodeDataUrl} style={styles.qrImage} />
-                                    <Text style={{ fontSize: 7, marginTop: 1, color: '#4b5563', fontFamily: 'TH Sarabun PSK', fontWeight: 'bold' }}>ตรวจสอบเอกสาร</Text>
-                                    <Text style={{ fontSize: 4, color: '#9ca3af', fontFamily: 'TH Sarabun PSK' }}>Digital Reference</Text>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </View>
                             )}
                         </View>

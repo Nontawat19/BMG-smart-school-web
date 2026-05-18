@@ -6,6 +6,7 @@ import MainLayout from "@/layouts/MainLayout";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import Swal from 'sweetalert2';
+import { updateOwnerAndSchoolCounts } from '@/utils/ownerStatsUtils';
 
 const DAYS = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัสบดี', fri: 'ศุกร์' };
 const PERIODS = Array.from({ length: 8 }, (_, i) => i + 1);
@@ -52,6 +53,7 @@ const AddTeacherPage: React.FC = () => {
       };
 
       await addDoc(collection(db, 'school-settings', schoolId, 'teachers'), teacherData);
+      await updateOwnerAndSchoolCounts(db, schoolId, { teachers: 1 });
       Swal.fire({
         icon: 'success',
         title: 'เพิ่มข้อมูลครูสำเร็จ!',

@@ -2,7 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path'; // ✅ ต้อง import path
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-<<<<<<< HEAD
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
@@ -38,11 +37,6 @@ export default defineConfig({
       }
     })
   ],
-=======
-
-export default defineConfig({
-  plugins: [react(), nodePolyfills()],
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'), // ✅ เพิ่ม alias

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore } from '@/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import {
@@ -11,6 +11,8 @@ import {
     FaExclamationTriangle, FaTable, FaSave,
     FaMagic, FaTimes, FaCloudUploadAlt, FaChevronRight
 } from 'react-icons/fa';
+import { toBuddhistBirthDateForSave } from '@/utils/birthDateUtils';
+import { updateOwnerAndSchoolCounts } from '@/utils/ownerStatsUtils';
 
 /**
  * Helper สำหรับจัดรูปแบบชื่อเต็มในหน้า Preview (ป้องกันคำนำหน้าซ้ำซ้อน)
@@ -693,7 +695,7 @@ const ImportStudentDMCPage: React.FC = () => {
                     room: rowData.room || "",
                     studentNumber: rowData.studentNumber || "",
                     gender: rowData.gender || "",
-                    birthDate: rowData.birthDate || "",
+                    birthDate: toBuddhistBirthDateForSave(rowData.birthDate),
                     ageYear: rowData.ageYear || "",
                     ageMonth: rowData.ageMonth || "",
                     bloodType: rowData.bloodType || "",
@@ -955,13 +957,19 @@ const ImportStudentDMCPage: React.FC = () => {
         });
 
         // --- Process Loop ---
-<<<<<<< HEAD
         const duplicates: { record: MappedData; conflict: any }[] = [];
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         for (let i = 0; i < total; i++) {
             const student = previewData[i];
+            
+            // Student ID Padding Logic (4 to 5 digits)
+            if (student.studentId) {
+                let sid = String(student.studentId).trim();
+                if (sid.length === 4) {
+                    sid = '0' + sid;
+                }
+                student.studentId = sid;
+            }
 
             // Update UI with student name (Real-time Feedback)
             const currentItemEl = document.getElementById('swal-current-item');
@@ -970,40 +978,59 @@ const ImportStudentDMCPage: React.FC = () => {
             }
 
             try {
-<<<<<<< HEAD
                 // Check Duplicate (By studentId or idCardNumber)
                 let conflictDoc: any = null;
 
                 // Check Student ID
+                let snapshotId: any = null;
+                let snapshotCard: any = null;
+
                 if (student.studentId) {
                     const qId = query(studentsRef, where('studentId', '==', student.studentId));
-                    const snapshotId = await getDocs(qId);
+                    snapshotId = await getDocs(qId);
                     if (!snapshotId.empty) {
                         conflictDoc = snapshotId.docs[0].data();
+                        conflictDoc.id = snapshotId.docs[0].id;
                     }
                 }
 
                 // Check ID Card Number (if not already found)
                 if (!conflictDoc && student.idCardNumber) {
                     const qCard = query(studentsRef, where('idCardNumber', '==', student.idCardNumber));
-                    const snapshotCard = await getDocs(qCard);
+                    snapshotCard = await getDocs(qCard);
                     if (!snapshotCard.empty) {
                         conflictDoc = snapshotCard.docs[0].data();
+                        conflictDoc.id = snapshotCard.docs[0].id;
                     }
                 }
 
                 if (conflictDoc) {
-                    duplicates.push({ record: student, conflict: conflictDoc });
-=======
-                // Check Duplicate
-                const q = query(studentsRef, where('studentId', '==', student.studentId));
-                const snapshot = await getDocs(q);
+                    const studentId = conflictDoc.id || conflictDoc.uid || snapshotId?.docs?.[0]?.id || snapshotCard?.docs?.[0]?.id;
+                    if (studentId) {
+                        const { status, ...allStudentData } = student;
 
-                if (!snapshot.empty) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                    skipCount++;
-                    const skipCountEl = document.getElementById('swal-skip-count');
-                    if (skipCountEl) skipCountEl.innerText = String(skipCount);
+                        // Calculate roles based on contact information
+                        const roles = ["student"];
+                        if (allStudentData.fatherPhone || allStudentData.motherPhone || allStudentData.guardianPhone) {
+                            roles.push("parent");
+                        }
+
+                        const updateData = {
+                            ...allStudentData,
+                            role: roles,
+                            updatedAt: serverTimestamp(),
+                        };
+                        await setDoc(doc(studentsRef, studentId), updateData, { merge: true });
+                        successCount++;
+                        const successCountEl = document.getElementById('swal-success-count');
+                        if (successCountEl) successCountEl.innerText = String(successCount);
+                    } else {
+                        // Fallback if ID not found (shouldn't happen with snapshot)
+                        duplicates.push({ record: student, conflict: conflictDoc });
+                        skipCount++;
+                        const skipCountEl = document.getElementById('swal-skip-count');
+                        if (skipCountEl) skipCountEl.innerText = String(skipCount);
+                    }
                 } else {
                     const { status, ...allStudentData } = student;
 
@@ -1016,10 +1043,11 @@ const ImportStudentDMCPage: React.FC = () => {
                         ...allStudentData,
                         schoolId: schoolId,
                         role: roles,
-                        studentStatus: 'เรียนอยู่',
+                        studentStatus: 'กำลังศึกษา',
                         profileImageUrl: "",
                         behaviorScore: 100,
                         createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
                     };
 
                     await addDoc(studentsRef, studentData);
@@ -1043,6 +1071,9 @@ const ImportStudentDMCPage: React.FC = () => {
         }
 
         setIsProcessing(false);
+        if (successCount > 0) {
+            await updateOwnerAndSchoolCounts(firestore, schoolId, { students: successCount });
+        }
         Swal.close();
 
         // --- Final Summary Popup (Premium Dashboard Style) ---
@@ -1081,7 +1112,6 @@ const ImportStudentDMCPage: React.FC = () => {
                             <span class="text-4xl font-black text-amber-600 dark:text-amber-400">${skipCount}</span>
                         </div>
 
-<<<<<<< HEAD
                         ${duplicates.length > 0 ? `
                             <div class="mt-8">
                                 <div class="flex items-center gap-2 mb-3 px-4">
@@ -1117,8 +1147,6 @@ const ImportStudentDMCPage: React.FC = () => {
                             </div>
                         ` : ""}
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         ${failCount > 0 ? `
                         <div class="flex justify-between items-center p-6 bg-red-50/50 dark:bg-red-900/10 rounded-[2.5rem] border border-red-100 dark:border-red-800/30 group">
                             <i class="fas fa-exclamation-triangle text-2xl text-red-500"></i>
@@ -1369,22 +1397,29 @@ const ImportStudentDMCPage: React.FC = () => {
                                             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium">กรองข้อมูลเพื่อตรวจสอบความถูกต้องก่อนบันทึก</p>
                                         </div>
                                         <div className="flex flex-col sm:flex-row items-center gap-4">
-                                            <div className="flex bg-gray-50 dark:bg-[#1e1f21] p-1 rounded-xl border border-gray-200 dark:border-gray-700 h-[46px] items-center">
-                                                <button
-                                                    onClick={() => handleAutoGenerateStudentNumbers('name')}
-                                                    className="px-3 h-full rounded-lg text-[10px] font-black uppercase tracking-tight flex items-center gap-2 hover:bg-white dark:hover:bg-gray-800 transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
-                                                    title="เรียงเลขที่ตามชื่อ ก-ฮ"
-                                                >
-                                                    <FaMagic className="text-xs" /> ชื่อ
-                                                </button>
-                                                <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700 mx-1"></div>
-                                                <button
-                                                    onClick={() => handleAutoGenerateStudentNumbers('id')}
-                                                    className="px-3 h-full rounded-lg text-[10px] font-black uppercase tracking-tight flex items-center gap-2 hover:bg-white dark:hover:bg-gray-800 transition-all text-gray-500 hover:text-indigo-600 active:scale-95"
-                                                    title="เรียงเลขที่ตามรหัสนักเรียน"
-                                                >
-                                                    <FaTable className="text-xs" /> รหัส
-                                                </button>
+                                            <div className="flex items-center gap-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-[#1b1c24] dark:to-[#221c2c] px-3.5 py-1 rounded-xl border border-indigo-100 dark:border-indigo-950 shadow-sm h-[46px]">
+                                                <span className="text-[11px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5 whitespace-nowrap pl-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-pulse"></span>
+                                                    จัดลำดับเลขที่ตาม
+                                                </span>
+                                                <div className="w-[1px] h-4 bg-indigo-200 dark:bg-indigo-900 mx-1"></div>
+                                                <div className="flex bg-white/60 dark:bg-black/30 p-0.5 rounded-lg border border-indigo-100/50 dark:border-white/5 items-center h-[34px]">
+                                                    <button
+                                                        onClick={() => handleAutoGenerateStudentNumbers('name')}
+                                                        className="px-3 h-full rounded-md text-[10px] font-black uppercase tracking-tight flex items-center gap-1.5 transition-all text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#1a1b1f] hover:shadow-sm active:scale-95"
+                                                        title="เรียงเลขที่ตามชื่อ ก-ฮ"
+                                                    >
+                                                        <FaMagic className="text-xs text-indigo-500 dark:text-indigo-400" /> ชื่อ
+                                                    </button>
+                                                    <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-700/50 mx-1"></div>
+                                                    <button
+                                                        onClick={() => handleAutoGenerateStudentNumbers('id')}
+                                                        className="px-3 h-full rounded-md text-[10px] font-black uppercase tracking-tight flex items-center gap-1.5 transition-all text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-[#1a1b1f] hover:shadow-sm active:scale-95"
+                                                        title="เรียงเลขที่ตามรหัสนักเรียน"
+                                                    >
+                                                        <FaTable className="text-xs text-indigo-500 dark:text-indigo-400" /> รหัส
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             <select

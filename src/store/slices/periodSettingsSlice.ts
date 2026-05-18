@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "@/firebase";
+import { normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
 
 /**
  * periodSettingsSlice
@@ -15,6 +16,8 @@ export interface Period {
     startTime: string;
     endTime: string;
     isTeaching: boolean;
+    isTeachingPeriod?: boolean;
+    index?: number;
     order?: number;
 }
 
@@ -50,19 +53,21 @@ export const fetchPeriodSettings = createAsyncThunk(
             }
 
             const data = docSnap.data();
-            const rawPeriods: Period[] = (data.periods || []).map((p: any, index: number) => ({
+            const rawPeriods: Period[] = normalizePeriodSettings((data.periods || []).map((p: any, index: number) => ({
                 id: p.id || `period-${index}`,
                 label: p.label || `คาบ ${index + 1}`,
                 startTime: p.startTime || "",
                 endTime: p.endTime || "",
-                isTeaching: p.isTeaching !== false,
-                order: p.order ?? index,
-            }));
+                isTeaching: p.isTeaching ?? p.isTeachingPeriod,
+                isTeachingPeriod: p.isTeachingPeriod ?? p.isTeaching,
+                index: p.index ?? p.order ?? index,
+                order: p.order ?? p.index ?? index,
+            })));
 
             // เรียงลำดับตาม order
             rawPeriods.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-            const teachingPeriods = rawPeriods.filter((p) => p.isTeaching);
+            const teachingPeriods = rawPeriods.filter((p) => p.isTeachingPeriod || p.isTeaching);
 
             return {
                 periods: rawPeriods,
@@ -81,8 +86,9 @@ const periodSettingsSlice = createSlice({
         /** อัปเดตคาบเรียนหลังแก้ไข (ใช้ใน PeriodSettingsPage) */
         updatePeriods(state, action) {
             const periods: Period[] = action.payload;
-            state.periods = periods;
-            state.teachingPeriods = periods.filter((p) => p.isTeaching);
+            const normalized = normalizePeriodSettings(periods);
+            state.periods = normalized;
+            state.teachingPeriods = normalized.filter((p) => p.isTeachingPeriod || p.isTeaching);
         },
         resetPeriodSettings() {
             return initialState;

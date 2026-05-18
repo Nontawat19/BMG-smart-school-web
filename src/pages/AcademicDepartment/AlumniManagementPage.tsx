@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import MainLayout from "@/layouts/MainLayout";
-import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useSelector, useDispatch } from 'react-redux';
@@ -10,7 +11,7 @@ import {
     FaGraduationCap, FaSearch, FaUserGraduate, FaInfoCircle, FaFilter, 
     FaUsers, FaHistory, FaUserTimes, FaExchangeAlt, FaFileAlt
 } from 'react-icons/fa';
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Home, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
@@ -106,6 +107,8 @@ const AlumniManagementPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [selectedClassLevel, setSelectedClassLevel] = useState<string>('');
     const [selectedRoom, setSelectedRoom] = useState<string>('');
+    const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+    const [isBulkReactivate, setIsBulkReactivate] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [reactivateStudent, setReactivateStudent] = useState<Student | null>(null);
     const [reactivateForm, setReactivateForm] = useState({
@@ -174,7 +177,7 @@ const AlumniManagementPage: React.FC = () => {
                 status: getStudentStatus(doc.data()),
                 graduationDetails: doc.data().graduationDetails,
                 exitDetails: doc.data().exitDetails,
-            })).filter(isArchivedStudent);
+            })).filter(s => isArchivedStudent(s) && s.status !== 'รออนุมัติจบ' && s.status !== 'pending_graduation');
             setStudents(studentDocs);
         } catch (error) {
             console.error("Error fetching alumni:", error);
@@ -243,6 +246,7 @@ const AlumniManagementPage: React.FC = () => {
             return;
         }
 
+        setIsBulkReactivate(false);
         setReactivateStudent(student);
         setReactivateForm({
             academicYear: academicYearOptions[0] || currentAcademicYear || '',
@@ -251,16 +255,77 @@ const AlumniManagementPage: React.FC = () => {
         });
     };
 
+    const openBulkReactivateModal = () => {
+        const selectedList = students.filter(s => selectedStudentIds.includes(s.docId));
+        const validList = selectedList.filter(s => {
+            const nextClass = getNextClassOption(s);
+            return !(!nextClass && s.status === 'สำเร็จการศึกษา');
+        });
+
+        if (validList.length === 0) {
+            Swal.fire('แจ้งเตือน', 'นักเรียนที่เลือกทั้งหมดเป็นศิษย์เก่าถาวรหรือไม่สามารถรับเข้าเรียนต่อได้', 'warning');
+            return;
+        }
+
+        if (validList.length < selectedList.length) {
+            Swal.fire({
+                title: 'พบนักเรียนบางคนเป็นศิษย์เก่าถาวร',
+                text: `มีนักเรียน ${selectedList.length - validList.length} คนที่ไม่สามารถรับเข้าเรียนต่อได้ ระบบจะดำเนินการเฉพาะคนที่มีสิทธิ์เท่านั้น`,
+                icon: 'info',
+                confirmButtonColor: '#4f46e5',
+                customClass: { popup: 'rounded-[2rem]' }
+            });
+        }
+
+        setIsBulkReactivate(true);
+        // Use the first valid student's next class as default
+        const firstNextClass = getNextClassOption(validList[0]);
+        setReactivateForm({
+            academicYear: academicYearOptions[0] || currentAcademicYear || '',
+            classLevel: firstNextClass?.[1] || '',
+            room: validList[0].roomNumber || '1',
+        });
+        setReactivateStudent(validList[0]); // Just for UI name display in single mode, bulk uses validList
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedStudentIds.length === currentItems.length) {
+            setSelectedStudentIds([]);
+        } else {
+            setSelectedStudentIds(currentItems.map(s => s.docId));
+        }
+    };
+
+    const toggleSelectStudent = (docId: string) => {
+        setSelectedStudentIds(prev => 
+            prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+        );
+    };
+
     const handleReactivateSubmit = async () => {
-        if (!schoolId || !reactivateStudent) return;
+        if (!schoolId) return;
+        
+        const selectedList = isBulkReactivate 
+            ? students.filter(s => selectedStudentIds.includes(s.docId)).filter(s => {
+                const nextClass = getNextClassOption(s);
+                return !(!nextClass && s.status === 'สำเร็จการศึกษา');
+            })
+            : reactivateStudent ? [reactivateStudent] : [];
+
+        if (selectedList.length === 0) return;
+
         if (!reactivateForm.academicYear || !reactivateForm.classLevel || !reactivateForm.room) {
             Swal.fire('ข้อมูลไม่ครบ', 'กรุณาเลือกปีการศึกษา ระดับชั้น และห้องเรียน', 'warning');
             return;
         }
 
+        const confirmText = isBulkReactivate 
+            ? `นักเรียนที่เลือกจำนวน ${selectedList.length} คน จะกลับเป็นนักเรียนปัจจุบัน ชั้น ${reactivateForm.classLevel}/${reactivateForm.room} ปีการศึกษา ${reactivateForm.academicYear}`
+            : `${selectedList[0].firstName} ${selectedList[0].lastName} จะกลับเป็นนักเรียนปัจจุบัน ชั้น ${reactivateForm.classLevel}/${reactivateForm.room} ปีการศึกษา ${reactivateForm.academicYear}`;
+
         const result = await Swal.fire({
             title: 'ยืนยันรับกลับเข้าเรียน?',
-            text: `${reactivateStudent.firstName} ${reactivateStudent.lastName} จะกลับเป็นนักเรียนปัจจุบัน ชั้น ${reactivateForm.classLevel}/${reactivateForm.room} ปีการศึกษา ${reactivateForm.academicYear}`,
+            text: confirmText,
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'ยืนยัน',
@@ -273,24 +338,32 @@ const AlumniManagementPage: React.FC = () => {
 
         setIsReactivating(true);
         try {
-            const studentRef = doc(firestore, 'school-settings', schoolId, 'students', reactivateStudent.docId);
-            await updateDoc(studentRef, {
-                classLevel: reactivateForm.classLevel,
-                room: reactivateForm.room,
-                roomNumber: reactivateForm.room,
-                status: 'เรียนอยู่',
-                studentStatus: 'เรียนอยู่',
-                reEnrollmentDetails: {
-                    fromStatus: reactivateStudent.status,
-                    fromClassLevel: reactivateStudent.classLevel,
-                    fromRoom: reactivateStudent.roomNumber,
-                    academicYear: reactivateForm.academicYear,
-                    reactivatedAt: new Date().toISOString(),
-                },
-                updatedAt: new Date().toISOString()
-            });
+            const batchSize = 10;
+            for (let i = 0; i < selectedList.length; i += batchSize) {
+                const chunk = selectedList.slice(i, i + batchSize);
+                await Promise.all(chunk.map(async (student) => {
+                    const studentRef = doc(firestore, 'school-settings', schoolId, 'students', student.docId);
+                    return updateDoc(studentRef, {
+                        classLevel: reactivateForm.classLevel,
+                        room: reactivateForm.room,
+                        roomNumber: reactivateForm.room,
+                        status: 'กำลังศึกษา',
+                        studentStatus: 'กำลังศึกษา',
+                        reEnrollmentDetails: {
+                            fromStatus: student.status,
+                            fromClassLevel: student.classLevel,
+                            fromRoom: student.roomNumber,
+                            academicYear: reactivateForm.academicYear,
+                            reactivatedAt: new Date().toISOString(),
+                        },
+                        updatedAt: new Date().toISOString()
+                    });
+                }));
+            }
+
             setReactivateStudent(null);
-            Swal.fire('สำเร็จ', 'ย้ายกลับเป็นนักเรียนปัจจุบันเรียบร้อยแล้ว', 'success');
+            setSelectedStudentIds([]);
+            Swal.fire('สำเร็จ', `ดำเนินการเรียบร้อยแล้ว (${selectedList.length} รายการ)`, 'success');
             fetchStudents();
         } catch (error) {
             console.error("Reactivate error:", error);
@@ -354,7 +427,12 @@ const AlumniManagementPage: React.FC = () => {
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                         <div>
                                 <div className="flex items-center gap-4">
-                                    <BackButton to="/academic/hub/registration" />
+                                    <Link 
+                                        to="/home"
+                                        className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
+                                    >
+                                        <Home size={20} />
+                                    </Link>
                                     <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ทำเนียบศิษย์เก่า</h1>
                                 </div>
                                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -402,10 +480,20 @@ const AlumniManagementPage: React.FC = () => {
                                 </select>
                             </div>
 
-                            <div className="flex items-center gap-2 ml-auto px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 text-xs font-bold text-gray-600 dark:text-gray-300">
+                             <div className="flex items-center gap-2 ml-auto px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-gray-200 dark:border-white/5 text-xs font-bold text-gray-600 dark:text-gray-300">
                                 <FaHistory size={13} />
                                 <span>{filteredStudents.length} / {students.length} รายชื่อ</span>
                             </div>
+
+                            {selectedStudentIds.length > 0 && (
+                                <button
+                                    onClick={openBulkReactivateModal}
+                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-600/20 transition-all active:scale-95 text-xs font-bold"
+                                >
+                                    <FaExchangeAlt size={13} />
+                                    <span>รับเข้าเรียนต่อที่เลือก ({selectedStudentIds.length})</span>
+                                </button>
+                            )}
                         </div>
                     </header>
 
@@ -413,8 +501,16 @@ const AlumniManagementPage: React.FC = () => {
                         <div className="bg-white dark:bg-[#2a2b2f]/60 rounded-2xl shadow-lg ring-1 ring-black/5 dark:ring-white/5 overflow-hidden">
                             <div className="table-responsive">
                                 <table className="min-w-full divide-y divide-gray-700">
-                                    <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
+                                     <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
                                         <tr>
+                                            <th className="py-3 px-2 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 w-10">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                                                    checked={selectedStudentIds.length === currentItems.length && currentItems.length > 0}
+                                                    onChange={toggleSelectAll}
+                                                />
+                                            </th>
                                             <th className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 w-12">ลำดับ</th>
                                             <th className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
                                             <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสนักเรียน</th>
@@ -427,14 +523,14 @@ const AlumniManagementPage: React.FC = () => {
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={7} className="px-6 py-20 text-center">
+                                                <td colSpan={8} className="px-6 py-20 text-center">
                                                     <div className="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                                                     <p className="mt-4 text-sm font-bold text-gray-400 uppercase tracking-widest">กำลังโหลดข้อมูล...</p>
                                                 </td>
                                             </tr>
                                         ) : currentItems.length === 0 ? (
                                             <tr>
-                                                <td colSpan={7} className="px-6 py-20 text-center">
+                                                <td colSpan={8} className="px-6 py-20 text-center">
                                                     <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                                                         <FaSearch className="text-gray-400 dark:text-gray-500 text-2xl" />
                                                     </div>
@@ -443,13 +539,21 @@ const AlumniManagementPage: React.FC = () => {
                                             </tr>
                                         ) : (
                                             currentItems.map((s, index) => (
-                                                <tr key={s.docId} className="hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors">
+                                                <tr key={s.docId} className={`hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors ${selectedStudentIds.includes(s.docId) ? 'bg-indigo-500/5 dark:bg-indigo-500/10' : ''}`}>
+                                                    <td className="py-3 px-2 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                                                            checked={selectedStudentIds.includes(s.docId)}
+                                                            onChange={() => toggleSelectStudent(s.docId)}
+                                                        />
+                                                    </td>
                                                     <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
                                                     <td className="whitespace-nowrap py-3 px-2 text-xs">
                                                         <div className="flex items-center group">
                                                             <div className="h-8 w-8 flex-shrink-0">
-                                                                <img
-                                                                    className="h-8 w-8 rounded-full object-cover"
+                                                                <ProfileAvatar
+                                                                    className="h-8 w-8"
                                                                     src={s.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(`${s.firstName || 'Student'} ${s.lastName || ''}`)}&background=random`}
                                                                     alt={`${s.firstName} ${s.lastName}`}
                                                                     loading="lazy"
@@ -557,12 +661,26 @@ const AlumniManagementPage: React.FC = () => {
 
                             <div className="p-6 space-y-5">
                                 <div className="rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 p-4">
-                                    <div className="text-sm font-black text-gray-900 dark:text-white">
-                                        {reactivateStudent.firstName} {reactivateStudent.lastName}
-                                    </div>
-                                    <div className="mt-1 text-xs font-bold text-gray-400">
-                                        รหัส {reactivateStudent.studentId} | ชั้นล่าสุด {reactivateStudent.classLevel}/{reactivateStudent.roomNumber} | สถานะ {reactivateStudent.status}
-                                    </div>
+                                    {isBulkReactivate ? (
+                                        <>
+                                            <div className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2">
+                                                <FaUsers className="text-indigo-500" />
+                                                รับเข้าเรียนต่อแบบกลุ่ม ({selectedStudentIds.length} รายการ)
+                                            </div>
+                                            <div className="mt-1 text-xs font-bold text-gray-400">
+                                                นักเรียนที่เลือกทั้งหมดจะถูกย้ายกลับไปเป็นนักเรียนปัจจุบันในระดับชั้นที่กำหนด
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="text-sm font-black text-gray-900 dark:text-white">
+                                                {reactivateStudent.firstName} {reactivateStudent.lastName}
+                                            </div>
+                                            <div className="mt-1 text-xs font-bold text-gray-400">
+                                                รหัส {reactivateStudent.studentId} | ชั้นล่าสุด {reactivateStudent.classLevel}/{reactivateStudent.roomNumber} | สถานะ {reactivateStudent.status}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -607,7 +725,7 @@ const AlumniManagementPage: React.FC = () => {
                                 </div>
 
                                 <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 text-xs font-bold text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                                    ถ้ากดยืนยัน ระบบจะเปลี่ยนสถานะเป็น “เรียนอยู่” และย้ายข้อมูลออกจากหน้าศิษย์เก่าไปแสดงในรายชื่อนักเรียนปัจจุบัน
+                                    ถ้ากดยืนยัน ระบบจะเปลี่ยนสถานะเป็น “กำลังศึกษา” และย้ายข้อมูลออกจากหน้าศิษย์เก่าไปแสดงในรายชื่อนักเรียนปัจจุบัน
                                 </div>
                             </div>
 

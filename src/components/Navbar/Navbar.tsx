@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { firestore } from "@/firebase";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 
 import {
   collection,
@@ -17,13 +18,13 @@ import {
   Timestamp,
   getDoc,
   getDocs,
+  limit,
 } from "firebase/firestore";
 
 import { formatDistanceToNow } from "date-fns";
 import { th } from "date-fns/locale";
 
-import { FaBell, FaBars, FaBookOpen, FaBook, FaChartPie, FaUsers, FaBuilding, FaLine, FaSun, FaMoon } from "react-icons/fa";
-import { BsChatDotsFill } from "react-icons/bs";
+import { FaBell, FaBars, FaBookOpen, FaSun, FaMoon, FaHome, FaUserCheck } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
 // import liff from "@line/liff"; // 📌 นำ LIFF ออกตามคำขอ
 
@@ -32,15 +33,22 @@ import SearchSidebar from "@/components/SearchSidebar/SearchSidebar";
 import LeftSidebar from "../Sidebar/LeftSidebar";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { useTheme } from "@/ThemeContext";
+import Swal from "sweetalert2";
 
 /* -------------------- types -------------------- */
 interface Notification {
   id: string;
-  path: string; // 📌 เพิ่ม path เพื่อให้สามารถอัปเดตเอกสารได้ถูกต้อง
+  path?: string; // 📌 เพิ่ม path เพื่อให้สามารถอัปเดตเอกสารได้ถูกต้อง
   message: string;
   isRead: boolean;
   createdAt: Timestamp;
   link?: string;
+  source?: "system" | "club-request";
+  clubRequest?: {
+    requestId: string;
+    approvalSide: "exit" | "entry";
+    approvalClubId: string;
+  };
 }
 
 /* -------------------- component -------------------- */
@@ -60,15 +68,12 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isOpenNoti, setIsOpenNoti] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [clubRequestNotifications, setClubRequestNotifications] = useState<Notification[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoadingNoti, setIsLoadingNoti] = useState(true);
-  const [isLineChatOpen, setIsLineChatOpen] = useState(false);
-  const [lineChatUsers, setLineChatUsers] = useState<any[]>([]);
-  const [isLineChatLoading, setIsLineChatLoading] = useState(false);
-  const [isLineLoggedIn, setIsLineLoggedIn] = useState(true);
-  const [isLiffInitialized, setIsLiffInitialized] = useState(true);
-  const lineChatRef = useRef<HTMLDivElement>(null);
-  const [schoolLineId, setSchoolLineId] = useState("");
+  const [processingNotificationId, setProcessingNotificationId] = useState<string | null>(null);
+
+  const resolvedSchoolId = schoolId || (currentUser as any)?.schoolId || null;
 
   /* -------------------- realtime notification ----โ---------------- */
   useEffect(() => {
@@ -100,22 +105,123 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
     return () => unsub();
   }, [currentUser?.uid]);
 
+  useEffect(() => {
+    if (!currentUser?.uid || !resolvedSchoolId) {
+      setClubRequestNotifications([]);
+      return;
+    }
+
+    let unsubClubs: (() => void) | undefined;
+    let unsubRequests: (() => void) | undefined;
+    let cancelled = false;
+
+    const subscribeClubRequests = async () => {
+      const teacherSnap = await getDocs(query(
+        collection(firestore, "school-settings", resolvedSchoolId, "teachers"),
+        where("uid", "==", currentUser.uid),
+        limit(1)
+      ));
+      const currentTeacherId = teacherSnap.docs[0]?.id || null;
+      if (!currentTeacherId) {
+        setClubRequestNotifications([]);
+        return;
+      }
+
+      if (cancelled) return;
+
+      const clubsQuery = query(
+        collection(firestore, "school-settings", resolvedSchoolId, "clubs"),
+        where("responsibleTeacherIds", "array-contains", currentTeacherId)
+      );
+
+      unsubClubs = onSnapshot(clubsQuery, (clubSnap) => {
+        const clubMap = new Map<string, string>();
+        clubSnap.docs.forEach((clubDoc) => {
+          clubMap.set(clubDoc.id, String(clubDoc.data().name || "ไม่ระบุชื่อชุมนุม"));
+        });
+
+        if (unsubRequests) {
+          unsubRequests();
+          unsubRequests = undefined;
+        }
+
+        if (clubMap.size === 0) {
+          setClubRequestNotifications([]);
+          return;
+        }
+
+        const pendingRequestsQuery = query(
+          collection(firestore, "school-settings", resolvedSchoolId, "club_requests"),
+          where("status", "==", "pending")
+        );
+
+        unsubRequests = onSnapshot(pendingRequestsQuery, (requestSnap) => {
+          const items: Notification[] = [];
+          requestSnap.docs.forEach((requestDoc) => {
+            const req = requestDoc.data() as any;
+            const isCurrentApproval = req.currentClubId && clubMap.has(req.currentClubId) && req.exitStatus === "pending";
+            const isTargetApproval = req.targetClubId && clubMap.has(req.targetClubId) && req.entryStatus === "pending";
+            if (!isCurrentApproval && !isTargetApproval) return;
+
+            const pushClubRequestNotification = (approvalSide: "exit" | "entry", approvalClubId: string, targetText: string) => {
+              items.push({
+                id: `club-request-${requestDoc.id}-${approvalSide}-${approvalClubId}`,
+                message: `${req.studentName || "นักเรียน"} ${targetText}`,
+                isRead: false,
+                createdAt: req.createdAt instanceof Timestamp ? req.createdAt : Timestamp.now(),
+                link: `/academic/club-members?clubId=${approvalClubId}&requestId=${requestDoc.id}`,
+                source: "club-request",
+                clubRequest: {
+                  requestId: requestDoc.id,
+                  approvalSide,
+                  approvalClubId,
+                },
+              });
+            };
+
+            if (isCurrentApproval) {
+              pushClubRequestNotification(
+                "exit",
+                req.currentClubId,
+                `ขอย้ายออกจาก ${req.currentClubName || clubMap.get(req.currentClubId) || "ชุมนุมเดิม"}`
+              );
+            }
+
+            if (isTargetApproval) {
+              pushClubRequestNotification(
+                "entry",
+                req.targetClubId,
+                req.type === "transfer"
+                  ? `ขอย้ายเข้า ${req.targetClubName || clubMap.get(req.targetClubId) || "ชุมนุมปลายทาง"}`
+                  : `ขอสมัครเข้า ${req.targetClubName || clubMap.get(req.targetClubId) || "ชุมนุม"}`
+              );
+            }
+          });
+          setClubRequestNotifications(items);
+        }, (error) => {
+          console.error("Error listening to club requests:", error);
+          setClubRequestNotifications([]);
+        });
+      }, (error) => {
+        console.error("Error listening to clubs for notifications:", error);
+        setClubRequestNotifications([]);
+      });
+    };
+
+    subscribeClubRequests();
+
+    return () => {
+      cancelled = true;
+      if (unsubRequests) unsubRequests();
+      if (unsubClubs) unsubClubs();
+    };
+  }, [currentUser, resolvedSchoolId]);
+
   /* -------------------- click outside -------------------- */
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
         setIsOpenNoti(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  /* -------------------- click outside line chat -------------------- */
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (lineChatRef.current && !lineChatRef.current.contains(e.target as Node)) {
-        setIsLineChatOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -138,54 +244,19 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
   // 📌 นำส่วน init LIFF ออกเนื่องจากไม่ได้ใช้งาน ID จริงและเพื่อลดข้อความแจ้งเตือนใน Console
 
-  /* -------------------- fetch school line oa id -------------------- */
-  useEffect(() => {
-    if (schoolId) {
-      const fetchSchoolSettings = async () => {
-        try {
-          const docRef = doc(firestore, "school-settings", schoolId);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            const basicId = data.lineOASettings?.school?.lineOABasicId;
-            if (basicId) setSchoolLineId(basicId);
-          }
-        } catch (error) {
-          console.error("Error fetching school settings:", error);
-        }
-      };
-      fetchSchoolSettings();
-    }
-  }, [schoolId]);
-
-  /* -------------------- fetch users for line chat -------------------- */
-  useEffect(() => {
-    if (isLineChatOpen && isLineLoggedIn && schoolId && lineChatUsers.length === 0) {
-      const fetchTeachers = async () => {
-        setIsLineChatLoading(true);
-        try {
-          const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
-          const q = query(teachersRef, orderBy("firstName"));
-          const querySnapshot = await getDocs(q);
-          const teachersData = querySnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as any))
-            .filter(teacher => teacher.id !== currentUser?.uid && teacher.lineId);
-          setLineChatUsers(teachersData);
-        } catch (error) {
-          console.error("Error fetching teachers for Line chat:", error);
-        } finally {
-          setIsLineChatLoading(false);
-        }
-      };
-      fetchTeachers();
-    }
-  }, [isLineChatOpen, isLineLoggedIn, schoolId, currentUser?.uid, lineChatUsers.length]);
-
   /* -------------------- handlers -------------------- */
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const visibleNotifications = useMemo(() => {
+    return [...clubRequestNotifications, ...notifications].sort((a, b) => {
+      const aTime = a.createdAt?.toMillis?.() || 0;
+      const bTime = b.createdAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+  }, [clubRequestNotifications, notifications]);
+
+  const unreadCount = visibleNotifications.filter((n) => !n.isRead).length;
 
   const handleReadOne = async (noti: Notification) => {
-    if (!noti.isRead) {
+    if (!noti.isRead && noti.path) {
       await updateDoc(doc(firestore, noti.path), { // 📌 แก้ไข: ใช้ path ที่เก็บไว้
         isRead: true,
       });
@@ -197,11 +268,103 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const handleReadAll = async () => {
     const batch = writeBatch(firestore);
     notifications.forEach((n) => {
-      if (!n.isRead) {
+      if (!n.isRead && n.path) {
         batch.update(doc(firestore, n.path), { isRead: true }); // 📌 แก้ไข: ใช้ path ที่เก็บไว้
       }
     });
     await batch.commit();
+  };
+
+  const handleClubRequestAction = async (
+    e: React.MouseEvent,
+    noti: Notification,
+    action: "approve" | "reject"
+  ) => {
+    e.stopPropagation();
+    if (!resolvedSchoolId || !noti.clubRequest || processingNotificationId) return;
+
+    const result = await Swal.fire({
+      title: action === "approve" ? "ยืนยันอนุมัติคำขอ?" : "ยืนยันปฏิเสธคำขอ?",
+      text: noti.message,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: action === "approve" ? "อนุมัติ" : "ปฏิเสธ",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: action === "approve" ? "#10b981" : "#ef4444",
+      background: isDarkMode ? "#2a2b2f" : "#fff",
+      color: isDarkMode ? "#fff" : "#111827",
+    });
+    if (!result.isConfirmed) return;
+
+    setProcessingNotificationId(noti.id);
+    try {
+      const requestRef = doc(firestore, "school-settings", resolvedSchoolId, "club_requests", noti.clubRequest.requestId);
+      const requestSnap = await getDoc(requestRef);
+      if (!requestSnap.exists()) {
+        Swal.fire("ไม่พบคำขอ", "คำขอนี้อาจถูกดำเนินการไปแล้ว", "info");
+        return;
+      }
+
+      const request = { id: requestSnap.id, ...requestSnap.data() } as any;
+      if (request.status !== "pending") {
+        Swal.fire("ดำเนินการแล้ว", "คำขอนี้ไม่อยู่ในสถานะรอดำเนินการแล้ว", "info");
+        return;
+      }
+
+      if (action === "reject") {
+        const batch = writeBatch(firestore);
+        batch.delete(requestRef);
+        await batch.commit();
+        await Swal.fire({
+          icon: "success",
+          title: "ปฏิเสธคำขอแล้ว",
+          timer: 1400,
+          showConfirmButton: false,
+          background: isDarkMode ? "#2a2b2f" : "#fff",
+          color: isDarkMode ? "#fff" : "#111827",
+        });
+        return;
+      }
+
+      const newExitStatus = noti.clubRequest.approvalSide === "exit" ? "approved" : request.exitStatus;
+      const newEntryStatus = noti.clubRequest.approvalSide === "entry" ? "approved" : request.entryStatus;
+      const updates: Record<string, any> = {
+        exitStatus: newExitStatus,
+        entryStatus: newEntryStatus,
+        updatedAt: new Date(),
+      };
+
+      if (newExitStatus === "approved" && newEntryStatus === "approved") {
+        const batch = writeBatch(firestore);
+        if (request.currentClubId) {
+          batch.delete(doc(firestore, "school-settings", resolvedSchoolId, "clubs", request.currentClubId, "members", request.studentId));
+        }
+        batch.set(doc(firestore, "school-settings", resolvedSchoolId, "clubs", request.targetClubId, "members", request.studentId), {
+          addedAt: new Date(),
+          addedBy: currentUser?.uid || null,
+          requestRef: request.id,
+          status: "confirmed",
+        });
+        batch.delete(requestRef);
+        await batch.commit();
+      } else {
+        await updateDoc(requestRef, updates);
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "อนุมัติคำขอแล้ว",
+        timer: 1400,
+        showConfirmButton: false,
+        background: isDarkMode ? "#2a2b2f" : "#fff",
+        color: isDarkMode ? "#fff" : "#111827",
+      });
+    } catch (error) {
+      console.error("Error processing club request notification:", error);
+      Swal.fire("ผิดพลาด", "ไม่สามารถดำเนินการคำขอได้", "error");
+    } finally {
+      setProcessingNotificationId(null);
+    }
   };
 
   const iconClass = (name: string) =>
@@ -243,78 +406,16 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
           {/* Center */}
           <div className="hidden md:flex items-center gap-6">
-            <FaBook
-              className={iconClass("academic")}
-              title="ฝ่ายบริหารงานวิชาการ"
-              onClick={() => navigate("/academic-admin")}
+            <FaHome
+              className={iconClass("home")}
+              title="หน้าแรก"
+              onClick={() => navigate("/home")}
             />
 
-
-
-            <div className="relative" ref={lineChatRef}>
-              <FaLine
-                className={iconClass("line")}
-                title="Line Chat"
-                onClick={() => {
-                  setIsLineChatOpen(p => !p);
-                  setIsOpenNoti(false);
-                  setIsMobileMenuOpen(false);
-                }}
-              />
-              {isLineChatOpen && (
-                <div className="fixed left-4 right-4 top-[65px] z-50 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-80 sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
-                  <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="font-bold text-lg text-gray-900 dark:text-white text-center">
-                      รายชื่อสำหรับแชท (LINE)
-                    </h3>
-                  </div>
-                  <div className="flex-grow max-h-[70vh] overflow-y-auto min-h-0">
-                    {/* 📌 ปรับให้แสดงรายชื่อครูได้เลยโดยไม่ต้องผ่าน Line Login (Bypass LIFF) */}
-                    {isLineChatLoading ? (
-                      <div className="p-4 text-center text-gray-500">กำลังโหลด...</div>
-                    ) : (
-                      <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {/* 🆕 ส่วนติดต่อ Line OA ของโรงเรียน */}
-                        <li
-                          onClick={() => window.open(`https://line.me/R/ti/p/${schoolLineId || '@YOUR_LINE_OA_ID'}`, '_blank')}
-                          className="p-3 flex items-center gap-3 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors bg-gray-50 dark:bg-white/5"
-                        >
-                          <div className="w-9 h-9 rounded-full bg-[#06c755] flex items-center justify-center text-white shadow-sm">
-                            <FaLine size={20} />
-                          </div>
-                          <div className="flex-grow overflow-hidden">
-                            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">ติดต่อโรงเรียน (Line OA)</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">สอบถามข้อมูล/แจ้งปัญหา</p>
-                          </div>
-                          <FaLine className="text-[#06c755] flex-shrink-0" />
-                        </li>
-
-                        {lineChatUsers.length === 0 ? (
-                          <div className="p-8 text-center text-gray-500">ไม่พบรายชื่อครูที่มี Line ID</div>
-                        ) : (
-                          lineChatUsers.map(user => (
-                            <li key={user.id}
-                              onClick={() => window.open(`https://line.me/ti/p/~${user.lineId}`, '_blank')}
-                              className="p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                            >
-                              <img src={user.profileImageUrl || defaultProfile} alt={user.firstName} className="w-9 h-9 rounded-full object-cover" />
-                              <div className="flex-grow overflow-hidden">
-                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{user.title}{user.firstName} {user.lastName}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">ID: {user.lineId}</p>
-                              </div>
-                              <FaLine className="text-green-500 flex-shrink-0" />
-                            </li>
-                          ))
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <BsChatDotsFill
-              className={iconClass("messages")}
-              onClick={() => navigate("/messages")}
+            <FaUserCheck
+              className={iconClass("attendance")}
+              title="ระบบเช็คชื่อ"
+              onClick={() => navigate("/academic/hub/attendance")}
             />
           </div>
 
@@ -339,7 +440,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               )}
 
               {isOpenNoti && (
-                <div className="fixed left-4 right-4 top-[65px] z-50 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-96 sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
+                <div className="fixed left-4 right-4 top-[65px] z-50 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-[640px] sm:max-w-[calc(100vw-2rem)] sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
                   {/* Header */}
                   <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">การแจ้งเตือน</h3>
@@ -369,7 +470,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                           </div>
                         ))}
                       </div>
-                    ) : notifications.length === 0 ? (
+                    ) : visibleNotifications.length === 0 ? (
                       <div className="text-center py-16 px-6">
                         <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -379,15 +480,15 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                       </div>
                     ) : (
                       <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {notifications.map((n) => (
+                        {visibleNotifications.map((n) => (
                           <li
                             key={n.id}
                             onClick={() => handleReadOne(n)}
                             className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors duration-150"
                           >
-                            <div className="flex items-start gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                               {/* Dot for unread status */}
-                              <div className="flex-shrink-0 mt-1">
+                              <div className="hidden flex-shrink-0 sm:block">
                                 {!n.isRead ? (
                                   <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full block" title="ยังไม่ได้อ่าน"></span>
                                 ) : (
@@ -395,17 +496,47 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                                 )}
                               </div>
                               {/* Message content */}
-                              <div className="flex-grow">
-                                <p className={`text-sm ${!n.isRead ? 'text-gray-800 dark:text-gray-100 font-semibold' : 'text-gray-600 dark:text-gray-400'}`}>
-                                  {n.message}
-                                </p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                              <div className="min-w-0 flex-grow">
+                                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                  {!n.isRead && (
+                                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 sm:hidden" title="ยังไม่ได้อ่าน"></span>
+                                  )}
+                                  {n.source === "club-request" && (
+                                    <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                      ชุมนุม
+                                    </span>
+                                  )}
+                                  <p className={`min-w-0 flex-1 text-sm leading-6 sm:truncate ${!n.isRead ? 'text-gray-800 dark:text-gray-100 font-semibold' : 'text-gray-600 dark:text-gray-400'}`}>
+                                    {n.message}
+                                  </p>
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                   {formatDistanceToNow(n.createdAt.toDate(), {
                                     addSuffix: true,
                                     locale: th,
                                   })}
                                 </p>
                               </div>
+                              {n.source === "club-request" && n.clubRequest && (
+                                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={processingNotificationId === n.id}
+                                      onClick={(e) => handleClubRequestAction(e, n, "approve")}
+                                      className="rounded-lg bg-emerald-500 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
+                                    >
+                                      อนุมัติ
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={processingNotificationId === n.id}
+                                      onClick={(e) => handleClubRequestAction(e, n, "reject")}
+                                      className="rounded-lg bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-500 hover:text-white disabled:cursor-wait disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500 dark:hover:text-white"
+                                    >
+                                      ปฏิเสธ
+                                    </button>
+                              </div>
+                              )}
                             </div>
                           </li>
                         ))}
@@ -413,7 +544,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                     )}
                   </div>
                   {/* Footer */}
-                  {notifications.length > 0 && (
+                  {visibleNotifications.length > 0 && (
                     <div className="p-2 bg-gray-50 dark:bg-[#1e1f21] border-t border-gray-200 dark:border-gray-700 text-center">
                       <button onClick={() => { navigate('/notifications'); setIsOpenNoti(false); }} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
                         ดูการแจ้งเตือนทั้งหมด
@@ -423,10 +554,10 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 </div>
               )}
             </div>
-            <img
+            <ProfileAvatar
               src={profileUrl}
               onError={(e) => (e.currentTarget.src = defaultProfile)}
-              className="w-9 h-9 rounded-full object-cover cursor-pointer"
+              className="w-9 h-9 cursor-pointer"
               onClick={() => navigate("/profile")}
               alt={`รูปโปรไฟล์ของ ${currentUser?.fullName || 'ผู้ใช้'}`}
               title="ไปที่โปรไฟล์"

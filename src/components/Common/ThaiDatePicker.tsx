@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../ThemeContext';
-<<<<<<< HEAD
 import { getThaiYear } from '@/utils/dateUtils';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 const thaiMonths = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -116,12 +113,8 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
     const displayValue = value
         ? (() => {
             const [y, m, d] = value.split('-').map(Number);
-<<<<<<< HEAD
             const date = new Date(y, m - 1, d);
             return `${d} ${thaiMonths[m - 1]} ${getThaiYear(date)}`;
-=======
-            return `${d} ${thaiMonths[m - 1]} ${y + 543}`;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         })()
         : '';
 
@@ -140,11 +133,7 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
                     <div className="flex justify-between items-center mb-4">
                         <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
                         <span className="font-bold text-gray-900 dark:text-white">
-<<<<<<< HEAD
                             {thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}
-=======
-                            {thaiMonths[viewDate.getMonth()]} {viewDate.getFullYear() + 543}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </span>
                         <button type="button" onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&gt;</button>
                     </div>

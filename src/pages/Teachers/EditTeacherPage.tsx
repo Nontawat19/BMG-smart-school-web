@@ -1,8 +1,9 @@
 import React, { useState, useEffect, FormEvent, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage } from "@/firebase";
-import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
@@ -12,10 +13,7 @@ import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { FaChevronDown, FaCheck, FaCamera } from 'react-icons/fa';
-<<<<<<< HEAD
 import { usePermissions } from "@/hooks/usePermissions";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 // --- Interface สำหรับ Teacher Form State (Type Safety) ---
 interface TeacherFormState {
@@ -39,16 +37,14 @@ interface TeacherFormState {
     learningArea?: string;
     isHeadOfLearningArea?: boolean;
     isHeadOfAssessment?: boolean;
+    isGuidanceTeacher?: boolean;
     licenseNumber: string;
     startDate: string;
     educationLevel: string;
     major: string;
     idCardNumber?: string;
     role: string[];
-<<<<<<< HEAD
     status: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 // --- Reusable Components ---
@@ -92,6 +88,7 @@ const initialState: TeacherFormState = {
     learningArea: "",
     isHeadOfAssessment: false,
     isHeadOfLearningArea: false,
+    isGuidanceTeacher: false,
     academicStanding: "",
     licenseNumber: "",
     startDate: "",
@@ -100,17 +97,15 @@ const initialState: TeacherFormState = {
     lineId: "",
     idCardNumber: "",
     role: ["teacher"],
-<<<<<<< HEAD
     status: "อยู่",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 export default function EditTeacherPage() {
     const { schoolId, teacherId } = useParams<{ schoolId: string, teacherId: string }>();
     const navigate = useNavigate();
-    const currentUser = useSelector((state: RootState) => state.auth.user);
+    const { user: currentUser, isSchoolAdmin, isSuperAdmin } = usePermissions();
     const isEditingSelf = currentUser?.uid === teacherId;
+    const canEditSpecialRoles = !isEditingSelf || isSchoolAdmin || isSuperAdmin;
     const [form, setForm] = useState<TeacherFormState>(initialState);
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
@@ -121,11 +116,6 @@ export default function EditTeacherPage() {
     const [availableLevels, setAvailableLevels] = useState<string[]>([]);
     const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-<<<<<<< HEAD
-    const { isSchoolAdmin, isSuperAdmin } = usePermissions();
-    const canElevatePermissions = isSchoolAdmin || isSuperAdmin;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -172,9 +162,41 @@ export default function EditTeacherPage() {
             try {
                 const docRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
                 const docSnap = await getDoc(docRef);
+                let data: any = null;
+                
                 if (docSnap.exists()) {
-                    const data = docSnap.data();
+                    data = docSnap.data();
+                } else {
+                    const userDocRef = doc(firestore, "users", teacherId);
+                    const userSnap = await getDoc(userDocRef);
+                    if (userSnap.exists()) {
+                        const userData = userSnap.data();
+                        const nameParts = (userData.fullName || '').trim().split(/\s+/).filter(Boolean);
+                        const roles = Array.isArray(userData.role) ? userData.role : (typeof userData.role === 'string' ? [userData.role] : []);
+                        const isSchoolAdmin = roles.some((role: string) => role.toLowerCase() === 'school_admin');
+                        const isSuperAdmin = roles.some((role: string) => role.toLowerCase() === 'super_admin');
+                        
+                        data = {
+                            id: teacherId,
+                            uid: userData.uid || teacherId,
+                            schoolId,
+                            title: userData.title || '',
+                            firstName: userData.firstName || nameParts[0] || userData.fullName || userData.email || 'ไม่ระบุชื่อ',
+                            lastName: userData.lastName || nameParts.slice(1).join(' '),
+                            email: userData.email || '',
+                            role: roles,
+                            profileImageUrl: userData.profileImageUrl || userData.profileUrl || '',
+                            teacherId: userData.teacherId || '',
+                            position: userData.position || (isSuperAdmin ? 'ผู้ดูแลระบบสูงสุด' : isSchoolAdmin ? 'ผู้ดูแลระบบโรงเรียน' : 'ครู'),
+                            department: userData.department || 'งานบริหารทั่วไป',
+                            status: userData.status || 'อยู่',
+                            learningArea: userData.learningArea || '',
+                            subjectGroup: userData.subjectGroup || '',
+                        };
+                    }
+                }
 
+                if (data) {
                     // --- ตรวจสอบเพศที่กำหนดเอง ---
                     const standardGenders = ["ชาย", "หญิง", ""];
                     if (data.gender && !standardGenders.includes(data.gender)) {
@@ -202,10 +224,7 @@ export default function EditTeacherPage() {
                     const mergedData = {
                         ...initialState,
                         ...data,
-<<<<<<< HEAD
                         learningArea: data.learningArea || data.subjectGroup || "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     } as TeacherFormState;
 
                     setForm(mergedData);
@@ -286,8 +305,7 @@ export default function EditTeacherPage() {
             }
 
             try {
-                // Compress and convert to WebP
-                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
                 setImageFile(compressedFile);
                 setImagePreview(URL.createObjectURL(compressedFile));
             } catch (error) {
@@ -333,11 +351,8 @@ export default function EditTeacherPage() {
                 ...teacherDataWithoutImageAndGrade,
                 title: finalTitle,
                 gender: finalGender,
-<<<<<<< HEAD
                 learningArea: form.learningArea || "",
                 subjectGroup: form.learningArea || "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 homeroomGrade: homeroomGrade,
                 updatedAt: serverTimestamp(),
                 isHomeroomTeacher: homeroomGrade !== "",
@@ -360,8 +375,7 @@ export default function EditTeacherPage() {
                 }
 
                 // อัปโหลดรูปภาพใหม่
-                // Force WebP Extension (since we compress to webp)
-                const fileExtension = '.webp';
+                const fileExtension = '.jpg';
 
                 if (!form.idCardNumber) {
                     throw new Error("กรุณาระบุเลขบัตรประชาชนก่อนอัปโหลดรูปภาพ");
@@ -383,7 +397,7 @@ export default function EditTeacherPage() {
 
             // อัปเดตข้อมูลใน Firestore (Teacher Collection)
             const docRef = doc(firestore, "school-settings", schoolId, "teachers", teacherId);
-            await updateDoc(docRef, dataToUpdate);
+            await setDoc(docRef, dataToUpdate, { merge: true });
 
             // อัปเดตข้อมูลใน Firestore (User Collection)
             const userDocRef = doc(firestore, "users", teacherId);
@@ -479,7 +493,7 @@ export default function EditTeacherPage() {
                                 <div className="flex-shrink-0">
                                     <label htmlFor="profileImage" className="relative cursor-pointer group block">
                                         {imagePreview ? (
-                                            <img src={imagePreview} alt="Teacher profile" className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600" />
+                                            <ProfileAvatar src={imagePreview} alt="Teacher profile" className="w-32 h-32 border-4 border-gray-200 dark:border-gray-600" />
                                         ) : (
                                             <div className="w-32 h-32 rounded-full border-4 border-dashed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center">
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
@@ -494,7 +508,7 @@ export default function EditTeacherPage() {
                                             </svg>
                                         </div>
                                     </label>
-                                    <input type="file" id="profileImage" name="profileImage" accept="image/*" onChange={handleImageChange} className="hidden" />
+                                    <input type="file" id="profileImage" name="profileImage" accept="image/jpeg,image/png" onChange={handleImageChange} className="hidden" />
                                 </div>
 
                                 <div className="flex-grow space-y-4 w-full">
@@ -581,6 +595,7 @@ export default function EditTeacherPage() {
                                                 <option value="งานบริหารงบประมาณ">งานบริหารงบประมาณ</option>
                                                 <option value="งานบริหารบุคคล">งานบริหารบุคคล</option>
                                                 <option value="งานบริหารทั่วไป">งานบริหารทั่วไป</option>
+                                                <option value="งานบริหารกิจการนักเรียน">งานบริหารกิจการนักเรียน</option>
                                             </select>
                                         </div>
                                         <div>
@@ -653,53 +668,41 @@ export default function EditTeacherPage() {
                                     <div className="sm:col-span-2">
                                         <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
                                             บทบาทพิเศษ
-<<<<<<< HEAD
-                                            {(isEditingSelf && !canElevatePermissions) && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
+                                            {isEditingSelf && !canEditSpecialRoles && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
                                         </label>
                                         <div className={`flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700`}>
-                                            <label className={`flex items-center space-x-2 ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
-=======
-                                            {isEditingSelf && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
-                                        </label>
-                                        <div className={`flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700`}>
-                                            <label className={`flex items-center space-x-2 ${isEditingSelf ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
                                                 <input
                                                     type="checkbox"
                                                     name="isHeadOfLearningArea"
                                                     checked={form.isHeadOfLearningArea || false}
-<<<<<<< HEAD
-                                                    onChange={(isEditingSelf && !canElevatePermissions) ? undefined : handleChange}
-                                                    onClick={(e) => (isEditingSelf && !canElevatePermissions) && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${(isEditingSelf && !canElevatePermissions) ? 'pointer-events-none' : ''}`}
+                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
+                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
+                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
                                                 />
                                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้ากลุ่มสาระ</span>
                                             </label>
-                                            <label className={`flex items-center space-x-2 ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
-=======
-                                                    onChange={isEditingSelf ? undefined : handleChange}
-                                                    onClick={(e) => isEditingSelf && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${isEditingSelf ? 'pointer-events-none' : ''}`}
-                                                />
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้ากลุ่มสาระ</span>
-                                            </label>
-                                            <label className={`flex items-center space-x-2 ${isEditingSelf ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
                                                 <input
                                                     type="checkbox"
                                                     name="isHeadOfAssessment"
                                                     checked={form.isHeadOfAssessment || false}
-<<<<<<< HEAD
-                                                    onChange={(isEditingSelf && !canElevatePermissions) ? undefined : handleChange}
-                                                    onClick={(e) => (isEditingSelf && !canElevatePermissions) && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${(isEditingSelf && !canElevatePermissions) ? 'pointer-events-none' : ''}`}
-=======
-                                                    onChange={isEditingSelf ? undefined : handleChange}
-                                                    onClick={(e) => isEditingSelf && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${isEditingSelf ? 'pointer-events-none' : ''}`}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
+                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
+                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
                                                 />
                                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้างานวัดและประเมินผล</span>
+                                            </label>
+                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
+                                                <input
+                                                    type="checkbox"
+                                                    name="isGuidanceTeacher"
+                                                    checked={form.isGuidanceTeacher || false}
+                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
+                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
+                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
+                                                />
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นครูแนะแนว</span>
                                             </label>
                                         </div>
                                     </div>
@@ -730,7 +733,6 @@ export default function EditTeacherPage() {
                                         <option value="อื่นๆ">อื่นๆ</option>
                                     </select>
                                 </div>
-<<<<<<< HEAD
                                 <div>
                                     <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะครู <span className="text-red-500">*</span></label>
                                     <select name="status" value={form.status} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white" required>
@@ -743,8 +745,6 @@ export default function EditTeacherPage() {
                                         <option value="ถึงแก่กรรม">ถึงแก่กรรม</option>
                                     </select>
                                 </div>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                                 <InputField label="วิชาที่สอนหลัก" name="subject" value={form.subject} onChange={handleChange} placeholder="เช่น คณิตศาสตร์, ภาษาไทย" />
@@ -780,19 +780,11 @@ export default function EditTeacherPage() {
                             <div className="relative" ref={dropdownRef}>
                                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
                                     สิทธิ์การใช้งานในระบบ <span className="text-red-500">*</span>
-<<<<<<< HEAD
-                                    {(isEditingSelf && !canElevatePermissions) && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขสิทธิ์ของตัวเองได้)</span>}
-                                </label>
-                                <div
-                                    onClick={() => !(isEditingSelf && !canElevatePermissions) && setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                                    className={`flex items-center justify-between w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm transition-all min-h-[42px] ${(isEditingSelf && !canElevatePermissions) ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/50' : 'cursor-pointer focus:ring-2 focus:ring-indigo-500'}`}
-=======
                                     {isEditingSelf && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขสิทธิ์ของตัวเองได้)</span>}
                                 </label>
                                 <div
                                     onClick={() => !isEditingSelf && setIsRoleDropdownOpen(!isRoleDropdownOpen)}
                                     className={`flex items-center justify-between w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm transition-all min-h-[42px] ${isEditingSelf ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/50' : 'cursor-pointer focus:ring-2 focus:ring-indigo-500'}`}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 >
                                     <div className="flex flex-wrap gap-1">
                                         {Array.isArray(form.role) && form.role.length > 0 ? (
@@ -808,17 +800,10 @@ export default function EditTeacherPage() {
                                             <span className="text-gray-500 dark:text-gray-400 text-sm">-- เลือกบทบาท --</span>
                                         )}
                                     </div>
-<<<<<<< HEAD
-                                    {!isEditingSelf || canElevatePermissions ? <FaChevronDown className={`text-gray-400 text-[10px] transition-transform duration-200 ${isRoleDropdownOpen ? 'rotate-180' : ''}`} /> : null}
-                                </div>
-
-                                {isRoleDropdownOpen && (!isEditingSelf || canElevatePermissions) && (
-=======
                                     {!isEditingSelf && <FaChevronDown className={`text-gray-400 text-[10px] transition-transform duration-200 ${isRoleDropdownOpen ? 'rotate-180' : ''}`} />}
                                 </div>
 
                                 {isRoleDropdownOpen && !isEditingSelf && (
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     <div className="absolute z-50 bottom-full mb-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in slide-in-from-bottom-2 fade-in zoom-in duration-200">
                                         {userRoles.map((role) => {
                                             const isChecked = Array.isArray(form.role) && form.role.includes(role.value);
@@ -870,8 +855,4 @@ export default function EditTeacherPage() {
             </div>
         </MainLayout >
     );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

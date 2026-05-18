@@ -1,40 +1,50 @@
-<<<<<<< HEAD
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { usePermissions } from "@/hooks/usePermissions";
-=======
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { auth, firestore, storage } from '@/firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import MainLayout from '@/layouts/MainLayout';
+import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool, FaSearch } from 'react-icons/fa';
-=======
-import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool } from 'react-icons/fa';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { compressImage } from '@/utils/imageUtils';
+import {
+    isActiveStudentSummaryStatus,
+    isActiveTeacherSummaryStatus,
+    updateOwnerAndSchoolCounts,
+} from '@/utils/ownerStatsUtils';
+import { ROLES } from '@/constants/roles';
 
 interface School {
     id: string;
     schoolName: string;
-<<<<<<< HEAD
     schoolCode?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
+
+const departmentOptions = [
+    "งานบริหารวิชาการ",
+    "งานบริหารงบประมาณ",
+    "งานบริหารบุคคล",
+    "งานบริหารทั่วไป",
+    "งานบริหารกิจการนักเรียน"
+];
+
+const STAFF_ROLES: string[] = [
+    ROLES.TEACHER,
+    ROLES.SCHOOL_ADMIN,
+    ROLES.ACADEMIC_ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
 
 const AddUserPage = () => {
     const navigate = useNavigate();
-<<<<<<< HEAD
     const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [formData, setFormData] = useState({
         title: '',
         firstName: '',
@@ -44,6 +54,7 @@ const AddUserPage = () => {
         confirmPassword: '',
         role: ['teacher'] as string[],
         schoolId: '',
+        department: 'งานบริหารทั่วไป',
     });
     const [customTitle, setCustomTitle] = useState("");
     const [schools, setSchools] = useState<School[]>([]);
@@ -51,7 +62,6 @@ const AddUserPage = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
-<<<<<<< HEAD
     const [isSchoolDropdownOpen, setIsSchoolDropdownOpen] = useState(false);
     const [schoolSearchTerm, setSchoolSearchTerm] = useState('');
     const [schoolPage, setSchoolPage] = useState(1);
@@ -61,21 +71,15 @@ const AddUserPage = () => {
     const schoolDropdownRef = useRef<HTMLDivElement>(null);
     const schoolMenuRef = useRef<HTMLDivElement>(null);
     const schoolsPerPage = 10;
-=======
-    const dropdownRef = useRef<HTMLDivElement>(null);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsRoleDropdownOpen(false);
             }
-<<<<<<< HEAD
             if (schoolDropdownRef.current && !schoolDropdownRef.current.contains(event.target as Node)) {
                 setIsSchoolDropdownOpen(false);
             }
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -89,12 +93,8 @@ const AddUserPage = () => {
                 const schoolsData = schoolSnapshot.docs.map(doc => ({
                     id: doc.id,
                     schoolName: doc.data().schoolName,
-<<<<<<< HEAD
                     schoolCode: doc.data().schoolCode || doc.data().schoolId || doc.data().code || doc.id,
                 })).sort((a, b) => (a.schoolName || '').localeCompare(b.schoolName || '', 'th'));
-=======
-                }));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setSchools(schoolsData);
             } catch (err) {
                 console.error("Error fetching schools:", err);
@@ -103,15 +103,12 @@ const AddUserPage = () => {
         fetchSchools();
     }, []);
 
-<<<<<<< HEAD
     useEffect(() => {
         if ((isSchoolAdmin || isTeacher) && currentUser?.schoolId) {
             setFormData(prev => ({ ...prev, schoolId: currentUser.schoolId || '' }));
         }
     }, [isSchoolAdmin, isTeacher, currentUser]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if (name === "title" && value !== "อื่นๆ") {
@@ -128,7 +125,6 @@ const AddUserPage = () => {
         setFormData({ ...formData, role: updatedRoles });
     };
 
-<<<<<<< HEAD
     const selectedSchool = useMemo(() => {
         return schools.find(school => school.id === formData.schoolId);
     }, [schools, formData.schoolId]);
@@ -210,25 +206,14 @@ const AddUserPage = () => {
         setIsSchoolDropdownOpen(false);
     };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             try {
-<<<<<<< HEAD
-                // Compress and convert to WebP to match standard
-                const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+                const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
                 setImageFile(compressedFile);
                 setImagePreview(URL.createObjectURL(compressedFile));
             } catch (error) {
-                console.error("Error compressing image:", error);
-=======
-                const compressedFile = await compressImage(file, 500, 0.8, 'image/png');
-                setImageFile(compressedFile);
-                setImagePreview(URL.createObjectURL(compressedFile));
-            } catch (error) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 setImageFile(file);
                 setImagePreview(URL.createObjectURL(file));
             }
@@ -275,21 +260,18 @@ const AddUserPage = () => {
             const newUser = userCredential.user;
 
             let profileUrl = '';
+            const finalTitle = formData.title === "อื่นๆ" ? customTitle : formData.title;
+            const fullName = `${finalTitle}${formData.firstName} ${formData.lastName}`.trim();
+
             if (imageFile) {
-<<<<<<< HEAD
-                // Use .webp extension to match standard
-                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.webp`);
-=======
-                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.png`);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                const storageRef = ref(storage, `users/${newUser.uid}/profile_${Date.now()}.jpg`);
                 const snapshot = await uploadBytes(storageRef, imageFile);
                 profileUrl = await getDownloadURL(snapshot.ref);
             }
 
-            const finalTitle = formData.title === "อื่นๆ" ? customTitle : formData.title;
-            const fullName = `${finalTitle}${formData.firstName} ${formData.lastName}`.trim();
-
-            await setDoc(doc(firestore, 'users', newUser.uid), {
+            // 1. Write to central 'users' collection
+            const userData = {
+                uid: newUser.uid,
                 fullName: fullName,
                 firstName: formData.firstName,
                 lastName: formData.lastName,
@@ -299,17 +281,18 @@ const AddUserPage = () => {
                 schoolId: formData.schoolId || null,
                 profileUrl: profileUrl || null,
                 createdAt: serverTimestamp(),
-            });
+            };
+            await setDoc(doc(firestore, 'users', newUser.uid), userData);
 
-<<<<<<< HEAD
-            // 📌 Sync with school-specific collections if schoolId is provided
+            // 2. Write to school-specific collections if applicable
             if (formData.schoolId) {
                 const roles = formData.role;
-                const isStaff = roles.some(r => ['teacher', 'school_admin', 'academic_admin', 'super_admin'].includes(r));
-                const isStudent = roles.includes('student');
+                const isStaff = roles.some(r => STAFF_ROLES.includes(r));
+                const isStudent = roles.includes(ROLES.STUDENT);
 
+                // Sync to Teachers collection
                 if (isStaff) {
-                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "teachers", newUser.uid), {
+                    const teacherData = {
                         uid: newUser.uid,
                         firstName: formData.firstName,
                         lastName: formData.lastName,
@@ -318,17 +301,25 @@ const AddUserPage = () => {
                         role: formData.role,
                         schoolId: formData.schoolId,
                         profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
-                        position: roles.includes('school_admin') ? "ผู้ดูแลระบบโรงเรียน" : "ครู",
-                        department: "งานบริหารทั่วไป",
+                        teacherId: "", // Default empty
+                        position: roles.includes(ROLES.SUPER_ADMIN) ? "ผู้ดูแลระบบสูงสุด" : (roles.includes(ROLES.SCHOOL_ADMIN) ? "ผู้ดูแลระบบโรงเรียน" : "ครู"),
+                        department: formData.department || "งานบริหารทั่วไป",
                         status: "อยู่",
+                        gender: "", // Basic info
+                        learningArea: "",
+                        subjectGroup: "",
                         isHomeroomTeacher: false,
                         createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp(),
-                    });
+                    };
+                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "teachers", newUser.uid), teacherData);
+                    if (isActiveTeacherSummaryStatus(teacherData.status)) {
+                        await updateOwnerAndSchoolCounts(firestore, formData.schoolId, { teachers: 1 });
+                    }
                 }
 
+                // Sync to Students collection
                 if (isStudent) {
-                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "students", newUser.uid), {
+                    const studentData = {
                         uid: newUser.uid,
                         firstName: formData.firstName,
                         lastName: formData.lastName,
@@ -337,15 +328,20 @@ const AddUserPage = () => {
                         role: formData.role,
                         schoolId: formData.schoolId,
                         profileImageUrl: profileUrl || null,
+                        studentId: "", // Default empty
+                        classLevel: "",
+                        room: "",
                         studentStatus: "ปกติ",
+                        gender: "",
                         createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp(),
-                    });
+                    };
+                    await setDoc(doc(firestore, "school-settings", formData.schoolId, "students", newUser.uid), studentData);
+                    if (isActiveStudentSummaryStatus(studentData.studentStatus)) {
+                        await updateOwnerAndSchoolCounts(firestore, formData.schoolId, { students: 1 });
+                    }
                 }
             }
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             // 📌 Create Slug for the Profile
             const slugId = `profile:${newUser.uid}`;
             await setDoc(doc(firestore, 'slugs', slugId), {
@@ -395,16 +391,12 @@ const AddUserPage = () => {
     };
 
     const userRoles = [
-        { value: 'super_admin', label: 'ผู้ดูแลสูงสุด (Super Admin)' },
-        { value: 'school_admin', label: 'แอดมินโรงเรียน (School Admin)' },
-        { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
-        { value: 'student', label: 'นักเรียน (Student)' },
-<<<<<<< HEAD
-        { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาครู (Teacher Attendance)' },
-        { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลา (Student Attendance)' },
-        { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลา (ครู/บุคลากร)' },
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลสูงสุด (Super Admin)' },
+        { value: ROLES.SCHOOL_ADMIN, label: 'แอดมินโรงเรียน (School Admin)' },
+        { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
+        { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
+        { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
+        { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
     ];
 
     const inputClasses = "w-full pl-11 pr-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 shadow-sm dark:autofill:shadow-[0_0_0_30px_#1c1c24_inset]";
@@ -448,20 +440,20 @@ const AddUserPage = () => {
                             <div className="bg-white dark:bg-[#1c1c24] rounded-3xl p-8 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none text-center">
                                 <div className="relative w-40 h-40 mx-auto group">
                                     <div className="absolute inset-0 bg-indigo-500 rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                                    <img
-                                        className="relative w-full h-full rounded-full object-cover border-4 border-white dark:border-gray-800 shadow-2xl z-10"
+                                    <ProfileAvatar
+                                        className="relative w-full h-full border-4 border-white dark:border-gray-800 shadow-2xl z-10"
                                         src={imagePreview || `https://ui-avatars.com/api/?name=New+User&background=4f46e5&color=fff&size=200`}
                                         alt="Preview"
                                     />
                                     <label htmlFor="profile-upload" className="absolute bottom-2 right-2 z-20 bg-indigo-600 text-white p-3.5 rounded-2xl cursor-pointer shadow-xl hover:bg-indigo-700 transition-all hover:scale-110 active:scale-90 ring-4 ring-white dark:ring-gray-800">
                                         <FaCamera size={18} />
                                     </label>
-                                    <input id="profile-upload" type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                                    <input id="profile-upload" type="file" className="hidden" accept="image/jpeg,image/png" onChange={handleImageChange} />
                                 </div>
                                 <div className="mt-8 space-y-2">
                                     <h3 className="text-lg font-black text-gray-900 dark:text-white">ภาพโปรไฟล์</h3>
                                     <p className="text-xs text-gray-400 dark:text-gray-500 font-medium px-4">
-                                        เลือกภาพที่ชัดเจนเพื่อระบุตัวตน (รองรับไฟล์ JPG, PNG, WebP)
+                                        เลือกภาพที่ชัดเจนเพื่อระบุตัวตน (รองรับไฟล์ JPG, PNG)
                                     </p>
                                 </div>
                             </div>
@@ -648,11 +640,7 @@ const AddUserPage = () => {
 
                                         {isRoleDropdownOpen && (
                                             <div className="absolute z-50 mt-2 w-full bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-white/5 rounded-2xl shadow-2xl py-2 max-h-64 overflow-auto animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-xl">
-<<<<<<< HEAD
-                                                {userRoles.filter(r => !isSchoolAdmin || r.value !== 'super_admin').map((role) => {
-=======
-                                                {userRoles.map((role) => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                {userRoles.filter(r => !isSchoolAdmin || r.value !== ROLES.SUPER_ADMIN).map((role) => {
                                                     const isChecked = formData.role.includes(role.value);
                                                     return (
                                                         <div
@@ -676,19 +664,17 @@ const AddUserPage = () => {
                                         )}
                                     </div>
 
-                                    {/* School Select - Hide if Super Admin is selected */}
-                                    {!formData.role.includes('super_admin') && (
+                                    {/* School Select */}
                                         <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
                                             <label className={labelClasses}>สังกัดโรงเรียน (School Assignment)</label>
-<<<<<<< HEAD
                                             <div className="relative" ref={schoolDropdownRef}>
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        if (!isSchoolAdmin && !isTeacher) setIsSchoolDropdownOpen(prev => !prev);
+                                                        if (!isSchoolAdmin) setIsSchoolDropdownOpen(prev => !prev);
                                                     }}
-                                                    disabled={isSchoolAdmin || isTeacher}
-                                                    className={`w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm shadow-sm text-left text-gray-900 dark:text-white ${isSchoolAdmin || isTeacher ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/50'} ${isSchoolDropdownOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
+                                                    disabled={isSchoolAdmin}
+                                                    className={`w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm shadow-sm text-left text-gray-900 dark:text-white ${isSchoolAdmin ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/50'} ${isSchoolDropdownOpen ? 'ring-2 ring-indigo-500/20 border-indigo-500' : ''}`}
                                                 >
                                                     <span className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                         <FaSchool size={14} className="opacity-40" />
@@ -787,25 +773,23 @@ const AddUserPage = () => {
                                                         </div>
                                                     </div>
                                                 )}
-=======
-                                            <div className="relative group">
-                                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none group-focus-within:text-indigo-500 transition-colors">
-                                                    <FaSchool size={14} className="opacity-40" />
-                                                </div>
-                                                <select
-                                                    name="schoolId"
-                                                    value={formData.schoolId}
-                                                    onChange={handleInputChange}
-                                                    className="w-full pl-11 pr-10 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm appearance-none cursor-pointer shadow-sm text-gray-900 dark:text-white"
-                                                >
-                                                    <option value="">-- ส่วนกลาง / ยังไม่ระบุ --</option>
-                                                    {schools.map(school => <option key={school.id} value={school.id}>{school.schoolName}</option>)}
-                                                </select>
-                                                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                                                    <FaChevronDown size={10} className="text-gray-400" />
-                                                </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                             </div>
+                                        </div>
+
+                                    {/* Department Select - Show if teacher or school admin role is selected */}
+                                    {formData.role.some(r => STAFF_ROLES.includes(r)) && (
+                                        <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <label className={labelClasses}>ฝ่ายงาน (Department)</label>
+                                            <select
+                                                name="department"
+                                                value={formData.department}
+                                                onChange={handleInputChange}
+                                                className="w-full px-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
+                                            >
+                                                {departmentOptions.map(dept => (
+                                                    <option key={dept} value={dept}>{dept}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                     )}
                                 </div>

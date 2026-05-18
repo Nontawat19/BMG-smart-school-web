@@ -85,12 +85,8 @@
     "tailwindcss": "^3.4.17",
     "typescript-eslint": "^8.26.1",
     "vite": "^6.3.5",
-<<<<<<< HEAD
     "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.2.0"
-=======
-    "vite-plugin-node-polyfills": "^0.25.0"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   },
   "description": "This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.",
   "main": "postcss.config.js",

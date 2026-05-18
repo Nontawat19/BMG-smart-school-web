@@ -1,5 +1,5 @@
 import React from 'react';
-import { Filter, BookOpen, AlertCircle, Users, ChevronLeft, MapPin } from 'lucide-react';
+import { Filter, BookOpen, AlertCircle, Users, ChevronLeft, MapPin, Download } from 'lucide-react';
 import { Course } from '../types';
 
 interface CourseSelectionStateProps {
@@ -8,7 +8,9 @@ interface CourseSelectionStateProps {
     CLASSES: Record<string, string>;
     filteredCourses: Course[];
     setSelectedCourse: (courseId: string) => void;
+    setSelectedGroup?: (groupId: string) => void;
     teacherMap: any;
+    pdfDownloadUrls?: Record<string, string>;
 }
 
 const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
@@ -17,7 +19,9 @@ const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
     CLASSES,
     filteredCourses,
     setSelectedCourse,
+    setSelectedGroup,
     teacherMap,
+    pdfDownloadUrls = {},
 }) => {
     if (!selectedClass) {
         return (
@@ -61,9 +65,17 @@ const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
                         });
 
                         return (
-                            <button
+                            <div
                                 key={course.id}
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => setSelectedCourse(course.id)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        setSelectedCourse(course.id);
+                                    }
+                                }}
                                 className="flex flex-col p-5 bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-2xl hover:border-indigo-500 hover:shadow-xl hover:-translate-y-1 transition-all text-left group relative overflow-hidden"
                             >
                                 <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -81,8 +93,34 @@ const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
 
                                 <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
                                     {assignments.length > 0 ? (
-                                        assignments.map((a: any, idx: number) => (
-                                            <div key={idx} className="flex items-start gap-2 text-[10px]">
+                                        assignments.map((a: any, idx: number) => {
+                                            const groupId = `กลุ่ม ${a.groupNumber}`;
+                                            const roomLabel = (a.targetRooms && a.targetRooms.length > 0)
+                                                ? a.targetRooms.join(', ')
+                                                : a.room
+                                                    ? `ห้อง ${a.room}`
+                                                    : classLabel;
+
+                                            return (
+                                            <div
+                                                key={idx}
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedCourse(course.id);
+                                                    setSelectedGroup?.(groupId);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setSelectedCourse(course.id);
+                                                        setSelectedGroup?.(groupId);
+                                                    }
+                                                }}
+                                                className="flex items-start gap-2 text-[10px] rounded-xl px-2 py-1.5 -mx-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+                                            >
                                                 <div className="w-4 h-4 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 shrink-0 mt-0.5">
                                                     <Users size={10} />
                                                 </div>
@@ -91,11 +129,25 @@ const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
                                                         {teacherMap[a.teacherId]?.name || 'ไม่ระบุชื่อครู'}
                                                     </span>
                                                     <span className="text-[9px] text-indigo-500 dark:text-indigo-400 font-black tracking-tight">
-                                                        กลุ่ม {a.groupNumber} • {(a.targetRooms && a.targetRooms.length > 0) ? a.targetRooms.join(', ') : classLabel}
+                                                        {groupId} • {roomLabel}
                                                     </span>
                                                 </div>
+                                                {pdfDownloadUrls[`${course.id}::${a.groupNumber}`] && (
+                                                    <a
+                                                        href={pdfDownloadUrls[`${course.id}::${a.groupNumber}`]}
+                                                        download
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="ml-auto inline-flex items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] font-black text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white transition-colors shrink-0"
+                                                    >
+                                                        <Download size={10} />
+                                                        ดาวน์โหลด PDF
+                                                    </a>
+                                                )}
                                             </div>
-                                        ))
+                                            );
+                                        })
                                     ) : (
                                         <div className="flex items-center gap-1.5 text-[10px] text-gray-400 italic">
                                             <Users size={10} />
@@ -106,7 +158,7 @@ const CourseSelectionState: React.FC<CourseSelectionStateProps> = ({
                                         <ChevronLeft size={16} className="rotate-180" />
                                     </div>
                                 </div>
-                            </button>
+                            </div>
                         );
                     })}
                 </div>

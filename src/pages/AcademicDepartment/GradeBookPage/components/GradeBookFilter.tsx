@@ -5,11 +5,8 @@ import { Course } from '../types';
 interface GradeBookFilterProps {
     selectedClass: string;
     setSelectedClass: React.Dispatch<React.SetStateAction<string>>;
-<<<<<<< HEAD
     selectedRoom: string;
     setSelectedRoom: React.Dispatch<React.SetStateAction<string>>;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setSelectedCourse: React.Dispatch<React.SetStateAction<string>>;
     availableClassOptions: [string, string][];
     currentCourse: Course | undefined;
@@ -29,11 +26,8 @@ interface GradeBookFilterProps {
 const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
     selectedClass,
     setSelectedClass,
-<<<<<<< HEAD
     selectedRoom,
     setSelectedRoom,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setSelectedCourse,
     availableClassOptions,
     selectedCourse,
@@ -74,7 +68,6 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                 </div>
             </div>
 
-<<<<<<< HEAD
             {/* ห้องเรียน */}
             <div className="md:col-span-1 group">
                 <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
@@ -102,8 +95,6 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                 </div>
             </div>
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             {/* ภาคเรียน */}
             <div className="md:col-span-2 group">
                 <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
@@ -134,11 +125,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
             </div>
 
             {/* รายวิชา */}
-<<<<<<< HEAD
             <div className="md:col-span-2 group">
-=======
-            <div className="md:col-span-3 group">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 <label className="flex items-center gap-2 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
                     รายวิชาที่เปิดสอน
                 </label>

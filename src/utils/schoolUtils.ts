@@ -16,6 +16,8 @@ export const CLASS_MAPPING: Record<string, string> = {
     m6: "ม.6",
 };
 
+export const CLASS_LEVEL_ORDER = Object.values(CLASS_MAPPING);
+
 export const CLASS_FULL_NAMES: Record<string, string> = {
     k1: "อนุบาล 1",
     k2: "อนุบาล 2",
@@ -32,6 +34,49 @@ export const CLASS_FULL_NAMES: Record<string, string> = {
     m4: "มัธยมศึกษาปีที่ 4",
     m5: "มัธยมศึกษาปีที่ 5",
     m6: "มัธยมศึกษาปีที่ 6",
+};
+
+export const getClassLevelRank = (classLevel?: string): number => {
+    const normalized = String(classLevel || '').trim();
+    if (!normalized) return -1;
+
+    const directIndex = CLASS_LEVEL_ORDER.indexOf(normalized);
+    if (directIndex >= 0) return directIndex;
+
+    const mappedLabel = CLASS_MAPPING[normalized];
+    if (mappedLabel) return CLASS_LEVEL_ORDER.indexOf(mappedLabel);
+
+    const fullNameEntry = Object.entries(CLASS_FULL_NAMES).find(([, label]) => label === normalized);
+    if (fullNameEntry) return CLASS_LEVEL_ORDER.indexOf(CLASS_MAPPING[fullNameEntry[0]]);
+
+    return -1;
+};
+
+export const isClassLevelInRange = (
+    classLevel?: string,
+    fromClassLevel?: string,
+    toClassLevel?: string
+): boolean => {
+    if (!fromClassLevel && !toClassLevel) return true;
+
+    const rank = getClassLevelRank(classLevel);
+    if (rank < 0) return false;
+
+    const fromRank = fromClassLevel ? getClassLevelRank(fromClassLevel) : 0;
+    const toRank = toClassLevel ? getClassLevelRank(toClassLevel) : CLASS_LEVEL_ORDER.length - 1;
+    if (fromRank < 0 || toRank < 0) return false;
+
+    const minRank = Math.min(fromRank, toRank);
+    const maxRank = Math.max(fromRank, toRank);
+    return rank >= minRank && rank <= maxRank;
+};
+
+export const formatClassLevelRange = (fromClassLevel?: string, toClassLevel?: string): string => {
+    if (!fromClassLevel && !toClassLevel) return 'ทุกระดับชั้น';
+    if (fromClassLevel && toClassLevel) {
+        return fromClassLevel === toClassLevel ? fromClassLevel : `${fromClassLevel} - ${toClassLevel}`;
+    }
+    return fromClassLevel ? `ตั้งแต่ ${fromClassLevel} ขึ้นไป` : `ถึง ${toClassLevel}`;
 };
 
 export const getLevelsByRange = (levelRange: string): string[] => {
@@ -86,7 +131,6 @@ export const getClassKeysByRange = (levelRange: string): string[] => {
     }
 };
 
-<<<<<<< HEAD
 export const getEffectiveLevelRange = (levelRange?: string, schoolType?: string): string => {
     if (levelRange) return levelRange;
 
@@ -112,7 +156,5 @@ export const getClassOptionsBySchoolSettings = (
     return Object.entries(CLASS_MAPPING).filter(([, label]) => levels.includes(label));
 };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 // Aliases for backward compatibility or easier usage
 export const CLASSES = CLASS_MAPPING;

@@ -1,5 +1,6 @@
 import React, { useState, FormEvent, useEffect, useRef } from "react";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { useParams, useNavigate } from "react-router-dom";
 import { auth, firestore, storage } from "@/firebase";
 import {
@@ -25,10 +26,8 @@ import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { FaChevronDown, FaCheck } from 'react-icons/fa';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { isActiveTeacherSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({
@@ -111,14 +110,12 @@ const initialState = {
   learningArea: "",
   isHeadOfLearningArea: false,
   isHeadOfAssessment: false,
+  isGuidanceTeacher: false,
   advisorRole: "",
   idCardNumber: "",
   lineId: "",
   role: ["teacher"] as string[],
-<<<<<<< HEAD
   status: "อยู่",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };
 
 export default function AddTeacherPage() {
@@ -274,8 +271,7 @@ export default function AddTeacherPage() {
       }
 
       try {
-        // Compress and convert to WebP
-        const compressedFile = await compressImage(file, 800, 0.8, 'image/webp');
+        const compressedFile = await compressImage(file, 800, 0.8, 'image/jpeg');
         setImageFile(compressedFile);
         setImagePreview(URL.createObjectURL(compressedFile));
       } catch (error) {
@@ -311,7 +307,6 @@ export default function AddTeacherPage() {
       return;
     }
 
-<<<<<<< HEAD
     // --- 🔍 Check for Duplicates (By teacherId or idCardNumber) ---
     const teachersRef = collection(firestore, "school-settings", form.schoolId, "teachers");
     let conflictDoc: any = null;
@@ -364,27 +359,6 @@ export default function AddTeacherPage() {
       return;
     }
 
-=======
-    // ตรวจสอบรหัสตำแหน่งครูซ้ำ
-    if (form.teacherId) {
-      const teachersRef = collection(firestore, "school-settings", form.schoolId, "teachers");
-      const q = query(teachersRef, where("teacherId", "==", form.teacherId));
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        Swal.fire({
-          icon: "warning",
-          title: "รหัสตำแหน่งครูซ้ำ",
-          text: `รหัสตำแหน่งครู "${form.teacherId}" มีอยู่ในระบบแล้ว กรุณาตรวจสอบอีกครั้ง`,
-          background: "#2a2b2f",
-          color: "#ffffff",
-        });
-        setIsLoading(false);
-        return;
-      }
-    }
-
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     Swal.fire({
       title: "กำลังบันทึกข้อมูล...",
       text: "กรุณารอสักครู่",
@@ -415,8 +389,7 @@ export default function AddTeacherPage() {
 
       let finalProfileImageUrl = "";
       if (imageFile) {
-        // Force WebP Extension (since we compress to webp)
-        const fileExtension = '.webp';
+        const fileExtension = '.jpg';
 
         const imageRef = ref(storage, `school-settings/${schoolId}/teachers/${teacherData.idCardNumber}${fileExtension}`);
         const snapshot = await uploadBytes(imageRef, imageFile);
@@ -427,11 +400,8 @@ export default function AddTeacherPage() {
         ...teacherData,
         title: finalTitle,
         gender: finalGender,
-<<<<<<< HEAD
         learningArea: teacherData.learningArea || "",
         subjectGroup: teacherData.learningArea || "",
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         schoolId: schoolId,
         email: email,
         uid: user.uid,
@@ -445,6 +415,9 @@ export default function AddTeacherPage() {
         doc(firestore, "school-settings", schoolId, "teachers", user.uid),
         dataToSave
       );
+      if (isActiveTeacherSummaryStatus(form.status)) {
+        await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: 1 });
+      }
 
       await setDoc(doc(firestore, "users", user.uid), {
         fullName: `${finalTitle}${teacherData.firstName} ${teacherData.lastName}`,
@@ -514,18 +487,12 @@ export default function AddTeacherPage() {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-4xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-<<<<<<< HEAD
           <header className="mb-8 flex items-center gap-4">
             <BackButton to="/academic/hub/personnel_info" />
             <div>
               <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลครูใหม่</h1>
               <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)</p>
             </div>
-=======
-          <header className="mb-8">
-            <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลครูใหม่</h1>
-            <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)</p>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -535,10 +502,10 @@ export default function AddTeacherPage() {
                 <div className="flex-shrink-0">
                   <label htmlFor="profileImage" className="relative cursor-pointer group block">
                     {imagePreview ? (
-                      <img
+                      <ProfileAvatar
                         src={imagePreview}
                         alt="Teacher profile"
-                        className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
+                        className="w-32 h-32 border-4 border-gray-200 dark:border-gray-600"
                       />
                     ) : (
                       <div className="w-32 h-32 rounded-full border-4 border-dashed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700/50 flex items-center justify-center">
@@ -578,7 +545,7 @@ export default function AddTeacherPage() {
                     type="file"
                     id="profileImage"
                     name="profileImage"
-                    accept="image/*"
+                    accept="image/jpeg,image/png"
                     onChange={handleImageChange}
                     className="hidden"
                   />
@@ -680,7 +647,6 @@ export default function AddTeacherPage() {
                         <option value="เชี่ยวชาญพิเศษ (คศ.5)">เชี่ยวชาญพิเศษ (คศ.5)</option>
                       </select>
                     </div>
-<<<<<<< HEAD
                     <div>
                       <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะครู <span className="text-red-500">*</span></label>
                       <select name="status" value={form.status} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white" required>
@@ -693,8 +659,6 @@ export default function AddTeacherPage() {
                         <option value="ถึงแก่กรรม">ถึงแก่กรรม</option>
                       </select>
                     </div>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                   </div>
 
                   {/* แถว ตำแหน่ง, ฝ่ายงาน, รหัสตำแหน่งครู, และ ครูประจำชั้น */}
@@ -753,6 +717,7 @@ export default function AddTeacherPage() {
                         <option value="งานบริหารงบประมาณ">งานบริหารงบประมาณ</option>
                         <option value="งานบริหารบุคคล">งานบริหารบุคคล</option>
                         <option value="งานบริหารทั่วไป">งานบริหารทั่วไป</option>
+                        <option value="งานบริหารกิจการนักเรียน">งานบริหารกิจการนักเรียน</option>
                       </select>
                     </div>
 
@@ -821,6 +786,10 @@ export default function AddTeacherPage() {
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input type="checkbox" name="isHeadOfAssessment" checked={form.isHeadOfAssessment} onChange={handleChange} className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600" />
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้างานวัดและประเมินผล</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" name="isGuidanceTeacher" checked={form.isGuidanceTeacher} onChange={handleChange} className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600" />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นครูแนะแนว</span>
                       </label>
                     </div>
                   </div>
@@ -958,8 +927,4 @@ export default function AddTeacherPage() {
       </div>
     </MainLayout>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

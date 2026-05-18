@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db, storage } from '../../firebase';
 import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, orderBy, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -17,10 +14,6 @@ import {
   PlusCircle,
   Trash2,
   Image as ImageIcon,
-<<<<<<< HEAD
-=======
-  ArrowLeft,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   Save,
   UserCheck,
   FileText,
@@ -31,14 +24,12 @@ import {
   RefreshCw,
   Settings,
   Copy,
-<<<<<<< HEAD
   Database,
   Clock
-=======
-  Database
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 } from 'lucide-react';
 import { compressImage } from "@/utils/imageUtils";
+import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import { CLASS_LEVEL_ORDER, formatClassLevelRange, getClassLevelRank } from "@/utils/schoolUtils";
 
 interface Club {
   id: string;
@@ -46,20 +37,18 @@ interface Club {
   description: string;
   capacity: number;
   responsibleTeacherIds: string[];
-<<<<<<< HEAD
   specialPeriodId?: string;
   specialPeriodTitle?: string;
   specialPeriodDay?: string;
   specialPeriodStartTime?: string;
   specialPeriodEndTime?: string;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  allowedClassLevelFrom?: string;
+  allowedClassLevelTo?: string;
   imageUrl?: string;
   createdAt: any;
   memberCount?: number;
 }
 
-<<<<<<< HEAD
 interface SpecialPeriod {
   id: string;
   title: string;
@@ -95,19 +84,36 @@ const sortSpecialPeriods = (a: SpecialPeriod, b: SpecialPeriod) => {
 
 const normalizeTimeForSort = (time?: string) => String(time || '').replace(':', '.').padStart(5, '0');
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+const normalizeClubCourseTitle = (title?: string) => String(title || '').replace(/\s+/g, '').trim().toLowerCase();
+
+const normalizeTeacherIds = (teacherId: any) => {
+  if (Array.isArray(teacherId)) return teacherId.filter((id: string) => id && id !== 'pending');
+  return teacherId && teacherId !== 'pending' ? [teacherId] : [];
+};
+
+const showSuccessAlert = (title: string, text?: string) => {
+  return Swal.fire({
+    icon: 'success',
+    title,
+    text,
+    timer: 1600,
+    timerProgressBar: true,
+    showConfirmButton: false,
+    background: '#2a2b2f',
+    color: '#fff'
+  });
+};
+
 const ClubManagementPage: React.FC = () => {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [capacity, setCapacity] = useState<string>('40');
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
-<<<<<<< HEAD
+  const [allowedClassLevelFrom, setAllowedClassLevelFrom] = useState('');
+  const [allowedClassLevelTo, setAllowedClassLevelTo] = useState('');
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [selectedSpecialPeriodId, setSelectedSpecialPeriodId] = useState('');
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,6 +129,8 @@ const ClubManagementPage: React.FC = () => {
   // New States for Pull
   const [isPullModalOpen, setIsPullModalOpen] = useState(false);
   const [pullableCourses, setPullableCourses] = useState<any[]>([]);
+  const [selectedPullCourseIds, setSelectedPullCourseIds] = useState<string[]>([]);
+  const [pullCourseSearchTerm, setPullCourseSearchTerm] = useState('');
   const [isPulling, setIsPulling] = useState(false);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -130,13 +138,22 @@ const ClubManagementPage: React.FC = () => {
   const dispatch = useDispatch();
 
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+  const availableClassOptions = useSelector((state: RootState) => state.schoolSettings.availableClassOptions);
+  const classLevelOptions = useMemo(() => {
+    const levels = availableClassOptions.map(([, name]: [string, string]) => name).filter(Boolean);
+    return levels.length > 0 ? levels : CLASS_LEVEL_ORDER;
+  }, [availableClassOptions]);
   const teachersList = useMemo(() => {
-    let list = Object.values(teacherMap || {});
+    let list = getActiveSortedTeachers(Object.values(teacherMap || {}));
     if (teacherSearchTerm) {
-      list = list.filter(t => t.name.toLowerCase().includes(teacherSearchTerm.toLowerCase()));
+      const term = teacherSearchTerm.toLowerCase();
+      list = list.filter((t: any) => {
+        const teacherName = t.name || `${t.title || ''}${t.firstName || ''} ${t.lastName || ''}`.trim();
+        return teacherName.toLowerCase().includes(term) || String(t.teacherId || '').toLowerCase().includes(term);
+      });
     }
-    return list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
-  }, [teacherMap]);
+    return list;
+  }, [teacherMap, teacherSearchTerm]);
 
   useEffect(() => {
     if (schoolId) {
@@ -145,10 +162,7 @@ const ClubManagementPage: React.FC = () => {
       }
       const init = async () => {
         await fetchClubs();
-<<<<<<< HEAD
         await fetchSpecialPeriods();
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         // ดึงการตั้งค่าการย้ายชุมนุม
         try {
           const configRef = doc(db, 'school-settings', schoolId, 'configs', 'club_settings');
@@ -187,7 +201,6 @@ const ClubManagementPage: React.FC = () => {
     }
   };
 
-<<<<<<< HEAD
   const fetchSpecialPeriods = async () => {
     if (!schoolId) return;
     try {
@@ -203,8 +216,6 @@ const ClubManagementPage: React.FC = () => {
     }
   };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const fetchPullableCourses = async () => {
     if (!schoolId) return;
     setIsPulling(true);
@@ -219,7 +230,39 @@ const ClubManagementPage: React.FC = () => {
         return title.includes('ชุมนุม') || title.includes('กิจกรรม') || group.includes('กิจกรรม') || group.includes('พัฒนาผู้เรียน');
       });
 
-      setPullableCourses(filtered);
+      const dedupedByTitle = Array.from(filtered.reduce((courseMap: Map<string, any>, course: any) => {
+        const titleKey = normalizeClubCourseTitle(course.title);
+        if (!titleKey) return courseMap;
+
+        const existing = courseMap.get(titleKey);
+        if (!existing) {
+          courseMap.set(titleKey, {
+            ...course,
+            sourceCourseIds: [course.id],
+            sourceCourseCodes: course.code ? [course.code] : [],
+            duplicateCount: 1,
+            teacherId: normalizeTeacherIds(course.teacherId),
+          });
+          return courseMap;
+        }
+
+        const sourceCourseIds = Array.from(new Set([...(existing.sourceCourseIds || []), course.id]));
+        const sourceCourseCodes = Array.from(new Set([...(existing.sourceCourseCodes || []), course.code].filter(Boolean)));
+        const teacherIds = Array.from(new Set([...normalizeTeacherIds(existing.teacherId), ...normalizeTeacherIds(course.teacherId)]));
+
+        courseMap.set(titleKey, {
+          ...existing,
+          sourceCourseIds,
+          sourceCourseCodes,
+          duplicateCount: sourceCourseIds.length,
+          teacherId: teacherIds,
+        });
+        return courseMap;
+      }, new Map<string, any>()).values());
+
+      setPullableCourses(dedupedByTitle);
+      setSelectedPullCourseIds([]);
+      setPullCourseSearchTerm('');
       setIsPullModalOpen(true);
     } catch (error) {
       console.error("Error fetching pullable courses:", error);
@@ -243,25 +286,25 @@ const ClubManagementPage: React.FC = () => {
 
     try {
       let importedCount = 0;
+      const importedClubNames = new Set(clubs.map(club => normalizeClubCourseTitle(club.name)));
       for (const course of selectedCourses) {
-        const isDuplicate = clubs.some(c => c.name === course.title);
+        const normalizedClubName = normalizeClubCourseTitle(course.title);
+        const isDuplicate = importedClubNames.has(normalizedClubName);
         if (isDuplicate) continue;
+        importedClubNames.add(normalizedClubName);
 
         const clubData = {
           name: course.title,
           description: course.description || `กิจกรรมชุมนุม ${course.title}`,
           capacity: 40,
-          responsibleTeacherIds: Array.isArray(course.teacherId)
-            ? course.teacherId.filter((id: string) => id && id !== 'pending')
-            : (course.teacherId && course.teacherId !== 'pending' ? [course.teacherId] : []),
-<<<<<<< HEAD
+          responsibleTeacherIds: normalizeTeacherIds(course.teacherId),
           specialPeriodId: defaultClubPeriod?.id || '',
           specialPeriodTitle: defaultClubPeriod?.title || '',
           specialPeriodDay: defaultClubPeriod?.day || 'all',
           specialPeriodStartTime: defaultClubPeriod?.startTime || '',
           specialPeriodEndTime: defaultClubPeriod?.endTime || '',
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+          allowedClassLevelFrom: '',
+          allowedClassLevelTo: '',
           imageUrl: '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -270,16 +313,14 @@ const ClubManagementPage: React.FC = () => {
         importedCount++;
       }
 
-      Swal.fire({
-        icon: 'success',
-        title: 'นำเข้าสำเร็จ',
-        text: `นำเข้าชุมนุมใหม่ ${importedCount} รายการ`,
-        timer: 2000,
-        background: '#2a2b2f',
-        color: '#fff'
-      });
+      showSuccessAlert(
+        'นำเข้าสำเร็จ',
+        `นำเข้าชุมนุมใหม่ ${importedCount} รายการ รายการที่ชื่อซ้ำกับชุมนุมเดิมจะถูกข้าม`
+      );
       fetchClubs();
       setIsPullModalOpen(false);
+      setSelectedPullCourseIds([]);
+      setPullCourseSearchTerm('');
     } catch (error) {
       console.error("Error saving pulled clubs:", error);
       Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
@@ -295,7 +336,6 @@ const ClubManagementPage: React.FC = () => {
     );
   }, [clubs, searchTerm]);
 
-<<<<<<< HEAD
   const selectedSpecialPeriod = useMemo(() => (
     specialPeriods.find(period => period.id === selectedSpecialPeriodId) || null
   ), [specialPeriods, selectedSpecialPeriodId]);
@@ -304,8 +344,48 @@ const ClubManagementPage: React.FC = () => {
     specialPeriods.find(period => String(period.title || '').includes('ชุมนุม')) || specialPeriods[0] || null
   ), [specialPeriods]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  const selectedPullCourses = useMemo(() => {
+    const selectedIds = new Set(selectedPullCourseIds);
+    return pullableCourses.filter(course => selectedIds.has(course.id));
+  }, [pullableCourses, selectedPullCourseIds]);
+
+  const filteredPullableCourses = useMemo(() => {
+    const term = pullCourseSearchTerm.trim().toLowerCase();
+    if (!term) return pullableCourses;
+
+    return pullableCourses.filter(course => {
+      const searchableText = [
+        course.title,
+        course.code,
+        course.subjectGroup,
+        course.description,
+        ...(course.sourceCourseCodes || []),
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return searchableText.includes(term);
+    });
+  }, [pullableCourses, pullCourseSearchTerm]);
+
+  const selectedVisiblePullCourseCount = useMemo(() => {
+    return filteredPullableCourses.filter(course => selectedPullCourseIds.includes(course.id)).length;
+  }, [filteredPullableCourses, selectedPullCourseIds]);
+
+  const togglePullCourse = (courseId: string) => {
+    setSelectedPullCourseIds(prev =>
+      prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]
+    );
+  };
+
+  const toggleAllPullCourses = () => {
+    const visibleIds = filteredPullableCourses.map(course => course.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedPullCourseIds.includes(id));
+
+    setSelectedPullCourseIds(prev => {
+      if (allVisibleSelected) return prev.filter(id => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -326,10 +406,9 @@ const ClubManagementPage: React.FC = () => {
     setDescription(club.description);
     setCapacity(String(club.capacity));
     setSelectedTeachers(club.responsibleTeacherIds || []);
-<<<<<<< HEAD
+    setAllowedClassLevelFrom(club.allowedClassLevelFrom || '');
+    setAllowedClassLevelTo(club.allowedClassLevelTo || '');
     setSelectedSpecialPeriodId(club.specialPeriodId || defaultClubPeriod?.id || '');
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setImagePreview(club.imageUrl || null);
     setImageFile(null); // Reset image file on edit start
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -341,10 +420,9 @@ const ClubManagementPage: React.FC = () => {
     setDescription('');
     setCapacity('40');
     setSelectedTeachers([]);
-<<<<<<< HEAD
+    setAllowedClassLevelFrom('');
+    setAllowedClassLevelTo('');
     setSelectedSpecialPeriodId(defaultClubPeriod?.id || '');
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     setImageFile(null);
     setImagePreview(null);
   };
@@ -359,19 +437,38 @@ const ClubManagementPage: React.FC = () => {
     e.preventDefault();
     if (isSubmitting || !schoolId) return;
 
-<<<<<<< HEAD
     if (!name || selectedTeachers.length === 0 || !capacity || !selectedSpecialPeriod) {
       Swal.fire({
         icon: 'warning',
         title: 'ข้อมูลไม่ครบ',
         text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ, เลือกครูผู้รับผิดชอบ และเลือกคาบชุมนุมที่ใช้เช็คชื่อ',
-=======
-    if (!name || selectedTeachers.length === 0 || !capacity) {
+        background: '#2a2b2f',
+        color: '#fff'
+      });
+      return;
+    }
+
+    if (allowedClassLevelFrom && allowedClassLevelTo && getClassLevelRank(allowedClassLevelFrom) > getClassLevelRank(allowedClassLevelTo)) {
       Swal.fire({
         icon: 'warning',
-        title: 'ข้อมูลไม่ครบ',
-        text: 'กรุณาระบุชื่อชุมนุม, จำนวนที่รับ และเลือกครูผู้รับผิดชอบอย่างน้อย 1 ท่าน',
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        title: 'ช่วงระดับชั้นไม่ถูกต้อง',
+        text: 'กรุณาเลือกระดับชั้นเริ่มต้นให้อยู่ก่อนหรือเท่ากับระดับชั้นสิ้นสุด',
+        background: '#2a2b2f',
+        color: '#fff'
+      });
+      return;
+    }
+
+    const normalizedClubName = normalizeClubCourseTitle(name);
+    const duplicateClub = clubs.find(club =>
+      club.id !== editingClub?.id && normalizeClubCourseTitle(club.name) === normalizedClubName
+    );
+
+    if (duplicateClub) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'มีชุมนุมนี้อยู่แล้ว',
+        text: 'ชุมนุมเดียวกันสามารถรับนักเรียนได้หลายชั้นหลายห้อง ไม่จำเป็นต้องสร้างชื่อซ้ำ',
         background: '#2a2b2f',
         color: '#fff'
       });
@@ -396,18 +493,17 @@ const ClubManagementPage: React.FC = () => {
       }
 
       const clubData = {
-        name,
+        name: name.trim(),
         description,
         capacity: parseInt(capacity) || 0,
         responsibleTeacherIds: selectedTeachers,
-<<<<<<< HEAD
         specialPeriodId: selectedSpecialPeriod.id,
         specialPeriodTitle: selectedSpecialPeriod.title,
         specialPeriodDay: selectedSpecialPeriod.day || 'all',
         specialPeriodStartTime: selectedSpecialPeriod.startTime,
         specialPeriodEndTime: selectedSpecialPeriod.endTime,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        allowedClassLevelFrom,
+        allowedClassLevelTo,
         imageUrl,
         updatedAt: serverTimestamp(),
       };
@@ -422,14 +518,7 @@ const ClubManagementPage: React.FC = () => {
         });
       }
 
-      Swal.fire({
-        icon: 'success',
-        title: editingClub ? 'อัปเดตสำเร็จ' : 'บันทึกสำเร็จ',
-        timer: 1500,
-        showConfirmButton: false,
-        background: '#2a2b2f',
-        color: '#fff'
-      });
+      showSuccessAlert(editingClub ? 'อัปเดตสำเร็จ' : 'บันทึกสำเร็จ');
       resetForm();
       fetchClubs();
     } catch (error) {
@@ -464,14 +553,7 @@ const ClubManagementPage: React.FC = () => {
       try {
         await deleteDoc(doc(db, 'school-settings', schoolId, 'clubs', clubId));
         setClubs(prev => prev.filter(c => c.id !== clubId));
-        Swal.fire({
-          icon: 'success',
-          title: 'ลบสำเร็จ',
-          timer: 1500,
-          showConfirmButton: false,
-          background: '#2a2b2f',
-          color: '#fff'
-        });
+        showSuccessAlert('ลบสำเร็จ');
       } catch (error) {
         Swal.fire({
           icon: 'error',
@@ -494,13 +576,7 @@ const ClubManagementPage: React.FC = () => {
         registrationStartDate: globalStartDate,
         registrationEndDate: globalEndDate
       }, { merge: true });
-      Swal.fire({
-        icon: 'success',
-        title: 'บันทึกการตั้งค่าสำเร็จ',
-        showConfirmButton: false,
-        toast: true,
-        position: 'top-end'
-      });
+      showSuccessAlert('บันทึกการตั้งค่าสำเร็จ');
     } catch (error) {
       console.error("Error saving club settings:", error);
       Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกการตั้งค่าได้', 'error');
@@ -521,7 +597,7 @@ const ClubManagementPage: React.FC = () => {
       if (now < start) return { text: 'ยังไม่เปิด', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
       return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
     }
-    return { text: 'ไม่ระบุเวลา', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
+    return { text: '', color: '' };
   };
 
   return (
@@ -529,90 +605,80 @@ const ClubManagementPage: React.FC = () => {
       <div className="p-4 sm:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
 
         {/* Page Header */}
-        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-<<<<<<< HEAD
-            <BackButton to="/academic/hub/activities" className="mb-2" />
-=======
-            <Link to="/academic-admin" className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
-              <ArrowLeft size={16} className="mr-1" /> กลับหน้าบริหารวิชาการ
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Users className="text-indigo-500" size={32} />
-              จัดการข้อมูลชุมนุม
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">เพิ่มและจัดการรายชื่อชุมนุมสำหรับนักเรียน</p>
-            <div className="flex flex-wrap items-center gap-3 mt-4">
-              <button
-                onClick={fetchPullableCourses}
-                disabled={isPulling}
-                className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-4 py-2.5 rounded-xl font-bold text-sm transition-all hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800"
-              >
-                {isPulling ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}
-                ดึงจากโครงสร้างหลักสูตร
-              </button>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <BackButton to="/academic/hub/activities" />
+            <div>
+              <h1 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                <Users className="text-indigo-500" size={28} />
+                จัดการข้อมูลชุมนุม
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">เพิ่มและจัดการรายชื่อชุมนุมสำหรับนักเรียน</p>
             </div>
           </div>
 
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <div className="relative w-full md:w-72">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
               placeholder="ค้นหาชื่อชุมนุม..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+              className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm text-sm font-medium"
             />
           </div>
         </div>
 
         {/* ส่วนการตั้งค่าระบบชุมนุม */}
-        <div className="mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <Settings size={20} className="text-gray-500" />
+        <div className="mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              <Settings size={16} />
               ตั้งค่าระบบชุมนุม
             </h3>
             <button
               onClick={handleSaveSettings}
               disabled={isSettingsSaving}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-all disabled:opacity-50"
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all disabled:opacity-50 shadow-sm"
             >
-              {isSettingsSaving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {isSettingsSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
               บันทึกการตั้งค่า
             </button>
           </div>
-          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center pt-3 border-t border-gray-50 dark:border-gray-800">
+            {/* Toggle Section */}
+            <div className="md:col-span-2 flex items-center justify-between gap-4 md:pr-6 md:border-r border-gray-100 dark:border-gray-800">
               <div>
-                <h4 className="font-bold text-sm">อนุญาตให้นักเรียนย้ายชุมนุม</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400">เปิดเพื่อให้นักเรียนสามารถส่งคำขอย้ายชุมนุมได้ด้วยตนเอง</p>
+                <h4 className="font-bold text-sm text-gray-700 dark:text-gray-200">อนุญาตให้นักเรียนย้ายชุมนุม</h4>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">อนุญาตให้นักเรียนส่งคำขอย้ายชุมนุมด้วยตนเอง</p>
               </div>
-              <button onClick={() => setIsTransferEnabled(!isTransferEnabled)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isTransferEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isTransferEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              <button 
+                onClick={() => setIsTransferEnabled(!isTransferEnabled)} 
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 ${isTransferEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${isTransferEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
 
-            <div className="pt-4 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">วันที่เปิดรับสมัคร (ทุกชุมนุม)</label>
-                <input
-                  type="date"
-                  value={globalStartDate}
-                  onChange={(e) => setGlobalStartDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">วันที่ปิดรับสมัคร (ทุกชุมนุม)</label>
-                <input
-                  type="date"
-                  value={globalEndDate}
-                  onChange={(e) => setGlobalEndDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
-                />
-              </div>
+            {/* Date Sections */}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันที่เปิดรับสมัคร</label>
+              <input
+                type="date"
+                value={globalStartDate}
+                onChange={(e) => setGlobalStartDate(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันที่ปิดรับสมัคร</label>
+              <input
+                type="date"
+                value={globalEndDate}
+                onChange={(e) => setGlobalEndDate(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
+              />
             </div>
           </div>
         </div>
@@ -621,113 +687,185 @@ const ClubManagementPage: React.FC = () => {
           {/* Form Section */}
           <div className="lg:col-span-4">
             <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 sticky top-24" id="club-form">
-              <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                {editingClub ? <Edit3 className="text-amber-500" size={22} /> : <PlusCircle className="text-emerald-500" size={22} />}
-                {editingClub ? 'แก้ไขข้อมูลชุมนุม' : 'เพิ่มชุมนุมใหม่'}
-              </h2>
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">ชื่อชุมนุม</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    placeholder="เช่น ชุมนุมหุ่นยนต์ระดับโลก"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">รายละเอียดชุมนุม</label>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 resize-none transition-all" placeholder="อธิบายกิจกรรมหรือเป้าหมายของชุมนุม..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">จำนวนที่รับสมัคร (คน)</label>
-                  <input
-                    type="number"
-                    value={capacity}
-                    onChange={e => setCapacity(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    placeholder="เช่น 40"
-                    min="1"
-                  />
-                </div>
-                <div>
-<<<<<<< HEAD
-                  <label className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">
-                    <Clock size={16} className="text-indigo-500" />
-                    คาบที่ใช้เช็คชื่อชุมนุม
-                  </label>
-                  <select
-                    value={selectedSpecialPeriodId}
-                    onChange={e => setSelectedSpecialPeriodId(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-black flex items-center gap-2">
+                  {editingClub ? <Edit3 className="text-amber-500" size={22} /> : <PlusCircle className="text-emerald-500" size={22} />}
+                  {editingClub ? 'แก้ไขข้อมูล' : 'เพิ่มชุมนุมใหม่'}
+                </h2>
+                {!editingClub && (
+                  <button
+                    onClick={fetchPullableCourses}
+                    disabled={isPulling}
+                    className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-bold text-[10px] transition-all hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800 uppercase tracking-tight"
                   >
-                    <option value="">เลือกคาบจากหน้าคาบเรียนพิเศษ</option>
-                    {specialPeriods.map(period => (
-                      <option key={period.id} value={period.id}>
-                        {period.title} ({formatSpecialPeriodDay(period.day)} {period.startTime}-{period.endTime})
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-xs font-bold text-gray-500 dark:text-gray-400">
-                    ใช้กำหนดว่าวันไหน เวลาไหนที่ครูจะเข้าเช็คชื่อชุมนุมได้
-                  </p>
+                    {isPulling ? <RefreshCw size={12} className="animate-spin" /> : <Database size={12} />}
+                    ดึงจากโครงสร้างหลักสูตร
+                  </button>
+                )}
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Row 1: Name & Capacity */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="col-span-3">
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">ชื่อชุมนุม</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-medium"
+                      placeholder="ระบุชื่อชุมนุม..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">รับ (คน)</label>
+                    <input
+                      type="number"
+                      value={capacity}
+                      onChange={e => setCapacity(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm font-bold text-center"
+                      placeholder="40"
+                      min="1"
+                    />
+                  </div>
                 </div>
+
+                {/* Row 2: Description */}
                 <div>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">รูปภาพชุมนุม</label>
-                  <div className="flex items-center gap-4">
-                    <div onClick={() => document.getElementById('club-image-input')?.click()} className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-all overflow-hidden relative group">
+                  <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">รายละเอียดกิจกรรม</label>
+                  <textarea 
+                    value={description} 
+                    onChange={e => setDescription(e.target.value)} 
+                    rows={2} 
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 resize-none transition-all text-xs" 
+                    placeholder="อธิบายกิจกรรมโดยย่อ..." 
+                  />
+                </div>
+
+                {/* Row 3: Period & Image */}
+                <div className="flex items-end gap-3">
+                  <div className="flex-grow">
+                    <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider flex items-center gap-1">
+                      <Clock size={10} /> คาบเช็คชื่อ
+                    </label>
+                    <select
+                      value={selectedSpecialPeriodId}
+                      onChange={e => setSelectedSpecialPeriodId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
+                    >
+                      <option value="">เลือกคาบเรียนพิเศษ...</option>
+                      {specialPeriods.map(period => (
+                        <option key={period.id} value={period.id}>
+                          {period.title} ({formatSpecialPeriodDay(period.day)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-shrink-0">
+                    <div 
+                      onClick={() => document.getElementById('club-image-input')?.click()} 
+                      className="w-9 h-9 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all overflow-hidden relative group shadow-sm"
+                    >
                       {imagePreview ? (
                         <img src={imagePreview} className="w-full h-full object-cover" alt="Preview" />
                       ) : (
-                        <ImageIcon className="text-gray-400" size={24} />
+                        <ImageIcon className="text-gray-300" size={16} />
                       )}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <PlusCircle className="text-white" size={20} />
+                        <PlusCircle className="text-white" size={14} />
                       </div>
                     </div>
-                    <input type="file" id="club-image-input" hidden accept="image/*" onChange={handleImageChange} />
+                    <input type="file" id="club-image-input" hidden accept="image/jpeg,image/png" onChange={handleImageChange} />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">ครูผู้รับผิดชอบ (เพิ่มได้ไม่จำกัด)</label>
+                {/* Row 4: Class Level Range */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">รับตั้งแต่ระดับชั้น</label>
+                    <select
+                      value={allowedClassLevelFrom}
+                      onChange={e => setAllowedClassLevelFrom(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
+                    >
+                      <option value="">ทุกระดับชั้น</option>
+                      {classLevelOptions.map(level => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">ถึงระดับชั้น</label>
+                    <select
+                      value={allowedClassLevelTo}
+                      onChange={e => setAllowedClassLevelTo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
+                    >
+                      <option value="">ทุกระดับชั้น</option>
+                      {classLevelOptions.map(level => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-                  {/* Search Teacher */}
+                {/* Row 4: Teachers */}
+                <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">ครูผู้รับผิดชอบ</label>
+                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-100 dark:border-emerald-500/20">
+                      เฉพาะสถานะอยู่
+                    </span>
+                  </div>
+                  
                   <div className="relative mb-2">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
                     <input
                       type="text"
-                      placeholder="ค้นหาชื่อครู..."
+                      placeholder="ค้นหาครูที่กำลังปฏิบัติหน้าที่..."
                       value={teacherSearchTerm}
                       onChange={(e) => setTeacherSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 text-xs bg-gray-100 dark:bg-gray-700 border-none rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className="w-full pl-8 pr-3 py-1.5 text-[11px] bg-gray-100 dark:bg-gray-800/50 border-none rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
                   </div>
 
-                  <div className="max-h-44 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl p-1 space-y-1 bg-gray-50 dark:bg-gray-800 custom-scrollbar">
+                  <div className="max-h-72 overflow-y-auto border border-gray-100 dark:border-gray-800 rounded-xl p-1.5 space-y-0.5 bg-gray-50/50 dark:bg-gray-900/40 custom-scrollbar">
                     {teachersList.length > 0 ? (
-                      teachersList.map(t => (
-                        <label key={t.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all ${selectedTeachers.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800' : 'hover:bg-white dark:hover:bg-gray-700'}`}>
-                          <input type="checkbox" checked={selectedTeachers.includes(t.id)} onChange={() => toggleTeacher(t.id)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
-                          <span className={`text-sm ${selectedTeachers.includes(t.id) ? 'font-bold text-indigo-700 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-400'}`}>{t.name}</span>
-                        </label>
-                      ))
+                      teachersList.slice(0, 30).map(t => {
+                        const teacherName = t.name || `${t.title || ''}${t.firstName || ''} ${t.lastName || ''}`.trim() || 'ไม่ระบุชื่อครู';
+                        return (
+                          <label key={t.id} className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all ${selectedTeachers.includes(t.id) ? 'bg-white dark:bg-gray-800 shadow-sm border border-indigo-100 dark:border-indigo-900/50' : 'hover:bg-white/50 dark:hover:bg-gray-800/50'}`}>
+                            <input type="checkbox" checked={selectedTeachers.includes(t.id)} onChange={() => toggleTeacher(t.id)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 dark:border-gray-600" />
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`text-[11px] truncate ${selectedTeachers.includes(t.id) ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                {t.teacherId && <span>{t.teacherId} </span>}
+                                {teacherName}
+                              </span>
+                            </div>
+                          </label>
+                        );
+                      })
                     ) : (
-                      <div className="p-4 text-center text-xs text-gray-400">ไม่พบรายชื่อครู</div>
+                      <div className="p-6 text-center">
+                        <div className="text-[11px] text-gray-400">ไม่พบรายชื่อครูที่กำลังปฏิบัติหน้าที่</div>
+                        <div className="text-[9px] text-gray-300 mt-1">ลองพิมพ์ค้นหาชื่อเพื่อระบุตัวตน</div>
+                      </div>
+                    )}
+                    {teachersList.length > 30 && (
+                      <div className="p-2 text-center text-[9px] text-gray-400 border-t border-gray-100 dark:border-gray-800 mt-1 italic">
+                        แสดง 30 รายชื่อแรก กรุณาใช้ช่องค้นหาเพื่อหาครูท่านอื่น
+                      </div>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-3 pt-2">
+
+                <div className="flex gap-2 pt-1">
                   {editingClub && (
-                    <button type="button" onClick={resetForm} className="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xl transition-all flex items-center justify-center gap-2">
-                      <X size={20} /> ยกเลิก
+                    <button type="button" onClick={resetForm} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
+                      <X size={14} /> ยกเลิก
                     </button>
                   )}
-                  <button type="submit" disabled={isSubmitting} className={`w-full py-3 ${editingClub ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center justify-center gap-2`}>
-                    <Save size={20} /> {isSubmitting ? (editingClub ? 'กำลังอัปเดต...' : 'กำลังบันทึก...') : (editingClub ? 'อัปเดตข้อมูล' : 'บันทึกข้อมูลชุมนุม')}
+                  <button type="submit" disabled={isSubmitting} className={`flex-[2] py-2.5 ${editingClub ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white font-black rounded-xl shadow-lg shadow-indigo-100 dark:shadow-none transition-all flex items-center justify-center gap-1.5 text-xs`}>
+                    <Save size={16} /> {isSubmitting ? (editingClub ? 'กำลังอัปเดต...' : 'กำลังบันทึก...') : (editingClub ? 'อัปเดตข้อมูล' : 'บันทึกชุมนุม')}
                   </button>
                 </div>
               </form>
@@ -735,7 +873,7 @@ const ClubManagementPage: React.FC = () => {
           </div>
 
           {/* List Section */}
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-8">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <FileText className="text-amber-500" /> รายการชุมนุมทั้งหมด ({clubs.length})
             </h2>
@@ -748,64 +886,82 @@ const ClubManagementPage: React.FC = () => {
                 <p className="text-gray-500">ยังไม่มีข้อมูลชุมนุมในระบบ</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-2.5">
                 {filteredClubs.map(club => {
                   const status = getClubStatus(club);
                   return (
-                    <div key={club.id} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex gap-4 group hover:shadow-md transition-all">
-                      <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0">
-                        {club.imageUrl ? (
-                          <img src={club.imageUrl} className="w-full h-full object-cover" alt={club.name} />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={32} /></div>
-                        )}
+                    <div key={club.id} className="bg-white dark:bg-[#2a2b2f] rounded-xl p-2.5 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row md:items-center gap-4 group hover:shadow-md transition-all relative overflow-hidden">
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${status.color.split(' ')[0]}`} />
+                      
+                      {/* 1. Image & Basic Info */}
+                      <div className="flex items-center gap-3 flex-[1.5] min-w-0">
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 shadow-inner">
+                          {club.imageUrl ? (
+                            <img src={club.imageUrl} className="w-full h-full object-cover" alt={club.name} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={24} /></div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-indigo-600 dark:text-indigo-400 truncate text-sm">{club.name}</h3>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-1">{club.description || 'ไม่มีรายละเอียด'}</p>
+                        </div>
                       </div>
-                      <div className="flex-grow flex flex-col">
-                        <div className="flex-grow">
-                          <div className="flex justify-between items-start">
-                            <h3 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 pr-2 line-clamp-1">{club.name}</h3>
-                            <div className="flex items-center flex-shrink-0">
-                              <button onClick={() => handleEdit(club)} className="p-2 text-gray-400 hover:text-amber-500 transition-colors"><Edit3 size={18} /></button>
-                              <button onClick={() => handleDelete(club.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
-                            </div>
+
+                      {/* 2. Status & Capacity */}
+                      <div className="flex items-center gap-4 flex-1">
+                        {status.text && (
+                          <div className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tight whitespace-nowrap ${status.color}`}>
+                            {status.text}
                           </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 mt-1 mb-2">{club.description || 'ไม่มีรายละเอียด'}</p>
-                          <div className="flex flex-wrap gap-2 text-xs font-bold">
-                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${status.color}`}>
-                              {status.text}
-                            </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg">
-                              <Users size={14} />
-                              {club.memberCount || 0} / {club.capacity || 0} คน
-                            </div>
-                          </div>
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            {globalStartDate && globalEndDate ? (
-                              <span>เปิดรับสมัคร: {new Date(globalStartDate).toLocaleDateString('th-TH')} - {new Date(globalEndDate).toLocaleDateString('th-TH')}</span>
-                            ) : (
-                              <span>ไม่จำกัดเวลา</span>
-                            )}
-                          </div>
-<<<<<<< HEAD
-                          <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-300">
-                            <Clock size={13} />
-                            {club.specialPeriodTitle
-                              ? `${club.specialPeriodTitle} (${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || '-'}-${club.specialPeriodEndTime || '-'})`
-                              : 'ยังไม่ได้ระบุคาบเช็คชื่อ'}
-                          </div>
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                        )}
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-gray-600 dark:text-gray-300">
+                          <Users size={12} className="text-gray-400" />
+                          <span className="tabular-nums">{club.memberCount || 0}</span>
+                          <span className="text-gray-400">/</span>
+                          <span className="tabular-nums">{club.capacity || 0}</span>
                         </div>
-                        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
-                          <h4 className="text-xs font-bold text-gray-400 mb-1.5">ครูผู้รับผิดชอบ</h4>
-                          <div className="flex flex-wrap gap-1.5">
-                            {club.responsibleTeacherIds?.map(tid => (
-                              <span key={tid} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full text-[10px] font-medium">
-                                {teacherMap?.[tid]?.name || 'ไม่พบข้อมูล'}
-                              </span>
-                            ))}
-                          </div>
+                        <div className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 whitespace-nowrap">
+                          {formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo)}
                         </div>
+                      </div>
+
+                      {/* 3. Schedule & Time */}
+                      <div className="hidden lg:flex flex-col gap-0.5 flex-1 border-l border-gray-100 dark:border-gray-700 pl-4">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">เวลาเรียน</span>
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-indigo-600 dark:text-indigo-300 truncate">
+                          <Clock size={11} />
+                          {club.specialPeriodTitle
+                            ? `${club.specialPeriodTitle} (${formatSpecialPeriodDay(club.specialPeriodDay)})`
+                            : '-'}
+                        </div>
+                      </div>
+
+                      {/* 4. Responsible Teachers */}
+                      <div className="hidden xl:flex flex-col gap-1 flex-1 border-l border-gray-100 dark:border-gray-700 pl-4 min-w-0">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">ครูผู้รับผิดชอบ</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {club.responsibleTeacherIds && club.responsibleTeacherIds.length > 0 ? (
+                            <>
+                              <div className="text-[11px] font-bold text-gray-700 dark:text-gray-200 truncate">
+                                {teacherMap?.[club.responsibleTeacherIds[0]]?.name || 'ไม่พบข้อมูล'}
+                              </div>
+                              {club.responsibleTeacherIds.length > 1 && (
+                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-md border border-indigo-100 dark:border-indigo-500/20">
+                                  +{club.responsibleTeacherIds.length - 1}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 italic">ไม่ระบุครู</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 5. Actions */}
+                      <div className="flex items-center justify-end gap-1 md:border-l border-gray-100 dark:border-gray-700 md:pl-2 shrink-0">
+                        <button onClick={() => handleEdit(club)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-all"><Edit3 size={16} /></button>
+                        <button onClick={() => handleDelete(club.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"><Trash2 size={16} /></button>
                       </div>
                     </div>
                   );
@@ -818,40 +974,124 @@ const ClubManagementPage: React.FC = () => {
       {/* Course Pull Modal */}
       {isPullModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#2a2b2f] w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-[#2a2b2f] w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
             <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold flex items-center gap-2">
                   <Database className="text-indigo-500" />
                   ดึงข้อมูลจากรายวิชา
                 </h3>
-                <p className="text-sm text-gray-500 mt-1">พบรายวิชาที่น่าจะเป็นกิจกรรมชุมนุม {pullableCourses.length} รายการ</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  พบรายวิชาที่น่าจะเป็นกิจกรรมชุมนุม {pullableCourses.length} รายการ เลือกเฉพาะรายวิชาที่ต้องการนำเข้า
+                </p>
               </div>
-              <button onClick={() => setIsPullModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-400">
+              <button
+                onClick={() => {
+                  setIsPullModalOpen(false);
+                  setSelectedPullCourseIds([]);
+                  setPullCourseSearchTerm('');
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-400"
+              >
                 <X size={20} />
               </button>
             </div>
+            {pullableCourses.length > 0 && (
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    value={pullCourseSearchTerm}
+                    onChange={(event) => setPullCourseSearchTerm(event.target.value)}
+                    placeholder="ค้นหาชื่อรายวิชา รหัสวิชา หรือกลุ่มสาระ..."
+                    className="w-full pl-10 pr-10 py-2.5 text-sm bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900 dark:text-white"
+                  />
+                  {pullCourseSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setPullCourseSearchTerm('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <label className={`flex items-center gap-3 select-none ${filteredPullableCourses.length === 0 ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
+                      checked={filteredPullableCourses.length > 0 && selectedVisiblePullCourseCount === filteredPullableCourses.length}
+                      ref={input => {
+                        if (input) input.indeterminate = selectedVisiblePullCourseCount > 0 && selectedVisiblePullCourseCount < filteredPullableCourses.length;
+                      }}
+                      onChange={toggleAllPullCourses}
+                      disabled={filteredPullableCourses.length === 0}
+                      className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 dark:border-gray-600 disabled:opacity-50"
+                    />
+                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200">
+                      เลือกรายการที่แสดง
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      ({filteredPullableCourses.length} รายการ)
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-500/20">
+                      เลือกแล้ว {selectedPullCourseIds.length} รายการ
+                    </span>
+                    {selectedPullCourseIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPullCourseIds([])}
+                        className="text-xs font-bold text-gray-500 hover:text-red-500 transition-colors"
+                      >
+                        ล้างการเลือก
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
               <div className="space-y-3">
-                {pullableCourses.map(course => (
-                  <div key={course.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-all group">
-                    <div className="flex-grow">
-                      <div className="font-bold text-gray-900 dark:text-white">{course.title}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-1">
+                {filteredPullableCourses.map(course => (
+                  <label
+                    key={course.id}
+                    className={`flex items-center gap-4 p-4 rounded-2xl border transition-all group cursor-pointer ${selectedPullCourseIds.includes(course.id)
+                      ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/50 shadow-sm'
+                      : 'bg-gray-50 dark:bg-gray-800/50 border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500/50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPullCourseIds.includes(course.id)}
+                      onChange={() => togglePullCourse(course.id)}
+                      className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300 dark:border-gray-600"
+                    />
+                    <div className="flex-grow min-w-0">
+                      <div className="font-bold text-gray-900 dark:text-white truncate">{course.title}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-2 mt-1">
                         <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded-md">{course.code || 'ไม่มีรหัส'}</span>
                         <span>•</span>
-                        <span>{course.subjectGroup}</span>
+                        <span>{course.subjectGroup || 'ไม่ระบุกลุ่มสาระ'}</span>
                       </div>
                     </div>
                     <button
-                      onClick={() => handleSavePulledCourses([course])}
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleSavePulledCourses([course]);
+                      }}
                       disabled={isSubmitting}
-                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all transform hover:scale-105"
+                      className="hidden sm:flex items-center gap-2 bg-white dark:bg-gray-900 hover:bg-indigo-600 dark:hover:bg-indigo-600 text-indigo-600 dark:text-indigo-300 hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all border border-indigo-200 dark:border-indigo-500/30"
                     >
                       <Copy size={16} />
                       ดึงข้อมูล
                     </button>
-                  </div>
+                  </label>
                 ))}
                 {pullableCourses.length === 0 && (
                   <div className="text-center py-10">
@@ -861,16 +1101,25 @@ const ClubManagementPage: React.FC = () => {
                     <p className="text-gray-500">ไม่พบรายวิชาที่เกี่ยวข้องกับชุมนุม</p>
                   </div>
                 )}
+                {pullableCourses.length > 0 && filteredPullableCourses.length === 0 && (
+                  <div className="text-center py-10">
+                    <div className="bg-gray-100 dark:bg-gray-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Search className="text-gray-400" size={32} />
+                    </div>
+                    <p className="font-bold text-gray-600 dark:text-gray-300">ไม่พบรายวิชาตามคำค้นหา</p>
+                    <p className="text-xs text-gray-400 mt-1">ลองค้นหาด้วยชื่อรายวิชา รหัสวิชา หรือกลุ่มสาระอื่น</p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-6 bg-gray-50 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
               <button
-                onClick={() => handleSavePulledCourses(pullableCourses)}
-                disabled={isSubmitting || pullableCourses.length === 0}
+                onClick={() => handleSavePulledCourses(selectedPullCourses)}
+                disabled={isSubmitting || selectedPullCourses.length === 0}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all disabled:opacity-50"
               >
                 {isSubmitting ? <RefreshCw size={20} className="animate-spin" /> : <Database size={20} />}
-                ดึงข้อมูลทั้งหมดเข้าสู่ระบบ
+                ดึงข้อมูลที่เลือกเข้าสู่ระบบ
               </button>
             </div>
           </div>
@@ -887,8 +1136,4 @@ const ClubManagementPage: React.FC = () => {
   );
 };
 
-<<<<<<< HEAD
 export default ClubManagementPage;
-=======
-export default ClubManagementPage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-<<<<<<< HEAD
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { RootState } from '@/store';
 import { firestore as db } from '@/firebase';
 import { doc, getDoc, setDoc, collection, onSnapshot, getDocs, serverTimestamp, query, where } from 'firebase/firestore';
-import { Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users } from 'lucide-react';
+import { Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users, AlertTriangle, Ban } from 'lucide-react';
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from '@/components/Shared/BackButton';
 import Swal from 'sweetalert2';
 import { useTheme } from '@/ThemeContext';
-import { isAcademicCourse, getPartnerIndex } from './utils';
+import { isAcademicCourse, getPartnerIndex, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { getEffectivePeriodEnd, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 
 interface TeacherAssignment {
     groupNumber: number;
     teacherId: string;
+    teacherIds?: string[];
     roomIds: string[];
     classLevels?: string[];
+    room?: string;
 }
 
 interface CourseAssignmentDoc {
@@ -27,22 +30,6 @@ interface CourseAssignmentDoc {
     academicYear: string;
     semester: string;
     teacherAssignments: TeacherAssignment[];
-=======
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store';
-import { firestore as db } from '@/firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot, getDocs, serverTimestamp } from 'firebase/firestore';
-import { ArrowLeft, Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users } from 'lucide-react';
-import MainLayout from "@/layouts/MainLayout";
-import Swal from 'sweetalert2';
-import { useTheme } from '@/ThemeContext';
-import { isAcademicCourse, getPartnerIndex } from './utils';
-
-interface GroupAssignment {
-    groupNumber: number;
-    teacherId: string;
-    roomIds: string[];
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Course {
@@ -56,27 +43,26 @@ interface Course {
     hoursPerWeek?: number;
     credits?: number | string;
     type?: string;
-<<<<<<< HEAD
-=======
-    teacherAssignments?: GroupAssignment[];
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface Teacher {
     id: string;
+    teacherId?: string;
     name: string;
+    title?: string;
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+    preferences?: {
+        unavailableSlots?: string[];
+    };
 }
 
 interface AssignmentRow extends Course {
-<<<<<<< HEAD
     assignment: TeacherAssignment;
     academicYear: string;
     semester: string;
     compositeId: string; // courseId + "_" + groupNumber
-=======
-    assignment: GroupAssignment;
-    compositeId: string; // course.id + "_" + groupNumber
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 }
 
 interface PeriodConstraint {
@@ -117,26 +103,32 @@ const DEFAULT_PERIODS: PeriodSettingItem[] = [
     { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
 ];
 
-<<<<<<< HEAD
 const getRequiredWeeklyPeriods = (course: Pick<Course, 'credits' | 'hoursPerWeek'>) => {
-    const hours = Number(course.hoursPerWeek || 0);
-    if (hours > 0) return Math.round(hours);
-
-    const credits = Number(course.credits || 0);
-    return credits > 0 ? Math.round(credits * 2) : 0;
+    return getScheduleRequiredWeeklyPeriods(course, 0);
 };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+const normalizeGroupNumber = (groupNumber?: number | string) => {
+    const normalized = Number(groupNumber || 1);
+    return Number.isFinite(normalized) && normalized > 0 ? normalized : 1;
+};
+
+const getAssignmentCompositeId = (courseId: string, groupNumber?: number | string) => {
+    return `${courseId}_${normalizeGroupNumber(groupNumber)}`;
+};
+
+const getAssignmentTeacherIds = (assignment?: TeacherAssignment | null): string[] => {
+    const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+        ? assignment.teacherIds
+        : (assignment?.teacherId ? [assignment.teacherId] : []);
+    return Array.from(new Set(ids.filter(Boolean)));
+};
+
 const PeriodConstraintPage: React.FC = () => {
     const { isDarkMode } = useTheme();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
-<<<<<<< HEAD
     const dispatch = useDispatch();
     const { academicYear: calYear, terms: calTerms, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const [courses, setCourses] = useState<Course[]>([]);
     const [constraints, setConstraints] = useState<Record<string, PeriodConstraint>>({});
@@ -149,14 +141,11 @@ const PeriodConstraintPage: React.FC = () => {
     
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
-<<<<<<< HEAD
-    const [selectedYear, setSelectedYear] = useState<string>("");
-    const [filterSemester, setFilterSemester] = useState('1');
+    const [selectedYear, setSelectedYear] = useState<string>(localStorage.getItem('porbor_active_year') || "");
+    const [filterSemester, setFilterSemester] = useState(localStorage.getItem('porbor_active_semester') || '1');
     const [courseAssignments, setCourseAssignments] = useState<CourseAssignmentDoc[]>([]);
-=======
-    const [filterSemester, setFilterSemester] = useState('1');
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const [filterClass, setFilterClass] = useState('all');
+    const [filterRoom, setFilterRoom] = useState('all');
     const [filterGroup, setFilterGroup] = useState('all');
     const [filterSubjectGroup, setFilterSubjectGroup] = useState('all');
     const [filterPhysicalRoom, setFilterPhysicalRoom] = useState('all'); // NEW
@@ -164,6 +153,15 @@ const PeriodConstraintPage: React.FC = () => {
     const [showActivityCourses, setShowActivityCourses] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 20;
+
+    // Persist filters to localStorage
+    useEffect(() => {
+        if (selectedYear) localStorage.setItem('porbor_active_year', selectedYear);
+    }, [selectedYear]);
+
+    useEffect(() => {
+        if (filterSemester) localStorage.setItem('porbor_active_semester', filterSemester);
+    }, [filterSemester]);
 
     // Metadata for filters
     const [subjectGroups, setSubjectGroups] = useState<string[]>([]);
@@ -186,28 +184,34 @@ const PeriodConstraintPage: React.FC = () => {
         'SENIOR_HIGH': 'ม.ปลาย',
     };
 
-<<<<<<< HEAD
     useEffect(() => {
-        if (schoolId && calendarStatus === 'idle') {
-            dispatch(fetchCalendar(schoolId) as any);
+        if (schoolId) {
+            if (calendarStatus === 'idle') {
+                dispatch(fetchCalendar(schoolId) as any);
+            }
+            dispatch(fetchTeachersMap(schoolId) as any);
         }
     }, [schoolId, calendarStatus, dispatch]);
 
     useEffect(() => {
         if (calYear && !selectedYear) {
-            setSelectedYear(calYear);
+            const savedYear = localStorage.getItem('porbor_active_year');
+            setSelectedYear(savedYear || calYear);
         }
         if (calTerms && calTerms.length > 0 && filterSemester === '1') {
-            const today = new Date().toISOString().split('T')[0];
-            const found = calTerms.find(t => today >= t.startDate && today <= t.endDate);
-            if (found) {
-                const termId = found.name.includes('2') ? '2' : '1';
-                setFilterSemester(termId);
+            const savedTerm = localStorage.getItem('porbor_active_semester');
+            if (savedTerm) {
+                setFilterSemester(savedTerm);
+            } else {
+                const today = new Date().toISOString().split('T')[0];
+                const found = calTerms.find(t => today >= t.startDate && today <= t.endDate);
+                if (found) {
+                    const termId = found.name.includes('2') ? '2' : '1';
+                    setFilterSemester(termId);
+                }
             }
         }
     }, [calYear, calTerms, selectedYear, filterSemester]);
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const buildClassList = (levelRange: string) => {
         const allKeys = ['k1','k2','k3','p1','p2','p3','p4','p5','p6','m1','m2','m3','m4','m5','m6'];
         const labelToKey: Record<string, string> = {};
@@ -237,6 +241,46 @@ const PeriodConstraintPage: React.FC = () => {
         return result;
     };
 
+    const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
+
+    const formatTeacherDisplayName = useCallback((teacherId: string) => {
+        const teacher = teacherMap[teacherId] as Teacher | undefined;
+        if (!teacher) return teacherId || 'ไม่ระบุครู';
+        const fullName = teacher.displayName || teacher.name || `${teacher.title || ''}${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
+        return fullName || teacherId || 'ไม่ระบุครู';
+    }, [teacherMap]);
+
+    const getTeacherCode = useCallback((teacherId: string) => {
+        const teacher = teacherMap[teacherId] as Teacher | undefined;
+        return teacher?.teacherId || teacherId?.slice(-4) || '-';
+    }, [teacherMap]);
+
+    const getTeacherSummaries = useCallback((assignment: TeacherAssignment) => {
+        const ids = getAssignmentTeacherIds(assignment);
+        return ids.map(id => ({
+            id,
+            code: getTeacherCode(id),
+            name: formatTeacherDisplayName(id),
+            teacher: teacherMap[id] as Teacher | undefined,
+        }));
+    }, [formatTeacherDisplayName, getTeacherCode, teacherMap]);
+
+    // Create a flattened list of all assignments (rows)
+    const allAssignments = useMemo(() => {
+        return courseAssignments.flatMap(courseDoc => {
+            const course = courses.find(c => c.id === courseDoc.courseId);
+            if (!course) return [];
+            
+            return (courseDoc.teacherAssignments || []).map(asgn => ({
+                ...course,
+                academicYear: courseDoc.academicYear,
+                semester: courseDoc.semester,
+                assignment: asgn,
+                compositeId: getAssignmentCompositeId(courseDoc.courseId, asgn.groupNumber)
+            } as AssignmentRow));
+        });
+    }, [courses, courseAssignments]);
+
     useEffect(() => {
         const loadData = async () => {
             if (!schoolId) return;
@@ -256,7 +300,6 @@ const PeriodConstraintPage: React.FC = () => {
                 const coursesData = coursesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Course));
                 setCourses(coursesData);
 
-<<<<<<< HEAD
                 // 1.1 Load Course Assignments (Filtered by year and semester)
                 const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
                 const q = query(assignmentsRef, 
@@ -267,8 +310,6 @@ const PeriodConstraintPage: React.FC = () => {
                 const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CourseAssignmentDoc));
                 setCourseAssignments(assignmentsData);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 // 2. Load Existing Constraints
                 const constraintDocRef = doc(db, 'school-settings', schoolId, 'configs', 'period_constraints');
                 const constraintSnap = await getDoc(constraintDocRef);
@@ -293,7 +334,9 @@ const PeriodConstraintPage: React.FC = () => {
                 const settingsRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
                 const settingsSnap = await getDoc(settingsRef);
                 if (settingsSnap.exists() && settingsSnap.data().periods) {
-                    setPeriodSettings(settingsSnap.data().periods);
+                    setPeriodSettings(normalizePeriodSettings(settingsSnap.data().periods));
+                } else {
+                    setPeriodSettings(normalizePeriodSettings(DEFAULT_PERIODS));
                 }
 
                 // 5. Load Special Periods
@@ -315,7 +358,6 @@ const PeriodConstraintPage: React.FC = () => {
             }
         };
         loadData();
-<<<<<<< HEAD
     }, [schoolId, selectedYear, filterSemester]);
 
     const showLimitWarning = (title: string, text: string) => {
@@ -344,22 +386,13 @@ const PeriodConstraintPage: React.FC = () => {
             return;
         }
 
-=======
-    }, [schoolId]);
-
-    const handleConstraintChange = (assignmentId: string, type: 'any' | 'single' | 'double' | 'mixed') => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         setConstraints(prev => ({
             ...prev,
             [assignmentId]: {
                 ...(prev[assignmentId] || { isLocked: false, doublePreference: 'any', singlePreference: 'any', excludedDays: [] }),
-<<<<<<< HEAD
                 type,
                 doublePreference: type === 'single' ? 'any' : (prev[assignmentId]?.doublePreference || 'any'),
                 singlePreference: type === 'double' ? 'any' : (prev[assignmentId]?.singlePreference || 'any'),
-=======
-                type
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }
         }));
     };
@@ -400,7 +433,9 @@ const PeriodConstraintPage: React.FC = () => {
     };
 
     const toggleSlot = useCallback((assignmentId: string, slotId: string, totalPeriods: number, totalHoursNeeded: number) => {
-<<<<<<< HEAD
+        const c = allAssignments.find(a => a.compositeId === assignmentId);
+        if (!c) return;
+
         const existing = constraints[assignmentId] || { type: 'any' as const, isLocked: false, lockedSlots: [] };
         const slots = existing.lockedSlots || [];
         const type = existing.type || 'any';
@@ -412,6 +447,41 @@ const PeriodConstraintPage: React.FC = () => {
 
         let targets = [slotId];
         
+        // Check for conflicts if adding
+        if (!isRemoving) {
+            const teacherIds = getAssignmentTeacherIds(c.assignment);
+            const unavailableTeacher = teacherIds
+                .map(id => ({ id, teacher: teacherMap[id] as Teacher | undefined }))
+                .find(item => item.teacher?.preferences?.unavailableSlots?.includes(slotId));
+            
+            // 1. Teacher Unavailable
+            if (unavailableTeacher) {
+                showLimitWarning('คาบนี้ถูกล็อคว่างไว้', `ครู ${formatTeacherDisplayName(unavailableTeacher.id)} ถูกกำหนดให้ว่างในคาบนี้`);
+                return;
+            }
+
+            // 2. Overlap with other subjects
+            const overlap = allAssignments.find(a => {
+                if (a.compositeId === assignmentId) return false;
+                const cst = constraints[a.compositeId];
+                if (!cst?.isLocked || !cst.lockedSlots?.includes(slotId)) return false;
+                
+                const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
+                const hasTeacherOverlap = teacherIds.some(id => otherTeacherIds.includes(id));
+                return hasTeacherOverlap || (c.classId && a.classId === c.classId);
+            });
+
+            if (overlap) {
+                const overlapTeacherIds = getAssignmentTeacherIds(overlap.assignment);
+                const sameTeacherId = teacherIds.find(id => overlapTeacherIds.includes(id));
+                const msg = sameTeacherId
+                    ? `ครู ${sameTeacherId ? formatTeacherDisplayName(sameTeacherId) : ''} ติดสอนวิชา ${overlap.code} ในคาบนี้`
+                    : `ห้อง ${overlap.classId} มีเรียนวิชา ${overlap.code} ในคาบนี้`;
+                showLimitWarning('คาบนี้ถูกล็อคไว้แล้ว', msg);
+                return;
+            }
+        }
+
         if (!isRemoving && (type === 'double' || type === 'mixed')) {
             const remaining = requiredPeriods - slots.length;
             const shouldPair = remaining >= 2 && (type === 'double' || (type === 'mixed' && remaining >= 2));
@@ -428,6 +498,30 @@ const PeriodConstraintPage: React.FC = () => {
 
                 if (slots.includes(partnerId)) {
                     showLimitWarning('คาบคู่ถูกเลือกไว้แล้ว', 'คาบที่เป็นคู่กับช่องนี้ถูกล็อกไว้แล้ว กรุณาเลือกคู่อื่นหรือยกเลิกคาบเดิมก่อน');
+                    return;
+                }
+
+                // Check conflicts for partner too
+                const teacherIds = getAssignmentTeacherIds(c.assignment);
+                const unavailableTeacher = teacherIds
+                    .map(id => ({ id, teacher: teacherMap[id] as Teacher | undefined }))
+                    .find(item => item.teacher?.preferences?.unavailableSlots?.includes(partnerId));
+                if (unavailableTeacher) {
+                    showLimitWarning('คาบคู่ติดคาบว่าง', `คู่ของคาบนี้ (${partnerSetting.label}) ถูกล็อคว่างไว้สำหรับครู ${formatTeacherDisplayName(unavailableTeacher.id)}`);
+                    return;
+                }
+
+                const partnerOverlap = allAssignments.find(a => {
+                    if (a.compositeId === assignmentId) return false;
+                    const cst = constraints[a.compositeId];
+                    if (!cst?.isLocked || !cst.lockedSlots?.includes(partnerId)) return false;
+                    const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
+                    const hasTeacherOverlap = teacherIds.some(id => otherTeacherIds.includes(id));
+                    return hasTeacherOverlap || (c.classId && a.classId === c.classId);
+                });
+
+                if (partnerOverlap) {
+                    showLimitWarning('คาบคู่ติดวิชาอื่น', `คู่ของคาบนี้ (${partnerSetting.label}) ถูกล็อกไว้แล้วสำหรับวิชา ${partnerOverlap.code}`);
                     return;
                 }
 
@@ -470,7 +564,7 @@ const PeriodConstraintPage: React.FC = () => {
             ...prev,
             [assignmentId]: { ...existing, isLocked: newSlots.length > 0, lockedSlots: newSlots }
         }));
-    }, [constraints, isDarkMode, periodSettings]);
+    }, [constraints, isDarkMode, periodSettings, allAssignments, teacherMap, formatTeacherDisplayName]);
 
     const handleSave = async () => {
         if (!schoolId) return;
@@ -492,66 +586,6 @@ const PeriodConstraintPage: React.FC = () => {
             return;
         }
 
-=======
-        const teachingPeriods = periodSettings.filter(p => p.isTeachingPeriod);
-        setConstraints(prev => {
-            const existing = prev[assignmentId] || { type: 'any', isLocked: false, lockedSlots: [] };
-            const slots = existing.lockedSlots || [];
-            const type = existing.type;
-            
-            const [dayKey, indexStr] = slotId.split('-');
-            const index = parseInt(indexStr);
-            const isRemoving = slots.includes(slotId);
-
-            let targets = [slotId];
-            
-            // Intelligent pairing logic
-            if (!isRemoving && (type === 'double' || type === 'mixed')) {
-                const currentCount = slots.length;
-                const remaining = totalHoursNeeded - currentCount;
-                
-                const shouldPair = type === 'double' || (type === 'mixed' && remaining >= 2);
-
-                if (shouldPair) {
-                    const partnerIndex = getPartnerIndex(index);
-                    if (partnerIndex !== -1 && partnerIndex < totalPeriods) {
-                        const p1 = periodSettings[index];
-                        const p2 = periodSettings[partnerIndex];
-                        if (p1 && p2 && p2.isTeachingPeriod) {
-                            targets.push(`${dayKey}-${partnerIndex}`);
-                        }
-                    }
-                }
-            } else if (isRemoving) {
-                // If removing, also check if it was part of a standard pair
-                const partnerIndex = getPartnerIndex(index);
-                if (partnerIndex !== -1) {
-                    const partnerId = `${dayKey}-${partnerIndex}`;
-                    if (slots.includes(partnerId)) {
-                        targets.push(partnerId);
-                    }
-                }
-            }
-
-            let newSlots = [...slots];
-            if (isRemoving) {
-                newSlots = newSlots.filter(s => !targets.includes(s));
-            } else {
-                targets.forEach(t => {
-                    if (!newSlots.includes(t)) newSlots.push(t);
-                });
-            }
-
-            return {
-                ...prev,
-                [assignmentId]: { ...existing, isLocked: newSlots.length > 0, lockedSlots: newSlots }
-            };
-        });
-    }, [periodSettings]);
-
-    const handleSave = async () => {
-        if (!schoolId) return;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         setIsSubmitting(true);
         try {
             const constraintDocRef = doc(db, 'school-settings', schoolId, 'configs', 'period_constraints');
@@ -577,36 +611,6 @@ const PeriodConstraintPage: React.FC = () => {
         }
     };
 
-    const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
-
-    // Create a flattened list of all assignments (rows)
-    const allAssignments = useMemo(() => {
-<<<<<<< HEAD
-        return courseAssignments.flatMap(courseDoc => {
-            const course = courses.find(c => c.id === courseDoc.courseId);
-            if (!course) return [];
-            
-            return (courseDoc.teacherAssignments || []).map(asgn => ({
-                ...course,
-                academicYear: courseDoc.academicYear,
-                semester: courseDoc.semester,
-                assignment: asgn,
-                compositeId: `${courseDoc.courseId}_${asgn.groupNumber}`
-            } as AssignmentRow));
-        });
-    }, [courses, courseAssignments]);
-=======
-        return courses.flatMap(course => {
-            if (!course.teacherAssignments || course.teacherAssignments.length === 0) return [];
-            return course.teacherAssignments.map(asgn => ({
-                ...course,
-                assignment: asgn,
-                compositeId: `${course.id}_${asgn.groupNumber}`
-            } as AssignmentRow));
-        });
-    }, [courses]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-
     const filteredAssignments = useMemo(() => {
         return allAssignments.filter(asgn => {
             const matchesSearch = (asgn.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -620,11 +624,40 @@ const PeriodConstraintPage: React.FC = () => {
                 if (filterClass === 'all') return true;
                 const lowerSecondaryKeys = ['lower_secondary', 'junior_high', 'JUNIOR_HIGH', 'ม.ต้น'];
                 const upperSecondaryKeys = ['upper_secondary', 'senior_high', 'SENIOR_HIGH', 'ม.ปลาย'];
-                const classIds = Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId];
+                
+                // Prioritize assignment-specific classLevels
+                const classIds = asgn.assignment.classLevels || (Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId]);
 
-                if (filterClass === 'lower_secondary') return classIds.some(id => lowerSecondaryKeys.includes(id));
-                if (filterClass === 'upper_secondary') return classIds.some(id => upperSecondaryKeys.includes(id));
-                return classIds.includes(filterClass);
+                const isLower = filterClass === 'lower_secondary';
+                const isUpper = filterClass === 'upper_secondary';
+
+                const classLabel = ALL_CLASSES[filterClass] || filterClass;
+
+                return classIds.some(id => {
+                    const level = id.split('/')[0];
+                    if (isLower) return lowerSecondaryKeys.includes(level) || lowerSecondaryKeys.includes(id);
+                    if (isUpper) return upperSecondaryKeys.includes(level) || upperSecondaryKeys.includes(id);
+                    // Match if level (ม.1) or ID (ม.1/1) matches filter (m1) or label (ม.1)
+                    return level === filterClass || level === classLabel || id === filterClass || id === classLabel;
+                });
+            })();
+
+            const matchesRoomValue = (() => {
+                if (filterRoom === 'all') return true;
+                
+                // Prioritize assignment-specific classLevels and room
+                const classIds = asgn.assignment.classLevels || (Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId]);
+                const groupRoom = asgn.assignment.room;
+
+                return classIds.some(id => {
+                    const parts = id.split('/');
+                    // Room could be in the ID (m1/1) or in the room field
+                    const roomPart = (parts.length >= 2 ? parts[1].trim() : groupRoom)?.toString().trim();
+                    if (!roomPart) return false;
+                    
+                    if (filterRoom === 'แผน') return roomPart === 'แผน';
+                    return Number(roomPart) === Number(filterRoom);
+                });
             })();
 
             const matchesGroupValue = filterGroup === 'all' || String(asgn.assignment.groupNumber) === filterGroup;
@@ -641,9 +674,9 @@ const PeriodConstraintPage: React.FC = () => {
                 });
             })();
 
-            return matchesSearch && matchesSemester && matchesClass && matchesGroupValue && matchesSubjectGroup && matchesActivity && matchesPhysicalRoom;
+            return matchesSearch && matchesSemester && matchesClass && matchesRoomValue && matchesGroupValue && matchesSubjectGroup && matchesActivity && matchesPhysicalRoom;
         });
-    }, [allAssignments, searchTerm, filterSemester, filterClass, filterGroup, filterSubjectGroup, showActivityCourses, filterPhysicalRoom, physicalRooms]);
+    }, [allAssignments, searchTerm, filterSemester, filterClass, filterRoom, filterGroup, filterSubjectGroup, showActivityCourses, filterPhysicalRoom, physicalRooms]);
 
     // Pagination Logic
     const totalPages = Math.ceil(filteredAssignments.length / pageSize);
@@ -665,12 +698,13 @@ const PeriodConstraintPage: React.FC = () => {
                 <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#07090e]/95 backdrop-blur-2xl border-b border-slate-200 dark:border-white/[0.03] shadow-lg px-6 py-5">
                     <div className="max-w-[1600px] mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-5">
-<<<<<<< HEAD
-                                <BackButton to="/academic/hub/scheduling" />
-                                <div className="flex flex-col">
-                                    <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase leading-none">จัดการรูปแบบคาบเรียน</h1>
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">กำหนดเงื่อนไขและรูปแบบคาบคู่/เดี่ยว</p>
-                                </div>
+                            <div className="ml-12 mr-2"> {/* Added margin to clear the sidebar collapse button */}
+                                <BackButton to="/academic/teacher-schedule" />
+                            </div>
+                            <div className="flex flex-col">
+                                <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase leading-none">จัดการรูปแบบคาบเรียน</h1>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">กำหนดเงื่อนไขและรูปแบบคาบคู่/เดี่ยว</p>
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-4">
@@ -694,21 +728,6 @@ const PeriodConstraintPage: React.FC = () => {
 
                             <div className="h-8 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
 
-=======
-                            <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)]">
-                                <Settings size={26} className="text-white" />
-                            </div>
-                            <div className="flex flex-col">
-                                <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase leading-none">จัดการรูปแบบคาบเรียน</h1>
-                                <Link to="/academic/teacher-schedule" className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 hover:text-indigo-500 transition-all uppercase tracking-[0.2em] mt-2">
-                                    <ArrowLeft size={12} />
-                                    <span>กลับไปหน้าจัดตารางสอน</span>
-                                </Link>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             <button className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all text-[11px] font-black uppercase tracking-widest shadow-lg">
                                 <Zap size={16} />
                                 <span>กำหนดรูปแบบคาบอัตโนมัติ</span>
@@ -729,8 +748,7 @@ const PeriodConstraintPage: React.FC = () => {
                     
                     {/* 2. FILTER BAR SECTION */}
                     <section className="relative z-10 bg-white dark:bg-[#0a0c10]/50 border border-slate-200 dark:border-white/[0.03] rounded-2xl p-8 shadow-xl mb-8">
-                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-8 items-end">
-<<<<<<< HEAD
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-8 items-end">
 
                             {/* Search */}
                             <div className="space-y-3">
@@ -747,11 +765,9 @@ const PeriodConstraintPage: React.FC = () => {
                                 </div>
                             </div>
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             {/* Semester */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ภาคเรียน</label>
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">ภาคเรียน</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterSemester}
@@ -760,10 +776,6 @@ const PeriodConstraintPage: React.FC = () => {
                                     >
                                         <option value="1" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 1</option>
                                         <option value="2" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 2</option>
-<<<<<<< HEAD
-=======
-                                        <option value="0" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทั้งปีการศึกษา</option>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </select>
                                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
@@ -787,16 +799,36 @@ const PeriodConstraintPage: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* Room */}
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">ห้อง</label>
+                                <div className="relative group">
+                                    <select 
+                                        value={filterRoom}
+                                        onChange={(e) => setFilterRoom(e.target.value)}
+                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                    >
+                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกห้อง</option>
+                                        {Array.from({ length: 20 }, (_, i) => {
+                                            const num = (i + 1).toString();
+                                            return <option key={num} value={num} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ห้อง {num}</option>;
+                                        })}
+                                        <option value="แผน" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ห้อง แผน</option>
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                </div>
+                            </div>
+
                             {/* Group */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">กลุ่ม</label>
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มเรียน</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterGroup}
                                         onChange={(e) => setFilterGroup(e.target.value)}
                                         className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกกลุ่ม</option>
+                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกกลุ่มเรียน</option>
                                         {Array.from({ length: 20 }, (_, i) => i + 1).map(num => <option key={num} value={String(num)} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">กลุ่ม {num}</option>)}
                                     </select>
                                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
@@ -805,7 +837,7 @@ const PeriodConstraintPage: React.FC = () => {
 
                             {/* Subject Group */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">กลุ่มสาระฯ</label>
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มสาระฯ</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterSubjectGroup}
@@ -821,7 +853,7 @@ const PeriodConstraintPage: React.FC = () => {
 
                             {/* Physical Room */}
                             <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">สถานที่</label>
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">สถานที่</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterPhysicalRoom}
@@ -839,23 +871,6 @@ const PeriodConstraintPage: React.FC = () => {
                                 </div>
                             </div>
 
-<<<<<<< HEAD
-=======
-                            {/* Search */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ค้นหา</label>
-                                <div className="relative group">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
-                                    <input 
-                                        type="text" 
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        placeholder="รหัส, ชื่อวิชา..."
-                                        className="w-full h-12 pl-12 pr-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
-                                    />
-                                </div>
-                            </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         </div>
 
                         <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
@@ -882,14 +897,15 @@ const PeriodConstraintPage: React.FC = () => {
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-100 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.05]">
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">ชั้นเรียน</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">รหัส/ชื่อวิชา</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">กลุ่ม</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">ครูผู้สอน</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">หน่วยกิต</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">คาบ/สัปดาห์</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">รูปแบบคาบ</th>
-                                    <th className="px-5 py-5 text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">ล็อกคาบสอน</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ชั้นเรียน</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">สถานที่สอน</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">รหัส/ชื่อวิชา</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">กลุ่ม</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ครูผู้สอน</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">หน่วยกิต</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">คาบ/สัปดาห์</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">รูปแบบคาบ</th>
+                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ล็อกคาบสอน</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -902,83 +918,133 @@ const PeriodConstraintPage: React.FC = () => {
                                 ) : paginatedAssignments.length > 0 ? (
                                     paginatedAssignments.map(asgn => {
                                         const current = constraints[asgn.compositeId] || { type: 'any', isLocked: false };
-                                        const teacherName = teacherMap[asgn.assignment.teacherId]?.name || 'ไม่ระบุครู';
-<<<<<<< HEAD
+                                        const teacherSummaries = getTeacherSummaries(asgn.assignment);
+                                        const primaryTeacher = teacherSummaries[0];
+                                        const teacherCount = teacherSummaries.length;
                                         const requiredPeriods = getRequiredWeeklyPeriods(asgn);
                                         const lockedCount = current.lockedSlots?.length || 0;
                                         const isOverLocked = requiredPeriods > 0 && lockedCount > requiredPeriods;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+                                        // Group Colors
+                                        const groupColors = [
+                                            { bg: 'bg-blue-600', shadow: 'shadow-blue-600/40' },
+                                            { bg: 'bg-indigo-600', shadow: 'shadow-indigo-600/40' },
+                                            { bg: 'bg-violet-600', shadow: 'shadow-violet-600/40' },
+                                            { bg: 'bg-purple-600', shadow: 'shadow-purple-600/40' },
+                                            { bg: 'bg-fuchsia-600', shadow: 'shadow-fuchsia-600/40' },
+                                            { bg: 'bg-pink-600', shadow: 'shadow-pink-600/40' },
+                                            { bg: 'bg-rose-600', shadow: 'shadow-rose-600/40' },
+                                        ];
+                                        const groupNumber = normalizeGroupNumber(asgn.assignment.groupNumber);
+                                        const gColor = groupColors[(groupNumber - 1) % groupColors.length];
+
                                         return (
                                             <tr key={asgn.compositeId} className={`group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors border-b border-slate-100 dark:border-white/5 last:border-0 ${openExcludedMenu === asgn.compositeId ? 'relative z-50' : ''}`}>
-                                                <td className="px-4 py-3.5">
-                                                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-500 text-[10px] font-black uppercase">
-<<<<<<< HEAD
+                                                <td className="px-4 py-4 text-center min-w-[100px]">
+                                                    <div className="flex flex-wrap justify-center gap-2">
                                                         {(() => {
                                                             const classLevels = asgn.assignment.classLevels || (Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId]);
-                                                            return classLevels.map(id => ALL_CLASSES[id] || id).join(', ');
+                                                            const roomNumber = asgn.assignment.room;
+                                                            return classLevels.map((id, idx) => {
+                                                                const parts = id.split('/');
+                                                                const levelKey = parts[0];
+                                                                const room = parts[1] || roomNumber;
+                                                                const label = `${ALL_CLASSES[levelKey] || levelKey}${room ? `/${room}` : ''}`;
+                                                                return (
+                                                                    <span key={idx} className="text-[13px] font-black text-slate-900 dark:text-white whitespace-nowrap">
+                                                                        {label}
+                                                                    </span>
+                                                                );
+                                                            });
                                                         })()}
-=======
-                                                        {Array.isArray(asgn.classId) ? asgn.classId.map(id => ALL_CLASSES[id] || id).join(', ') : (ALL_CLASSES[asgn.classId] || asgn.classId)}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 text-center min-w-[100px]">
+                                                    <div className="flex flex-wrap justify-center gap-2">
+                                                        {asgn.assignment.roomIds && asgn.assignment.roomIds.map(roomId => {
+                                                            const room = physicalRooms.find(r => r.id === roomId);
+                                                            if (!room) return null;
+                                                            return (
+                                                                <span key={roomId} className="text-[11px] font-black text-slate-600 dark:text-slate-400">
+                                                                    {room.roomCode || room.roomName}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 text-center">
+                                                    <div className="flex items-center justify-center gap-2 overflow-hidden">
+                                                        <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider shrink-0">{asgn.code}</span>
+                                                        <span className="text-[13px] font-black text-slate-900 dark:text-white truncate max-w-[200px]" title={asgn.title}>{asgn.title}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 text-center">
+                                                    <span className="text-sm font-black text-slate-700 dark:text-slate-300">
+                                                        {groupNumber}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3.5">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{asgn.code}</span>
-                                                        <span className="text-xs font-black text-slate-900 dark:text-white leading-tight mt-0.5">{asgn.title}</span>
+                                                <td className="px-4 py-4 text-center">
+                                                    <div className="relative group/teachers flex items-center justify-center gap-2">
+                                                        <span className="text-[11px] font-black text-slate-400 shrink-0">
+                                                            {primaryTeacher?.code || '-'}
+                                                        </span>
+                                                        <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate max-w-[150px]">
+                                                            {primaryTeacher?.name || 'ไม่ระบุครู'}
+                                                        </span>
+                                                        {teacherCount > 1 && (
+                                                            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-[10px] font-black text-indigo-600 dark:text-indigo-300 shadow-sm">
+                                                                <Users size={11} strokeWidth={3} />
+                                                                +{teacherCount - 1}
+                                                            </span>
+                                                        )}
+                                                        {teacherCount > 0 && (
+                                                            <div className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-2xl group-hover/teachers:block dark:border-white/10 dark:bg-[#151820]">
+                                                                <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2 dark:border-white/5">
+                                                                    <Users size={14} className="text-indigo-500" />
+                                                                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                                                                        ครูผู้สอนทั้งหมด {teacherCount} คน
+                                                                    </span>
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    {teacherSummaries.map(item => (
+                                                                        <div key={item.id} className="flex items-start gap-2 rounded-lg bg-slate-50 px-2.5 py-2 dark:bg-white/[0.03]">
+                                                                            <span className="min-w-12 text-[11px] font-black text-indigo-600 dark:text-indigo-300">
+                                                                                {item.code}
+                                                                            </span>
+                                                                            <span className="text-[12px] font-bold leading-snug text-slate-700 dark:text-slate-100">
+                                                                                {item.name}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center text-[10px] font-black text-slate-500">
-                                                            {asgn.assignment.groupNumber}
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-7 h-7 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-500">
-                                                            <User size={12} />
-                                                        </div>
-                                                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{teacherName}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3.5 text-center">
-                                                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                                <td className="px-4 py-4 text-center">
+                                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
                                                         {asgn.credits !== undefined ? asgn.credits : (asgn.hoursPerWeek ? (asgn.hoursPerWeek / 2) : 0)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3.5 text-center">
+                                                <td className="px-4 py-4 text-center">
                                                     <div className="flex flex-col items-center">
-<<<<<<< HEAD
-                                                        <span className={`text-xs font-black ${isOverLocked || (asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2)) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                                                        <span className={`text-sm font-black ${isOverLocked || (asgn.credits && asgn.hoursPerWeek && Math.round(parseScheduleNumber(asgn.hoursPerWeek)) !== Math.round(parseScheduleNumber(asgn.credits) * 2)) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
                                                             {requiredPeriods}
-=======
-                                                        <span className={`text-xs font-black ${asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
-                                                            {asgn.hoursPerWeek || 0}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                         </span>
-                                                        {asgn.credits && asgn.hoursPerWeek !== Math.round(Number(asgn.credits) * 2) && (
-                                                            <span className="text-[8px] text-red-400 font-bold">ควรเป็น {Math.round(Number(asgn.credits) * 2)}</span>
-                                                        )}
-<<<<<<< HEAD
                                                         {lockedCount > 0 && (
-                                                            <span className={`text-[8px] font-bold ${isOverLocked ? 'text-red-500' : 'text-amber-500'}`}>
+                                                            <span className={`text-[9px] font-black uppercase mt-0.5 ${isOverLocked ? 'text-red-500' : 'text-amber-500'}`}>
                                                                 ล็อก {lockedCount}/{requiredPeriods || '-'}
                                                             </span>
                                                         )}
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="relative min-w-[120px]">
+                                                <td className="px-4 py-4 text-center">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <div className="relative min-w-[130px]">
                                                             <select 
                                                                 value={current.type}
                                                                 onChange={(e) => handleConstraintChange(asgn.compositeId, e.target.value as any)}
-                                                                className={`w-full h-8 pl-3 pr-8 rounded-lg text-[10px] font-black appearance-none cursor-pointer focus:outline-none focus:ring-2 transition-all shadow-sm border ${
+                                                                className={`w-full h-9 pl-3 pr-8 rounded-xl text-[12px] font-black appearance-none cursor-pointer focus:outline-none focus:ring-2 transition-all shadow-sm border ${
                                                                     current.type === 'double' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 focus:ring-indigo-500/20' :
                                                                     current.type === 'single' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30 focus:ring-emerald-500/20' :
                                                                     current.type === 'mixed' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30 focus:ring-amber-500/20' :
@@ -987,7 +1053,7 @@ const PeriodConstraintPage: React.FC = () => {
                                                             >
                                                                 <option value="any" className="bg-white dark:bg-[#1a1b20]">รูปแบบ (อัตโนมัติ)</option>
                                                                 {(() => {
-                                                                    const h = asgn.hoursPerWeek || 0;
+                                                                    const h = getRequiredWeeklyPeriods(asgn);
                                                                     if (h === 1) return (
                                                                         <option value="single" className="bg-white dark:bg-[#1a1b20]">คาบเดี่ยว (1)</option>
                                                                     );
@@ -1019,103 +1085,97 @@ const PeriodConstraintPage: React.FC = () => {
                                                                     );
                                                                 })()}
                                                             </select>
-                                                            <ChevronDown size={10} className={`absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+                                                            <ChevronDown size={12} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${
                                                                 current.type === 'double' ? 'text-indigo-400' :
                                                                 current.type === 'single' ? 'text-emerald-400' :
                                                                 current.type === 'mixed' ? 'text-amber-400' :
                                                                 'text-slate-400'
                                                             }`} />
                                                         </div>
-
-                                                        {/* Preference for Double Part */}
-                                                        {(current.type === 'double' || current.type === 'mixed') && (
-                                                            <div className="relative min-w-[110px] animate-in fade-in zoom-in-95 duration-200">
-                                                                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10">
-                                                                    <BookOpen size={10} className="text-indigo-500 dark:text-indigo-400 shadow-sm" />
+                                                        
+                                                        <div className="flex items-center gap-2">
+                                                            {/* Preference for Double Part */}
+                                                            {(current.type === 'double' || current.type === 'mixed') && (
+                                                                <div className="relative min-w-[80px] animate-in fade-in zoom-in-95 duration-200">
+                                                                    <select 
+                                                                        value={current.doublePreference || 'any'}
+                                                                        onChange={(e) => handlePreferenceChange(asgn.compositeId, 'doublePreference', e.target.value as any)}
+                                                                        className="w-full h-8 px-2 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] font-black text-indigo-700 dark:text-indigo-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-all"
+                                                                    >
+                                                                        <option value="any" className="bg-white dark:bg-[#1a1b20]">คู่: อัตโนมัติ</option>
+                                                                        <option value="morning" className="bg-white dark:bg-[#1a1b20]">คู่: เช้า</option>
+                                                                        <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">คู่: บ่าย</option>
+                                                                    </select>
                                                                 </div>
-                                                                <select 
-                                                                    value={current.doublePreference || 'any'}
-                                                                    onChange={(e) => handlePreferenceChange(asgn.compositeId, 'doublePreference', e.target.value as any)}
-                                                                    className="w-full h-8 pl-7 pr-6 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] font-black text-indigo-700 dark:text-indigo-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-all shadow-sm"
-                                                                >
-                                                                    <option value="any" className="bg-white dark:bg-[#1a1b20]">คู่: ไม่ระบุ</option>
-                                                                    <option value="morning" className="bg-white dark:bg-[#1a1b20]">คู่: ช่วงเช้า</option>
-                                                                    <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">คู่: ช่วงบ่าย</option>
-                                                                </select>
-                                                                <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
-                                                            </div>
-                                                        )}
-
-                                                        {/* Preference for Single Part */}
-                                                        {(current.type === 'single' || current.type === 'mixed') && (
-                                                            <div className="relative min-w-[110px] animate-in fade-in zoom-in-95 duration-200">
-                                                                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10">
-                                                                    <Book size={10} className="text-emerald-500 dark:text-emerald-400" />
-                                                                </div>
-                                                                <select 
-                                                                    value={current.singlePreference || 'any'}
-                                                                    onChange={(e) => handlePreferenceChange(asgn.compositeId, 'singlePreference', e.target.value as any)}
-                                                                    className="w-full h-8 pl-7 pr-6 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-black text-emerald-700 dark:text-emerald-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all shadow-sm"
-                                                                >
-                                                                    <option value="any" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: ไม่ระบุ</option>
-                                                                    <option value="morning" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: ช่วงเช้า</option>
-                                                                    <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: ช่วงบ่าย</option>
-                                                                </select>
-                                                                <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none" />
-                                                            </div>
-                                                        )}
-                                                        {/* Excluded Days Selector */}
-                                                        <div className="relative">
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setOpenExcludedMenu(openExcludedMenu === asgn.compositeId ? null : asgn.compositeId);
-                                                                }}
-                                                                title="ยกเว้นวันสอน"
-                                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${current.excludedDays?.length ? 'bg-red-500/10 text-red-500 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : 'bg-slate-100 dark:bg-white/5 text-slate-400 border border-transparent hover:border-red-500/30 hover:text-red-500'}`}
-                                                            >
-                                                                <CalendarX size={14} />
-                                                                {current.excludedDays && current.excludedDays.length > 0 && (
-                                                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1b20]">
-                                                                        {current.excludedDays.length}
-                                                                    </span>
-                                                                )}
-                                                            </button>
-
-                                                            {openExcludedMenu === asgn.compositeId && (
-                                                                <>
-                                                                    <div className="fixed inset-0 z-40" onClick={() => setOpenExcludedMenu(null)} />
-                                                                    <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#1a1b20] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl p-2 min-w-[140px] animate-in fade-in slide-in-from-top-2 duration-200">
-                                                                        <div className="px-2 py-1.5 mb-1 border-b border-slate-100 dark:border-white/5">
-                                                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ยกเว้นวันสอน:</span>
-                                                                        </div>
-                                                                        <div className="space-y-1">
-                                                                            {DAYS.map(day => {
-                                                                                const isExcluded = current.excludedDays?.includes(day.key);
-                                                                                return (
-                                                                                    <button
-                                                                                        key={day.key}
-                                                                                        onClick={() => handleExcludedDayToggle(asgn.compositeId, day.key)}
-                                                                                        className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-all ${isExcluded ? 'bg-red-500/10 text-red-600 dark:text-red-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}
-                                                                                    >
-                                                                                        <span className="text-[11px]">{day.label}</span>
-                                                                                        {isExcluded && <Check size={10} strokeWidth={3} />}
-                                                                                    </button>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    </div>
-                                                                </>
                                                             )}
+
+                                                            {/* Preference for Single Part */}
+                                                            {(current.type === 'single' || current.type === 'mixed') && (
+                                                                <div className="relative min-w-[80px] animate-in fade-in zoom-in-95 duration-200">
+                                                                    <select 
+                                                                        value={current.singlePreference || 'any'}
+                                                                        onChange={(e) => handlePreferenceChange(asgn.compositeId, 'singlePreference', e.target.value as any)}
+                                                                        className="w-full h-8 px-2 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-black text-emerald-700 dark:text-emerald-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all"
+                                                                    >
+                                                                        <option value="any" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: อัตโนมัติ</option>
+                                                                        <option value="morning" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: เช้า</option>
+                                                                        <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: บ่าย</option>
+                                                                    </select>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Excluded Days Selector */}
+                                                            <div className="relative">
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setOpenExcludedMenu(openExcludedMenu === asgn.compositeId ? null : asgn.compositeId);
+                                                                    }}
+                                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${current.excludedDays?.length ? 'bg-red-500/10 text-red-500 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : 'bg-slate-100 dark:bg-white/5 text-slate-400 border border-transparent hover:border-red-500/30 hover:text-red-500'}`}
+                                                                >
+                                                                    <CalendarX size={14} />
+                                                                    {current.excludedDays && current.excludedDays.length > 0 && (
+                                                                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1b20]">
+                                                                            {current.excludedDays.length}
+                                                                        </span>
+                                                                    )}
+                                                                </button>
+
+                                                                {openExcludedMenu === asgn.compositeId && (
+                                                                    <>
+                                                                        <div className="fixed inset-0 z-40" onClick={() => setOpenExcludedMenu(null)} />
+                                                                        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#1a1b20] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl p-2 min-w-[140px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                            <div className="px-2 py-1.5 mb-1 border-b border-slate-100 dark:border-white/5">
+                                                                                <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest">ยกเว้นวันสอน:</span>
+                                                                            </div>
+                                                                            <div className="space-y-1">
+                                                                                {DAYS.map(day => {
+                                                                                    const isExcluded = current.excludedDays?.includes(day.key);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={day.key}
+                                                                                            onClick={() => handleExcludedDayToggle(asgn.compositeId, day.key)}
+                                                                                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-all ${isExcluded ? 'bg-red-500/10 text-red-600 dark:text-red-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                                                                                        >
+                                                                                            <span className="text-[13px]">{day.label}</span>
+                                                                                            {isExcluded && <Check size={10} strokeWidth={3} />}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-5 py-3.5 text-center">
+                                                <td className="px-5 py-4 text-center">
                                                     <button 
                                                         onClick={() => setSlotModalCourse(asgn)}
-                                                        className={`w-9 h-9 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 shadow-sm ${current.isLocked ? 'bg-amber-500 text-white shadow-amber-500/20 scale-110' : 'bg-slate-100 dark:bg-white/[0.03] text-slate-400 dark:text-slate-600 border border-transparent hover:border-amber-500/30 hover:text-amber-500 hover:scale-110'}`}
+                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 shadow-sm ${current.isLocked ? 'bg-amber-500 text-white shadow-amber-500/20 scale-110' : 'bg-slate-100 dark:bg-white/[0.03] text-slate-400 dark:text-slate-600 border border-transparent hover:border-amber-500/30 hover:text-amber-500 hover:scale-110'}`}
                                                     >
-                                                        {current.isLocked ? <Lock size={16} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" /> : <Unlock size={16} />}
+                                                        {current.isLocked ? <Lock size={18} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" /> : <Unlock size={18} />}
                                                     </button>
                                                 </td>
                                             </tr>
@@ -1202,17 +1262,12 @@ const PeriodConstraintPage: React.FC = () => {
                 const c = slotModalCourse;
                 const cst = constraints[c.compositeId] || { type: 'any', isLocked: false, lockedSlots: [] };
                 const locked = cst.lockedSlots || [];
-<<<<<<< HEAD
-                const displayPeriods = periodSettings.filter(p => p.isTeachingPeriod || p.id === 'lunch');
+                const normalizedPeriodSettings = normalizePeriodSettings(periodSettings);
+                const displayPeriods = getTimetableDisplayPeriods(normalizedPeriodSettings).filter(p => p.isTeachingPeriod || p.id === 'lunch');
                 const classLabel = ALL_CLASSES[c.classId] || c.classId;
                 const totalHours = getRequiredWeeklyPeriods(c);
                 const hasReachedLimit = totalHours > 0 && locked.length >= totalHours;
                 const isOverLimit = totalHours > 0 && locked.length > totalHours;
-=======
-                const teachingPeriods = periodSettings.filter(p => p.isTeachingPeriod);
-                const displayPeriods = periodSettings.filter(p => p.isTeachingPeriod || p.id === 'lunch');
-                const classLabel = ALL_CLASSES[c.classId] || c.classId;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 // Build merged columns: teaching periods + special periods mapped by position
                 // Special periods that match a teaching period's time slot get overlaid
@@ -1223,6 +1278,39 @@ const PeriodConstraintPage: React.FC = () => {
                         return matchDay && matchPeriod;
                     });
                 };
+
+                const teacherIds = getAssignmentTeacherIds(c.assignment);
+                const teacherSummaries = getTeacherSummaries(c.assignment);
+                const unavailableSlotTeachers = (slotId: string) => teacherIds
+                    .map(id => ({ id, teacher: teacherMap[id] as Teacher | undefined }))
+                    .filter(item => item.teacher?.preferences?.unavailableSlots?.includes(slotId));
+                const classId = c.classId;
+
+                // Pre-calculate other subjects locked in these slots
+                const otherLockedMap = allAssignments.reduce((acc, a) => {
+                    if (a.compositeId === c.compositeId) return acc;
+                    const cst = constraints[a.compositeId];
+                    if (cst?.isLocked && cst.lockedSlots) {
+                        const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
+                        const sameTeacherIds = teacherIds.filter(id => otherTeacherIds.includes(id));
+                        const isSameTeacher = sameTeacherIds.length > 0;
+                        const isSameClass = classId && a.classId === classId;
+                        
+                        if (isSameTeacher || isSameClass) {
+                            cst.lockedSlots.forEach(slotId => {
+                                if (!acc[slotId]) acc[slotId] = [];
+                                acc[slotId].push({
+                                    type: isSameTeacher ? 'teacher' : 'class',
+                                    code: a.code,
+                                    title: a.title,
+                                    classLabel: ALL_CLASSES[a.classId] || a.classId,
+                                    teacherNames: sameTeacherIds.map(formatTeacherDisplayName)
+                                });
+                            });
+                        }
+                    }
+                    return acc;
+                }, {} as Record<string, any[]>);
 
                 return (
                     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSlotModalCourse(null)}>
@@ -1237,11 +1325,17 @@ const PeriodConstraintPage: React.FC = () => {
                                     <span className="text-xs font-black text-amber-500">{c.code}</span>
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-300">{c.title}</span>
                                     <span className="text-xs font-bold text-slate-400">•</span>
-<<<<<<< HEAD
                                     <span className={`text-xs font-bold ${isOverLimit ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>{locked.length}/{totalHours || '-'} คาบ</span>
-=======
-                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{c.hoursPerWeek || 0} คาบ</span>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                    {teacherSummaries.length > 0 && (
+                                        <>
+                                            <span className="text-xs font-bold text-slate-400">•</span>
+                                            <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-slate-500 dark:text-slate-300">
+                                                <Users size={13} className="text-indigo-500" />
+                                                {teacherSummaries[0].name}
+                                                {teacherSummaries.length > 1 && <span className="text-indigo-500">+{teacherSummaries.length - 1}</span>}
+                                            </span>
+                                        </>
+                                    )}
                                 </div>
                                 <button onClick={() => setSlotModalCourse(null)} className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all shrink-0">
                                     <X size={14} />
@@ -1254,10 +1348,10 @@ const PeriodConstraintPage: React.FC = () => {
                                     <thead>
                                         <tr className="border-b border-slate-100 dark:border-white/5">
                                             <th className="px-2 py-2 text-[11px] font-black text-slate-400 uppercase text-left w-20">วัน/คาบ</th>
-                                            {displayPeriods.map(p => (
+                                            {displayPeriods.map((p, idx) => (
                                                 <th key={p.id} className={`px-0.5 py-2 text-center ${p.id === 'lunch' ? 'w-10 opacity-40' : ''}`}>
                                                     <div className="text-[11px] font-black text-slate-700 dark:text-slate-200">{p.label}</div>
-                                                    <div className="text-[9px] font-bold text-slate-400 mt-0.5">{p.startTime}-{p.endTime}</div>
+                                                    <div className="text-[9px] font-bold text-slate-400 mt-0.5">{p.startTime}-{getEffectivePeriodEnd(displayPeriods, p, idx)}</div>
                                                 </th>
                                             ))}
                                         </tr>
@@ -1277,15 +1371,15 @@ const PeriodConstraintPage: React.FC = () => {
                                                         );
                                                     }
 
-                                                    const originalIndex = periodSettings.indexOf(p);
+                                                    const originalIndex = p.index ?? normalizedPeriodSettings.findIndex(period => period.id === p.id);
                                                     const slotId = `${day.key}-${originalIndex}`;
                                                     const isSelected = locked.includes(slotId);
                                                     const sp = getSpecialForDayAndPeriod(day.key, p.id);
                                                     const isDayExcluded = cst.excludedDays?.includes(day.key);
-<<<<<<< HEAD
                                                     const isDisabledByLimit = hasReachedLimit && !isSelected;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                    const otherLocked = otherLockedMap[slotId];
+                                                    const unavailableTeachers = unavailableSlotTeachers(slotId);
+                                                    const isUnavailable = unavailableTeachers.length > 0;
                                                     
                                                     if (sp) {
                                                         return (
@@ -1306,15 +1400,67 @@ const PeriodConstraintPage: React.FC = () => {
                                                             </td>
                                                         );
                                                     }
-<<<<<<< HEAD
-=======
-                                                    const totalHours = Math.round(Number(c.credits || 0) * 2) || Number(c.hoursPerWeek || 0);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+
+                                                    if (isUnavailable) {
+                                                        return (
+                                                            <td key={p.id} className="px-0.5 py-1.5">
+                                                                <div 
+                                                                    className="relative w-full h-9 rounded-lg bg-amber-50 dark:bg-amber-500/[0.03] border border-amber-200/50 dark:border-amber-500/20 flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-sm transition-all duration-300"
+                                                                    title={`ครู ${unavailableTeachers.map(item => formatTeacherDisplayName(item.id)).join(', ')} ล็อคคาบว่าง`}
+                                                                >
+                                                                    {/* Red Corner Badge with Lock - Premium Style */}
+                                                                    <div className="absolute top-0 left-0 w-3.5 h-3.5 bg-rose-500 dark:bg-rose-600 rounded-br-lg flex items-center justify-center shadow-sm z-10">
+                                                                        <Lock size={6} className="text-white" strokeWidth={3} />
+                                                                    </div>
+                                                                    
+                                                                    {/* "ว่าง" Text Content - Consistent with DroppableCell */}
+                                                                    <div className="flex flex-col items-center justify-center gap-0.5 mt-0.5">
+                                                                        <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 tracking-tight leading-none uppercase">ว่าง</span>
+                                                                        {/* Glowing Dot indicator */}
+                                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-600 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                                                                    </div>
+
+                                                                    {/* Glassy overlay for premium feel */}
+                                                                    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent dark:from-white/[0.02] pointer-events-none" />
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    }
+
+                                                    if (otherLocked && otherLocked.length > 0) {
+                                                        const first = otherLocked[0];
+                                                        const isTeacherOverlap = otherLocked.some(o => o.type === 'teacher');
+                                                        return (
+                                                            <td key={p.id} className="px-0.5 py-1.5">
+                                                                <div 
+                                                                    className={`relative w-full h-9 rounded-lg border flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner ${
+                                                                        isTeacherOverlap 
+                                                                            ? 'bg-[#1a1b20] border-rose-900/30' 
+                                                                            : 'bg-indigo-950/30 border-indigo-500/20'
+                                                                    }`}
+                                                                    title={`${isTeacherOverlap ? `ครู ${(first.teacherNames || []).join(', ')} ติดสอน` : `ห้อง ${first.classLabel} มีเรียน`}: ${first.code} ${first.title}`}
+                                                                >
+                                                                    {/* Top-Left Badge for Teacher Overlap */}
+                                                                    {isTeacherOverlap && (
+                                                                        <div className="absolute top-0 left-0 w-3.5 h-3 bg-rose-800 rounded-br-md flex items-center justify-center shadow-sm">
+                                                                            <Lock size={6} className="text-white" strokeWidth={3} />
+                                                                        </div>
+                                                                    )}
+
+                                                                    <span className={`text-[8px] font-black truncate px-1 uppercase leading-none ${isTeacherOverlap ? 'text-rose-500' : 'text-indigo-400'}`}>
+                                                                        {first.code}
+                                                                    </span>
+                                                                    {/* Bottom Status Dot */}
+                                                                    <div className={`w-1 h-1 rounded-full mt-1 ${isTeacherOverlap ? 'bg-rose-600' : 'bg-indigo-500'}`} />
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    }
+
                                                     return (
                                                         <td key={p.id} className="px-0.5 py-1.5">
                                                             <button
                                                                 onClick={() => toggleSlot(c.compositeId, slotId, periodSettings.length, totalHours)}
-<<<<<<< HEAD
                                                                 disabled={isDisabledByLimit}
                                                                 title={isDisabledByLimit ? `เลือกครบ ${totalHours} คาบ/สัปดาห์แล้ว` : undefined}
                                                                 className={`w-full h-9 rounded-lg border transition-all flex items-center justify-center ${
@@ -1322,11 +1468,6 @@ const PeriodConstraintPage: React.FC = () => {
                                                                         ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
                                                                         : isDisabledByLimit
                                                                             ? 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 opacity-35 cursor-not-allowed'
-=======
-                                                                className={`w-full h-9 rounded-lg border transition-all flex items-center justify-center ${
-                                                                    isSelected
-                                                                        ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                                         : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:border-amber-400/50 hover:bg-amber-50 dark:hover:bg-amber-500/5'
                                                                 }`}
                                                             >
@@ -1343,7 +1484,6 @@ const PeriodConstraintPage: React.FC = () => {
 
                             {/* Footer */}
                             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] shrink-0">
-<<<<<<< HEAD
                                 <div className="flex flex-col">
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
                                         คาบที่ล็อกไว้: <span className={isOverLimit ? 'text-red-500 font-black' : 'text-amber-500 font-black'}>{locked.length}</span>
@@ -1364,16 +1504,6 @@ const PeriodConstraintPage: React.FC = () => {
                                     >
                                         <Unlock size={14} />
                                         <span>ล้างคาบที่ล็อกไว้</span>
-=======
-                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">คาบที่ล็อกไว้: <span className="text-amber-500 font-black">{locked.length}</span> คาบ</span>
-                                <div className="flex items-center gap-3">
-                                    <button 
-                                        onClick={() => { setConstraints(prev => ({ ...prev, [c.compositeId]: { ...cst, lockedSlots: [], isLocked: false } })); }}
-                                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-black hover:bg-emerald-500/20 transition-all"
-                                    >
-                                        <Lock size={14} />
-                                        <span>บังคับจัดลงตารางในคาบนี้เท่านั้น</span>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </button>
                                     <button 
                                         onClick={() => setSlotModalCourse(null)} 

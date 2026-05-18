@@ -1,4 +1,4 @@
-export const ACTIVE_STUDENT_STATUSES = ['เรียนอยู่', 'พักการเรียน', 'active', 'ปกติ'];
+export const ACTIVE_STUDENT_STATUSES = ['กำลังศึกษา', 'เรียนอยู่', 'พักการเรียน', 'แขวนลอย', 'active', 'ปกติ'];
 
 export const ARCHIVED_STUDENT_STATUSES = [
   'ย้าย',
@@ -16,7 +16,7 @@ export const ARCHIVED_STUDENT_STATUSES = [
 
 export const EXIT_STUDENT_STATUSES = ['ย้าย', 'ลาออก', 'จำหน่าย', 'จำหน่ายชื่อออก'];
 
-export const getStudentStatus = (student: any) => String(student?.status || student?.studentStatus || 'เรียนอยู่').trim();
+export const getStudentStatus = (student: any) => String(student?.status || student?.studentStatus || 'กำลังศึกษา').trim();
 
 export const isArchivedStudentStatus = (status?: string) => {
   const normalized = String(status || '').trim().toLowerCase();

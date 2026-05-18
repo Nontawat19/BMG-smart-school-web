@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { doc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '../firebase';
+import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,6 +15,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, featureFlag }) => {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isFeatureEnabled, setIsFeatureEnabled] = useState(true); // Default to true until checked
@@ -66,6 +68,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user && isAttendanceEntryOnly(user.role) && location.pathname !== "/attendance/checkin-out") {
+    return <Navigate to="/attendance/checkin-out" replace />;
   }
 
   // Role-based authorization check

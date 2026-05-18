@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from "react-router-dom";
 import { FaLock } from "react-icons/fa";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { Student } from '../../types';
 import { StudentCardSkeleton } from '../Skeletons';
 
@@ -75,10 +76,11 @@ const StudentGrid: React.FC<StudentGridProps> = ({
                                     const cleanName = fullName.replace(/^(เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นาย|นางสาว|นาง)\s*/, '').trim();
 
                                     return (
-                                        <img
+                                        <ProfileAvatar
                                             src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=random&color=fff&rounded=true&size=128&length=2`}
                                             alt={student.firstName}
-                                            className="relative w-16 h-16 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105"
+                                            className="relative w-16 h-16 sm:w-24 sm:h-24 border-4 border-white dark:border-[#2a2b2f] shadow-sm"
+                                            imageClassName="transition-transform group-hover:scale-105"
                                         />
                                     );
                                 })()}

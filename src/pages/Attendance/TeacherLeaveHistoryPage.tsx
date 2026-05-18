@@ -19,11 +19,9 @@ import { pdf } from '@react-pdf/renderer';
 import TeacherLeaveRequestPdfDocument from '@/components/Pdf/leave/TeacherLeaveRequestPdfDocument';
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from '@/components/SkeletonLoader';
-<<<<<<< HEAD
 import BackButton from '@/components/Shared/BackButton';
+import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import { getThaiYear } from '@/utils/dateUtils';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface TeacherLeaveRequest {
   id: string;
@@ -149,11 +147,7 @@ const TeacherLeaveHistoryPage: React.FC = () => {
     return {
       day: d.getDate(),
       month: d.toLocaleDateString('th-TH', { month: 'long' }),
-<<<<<<< HEAD
       year: getThaiYear(d),
-=======
-      year: d.getFullYear() + 543,
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     };
   })();
 
@@ -220,14 +214,10 @@ const TeacherLeaveHistoryPage: React.FC = () => {
     <MainLayout>
       <div className="p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-<<<<<<< HEAD
           <div className="flex items-center gap-4">
             <BackButton />
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา (ครูและบุคลากร)</h1>
           </div>
-=======
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา (ครูและบุคลากร)</h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           <div className="relative w-full md:w-72">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <FaSearch className="text-gray-400" />
@@ -278,16 +268,16 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                     <td className="px-4 py-3 text-gray-900 dark:text-white">
                       {r.schoolId && r.teacherDocId ? (
                         <Link to={`/school/${r.schoolId}/teachers/view/${r.teacherDocId}`} className="flex items-center gap-3 group">
-                          <img
+                          <ProfileAvatar
                             src={r.profileImageUrl || `https://ui-avatars.com/api/?name=${r.teacherName}&background=random`}
                             alt={r.teacherName}
-                            className="w-8 h-8 rounded-full object-cover"
+                            className="w-8 h-8"
                           />
                           <span className="group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors">{r.teacherName}</span>
                         </Link>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <img src={r.profileImageUrl || `https://ui-avatars.com/api/?name=${r.teacherName}&background=random`} alt={r.teacherName} className="w-8 h-8 rounded-full object-cover" />
+                          <ProfileAvatar src={r.profileImageUrl || `https://ui-avatars.com/api/?name=${r.teacherName}&background=random`} alt={r.teacherName} className="w-8 h-8" />
                           <span>{r.teacherName}</span>
                         </div>
                       )}

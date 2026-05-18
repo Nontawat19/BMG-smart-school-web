@@ -1,18 +1,27 @@
 import React, { useState, useEffect } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { firestore } from "@/firebase";
 import { collection, query, where, getDocs, documentId, doc, getDoc, Timestamp } from "firebase/firestore";
-import { RootState } from "../../store";
+import { RootState, AppDispatch } from "../../store";
+import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
 import { FaFilePdf, FaSearch, FaCalendarAlt } from "react-icons/fa";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import defaultProfile from "@/assets/profile.png";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+
+Font.register({
+  family: "TH Sarabun PSK",
+  fonts: [
+    { src: "/fonts/THSarabunNew.ttf" },
+    { src: "/fonts/THSarabunNew-Bold.ttf", fontWeight: "bold" }
+  ]
+});
 
 interface AttendanceRecord {
   id: string;
@@ -35,10 +44,289 @@ interface TeacherStats {
   officialTravel: number;
   total: number;
   percentage: string;
+  teacherId?: string;
 }
 
+interface TeacherAttendancePdfDocumentProps {
+  chunks: TeacherStats[][];
+  rowsPerPage: number;
+  schoolName: string;
+  schoolAffiliation: string;
+  schoolLogo?: string;
+  directorName: string;
+  dateText: string;
+  filterType: "daily" | "weekly" | "monthly" | "term" | "yearly" | "custom";
+  totalItems: number;
+  reportPrintedAt: string;
+}
+
+const pdfStyles = StyleSheet.create({
+  page: {
+    paddingTop: 70,
+    paddingRight: 56,
+    paddingBottom: 56,
+    paddingLeft: 85,
+    fontFamily: "TH Sarabun PSK",
+    fontSize: 13,
+    color: "#000"
+  },
+  header: {
+    position: "relative",
+    minHeight: 64,
+    marginBottom: 14,
+    justifyContent: "center"
+  },
+  headerTextBlock: {
+    alignItems: "center",
+    paddingLeft: 64,
+    paddingRight: 64
+  },
+  logoBox: {
+    position: "absolute",
+    left: 0,
+    top: -34,
+    width: 58,
+    height: 58,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  logo: {
+    width: 58,
+    height: 58,
+    objectFit: "contain"
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "bold",
+    lineHeight: 1.1
+  },
+  subtitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    lineHeight: 1.15,
+    textAlign: "center",
+    marginTop: 2
+  },
+  period: {
+    fontSize: 14,
+    lineHeight: 1.15,
+    marginTop: 2
+  },
+  metaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 5,
+    fontSize: 12
+  },
+  table: {
+    borderWidth: 1,
+    borderColor: "#000",
+    width: "100%"
+  },
+  row: {
+    flexDirection: "row"
+  },
+  th: {
+    height: 36,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f4f4f4",
+    paddingHorizontal: 1
+  },
+  td: {
+    height: 24,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 1
+  },
+  lastCol: {
+    borderRightWidth: 0
+  },
+  lastRowCell: {
+    borderBottomWidth: 0
+  },
+  headerText: {
+    fontSize: 13,
+    fontWeight: "bold",
+    textAlign: "center",
+    lineHeight: 1.05
+  },
+  cellText: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 1
+  },
+  nameText: {
+    fontSize: 13,
+    lineHeight: 1,
+    textAlign: "left"
+  },
+  nameCell: {
+    alignItems: "flex-start",
+    paddingLeft: 4
+  },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 15,
+    marginTop: 40,
+    fontSize: 13
+  },
+  signBox: {
+    width: "30%",
+    alignItems: "center"
+  },
+  signName: {
+    marginTop: 15,
+    marginBottom: 2
+  },
+  pageNumber: {
+    position: "absolute",
+    right: 56,
+    bottom: 32,
+    fontSize: 11
+  }
+});
+
+const colDefs = [
+  { key: "index", label: "ที่", width: 20 },
+  { key: "teacherId", label: "รหัสครู", width: 35 },
+  { key: "fullName", label: "ชื่อ - นามสกุล", width: 120 },
+  { key: "present", label: "มา", width: 22 },
+  { key: "late", label: "สาย", width: 22 },
+  { key: "leave", label: "ลา", width: 22 },
+  { key: "absent", label: "ขาด", width: 22 },
+  { key: "officialTravel", label: "ไป\nราชการ", width: 35 },
+  { key: "noCheckout", label: "ไม่ลงเวลา\nออก", width: 45 },
+  { key: "total", label: "รวม", width: 25 },
+  { key: "percentage", label: "ร้อยละ", width: 35 },
+  { key: "note", label: "หมายเหตุ", width: 47 }
+] as const;
+
+const TeacherAttendancePdfDocument: React.FC<TeacherAttendancePdfDocumentProps> = ({
+  chunks,
+  rowsPerPage,
+  schoolName,
+  schoolAffiliation,
+  schoolLogo,
+  directorName,
+  dateText,
+  filterType,
+  totalItems,
+  reportPrintedAt
+}) => {
+  const periodPrefix = filterType === "daily" ? "วันที่" : filterType === "monthly" ? "เดือน" : filterType === "term" ? "" : "ช่วงวันที่";
+
+  const getValue = (row: TeacherStats, key: typeof colDefs[number]["key"], index: number) => {
+    if (key === "index") return String(index);
+    if (key === "teacherId") return row.teacherId || "-";
+    if (key === "fullName") return row.fullName;
+    if (key === "percentage") return `${row.percentage}%`;
+    if (key === "note") return "";
+    return String(row[key] ?? "");
+  };
+
+  return (
+    <Document>
+      {chunks.map((chunk, pageIndex) => {
+        const isLastPage = pageIndex === chunks.length - 1;
+        return (
+          <Page key={pageIndex} size="A4" style={pdfStyles.page}>
+            <View style={pdfStyles.header}>
+              {schoolLogo ? (
+                <View style={pdfStyles.logoBox}>
+                  <Image src={schoolLogo} style={pdfStyles.logo} />
+                </View>
+              ) : null}
+              <View style={pdfStyles.headerTextBlock}>
+                <Text style={pdfStyles.title}>รายงานสรุปการลงเวลาปฏิบัติราชการ</Text>
+                <Text style={pdfStyles.subtitle}>
+                  ข้าราชการครูและบุคลากรทางการศึกษา {schoolName}{schoolAffiliation ? ` ${schoolAffiliation}` : ""}
+                </Text>
+                <Text style={pdfStyles.period}>ประจำ{periodPrefix} {dateText}</Text>
+              </View>
+            </View>
+
+            <View style={pdfStyles.metaRow}>
+              <Text>จำนวนรายการทั้งหมด {totalItems} รายการ</Text>
+              <Text>พิมพ์วันที่ {reportPrintedAt}</Text>
+            </View>
+
+            <View style={pdfStyles.table}>
+              <View style={pdfStyles.row}>
+                {colDefs.map((col, colIndex) => (
+                  <View
+                    key={col.key}
+                    style={[pdfStyles.th, { width: col.width }, colIndex === colDefs.length - 1 ? pdfStyles.lastCol : {}]}
+                  >
+                    <Text style={pdfStyles.headerText}>{col.label}</Text>
+                  </View>
+                ))}
+              </View>
+              {chunk.map((row, rowIndex) => {
+                const absoluteIndex = pageIndex * rowsPerPage + rowIndex + 1;
+                const isLastRow = rowIndex === chunk.length - 1;
+                return (
+                  <View key={row.id || absoluteIndex} style={pdfStyles.row}>
+                    {colDefs.map((col, colIndex) => (
+                      <View
+                        key={col.key}
+                        style={[
+                          pdfStyles.td,
+                          { width: col.width },
+                          col.key === "fullName" ? pdfStyles.nameCell : {},
+                          colIndex === colDefs.length - 1 ? pdfStyles.lastCol : {},
+                          isLastRow ? pdfStyles.lastRowCell : {}
+                        ]}
+                      >
+                        <Text style={col.key === "fullName" ? pdfStyles.nameText : pdfStyles.cellText}>
+                          {getValue(row, col.key, absoluteIndex)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </View>
+
+            {isLastPage ? (
+              <View style={pdfStyles.footer}>
+                <View style={pdfStyles.signBox}>
+                  <Text>ลงชื่อ..........................................ผู้จัดทำรายงาน</Text>
+                  <Text style={pdfStyles.signName}>(..........................................)</Text>
+                  <Text>ตำแหน่ง..........................................</Text>
+                </View>
+                <View style={pdfStyles.signBox}>
+                  <Text>ลงชื่อ..........................................ผู้ตรวจสอบ</Text>
+                  <Text style={pdfStyles.signName}>(..........................................)</Text>
+                  <Text>หัวหน้าฝ่ายบริหารงานบุคคล</Text>
+                </View>
+                <View style={pdfStyles.signBox}>
+                  <Text>ลงชื่อ..........................................ผู้รับรอง</Text>
+                  <Text style={pdfStyles.signName}>({directorName || ".........................................."})</Text>
+                  <Text>ผู้อำนวยการ{schoolName || ".........................................."}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={pdfStyles.pageNumber}>หน้า {pageIndex + 1} / {chunks.length}</Text>
+          </Page>
+        );
+      })}
+    </Document>
+  );
+};
+
 const TeacherAttendanceSummaryPage: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
+  const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
   const schoolId = currentUser?.schoolId;
 
   const [loading, setLoading] = useState(false);
@@ -82,7 +370,10 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
       if (!schoolId) return;
       try {
         // 📌 แก้ไข: ดึงข้อมูลจาก school-settings/teachers แทน users เพื่อให้ได้ ID ที่ถูกต้องตรงกับที่บันทึกเวลา
-        const q = query(collection(firestore, "school-settings", schoolId, "teachers"));
+        const q = query(
+          collection(firestore, "school-settings", schoolId, "teachers"),
+          where("status", "==", "อยู่")
+        );
         const snapshot = await getDocs(q);
         const teacherList = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -100,6 +391,13 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
     fetchTeachers();
   }, [schoolId]);
 
+
+  // Fetch School Settings if not already loaded
+  useEffect(() => {
+    if (schoolId && schoolSettings.status === 'idle') {
+      dispatch(fetchSchoolSettings(schoolId));
+    }
+  }, [schoolId, schoolSettings.status, dispatch]);
 
   // Fetch Academic Year and Terms from School Calendar
   useEffect(() => {
@@ -283,7 +581,8 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
             id: teacher.id, fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
             profileUrl: teacher.profileImageUrl,
             present, late, leave, absent, noCheckout, officialTravel,
-            total: workingDates.length, percentage
+            total: workingDates.length, percentage,
+            teacherId: teacher.teacherId || ""
           };
         });
         setSummaryData(stats);
@@ -324,7 +623,8 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
             fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
             profileUrl: teacher.profileImageUrl,
             present, late, leave, absent, noCheckout, officialTravel,
-            total, percentage
+            total, percentage,
+            teacherId: teacher.teacherId || ""
           };
         });
         console.log(`[Teacher Summary] Fetched ${stats.length} records:`, stats);
@@ -350,29 +650,47 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
   );
 
   const exportPDF = async () => {
-    // ดึงข้อมูลโรงเรียนเพื่อนำมาแสดงในหัวกระดาษ
-    let schoolName = "";
-    let directorName = "";
+    if (filteredData.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับส่งออก PDF", "info");
+      return;
+    }
+
+    const getImageDataUrl = async (url: string): Promise<string> => {
+      try {
+        const response = await fetch(url, { mode: "cors" });
+        if (!response.ok) return url;
+        const blob = await response.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      } catch (error) {
+        console.warn("Unable to convert school logo for PDF:", error);
+        return url;
+      }
+    };
+
+    let freshSchoolSettings: any = schoolSettings;
     if (schoolId) {
       try {
         const schoolDoc = await getDoc(doc(firestore, "school-settings", schoolId));
         if (schoolDoc.exists()) {
-          const data = schoolDoc.data();
-          schoolName = data.schoolName || "";
-          directorName = data.directorName || "";
+          freshSchoolSettings = { ...schoolSettings, ...schoolDoc.data() };
         }
-      } catch (e) {
-        console.error("Error fetching school info:", e);
+      } catch (error) {
+        console.warn("Unable to fetch latest school settings for PDF:", error);
       }
     }
 
-    const el = document.createElement('div');
-    el.style.position = 'absolute';
-    el.style.left = '-9999px';
-    el.style.top = '0';
-    el.style.width = '800px';
-    el.style.background = '#fff';
-    el.style.padding = '40px 50px';
+    const schoolName = freshSchoolSettings.schoolName || "";
+    const directorName = freshSchoolSettings.directorName || "";
+    const schoolLogoUrl = freshSchoolSettings.logoUrl || "";
+    const schoolLogo = schoolLogoUrl ? await getImageDataUrl(schoolLogoUrl) : "";
+    const schoolAffiliation = freshSchoolSettings.affiliation || "";
+
+    const displaySchoolName = schoolName ? (schoolName.startsWith("โรงเรียน") ? schoolName : `โรงเรียน${schoolName}`) : "";
+    const displayAffiliation = schoolAffiliation || "";
 
     let dateText = "";
     if (filterType === "daily") {
@@ -392,120 +710,38 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
       dateText = `${s} - ${e}`;
     }
 
-    el.innerHTML = `
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&family=TH+Sarabun+New:wght@400;700&display=swap');
-        * { font-family: 'TH Sarabun New', 'Sarabun', sans-serif; box-sizing: border-box; color: #000; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
-        .subtitle { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
-        .info { font-size: 18px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #000; padding: 8px 5px; font-size: 16px; line-height: 1.2; vertical-align: middle; }
-        th { background-color: #f5f5f5; text-align: center; font-weight: bold; height: 35px; }
-        td.center { text-align: center; }
-        td.left { text-align: left; padding-left: 8px; }
-        .footer { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
-        .sign-box { text-align: center; width: 32%; }
-        .sign-name { margin-top: 15px; }
-        .sign-pos { margin-top: 5px; }
-      </style>
-      
-      <div class="header">
-        <div class="title">สรุปการลงเวลาปฏิบัติราชการข้าราชการครูและบุคลากรทางการศึกษา</div>
-        <div class="subtitle">${schoolName ? `โรงเรียน${schoolName}` : 'โรงเรียน................................................'}</div>
-        <div class="info">ประจำ${filterType === 'daily' ? 'วันที่' : (filterType === 'monthly' ? 'เดือน' : filterType === 'term' ? '' : 'ช่วงวันที่')} ${dateText}</div>
-      </div>
+    const rowsPerPage = 20;
+    const chunks: TeacherStats[][] = [];
+    for (let i = 0; i < filteredData.length; i += rowsPerPage) {
+      chunks.push(filteredData.slice(i, i + rowsPerPage));
+    }
 
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 40px;">ที่</th>
-            <th>ชื่อ - นามสกุล</th>
-            <th style="width: 50px;">มา</th>
-            <th style="width: 50px;">สาย</th>
-            <th style="width: 50px;">ลา</th>
-            <th style="width: 50px;">ขาด</th>
-            <th style="width: 60px;">ไปราชการ</th>
-            <th style="width: 70px;">ไม่ลงเวลาออก</th>
-            <th style="width: 60px;">รวมวัน</th>
-            <th style="width: 60px;">ร้อยละ</th>
-            <th style="width: 80px;">หมายเหตุ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filteredData.map((r, index) => `
-            <tr>
-              <td class="center">${index + 1}</td>
-              <td class="left" style="display: flex; align-items: center; gap: 8px;">
-                <img src="${r.profileUrl || defaultProfile}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;" crossorigin="anonymous" />
-                <span>${r.fullName}</span>
-              </td>
-              <td class="center">${r.present}</td>
-              <td class="center">${r.late}</td>
-              <td class="center">${r.leave}</td>
-              <td class="center">${r.absent}</td>
-              <td class="center">${r.officialTravel}</td>
-              <td class="center">${r.noCheckout}</td>
-              <td class="center">${r.total}</td>
-              <td class="center">${r.percentage}%</td>
-              <td></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-
-      <div class="footer">
-        <div class="sign-box">
-            <div>ลงชื่อ..........................................ผู้สรุป</div>
-            <div class="sign-name">(..........................................)</div>
-            <div class="sign-pos">ตำแหน่ง..........................................</div>
-        </div>
-        <div class="sign-box">
-            <div>ลงชื่อ..........................................ผู้ตรวจเสนอ</div>
-            <div class="sign-name">(..........................................)</div>
-            <div class="sign-pos">หัวหน้าฝ่ายบริหารงานบุคคล</div>
-        </div>
-        <div class="sign-box">
-            <div>ลงชื่อ..........................................ผู้รับรอง</div>
-            <div class="sign-name">(${directorName ? directorName : '..........................................'})</div>
-            <div class="sign-pos">ผู้อำนวยการโรงเรียน${schoolName}</div>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(el);
+    const reportPrintedAt = new Date().toLocaleDateString('th-TH', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
 
     try {
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
+      const pdfBlob = await pdf(
+        <TeacherAttendancePdfDocument
+          chunks={chunks}
+          rowsPerPage={rowsPerPage}
+          schoolName={displaySchoolName}
+          schoolAffiliation={displayAffiliation}
+          schoolLogo={schoolLogo}
+          directorName={directorName}
+          dateText={dateText}
+          filterType={filterType}
+          totalItems={filteredData.length}
+          reportPrintedAt={reportPrintedAt}
+        />
+      ).toBlob();
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdfHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`attendance_summary_${new Date().toISOString().split('T')[0]}.pdf`);
+      saveAs(pdfBlob, `attendance_summary_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
       Swal.fire("Error", "ไม่สามารถส่งออก PDF ได้", "error");
-    } finally {
-      document.body.removeChild(el);
     }
   };
 
@@ -712,6 +948,8 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-[#323338] border-b border-gray-200 dark:border-gray-700">
+                    <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-center">ลำดับ</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
                     <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">ชื่อ - นามสกุล</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-green-600 dark:text-green-400">มา (ปกติ)</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-yellow-600 dark:text-yellow-400">สาย</th>
@@ -726,19 +964,25 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan={11} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                         กำลังประมวลผลข้อมูล...
                       </td>
                     </tr>
                   ) : filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan={11} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                         ไม่พบข้อมูลในช่วงเวลาที่เลือก
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((record) => (
+                    filteredData.map((record, index) => (
                       <tr key={record.id} className="hover:bg-gray-50 dark:hover:bg-[#323338]/50 transition-colors">
+                        <td className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400 font-medium">
+                          {index + 1}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">
+                          {record.teacherId || "-"}
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <img

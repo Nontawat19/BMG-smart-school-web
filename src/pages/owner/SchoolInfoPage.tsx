@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom'; // Import useNavigate and useParams
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
-<<<<<<< HEAD
 import { usePermissions } from "@/hooks/usePermissions";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db, storage } from '../../firebase';
 import { doc, getDoc, setDoc, addDoc, collection, query, getDocs, serverTimestamp } from 'firebase/firestore'; // Import addDoc, collection, serverTimestamp
+import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
 import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import { ROLES } from "@/constants/roles";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import {
+  DEFAULT_SCHOOL_SUMMARY,
+  getSchoolDashboardSummaryRef,
+  updateOwnerDashboardSummary,
+} from "@/utils/ownerStatsUtils";
 
 // Import Leaflet components
 import { MapContainer, TileLayer, Marker, Polygon, useMapEvents, CircleMarker, Popup } from 'react-leaflet';
@@ -38,6 +38,7 @@ interface SchoolInfo {
   subDistrict?: string;
   district?: string;
   province?: string;
+  postalCode?: string;
   affiliation?: string;
   directorPrefix?: string;
   directorName?: string;
@@ -102,11 +103,8 @@ const MapController: React.FC<{
 const SchoolInfoPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId?: string }>(); // schoolId is now optional
   const navigate = useNavigate();
-<<<<<<< HEAD
-  const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
-=======
-  const { user: currentUser } = useSelector((state: RootState) => state.auth);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+  const dispatch = useDispatch();
+  const { user: currentUser, isSchoolAdmin } = usePermissions();
 
   const [info, setInfo] = useState<SchoolInfo>({});
   const [customPrefixModes, setCustomPrefixModes] = useState<Record<string, boolean>>({});
@@ -151,16 +149,13 @@ const SchoolInfoPage: React.FC = () => {
   }, [schoolId, navigate]);
 
   useEffect(() => {
-<<<<<<< HEAD
-    // Security check for school admins and teachers
-    if ((isSchoolAdmin || isTeacher) && schoolId && schoolId !== currentUser?.schoolId) {
+    // Security check for school admins
+    if (isSchoolAdmin && schoolId && schoolId !== currentUser?.schoolId) {
       Swal.fire('เข้าถึงไม่ได้', 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลโรงเรียนอื่น', 'error');
       navigate('/home');
       return;
     }
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     if (schoolId) {
       fetchData();
     } else {
@@ -436,6 +431,7 @@ const SchoolInfoPage: React.FC = () => {
     try {
       let finalLogoUrl = info.logoUrl || '';
       let currentSchoolId = schoolId;
+      const isCreatingSchool = !schoolId;
 
       if (logoFile) {
         // If adding a new school, we need an ID first.
@@ -470,6 +466,15 @@ const SchoolInfoPage: React.FC = () => {
       if (currentSchoolId) {
         // Editing existing school or updating a newly created one
         const docRef = doc(db, collectionName, currentSchoolId);
+        await setDoc(docRef, dataToSave, { merge: true });
+        if (isCreatingSchool) {
+          await setDoc(getSchoolDashboardSummaryRef(db, currentSchoolId), {
+            ...DEFAULT_SCHOOL_SUMMARY,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+          await updateOwnerDashboardSummary(db, { schools: 1 });
+        }
+
         // 📌 Create/Update Slug for the School
         if (dataToSave.schoolCode) {
           const slugId = `school:${dataToSave.schoolCode}`;
@@ -490,23 +495,26 @@ const SchoolInfoPage: React.FC = () => {
           text: 'ข้อมูลโรงเรียนได้รับการอัปเดตแล้ว',
           background: '#2a2b2f',
           color: '#ffffff',
-<<<<<<< HEAD
           }).then(() => {
-            if (isSchoolAdmin || isTeacher) {
+            // 📌 Update Redux Store
+            if (currentSchoolId) {
+              dispatch(fetchSchoolSettings(currentSchoolId) as any);
+            }
+            if (isSchoolAdmin) {
               navigate('/owner/hub'); // Or wherever school admins should go
             } else {
               navigate(`/owner/schools/${currentSchoolId}`);
             }
           });
-=======
-        }).then(() => {
-          navigate(`/owner/schools/${currentSchoolId}`); // Navigate to details page
-        });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       } else {
         // 📌 Create the new school first to get the ID
         const newDocRef = await addDoc(collection(db, collectionName), dataToSave);
         const newId = newDocRef.id;
+        await setDoc(getSchoolDashboardSummaryRef(db, newId), {
+          ...DEFAULT_SCHOOL_SUMMARY,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        await updateOwnerDashboardSummary(db, { schools: 1 });
 
         // 📌 Create Slug for the School
         if (dataToSave.schoolCode) {
@@ -528,19 +536,13 @@ const SchoolInfoPage: React.FC = () => {
           text: 'ข้อมูลโรงเรียนใหม่ได้รับการบันทึกแล้ว',
           background: '#2a2b2f',
           color: '#ffffff',
-<<<<<<< HEAD
           }).then(() => {
-            if (isSchoolAdmin || isTeacher) {
+            if (isSchoolAdmin) {
               navigate('/owner/hub');
             } else {
               navigate(`/owner/schools/${newId}`);
             }
           });
-=======
-        }).then(() => {
-          navigate(`/owner/schools/${newId}`); // Navigate to the new school's details page
-        });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       }
 
     } catch (error) {
@@ -605,11 +607,7 @@ const SchoolInfoPage: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 <Link
-<<<<<<< HEAD
-                  to={isSchoolAdmin || isTeacher ? '/owner/hub' : '/owner/schools'}
-=======
-                  to="/owner/schools"
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                  to={isSchoolAdmin ? '/owner/hub' : '/owner/schools'}
                   className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-[#2a2b2f] dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 transition-all shadow-sm"
                 >
                   <FaArrowLeft className="text-[10px]" />
@@ -815,7 +813,7 @@ const SchoolInfoPage: React.FC = () => {
                             name="opportunityExpansionLevel"
                             value={info.opportunityExpansionLevel || ''}
                             onChange={handleInputChange}
-                            disabled={info.schoolType !== 'ขยายโอกาส' && info.schoolType !== 'ประถม'} // Allow editing for Primary too if we want options? Actually usually fixed but let's see.
+                            disabled={!info.schoolType}
                             className={`w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white placeholder-gray-400`}
                           >
                             <option value="">-- เลือกระดับชั้น --</option>
@@ -876,7 +874,7 @@ const SchoolInfoPage: React.FC = () => {
                     ที่ตั้งโรงเรียน
                   </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
                     <div>
                       <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">ตำบล</label>
                       <input
@@ -903,6 +901,16 @@ const SchoolInfoPage: React.FC = () => {
                         type="text"
                         name="province"
                         value={info.province || ''}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white placeholder-gray-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">รหัสไปรษณีย์</label>
+                      <input
+                        type="text"
+                        name="postalCode"
+                        value={info.postalCode || ''}
                         onChange={handleInputChange}
                         className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white placeholder-gray-400"
                       />

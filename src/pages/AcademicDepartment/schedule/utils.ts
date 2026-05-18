@@ -8,13 +8,46 @@ export const DAYS = { mon: 'จันทร์', tue: 'อังคาร', wed:
 
 export type ClassKey = keyof typeof CLASSES;
 
+// Helper to format level/class name to Thai (e.g., m2 -> ม.2, p1 -> ป.1, k1 -> อนุบาล 1)
+export const thaiFormatClass = (name: string): string => {
+    if (!name) return name;
+    let formatted = name;
+    
+    // Convert m/M to ม. (e.g. m1 -> ม.1, M2/1 -> ม.2/1)
+    formatted = formatted.replace(/^[mM](?=\d)/, 'ม.');
+    // Convert p/P to ป. (e.g. p1 -> ป.1)
+    formatted = formatted.replace(/^[pP](?=\d)/, 'ป.');
+    // Convert k/K to อ. (e.g. k1 -> อ.1)
+    formatted = formatted.replace(/^[kK](?=\d)/, 'อ.');
+    
+    // Also handle cases where it might already be ม1 (no dot)
+    formatted = formatted.replace(/^ม(?=\d)/, 'ม.');
+    formatted = formatted.replace(/^ป(?=\d)/, 'ป.');
+    
+    // If it's "อ." (which is in CLASSES mapping), convert to "อนุบาล "
+    if (formatted.startsWith('อ.')) {
+        formatted = formatted.replace(/^อ\./, 'อนุบาล ');
+    } else if (formatted.startsWith('อ') && !isNaN(Number(formatted.substring(1, 2)))) {
+        // Handle "อ1" case
+        formatted = formatted.replace(/^อ(?=\d)/, 'อนุบาล ');
+    }
+
+    return formatted;
+};
+
 // Helper to get display name for class(es)
 export const getClassDisplayName = (classId?: string | string[]): string => {
     if (!classId) return '';
+    
+    const getSingleName = (id: string) => {
+        const name = CLASSES[id as ClassKey] || id;
+        return thaiFormatClass(name);
+    };
+
     if (Array.isArray(classId)) {
-        return classId.map(id => CLASSES[id as ClassKey] || id).join(', ');
+        return classId.map(getSingleName).join(', ');
     }
-    return CLASSES[classId as ClassKey] || classId;
+    return getSingleName(classId);
 };
 
 // Helper to format combined classes like "ม.1,2,3"
@@ -23,21 +56,39 @@ export const formatClassDisplay = (classIds: string[]) => {
     const others: string[] = [];
 
     classIds.forEach(id => {
-        const name = CLASSES[id as ClassKey] || id;
-        const parts = name.split('.'); // Split "ม.1" -> ["ม", "1"]
-        if (parts.length === 2 && !isNaN(Number(parts[1]))) {
-            const prefix = parts[0] + '.';
-            const num = Number(parts[1]);
-            if (!groups[prefix]) groups[prefix] = [];
-            groups[prefix].push(num);
-        } else {
-            others.push(name);
+        const rawName = CLASSES[id as ClassKey] || id;
+        const name = thaiFormatClass(rawName);
+        
+        // Handle standard prefixes for grouping
+        if (name.includes('.')) {
+            const parts = name.split('.'); // Split "ม.1" -> ["ม", "1"]
+            if (parts.length === 2 && !isNaN(Number(parts[1]))) {
+                const prefix = parts[0] + '.';
+                const num = Number(parts[1]);
+                if (!groups[prefix]) groups[prefix] = [];
+                groups[prefix].push(num);
+                return;
+            }
         }
+        
+        // Handle "อนุบาล 1"
+        if (name.startsWith('อนุบาล ')) {
+            const numPart = name.replace('อนุบาล ', '').split('/')[0]; // Handle "อนุบาล 1/1" -> "1"
+            const num = Number(numPart);
+            if (!isNaN(num)) {
+                const prefix = 'อนุบาล ';
+                if (!groups[prefix]) groups[prefix] = [];
+                groups[prefix].push(num);
+                return;
+            }
+        }
+
+        others.push(name);
     });
 
     const formattedGroups = Object.entries(groups).map(([prefix, nums]) => {
-        nums.sort((a, b) => a - b);
-        return `${prefix}${nums.join(',')}`;
+        const uniqueNums = Array.from(new Set(nums)).sort((a, b) => a - b);
+        return `${prefix}${uniqueNums.join(',')}`;
     });
 
     return [...formattedGroups, ...others];
@@ -113,6 +164,55 @@ export const getSubjectCategory = (title: string): 'ACADEMIC' | 'ACTIVITY' | 'GE
     return 'GENERAL';
 };
 
+const THAI_DIGITS: Record<string, string> = {
+    '๐': '0',
+    '๑': '1',
+    '๒': '2',
+    '๓': '3',
+    '๔': '4',
+    '๕': '5',
+    '๖': '6',
+    '๗': '7',
+    '๘': '8',
+    '๙': '9'
+};
+
+const normalizeNumericText = (value: string) => (
+    value
+        .replace(/[๐-๙]/g, digit => THAI_DIGITS[digit] || digit)
+        .replace(/(\d),(\d)/g, '$1.$2')
+);
+
+export const parseScheduleNumber = (value: unknown): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value !== 'string') return 0;
+
+    const normalized = normalizeNumericText(value.trim());
+    if (!normalized) return 0;
+
+    const direct = Number(normalized);
+    if (Number.isFinite(direct)) return direct;
+
+    const numericParts = normalized.match(/\d+(?:\.\d+)?/g);
+    if (!numericParts || numericParts.length === 0) return 0;
+
+    if (/[+＋]/.test(normalized)) {
+        return numericParts.reduce((sum, part) => sum + Number(part), 0);
+    }
+
+    return Number(numericParts[0]) || 0;
+};
+
+export const getRequiredWeeklyPeriods = (
+    course: Pick<Course, 'credits' | 'hoursPerWeek'>,
+    fallback = 1
+) => {
+    const hours = Math.round(parseScheduleNumber(course.hoursPerWeek));
+    const creditPeriods = Math.round(parseScheduleNumber(course.credits) * 2);
+    const requiredPeriods = Math.max(hours, creditPeriods);
+    return requiredPeriods > 0 ? requiredPeriods : fallback;
+};
+
 export const getPartnerIndex = (idx: number): number => {
     // Standard Thai school block pairs: (1,2), (3,4), (6,7), (8,9)
     // index 0=Homeroom, 5=Lunch
@@ -127,13 +227,10 @@ export const getPartnerIndex = (idx: number): number => {
     return -1;
 };
 
-<<<<<<< HEAD
 export const isDoublePeriodStart = (idx: number): boolean => {
     return getPartnerIndex(idx) === idx + 1;
 };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 export const checkConstraints = (
     course: CourseInstance,
     targetSlotId: string,
@@ -142,7 +239,7 @@ export const checkConstraints = (
     specialPeriods: SpecialPeriod[],
     assignmentConstraints: AssignmentConstraintMap = {},
     dynamicUnavailableSlots: string[] = [],
-    schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]> = {},
+    schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]> = {},
     duration: number = 1
 ): { forbidden: boolean; message: string } => {
     const [dayKey, periodNumberStr] = targetSlotId.split('-');
@@ -174,11 +271,7 @@ export const checkConstraints = (
     if (asgnCst?.isLocked && asgnCst.lockedSlots && asgnCst.lockedSlots.length > 0) {
         const isThisSlotLocked = asgnCst.lockedSlots.some((s: any) => {
             if (typeof s === 'string') return s === targetSlotId;
-<<<<<<< HEAD
             return s.day === dayKey && s.periodId === periodSetting.id;
-=======
-            return s.day === dayKey && s.periodId === `period-${periodNumberStr}`;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         });
         if (!isThisSlotLocked) {
             return { forbidden: true, message: `กลุ่มเรียนนี้ถูกล็อคให้สอนในคาบเฉพาะเจาะจงเท่านั้น` };
@@ -222,11 +315,7 @@ export const checkConstraints = (
     // Constraint 5: Double Period Type Check
     if (asgnCst?.type === 'double' && duration === 2) {
         const partnerIdx = getPartnerIndex(periodIndex);
-<<<<<<< HEAD
         if (partnerIdx === -1 || partnerIdx !== periodIndex + 1) {
-=======
-        if (partnerIdx === -1) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             return { forbidden: true, message: 'วิชานี้ต้องจัดเป็นคาบคู่ (2 คาบติดกันในบล็อกที่กำหนด)' };
         }
         const partnerSetting = periodSettings[partnerIdx];
@@ -277,14 +366,27 @@ export const checkConstraints = (
         // B) Class Conflict: This class group already has another teacher in this slot
         const occClasses = Array.isArray(occ.classId) ? occ.classId : [occ.classId];
         const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
-        if (sharedClass && occ.teacherId !== currentTeacherId) {
-            return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+        
+        if (sharedClass) {
+            const occGroup = Number(occ.groupNumber || occ.course?.groupNumber || 0);
+            const currentGroup = Number(course.groupNumber || 0);
+            
+            // Conflict if:
+            // 1. Same group is already occupied by a DIFFERENT teacher
+            // 2. Either occupancy is for 'all groups' (0) and teacher is DIFFERENT
+            const isSameGroup = occGroup === currentGroup;
+            const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
+            
+            if ((isSameGroup || isEitherAllGroups) && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+                const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
+                return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+            }
         }
 
         // C) Room Conflict: Another teacher is using the same room
         const occRooms = occ.course?.room && occ.course.room.length > 0 ? occ.course.room : ['all'];
         const hasSpecificRoomConflict = !courseRooms.includes('all') && !occRooms.includes('all') && courseRooms.some(r => occRooms.includes(r));
-        if (hasSpecificRoomConflict && occ.teacherId !== currentTeacherId) {
+        if (hasSpecificRoomConflict && occ.teacherId !== currentTeacherId && !isSameAssignment) {
             return { forbidden: true, message: `ห้องปฏิบัติการถูกใช้งานโดยครูท่านอื่นในคาบนี้` };
         }
     }
@@ -296,7 +398,7 @@ export const findValidSlots = (
     course: CourseInstance,
     teacherId: string,
     currentSchedule: Schedule,
-    schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null }[]>,
+    schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]>,
     teacher: Teacher,
     periodSettings: PeriodSetting[],
     specialPeriods: SpecialPeriod[],
@@ -305,24 +407,14 @@ export const findValidSlots = (
 ): string[] => {
     const validSlots: Array<{ slot: string; score: number }> = [];
     const days = Object.keys(DAYS);
-<<<<<<< HEAD
-=======
-    const periods = periodSettings.filter(p => p.isTeachingPeriod);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Get granular constraints
     const asgnCst = assignmentConstraints[course.compositeId];
 
     days.forEach(day => {
-<<<<<<< HEAD
         periodSettings.forEach((period, periodIndex) => {
             if (!period.isTeachingPeriod) return;
             const slot = `${day}-${periodIndex}`;
-=======
-        periods.forEach(period => {
-            const pNum = parseInt(period.id.replace('period-', ''));
-            const slot = `${day}-${pNum}`;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
             // 1. Basic Constraints
             const { forbidden } = checkConstraints(course, slot, teacher, periodSettings, specialPeriods, assignmentConstraints, dynamicUnavailableSlots, schoolMasterSchedule);
@@ -333,11 +425,7 @@ export const findValidSlots = (
 
             // 3. Double Period validation
             if (asgnCst?.type === 'double' || asgnCst?.type === 'mixed') {
-<<<<<<< HEAD
                 const partnerIdx = getPartnerIndex(periodIndex);
-=======
-                const partnerIdx = getPartnerIndex(pNum);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (partnerIdx !== -1) {
                     const partnerSlot = `${day}-${partnerIdx}`;
                     if (currentSchedule[partnerSlot]) {
@@ -357,11 +445,7 @@ export const findValidSlots = (
             let score = 100;
 
             if (asgnCst) {
-<<<<<<< HEAD
                 const isMorning = period.startTime < (periodSettings.find(p => p.id === 'lunch')?.startTime || '12:00');
-=======
-                const isMorning = pNum <= 4;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const pref = asgnCst.type === 'double' ? asgnCst.doublePreference : asgnCst.singlePreference;
 
                 if (pref === 'morning' && isMorning) score += 50;
@@ -371,11 +455,7 @@ export const findValidSlots = (
 
                 // Extra points for double if the partner slot is also free
                 if (asgnCst.type === 'double' || asgnCst.type === 'mixed') {
-<<<<<<< HEAD
                     const partnerIdx = getPartnerIndex(periodIndex);
-=======
-                    const partnerIdx = getPartnerIndex(pNum);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     if (partnerIdx !== -1 && !currentSchedule[`${day}-${partnerIdx}`]) {
                         score += 40;
                     }
@@ -402,33 +482,15 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
     
     // Explicit exclusions based on common Thai school subject types and keywords
     const exclusions = [
-<<<<<<< HEAD
-=======
-        'กิจกรรม',
-        'ชุมนุม',
-        'ลดเวลาเรียน',
-        'ลูกเสือ',
-        'เนตรนารี',
-        'ยุวกาชาด',
-        'บำเพ็ญประโยชน์',
-        'จิตอาสา',
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         'homeroom',
         'โฮมรูม',
         'assembly',
         'ประชุมสาย',
         'สวดมนต์',
         'หน้าเสาธง',
-<<<<<<< HEAD
         'พัก',
         'ทัศนศึกษา',
         'เวร'
-=======
-        'แนะแนว',
-        'เวร',
-        'พัก',
-        'ทัศนศึกษา'
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     ];
 
     const isExcluded = exclusions.some(keyword => 
@@ -438,10 +500,6 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
     );
     
     // If the subject group is specifically "กิจกรรมพัฒนาผู้เรียน", it's usually non-academic for timetable bank
-<<<<<<< HEAD
-=======
-    if (subjectGroup.includes('พัฒนาผู้เรียน')) return false;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Filter out items that are clearly not academic courses (usually have 0 credits or are marked as activity)
     if (course.credits === 0 || course.credits === '0') {

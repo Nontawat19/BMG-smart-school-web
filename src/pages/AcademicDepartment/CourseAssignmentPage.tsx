@@ -2,27 +2,18 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
-<<<<<<< HEAD
 import { collection, query, doc, onSnapshot, updateDoc, where, orderBy, getDoc, getDocs, setDoc, writeBatch } from "firebase/firestore";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
-=======
-import { collection, query, doc, onSnapshot, updateDoc, where, orderBy, getDoc, getDocs } from "firebase/firestore";
-import { useSelector } from "react-redux";
-import { RootState } from "../../store";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import {
     Users,
     MapPin,
     BookOpen,
     ChevronLeft,
-<<<<<<< HEAD
     ChevronDown,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     Search,
     Check,
     Plus,
@@ -40,14 +31,19 @@ import {
     Calendar,
     Filter,
     ChevronsLeft,
-    ChevronsRight
+    ChevronsRight,
+    Database
 } from "lucide-react";
 import Swal from "sweetalert2";
+import Select from "react-select";
+import { compareTeachersByGroupAndId, getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 
 // --- Types ---
 interface GroupAssignment {
     groupNumber: number;
+    room?: string;
     teacherId: string;
+    teacherIds?: string[];
     roomIds: string[];
     classLevels?: string[];
 }
@@ -60,7 +56,7 @@ interface Course {
     credits?: number | string;
     hoursPerWeek?: number;
     semester?: number | string;
-    type?: string; // พื้นฐาน, เพิ่มเติม
+    type?: string; // พื้นฐาน, เพิ่มเติม, ชุมนุม, กิจกรรม
     subjectGroup?: string; // กลุ่มสาระการเรียนรู้
     teacherAssignments?: GroupAssignment[];
     isActive?: boolean;
@@ -73,7 +69,15 @@ interface Teacher {
     email?: string;
     role?: string;
     subjectGroup?: string;
+    status?: string;
 }
+
+const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): string[] => {
+    const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+        ? assignment.teacherIds
+        : (assignment?.teacherId ? [assignment.teacherId] : []);
+    return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
+};
 
 interface Room {
     id: string;
@@ -88,11 +92,180 @@ interface Room {
 
 // --- Components ---
 
-const PanelHeader = ({ title, icon: Icon, count, compact = false }: { title: string, icon: any, count?: number, compact?: boolean }) => (
-    <div className={`flex items-center justify-between ${compact ? 'px-3 py-2' : 'px-4 py-3'} border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02]`}>
+// Premium Dark mode styles for react-select (Same as other pages)
+const headerSelectStyles = {
+    control: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: 'transparent',
+        borderColor: 'transparent',
+        boxShadow: 'none',
+        borderRadius: '0.5rem',
+        padding: '0',
+        fontSize: '14px',
+        minHeight: '32px',
+        height: '32px',
+        '&:hover': {
+            borderColor: 'transparent'
+        },
+        cursor: 'pointer'
+    }),
+    valueContainer: (base: any) => ({
+        ...base,
+        padding: '0 4px',
+        height: '32px',
+    }),
+    menu: (base: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-menu-bg, #ffffff)',
+        borderRadius: '1rem',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        padding: '8px',
+        border: '1px solid var(--select-border, #f3f4f6)',
+        width: 'max-content',
+        minWidth: '150px',
+        zIndex: 100
+    }),
+    option: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: state.isSelected 
+            ? '#6366f1' 
+            : state.isFocused 
+                ? 'rgba(99, 102, 241, 0.1)' 
+                : 'transparent',
+        color: state.isSelected ? '#ffffff' : 'var(--select-text, #1f2937)',
+        borderRadius: '0.5rem',
+        margin: '2px 0',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: state.isSelected ? '700' : '500',
+        whiteSpace: 'nowrap',
+        '&:active': {
+            backgroundColor: '#6366f1'
+        }
+    }),
+    singleValue: (base: any) => ({ 
+        ...base, 
+        color: 'var(--select-text, #1f2937)', 
+        fontWeight: '900',
+        fontSize: '14px',
+        whiteSpace: 'nowrap'
+    }),
+    menuList: (base: any) => ({
+        ...base,
+        maxHeight: '600px', 
+        padding: '4px'
+    }),
+    indicatorsContainer: (base: any) => ({
+        ...base,
+        height: '32px',
+    }),
+    dropdownIndicator: (base: any) => ({
+        ...base,
+        padding: '0 2px',
+        color: '#94a3b8'
+    }),
+    placeholder: (base: any) => ({
+        ...base,
+        color: '#94a3b8'
+    }),
+    input: (base: any) => ({
+        ...base,
+        color: 'var(--select-text, #1f2937)'
+    }),
+    indicatorSeparator: () => ({ display: 'none' })
+};
+
+// Compact style for course panel filters
+const filterSelectStyles = {
+    control: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-bg, #ffffff)',
+        borderColor: state.isFocused ? '#6366f1' : 'var(--select-border, #e2e8f0)',
+        boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.1)' : 'none',
+        borderRadius: '0.75rem',
+        padding: '0',
+        fontSize: '13px',
+        minHeight: '34px',
+        height: '34px',
+        '&:hover': {
+            borderColor: '#6366f1'
+        },
+        cursor: 'pointer'
+    }),
+    valueContainer: (base: any) => ({
+        ...base,
+        padding: '0 8px',
+        height: '34px',
+    }),
+    menu: (base: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-menu-bg, #ffffff)',
+        borderRadius: '1rem',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        padding: '8px',
+        border: '1px solid var(--select-border, #f3f4f6)',
+        width: 'max-content',
+        minWidth: '150px',
+        zIndex: 100
+    }),
+    option: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: state.isSelected 
+            ? '#6366f1' 
+            : state.isFocused 
+                ? 'rgba(99, 102, 241, 0.1)' 
+                : 'transparent',
+        color: state.isSelected ? '#ffffff' : 'var(--select-text, #475569)',
+        borderRadius: '0.5rem',
+        margin: '2px 0',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: state.isSelected ? '700' : '500',
+        whiteSpace: 'nowrap',
+        '&:active': {
+            backgroundColor: '#6366f1'
+        }
+    }),
+    singleValue: (base: any) => ({ 
+        ...base, 
+        color: 'var(--select-text, #1e293b)', 
+        fontWeight: '700',
+        fontSize: '11px',
+        whiteSpace: 'nowrap'
+    }),
+    menuList: (base: any) => ({
+        ...base,
+        maxHeight: '400px', 
+        padding: '4px'
+    }),
+    indicatorsContainer: (base: any) => ({
+        ...base,
+        height: '34px',
+    }),
+    dropdownIndicator: (base: any) => ({
+        ...base,
+        padding: '0 4px',
+        color: '#94a3b8'
+    }),
+    placeholder: (base: any) => ({
+        ...base,
+        color: '#94a3b8'
+    }),
+    input: (base: any) => ({
+        ...base,
+        color: 'var(--select-text, #1e293b)'
+    }),
+    indicatorSeparator: () => ({ display: 'none' })
+};
+
+const PanelHeader = ({ title, icon: Icon, count, compact = false, extra }: { title: string, icon: any, count?: number, compact?: boolean, extra?: React.ReactNode }) => (
+    <div className={`flex items-center justify-between ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02]`}>
         <div className="flex items-center gap-2">
-            <Icon size={14} className="text-indigo-600 dark:text-indigo-400" />
-            <h3 className={`font-bold text-slate-800 dark:text-white tracking-wide uppercase ${compact ? 'text-[9px]' : 'text-[11px]'}`}>{title}</h3>
+            <div className="flex items-center gap-2">
+                <Icon size={14} className="text-indigo-600 dark:text-indigo-400" />
+                <h3 className={`font-bold text-slate-800 dark:text-white tracking-wide uppercase ${compact ? 'text-[9px]' : 'text-[11px]'}`}>{title}</h3>
+            </div>
+            {extra}
         </div>
         {count !== undefined && (
             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500">({count})</span>
@@ -102,74 +275,28 @@ const PanelHeader = ({ title, icon: Icon, count, compact = false }: { title: str
 
 const FloatingButton = ({ icon: Icon, color, onClick, label, disabled = false }: { icon: any, color: string, onClick: () => void, label?: string, disabled?: boolean }) => (
     <motion.button
-        whileHover={disabled ? {} : { scale: 1.05 }}
+        whileHover={disabled ? {} : { scale: 1.1, x: 2 }}
         whileTap={disabled ? {} : { scale: 0.9 }}
         onClick={disabled ? undefined : onClick}
         title={label}
-        className={`w-11 h-11 ${color} text-white rounded-2xl flex items-center justify-center shadow-2xl transition-all border border-white/10 ${disabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`w-9 h-9 ${color} text-white rounded-xl flex items-center justify-center shadow-lg transition-all border border-white/10 ${disabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:shadow-xl hover:-translate-y-0.5'}`}
     >
-        <Icon size={22} strokeWidth={3} />
+        <Icon size={18} strokeWidth={2.5} />
     </motion.button>
 );
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 500; // Increased to show virtually all items in a single scrollable view as requested
 
+// Pagination removed in favor of single scrollable list as requested by user
 const Pagination = ({ currentPage, totalPages, onPageChange }: { currentPage: number, totalPages: number, onPageChange: (p: number) => void }) => {
-    if (totalPages <= 1) return null;
-    const maxVisible = 5;
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-    if (endPage - startPage + 1 < maxVisible) startPage = Math.max(1, endPage - maxVisible + 1);
-    const pages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
-
-    const Btn = ({ onClick, disabled, children, active }: any) => (
-<<<<<<< HEAD
-        <button 
-            onClick={onClick} 
-            disabled={disabled} 
-            className={`w-6 h-6 rounded-md text-[8px] font-black flex items-center justify-center transition-all shadow-sm ${
-                active 
-                    ? 'bg-indigo-600 text-white shadow-indigo-600/20' 
-                    : disabled 
-                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed bg-slate-50 dark:bg-white/[0.02]' 
-                        : 'text-slate-500 dark:text-slate-400 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/10 hover:border-indigo-500/30 cursor-pointer'
-            }`}
-        >
-            {children}
-        </button>
-    );
-
-    return (
-        <div className="flex items-center justify-center gap-1 py-2 border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20 px-2 shrink-0">
-            <Btn onClick={() => onPageChange(1)} disabled={currentPage === 1}><ChevronsLeft size={10} /></Btn>
-            <Btn onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}><ChevronLeft size={10} /></Btn>
-            <div className="flex items-center gap-1 mx-1">
-                {pages.map(p => <Btn key={p} onClick={() => onPageChange(p)} active={p === currentPage}>{p}</Btn>)}
-            </div>
-=======
-        <button onClick={onClick} disabled={disabled} className={`w-5 h-5 rounded text-[7px] font-black flex items-center justify-center transition-all ${active ? 'bg-indigo-600 text-white' : disabled ? 'text-slate-400 dark:text-slate-600 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 cursor-pointer'}`}>{children}</button>
-    );
-
-    return (
-        <div className="flex items-center justify-center gap-0.5 py-1.5 border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/10 px-1">
-            <Btn onClick={() => onPageChange(1)} disabled={currentPage === 1}><ChevronsLeft size={10} /></Btn>
-            <Btn onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}><ChevronLeft size={10} /></Btn>
-            {pages.map(p => <Btn key={p} onClick={() => onPageChange(p)} active={p === currentPage}>{p}</Btn>)}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-            <Btn onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages}><ChevronRight size={10} /></Btn>
-            <Btn onClick={() => onPageChange(totalPages)} disabled={currentPage === totalPages}><ChevronsRight size={10} /></Btn>
-        </div>
-    );
+    return null;
 };
 
 const CourseAssignmentPage: React.FC = () => {
-<<<<<<< HEAD
     const dispatch = useDispatch();
     const navigate = useNavigate();
+    const { availableClassOptions, classKeys } = useSelector((state: RootState) => state.schoolSettings);
     const BackButton = React.lazy(() => import("@/components/Shared/BackButton"));
-=======
-    const navigate = useNavigate();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = urlSchoolId || (currentUser as any)?.schoolId;
@@ -183,24 +310,41 @@ const CourseAssignmentPage: React.FC = () => {
 
     // Selection States
     const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
-    const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+    const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-    const [activeGroupNumber, setActiveGroupNumber] = useState<number>(1);
+    const [activeGroupNumbers, setActiveGroupNumbers] = useState<number[]>([1]);
+    const [activeRoomNumber, setActiveRoomNumber] = useState<string>("1");
     const [selectedAssignments, setSelectedAssignments] = useState<{ courseId: string, groupNumber: number, isPending?: boolean }[]>([]);
-    const [pendingQueue, setPendingQueue] = useState<{ courseId: string, teacherId: string, roomIds: string[], groupNumber: number, title: string, code: string, classId: any }[]>([]);
+    const [pendingQueue, setPendingQueue] = useState<{ courseId: string, teacherId: string, teacherIds?: string[], roomIds: string[], groupNumber: number, room?: string, title: string, code: string, classId: any }[]>([]);
 
-<<<<<<< HEAD
+    // Auto-save draft to localStorage
+    useEffect(() => {
+        const savedDraft = localStorage.getItem(`assignment_draft_${schoolId}`);
+        if (savedDraft) {
+            try {
+                const parsed = JSON.parse(savedDraft);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setPendingQueue(parsed);
+                }
+            } catch (e) {
+                console.error("Failed to parse assignment draft", e);
+            }
+        }
+    }, [schoolId]);
+
+    useEffect(() => {
+        if (pendingQueue.length > 0) {
+            localStorage.setItem(`assignment_draft_${schoolId}`, JSON.stringify(pendingQueue));
+        } else {
+            localStorage.removeItem(`assignment_draft_${schoolId}`);
+        }
+    }, [pendingQueue, schoolId]);
+
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
     const [selectedYear, setSelectedYear] = useState<string>(academicYear);
     const [selectedSemester, setSelectedSemester] = useState<string>("1");
     const [availableYears, setAvailableYears] = useState<string[]>([]);
     const [semesterAssignments, setSemesterAssignments] = useState<any[]>([]);
-=======
-    // Academic Year & Semester States
-    const [selectedYear, setSelectedYear] = useState<string>("");
-    const [selectedSemester, setSelectedSemester] = useState<string>("1");
-    const [availableYears, setAvailableYears] = useState<string[]>([]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Search/Filter States
     const [courseSearch, setCourseSearch] = useState("");
@@ -208,8 +352,8 @@ const CourseAssignmentPage: React.FC = () => {
     const [roomSearch, setRoomSearch] = useState("");
     const [buildingFilter, setBuildingFilter] = useState("ทั้งหมด");
     const [categoryFilter, setCategoryFilter] = useState("ทั้งหมด");
-    const [subjectGroupFilter, setSubjectGroupFilter] = useState("กลุ่มวิชา ทั้งหมด");
-    const [teacherGroupFilter, setTeacherGroupFilter] = useState("ครู ทั้งหมด");
+    const [subjectGroupFilter, setSubjectGroupFilter] = useState("กลุ่มสาระทั้งหมด");
+    const [teacherGroupFilter, setTeacherGroupFilter] = useState("ครูกลุ่มสาระ");
     const [showOnlyAssigned, setShowOnlyAssigned] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState("ทั้งหมด");
     const [schoolInfo, setSchoolInfo] = useState<any>(null);
@@ -238,29 +382,24 @@ const CourseAssignmentPage: React.FC = () => {
 
     // Derived UI Props for Floating Buttons
     const assignButtonProps = useMemo(() => {
-        const canAssign = selectedCourses.length > 0 && selectedTeacherId !== null;
+        const canAssign = selectedCourses.length > 0 && selectedTeacherIds.length > 0;
         return {
             color: canAssign ? 'bg-indigo-600' : 'bg-slate-400',
             label: selectedCourses.length > 0 ? `มอบหมายใหม่ ${selectedCourses.length} วิชา` : 'เลือกวิชาด้านซ้าย',
             disabled: !canAssign
         };
-    }, [selectedCourses, selectedTeacherId]);
+    }, [selectedCourses, selectedTeacherIds]);
 
     const middleButtonProps = useMemo(() => {
-        const isUpdate = selectedAssignments.length > 0 && selectedTeacherId !== null;
-<<<<<<< HEAD
-=======
-        const isBulkDelete = selectedAssignments.length > 1;
-        const isSingleDelete = selectedAssignments.length === 1;
-
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        const isUpdate = selectedAssignments.length > 0 && selectedTeacherIds.length > 0;
         if (isUpdate) {
-            const teacherName = teacherMap?.[selectedTeacherId]?.name || "";
+            const teacherName = selectedTeacherIds
+                .map(id => teacherMap?.[id]?.name || id)
+                .join(", ");
             return { icon: RefreshCw, color: 'bg-amber-500', label: `เปลี่ยนครูเป็น ${teacherName} (${selectedAssignments.length} รายการ)`, action: 'update' };
         }
-<<<<<<< HEAD
         return { icon: X, color: 'bg-slate-500', label: 'ล้างการเลือกทั้งหมด', action: 'reset' };
-    }, [selectedAssignments, selectedTeacherId, teacherMap]);
+    }, [selectedAssignments, selectedTeacherIds, teacherMap]);
 
     const deleteButtonProps = useMemo(() => {
         const canDelete = selectedAssignments.length > 0;
@@ -272,13 +411,6 @@ const CourseAssignmentPage: React.FC = () => {
         };
     }, [selectedAssignments]);
 
-=======
-        if (isBulkDelete) return { icon: Trash2, color: 'bg-rose-600', label: `ลบ ${selectedAssignments.length} รายการที่เลือก`, action: 'bulkDelete' };
-        if (isSingleDelete) return { icon: Trash2, color: 'bg-rose-500', label: 'ลบรายการที่เลือก', action: 'delete' };
-        return { icon: X, color: 'bg-slate-500', label: 'ล้างการเลือกทั้งหมด', action: 'reset' };
-    }, [selectedAssignments, selectedTeacherId, teacherMap]);
-
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const roomButtonProps = useMemo(() => {
         const canUpdate = selectedAssignments.length > 0 && selectedRoomId !== null;
         if (canUpdate) {
@@ -293,9 +425,32 @@ const CourseAssignmentPage: React.FC = () => {
             label: 'เลือกวิชาและสถานที่'
         };
     }, [selectedAssignments, selectedRoomId, rooms]);
-    const teacherList = useMemo(() => Object.values(teacherMap) as Teacher[], [teacherMap]);
+    const teacherList = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap) as Teacher[]), [teacherMap]);
 
-<<<<<<< HEAD
+    const dynamicLevelOptions = useMemo(() => {
+        const options = [{ value: 'ทั้งหมด', label: 'ชั้น ทั้งหมด' }];
+        
+        // Add basic levels from school settings and insert groups at correct positions
+        availableClassOptions.forEach(([key, label]) => {
+            options.push({ value: key, label });
+            if (key === 'm3') options.push({ value: 'junior_high', label: 'ม.ต้น' });
+            if (key === 'm6') options.push({ value: 'senior_high', label: 'ม.ปลาย' });
+        });
+
+        // Ensure groups are added if they were missing from the sequence (edge cases)
+        const hasJunior = classKeys.some(k => ['m1', 'm2', 'm3'].includes(k));
+        const hasSenior = classKeys.some(k => ['m4', 'm5', 'm6'].includes(k));
+
+        if (hasJunior && !options.find(o => o.value === 'junior_high')) {
+            options.push({ value: 'junior_high', label: 'ม.ต้น' });
+        }
+        if (hasSenior && !options.find(o => o.value === 'senior_high')) {
+            options.push({ value: 'senior_high', label: 'ม.ปลาย' });
+        }
+
+        return options;
+    }, [availableClassOptions, classKeys]);
+
     // Computed courses with merged assignments for the selected year/semester
     const coursesWithAssignments = useMemo(() => {
         return courses.map(course => {
@@ -315,19 +470,9 @@ const CourseAssignmentPage: React.FC = () => {
             const hours = creditsNum > 0 ? Math.round(creditsNum * 2) : (c.hoursPerWeek || 0);
             
             c.teacherAssignments?.forEach((asgn: GroupAssignment) => {
-=======
-    // --- Enterprise Feature: Teacher Load Calculation ---
-    const teacherLoadMap = useMemo(() => {
-        const load: Record<string, number> = {};
-        courses.forEach(c => {
-            const creditsNum = Number(c.credits || 0);
-            const hours = creditsNum > 0 ? Math.round(creditsNum * 2) : (c.hoursPerWeek || 0);
-            
-            c.teacherAssignments?.forEach(asgn => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                if (asgn.teacherId) {
-                    load[asgn.teacherId] = (load[asgn.teacherId] || 0) + hours;
-                }
+                getAssignmentTeacherIds(asgn).forEach(teacherId => {
+                    load[teacherId] = (load[teacherId] || 0) + hours;
+                });
             });
         });
 
@@ -337,18 +482,88 @@ const CourseAssignmentPage: React.FC = () => {
             if (course) {
                 const creditsNum = Number(course.credits || 0);
                 const hours = creditsNum > 0 ? Math.round(creditsNum * 2) : (course.hoursPerWeek || 0);
-                load[p.teacherId] = (load[p.teacherId] || 0) + hours;
+                getAssignmentTeacherIds(p).forEach(teacherId => {
+                    load[teacherId] = (load[teacherId] || 0) + hours;
+                });
             }
         });
         return load;
     }, [courses, pendingQueue]);
 
+    const roomUsageCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        semesterAssignments.forEach(a => {
+            a.teacherAssignments?.forEach((ta: any) => {
+                const r = String(ta.room || "");
+                if (r) counts[r] = (counts[r] || 0) + 1;
+            });
+        });
+        pendingQueue.forEach(p => {
+            const r = String(p.room || "");
+            if (r) counts[r] = (counts[r] || 0) + 1;
+        });
+        return counts;
+    }, [semesterAssignments, pendingQueue]);
+
     const buildings = useMemo(() => {
-        const unique = Array.from(new Set(rooms.map(r => r.building).filter(Boolean)));
-        return ["ทั้งหมด", ...unique];
+        const unique = Array.from(new Set(rooms.map(r => r.building).filter((b): b is string => !!b)));
+        return ["ทั้งหมด", ...unique.sort((a, b) => a.localeCompare(b, 'th', { numeric: true }))];
     }, [rooms]);
 
-<<<<<<< HEAD
+    const normalizeSubjectGroupValue = (value?: string) => {
+        return (value || "")
+            .replace(/^กลุ่มสาระการเรียนรู้\s*/u, "")
+            .replace(/^กลุ่มสาระ\s*/u, "")
+            .replace(/\s+/g, "")
+            .trim()
+            .toLowerCase();
+    };
+
+    const getSubjectGroupInfo = (value?: string) => {
+        const rawValue = (value || "").trim();
+        if (!rawValue) return undefined;
+
+        const normalizedValue = normalizeSubjectGroupValue(rawValue);
+        return subjectGroupsList.find(group => {
+            const candidates = [group.id, group.code, group.name].filter(Boolean);
+            return candidates.some(candidate =>
+                candidate === rawValue ||
+                normalizeSubjectGroupValue(candidate) === normalizedValue
+            );
+        });
+    };
+
+    const getSubjectGroupName = (value?: string) => {
+        return getSubjectGroupInfo(value)?.name || value || "";
+    };
+
+    const isSubjectGroupMatch = (courseGroup?: string, selectedGroup?: string) => {
+        if (!selectedGroup || selectedGroup === "กลุ่มสาระทั้งหมด") return true;
+        if (!courseGroup) return false;
+
+        const courseInfo = getSubjectGroupInfo(courseGroup);
+        const selectedInfo = getSubjectGroupInfo(selectedGroup);
+        const courseValues = [
+            courseGroup,
+            courseInfo?.id,
+            courseInfo?.code,
+            courseInfo?.name,
+        ].filter(Boolean) as string[];
+        const selectedValues = [
+            selectedGroup,
+            selectedInfo?.id,
+            selectedInfo?.code,
+            selectedInfo?.name,
+        ].filter(Boolean) as string[];
+
+        return courseValues.some(courseValue =>
+            selectedValues.some(selectedValue =>
+                courseValue === selectedValue ||
+                normalizeSubjectGroupValue(courseValue) === normalizeSubjectGroupValue(selectedValue)
+            )
+        );
+    };
+
     const calendarState = useSelector((state: RootState) => state.calendar);
 
     useEffect(() => {
@@ -361,35 +576,13 @@ const CourseAssignmentPage: React.FC = () => {
         const fetchInitialSettings = async () => {
             try {
                 // Fetch School Info
-=======
-    useEffect(() => {
-        if (!schoolId) return;
-
-        // Fetch current active calendar settings
-        const fetchCalendarSettings = async () => {
-            try {
-                // Fetch School Info for levels
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const schoolRef = doc(db, 'school-settings', schoolId);
                 const schoolSnap = await getDoc(schoolRef);
                 if (schoolSnap.exists()) {
                     setSchoolInfo(schoolSnap.data());
                 }
 
-<<<<<<< HEAD
                 // Fetch available years for dropdown
-=======
-                const calendarRef = doc(db, 'school-settings', schoolId, 'main_calendar', 'default');
-                const calendarSnap = await getDoc(calendarRef);
-                if (calendarSnap.exists()) {
-                    const data = calendarSnap.data();
-                    if (data.academicYear) {
-                        setSelectedYear(data.academicYear);
-                    }
-                }
-
-                // Also fetch all available academic years to populate the dropdown
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 const calendarColRef = collection(db, 'school-settings', schoolId, 'main_calendar');
                 const calendarColSnap = await getDocs(calendarColRef);
                 const years = calendarColSnap.docs
@@ -398,7 +591,6 @@ const CourseAssignmentPage: React.FC = () => {
                     .sort((a, b) => b.localeCompare(a));
                 
                 setAvailableYears(years);
-<<<<<<< HEAD
                 
                 // Initialize selection from Redux if available
                 if (calendarState.status === 'succeeded' && !selectedYear) {
@@ -412,14 +604,6 @@ const CourseAssignmentPage: React.FC = () => {
         };
 
         fetchInitialSettings();
-=======
-            } catch (error) {
-                console.error("Error fetching calendar settings:", error);
-            }
-        };
-
-        fetchCalendarSettings();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         const unsubCourses = onSnapshot(query(collection(db, 'school-settings', schoolId, 'courses'), orderBy('code', 'asc')), (snap) => {
             setCourses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course)).filter(c => c.isActive !== false));
@@ -432,7 +616,7 @@ const CourseAssignmentPage: React.FC = () => {
 
         const unsubGroups = onSnapshot(collection(db, 'school-settings', schoolId, 'subject_groups'), (snap) => {
             const data = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as { name: string, code: string }) }));
-            data.sort((a, b) => parseInt(a.code || '999') - parseInt(b.code || '999'));
+            data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
             setSubjectGroupsList(data);
         });
 
@@ -443,7 +627,6 @@ const CourseAssignmentPage: React.FC = () => {
         };
     }, [schoolId]);
 
-<<<<<<< HEAD
     // Real-time listener for semester-specific assignments
     useEffect(() => {
         if (!schoolId || !selectedYear || !selectedSemester) return;
@@ -461,35 +644,73 @@ const CourseAssignmentPage: React.FC = () => {
         return () => unsub();
     }, [schoolId, selectedYear, selectedSemester]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     // Handlers
     const handleAddToQueue = async () => {
-        if (!selectedCourses.length || !selectedTeacherId || !schoolId) return;
+        if (!selectedCourses.length || selectedTeacherIds.length === 0 || !schoolId) return;
 
-        const newItems = selectedCourses.map(course => ({
-            courseId: course.id,
-            teacherId: selectedTeacherId,
-            roomIds: selectedRoomId ? [selectedRoomId] : [],
-            groupNumber: activeGroupNumber,
-            title: course.title || "",
-            code: course.code || "",
-            classId: course.classId
-        }));
+        if (!activeGroupNumbers.length) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'กรุณาเลือกกลุ่ม',
+                text: 'กรุณาเลือกอย่างน้อย 1 กลุ่มเพื่อมอบหมายงาน',
+                confirmButtonColor: '#3b82f6'
+            });
+            return;
+        }
+
+        const newItems: any[] = [];
+        const baseRoomNum = parseInt(activeRoomNumber);
+        const minGroupNum = activeGroupNumbers.length > 0 ? Math.min(...activeGroupNumbers) : 0;
+
+        selectedCourses.forEach(course => {
+            activeGroupNumbers.forEach(groupNum => {
+                let currentRoom = activeRoomNumber;
+                let currentRoomIds = selectedRoomId ? [selectedRoomId] : [];
+
+                // If multiple groups are selected and the room is numeric, auto-increment the room
+                if (!isNaN(baseRoomNum) && activeGroupNumbers.length > 1) {
+                    const offset = groupNum - minGroupNum;
+                    currentRoom = String(baseRoomNum + offset);
+                    
+                    // Try to find matching room entity for the incremented room
+                    const matchedRoom = rooms.find(r => r.roomName === currentRoom || r.roomCode === currentRoom);
+                    if (matchedRoom) {
+                        currentRoomIds = [matchedRoom.id];
+                    } else if (offset !== 0) {
+                        // If it's an incremented room and we don't have an entity, clear the IDs
+                        currentRoomIds = [];
+                    }
+                }
+
+                newItems.push({
+                    courseId: course.id,
+                    teacherId: selectedTeacherIds[0],
+                    teacherIds: selectedTeacherIds,
+                    roomIds: currentRoomIds,
+                    groupNumber: groupNum,
+                    room: currentRoom,
+                    title: course.title || "",
+                    code: course.code || "",
+                    classId: course.classId
+                });
+            });
+        });
 
         setPendingQueue(prev => [...prev, ...newItems]);
         setSelectedCourses([]);
-        setSelectedTeacherId(null);
+        setSelectedTeacherIds([]);
         setSelectedRoomId(null);
         
         Swal.fire({
             icon: 'info',
-            title: 'เตรียมการมอบหมายสำเร็จ',
-            text: `วิชาถูกนำไปพักไว้ที่ "รายวิชาที่มอบหมาย" เพื่อรอการระบุสถานที่หรือบันทึกจริง`,
+            title: 'บันทึกร่างการมอบหมายแล้ว',
+            text: `ระบบจะเก็บข้อมูลไว้จนกว่าคุณจะกดยืนยัน (${newItems.length} รายการ)`,
             toast: true,
             position: 'top-end',
             timer: 3000,
-            showConfirmButton: false
+            showConfirmButton: false,
+            background: '#161a27',
+            color: '#fff'
         });
     };
 
@@ -521,14 +742,9 @@ const CourseAssignmentPage: React.FC = () => {
             });
 
             for (const [courseId, queueItems] of Object.entries(byCourse)) {
-<<<<<<< HEAD
                 const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                 const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
                 const courseData = coursesWithAssignments.find(c => c.id === courseId);
-=======
-                const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
-                const courseData = courses.find(c => c.id === courseId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 if (!courseData) continue;
 
                 const currentAssignments = [...(courseData.teacherAssignments || [])];
@@ -537,7 +753,9 @@ const CourseAssignmentPage: React.FC = () => {
                     const existingIdx = currentAssignments.findIndex(a => a.groupNumber === item.groupNumber);
                     const newAssign: GroupAssignment = {
                         groupNumber: item.groupNumber,
+                        room: (item as any).room || "1",
                         teacherId: item.teacherId,
+                        teacherIds: getAssignmentTeacherIds(item),
                         roomIds: item.roomIds,
                         classLevels: item.classId ? (Array.isArray(item.classId) ? item.classId : [item.classId]) : []
                     };
@@ -549,16 +767,12 @@ const CourseAssignmentPage: React.FC = () => {
                     }
                 });
 
-<<<<<<< HEAD
                 await setDoc(assignmentRef, { 
                     courseId,
                     academicYear: selectedYear,
                     semester: selectedSemester,
                     teacherAssignments: currentAssignments 
                 }, { merge: true });
-=======
-                await updateDoc(courseRef, { teacherAssignments: currentAssignments });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             }
 
             Swal.fire({ icon: 'success', title: 'บันทึกข้อมูลเรียบร้อย', text: 'ข้อมูลถูกเขียนลงฐานข้อมูลและพร้อมใช้งานแล้ว', timer: 2000, showConfirmButton: false });
@@ -574,16 +788,17 @@ const CourseAssignmentPage: React.FC = () => {
 
     const handleResetSelections = () => {
         setSelectedCourses([]);
-        setSelectedTeacherId(null);
+        setSelectedTeacherIds([]);
         setSelectedRoomId(null);
-        setActiveGroupNumber(1);
+        setActiveGroupNumbers([1]);
+        setActiveRoomNumber("1");
         setSelectedAssignments([]);
     };
 
     const handleUpdateTeacher = async () => {
-        if (!selectedAssignments.length || !selectedTeacherId || !schoolId) return;
+        if (!selectedAssignments.length || selectedTeacherIds.length === 0 || !schoolId) return;
         
-        const teacherName = teacherMap?.[selectedTeacherId]?.name || "ไม่ทราบชื่อ";
+        const teacherName = selectedTeacherIds.map(id => teacherMap?.[id]?.name || id).join(", ");
         const hasPending = selectedAssignments.some(a => a.isPending);
         const hasSaved = selectedAssignments.some(a => !a.isPending);
 
@@ -604,7 +819,7 @@ const CourseAssignmentPage: React.FC = () => {
             if (hasPending) {
                 setPendingQueue(prev => prev.map(item => {
                     const isTarget = selectedAssignments.some(a => a.isPending && a.courseId === item.courseId && a.groupNumber === item.groupNumber);
-                    return isTarget ? { ...item, teacherId: selectedTeacherId } : item;
+                    return isTarget ? { ...item, teacherId: selectedTeacherIds[0], teacherIds: selectedTeacherIds } : item;
                 }));
             }
 
@@ -621,37 +836,27 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
-<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
-=======
-                    const course = courses.find(c => c.id === courseId);
-                    if (!course) continue;
-                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(num => {
                         const idx = assignments.findIndex(a => a.groupNumber === num);
-                        if (idx !== -1) assignments[idx] = { ...assignments[idx], teacherId: selectedTeacherId };
+                        if (idx !== -1) assignments[idx] = { ...assignments[idx], teacherId: selectedTeacherIds[0], teacherIds: selectedTeacherIds };
                     });
-<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
-=======
-                    batch.update(courseRef, { teacherAssignments: assignments });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
 
             Swal.fire({ icon: 'success', title: 'อัปเดตครูสำเร็จ', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
-            setSelectedTeacherId(null);
+            setSelectedTeacherIds([]);
             setSelectedAssignments([]);
         } catch (error) {
             console.error(error);
@@ -663,21 +868,8 @@ const CourseAssignmentPage: React.FC = () => {
         if (!selectedAssignments.length || !selectedRoomId || !schoolId) return;
         
         const room = rooms.find(r => r.id === selectedRoomId);
-        const roomName = room ? `${room.roomCode} ${room.roomName}` : "ไม่ทราบชื่อ";
         const hasPending = selectedAssignments.some(a => a.isPending);
         const hasSaved = selectedAssignments.some(a => !a.isPending);
-
-        const confirmResult = await Swal.fire({
-            title: 'ยืนยันการระบุสถานที่?',
-            text: `เปลี่ยนสถานที่สอนเป็น "${roomName}" สำหรับ ${selectedAssignments.length} รายการ?`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#10b981',
-            cancelButtonText: 'ยกเลิก',
-            confirmButtonText: 'ตกลง, ระบุสถานที่'
-        });
-
-        if (!confirmResult.isConfirmed) return;
 
         try {
             // 1. Update Pending Queue (Local)
@@ -700,31 +892,21 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
-<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
-=======
-                    const course = courses.find(c => c.id === courseId);
-                    if (!course) continue;
-                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(num => {
                         const idx = assignments.findIndex(a => a.groupNumber === num);
                         if (idx !== -1) assignments[idx] = { ...assignments[idx], roomIds: [selectedRoomId] };
                     });
-<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
-=======
-                    batch.update(courseRef, { teacherAssignments: assignments });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
@@ -735,6 +917,57 @@ const CourseAssignmentPage: React.FC = () => {
         } catch (error) {
             console.error(error);
             Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถระบุสถานที่ได้' });
+        }
+    };
+
+    const handleUpdateRoomNumber = async (newRoom: string) => {
+        setActiveRoomNumber(newRoom);
+        if (!selectedAssignments.length || !schoolId) return;
+
+        const hasPending = selectedAssignments.some(a => a.isPending);
+        const hasSaved = selectedAssignments.some(a => !a.isPending);
+
+        try {
+            if (hasPending) {
+                setPendingQueue(prev => prev.map(item => {
+                    const isTarget = selectedAssignments.some(a => a.isPending && a.courseId === item.courseId && a.groupNumber === item.groupNumber);
+                    return isTarget ? { ...item, room: newRoom } : item;
+                }));
+            }
+
+            if (hasSaved) {
+                const { writeBatch } = await import("firebase/firestore");
+                const batch = writeBatch(db);
+                const savedTargets = selectedAssignments.filter(a => !a.isPending);
+                
+                const byCourse = savedTargets.reduce((acc, curr) => {
+                    acc[curr.courseId] = [...(acc[curr.courseId] || []), curr.groupNumber];
+                    return acc;
+                }, {} as Record<string, number[]>);
+
+                for (const [courseId, groups] of Object.entries(byCourse)) {
+                    const course = coursesWithAssignments.find(c => c.id === courseId);
+                    if (!course) continue;
+                    const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
+                    const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
+                    const assignments = [...(course.teacherAssignments || [])];
+                    groups.forEach(num => {
+                        const idx = assignments.findIndex(a => a.groupNumber === num);
+                        if (idx !== -1) assignments[idx] = { ...assignments[idx], room: newRoom };
+                    });
+                    batch.set(assignmentRef, { 
+                        courseId,
+                        academicYear: selectedYear,
+                        semester: selectedSemester,
+                        teacherAssignments: assignments 
+                    }, { merge: true });
+                }
+                await batch.commit();
+            }
+            Swal.fire({ icon: 'success', title: 'เปลี่ยนห้องเรียบร้อย', toast: true, position: 'top-end', timer: 1000, showConfirmButton: false });
+        } catch (error) {
+            console.error(error);
+            Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถเปลี่ยนห้องได้' });
         }
     };
 
@@ -778,31 +1011,21 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
-<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                     const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
-=======
-                    const course = courses.find(c => c.id === courseId);
-                    if (!course) continue;
-                    const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     const assignments = [...(course.teacherAssignments || [])];
                     groups.forEach(groupNum => {
                         const idx = assignments.findIndex(a => a.groupNumber === groupNum);
                         if (idx !== -1) assignments[idx] = { ...assignments[idx], roomIds: [] };
                     });
-<<<<<<< HEAD
                     batch.set(assignmentRef, { 
                         courseId,
                         academicYear: selectedYear,
                         semester: selectedSemester,
                         teacherAssignments: assignments 
                     }, { merge: true });
-=======
-                    batch.update(courseRef, { teacherAssignments: assignments });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
                 await batch.commit();
             }
@@ -848,7 +1071,6 @@ const CourseAssignmentPage: React.FC = () => {
                 }, {} as Record<string, number[]>);
 
                 for (const [courseId, groups] of Object.entries(byCourse)) {
-<<<<<<< HEAD
                     const course = coursesWithAssignments.find(c => c.id === courseId);
                     if (!course) continue;
                     const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
@@ -860,12 +1082,6 @@ const CourseAssignmentPage: React.FC = () => {
                         semester: selectedSemester,
                         teacherAssignments: updated 
                     }, { merge: true });
-=======
-                    const course = courses.find(c => c.id === courseId);
-                    if (!course) continue;
-                    const updated = (course.teacherAssignments || []).filter(a => !groups.includes(a.groupNumber));
-                    await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { teacherAssignments: updated });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 }
             }
             
@@ -891,7 +1107,6 @@ const CourseAssignmentPage: React.FC = () => {
 
         if (result.isConfirmed && schoolId) {
             try {
-<<<<<<< HEAD
                 const course = coursesWithAssignments.find(c => c.id === courseId);
                 if (!course) return;
                 const updated = (course.teacherAssignments || []).filter((a: GroupAssignment) => a.groupNumber !== groupNumber);
@@ -902,12 +1117,6 @@ const CourseAssignmentPage: React.FC = () => {
                     semester: selectedSemester,
                     teacherAssignments: updated
                 }, { merge: true });
-=======
-                const course = courses.find(c => c.id === courseId);
-                if (!course) return;
-                const updated = (course.teacherAssignments || []).filter(a => a.groupNumber !== groupNumber);
-                await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { teacherAssignments: updated });
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
             } catch (error) {
                 console.error(error);
@@ -915,16 +1124,11 @@ const CourseAssignmentPage: React.FC = () => {
         }
     };
 
-<<<<<<< HEAD
     // Helper for level matching - handles both IDs (m1) and Thai labels (ม.1)
-=======
-    // Helper for level matching
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const matchesLevel = (courseClassId: string | undefined) => {
         if (selectedLevel === "ทั้งหมด") return true;
         if (!courseClassId) return false;
         
-<<<<<<< HEAD
         const cid = courseClassId.toString().toLowerCase().trim();
         const sid = selectedLevel.toLowerCase().trim();
 
@@ -950,19 +1154,6 @@ const CourseAssignmentPage: React.FC = () => {
         // Group logic for "ม.ปลาย"
         if (sid === "senior_high" || sid === "ม.ปลาย") {
             return ["m4", "m5", "m6", "senior_high", "ม.ปลาย", "ม.4", "ม.5", "ม.6"].includes(cid);
-=======
-        // Exact match (either English ID or Thai string from DB)
-        if (courseClassId === selectedLevel) return true;
-        
-        // Group logic for "ม.ต้น"
-        if (selectedLevel === "junior_high" || selectedLevel === "ม.ต้น") {
-            return ["m1", "m2", "m3", "junior_high", "ม.ต้น"].includes(courseClassId);
-        }
-        
-        // Group logic for "ม.ปลาย"
-        if (selectedLevel === "senior_high" || selectedLevel === "ม.ปลาย") {
-            return ["m4", "m5", "m6", "senior_high", "ม.ปลาย"].includes(courseClassId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
         
         return false;
@@ -975,7 +1166,7 @@ const CourseAssignmentPage: React.FC = () => {
 
     const subjectGroups = useMemo(() => {
         const names = subjectGroupsList.map(g => g.name);
-        return ["กลุ่มวิชา ทั้งหมด", ...names];
+        return ["กลุ่มสาระทั้งหมด", ...names];
     }, [subjectGroupsList]);
 
     if (isLoading) {
@@ -990,29 +1181,17 @@ const CourseAssignmentPage: React.FC = () => {
     // --- Senior Logic: Filtering System ---
     
     // 1. Filter for Left Panel (Source Courses)
-<<<<<<< HEAD
     const filteredCourses = coursesWithAssignments.filter(c => {
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
-        const matchesGroup = subjectGroupFilter === "กลุ่มวิชา ทั้งหมด" || (c.subjectGroup && (c.subjectGroup === subjectGroupFilter || c.subjectGroup.includes(subjectGroupFilter.replace('กลุ่มสาระการเรียนรู้', '').trim()) || subjectGroupFilter.includes(c.subjectGroup.replace('กลุ่มสาระการเรียนรู้', '').trim())));
-=======
-    const filteredCourses = courses.filter(c => {
-        // Core Logic: Checks if matches all active filters
-        const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
-        const matchesGroup = subjectGroupFilter === "กลุ่มวิชา ทั้งหมด" || (c.subjectGroup === subjectGroupFilter);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+        const matchesGroup = isSubjectGroupMatch(c.subjectGroup, subjectGroupFilter);
         const matchesType = categoryFilter === "ประเภท" || categoryFilter === "ทั้งหมด" || (c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase());
         const matchesLevelFilter = matchesLevel(c.classId);
         
         let matchesSemester = true;
         if (selectedSemester !== "0") {
-<<<<<<< HEAD
             const courseSem = c.semester?.toString().trim() || "0";
             matchesSemester = courseSem === selectedSemester || courseSem === "0" || courseSem === "";
-=======
-            const courseSem = c.semester?.toString().trim() || "";
-            matchesSemester = courseSem === selectedSemester || courseSem === "0";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         }
 
         if (!(matchesSearch && matchesGroup && matchesType && matchesLevelFilter && matchesSemester)) return false;
@@ -1028,28 +1207,40 @@ const CourseAssignmentPage: React.FC = () => {
         // Even if not "showOnlyAssigned", we show the course so user can add more groups
         return true; 
     }).sort((a, b) => {
-        const aGroup = subjectGroupsList.find(g => g.name === (a as any).subjectGroup);
-        const bGroup = subjectGroupsList.find(g => g.name === (b as any).subjectGroup);
-        if (aGroup?.code !== bGroup?.code) return (parseInt(aGroup?.code || '999')) - (parseInt(bGroup?.code || '999'));
+        const getTypeWeight = (type?: string) => {
+            const t = type?.trim() || "";
+            if (t.includes("พื้นฐาน")) return 1;
+            if (t.includes("เพิ่มเติม")) return 2;
+            if (t.includes("ชุมนุม")) return 3;
+            if (t.includes("กิจกรรม")) return 4;
+            return 5;
+        };
+        
+        const weightA = getTypeWeight(a.type);
+        const weightB = getTypeWeight(b.type);
+        
+        if (weightA !== weightB) return weightA - weightB;
+
+        const aGroup = getSubjectGroupInfo((a as any).subjectGroup);
+        const bGroup = getSubjectGroupInfo((b as any).subjectGroup);
+        if (aGroup?.code !== bGroup?.code) {
+            return (aGroup?.code || '999').localeCompare(bGroup?.code || '999', undefined, { numeric: true, sensitivity: 'base' });
+        }
         return (a.code || "").localeCompare(b.code || "");
     });
 
     // 2. Filter for Right Panel (Assigned Courses View) - "FOCUS MODE"
-<<<<<<< HEAD
     const assignedCourses = coursesWithAssignments.filter(c => {
-=======
-    const assignedCourses = courses.filter(c => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         if (!matchesLevel(c.classId)) return false;
 
         // Condition 1: If a teacher is selected, show ALL courses assigned to that teacher
-        if (selectedTeacherId) {
-<<<<<<< HEAD
-            const matchesDB = c.teacherAssignments?.some((a: GroupAssignment) => a.teacherId === selectedTeacherId);
-=======
-            const matchesDB = c.teacherAssignments?.some(a => a.teacherId === selectedTeacherId);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-            const matchesQueue = pendingQueue.some(p => p.courseId === c.id && p.teacherId === selectedTeacherId);
+        if (selectedTeacherIds.length > 0) {
+            const matchesDB = c.teacherAssignments?.some((a: GroupAssignment) =>
+                getAssignmentTeacherIds(a).some(id => selectedTeacherIds.includes(id))
+            );
+            const matchesQueue = pendingQueue.some(p =>
+                p.courseId === c.id && getAssignmentTeacherIds(p).some(id => selectedTeacherIds.includes(id))
+            );
             if (matchesDB || matchesQueue) return true;
         }
 
@@ -1059,38 +1250,68 @@ const CourseAssignmentPage: React.FC = () => {
         // Condition 3: If an assignment is already selected for editing
         if (selectedAssignments.some(a => a.courseId === c.id)) return true;
 
-<<<<<<< HEAD
         // Condition 4: If specifically showOnlyAssigned is on, show those with DB assignments (ONLY if a teacher is selected to avoid cluttering the view)
-        if (showOnlyAssigned && selectedTeacherId && c.teacherAssignments && c.teacherAssignments.length > 0) return true;
+        if (showOnlyAssigned && selectedTeacherIds.length > 0 && c.teacherAssignments && c.teacherAssignments.length > 0) return true;
 
         return false;
     }).sort((a, b) => {
-        const aGroup = subjectGroupsList.find(g => g.name === (a as any).subjectGroup);
-        const bGroup = subjectGroupsList.find(g => g.name === (b as any).subjectGroup);
-        if (aGroup?.code !== bGroup?.code) return (parseInt(aGroup?.code || '999')) - (parseInt(bGroup?.code || '999'));
+        const getTypeWeight = (type?: string) => {
+            const t = type?.trim() || "";
+            if (t.includes("พื้นฐาน")) return 1;
+            if (t.includes("เพิ่มเติม")) return 2;
+            if (t.includes("ชุมนุม")) return 3;
+            if (t.includes("กิจกรรม")) return 4;
+            return 5;
+        };
+        
+        const weightA = getTypeWeight(a.type);
+        const weightB = getTypeWeight(b.type);
+        
+        if (weightA !== weightB) return weightA - weightB;
+
+        const aGroup = getSubjectGroupInfo((a as any).subjectGroup);
+        const bGroup = getSubjectGroupInfo((b as any).subjectGroup);
+        if (aGroup?.code !== bGroup?.code) {
+            return (aGroup?.code || '999').localeCompare(bGroup?.code || '999', undefined, { numeric: true, sensitivity: 'base' });
+        }
         return (a.code || "").localeCompare(b.code || "");
     });
-=======
-        // Condition 4: If specifically showOnlyAssigned is on, show those with DB assignments
-        if (showOnlyAssigned && c.teacherAssignments && c.teacherAssignments.length > 0) return true;
-
-        return false;
-    }).sort((a, b) => (a.code || "").localeCompare(b.code || ""));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Paginated data
     const courseTotalPages = Math.ceil(filteredCourses.length / ITEMS_PER_PAGE);
     const paginatedCourses = filteredCourses.slice((coursePage - 1) * ITEMS_PER_PAGE, coursePage * ITEMS_PER_PAGE);
 
     const filteredTeachers = teacherList.filter(t => {
-        const matchesSearch = t.name?.toLowerCase().includes(teacherSearch.toLowerCase());
-        const matchesGroup = teacherGroupFilter === "ครู ทั้งหมด" || (t as any).subjectGroup === teacherGroupFilter || (t as any).learningArea === teacherGroupFilter;
+        const search = teacherSearch.toLowerCase();
+        const matchesSearch = (t.name || '').toLowerCase().includes(search) || String(t.teacherId || '').toLowerCase().includes(search);
+        const matchesGroup = teacherGroupFilter === "ครูกลุ่มสาระ" || (t as any).subjectGroup === teacherGroupFilter || (t as any).learningArea === teacherGroupFilter;
         return matchesSearch && matchesGroup;
+    }).sort((a, b) => {
+        return compareTeachersByGroupAndId(a, b);
     });
     const teacherTotalPages = Math.ceil(filteredTeachers.length / ITEMS_PER_PAGE);
     const paginatedTeachers = filteredTeachers.slice((teacherPage - 1) * ITEMS_PER_PAGE, teacherPage * ITEMS_PER_PAGE);
 
-    const filteredRooms = rooms.filter(r => (buildingFilter === "ทั้งหมด" || r.building === buildingFilter) && ((r.roomName?.toLowerCase() || "").includes(roomSearch.toLowerCase()) || (r.roomCode?.toLowerCase() || "").includes(roomSearch.toLowerCase())));
+    const filteredRooms = rooms.filter(r => (buildingFilter === "ทั้งหมด" || r.building === buildingFilter) && ((r.roomName?.toLowerCase() || "").includes(roomSearch.toLowerCase()) || (r.roomCode?.toLowerCase() || "").includes(roomSearch.toLowerCase())))
+        .sort((a, b) => {
+            // Sort by Building
+            const buildA = a.building || "";
+            const buildB = b.building || "";
+            if (buildA !== buildB) return buildA.localeCompare(buildB, 'th', { numeric: true });
+
+            // Sort by Floor
+            const floorA = a.floor || "";
+            const floorB = b.floor || "";
+            if (floorA !== floorB) {
+                const numA = parseInt(floorA);
+                const numB = parseInt(floorB);
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                return floorA.localeCompare(floorB, 'th', { numeric: true });
+            }
+
+            // Sort by Room Code (Numeric)
+            return (a.roomCode || "").localeCompare(b.roomCode || "", 'th', { numeric: true });
+        });
     const roomTotalPages = Math.ceil(filteredRooms.length / ITEMS_PER_PAGE);
     const paginatedRooms = filteredRooms.slice((roomPage - 1) * ITEMS_PER_PAGE, roomPage * ITEMS_PER_PAGE);
 
@@ -1102,12 +1323,11 @@ const CourseAssignmentPage: React.FC = () => {
             <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e14] text-slate-800 dark:text-slate-300 font-sans flex flex-col overflow-hidden h-screen select-none transition-colors duration-300">
                 
                 {/* --- Header --- */}
-<<<<<<< HEAD
                 <header className="px-6 py-3 bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0 shadow-sm z-30 transition-colors duration-300">
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-6 pl-12">
                         <div className="flex items-center gap-4">
                             <React.Suspense fallback={<div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-white/5 animate-pulse" />}>
-                                <BackButton to="/academic/hub/registration" />
+                                <BackButton to="/academic/hub/scheduling" />
                             </React.Suspense>
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-600/20">
@@ -1117,138 +1337,57 @@ const CourseAssignmentPage: React.FC = () => {
                                     <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">การมอบหมายงานสอน</h1>
                                     <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-1 uppercase tracking-wider">กำหนดวิชาสอน ครูผู้สอน และสถานที่เรียนรายภาคเรียน</p>
                                 </div>
-=======
-                <header className="px-6 py-3 bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0 shadow-sm">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-indigo-600 rounded-xl shadow-lg">
-                                <BookOpen size={20} className="text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">การมอบหมายงานสอน</h1>
-                                <p className="text-[9px] text-slate-500 font-bold mt-1 uppercase tracking-wider">กำหนดวิชาสอน ครูผู้สอน และสถานที่เรียนรายภาคเรียน</p>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-<<<<<<< HEAD
-                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
-=======
-                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/5">
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                            <div className="flex items-center gap-2 border-r border-slate-200 dark:border-white/10 pr-3">
-                                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">ปีการศึกษา</span>
+                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 px-2 py-1 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
+                            <div className="flex items-center gap-1.5 border-r border-slate-200 dark:border-white/10 pr-2 ml-1">
+                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">ปีการศึกษา</span>
                                 <select 
                                     value={selectedYear} 
                                     onChange={(e) => setSelectedYear(e.target.value)}
-                                    className="bg-transparent border-none text-xs font-black text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-4"
+                                    className="bg-transparent border-none text-[11px] font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-3"
                                 >
                                     {availableYears.length > 0 ? (
                                         availableYears.map(year => (
-<<<<<<< HEAD
                                             <option key={year} value={year} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">{year}</option>
                                         ))
                                     ) : (
                                         <option value={selectedYear} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">{selectedYear || '—'}</option>
-=======
-                                            <option key={year} value={year} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{year}</option>
-                                        ))
-                                    ) : (
-                                        <option value={selectedYear} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{selectedYear || '—'}</option>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     )}
                                 </select>
                             </div>
-                            <div className="flex items-center gap-2 px-3">
-                                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">ภาคเรียน</span>
+                            <div className="flex items-center gap-1.5 px-2">
+                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">ภาคเรียน</span>
                                 <select 
                                     value={selectedSemester} 
                                     onChange={(e) => setSelectedSemester(e.target.value)}
-                                    className="bg-transparent border-none text-xs font-black text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-4"
+                                    className="bg-transparent border-none text-[11px] font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-3"
                                 >
-<<<<<<< HEAD
                                     <option value="1" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ภาคเรียนที่ 1</option>
                                     <option value="2" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ภาคเรียนที่ 2</option>
                                     <option value="0" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white font-bold">ทั้งปีการศึกษา (0)</option>
-=======
-                                    <option value="1" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ภาคเรียนที่ 1</option>
-                                    <option value="2" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ภาคเรียนที่ 2</option>
-                                    <option value="0" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ทั้งปีการศึกษา (0)</option>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 </select>
                             </div>
-                            <div className="flex items-center gap-2 px-3 border-l border-slate-200 dark:border-white/10">
-                                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">ระดับชั้น</span>
-                                <select 
-                                    value={selectedLevel} 
-                                    onChange={(e) => setSelectedLevel(e.target.value)}
-                                    className="bg-transparent border-none text-xs font-black text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 p-0 pr-4"
-                                >
-<<<<<<< HEAD
-                                    <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27] font-bold">ทั้งหมด</option>
-                                    <option value="m1" className="bg-white dark:bg-[#161a27] font-bold">ม.1</option>
-                                    <option value="m2" className="bg-white dark:bg-[#161a27] font-bold">ม.2</option>
-                                    <option value="m3" className="bg-white dark:bg-[#161a27] font-bold">ม.3</option>
-                                    <option value="junior_high" className="bg-white dark:bg-[#161a27] font-bold">ม.ต้น</option>
-                                    <option value="m4" className="bg-white dark:bg-[#161a27] font-bold">ม.4</option>
-                                    <option value="m5" className="bg-white dark:bg-[#161a27] font-bold">ม.5</option>
-                                    <option value="m6" className="bg-white dark:bg-[#161a27] font-bold">ม.6</option>
-                                    <option value="senior_high" className="bg-white dark:bg-[#161a27] font-bold">ม.ปลาย</option>
-=======
-                                    <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27]">ทั้งหมด</option>
-                                    {(() => {
-                                        const exp = schoolInfo?.opportunityExpansionLevel || "";
-                                        
-                                        // Standard levels in logical order
-                                        const allPossible = [
-                                            {id: 'k1', name: 'อนุบาล 1'}, {id: 'k2', name: 'อนุบาล 2'}, {id: 'k3', name: 'อนุบาล 3'},
-                                            {id: 'p1', name: 'ป.1'}, {id: 'p2', name: 'ป.2'}, {id: 'p3', name: 'ป.3'},
-                                            {id: 'p4', name: 'ป.4'}, {id: 'p5', name: 'ป.5'}, {id: 'p6', name: 'ป.6'},
-                                            {id: 'm1', name: 'ม.1'}, {id: 'm2', name: 'ม.2'}, {id: 'm3', name: 'ม.3'},
-                                            {id: 'junior_high', name: 'ม.ต้น'}, 
-                                            {id: 'm4', name: 'ม.4'}, {id: 'm5', name: 'ม.5'}, {id: 'm6', name: 'ม.6'},
-                                            {id: 'senior_high', name: 'ม.ปลาย'}
-                                        ];
-
-                                        if (!exp) return allPossible.map(l => <option key={l.id} value={l.id} className="bg-white dark:bg-[#161a27]">{l.name}</option>);
-
-                                        // Parsing of "อ.1-ม.6"
-                                        const start = exp.split('-')[0]?.trim();
-                                        const end = exp.split('-')[1]?.trim();
-
-                                        let startIndex = allPossible.findIndex(l => l.name === start);
-                                        let endIndex = allPossible.findIndex(l => l.name === end);
-
-                                        if (startIndex === -1) startIndex = 0;
-                                        if (endIndex === -1) endIndex = allPossible.length - 1;
-
-                                        // Extra logic: If the range ends at m3, include the 'ม.ต้น' group label
-                                        if (endIndex < allPossible.length - 1 && allPossible[endIndex].id === 'm3') {
-                                            endIndex += 1;
-                                        }
-                                        // If the range ends at m6, include the 'ม.ปลาย' group label
-                                        if (endIndex < allPossible.length - 1 && allPossible[endIndex].id === 'm6') {
-                                            endIndex += 1;
-                                        }
-
-                                        const filtered = allPossible.slice(startIndex, endIndex + 1);
-                                        
-                                        return filtered.map(l => <option key={l.id} value={l.id} className="bg-white dark:bg-[#161a27]">{l.name}</option>);
-                                    })()}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                </select>
+                            <div className="flex items-center gap-1.5 px-2 border-l border-slate-200 dark:border-white/10">
+                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">ระดับชั้น</span>
+                                <div className="flex-1">
+                                    <Select
+                                        options={dynamicLevelOptions}
+                                        value={dynamicLevelOptions.find(opt => opt.value === selectedLevel) || dynamicLevelOptions[0]}
+                                        onChange={(opt: any) => setSelectedLevel(opt.value)}
+                                        styles={headerSelectStyles}
+                                        isSearchable={false}
+                                    />
+                                </div>
                             </div>
                         </div>
                         <button 
                             onClick={handleCommitAll}
                             disabled={!pendingQueue.length || isSaving}
-<<<<<<< HEAD
                             className={`px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 dark:disabled:bg-white/5 disabled:text-slate-500 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 border border-white/10 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
-=======
-                            className={`px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-400 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                         >
                             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                             {pendingQueue.length > 0 ? `บันทึกข้อมูลลงระบบ (${pendingQueue.length})` : 'ไม่มีรายการรอยืนยัน'}
@@ -1257,175 +1396,126 @@ const CourseAssignmentPage: React.FC = () => {
                 </header>
 
                 {/* --- Main Content --- */}
-                <main className="flex-1 p-3 flex gap-2 overflow-hidden h-full items-stretch">
+                <main className="flex-1 px-8 py-3 flex gap-2 overflow-hidden h-full items-stretch">
                     
                     {/* --- BLOCK 1: Courses & Teachers --- */}
-                    <div className="flex-[1.9] bg-white dark:bg-[#161a27] rounded-[1.5rem] border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl relative transition-all duration-300">
+                    <div className="flex-[2] min-w-0 bg-white dark:bg-[#161a27] rounded-xl border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl relative transition-all duration-300">
                         <div className="flex-1 flex overflow-hidden h-full">
                             
-                            <div className="flex-[1.1] flex flex-col border-r border-slate-200 dark:border-white/5">
-                                <PanelHeader title="รายวิชา" icon={BookOpen} count={filteredCourses.length} compact />
-<<<<<<< HEAD
-                                    <div className="space-y-2 p-2">
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div className="relative group">
-                                                <select 
-                                                    value={subjectGroupFilter} 
-                                                    onChange={e=>setSubjectGroupFilter(e.target.value)} 
-                                                    className="w-full pl-3 pr-10 py-2 bg-white dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-white appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-sm group-hover:border-indigo-500/30"
-                                                >
-                                                    {subjectGroups.map(g => (
-                                                        <option key={g} value={g} className="bg-white dark:bg-[#161a27]">
-                                                            {g === "กลุ่มวิชา ทั้งหมด" ? "ทุกกลุ่มสาระ" : g.replace('กลุ่มวิชา ', '')}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                                    <ChevronDown size={14} />
-                                                </div>
+                            <div className="flex-[1.2] min-w-0 flex flex-col border-r border-slate-200 dark:border-white/5">
+                                <PanelHeader 
+                                    title="รายวิชา" 
+                                    icon={BookOpen} 
+                                    count={filteredCourses.length} 
+                                    compact 
+                                    extra={
+                                        <div 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowOnlyAssigned(!showOnlyAssigned);
+                                            }}
+                                            className="flex items-center gap-1.5 ml-3 cursor-pointer select-none group"
+                                        >
+                                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${showOnlyAssigned ? 'bg-indigo-500 border-indigo-500 shadow-sm' : 'bg-white dark:bg-white/5 border-slate-300 dark:border-slate-600 shadow-inner'}`}>
+                                                <Check size={10} className={`text-white transition-opacity ${showOnlyAssigned ? 'opacity-100' : 'opacity-0'}`} strokeWidth={4} />
                                             </div>
-
-                                            <div className="relative group">
-                                                <select 
-                                                    value={categoryFilter} 
-                                                    onChange={e=>setCategoryFilter(e.target.value)} 
-                                                    className="w-full pl-3 pr-10 py-2 bg-white dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-white appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-sm group-hover:border-indigo-500/30"
-                                                >
-                                                    <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27]">ทุกประเภทวิชา</option>
-                                                    <option value="พื้นฐาน" className="bg-white dark:bg-[#161a27]">พื้นฐาน</option>
-                                                    <option value="เพิ่มเติม" className="bg-white dark:bg-[#161a27]">เพิ่มเติม</option>
-                                                </select>
-                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                                    <ChevronDown size={14} />
-                                                </div>
-                                            </div>
+                                            <span className={`text-[9px] font-bold transition-colors ${showOnlyAssigned ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'}`}>
+                                                วิชามอบหมายแล้ว
+                                            </span>
                                         </div>
-
+                                    }
+                                />
+                                    <div className="space-y-1 p-2">
                                         <div className="grid grid-cols-2 gap-2">
-                                            <div className="relative group">
-                                                <select 
-                                                    value={selectedLevel} 
-                                                    onChange={e=>setSelectedLevel(e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-700 dark:text-white appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-sm group-hover:border-indigo-500/30"
-                                                >
-                                                    <option value="ทั้งหมด" className="bg-white dark:bg-[#161a27]">ทั้งหมด</option>
-                                                    <option value="m1" className="bg-white dark:bg-[#161a27]">ม.1</option>
-                                                    <option value="m2" className="bg-white dark:bg-[#161a27]">ม.2</option>
-                                                    <option value="m3" className="bg-white dark:bg-[#161a27]">ม.3</option>
-                                                    <option value="junior_high" className="bg-white dark:bg-[#161a27]">ม.ต้น</option>
-                                                    <option value="m4" className="bg-white dark:bg-[#161a27]">ม.4</option>
-                                                    <option value="m5" className="bg-white dark:bg-[#161a27]">ม.5</option>
-                                                    <option value="m6" className="bg-white dark:bg-[#161a27]">ม.6</option>
-                                                    <option value="senior_high" className="bg-white dark:bg-[#161a27]">ม.ปลาย</option>
-                                                </select>
-                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-indigo-500 transition-colors">
-                                                    <ChevronDown size={12} />
-                                                </div>
-                                            </div>
-                                            <div className="relative group">
-                                                <select 
-                                                    value={selectedSemester} 
-                                                    onChange={e=>setSelectedSemester(e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-700 dark:text-white appearance-none cursor-pointer focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-sm group-hover:border-indigo-500/30"
-                                                >
-                                                    <option value="0" className="bg-white dark:bg-[#161a27]">ทุกภาคเรียน</option>
-                                                    <option value="1" className="bg-white dark:bg-[#161a27]">ภาคเรียน 1</option>
-                                                    <option value="2" className="bg-white dark:bg-[#161a27]">ภาคเรียน 2</option>
-                                                </select>
-                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-indigo-500 transition-colors">
-                                                    <ChevronDown size={12} />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div className="relative group">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-indigo-500 transition-colors" size={14} />
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="ค้นหารหัส หรือชื่อวิชา..." 
-                                                    value={courseSearch} 
-                                                    onChange={e=>setCourseSearch(e.target.value)} 
-                                                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white transition-all shadow-inner" 
+                                            <div className="flex-1">
+                                                <Select
+                                                    options={subjectGroups.map(g => ({ value: g, label: g }))}
+                                                    value={{ value: subjectGroupFilter, label: subjectGroupFilter }}
+                                                    onChange={(opt: any) => {
+                                                        const val = opt.value;
+                                                        setSubjectGroupFilter(val);
+                                                    }}
+                                                    styles={filterSelectStyles}
+                                                    isSearchable={true}
+                                                    placeholder="กลุ่มสาระ"
                                                 />
                                             </div>
-                                            <button 
-                                                onClick={() => setShowOnlyAssigned(!showOnlyAssigned)}
-                                                className={`flex items-center justify-center gap-2 py-2 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-wide shadow-sm ${showOnlyAssigned ? 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-600/20' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500'}`}
-                                            >
-                                                <Check size={12} className={showOnlyAssigned ? 'opacity-100' : 'opacity-30'} />
-                                                {showOnlyAssigned ? 'มอบหมายแล้ว' : 'ยังไม่มอบหมาย'}
-                                            </button>
+
+                                            <div className="flex-1">
+                                                <Select
+                                                    options={[
+                                                        { value: 'ทั้งหมด', label: 'ทุกประเภทวิชา' },
+                                                        { value: 'พื้นฐาน', label: 'พื้นฐาน' },
+                                                        { value: 'เพิ่มเติม', label: 'เพิ่มเติม' },
+                                                        { value: 'ชุมนุม', label: 'ชุมนุม' },
+                                                        { value: 'กิจกรรม', label: 'กิจกรรม' }
+                                                    ]}
+                                                    value={{ 
+                                                        value: categoryFilter, 
+                                                        label: categoryFilter === 'ทั้งหมด' ? 'ทุกประเภทวิชา' : categoryFilter 
+                                                    }}
+                                                    onChange={(opt: any) => setCategoryFilter(opt.value)}
+                                                    styles={filterSelectStyles}
+                                                    isSearchable={false}
+                                                />
+                                            </div>
                                         </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="flex-1">
+                                                <Select
+                                                    options={dynamicLevelOptions}
+                                                    value={dynamicLevelOptions.find(opt => opt.value === selectedLevel) || dynamicLevelOptions[0]}
+                                                    onChange={(opt: any) => setSelectedLevel(opt.value)}
+                                                    styles={filterSelectStyles}
+                                                    isSearchable={false}
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <Select
+                                                    options={[
+                                                        { value: '1', label: 'ภาคเรียน 1' },
+                                                        { value: '2', label: 'ภาคเรียน 2' },
+                                                        { value: '0', label: 'ทุกภาคเรียน' }
+                                                    ]}
+                                                    value={[
+                                                        { value: '1', label: 'ภาคเรียน 1' },
+                                                        { value: '2', label: 'ภาคเรียน 2' },
+                                                        { value: '0', label: 'ทุกภาคเรียน' }
+                                                    ].find(opt => opt.value === selectedSemester) || { value: '0', label: 'ทุกภาคเรียน' }}
+                                                    onChange={(opt: any) => setSelectedSemester(opt.value)}
+                                                    styles={filterSelectStyles}
+                                                    isSearchable={false}
+                                                />
+                                            </div>
+                                        </div>
+
+
                                     </div>
-=======
-                                <div className="p-1.5 space-y-1">
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <div className="relative">
-                                            <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
-                                            <input type="text" placeholder="ค้นหา..." value={courseSearch} onChange={e=>setCourseSearch(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] outline-none focus:border-indigo-500/30 text-slate-900 dark:text-white" />
-                                        </div>
-                                        <div className="relative">
-                                            <School className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
-                                            <select value={subjectGroupFilter} onChange={e=>setSubjectGroupFilter(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] font-bold outline-none text-slate-700 dark:text-white appearance-none cursor-pointer">
-                                                {subjectGroups.map(g => <option key={g} value={g} className="bg-white dark:bg-[#161a27]">{g.replace('กลุ่มวิชา ', '')}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <div className="relative">
-                                            <Filter className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400" size={8} />
-                                            <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} className="w-full pl-5 pr-1 py-1 bg-slate-100 dark:bg-white/5 rounded border border-slate-200 dark:border-white/5 text-[9px] font-bold outline-none text-slate-700 dark:text-white appearance-none cursor-pointer">
-                                                <option className="bg-white dark:bg-[#161a27]">ประเภท</option>
-                                                <option className="bg-white dark:bg-[#161a27]">พื้นฐาน</option>
-                                                <option className="bg-white dark:bg-[#161a27]">เพิ่มเติม</option>
-                                            </select>
-                                        </div>
-                                        <button 
-                                            onClick={() => setShowOnlyAssigned(!showOnlyAssigned)}
-                                            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border transition-all ${showOnlyAssigned ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-500'}`}
-                                        >
-                                            <Check size={10} className={showOnlyAssigned ? 'opacity-100' : 'opacity-30'} />
-                                            <span className="text-[9px] font-black uppercase tracking-tight">
-                                                {showOnlyAssigned ? 'วิชาที่มอบหมายแล้ว' : 'วิชาที่ยังไม่มอบหมาย'}
-                                            </span>
-                                        </button>
-                                    </div>
-                                </div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1 space-y-0.5">
                                     {(() => {
                                         let lastGroup = '';
                                         return paginatedCourses.map(course => {
                                             const isSel = selectedCourses.some(c => c.id === course.id);
-                                            const courseGroup = (course as any).subjectGroup || '';
+                                            const courseGroup = getSubjectGroupName((course as any).subjectGroup);
                                             const showHeader = courseGroup !== lastGroup;
                                             if (showHeader) lastGroup = courseGroup;
-                                            const groupInfo = subjectGroupsList.find(g => g.name === courseGroup);
+                                            const groupInfo = getSubjectGroupInfo((course as any).subjectGroup);
                                             const groupCode = groupInfo?.code || '?';
                                             return (
                                                 <div key={course.id}>
-<<<<<<< HEAD
-=======
-                                                    {showHeader && courseGroup && (
-                                                        <div className="sticky top-0 z-10 bg-slate-100/90 dark:bg-[#1a1f30]/90 backdrop-blur-sm px-2 py-1.5 rounded-lg mt-1 mb-0.5 border-b border-slate-200 dark:border-white/5">
-                                                            <span className="text-[9px] font-black text-indigo-500 dark:text-indigo-400">กลุ่มที่ {groupCode} : {courseGroup}</span>
-                                                        </div>
-                                                    )}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     <div 
                                                         onClick={() => {
                                                             setSelectedCourses(prev => {
                                                                 const isAlreadySelected = prev.some(c => c.id === course.id);
                                                                 if (isAlreadySelected) return prev.filter(c => c.id !== course.id);
-<<<<<<< HEAD
                                                                 const dbCount = course.teacherAssignments?.length || 0;
                                                                 const qCount = pendingQueue.filter(p => p.courseId === course.id).length;
-                                                                setActiveGroupNumber(dbCount + qCount + 1);
+                                                                setActiveGroupNumbers([dbCount + qCount + 1]);
                                                                 return [...prev, course];
                                                             });
                                                         }} 
-                                                        className={`flex items-center gap-4 px-4 py-3 cursor-pointer transition-all border-b border-slate-100 dark:border-white/5 ${isSel ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : 'bg-white dark:bg-transparent hover:bg-slate-50 dark:hover:bg-white/[0.02]'}`}
+                                                        className={`flex items-center gap-3 px-3 py-1.5 cursor-pointer transition-all border-b border-slate-100 dark:border-white/5 ${isSel ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : 'bg-white dark:bg-transparent hover:bg-slate-50 dark:hover:bg-white/[0.02]'}`}
                                                     >
                                                         {/* Radio Style Indicator */}
                                                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${isSel ? 'border-indigo-500 bg-white dark:bg-slate-900' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
@@ -1433,136 +1523,150 @@ const CourseAssignmentPage: React.FC = () => {
                                                         </div>
                                                         
                                                         {/* Course Info */}
-                                                        <div className="flex items-center gap-3 text-sm font-medium overflow-hidden">
-                                                            <span className="text-slate-400 shrink-0 w-4 text-center">{course.semester || '0'}</span>
+                                                        <div className="flex items-center gap-2 text-[11px] font-medium overflow-hidden">
+                                                            <span className="text-slate-400 shrink-0 w-3 text-center text-[10px]">{course.semester || '0'}</span>
                                                             <span className="text-slate-900 dark:text-white font-black shrink-0">{course.code}</span>
-                                                            <span className="text-slate-600 dark:text-slate-300 truncate font-bold">{course.title}</span>
+                                                            <span className="text-slate-600 dark:text-slate-300 truncate font-bold text-[11px] whitespace-nowrap">{course.title}</span>
                                                         </div>
-=======
-                                                                
-                                                                // Auto-set next group number
-                                                                const dbCount = course.teacherAssignments?.length || 0;
-                                                                const qCount = pendingQueue.filter(p => p.courseId === course.id).length;
-                                                                setActiveGroupNumber(dbCount + qCount + 1);
-                                                                
-                                                                return [...prev, course];
-                                                            });
-                                                        }} 
-                                                        className={`p-2 rounded-lg cursor-pointer transition-all border ${isSel ? 'bg-indigo-600/10 dark:bg-indigo-600/20 border-indigo-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}
-                                                    >
-                                                        <div className="flex items-center justify-between gap-1 mb-1">
-                                                            <div className="flex items-center gap-1">
-                                                                {isSel && <div className="w-3.5 h-3.5 rounded-full bg-indigo-500 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
-                                                                <span className="text-[8px] font-black bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400 block w-fit">{course.code}</span>
-                                                                <span className="text-[8px] font-black bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20">
-                                                                    {course.credits !== undefined ? course.credits : (course.hoursPerWeek ? (course.hoursPerWeek / 2) : 0)} นก. ({course.hoursPerWeek || (course.credits ? Math.round(Number(course.credits) * 2) : 0)} คาบ)
-                                                                </span>
-                                                                {course.type && <span className={`text-[7px] font-bold px-1 py-0.5 rounded ${course.type === 'พื้นฐาน' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-500'}`}>{course.type}</span>}
-                                                                {course.classId && (
-                                                                    <span className="text-[7px] font-black px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                                                                        {getLevelLabel(course.classId)}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <div className="flex items-center gap-1">
-                                                                {(() => {
-                                                                    const count = (course.teacherAssignments?.length || 0) + pendingQueue.filter(p => p.courseId === course.id).length;
-                                                                    return count > 0 && (
-                                                                        <span className="text-[7px] font-black px-1 py-0.5 rounded bg-blue-500 text-white shadow-sm">
-                                                                            {count} กลุ่ม
-                                                                        </span>
-                                                                    );
-                                                                })()}
-                                                                <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded ${course.semester === 1 || course.semester === '1' ? 'text-blue-500 bg-blue-500/10' : course.semester === 2 || course.semester === '2' ? 'text-emerald-500 bg-emerald-500/10' : 'text-indigo-500 bg-indigo-500/10'}`}>
-                                                                    {(course.semester === 0 || course.semester === '0') ? 'เทอม 1,2' : `เทอม ${course.semester}`}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <h4 className={`text-[10px] font-bold truncate ${isSel ? 'text-indigo-600 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>{course.title}</h4>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     </div>
                                                 </div>
                                             );
                                         });
                                     })()}
                                 </div>
-                                <Pagination currentPage={coursePage} totalPages={courseTotalPages} onPageChange={setCoursePage} />
                             </div>
 
-<<<<<<< HEAD
-                            <div className="w-16 flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
-                                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                    {Array.from({ length: 22 }, (_, i) => (
-                                        <button 
-                                            key={i+1} 
-                                            onClick={() => setActiveGroupNumber(i+1)} 
-                                            className={`w-full py-3 text-[11px] font-black transition-all border-b border-slate-100 dark:border-white/5 ${activeGroupNumber === i+1 ? 'bg-indigo-600 text-white shadow-inner' : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400'}`}
-                                        >
-                                            {i+1}
-                                        </button>
-=======
-                            <div className="w-16 flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black/10">
-                                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400">กลุ่ม</div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                    {Array.from({ length: 22 }, (_, i) => (
-                                        <button key={i+1} onClick={() => setActiveGroupNumber(i+1)} className={`w-full py-2.5 text-[11px] font-black ${activeGroupNumber === i+1 ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-indigo-600'}`}>{i+1}</button>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                    ))}
-                                </div>
-                            </div>
 
-                            <div className="flex-[1.3] flex flex-col">
+
+                            <div className="flex-[1.1] min-w-0 flex flex-col">
                                 <PanelHeader title="ครู" icon={Users} count={filteredTeachers.length} compact />
                                 <div className="p-2 space-y-1.5">
                                     <div className="relative">
                                         <School className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={10} />
-                                        <select value={teacherGroupFilter} onChange={e=>setTeacherGroupFilter(e.target.value)} className="w-full pl-6 pr-1 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white transition-all focus:ring-2 focus:ring-indigo-500/20">
-                                            <option value="ครู ทั้งหมด" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ครู ทั้งหมด</option>
+                                        <select 
+                                            value={teacherGroupFilter} 
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setTeacherGroupFilter(val);
+                                            }} 
+                                            className="w-full pl-6 pr-1 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white transition-all focus:ring-2 focus:ring-indigo-500/20"
+                                        >
+                                            <option value="ครูกลุ่มสาระ" className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">ครูกลุ่มสาระ</option>
                                             {subjectGroupsList.map(g => <option key={g.id} value={g.name} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{g.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="relative">
                                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={10} />
-<<<<<<< HEAD
                                         <input type="text" placeholder="ค้นชื่อ..." value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} className="w-full pl-6 pr-2 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white shadow-inner" />
-=======
-                                        <input type="text" placeholder="ค้นชื่อ..." value={teacherSearch} onChange={e=>setTeacherSearch(e.target.value)} className="w-full pl-6 pr-2 py-1.5 bg-slate-100 dark:bg-white/5 rounded-md text-[9px] outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white" />
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1 space-y-0.5">
                                     {paginatedTeachers.map(teacher => (
-<<<<<<< HEAD
-                                        <div key={teacher.id} onClick={() => setSelectedTeacherId(prev => prev === teacher.id ? null : teacher.id)} className={`p-2 rounded-lg cursor-pointer flex items-center gap-3 border transition-all ${selectedTeacherId === teacher.id ? 'bg-blue-600/10 dark:bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${selectedTeacherId === teacher.id ? 'border-blue-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
-                                                {selectedTeacherId === teacher.id && <div className="w-2 h-2 rounded-full bg-blue-500 animate-in zoom-in-50 duration-200" />}
-                                            </div>
-=======
-                                        <div key={teacher.id} onClick={() => setSelectedTeacherId(prev => prev === teacher.id ? null : teacher.id)} className={`p-2 rounded-lg cursor-pointer flex items-center gap-3 border ${selectedTeacherId === teacher.id ? 'bg-blue-600/10 dark:bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                            {selectedTeacherId === teacher.id && <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-0.5">
-                                                    <span className={`text-[10px] font-black ${selectedTeacherId === teacher.id ? 'text-blue-600 dark:text-white' : 'text-slate-500'}`}>
-                                                        {teacher.teacherId || "N/A"}
-                                                    </span>
-                                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${teacherLoadMap[teacher.id] > 20 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                                                        {teacherLoadMap[teacher.id] || 0} คาบ/สัปดาห์
-                                                    </span>
+                                        <div 
+                                            key={teacher.id} 
+                                            onClick={() => setSelectedTeacherIds(prev => prev.includes(teacher.id) ? prev.filter(id => id !== teacher.id) : [...prev, teacher.id])} 
+                                            className={`px-3 py-1.5 rounded-xl cursor-pointer flex items-center justify-between gap-3 border transition-all ${selectedTeacherIds.includes(teacher.id) ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'border-transparent bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05]'}`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${selectedTeacherIds.includes(teacher.id) ? 'bg-white border-white' : 'bg-transparent border-slate-300 dark:border-white/20'}`}>
+                                                    {selectedTeacherIds.includes(teacher.id) && <Check size={10} className="text-indigo-600" strokeWidth={4} />}
                                                 </div>
-                                                <h4 className={`text-[11px] font-bold truncate ${selectedTeacherId === teacher.id ? 'text-blue-600 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>{teacher.name}</h4>
+                                                <span className={`text-[9px] font-black shrink-0 px-1.5 py-0.5 rounded-md ${selectedTeacherIds.includes(teacher.id) ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}>
+                                                    {teacher.teacherId || "—"}
+                                                </span>
+                                                <h4 className={`text-[11px] font-bold truncate whitespace-nowrap ${selectedTeacherIds.includes(teacher.id) ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                    {teacher.name}
+                                                </h4>
                                             </div>
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${selectedTeacherIds.includes(teacher.id) ? 'bg-white/20 text-white' : (teacherLoadMap[teacher.id] > 20 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500')}`}>
+                                                {teacherLoadMap[teacher.id] || 0} คาบ
+                                            </span>
                                         </div>
                                     ))}
                                 </div>
-                                <Pagination currentPage={teacherPage} totalPages={teacherTotalPages} onPageChange={setTeacherPage} />
+                            </div>
+
+                            <div className="w-16 shrink-0 flex flex-col border-l border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ห้อง</div>
+                                
+                                <div className="h-[480px] flex flex-col overflow-y-auto custom-scrollbar scroll-smooth">
+                                    {Array.from({ length: 20 }, (_, i) => {
+                                        const num = (i + 1).toString();
+                                        const count = roomUsageCounts[num] || 0;
+                                        return (
+                                            <button 
+                                                key={num} 
+                                                onClick={() => handleUpdateRoomNumber(num)} 
+                                                className={`w-full py-2 shrink-0 text-[10px] font-black transition-all border-b border-slate-100 dark:border-white/5 relative group
+                                                    ${activeRoomNumber === num 
+                                                        ? 'bg-blue-600 text-white shadow-inner' 
+                                                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-blue-600 dark:hover:text-blue-400'
+                                                    }`}
+                                            >
+                                                {num}
+                                                {count > 0 && activeRoomNumber !== num && (
+                                                    <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-auto border-t border-slate-200 dark:border-white/5">
+                                    <button 
+                                        onClick={() => handleUpdateRoomNumber('แผน')} 
+                                        className={`w-full py-3 text-[10px] font-black transition-all relative
+                                            ${activeRoomNumber === 'แผน' 
+                                                ? 'bg-indigo-600 text-white shadow-inner' 
+                                                : 'bg-slate-100/50 dark:bg-white/5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'
+                                            }`}
+                                    >
+                                        <div className="flex flex-col items-center leading-tight">
+                                            <span>แผน</span>
+                                            {roomUsageCounts['แผน'] > 0 && (
+                                                <span className={`text-[8px] mt-0.5 opacity-80 ${activeRoomNumber === 'แผน' ? 'text-white' : 'text-indigo-500'}`}>
+                                                    {roomUsageCounts['แผน']} วิชา
+                                                </span>
+                                            )}
+                                        </div>
+                                    </button>
+                                </div>
+                                <div className="flex-1 bg-slate-50/30 dark:bg-black/10"></div>
+                            </div>
+
+                            <div className="w-16 shrink-0 flex flex-col border-l border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</div>
+                                <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar">
+                                    {Array.from({ length: 20 }, (_, i) => {
+                                        const groupNum = i + 1;
+                                        const isActive = activeGroupNumbers.includes(groupNum);
+                                        return (
+                                            <button 
+                                                key={groupNum} 
+                                                onClick={() => {
+                                                    setActiveGroupNumbers(prev => 
+                                                        prev.includes(groupNum) 
+                                                            ? prev.filter(n => n !== groupNum) 
+                                                            : [...prev, groupNum]
+                                                    );
+                                                }} 
+                                                className={`flex-1 w-full py-1 text-[10px] font-black transition-all border-b border-slate-100 dark:border-white/5 
+                                                    ${isActive 
+                                                        ? 'bg-indigo-600 text-white shadow-inner' 
+                                                        : 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400'
+                                                    }`}
+                                            >
+                                                {groupNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
 
                     </div>
 
-                    <div className="flex flex-col justify-center gap-3 px-0.5 shrink-0">
+                    <div className="flex flex-col justify-center gap-2 px-1 shrink-0">
                         <FloatingButton 
                             icon={ChevronRight} 
                             color={assignButtonProps.color} 
@@ -1575,16 +1679,10 @@ const CourseAssignmentPage: React.FC = () => {
                             color={middleButtonProps.color}
                             onClick={() => {
                                 if (middleButtonProps.action === 'update') handleUpdateTeacher();
-<<<<<<< HEAD
-=======
-                                else if (middleButtonProps.action === 'bulkDelete') handleBulkRemoveAssignments();
-                                else if (middleButtonProps.action === 'delete') handleRemoveAssignment(selectedAssignments[0].courseId, selectedAssignments[0].groupNumber);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                 else handleResetSelections();
                             }}
                             label={middleButtonProps.label}
                         />
-<<<<<<< HEAD
                         <FloatingButton 
                             icon={deleteButtonProps.icon} 
                             color={deleteButtonProps.color}
@@ -1592,11 +1690,9 @@ const CourseAssignmentPage: React.FC = () => {
                             label={deleteButtonProps.label}
                             disabled={deleteButtonProps.disabled}
                         />
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     </div>
-                    <div className="flex-1 bg-white dark:bg-[#161a27] rounded-[1.5rem] border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
-                        <PanelHeader title="วิชาที่มอบหมายแล้ว" icon={LayoutGrid} count={assignedCourses.length} />
+                    <div className="flex-1 min-w-0 bg-white dark:bg-[#161a27] rounded-xl border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
+                        <PanelHeader title="วิชาที่มอบหมายแล้ว" icon={LayoutGrid} count={assignedCourses.length} compact />
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
                             {assignedCourses.length || pendingQueue.length > 0 ? (
                                 <>
@@ -1615,42 +1711,91 @@ const CourseAssignmentPage: React.FC = () => {
                                                                 setSelectedAssignments(prev => {
                                                                     const exists = prev.some(a => a.courseId === item.courseId && a.groupNumber === item.groupNumber && a.isPending);
                                                                     if (exists) return prev.filter(a => !(a.courseId === item.courseId && a.groupNumber === item.groupNumber && a.isPending));
-                                                                    setSelectedTeacherId(item.teacherId);
+                                                                    setSelectedTeacherIds(getAssignmentTeacherIds(item));
                                                                     if (item.roomIds.length > 0) setSelectedRoomId(item.roomIds[0]);
+                                                                    if (item.room) setActiveRoomNumber(item.room);
                                                                     return [...prev, { courseId: item.courseId, groupNumber: item.groupNumber, isPending: true }];
                                                                 });
                                                             }}
-                                                            className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-amber-500/20 border-amber-500/40' : 'bg-amber-50/50 dark:bg-amber-500/5 border-amber-500/10 hover:bg-amber-100/50'}`}
+                                                            className={`ml-2 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-amber-500/20 border-amber-500/40' : 'bg-amber-50/50 dark:bg-amber-500/5 border-amber-500/10 hover:bg-amber-100/50'}`}
                                                         >
-                                                            <div className="flex items-center gap-2 min-w-0">
-<<<<<<< HEAD
-                                                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-amber-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-amber-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
-                                                                    {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-in zoom-in-50 duration-200" />}
-=======
-                                                                <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border transition-all ${isSelected ? 'bg-amber-500 border-amber-500' : 'border-amber-300 dark:border-white/10'}`}>
-                                                                    {isSelected && <Check size={7} className="text-white" />}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-amber-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-amber-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
+                                                                        {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-in zoom-in-50 duration-200" />}
+                                                                    </div>
+                                                                    
+                                                                    {/* Group Block (Matched with Enrollment Page) */}
+                                                                    {(() => {
+                                                                        const groupColors = [
+                                                                            { bg: 'bg-blue-600', shadow: 'shadow-blue-600/40' },
+                                                                            { bg: 'bg-indigo-600', shadow: 'shadow-indigo-600/40' },
+                                                                            { bg: 'bg-violet-600', shadow: 'shadow-violet-600/40' },
+                                                                            { bg: 'bg-purple-600', shadow: 'shadow-purple-600/40' },
+                                                                            { bg: 'bg-fuchsia-600', shadow: 'shadow-fuchsia-600/40' },
+                                                                            { bg: 'bg-pink-600', shadow: 'shadow-pink-600/40' },
+                                                                            { bg: 'bg-rose-600', shadow: 'shadow-rose-600/40' },
+                                                                        ];
+                                                                        const gColor = groupColors[(item.groupNumber - 1) % groupColors.length];
+                                                                        return (
+                                                                            <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0 border shadow-sm transition-all ${gColor.bg} text-white shadow-lg ${gColor.shadow}`}>
+                                                                                <span className="text-[6px] uppercase font-black tracking-tighter mb-0.5 opacity-80">กลุ่ม</span>
+                                                                                <span className="text-sm font-black leading-none">{item.groupNumber}</span>
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+
+                                                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                                        <div className="flex items-center gap-2 mb-0.5">
+                                                                            <span className="text-amber-600 dark:text-amber-400 font-mono text-[9px] font-black shrink-0 bg-amber-500/5 px-1.5 py-0.5 rounded border border-amber-500/10">
+                                                                                {getAssignmentTeacherIds(item).map(id => teacherMap?.[id]?.teacherId || "N/A").join(", ")}
+                                                                            </span>
+                                                                            <h4 className="text-[11px] font-black text-slate-800 dark:text-white truncate tracking-tight">
+                                                                                {getAssignmentTeacherIds(item).map(id => teacherMap?.[id]?.name || id).join(", ") || "ไม่ระบุครู"}
+                                                                            </h4>
+                                                                        </div>
+
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            {/* Unified Class/Room Badge */}
+                                                                            {(() => {
+                                                                                const courseObj = courses.find(c => c.id === item.courseId);
+                                                                                const label = courseObj ? getLevelLabel(courseObj.classId as string) : null;
+                                                                                return (label || item.room) ? (
+                                                                                    <div className="flex items-center bg-amber-500 text-white px-2 py-0.5 rounded-md shrink-0 shadow-sm">
+                                                                                        <span className="text-[9px] font-black uppercase tracking-tighter">
+                                                                                            {label}{item.room ? `/${item.room}` : ''}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                ) : null;
+                                                                            })()}
+                                                                            
+                                                                            <div className="flex flex-wrap items-center gap-1">
+                                                                                {item.roomIds?.map((rid: string) => {
+                                                                                    const room = rooms.find(r => r.id === rid);
+                                                                                    return room ? (
+                                                                                        <div key={rid} className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/10 px-1.5 py-0.5 rounded-md">
+                                                                                            <MapPin size={9} className="text-emerald-400" />
+                                                                                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                                                                                {room.roomCode}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    ) : null;
+                                                                                })}
+                                                                            </div>
+                                                                        </div>
+                                                                        
+                                                                        {/* Course Subject Info (Subtle) */}
+                                                                        <div className="mt-1 flex items-center gap-1.5">
+                                                                            <span className="text-amber-600 font-black text-[9px] shrink-0 opacity-70">[{item.code}]</span>
+                                                                            <span className="text-[10px] font-bold text-slate-500 truncate opacity-80">{item.title}</span>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <div className="min-w-0">
-                                                                    <p className="text-[9px] font-black text-slate-800 dark:text-white leading-tight">
-                                                                        <span className="text-amber-600 mr-1">[{item.code}]</span>
-                                                                        {item.title}
-                                                                    </p>
-                                                                    <p className="text-[7px] font-bold text-slate-500">
-                                                                        ครู: {teacherMap?.[item.teacherId]?.name || "ไม่ระบุ"} | ห้อง: {item.roomIds.map(rid => rooms.find(r => r.id === rid)?.roomCode).join(', ') || "ยังไม่ระบุ"}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                            <button onClick={(e) => { e.stopPropagation(); setPendingQueue(prev => prev.filter((_, i) => i !== idx)); }} className="p-0.5 text-slate-400 hover:text-red-500"><Trash2 size={11} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); setPendingQueue(prev => prev.filter((_, i) => i !== idx)); }} className="p-1 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-<<<<<<< HEAD
                                             <div className="h-px bg-slate-200 dark:bg-white/5 my-4" />
-=======
-                                            <div className="h-px bg-slate-200 dark:border-white/5 my-4" />
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                         </div>
                                     )}
 
@@ -1662,11 +1807,7 @@ const CourseAssignmentPage: React.FC = () => {
                                                     const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                     
                                                     // Check if all (saved and pending) are selected
-<<<<<<< HEAD
                                                     const areSavedSelected = dbGroups.every((g: GroupAssignment) => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending));
-=======
-                                                    const areSavedSelected = dbGroups.every(g => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     const arePendingSelected = queueGroups.every(g => selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && a.isPending));
                                                     
                                                     if (areSavedSelected && arePendingSelected) {
@@ -1676,11 +1817,7 @@ const CourseAssignmentPage: React.FC = () => {
                                                         // Select all
                                                         const newSelection = [...selectedAssignments];
                                                         
-<<<<<<< HEAD
                                                         dbGroups.forEach((g: GroupAssignment) => {
-=======
-                                                        dbGroups.forEach(g => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                             if (!newSelection.some(a => a.courseId === course.id && a.groupNumber === g.groupNumber && !a.isPending)) {
                                                                 newSelection.push({ courseId: course.id, groupNumber: g.groupNumber });
                                                             }
@@ -1695,40 +1832,29 @@ const CourseAssignmentPage: React.FC = () => {
                                                         setSelectedAssignments(newSelection);
                                                     }
                                                 }}
-                                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg sticky top-0 z-10 bg-white dark:bg-[#161a27] hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all border border-transparent hover:border-indigo-500/20 ${selectedAssignments.some(a => a.courseId === course.id) ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : ''}`}
+                                                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg sticky top-0 z-10 bg-white dark:bg-[#161a27] hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-all border border-transparent hover:border-indigo-500/20 ${selectedAssignments.some(a => a.courseId === course.id) ? 'bg-indigo-50/50 dark:bg-indigo-500/5' : ''}`}
                                             >
-<<<<<<< HEAD
                                                 <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-=======
-                                                <div className={`w-3 h-3 rounded flex items-center justify-center border transition-all ${
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                     (() => {
                                                         const dbGroups = course.teacherAssignments || [];
                                                         const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                         const total = dbGroups.length + queueGroups.length;
                                                         if (total === 0) return false;
-<<<<<<< HEAD
                                                         const selectedCount = selectedAssignments.filter(a => a.courseId === course.id).length;
                                                         return selectedCount === total;
                                                     })() ? 'border-indigo-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'
-=======
-                                                        const selected = selectedAssignments.filter(a => a.courseId === course.id).length;
-                                                        return selected === total;
-                                                    })() ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                 }`}>
                                                     {(() => {
                                                         const dbGroups = course.teacherAssignments || [];
                                                         const queueGroups = pendingQueue.filter(p => p.courseId === course.id);
                                                         const total = dbGroups.length + queueGroups.length;
                                                         if (total === 0) return false;
-<<<<<<< HEAD
                                                         const selectedCount = selectedAssignments.filter(a => a.courseId === course.id).length;
                                                         return selectedCount === total;
                                                     })() && <div className="w-2 h-2 rounded-full bg-indigo-500 animate-in zoom-in-50 duration-200" />}
                                                 </div>
-                                                <div className="flex items-center gap-3 text-sm font-bold truncate">
-                                                    <span className="text-slate-400 shrink-0 w-4 text-center">{course.semester || '0'}</span>
+                                                <div className="flex items-center gap-2 text-[11px] font-bold truncate">
+                                                    <span className="text-slate-400 shrink-0 w-3 text-center text-[10px]">{course.semester || '0'}</span>
                                                     <span className="text-slate-900 dark:text-white font-black shrink-0">{course.code}</span>
                                                     <span className="text-slate-600 dark:text-slate-200 truncate">{course.title}</span>
                                                 </div>
@@ -1741,24 +1867,6 @@ const CourseAssignmentPage: React.FC = () => {
                                                 </span>
                                             </div>
                                             {course.teacherAssignments?.sort((a: any, b: any) => a.groupNumber - b.groupNumber).map((assign: GroupAssignment, idx: number) => {
-=======
-                                                        const selected = selectedAssignments.filter(a => a.courseId === course.id).length;
-                                                        return selected === total;
-                                                    })() && <Check size={6} className="text-white" />}
-                                                </div>
-                                                <BookOpen size={9} className="text-indigo-400 shrink-0" />
-                                                <span className="text-[7px] font-black text-indigo-400 shrink-0">{course.code}</span>
-                                                <span className="text-[8px] font-bold text-slate-600 dark:text-slate-300 truncate">{course.title}</span>
-                                                <span className="text-[7px] font-bold text-slate-400 dark:text-slate-500 shrink-0 ml-auto">
-                                                    {(() => {
-                                                        const dbLen = course.teacherAssignments?.length || 0;
-                                                        const qLen = pendingQueue.filter(p => p.courseId === course.id).length;
-                                                        return dbLen + qLen;
-                                                    })()}
-                                                </span>
-                                            </div>
-                                            {course.teacherAssignments?.sort((a,b) => a.groupNumber - b.groupNumber).map((assign, idx) => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                                 const isSelected = selectedAssignments.some(a => a.courseId === course.id && a.groupNumber === assign.groupNumber && !a.isPending);
                                                 return (
                                                     <div key={idx}
@@ -1768,62 +1876,95 @@ const CourseAssignmentPage: React.FC = () => {
                                                                 if (exists) {
                                                                     const newSelection = prev.filter(a => !(a.courseId === course.id && a.groupNumber === assign.groupNumber && !a.isPending));
                                                                     if (newSelection.length === 0) {
-                                                                        setSelectedTeacherId(null);
+                                                                        setSelectedTeacherIds([]);
                                                                         setSelectedRoomId(null);
                                                                     }
                                                                     return newSelection;
                                                                 } else {
-                                                                    setSelectedTeacherId(assign.teacherId);
+                                                                    setSelectedTeacherIds(getAssignmentTeacherIds(assign));
                                                                     if (assign.roomIds && assign.roomIds.length > 0) {
                                                                         setSelectedRoomId(assign.roomIds[0]);
                                                                     }
+                                                                    if (assign.room) setActiveRoomNumber(assign.room);
                                                                     return [...prev, { courseId: course.id, groupNumber: assign.groupNumber }];
                                                                 }
                                                             });
                                                         }}
-<<<<<<< HEAD
-                                                        className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-500/30 shadow-sm' : 'bg-slate-50/50 dark:bg-white/[0.03] border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/[0.06] shadow-sm hover:shadow-md'}`}
+                                                        className={`ml-2 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-500/30 shadow-sm' : 'bg-slate-50/50 dark:bg-white/[0.03] border-slate-100 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/[0.06] shadow-sm hover:shadow-md'}`}
                                                     >
                                                         <div className="flex items-center gap-2 min-w-0">
-                                                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-indigo-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
-                                                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-in zoom-in-50 duration-200" />}
-=======
-                                                        className={`ml-3 px-2 py-1.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${isSelected ? 'bg-indigo-600/10 dark:bg-indigo-500/10 border-indigo-500/30' : 'bg-slate-50 dark:bg-white/[0.03] border-transparent hover:bg-slate-100 dark:hover:bg-white/[0.06]'}`}
-                                                    >
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border transition-all ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-white/10'}`}>
-                                                                {isSelected && <Check size={7} className="text-white" />}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'border-indigo-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
+                                                                {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-in zoom-in-50 duration-200" />}
                                                             </div>
-                                                            <div className="min-w-0">
-                                                                <p className={`text-[9px] font-black leading-tight ${isSelected ? 'text-indigo-600 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
-                                                                    กลุ่ม {assign.groupNumber} : {(() => {
-                                                                        const t = teacherMap?.[assign.teacherId] || Object.values(teacherMap || {}).find(u => u.teacherId === assign.teacherId);
-                                                                        if (!t) return "ยังไม่ได้กำหนด";
-                                                                        const cleanName = (name: string) => {
-                                                                            if (!name) return '';
-                                                                            return name.replace(/^(นาย|นาง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่\s?ร\.ต\.|ว่าที่ร้อยตรี|อาจารย์|อ\.|ครู)\s?/, '').trim();
-                                                                        };
-                                                                        const namePart = cleanName(t.firstName || (t.name ? t.name.split(' ')[0] : ''));
-                                                                        return `ครู${namePart}`;
-                                                                    })()}
-                                                                </p>
-                                                                <div className="flex flex-wrap gap-1 mt-1">
+
+                                                            {/* Group Block (Matched with Enrollment Page) */}
+                                                            {(() => {
+                                                                const groupColors = [
+                                                                    { bg: 'bg-blue-600', shadow: 'shadow-blue-600/40' },
+                                                                    { bg: 'bg-indigo-600', shadow: 'shadow-indigo-600/40' },
+                                                                    { bg: 'bg-violet-600', shadow: 'shadow-violet-600/40' },
+                                                                    { bg: 'bg-purple-600', shadow: 'shadow-purple-600/40' },
+                                                                    { bg: 'bg-fuchsia-600', shadow: 'shadow-fuchsia-600/40' },
+                                                                    { bg: 'bg-pink-600', shadow: 'shadow-pink-600/40' },
+                                                                    { bg: 'bg-rose-600', shadow: 'shadow-rose-600/40' },
+                                                                ];
+                                                                const gColor = groupColors[(assign.groupNumber - 1) % groupColors.length];
+                                                                return (
+                                                                    <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0 border shadow-sm transition-all ${isSelected ? `${gColor.bg} text-white shadow-lg ${gColor.shadow} scale-105 border-white/20` : 'bg-slate-100 dark:bg-white/[0.03] border-slate-200 dark:border-white/10 text-slate-900 dark:text-white/80'}`}>
+                                                                        <span className="text-[6px] uppercase font-black tracking-tighter mb-0.5 opacity-60">กลุ่ม</span>
+                                                                        <span className="text-sm font-black leading-none">{assign.groupNumber}</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+
+                                                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                                <div className="flex items-center gap-2 mb-0.5">
+                                                                    <span className={`font-mono text-[9px] font-black shrink-0 px-1.5 py-0.5 rounded border ${isSelected ? 'bg-white/10 text-white border-white/20' : 'bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-500/10'}`}>
+                                                                        {(() => {
+                                                                            return getAssignmentTeacherIds(assign).map(id => {
+                                                                                const t = teacherMap?.[id] || Object.values(teacherMap || {}).find(u => u.teacherId === id);
+                                                                                return t?.teacherId || "N/A";
+                                                                            }).join(", ");
+                                                                        })()}
+                                                                    </span>
+                                                                    <h4 className={`text-[11px] font-black truncate tracking-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                                                                        {(() => {
+                                                                            return getAssignmentTeacherIds(assign).map(id => {
+                                                                                const t = teacherMap?.[id] || Object.values(teacherMap || {}).find(u => u.teacherId === id);
+                                                                                return t?.name || id;
+                                                                            }).join(", ") || "ไม่ระบุครู";
+                                                                        })()}
+                                                                    </h4>
+                                                                </div>
+                                                                
+                                                                <div className="flex items-center gap-1.5">
+                                                                    {/* Unified Class/Room Badge */}
                                                                     {(() => {
                                                                         const label = getLevelLabel(course.classId as string);
-                                                                        return label ? (
-                                                                            <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">{label}</span>
+                                                                        return (label || assign.room) ? (
+                                                                            <div className={`flex items-center px-2 py-0.5 rounded-md shrink-0 shadow-sm ${isSelected ? 'bg-white text-indigo-600' : 'bg-indigo-600 text-white'}`}>
+                                                                                <span className="text-[9px] font-black uppercase tracking-tighter">
+                                                                                    {label}{assign.room ? `/${assign.room}` : ''}
+                                                                                </span>
+                                                                            </div>
                                                                         ) : null;
                                                                     })()}
 
-                                                                    {assign.roomIds?.map((rid: string) => {
-                                                                        const room = rooms.find(r => r.id === rid);
-                                                                        return room ? (
-                                                                            <span key={rid} className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded">{room.roomCode} {room.roomName}</span>
-                                                                        ) : (
-                                                                            <span key={rid} className="text-[8px] font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded">ไม่พบ</span>
-                                                                        );
-                                                                    })}
+                                                                    <div className="flex flex-wrap items-center gap-1">
+                                                                        {assign.roomIds?.map((rid: string) => {
+                                                                            const room = rooms.find(r => r.id === rid);
+                                                                            return room ? (
+                                                                                <div key={rid} className={`flex items-center gap-1 border px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/10 border-white/10 text-white' : 'bg-emerald-500/10 border-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
+                                                                                    <MapPin size={9} className={isSelected ? 'text-white' : 'text-emerald-400'} />
+                                                                                    <span className="text-[9px] font-black whitespace-nowrap">
+                                                                                        {room.roomCode}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div key={rid} className="text-[8px] font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">ไม่ระบุสถานที่</div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1841,10 +1982,9 @@ const CourseAssignmentPage: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                        <Pagination currentPage={assignmentPage} totalPages={assignmentTotalPages} onPageChange={setAssignmentPage} />
                     </div>
 
-                    <div className="flex flex-col justify-center gap-3 px-0.5 shrink-0">
+                    <div className="flex flex-col justify-center gap-2 px-1 shrink-0">
                         <FloatingButton 
                             icon={ChevronLeft} 
                             color={roomButtonProps.color}
@@ -1878,40 +2018,94 @@ const CourseAssignmentPage: React.FC = () => {
                         />
                     </div>
 
-                    <div className="flex-[0.7] bg-white dark:bg-[#161a27] rounded-[1.5rem] border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
-                        <PanelHeader title="สถานที่เรียน" icon={MapPin} count={rooms.length} />
+                    <div className="flex-[0.8] min-w-0 bg-white dark:bg-[#161a27] rounded-xl border border-slate-200 dark:border-white/5 flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
+                        <PanelHeader title="สถานที่เรียน" icon={MapPin} count={rooms.length} compact />
                         <div className="p-3 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5">
                             <div className="grid grid-cols-2 gap-2">
                                 <select value={buildingFilter} onChange={e=>setBuildingFilter(e.target.value)} className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20">
                                     {buildings.map(b => <option key={b} value={b} className="bg-white dark:bg-[#161a27] text-slate-900 dark:text-white">{b}</option>)}
                                 </select>
-<<<<<<< HEAD
                                 <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} /><input type="text" placeholder="ค้นห้อง..." value={roomSearch} onChange={e=>setRoomSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 rounded-xl text-[10px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white shadow-inner focus:ring-2 focus:ring-emerald-500/20 transition-all" /></div>
-=======
-                                <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} /><input type="text" placeholder="ค้นห้อง..." value={roomSearch} onChange={e=>setRoomSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-white/5 rounded-xl text-[10px] font-bold outline-none border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white" /></div>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-1 space-y-1">
                             {paginatedRooms.map(room => (
                                 <div key={room.id} onClick={() => setSelectedRoomId(prev => prev === room.id ? null : room.id)} className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border flex items-center gap-2 ${selectedRoomId === room.id ? 'bg-emerald-600/10 dark:bg-emerald-600/20 border-emerald-500/30' : 'border-transparent hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-<<<<<<< HEAD
                                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${selectedRoomId === room.id ? 'border-emerald-500 bg-white dark:bg-slate-900 shadow-sm' : 'border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-white/5'}`}>
                                         {selectedRoomId === room.id && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-in zoom-in-50 duration-200" />}
                                     </div>
-=======
-                                    {selectedRoomId === room.id && <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={8} className="text-white" /></div>}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shrink-0 ${selectedRoomId === room.id ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>{room.roomCode || "—"}</span>
                                     <h4 className={`text-[10px] font-black truncate flex-1 ${selectedRoomId === room.id ? 'text-emerald-600 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{room.roomName}</h4>
                                     <span className="text-[7px] font-bold text-slate-400 dark:text-slate-500 shrink-0 text-right leading-tight">{room.building && `${room.building}`}{room.floor && ` ชั้น${room.floor}`}</span>
                                 </div>
                             ))}
                         </div>
-                        <Pagination currentPage={roomPage} totalPages={roomTotalPages} onPageChange={setRoomPage} />
                     </div>
 
                 </main>
+
+                {/* Floating Bottom Save Bar */}
+                <AnimatePresence>
+                    {pendingQueue.length > 0 && (
+                        <motion.div 
+                            initial={{ y: 100, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: 100, opacity: 0 }}
+                            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4"
+                        >
+                            <div className="bg-slate-900/90 dark:bg-indigo-950/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-4 flex items-center justify-between gap-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
+                                        <Database size={24} className="animate-pulse" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-black text-sm leading-tight">พบรายการมอบหมายที่ยังไม่ได้บันทึก</h3>
+                                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">
+                                            มี {pendingQueue.length} รายการในคิวที่รอการยืนยันลงระบบจริง
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => {
+                                            Swal.fire({
+                                                title: 'ล้างรายการทั้งหมด?',
+                                                text: 'รายการที่เตรียมไว้ในคิวจะถูกลบออกทั้งหมด',
+                                                icon: 'warning',
+                                                showCancelButton: true,
+                                                confirmButtonText: 'ล้างข้อมูล',
+                                                cancelButtonText: 'ยกเลิก',
+                                                confirmButtonColor: '#ef4444',
+                                                background: '#161a27',
+                                                color: '#fff'
+                                            }).then(res => {
+                                                if (res.isConfirmed) {
+                                                    setPendingQueue([]);
+                                                }
+                                            });
+                                        }}
+                                        className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all text-[10px] font-black uppercase tracking-wider"
+                                    >
+                                        ล้างคิว
+                                    </button>
+                                    <button 
+                                        onClick={handleCommitAll}
+                                        disabled={isSaving}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-7 py-3 rounded-xl font-black text-sm transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"
+                                    >
+                                        {isSaving ? (
+                                            <RefreshCw size={18} className="animate-spin" />
+                                        ) : (
+                                            <Save size={18} />
+                                        )}
+                                        ยืนยันบันทึกข้อมูล
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <style>{`
                     .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }

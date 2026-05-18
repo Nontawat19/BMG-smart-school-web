@@ -6,10 +6,7 @@ import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface SpecialPeriod {
   id: string;
@@ -18,6 +15,7 @@ interface SpecialPeriod {
   endTime: string;
   day?: string;
   linkedPeriodId?: string; // Reference to the global period ID (e.g., 'period-1')
+  isTeachingLoad?: boolean; // Does this count as a teaching period in the workload summary?
 }
 
 interface PeriodSetting {
@@ -51,25 +49,22 @@ const SpecialPeriodManagementPage: React.FC = () => {
   const [selectedPeriodOption, setSelectedPeriodOption] = useState("custom");
   const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
   const [isSubmittingPeriod, setIsSubmittingPeriod] = useState(false);
+  const [newPeriodIsTeachingLoad, setNewPeriodIsTeachingLoad] = useState(false);
 
   const PERIOD_OPTIONS = useMemo(() => {
     if (periodSettings.length === 0) {
-      return [{ value: 'custom', label: 'กำหนดเวลาเอง', start: '', end: '' }];
+      return [];
     }
-    const options = periodSettings.map(p => ({
+    return periodSettings.map(p => ({
       value: p.id,
       label: `${p.label} (${p.startTime}-${p.endTime})`,
       start: p.startTime,
       end: p.endTime
     }));
-    return [{ value: 'custom', label: 'กำหนดเวลาเอง', start: '', end: '' }, ...options];
   }, [periodSettings]);
 
   useEffect(() => {
-    // Only auto-fill time if NOT in edit mode OR if user explicitly changes selection while editing
-    // But we need to be careful not to overwrite custom time during edit load.
-    // Let's rely on manual set for edit load, and this effect for new selection.
-    if (selectedPeriodOption !== 'custom') {
+    if (selectedPeriodOption && selectedPeriodOption !== 'custom') {
       const option = PERIOD_OPTIONS.find(o => o.value === selectedPeriodOption);
       if (option) {
         setNewPeriodStartTime(option.start);
@@ -77,6 +72,12 @@ const SpecialPeriodManagementPage: React.FC = () => {
       }
     }
   }, [selectedPeriodOption, PERIOD_OPTIONS]);
+
+  useEffect(() => {
+    if (PERIOD_OPTIONS.length > 0 && !selectedPeriodOption) {
+      setSelectedPeriodOption(PERIOD_OPTIONS[0].value);
+    }
+  }, [PERIOD_OPTIONS]);
 
   useEffect(() => {
     const fetchSpecialPeriods = async () => {
@@ -118,33 +119,15 @@ const SpecialPeriodManagementPage: React.FC = () => {
     fetchPeriodSettings();
   }, [schoolId]);
 
-  const handleTimeBlur = (value: string, setter: (val: string) => void) => {
-    let normalized = value.replace(':', '.');
-    // Basic validation? If user types 8.30 -> 08.30
-    const parts = normalized.split('.');
-    if (parts.length === 2) {
-      const h = parts[0].padStart(2, '0');
-      const m = parts[1].padStart(2, '0');
-      // Simple validation for ranges
-      const hNum = parseInt(h);
-      const mNum = parseInt(m);
-      if (!isNaN(hNum) && !isNaN(mNum) && hNum >= 0 && hNum < 24 && mNum >= 0 && mNum < 60) {
-        normalized = `${h}.${m}`;
-      }
-    }
-    // Only update if it looks like a time. If user cleared it, leave it
-    if (normalized.includes('.')) {
-      setter(normalized);
-    }
-  };
 
   const resetForm = () => {
     setNewPeriodTitle("");
     setNewPeriodStartTime("");
     setNewPeriodEndTime("");
     setNewPeriodDay("all");
-    setSelectedPeriodOption("custom");
+    setSelectedPeriodOption(PERIOD_OPTIONS.length > 0 ? PERIOD_OPTIONS[0].value : "");
     setEditingPeriodId(null);
+    setNewPeriodIsTeachingLoad(false);
   };
 
   const handleEditClick = (period: SpecialPeriod) => {
@@ -154,12 +137,10 @@ const SpecialPeriodManagementPage: React.FC = () => {
     setNewPeriodEndTime(period.endTime);
     setNewPeriodDay(period.day || "all");
 
-    // Check if it's linked
     if (period.linkedPeriodId) {
       setSelectedPeriodOption(period.linkedPeriodId);
-    } else {
-      setSelectedPeriodOption("custom");
     }
+    setNewPeriodIsTeachingLoad(period.isTeachingLoad || false);
 
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -180,11 +161,9 @@ const SpecialPeriodManagementPage: React.FC = () => {
         startTime: newPeriodStartTime,
         endTime: newPeriodEndTime,
         day: newPeriodDay,
-        // Save the link if it's not a custom time
-        linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : (selectedPeriodOption === 'custom' ? null : null), // Ensure null if custom, but actually firestore prefers undefined to delete or null. Let's send null if unlinked.
+        linkedPeriodId: selectedPeriodOption,
+        isTeachingLoad: newPeriodIsTeachingLoad,
       };
-      // Clean up undefined/null for linkedPeriodId if needed
-      if (selectedPeriodOption === 'custom') delete (periodData as any).linkedPeriodId;
 
 
       if (editingPeriodId) {
@@ -278,13 +257,7 @@ const SpecialPeriodManagementPage: React.FC = () => {
           </div>
 
           <div className="mb-6">
-<<<<<<< HEAD
             <BackButton to="/academic/hub/scheduling" />
-=======
-            <Link to="/academic-admin" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300">
-              &larr; กลับไปหน้าบริหารงานวิชาการ
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </div>
 
           {/* Special Period Management Section */}
@@ -314,7 +287,7 @@ const SpecialPeriodManagementPage: React.FC = () => {
               <form onSubmit={handleSubmitSpecialPeriod} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
                   {/* Title Input */}
-                  <div className="lg:col-span-4">
+                  <div className="lg:col-span-6">
                     <label htmlFor="newPeriodTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">ชื่อกิจกรรม</label>
                     <input
                       type="text"
@@ -327,7 +300,7 @@ const SpecialPeriodManagementPage: React.FC = () => {
                   </div>
 
                   {/* Day Select */}
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-3">
                     <label htmlFor="newPeriodDay" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">วัน</label>
                     <select
                       id="newPeriodDay"
@@ -355,36 +328,20 @@ const SpecialPeriodManagementPage: React.FC = () => {
                       ))}
                     </select>
                   </div>
+                </div>
 
-                  {/* Time Inputs */}
-                  <div className="lg:col-span-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <label htmlFor="newPeriodStartTime" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">เริ่ม</label>
-                      <input
-                        type="text"
-                        placeholder="00.00"
-                        id="newPeriodStartTime"
-                        value={newPeriodStartTime}
-                        onChange={(e) => setNewPeriodStartTime(e.target.value)}
-                        onBlur={(e) => handleTimeBlur(e.target.value, setNewPeriodStartTime)}
-                        className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2.5 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-800 transition-colors"
-                        disabled={selectedPeriodOption !== 'custom'}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="newPeriodEndTime" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">สิ้นสุด</label>
-                      <input
-                        type="text"
-                        placeholder="00.00"
-                        id="newPeriodEndTime"
-                        value={newPeriodEndTime}
-                        onChange={(e) => setNewPeriodEndTime(e.target.value)}
-                        onBlur={(e) => handleTimeBlur(e.target.value, setNewPeriodEndTime)}
-                        className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2.5 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:bg-gray-100 dark:disabled:bg-gray-800 transition-colors"
-                        disabled={selectedPeriodOption !== 'custom'}
-                      />
-                    </div>
-                  </div>
+                <div className="flex items-center gap-3 bg-white dark:bg-[#2a2b2f] p-3 rounded-lg border border-gray-200 dark:border-gray-700 w-fit">
+                  <input
+                    type="checkbox"
+                    id="isTeachingLoad"
+                    checked={newPeriodIsTeachingLoad}
+                    onChange={(e) => setNewPeriodIsTeachingLoad(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <label htmlFor="isTeachingLoad" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2 cursor-pointer">
+                    <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-1 rounded">📊</span>
+                    นับเป็นภาระงานสอน (ใช้คำนวณในสรุปหน้า 2)
+                  </label>
                 </div>
 
                 <div className="flex justify-end pt-2 gap-3">
@@ -471,9 +428,11 @@ const SpecialPeriodManagementPage: React.FC = () => {
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isAllDays ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'}`}>
                             {isAllDays ? '📅 ทุกวัน' : `📅 ${dayLabel}`}
                           </span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                            ⏰ {displayStartTime} - {displayEndTime}
-                          </span>
+                          {period.isTeachingLoad && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                              📊 นับภาระงาน
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

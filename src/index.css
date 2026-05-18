@@ -8,10 +8,26 @@
     background-color: #f9fafb;
     /* gray-50 fallback */
     font-size: 16px; /* ✅ Reset base font to true 100% */
+    --form-focus-color: #1a73e8;
+    --form-caret-color: #5f6368;
+    --form-selection-bg: #d2e3fc;
+    --form-selection-text: #202124;
+    --select-bg: #ffffff;
+    --select-border: #e2e8f0;
+    --select-text: #1e293b;
+    --select-menu-bg: #ffffff;
   }
 
   html.dark {
     background-color: #1e1f21;
+    --form-focus-color: #8ab4f8;
+    --form-caret-color: #cbd5e1;
+    --form-selection-bg: rgba(138, 180, 248, 0.35);
+    --form-selection-text: #f8fafc;
+    --select-bg: #1e293b;
+    --select-border: rgba(255, 255, 255, 0.1);
+    --select-text: #f1f5f9;
+    --select-menu-bg: #1e293b;
   }
 
   /* Global Dark Mode Autofill Fix */
@@ -45,17 +61,70 @@
 
   input,
   textarea,
-  select,
+  select {
+    outline: none !important;
+    caret-color: var(--form-caret-color) !important;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 1px var(--form-focus-color) !important;
+  }
+
   button {
-    @apply focus:outline-none focus:ring-2 focus:ring-indigo-500;
+    @apply focus:outline-none;
+  }
+
+  button:focus-visible {
+    @apply ring-2 ring-indigo-500;
   }
 
   ::selection {
-    @apply bg-indigo-200 text-indigo-900;
+    background: var(--form-selection-bg);
+    color: var(--form-selection-text);
   }
 }
 
 @layer components {
+  /* Google-style form focus for search fields and react-select controls */
+  .react-select__control,
+  [class*="-control"] {
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+  }
+
+  .react-select__control--is-focused,
+  [class*="-control"]:has(input:focus) {
+    border-color: var(--form-focus-color) !important;
+    box-shadow: 0 0 0 1px var(--form-focus-color) !important;
+    outline: none !important;
+  }
+
+  .react-select__input,
+  .react-select__input-container,
+  [class*="-Input"],
+  [class*="-input"] {
+    caret-color: var(--form-caret-color) !important;
+  }
+
+  .react-select__input input,
+  .react-select__input-container input,
+  [class*="-Input"] input,
+  [class*="-input"] input {
+    caret-color: var(--form-caret-color) !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .react-select__input input::selection,
+  .react-select__input-container input::selection,
+  [class*="-Input"] input::selection,
+  [class*="-input"] input::selection {
+    background: var(--form-selection-bg) !important;
+    color: var(--form-selection-text) !important;
+  }
+
   /* ✅ Global responsive page container — ใช้แทน max-w-* ที่ซ้ำกัน */
   .page-container {
     @apply w-full mx-auto px-3 sm:px-4 md:px-6 lg:px-8;

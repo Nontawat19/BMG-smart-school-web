@@ -1,8 +1,8 @@
-import React from 'react';
-import Select from 'react-select';
-import { ChevronDown } from 'lucide-react';
-import { CLASSES } from '../utils';
-import { Course, CourseInstance, Schedule, SchoolSettings, Teacher } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import Select, { components, MenuListProps } from 'react-select';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CLASSES, thaiFormatClass } from '../utils';
+import { Course, CourseInstance, Schedule, SchoolSettings, Teacher, getAssignmentTeacherIds } from '../types';
 import { TeacherSelect } from './TeacherSelect';
 
 interface TeacherScheduleControlPanelProps {
@@ -14,6 +14,7 @@ interface TeacherScheduleControlPanelProps {
     selectedSemester: string;
     filterClass: string;
     filterRoom: string;
+    filterGroup: string;
     filterPhysicalRoom: string;
     physicalRooms: any[];
     searchTerm: string;
@@ -23,6 +24,7 @@ interface TeacherScheduleControlPanelProps {
     setSchedule: React.Dispatch<React.SetStateAction<Schedule>>;
     setFilterClass: (value: string) => void;
     setFilterRoom: (value: string) => void;
+    setFilterGroup: (value: string) => void;
     setFilterPhysicalRoom: (value: string) => void;
 }
 
@@ -35,6 +37,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
     selectedSemester,
     filterClass,
     filterRoom,
+    filterGroup,
     filterPhysicalRoom,
     physicalRooms,
     searchTerm,
@@ -44,10 +47,48 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
     setSchedule,
     setFilterClass,
     setFilterRoom,
+    setFilterGroup,
     setFilterPhysicalRoom
 }) => {
+    const courseMatchesRoom = (course: Course) => {
+        if (filterRoom === 'all') return true;
+
+        const courseClassIds = Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[];
+        const assignedClassIds = course.teacherAssignments
+            ?.filter(a => !selectedTeacher || getAssignmentTeacherIds(a).includes(selectedTeacher))
+            .flatMap(a => a.classLevels || []) || [];
+        const allAssociatedClasses = [...courseClassIds, ...assignedClassIds];
+
+        return allAssociatedClasses.some(id => {
+            const parts = String(id).split('/');
+            if (parts.length < 2) return false;
+            const roomPart = parts[1].trim();
+            if (filterRoom === 'แผน') return roomPart === 'แผน';
+            return Number(roomPart) === Number(filterRoom);
+        });
+    };
+
+    const courseMatchesGroup = (course: Course) => {
+        if (filterGroup === 'all') return true;
+
+        return course.teacherAssignments
+            ?.filter(a => !selectedTeacher || getAssignmentTeacherIds(a).includes(selectedTeacher))
+            .some(a => String(a.groupNumber || 1) === filterGroup) || false;
+    };
+
+    const handleClassChange = (option: any) => {
+        const nextClass = option?.value || 'all';
+        setFilterClass(nextClass);
+
+        if (nextClass !== 'all') {
+            setFilterRoom('1');
+            setFilterGroup('1');
+        }
+    };
+
+
     return (
-        <section className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] p-5 shadow-sm relative overflow-hidden group transition-colors">
+        <section className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] p-4 shadow-sm relative overflow-hidden group transition-colors">
             <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent"></div>
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -55,7 +96,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                     <h2 className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-[0.2em]">แผงควบคุมการเลือกวิชา</h2>
                 </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_1.5fr_0.6fr_0.6fr_0.6fr_1fr] gap-4">
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-indigo-500/20 text-indigo-400 text-[10px] font-black border border-indigo-500/30">1</span>
@@ -76,14 +117,14 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                                         if (!isCorrectSemester) return false;
 
                                         const hasAssignments = (c.teacherAssignments?.length || 0) > 0;
-                                        const isForSelectedTeacher = !selectedTeacher || c.teacherAssignments?.some(a => a.teacherId === selectedTeacher);
+                                        const isForSelectedTeacher = !selectedTeacher || c.teacherAssignments?.some(a => getAssignmentTeacherIds(a).includes(selectedTeacher));
 
                                         const classIds = Array.isArray(c.classId) ? c.classId : [c.classId].filter(Boolean) as string[];
-                                        const assignedClasses = c.teacherAssignments?.filter(a => !selectedTeacher || a.teacherId === selectedTeacher).flatMap(a => a.classLevels || []) || [];
+                                        const assignedClasses = c.teacherAssignments?.filter(a => !selectedTeacher || getAssignmentTeacherIds(a).includes(selectedTeacher)).flatMap(a => a.classLevels || []) || [];
                                         const allAssociatedClasses = [...classIds, ...assignedClasses];
                                         const isForSelectedClass = filterClass === 'all' || allAssociatedClasses.some(id => id === filterClass || id.startsWith(filterClass + '/'));
 
-                                        if (!hasAssignments || !isForSelectedTeacher || !isForSelectedClass) return false;
+                                        if (!hasAssignments || !isForSelectedTeacher || !isForSelectedClass || !courseMatchesRoom(c) || !courseMatchesGroup(c)) return false;
 
                                         const remainingCount = availableCourseInstances.filter(inst => inst.code === c.code).length;
                                         return remainingCount > 0;
@@ -111,7 +152,8 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                                     backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
                                     border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
                                     borderRadius: '16px',
-                                    overflow: 'hidden',
+                                    overflowX: 'hidden',
+                                    width: '100%',
                                     boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
                                 }),
                                 option: (base, { isFocused, isSelected }) => ({
@@ -123,6 +165,10 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                                             : 'transparent',
                                     color: isDarkMode ? 'white' : 'black',
                                     cursor: 'pointer',
+                                    padding: '4px 12px',
+                                    margin: '1px 8px',
+                                    borderRadius: '8px',
+                                    width: 'calc(100% - 16px)',
                                     fontSize: '11px',
                                     fontWeight: '700'
                                 }),
@@ -131,7 +177,8 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                                 menuPortal: (base) => ({ ...base, zIndex: 9999 }),
                                 singleValue: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black' }),
                                 input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
-                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' })
+                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+                                menuList: (base) => ({ ...base, maxHeight: '350px', padding: 0 })
                             }}
                         />
                     </div>
@@ -151,63 +198,256 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                         <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">ระดับชั้น</label>
                     </div>
                     <div className="relative group/input">
-                        <select
-                            value={filterClass}
-                            onChange={(e) => setFilterClass(e.target.value)}
-                            className="w-full h-9 px-4 bg-gray-50/80 dark:bg-[#1a1b1e] border border-gray-100 dark:border-white/5 rounded-[12px] text-xs font-bold appearance-none cursor-pointer focus:outline-none dark:text-white"
-                        >
-                            <option value="all" className="dark:bg-[#1a1b1e] dark:text-white">เลือกชั้น...</option>
-                            {schoolSettings.availableClasses.map((k) => (
-                                <option key={k} value={k} className="dark:bg-[#1a1b1e] dark:text-white">
-                                    {CLASSES[k as keyof typeof CLASSES]}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        <Select
+                            menuPortalTarget={document.body}
+                            value={filterClass !== 'all' ? { value: filterClass, label: thaiFormatClass(CLASSES[filterClass as keyof typeof CLASSES] || filterClass) } : { value: 'all', label: 'เลือกชั้น...' }}
+                            onChange={handleClassChange}
+                            options={[
+                                { value: 'all', label: 'เลือกชั้น...' },
+                                ...schoolSettings.availableClasses.map((k) => ({
+                                    value: k,
+                                    label: thaiFormatClass(CLASSES[k as keyof typeof CLASSES] || k)
+                                }))
+                            ]}
+                            placeholder="เลือกชั้น..."
+                            className="react-select-container text-xs font-black"
+                            classNamePrefix="react-select"
+                            styles={{
+                                control: (base) => ({
+                                    ...base, minHeight: '36px', height: '36px', borderRadius: '12px',
+                                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(249, 250, 251, 0.8)',
+                                    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    fontWeight: '800'
+                                }),
+                                menu: (base) => ({
+                                    ...base,
+                                    backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
+                                    border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                                    borderRadius: '16px',
+                                    overflowX: 'hidden',
+                                    width: '100%',
+                                    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+                                }),
+                                option: (base, { isFocused, isSelected }) => ({
+                                    ...base,
+                                    backgroundColor: isSelected
+                                        ? '#4f46e5'
+                                        : isFocused
+                                            ? isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                            : 'transparent',
+                                    color: isDarkMode ? 'white' : 'black',
+                                    cursor: 'pointer',
+                                    padding: '4px 12px',
+                                    margin: '1px 8px',
+                                    borderRadius: '8px',
+                                    width: 'calc(100% - 16px)',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                }),
+                                valueContainer: (base) => ({ ...base, padding: '0 8px' }),
+                                indicatorsContainer: (base) => ({ ...base, height: '36px' }),
+                                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                                singleValue: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black' }),
+                                input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
+                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+                                menuList: (base) => ({ ...base, maxHeight: '350px', padding: 0 })
+                            }}
+                        />
                     </div>
                 </div>
-
-                <div className="space-y-3">
+                <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-500/20 text-blue-400 text-[10px] font-black border border-blue-500/30">4</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">กลุ่ม</label>
+                        <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-cyan-500/20 text-cyan-400 text-[10px] font-black border border-cyan-500/30">4</span>
+                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">ห้อง</label>
                     </div>
                     <div className="relative group/input">
-                        <select
-                            value={filterRoom}
-                            onChange={(e) => setFilterRoom(e.target.value)}
-                            className="w-full h-9 px-4 bg-gray-50/80 dark:bg-[#1a1b1e] border border-gray-100 dark:border-white/5 rounded-[12px] text-xs font-bold appearance-none cursor-pointer focus:outline-none dark:text-white"
-                        >
-                            <option value="all" className="dark:bg-[#1a1b1e] dark:text-white">ทุกกลุ่ม...</option>
-                            {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                                <option key={num} value={String(num)} className="dark:bg-[#1a1b1e] dark:text-white">
-                                    กลุ่ม {num}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        <Select
+                            menuPortalTarget={document.body}
+                            value={filterRoom !== 'all' ? { value: filterRoom, label: `ห้อง ${filterRoom}` } : { value: 'all', label: 'เลือกห้อง...' }}
+                            onChange={(option: any) => setFilterRoom(option?.value || 'all')}
+                            options={[
+                                { value: 'all', label: 'เลือกห้อง...' },
+                                ...Array.from({ length: 20 }, (_, i) => {
+                                    const num = (i + 1).toString();
+                                    return { value: num, label: `ห้อง ${num}` };
+                                }),
+                                { value: 'แผน', label: 'ห้อง แผน' }
+                            ]}
+                            placeholder="เลือกห้อง..."
+                            className="react-select-container text-xs font-black"
+                            classNamePrefix="react-select"
+                            styles={{
+                                control: (base) => ({
+                                    ...base, minHeight: '36px', height: '36px', borderRadius: '12px',
+                                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(249, 250, 251, 0.8)',
+                                    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    fontWeight: '800'
+                                }),
+                                menu: (base) => ({
+                                    ...base,
+                                    backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
+                                    border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                                    borderRadius: '16px',
+                                    overflowX: 'hidden',
+                                    width: '100%',
+                                    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+                                }),
+                                option: (base, { isFocused, isSelected }) => ({
+                                    ...base,
+                                    backgroundColor: isSelected
+                                        ? '#4f46e5'
+                                        : isFocused
+                                            ? isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                            : 'transparent',
+                                    color: isDarkMode ? 'white' : 'black',
+                                    cursor: 'pointer',
+                                    padding: '4px 12px',
+                                    margin: '1px 8px',
+                                    borderRadius: '8px',
+                                    width: 'calc(100% - 16px)',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                }),
+                                valueContainer: (base) => ({ ...base, padding: '0 8px' }),
+                                indicatorsContainer: (base) => ({ ...base, height: '36px' }),
+                                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                                singleValue: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black' }),
+                                input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
+                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+                                menuList: (base) => ({ ...base, maxHeight: '350px', padding: 0 })
+                            }}
+                        />
                     </div>
                 </div>
 
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-violet-500/20 text-violet-400 text-[10px] font-black border border-violet-500/30">5</span>
+                        <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-500/20 text-blue-400 text-[10px] font-black border border-blue-500/30">5</span>
+                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">กลุ่มเรียน</label>
+                    </div>
+                    <div className="relative group/input">
+                        <Select
+                            menuPortalTarget={document.body}
+                            value={filterGroup !== 'all' ? { value: filterGroup, label: `กลุ่ม ${filterGroup}` } : { value: 'all', label: 'เลือกกลุ่ม...' }}
+                            onChange={(option: any) => setFilterGroup(option?.value || 'all')}
+                            options={[
+                                { value: 'all', label: 'เลือกกลุ่ม...' },
+                                ...Array.from({ length: 20 }, (_, i) => ({
+                                    value: String(i + 1),
+                                    label: `กลุ่ม ${i + 1}`
+                                }))
+                            ]}
+                            placeholder="เลือกกลุ่ม..."
+                            className="react-select-container text-xs font-black"
+                            classNamePrefix="react-select"
+                            styles={{
+                                control: (base) => ({
+                                    ...base, minHeight: '36px', height: '36px', borderRadius: '12px',
+                                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(249, 250, 251, 0.8)',
+                                    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    fontWeight: '800'
+                                }),
+                                menu: (base) => ({
+                                    ...base,
+                                    backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
+                                    border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                                    borderRadius: '16px',
+                                    overflowX: 'hidden',
+                                    width: '100%',
+                                    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+                                }),
+                                option: (base, { isFocused, isSelected }) => ({
+                                    ...base,
+                                    backgroundColor: isSelected
+                                        ? '#4f46e5'
+                                        : isFocused
+                                            ? isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                            : 'transparent',
+                                    color: isDarkMode ? 'white' : 'black',
+                                    cursor: 'pointer',
+                                    padding: '4px 12px',
+                                    margin: '1px 8px',
+                                    borderRadius: '8px',
+                                    width: 'calc(100% - 16px)',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                }),
+                                valueContainer: (base) => ({ ...base, padding: '0 8px' }),
+                                indicatorsContainer: (base) => ({ ...base, height: '36px' }),
+                                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                                singleValue: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black' }),
+                                input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
+                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+                                menuList: (base) => ({ ...base, maxHeight: '350px', padding: 0 })
+                            }}
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-violet-500/20 text-violet-400 text-[10px] font-black border border-violet-500/30">6</span>
                         <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">สถานที่</label>
                     </div>
                     <div className="relative group/input">
-                        <select
-                            value={filterPhysicalRoom}
-                            onChange={(e) => setFilterPhysicalRoom(e.target.value)}
-                            className="w-full h-9 px-4 bg-gray-50/80 dark:bg-[#1a1b1e] border border-gray-100 dark:border-white/5 rounded-[12px] text-xs font-bold appearance-none cursor-pointer focus:outline-none dark:text-white"
-                        >
-                            <option value="all" className="dark:bg-[#1a1b1e] dark:text-white">ทุกสถานที่...</option>
-                            {physicalRooms.map((room: any) => (
-                                <option key={room.id} value={room.id} className="dark:bg-[#1a1b1e] dark:text-white">
-                                    {room.roomCode ? `(${room.roomCode}) ` : ''}{room.roomName}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        <Select
+                            menuPortalTarget={document.body}
+                            value={filterPhysicalRoom !== 'all' ? { 
+                                value: filterPhysicalRoom, 
+                                label: physicalRooms.find(r => r.id === filterPhysicalRoom) ? `${physicalRooms.find(r => r.id === filterPhysicalRoom).roomCode ? `(${physicalRooms.find(r => r.id === filterPhysicalRoom).roomCode}) ` : ''}${physicalRooms.find(r => r.id === filterPhysicalRoom).roomName}` : filterPhysicalRoom 
+                            } : { value: 'all', label: 'ทุกสถานที่...' }}
+                            onChange={(option: any) => setFilterPhysicalRoom(option?.value || 'all')}
+                            options={[
+                                { value: 'all', label: 'ทุกสถานที่...' },
+                                ...physicalRooms.map((room: any) => ({
+                                    value: room.id,
+                                    label: `${room.roomCode ? `(${room.roomCode}) ` : ''}${room.roomName}`
+                                }))
+                            ]}
+                            placeholder="เลือกสถานที่..."
+                            className="react-select-container text-xs font-black"
+                            classNamePrefix="react-select"
+                            styles={{
+                                control: (base) => ({
+                                    ...base, minHeight: '36px', height: '36px', borderRadius: '12px',
+                                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(249, 250, 251, 0.8)',
+                                    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    fontWeight: '800'
+                                }),
+                                menu: (base) => ({
+                                    ...base,
+                                    backgroundColor: isDarkMode ? '#1a1b1e' : 'white',
+                                    border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                                    borderRadius: '16px',
+                                    overflowX: 'hidden',
+                                    width: '100%',
+                                    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+                                }),
+                                option: (base, { isFocused, isSelected }) => ({
+                                    ...base,
+                                    backgroundColor: isSelected
+                                        ? '#4f46e5'
+                                        : isFocused
+                                            ? isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                            : 'transparent',
+                                    color: isDarkMode ? 'white' : 'black',
+                                    cursor: 'pointer',
+                                    padding: '4px 12px',
+                                    margin: '1px 8px',
+                                    borderRadius: '8px',
+                                    width: 'calc(100% - 16px)',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                }),
+                                valueContainer: (base) => ({ ...base, padding: '0 8px' }),
+                                indicatorsContainer: (base) => ({ ...base, height: '36px' }),
+                                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                                singleValue: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black' }),
+                                input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
+                                placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+                                menuList: (base) => ({ ...base, maxHeight: '350px', padding: 0 })
+                            }}
+                        />
                     </div>
                 </div>
             </div>

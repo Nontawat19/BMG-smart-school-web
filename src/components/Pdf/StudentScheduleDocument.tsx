@@ -1,5 +1,6 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Font, Image } from '@react-pdf/renderer';
+import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods } from '@/utils/scheduleDisplayUtils';
 
 // Register Thai Font (Sarabun)
 // Register Thai Font (Sarabun)
@@ -64,6 +65,7 @@ export interface StudentSchedulePDFProps {
     specialPeriods: SpecialPeriod[];
     periodSettings: PeriodSetting[];
     roomName?: string;
+    groupName?: string;
 }
 
 const styles = StyleSheet.create({
@@ -134,18 +136,14 @@ const styles = StyleSheet.create({
         fontSize: 12,
     },
     dayCell: { width: '8%', fontWeight: 'bold' },
-    periodCell: { flex: 1 },
+    periodCell: { width: '8.7%' }, // Default width, will be overridden inline
     lunchCell: { width: '5%', padding: 0, alignItems: 'center', justifyContent: 'center' },
 
     // Content inside cells
     courseTitle: { fontWeight: 'bold', fontSize: 11, marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
     courseCode: { fontSize: 9, marginBottom: 1, color: '#333' },
     teacherName: { fontSize: 9, color: '#444', marginBottom: 1 },
-<<<<<<< HEAD
     roomCode: { fontSize: 10, color: '#000000', fontWeight: 'bold' },
-=======
-    roomCode: { fontSize: 9, color: '#10b981', fontWeight: 'bold' },
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     // Footer
 
@@ -163,8 +161,10 @@ const StudentSchedulePageContent = ({
     totalPeriods,
     specialPeriods,
     periodSettings,
-    roomName
+    roomName,
+    groupName
 }: StudentSchedulePDFProps) => {
+    const displayPeriods = getTimetableDisplayPeriods(periodSettings);
 
     return (
         <Page size="A4" orientation="landscape" style={styles.page}>
@@ -174,115 +174,171 @@ const StudentSchedulePageContent = ({
                 </View>
                 <View style={styles.headerContent}>
                     <Text style={styles.headerText}>
-<<<<<<< HEAD
-                        ตารางเรียน {className}{roomName ? `/${roomName}` : ''} ภาคเรียนที่ {term || '...'} ปีการศึกษา {academicYear || '...'}
-=======
-                        ตารางเรียน {className} {roomName ? `ห้อง ${roomName}` : ''} ภาคเรียนที่ {term || '...'} ปีการศึกษา {academicYear || '...'}
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+                        ตารางเรียน {className}{roomName ? `/${roomName}` : ''}{groupName && groupName !== 'all' ? ` (กลุ่ม ${groupName})` : ''} ภาคเรียนที่ {term || '...'} ปีการศึกษา {academicYear || '...'}
                     </Text>
                     <Text style={styles.subHeaderText}>
                         {schoolInfo.schoolName ? `โรงเรียน${schoolInfo.schoolName} ` : ''}
-                        {schoolInfo.subDistrict ? `ต.${schoolInfo.subDistrict} ` : ''}
-                        {schoolInfo.district ? `อ.${schoolInfo.district} ` : ''}
-                        {schoolInfo.province ? `จ.${schoolInfo.province}` : ''}
+                        {schoolInfo.affiliation ? `${schoolInfo.affiliation}` : ''}
                     </Text>
-                    <Text style={styles.affiliationText}>{schoolInfo.affiliation || 'สังกัด...'}</Text>
                 </View>
             </View>
 
             <View style={styles.table}>
                 {/* Header Row */}
-                <View style={[styles.row, styles.headerRow]}>
-                    <View style={[styles.cell, styles.dayCell]}><Text>วัน / เวลา</Text></View>
-                    {periodSettings.map((p) => (
-                        <View key={p.id} style={[styles.cell, p.id === 'lunch' ? styles.lunchCell : styles.periodCell]}>
-                            {p.id === 'lunch' ? (
-                                <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                                    <Text style={{ fontWeight: 'bold', fontSize: 8 }}>{p.label}</Text>
-                                    <Text style={{ fontSize: 6 }}>{p.startTime} - {p.endTime}</Text>
+                {(() => {
+                    const lunchCount = displayPeriods.filter(p => p.id === 'lunch').length;
+                    const teachingCount = displayPeriods.length - lunchCount;
+                    const teachingWidth = (100 - 8 - (lunchCount * 5)) / teachingCount;
+
+                    return (
+                        <View style={[styles.row, styles.headerRow]}>
+                            <View style={[styles.cell, styles.dayCell]}><Text>วัน / เวลา</Text></View>
+                            {displayPeriods.map((p, index) => {
+                                const effectiveEnd = getEffectivePeriodEnd(displayPeriods, p, index);
+                                return (
+                                <View key={p.id} style={[styles.cell, p.id === 'lunch' ? styles.lunchCell : styles.periodCell, p.id !== 'lunch' ? { width: `${teachingWidth}%` } : {}]}>
+                                    {p.id === 'lunch' ? (
+                                        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                                            <Text style={{ fontWeight: 'bold', fontSize: 8 }}>{p.label}</Text>
+                                            <Text style={{ fontSize: 6 }}>{p.startTime} - {effectiveEnd}</Text>
+                                        </View>
+                                    ) : (
+                                        <>
+                                            <Text style={{ fontWeight: 'bold', fontSize: 10 }}>{p.label}</Text>
+                                            <Text style={{ fontSize: 8 }}>{p.startTime} - {effectiveEnd}</Text>
+                                        </>
+                                    )}
                                 </View>
-                            ) : (
-                                <>
-                                    <Text style={{ fontWeight: 'bold', fontSize: 10 }}>{p.label}</Text>
-                                    <Text style={{ fontSize: 8 }}>{p.startTime} - {p.endTime}</Text>
-                                </>
-                            )}
+                                );
+                            })}
                         </View>
-                    ))}
-                </View>
+                    );
+                })()}
 
                 {/* Data Rows */}
-                {Object.entries(DAYS).map(([dayKey, dayName], dayIndex) => (
-                    <View key={dayKey} style={styles.row}>
-                        <View style={[styles.cell, styles.dayCell]}><Text>{dayName}</Text></View>
-                        {periodSettings.map((period) => {
-                            if (period.id === 'lunch') {
-                                const isLastRow = dayIndex === Object.keys(DAYS).length - 1;
-                                return (
-                                    <View key="lunch" style={[styles.cell, styles.lunchCell, { borderBottomWidth: isLastRow ? 1 : 0 }]}>
-                                        {dayIndex === 2 && (
-                                            <Text style={{ transform: 'rotate(-90deg)', width: 80, textAlign: 'center', fontSize: 16, fontWeight: 'bold' }}>
-                                                พักกลางวัน
-                                            </Text>
-                                        )}
-                                    </View>
-                                );
-                            }
+                {Object.entries(DAYS).map(([dayKey, dayName], dayIndex) => {
+                    const rowSpans = [];
+                    for (let i = 0; i < displayPeriods.length; i++) {
+                        const period = displayPeriods[i];
+                        
+                        if (period.id === 'lunch') {
+                            rowSpans.push({ type: 'lunch', period, span: 1 });
+                            continue;
+                        }
 
-                            const teachingPeriodNumber = period.isTeachingPeriod ? parseInt(period.id.replace('period-', '')) : null;
-                            const slot = teachingPeriodNumber ? `${dayKey}-${teachingPeriodNumber}` : `${dayKey}-${period.id}`;
-                            const entry = teachingPeriodNumber ? schedule[slot] : null;
-
-                            const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
-                                const { id, startTime, endTime } = periodSetting;
-                                return specialPeriods.find(sp =>
-                                    (sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)) ||
-                                    (sp.startTime === startTime && sp.endTime === endTime && (!sp.day || sp.day === 'all' || sp.day === day))
-                                );
-                            };
-                            const special = getSpecialPeriod(dayKey, period);
-                            const specialTitle = special?.title;
-                            const isHomeroom = period.id === 'homeroom';
-
-                            let displayText = specialTitle || period.label || '';
-                            if (displayText.startsWith('กิจกรรม') && displayText.length > 8) {
-                                displayText = displayText.replace('กิจกรรม', 'กิจกรรม\n');
-                            }
-                            const isMultiLine = displayText.includes('\n');
-                            const fontSize = isMultiLine ? 10 : (displayText.length > 15 ? 10 : 12);
-
-                            return (
-                                <View key={period.id} style={[styles.cell, styles.periodCell]}>
-                                    {entry ? (
-                                        <>
-                                            <Text style={styles.courseTitle}>{entry.course.title}</Text>
-                                            <Text style={styles.courseCode}>{entry.course.code}</Text>
-                                            <Text style={styles.teacherName}>{entry.teacherName}</Text>
-                                            {entry.roomCode && <Text style={styles.roomCode}>{entry.roomCode}</Text>}
-                                        </>
-                                    ) : specialTitle ? (
-                                        <Text style={{
-                                            fontWeight: 'bold',
-                                            fontSize: fontSize,
-                                            textAlign: 'center',
-                                            lineHeight: 1.1,
-                                            paddingHorizontal: 0,
-                                        }}>
-                                            {displayText + ' '}
-                                        </Text>
-                                    ) : !period.isTeachingPeriod ? (
-                                        <View style={{ justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                                            <Text style={{ fontWeight: 'bold', fontSize: 12 }}>{displayText}</Text>
-                                            {isHomeroom && homeroomTeacher && (
-                                                <Text style={{ fontSize: 10 }}>({homeroomTeacher})</Text>
-                                            )}
-                                        </View>
-                                    ) : null}
-                                </View>
+                        const slot = getScheduleSlotCandidates(dayKey, period, i).find(key => schedule[key]) || `${dayKey}-${(period as any).index ?? i}`;
+                        const entry = schedule[slot];
+                        
+                        const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
+                            const { id, startTime, endTime } = periodSetting;
+                            return specialPeriods.find(sp =>
+                                (sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)) ||
+                                (sp.startTime === startTime && sp.endTime === endTime && (!sp.day || sp.day === 'all' || sp.day === day))
                             );
-                        })}
-                    </View>
-                ))}
+                        };
+                        const special = getSpecialPeriod(dayKey, period);
+                        const specialTitle = special?.title;
+
+                        let span = 1;
+                        while (i + 1 < displayPeriods.length) {
+                            const nextPeriod = displayPeriods[i + 1];
+                            if (nextPeriod.id === 'lunch') break;
+
+                            const nextSlot = getScheduleSlotCandidates(dayKey, nextPeriod, i + 1).find(key => schedule[key]) || `${dayKey}-${(nextPeriod as any).index ?? (i + 1)}`;
+                            const nextEntry = schedule[nextSlot];
+                            const nextSpecial = getSpecialPeriod(dayKey, nextPeriod);
+                            const nextSpecialTitle = nextSpecial?.title;
+
+                            const sameEntry = entry && nextEntry && 
+                                             entry.course.code === nextEntry.course.code && 
+                                             entry.teacherName === nextEntry.teacherName;
+                            
+                            const sameSpecial = !entry && !nextEntry && specialTitle && nextSpecialTitle && specialTitle === nextSpecialTitle;
+
+                            if (sameEntry || sameSpecial) {
+                                span++;
+                                i++;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        rowSpans.push({ 
+                            type: entry ? 'course' : (specialTitle ? 'special' : (period.isTeachingPeriod ? 'empty' : 'fixed')),
+                            period, 
+                            span, 
+                            entry, 
+                            specialTitle,
+                            slot
+                        });
+                    }
+
+                    return (
+                        <View key={dayKey} style={styles.row}>
+                            <View style={[styles.cell, styles.dayCell]}><Text>{dayName}</Text></View>
+                            {(() => {
+                                const lunchCount = displayPeriods.filter(p => p.id === 'lunch').length;
+                                const teachingCount = displayPeriods.length - lunchCount;
+                                const teachingWidth = (100 - 8 - (lunchCount * 5)) / teachingCount;
+
+                                return rowSpans.map((rowItem, sIndex) => {
+                                    if (rowItem.type === 'lunch') {
+                                        const isLastRow = dayIndex === Object.keys(DAYS).length - 1;
+                                        return (
+                                            <View key="lunch" style={[styles.cell, styles.lunchCell, { borderBottomWidth: isLastRow ? 1 : 0 }]}>
+                                                {dayIndex === 2 && (
+                                                    <Text style={{ transform: 'rotate(-90deg)', width: 80, textAlign: 'center', fontSize: 16, fontWeight: 'bold' }}>
+                                                        พักกลางวัน
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        );
+                                    }
+
+                                    const { type, span, entry, specialTitle, period } = rowItem;
+                                    const isHomeroom = period.id === 'homeroom';
+
+                                    let displayText = specialTitle || period.label || '';
+                                    if (displayText.startsWith('กิจกรรม') && displayText.length > 8) {
+                                        displayText = displayText.replace('กิจกรรม', 'กิจกรรม\n');
+                                    }
+                                    const isMultiLine = displayText.includes('\n');
+                                    const fontSize = isMultiLine ? 10 : (displayText.length > 15 ? 10 : 12);
+
+                                    return (
+                                        <View key={sIndex} style={[styles.cell, styles.periodCell, { width: `${teachingWidth * span}%` }]}>
+                                            {entry ? (
+                                                <>
+                                                    <Text style={styles.courseTitle}>{entry.course.title}</Text>
+                                                    <Text style={styles.courseCode}>{entry.course.code}</Text>
+                                                    <Text style={styles.teacherName}>{entry.teacherName}</Text>
+                                                    {entry.roomCode && <Text style={styles.roomCode}>{entry.roomCode}</Text>}
+                                                </>
+                                            ) : specialTitle ? (
+                                                <Text style={{
+                                                    fontWeight: 'bold',
+                                                    fontSize: fontSize,
+                                                    textAlign: 'center',
+                                                    lineHeight: 1.1,
+                                                    paddingHorizontal: 0,
+                                                }}>
+                                                    {displayText + ' '}
+                                                </Text>
+                                            ) : type === 'fixed' || !period.isTeachingPeriod ? (
+                                                <View style={{ justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                                                    <Text style={{ fontWeight: 'bold', fontSize: 12 }}>{displayText}</Text>
+                                                    {isHomeroom && homeroomTeacher && (
+                                                        <Text style={{ fontSize: 10 }}>({homeroomTeacher})</Text>
+                                                    )}
+                                                </View>
+                                            ) : null}
+                                        </View>
+                                    );
+                                });
+                            })()}
+                        </View>
+                    );
+                })}
             </View>
 
 
@@ -313,6 +369,7 @@ interface BulkStudentSchedulePDFProps {
     term: string;
     specialPeriods: SpecialPeriod[];
     periodSettings: PeriodSetting[];
+    groupName?: string;
 }
 
 export const BulkStudentSchedulePDF = ({
@@ -321,7 +378,8 @@ export const BulkStudentSchedulePDF = ({
     academicYear,
     term,
     specialPeriods,
-    periodSettings
+    periodSettings,
+    groupName
 }: BulkStudentSchedulePDFProps) => {
     return (
         <Document>
@@ -338,6 +396,7 @@ export const BulkStudentSchedulePDF = ({
                     totalPeriods={item.totalPeriods}
                     specialPeriods={specialPeriods}
                     periodSettings={periodSettings}
+                    groupName={groupName}
                 />
             ))}
         </Document>

@@ -1,8 +1,5 @@
 import { doc, getDoc } from 'firebase/firestore';
-<<<<<<< HEAD
 import { getCurrentThaiYear } from './dateUtils';
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
 interface Term {
     startDate: string | null;
@@ -32,11 +29,7 @@ export const getCurrentAcademicYear = async (
         if (!docSnap.exists()) {
             console.warn('No academic year data found, using fallback');
             return {
-<<<<<<< HEAD
                 academicYear: String(getCurrentThaiYear()),
-=======
-                academicYear: String(new Date().getFullYear() + 543),
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 currentTerm: null,
                 terms: {
                     term1: { startDate: null, endDate: null },
@@ -46,11 +39,7 @@ export const getCurrentAcademicYear = async (
         }
 
         const data = docSnap.data();
-<<<<<<< HEAD
         const academicYear = data.academicYear || String(getCurrentThaiYear());
-=======
-        const academicYear = data.academicYear || String(new Date().getFullYear() + 543);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         const terms = data.terms || {
             term1: { startDate: null, endDate: null },
             term2: { startDate: null, endDate: null }
@@ -80,11 +69,7 @@ export const getCurrentAcademicYear = async (
     } catch (error) {
         console.error('Error fetching academic year:', error);
         return {
-<<<<<<< HEAD
             academicYear: String(getCurrentThaiYear()),
-=======
-            academicYear: String(new Date().getFullYear() + 543),
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             currentTerm: null,
             terms: {
                 term1: { startDate: null, endDate: null },

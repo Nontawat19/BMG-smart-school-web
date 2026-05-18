@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { collectionGroup, query, where, getDocs, orderBy, limit, collection, Timestamp, doc, getDoc, documentId, updateDoc } from "firebase/firestore";
+import { query, where, getDocs, orderBy, limit, collection, Timestamp, doc, getDoc, documentId, updateDoc, onSnapshot, DocumentSnapshot } from "firebase/firestore";
 import { firestore } from "@/firebase";
 import { ToastContainer, toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
@@ -8,7 +8,8 @@ import { RootState } from "@/store";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import MainLayout from "@/layouts/MainLayout";
 import LogoutButton from "@/components/LogoutButton";
-import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
+import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList } from "react-icons/fa";
 import { useTheme } from "../../ThemeContext";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
@@ -20,11 +21,11 @@ import { useDispatch } from "react-redux";
 import Swal from 'sweetalert2';
 
 import "react-toastify/dist/ReactToastify.css";
-<<<<<<< HEAD
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import { CLASSES } from "@/utils/schoolUtils";
+import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
 
 // 1. สร้าง Interface สำหรับข้อมูลโปรไฟล์
 interface TeacherProfile {
@@ -110,6 +111,55 @@ interface Substitution {
   originalTeacherName: string;
   status?: string;
 }
+
+const DAYS: Record<string, string> = {
+  mon: 'จันทร์',
+  tue: 'อังคาร',
+  wed: 'พุธ',
+  thu: 'พฤหัสบดี',
+  fri: 'ศุกร์',
+};
+
+const DAY_SHORT_LABELS: Record<string, string> = {
+  mon: 'จ',
+  tue: 'อ',
+  wed: 'พ',
+  thu: 'พฤ',
+  fri: 'ศ',
+};
+
+const DEFAULT_PERIODS = [
+  { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, isFixed: true },
+  { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true },
+  { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true },
+  { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true },
+  { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true },
+  { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false, isFixed: true },
+  { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true },
+  { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true },
+  { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true },
+  { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
+];
+
+const getAssignmentTeacherIds = (assignment: any): string[] => {
+  const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+    ? assignment.teacherIds
+    : (assignment?.teacherId ? [assignment.teacherId] : []);
+  return Array.from(new Set(ids.filter(Boolean)));
+};
+
+const assignmentIncludesTeacher = (assignment: any, teacherId: string) => {
+  const ids = getAssignmentTeacherIds(assignment);
+  return ids.length === 0 || ids.includes(teacherId);
+};
+
+const matchesScheduleYearTerm = (data: any, year: string, term: string) => {
+  const dataYear = String(data.academicYear || '');
+  const dataTerm = String(data.semester || '');
+  const yearMatches = !year || !dataYear || dataYear === String(year);
+  const termMatches = !term || !dataTerm || dataTerm === String(term) || dataTerm.startsWith(`${term}/`) || String(term).startsWith(`${dataTerm}/`);
+  return yearMatches && termMatches;
+};
 
 const formatGradeLevel = (grade?: any) => {
   if (!grade) return "";
@@ -256,11 +306,24 @@ const ProfilePage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const appProfile = useSelector((state: RootState) => state.profile);
 
+  const getLevelLabel = (id: string | undefined) => {
+    if (!id) return "";
+    const map: Record<string, string> = {
+      k1: 'อนุบาล 1', k2: 'อนุบาล 2', k3: 'อนุบาล 3',
+      p1: 'ป.1', p2: 'ป.2', p3: 'ป.3', p4: 'ป.4', p5: 'ป.5', p6: 'ป.6',
+      m1: 'ม.1', m2: 'ม.2', m3: 'ม.3', m4: 'ม.4', m5: 'ม.5', m6: 'ม.6',
+      junior_high: 'ม.ต้น', senior_high: 'ม.ปลาย',
+      'ม.ต้น': 'ม.ต้น', 'ม.ปลาย': 'ม.ปลาย'
+    };
+    return map[id] || id;
+  };
+
   // 2. รวม State ให้จัดการง่ายขึ้น
   const [profile, setProfile] = useState<any | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   const [isFetching, setIsFetching] = useState(true);
   const [courses, setCourses] = useState<CourseData[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("general");
   const [coursesFetched, setCoursesFetched] = useState(false);
   const dispatch = useDispatch();
@@ -281,7 +344,7 @@ const ProfilePage: React.FC = () => {
         list.push(profileTeacher as any);
       }
     }
-    return list;
+    return getActiveSortedTeachers(list);
   }, [teacherMap, profile]);
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
   const { isDarkMode, toggleTheme } = useTheme(); // เก็บ toggleTheme ไว้ใช้กับปุ่ม
@@ -291,6 +354,16 @@ const ProfilePage: React.FC = () => {
   const [substitutionsItemsPerPage, setSubstitutionsItemsPerPage] = useState(10);
   const [expandedTeacherCourses, setExpandedTeacherCourses] = useState<string[]>([]);
 
+  const [schedule, setSchedule] = useState<Record<string, any>>({});
+  const [scheduleSpecialPeriods, setScheduleSpecialPeriods] = useState<any[]>([]);
+  const [schedulePeriodSettings, setSchedulePeriodSettings] = useState<any[]>(DEFAULT_PERIODS);
+  const [scheduleRoomsMap, setScheduleRoomsMap] = useState<Record<string, string>>({});
+  const [scheduleCoursesMap, setScheduleCoursesMap] = useState<Record<string, any>>({});
+  const [scheduleClubs, setScheduleClubs] = useState<any[]>([]);
+  const [isScheduleLoading, setIsScheduleLoading] = useState(false);
+  const [scheduleAcademicYear, setScheduleAcademicYear] = useState('');
+  const [scheduleCurrentTerm, setScheduleCurrentTerm] = useState('1');
+
   const toggleTeacherExpand = (courseId: string) => {
     setExpandedTeacherCourses(prev =>
       prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]
@@ -298,16 +371,13 @@ const ProfilePage: React.FC = () => {
   };
 
   const [teachingSemester, setTeachingSemester] = useState<string>("ทั้งหมด");
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
 
   const filteredTeachingCourses = useMemo(() => {
     if (teachingSemester === "ทั้งหมด") return courses;
     return courses.filter(c => c.semester === teachingSemester || c.semester === Number(teachingSemester).toString());
   }, [courses, teachingSemester]);
-<<<<<<< HEAD
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
-=======
-  const [academicYear, setAcademicYear] = useState<string>("");
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
@@ -346,7 +416,6 @@ const ProfilePage: React.FC = () => {
     }
   }, [reduxSchoolSettings.status, reduxSchoolSettings.availableClassOptions]);
 
-<<<<<<< HEAD
   const calendarState = useSelector((state: RootState) => state.calendar);
   const reduxTerms = calendarState.terms;
 
@@ -356,11 +425,9 @@ const ProfilePage: React.FC = () => {
     }
   }, [profile?.schoolId, dispatch]);
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   useEffect(() => {
     let isMounted = true;
-
+    let unsubscribeProfile: (() => void) | null = null;
 
     const fetchProfile = async () => {
       if (!currentUser?.uid) {
@@ -370,49 +437,64 @@ const ProfilePage: React.FC = () => {
 
       try {
         setIsFetching(true);
+        setProfile(null);
+        setUserRole(null);
 
-        // ใช้ collectionGroup query เพื่อค้นหาครูจาก uid
-        const teachersRef = collectionGroup(firestore, "teachers");
-        const q = query(
-          teachersRef,
-          where("uid", "==", currentUser.uid),
-          orderBy("createdAt", "desc"),
-          limit(1)
-        );
-        const querySnapshot = await getDocs(q);
+        const userDocSnap = await getDoc(doc(firestore, "users", currentUser.uid));
+        const userData = userDocSnap.exists() ? userDocSnap.data() : {};
+        const schoolId = String((currentUser as any)?.schoolId || userData.schoolId || "").trim();
 
-        if (!querySnapshot.empty && isMounted) {
-          const teacherDoc = querySnapshot.docs[0];
-          const data = teacherDoc.data();
-          const schoolId = teacherDoc.ref.parent.parent?.id;
+        if (!schoolId) {
+          if (isMounted) toast.error("ไม่พบรหัสโรงเรียนของบัญชีผู้ใช้");
+          return;
+        }
 
-          setProfile({
-            ...(data as any),
-            schoolId: schoolId || "",
-            docId: teacherDoc.id,
-          });
-          setUserRole('teacher');
-        } else if (isMounted) {
-          // If not a teacher, check if student
-          const studentsRef = collectionGroup(firestore, "students");
-          const qStudent = query(
-            studentsRef,
-            where("uid", "==", currentUser.uid),
-            limit(1)
-          );
-          const studentSnapshot = await getDocs(qStudent);
+        const findProfileDoc = async (collectionName: "teachers" | "students") => {
+          const baseRef = collection(firestore, "school-settings", schoolId, collectionName);
 
-          if (!studentSnapshot.empty && isMounted) {
-            const studentDoc = studentSnapshot.docs[0];
-            const data = studentDoc.data();
-            const schoolId = studentDoc.ref.parent.parent?.id;
+          const directSnap = await getDoc(doc(firestore, "school-settings", schoolId, collectionName, currentUser.uid));
+          if (directSnap.exists()) return directSnap;
 
+          const byUidSnap = await getDocs(query(baseRef, where("uid", "==", currentUser.uid), limit(1)));
+          if (!byUidSnap.empty) return byUidSnap.docs[0];
+
+          if (currentUser.email) {
+            const byEmailSnap = await getDocs(query(baseRef, where("email", "==", currentUser.email), limit(1)));
+            if (!byEmailSnap.empty) return byEmailSnap.docs[0];
+          }
+
+          const lookupId = collectionName === "teachers"
+            ? userData.teacherId
+            : userData.studentId;
+          if (lookupId) {
+            const idField = collectionName === "teachers" ? "teacherId" : "studentId";
+            const byCodeSnap = await getDocs(query(baseRef, where(idField, "==", lookupId), limit(1)));
+            if (!byCodeSnap.empty) return byCodeSnap.docs[0];
+          }
+
+          return null;
+        };
+
+        const subscribeProfileDoc = (profileDoc: any, role: 'teacher' | 'student') => {
+          unsubscribeProfile?.();
+          unsubscribeProfile = onSnapshot(profileDoc.ref, (docSnap: DocumentSnapshot) => {
+            if (!docSnap.exists() || !isMounted) return;
             setProfile({
-              ...data,
-              schoolId: schoolId || "",
-              docId: studentDoc.id,
+              ...(docSnap.data() as any),
+              schoolId,
+              docId: docSnap.id,
             });
-            setUserRole('student');
+            setUserRole(role);
+          });
+        };
+
+        const teacherDoc = await findProfileDoc("teachers");
+        if (teacherDoc && isMounted) {
+          subscribeProfileDoc(teacherDoc, 'teacher');
+        } else if (isMounted) {
+          const studentDoc = await findProfileDoc("students");
+          if (studentDoc && isMounted) {
+            subscribeProfileDoc(studentDoc, 'student');
           }
         }
       } catch (error) {
@@ -427,8 +509,9 @@ const ProfilePage: React.FC = () => {
 
     return () => {
       isMounted = false;
+      unsubscribeProfile?.();
     };
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, currentUser?.email, (currentUser as any)?.schoolId]);
 
   useEffect(() => {
     if (profile?.schoolId) {
@@ -436,41 +519,62 @@ const ProfilePage: React.FC = () => {
     }
   }, [profile?.schoolId, dispatch]);
 
+  // Reset courses fetch status when academicYear changes so it re-fetches with correct year data
+  useEffect(() => {
+    setCoursesFetched(false);
+  }, [academicYear]);
+
   useEffect(() => {
     if (profile?.schoolId && profile?.docId && activeTab === "teaching" && !coursesFetched) {
       const fetchCourses = async () => {
         try {
           const coursesRef = collection(firestore, "school-settings", profile.schoolId, "courses");
-          const enrollmentsRef = collection(firestore, "school-settings", profile.schoolId, "enrollments");
+          const assignmentsRef = collection(firestore, "school-settings", profile.schoolId, "course_assignments");
+          const roomsRef = collection(firestore, "school-settings", profile.schoolId, "physical-rooms");
 
-          // Get all courses and check enrollments
-          const [coursesSnap, enrollmentsSnap] = await Promise.all([
+          // Query course assignments for this academic year (if set)
+          let assignmentsQuery = query(assignmentsRef);
+          if (academicYear) {
+            assignmentsQuery = query(assignmentsRef, where("academicYear", "==", academicYear));
+          }
+
+          // Fetch all courses, assignments, and physical rooms in parallel
+          const [coursesSnap, assignmentsSnap, roomsSnap] = await Promise.all([
             getDocs(query(coursesRef)),
-            getDocs(query(enrollmentsRef))
+            getDocs(assignmentsQuery),
+            getDocs(query(roomsRef))
           ]);
 
-          // Get set of courses that HAVE students enrolled
-          const enrolledCourseIds = new Set(enrollmentsSnap.docs.map(doc => doc.data().courseId).filter(Boolean));
+          const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const roomsData = roomsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setRooms(roomsData);
 
           const coursesData = coursesSnap.docs
             .map(doc => {
               const data = doc.data();
-              return { id: doc.id, ...data, gradeLevel: data.gradeLevel || data.classId } as CourseData;
+              // Find the assignment for this course and semester
+              const courseAssignmentsForSemester = assignmentsData.filter(
+                (a: any) => a.courseId === doc.id && String(a.semester) === String(data.semester)
+              );
+              
+              // Merge teacher assignments
+              const teacherAssignments = courseAssignmentsForSemester.flatMap((a: any) => a.teacherAssignments || []);
+              
+              return { 
+                id: doc.id, 
+                ...data, 
+                gradeLevel: data.gradeLevel || data.classId,
+                teacherAssignments: teacherAssignments.length > 0 ? teacherAssignments : (data.teacherAssignments || [])
+              } as CourseData;
             })
             .filter(course => {
-              // 1. ต้องเป็นวิชาที่มีนักเรียน enrolled แล้ว
-              if (!enrolledCourseIds.has(course.id)) return false;
-
-              // 2. เป็นของครูคนนี้ (ของใครของมัน)
-              // เป็นครูหลัก
-              if (course.teacherId === profile.docId) return true;
-              // อยู่ในรายชื่อครูสอน (teacherIds)
-              if (course.teacherIds?.includes(profile.docId)) return true;
-              // มีการรับมอบหมาย (teacherAssignments)
-              if (course.teacherAssignments?.some(a => a.teacherId === profile.docId)) return true;
-
-              return false;
+              // 1. Must be assigned to this teacher (either via new course assignment, main teacher, teacherIds or legacy)
+              const isAssigned = course.teacherAssignments?.some(a => a.teacherId === profile.docId) || 
+                                 course.teacherId === profile.docId || 
+                                 course.teacherIds?.includes(profile.docId);
+              return isAssigned;
             });
+
           setCourses(coursesData);
         } catch (err) {
           console.error("Error fetching courses:", err);
@@ -480,7 +584,7 @@ const ProfilePage: React.FC = () => {
       };
       fetchCourses();
     }
-  }, [profile, activeTab, coursesFetched]);
+  }, [profile, activeTab, coursesFetched, academicYear]);
 
   useEffect(() => {
     if (activeTab === 'substitution' && profile?.schoolId && profile?.docId) {
@@ -525,23 +629,7 @@ const ProfilePage: React.FC = () => {
               personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
               affiliation: sData.affiliation || ""
             });
-<<<<<<< HEAD
             // Logic handled by calendarSlice
-=======
-            if (sData.academicYear) {
-              setAcademicYear(sData.academicYear);
-            }
-          }
-
-          // Also check calendar for year (fallback)
-          const calendarDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", "default");
-          const calendarSnap = await getDoc(calendarDocRef);
-          if (calendarSnap.exists()) {
-            const data = calendarSnap.data();
-            if (data.academicYear && !schoolInfo.schoolName) {
-              setAcademicYear(data.academicYear || "");
-            }
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
         } catch (err) {
           console.error("Error fetching school info:", err);
@@ -559,7 +647,6 @@ const ProfilePage: React.FC = () => {
           let startDate = "";
           let endDate = "";
 
-<<<<<<< HEAD
           if (calendarState.status === 'succeeded' && reduxTerms.length > 0) {
             const term1 = reduxTerms.find(t => t.id === 'term1' || t.name.includes('1'));
             const term2 = reduxTerms.find(t => t.id === 'term2' || t.name.includes('2'));
@@ -574,20 +661,6 @@ const ProfilePage: React.FC = () => {
               startDate = data.terms?.term1?.startDate || "";
               endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
             }
-=======
-          const yearDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", academicYear);
-          let yearSnap = await getDoc(yearDocRef);
-
-          if (!yearSnap.exists()) {
-            const defaultDocRef = doc(firestore, "school-settings", profile.schoolId, "main_calendar", "default");
-            yearSnap = await getDoc(defaultDocRef);
-          }
-
-          if (yearSnap.exists()) {
-            const data = yearSnap.data();
-            startDate = data.terms?.term1?.startDate || "";
-            endDate = data.terms?.term2?.endDate || data.terms?.term1?.endDate || "";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           }
 
           const attRef = collection(firestore, "school-settings", profile.schoolId, "teachers", profile.docId, "attendance");
@@ -672,6 +745,167 @@ const ProfilePage: React.FC = () => {
     }
   }, [activeTab, profile]);
 
+  useEffect(() => {
+    if (activeTab === 'schedule' && profile?.schoolId && profile?.docId) {
+      const fetchScheduleData = async () => {
+        setIsScheduleLoading(true);
+        try {
+          const schoolId = profile.schoolId;
+          const teacherId = profile.docId;
+
+          // Determine Year & Term
+          let acadYear = academicYear || "";
+          let currTerm = "1";
+          
+          if (calendarState.status === 'succeeded' && calendarState.academicYear) {
+            acadYear = calendarState.academicYear;
+            const terms = calendarState.terms;
+            if (terms && terms.length > 0) {
+              const today = new Date().toISOString().split('T')[0];
+              const found = terms.find((t: any) => today >= t.startDate && today <= t.endDate);
+              if (found) {
+                currTerm = found.name.includes('2') ? '2' : '1';
+              }
+            }
+          }
+          setScheduleAcademicYear(acadYear);
+          setScheduleCurrentTerm(currTerm);
+
+          // 1. Fetch configurations
+          const configRef = doc(firestore, 'school-settings', schoolId, 'configs', 'schedule_settings');
+          const configSnap = await getDoc(configRef);
+          let periods = DEFAULT_PERIODS;
+          if (configSnap.exists() && configSnap.data().periods) {
+            periods = normalizePeriodSettings(configSnap.data().periods);
+          }
+          setSchedulePeriodSettings(normalizePeriodSettings(periods));
+
+          // 2. Fetch special periods
+          const spCollectionRef = collection(firestore, 'school-settings', schoolId, 'special-periods');
+          const spSnap = await getDocs(spCollectionRef);
+          const spList = spSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setScheduleSpecialPeriods(spList);
+
+          // 3. Fetch rooms map
+          const roomsCollectionRef = collection(firestore, 'school-settings', schoolId, 'physical-rooms');
+          const roomsSnap = await getDocs(roomsCollectionRef);
+          const roomsMap: Record<string, string> = {};
+          roomsSnap.forEach(d => {
+            const rData = d.data();
+            roomsMap[d.id] = rData.roomCode || rData.roomName || d.id;
+          });
+          setScheduleRoomsMap(roomsMap);
+
+          // 4. Fetch courses map
+          const coursesCollectionRef = collection(firestore, 'school-settings', schoolId, 'courses');
+          const coursesSnap = await getDocs(coursesCollectionRef);
+          const coursesMap: Record<string, any> = {};
+          coursesSnap.forEach(d => {
+            coursesMap[d.id] = { id: d.id, ...d.data() };
+          });
+          setScheduleCoursesMap(coursesMap);
+
+          // 5. Fetch clubs
+          const clubsCollectionRef = collection(firestore, 'school-settings', schoolId, 'clubs');
+          const clubsSnap = await getDocs(clubsCollectionRef);
+          const clubsList = clubsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setScheduleClubs(clubsList);
+
+          // 6. Fetch course assignments
+          const assignmentsQuery = query(
+            collection(firestore, 'school-settings', schoolId, 'course_assignments'),
+            where('academicYear', '==', acadYear),
+            where('semester', '==', currTerm)
+          );
+          const assignmentsSnap = await getDocs(assignmentsQuery);
+          const assignmentsMap: Record<string, any> = {};
+          assignmentsSnap.forEach(d => {
+            const data = d.data();
+            if (data.courseId) {
+              assignmentsMap[data.courseId] = data;
+            }
+          });
+
+          // Helpers
+          const formatClassNamesLocal = (classIds: any, groupNum?: number, roomNum?: string | number): string => {
+            const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
+            const roomSuffix = roomNum ? `/${roomNum}` : '';
+            return ids.map(c => {
+              const baseName = CLASSES[c as keyof typeof CLASSES] || c;
+              return `${baseName}${roomSuffix}`;
+            }).join(', ');
+          };
+
+          const findAssignmentLocal = (course: any, tId: string, groupNum: number) => {
+            const semesterAssignment = assignmentsMap[course.id]?.teacherAssignments || [];
+            const courseAssignment = coursesMap[course.id]?.teacherAssignments || [];
+            return [...semesterAssignment, ...courseAssignment].find((a: any) =>
+              assignmentIncludesTeacher(a, tId) && Number(a.groupNumber || 1) === Number(groupNum)
+            );
+          };
+
+          // 7. Fetch schedule entries for the current teacher
+          const scheduleQuery = query(
+            collection(firestore, 'school-settings', schoolId, 'schedules'),
+            where('teacherId', '==', teacherId)
+          );
+          const scheduleSnap = await getDocs(scheduleQuery);
+          const merged: Record<string, any> = {};
+
+          scheduleSnap.forEach(d => {
+            const data = d.data();
+            if (!matchesScheduleYearTerm(data, acadYear, currTerm)) return;
+
+            const sch = data.schedule || {};
+            Object.entries(sch).forEach(([slot, courseData]) => {
+              if (courseData) {
+                const coursesArray = Array.isArray(courseData) ? courseData : [courseData];
+                coursesArray.forEach((course: any) => {
+                  if (!course) return;
+
+                  const groupNum = course.groupNumber || 1;
+                  const assignment = findAssignmentLocal(course, teacherId, groupNum);
+                  const courseWithGroup = { ...course, groupNumber: groupNum };
+
+                  const roomIds = assignment?.roomIds || course.room || [];
+                  let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
+                    ? roomIds.map((id: string) => roomsMap[id] || id).join(', ')
+                    : '';
+
+                  if (!roomDisplay && groupNum) {
+                    roomDisplay = String(groupNum);
+                  }
+
+                  const displayClassName = assignment?.classLevels?.length
+                    ? formatClassNamesLocal(assignment.classLevels, groupNum, assignment.room)
+                    : formatClassNamesLocal(data.classId, groupNum, course.room);
+
+                  if (merged[slot] && merged[slot].course.id === course.id && merged[slot].course.groupNumber === groupNum) {
+                    const existingClass = merged[slot].className;
+                    if (!existingClass.includes(displayClassName)) {
+                      merged[slot].className = `${existingClass}, ${displayClassName}`;
+                    }
+                  } else {
+                    merged[slot] = { course: courseWithGroup, className: displayClassName, roomDisplay };
+                  }
+                });
+              }
+            });
+          });
+
+          setSchedule(merged);
+        } catch (err) {
+          console.error("Error fetching teacher own schedule:", err);
+          toast.error("ไม่สามารถดึงข้อมูลตารางสอนได้");
+        } finally {
+          setIsScheduleLoading(false);
+        }
+      };
+
+      fetchScheduleData();
+    }
+  }, [activeTab, profile, academicYear, calendarState]);
+
   // 4. สร้างฟังก์ชันสำหรับนำทางไปหน้าแก้ไข Profile
   const handleEdit = () => {
     if (profile?.schoolId && profile?.docId) {
@@ -726,7 +960,78 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  const scheduleSummary = useMemo(() => {
+    const summaryMap: Record<string, any> = {};
 
+    Object.values(schedule).forEach((entry: any) => {
+      if (!entry) return;
+      const { course, className } = entry;
+      const groupNumber = course.groupNumber || 1;
+      const courseCode = course.code || course.courseCode || course.subjectCode || "";
+      const courseTitle = course.title || course.courseName || course.subjectName || "วิชาไม่ระบุชื่อ";
+      const key = `${course.id || `${courseCode}-${courseTitle}`}-${groupNumber}`;
+
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          code: courseCode,
+          title: courseTitle,
+          classes: [],
+          periods: 0,
+          credits: 0
+        };
+      }
+
+      const classList = className.split(',').map((s: string) => s.trim());
+      classList.forEach((cls: string) => {
+        if (cls) {
+          const cleanClsName = cls.split(' (กลุ่ม')[0];
+          if (!summaryMap[key].classes.includes(cleanClsName)) {
+            summaryMap[key].classes.push(cleanClsName);
+          }
+        }
+      });
+
+      summaryMap[key].periods += 1;
+    });
+
+    const summaryList = Object.values(summaryMap).map((item: any) => ({
+      ...item,
+      classes: item.classes.sort(),
+      credits: item.periods / 2 
+    })).sort((a: any, b: any) => String(a.code || '').localeCompare(String(b.code || '')));
+
+    // Special Periods that count as teaching load
+    if (scheduleSpecialPeriods.length > 0 && schedulePeriodSettings.length > 0) {
+      const specialLoadMap: Record<string, number> = {};
+      const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
+      
+      days.forEach(day => {
+        schedulePeriodSettings.forEach(p => {
+          const special = scheduleSpecialPeriods.find(sp => 
+            sp.isTeachingLoad && 
+            (sp.linkedPeriodId === p.id || (!p.id.startsWith('period') && sp.id === p.id)) && 
+            (!sp.day || sp.day === day || sp.day === 'all')
+          );
+          
+          if (special) {
+            specialLoadMap[special.title] = (specialLoadMap[special.title] || 0) + 1;
+          }
+        });
+      });
+
+      Object.entries(specialLoadMap).forEach(([title, count]) => {
+        summaryList.push({
+          code: 'กิจกรรม',
+          title: title,
+          classes: ['-'],
+          periods: count,
+          credits: 0
+        });
+      });
+    }
+
+    return summaryList;
+  }, [schedule, scheduleSpecialPeriods, schedulePeriodSettings]);
 
   if (isFetching) {
     return <ProfilePageSkeleton />;
@@ -760,6 +1065,7 @@ const ProfilePage: React.FC = () => {
   ] : [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
+    { id: "schedule", label: "ตารางสอน", icon: <FaChalkboard /> },
     { id: "teaching", label: "การสอน", icon: <FaBook /> },
     { id: "attendance", label: "สถิติการมาทำงาน", icon: <FaClock /> },
     { id: "substitution", label: "สถิติการสอนแทน", icon: <FaExchangeAlt /> },
@@ -810,6 +1116,139 @@ const ProfilePage: React.FC = () => {
 
   const filteredRecords = getFilteredAttendance();
 
+  const getCourseTitle = (course: any) => course?.title || course?.courseName || course?.subjectName || "วิชาไม่ระบุชื่อ";
+  const getCourseCode = (course: any) => course?.code || course?.courseCode || course?.subjectCode || "";
+  const stripGroupLabel = (value: string = "") => value.replace(/\s*\(กลุ่ม\s*\d+\)/g, '').trim();
+
+  const getScheduleEntryForPeriod = (dayKey: string, period: any, periodIndex: number) => {
+    const candidates = getScheduleSlotCandidates(dayKey, period, periodIndex);
+    const slotKey = candidates.find(key => schedule[key]);
+    return {
+      slotKey: slotKey || candidates[0] || `${dayKey}-${periodIndex}`,
+      entry: slotKey ? schedule[slotKey] : undefined
+    };
+  };
+
+  const getDayCells = (dayKey: string) => {
+    const cells: any[] = [];
+    const periods = getTimetableDisplayPeriods(schedulePeriodSettings);
+    let i = 0;
+    while (i < periods.length) {
+      const p = periods[i];
+      
+      if (p.id === 'lunch') {
+        cells.push({
+          type: 'lunch',
+          period: p,
+          colSpan: 1
+        });
+        i++;
+        continue;
+      }
+      
+      const { slotKey, entry } = getScheduleEntryForPeriod(dayKey, p, i);
+      
+      const special = scheduleSpecialPeriods.find(sp => 
+        (sp.linkedPeriodId === p.id || (!p.id.startsWith('period') && sp.id === p.id)) && 
+        (!sp.day || sp.day === dayKey || sp.day === 'all')
+      );
+      
+      const club = scheduleClubs.find(c => 
+        c.responsibleTeacherIds?.includes(profile?.docId) &&
+        c.scheduleSlot === slotKey
+      );
+
+      if (special) {
+        cells.push({
+          type: 'special',
+          special,
+          period: p,
+          colSpan: 1
+        });
+        i++;
+        continue;
+      }
+
+      if (club) {
+        cells.push({
+          type: 'club',
+          club,
+          period: p,
+          colSpan: 1
+        });
+        i++;
+        continue;
+      }
+
+      if (!entry) {
+        cells.push({
+          type: 'empty',
+          period: p,
+          colSpan: 1
+        });
+        i++;
+        continue;
+      }
+
+      let colSpan = 1;
+      let nextIndex = i + 1;
+      while (nextIndex < periods.length) {
+        const nextPeriod = periods[nextIndex];
+        if (nextPeriod.id === 'lunch') break;
+        
+        const { slotKey: nextSlotKey, entry: nextEntry } = getScheduleEntryForPeriod(dayKey, nextPeriod, nextIndex);
+        
+        const nextSpecial = scheduleSpecialPeriods.find(sp => 
+          (sp.linkedPeriodId === nextPeriod.id || (!nextPeriod.id.startsWith('period') && sp.id === nextPeriod.id)) && 
+          (!sp.day || sp.day === dayKey || sp.day === 'all')
+        );
+        const nextClub = scheduleClubs.find(c => 
+          c.responsibleTeacherIds?.includes(profile?.docId) &&
+          c.scheduleSlot === nextSlotKey
+        );
+
+        if (nextSpecial || nextClub) break;
+
+        if (nextEntry && 
+            nextEntry.course.id === entry.course.id && 
+            Number(nextEntry.course.groupNumber || 1) === Number(entry.course.groupNumber || 1)) {
+          colSpan++;
+          nextIndex++;
+        } else {
+          break;
+        }
+      }
+
+      cells.push({
+        type: 'course',
+        entry,
+        period: p,
+        colSpan
+      });
+      i += colSpan;
+    }
+    return cells;
+  };
+
+  const getCourseColors = (code: string) => {
+    const colors = [
+      { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-800 dark:text-indigo-300', border: 'border-t-indigo-100 border-b-indigo-100 dark:border-t-indigo-900/50 dark:border-b-indigo-900/50' },
+      { bg: 'bg-teal-50 dark:bg-teal-950/40', text: 'text-teal-800 dark:text-teal-300', border: 'border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50' },
+      { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-800 dark:text-violet-300', border: 'border-t-violet-100 border-b-violet-100 dark:border-t-violet-900/50 dark:border-b-violet-900/50' },
+      { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-800 dark:text-sky-300', border: 'border-t-sky-100 border-b-sky-100 dark:border-t-sky-900/50 dark:border-b-sky-900/50' },
+      { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-800 dark:text-rose-300', border: 'border-t-rose-100 border-b-rose-100 dark:border-t-rose-900/50 dark:border-b-rose-900/50' },
+      { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-800 dark:text-amber-300', border: 'border-t-amber-100 border-b-amber-100 dark:border-t-amber-900/50 dark:border-b-amber-900/50' },
+      { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', text: 'text-fuchsia-800 dark:text-fuchsia-300', border: 'border-t-fuchsia-100 border-b-fuchsia-100 dark:border-t-fuchsia-900/50 dark:border-b-fuchsia-900/50' },
+    ];
+    
+    let hash = 0;
+    for (let i = 0; i < code.length; i++) {
+      hash = code.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+  };
+
   return (
     <MainLayout>
       <ToastContainer theme={isDarkMode ? "dark" : "light"} autoClose={2000} />
@@ -848,13 +1287,13 @@ const ProfilePage: React.FC = () => {
           <aside className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 self-start">
             {/* Profile Card */}
             <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 text-center">
-              <img
+              <ProfileAvatar
                 src={
                   profile.profileImageUrl ||
                   `https://ui-avatars.com/api/?name=${profile.firstName}+${profile.lastName}&background=random`
                 }
                 alt="Profile"
-                className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
+                className="w-32 h-32 border-4 border-white dark:border-gray-700 shadow-lg mx-auto mb-4"
               />
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">{profile.title}{profile.firstName} {profile.lastName}</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">{profile.email}</p>
@@ -931,6 +1370,9 @@ const ProfilePage: React.FC = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <DetailField label="ชั้น/ห้อง" value={`${profile.classLevel}/${profile.room}`} />
                           <DetailField label="เลขที่" value={profile.studentNumber} />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <DetailField label="คะแนนความประพฤติ" value={`${profile.behaviorScore ?? 100} คะแนน`} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <DetailField label="วันเกิด" value={profile.birthDate} />
@@ -1069,26 +1511,386 @@ const ProfilePage: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === "schedule" && userRole === 'teacher' && (
+                <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in space-y-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-gray-200 dark:border-gray-700 gap-4">
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                        <FaChalkboard className="text-indigo-500" /> ตารางสอนของฉัน
+                      </h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {scheduleAcademicYear ? `ภาคเรียนที่ ${scheduleCurrentTerm} ปีการศึกษา ${scheduleAcademicYear}` : 'กำลังระบุปีการศึกษา...'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                      <span>ตารางสอนจริงอิงตามระบบจัดตารางกลางของกลุ่มวิชาการ</span>
+                    </div>
+                  </div>
+
+                  {isScheduleLoading ? (
+                    <div className="flex flex-col justify-center items-center py-12">
+                      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">กำลังโหลดข้อมูลตารางสอน...</p>
+                    </div>
+                  ) : Object.keys(schedule).length === 0 ? (
+                    <div className="flex flex-col justify-center items-center py-16 text-center">
+                      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4 text-gray-450">
+                        <FaChalkboard size={32} />
+                      </div>
+                      <h3 className="text-base font-bold text-gray-750 dark:text-gray-200 mb-1">ไม่พบข้อมูลตารางสอน</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm">
+                        ยังไม่มีการกำหนดหรือนำเข้าข้อมูลตารางสอนสำหรับท่านในภาคเรียนนี้
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Table Container - overflow-x-hidden to fully satisfy user constraint of NO bottom scrollbar */}
+                      <div className="w-full overflow-x-hidden border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-[#1a1b1e] shadow-sm">
+                        <table className="w-full table-fixed border-collapse text-[10px] sm:text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-[#202125]/50 border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
+                              {/* Day/Period Column Header */}
+                              <th className="p-1.5 text-center font-bold border-r border-gray-200 dark:border-gray-700" style={{ width: '8%' }}>
+                                วัน / คาบ
+                              </th>
+                              {getTimetableDisplayPeriods(schedulePeriodSettings).map((p, index) => {
+                                const isLunch = p.id === 'lunch';
+                                const displayPeriods = getTimetableDisplayPeriods(schedulePeriodSettings);
+                                const teachingCount = Math.max(1, displayPeriods.filter(period => period.id !== 'lunch').length);
+                                const w = isLunch ? '6%' : `${86 / teachingCount}%`;
+                                const effectiveEnd = getEffectivePeriodEnd(displayPeriods, p, index);
+                                return (
+                                  <th key={p.id} className="p-1 text-center font-bold border-r last:border-none border-gray-200 dark:border-gray-700 leading-tight" style={{ width: w }}>
+                                    <div className="font-semibold text-[8px] sm:text-[10px] truncate">{isLunch ? 'พัก' : p.label}</div>
+                                    <div className="text-[7px] sm:text-[8px] text-gray-400 dark:text-gray-500 font-normal mt-0.5 whitespace-normal">{p.startTime} - {effectiveEnd}</div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(DAYS).map(([dayKey, dayName]) => {
+                              const dayBorder = {
+                                mon: 'border-l-4 border-l-[#eedc32] bg-yellow-50/5 dark:bg-yellow-950/5',
+                                tue: 'border-l-4 border-l-[#ea77bb] bg-pink-50/5 dark:bg-pink-950/5',
+                                wed: 'border-l-4 border-l-[#4fb56a] bg-green-50/5 dark:bg-green-950/5',
+                                thu: 'border-l-4 border-l-[#f47c24] bg-orange-50/5 dark:bg-orange-950/5',
+                                fri: 'border-l-4 border-l-[#4e9beb] bg-sky-50/5 dark:bg-sky-950/5',
+                              }[dayKey] || '';
+
+                              const dayLabelBg = {
+                                mon: 'bg-yellow-500 text-white',
+                                tue: 'bg-pink-500 text-white',
+                                wed: 'bg-green-500 text-white',
+                                thu: 'bg-orange-500 text-white',
+                                fri: 'bg-sky-500 text-white',
+                              }[dayKey] || 'bg-gray-500 text-white';
+
+                              // Call helper to get cells for this day
+                              const cells = getDayCells(dayKey);
+
+                              return (
+                                <tr key={dayKey} className="h-20 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-800/10 transition-colors">
+                                  {/* Day Name Column */}
+                                  <td className={`p-1.5 font-bold border-r border-gray-200 dark:border-gray-700 text-center align-middle ${dayBorder}`}>
+                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-bold shadow-sm ${dayLabelBg}`}>
+                                      {DAY_SHORT_LABELS[dayKey] || dayName.substring(0, 1)}
+                                    </span>
+                                  </td>
+                                  
+                                  {/* Period Cells */}
+                                  {cells.map((cell, idx) => {
+                                    if (cell.type === 'lunch') {
+                                      return (
+                                        <td key={`lunch-${dayKey}`} className="border-r last:border-none border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/20 text-gray-400 dark:text-gray-500 font-bold select-none p-1 text-center align-middle" colSpan={cell.colSpan}>
+                                          <div className="flex h-full min-h-[72px] flex-col items-center justify-center gap-0.5 text-[7px] sm:text-[8px] leading-none font-bold select-none opacity-75">
+                                            <span className="whitespace-nowrap">พัก</span>
+                                            <span className="whitespace-nowrap">กลางวัน</span>
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+
+                                    if (cell.type === 'empty') {
+                                      return (
+                                        <td key={`empty-${dayKey}-${idx}`} className="border-r last:border-none border-gray-200 dark:border-gray-700 bg-gray-50/20 dark:bg-[#202125]/10 text-gray-300 dark:text-gray-700 text-center align-middle p-1" colSpan={cell.colSpan}>
+                                          <span className="text-[7px] sm:text-[9px] select-none font-medium opacity-35">-</span>
+                                        </td>
+                                      );
+                                    }
+
+                                    if (cell.type === 'special') {
+                                      return (
+                                        <td key={`special-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 text-center align-middle p-1 border-t border-b border-t-emerald-100 border-b-emerald-100 dark:border-t-emerald-900/50 dark:border-b-emerald-900/50" colSpan={cell.colSpan}>
+                                          <div className="flex min-h-[72px] flex-col items-center justify-center">
+                                          <div className="font-bold text-[8px] sm:text-[9px] leading-tight truncate">{cell.special.title}</div>
+                                          {cell.special.description && (
+                                            <div className="text-[6px] sm:text-[7px] text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">{cell.special.description}</div>
+                                          )}
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+
+                                    if (cell.type === 'club') {
+                                      return (
+                                        <td key={`club-${dayKey}-${idx}`} className="border-r last:border-none border-r-gray-200 dark:border-r-gray-700 bg-teal-50 dark:bg-teal-950/20 text-teal-800 dark:text-teal-300 text-center align-middle p-1 border-t border-b border-t-teal-100 border-b-teal-100 dark:border-t-teal-900/50 dark:border-b-teal-900/50" colSpan={cell.colSpan}>
+                                          <div className="flex min-h-[72px] flex-col items-center justify-center">
+                                            <div className="font-bold text-[8px] sm:text-[9px] leading-tight truncate">{cell.club.clubName}</div>
+                                            <div className="text-[7px] sm:text-[8px] text-teal-600 dark:text-teal-400 mt-0.5 truncate">กิจกรรมชุมนุม</div>
+                                          </div>
+                                        </td>
+                                      );
+                                    }
+
+                                    // Active course cell
+                                    const courseTitle = getCourseTitle(cell.entry.course);
+                                    const courseCode = getCourseCode(cell.entry.course);
+                                    const className = stripGroupLabel(cell.entry.className);
+                                    const colors = getCourseColors(courseCode);
+                                    return (
+                                      <td key={`course-${dayKey}-${idx}`} className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 text-center align-middle p-0 cursor-default border-t border-b ${colors.bg} ${colors.text} ${colors.border}`} colSpan={cell.colSpan}>
+                                        <div className="flex min-h-[72px] flex-col items-center justify-center gap-0.5 px-1.5 py-1.5">
+                                          {/* Course name */}
+                                          <div className="max-w-full font-black text-[8px] sm:text-[10px] md:text-[11px] leading-tight line-clamp-2" title={courseTitle}>
+                                            {courseTitle}
+                                          </div>
+                                          {/* Course code */}
+                                          <div className="max-w-full text-[7px] sm:text-[8px] font-semibold opacity-70 truncate">
+                                            {courseCode}
+                                          </div>
+                                          {/* Class name / Group */}
+                                          <div className="max-w-full text-[7px] sm:text-[8px] font-bold text-gray-750 dark:text-gray-300 truncate">
+                                            {className}
+                                          </div>
+                                          {/* Physical teaching room */}
+                                          {cell.entry.roomDisplay && (
+                                            <div className="mt-0.5 inline-flex max-w-full items-center justify-center gap-1 rounded-full bg-white/55 dark:bg-black/15 px-1.5 py-0.5 text-[7px] sm:text-[8px] font-black text-emerald-600 dark:text-emerald-400">
+                                              <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-400"></span>
+                                              <span className="truncate">{cell.entry.roomDisplay}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Teaching Workload Summary Table */}
+                      <div className="bg-gray-50 dark:bg-gray-800/30 rounded-xl p-5 border border-gray-150 dark:border-gray-750 space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-gray-700">
+                          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                            <FaBook className="text-indigo-500" /> สรุปภาระงานสอน
+                          </h3>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            รวมภาระงานสอนทั้งหมด:{' '}
+                            <strong className="text-indigo-650 dark:text-indigo-400 text-sm">
+                              {scheduleSummary.reduce((sum, item) => sum + item.periods, 0)} คาบ
+                            </strong>
+                          </span>
+                        </div>
+                        
+                        <div className="w-full overflow-x-hidden">
+                          <table className="w-full table-fixed border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
+                                <th className="p-2 text-left font-bold" style={{ width: '8%' }}>ที่</th>
+                                <th className="p-2 text-left font-bold" style={{ width: '45%' }}>ชื่อรายวิชา / กิจกรรม</th>
+                                <th className="p-2 text-left font-bold" style={{ width: '17%' }}>รหัสวิชา</th>
+                                <th className="p-2 text-center font-bold" style={{ width: '15%' }}>ระดับชั้น</th>
+                                <th className="p-2 text-center font-bold" style={{ width: '15%' }}>จำนวนคาบ</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                              {scheduleSummary.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors">
+                                  <td className="p-2 font-medium text-gray-600 dark:text-gray-400">{idx + 1}</td>
+                                  <td className="p-2 font-semibold text-gray-800 dark:text-gray-200 truncate">{item.title}</td>
+                                  <td className="p-2 font-medium text-gray-600 dark:text-gray-400">{item.code}</td>
+                                  <td className="p-2 text-center font-medium text-gray-600 dark:text-gray-400 truncate">{item.classes.join(', ')}</td>
+                                  <td className="p-2 text-center font-bold text-indigo-600 dark:text-indigo-400">{item.periods} คาบ</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {activeTab === "teaching" && userRole === 'teacher' && (
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">รายวิชาที่สอน</h2>
-                    <select
-                      value={teachingSemester}
-                      onChange={(e) => {
-                        setTeachingSemester(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-colors"
-                    >
-                      <option value="ทั้งหมด">ภาคเรียนทั้งหมด</option>
-                      <option value="1">ภาคเรียนที่ 1</option>
-                      <option value="2">ภาคเรียนที่ 2</option>
-                    </select>
+                    <div className="flex items-center gap-3">
+                      {/* View Mode Toggle */}
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-850 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700">
+                        <button
+                          onClick={() => setViewMode('list')}
+                          className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                          title="แสดงผลแบบรายการ (List)"
+                        >
+                          <FaList size={13} />
+                        </button>
+                        <button
+                          onClick={() => setViewMode('grid')}
+                          className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                          title="แสดงผลแบบการ์ด (Grid)"
+                        >
+                          <FaThLarge size={13} />
+                        </button>
+                      </div>
+
+                      <select
+                        value={teachingSemester}
+                        onChange={(e) => {
+                          setTeachingSemester(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                        className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-colors"
+                      >
+                        <option value="ทั้งหมด">ภาคเรียนทั้งหมด</option>
+                        <option value="1">ภาคเรียนที่ 1</option>
+                        <option value="2">ภาคเรียนที่ 2</option>
+                      </select>
+                    </div>
                   </div>
                   {filteredTeachingCourses.length > 0 ? (
                     <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
+                      {viewMode === 'list' ? (
+                        <div className="space-y-4">
+                          {filteredTeachingCourses.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((course) => {
+                            const allAssignments = course.teacherAssignments || [];
+                            return (
+                              <div key={course.id} className="group relative flex flex-col md:flex-row md:items-center justify-between p-5 bg-white dark:bg-[#1e1f21] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:border-indigo-500/30 transition-all duration-300 gap-4 overflow-hidden">
+                                
+                                {/* Hover Gradient Accent Line */}
+                                <div className="absolute top-0 left-0 h-full w-1 bg-gradient-to-b from-indigo-500 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                                {/* Left Column: Subject Info */}
+                                <div className="flex items-start gap-4 min-w-0 md:w-5/12">
+                                  <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 rounded-xl text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform duration-300">
+                                    <FaBook size={22} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-gray-150 dark:bg-gray-800 text-gray-650 dark:text-gray-400">
+                                        {course.courseCode || course.code || "-"}
+                                      </span>
+                                      {course.semester && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10">
+                                          เทอม {course.semester}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="text-base font-bold text-gray-900 dark:text-white truncate mt-1" title={course.title || course.courseName || course.subjectName}>
+                                      {course.title || course.courseName || course.subjectName || "วิชาไม่ระบุชื่อ"}
+                                    </h4>
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                      {course.type && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400">
+                                          {course.type}
+                                        </span>
+                                      )}
+                                      {course.gradeLevel && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400">
+                                          {formatGradeLevel(course.gradeLevel)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Middle Column: Teachers & Rooms list */}
+                                <div className="flex-1 min-w-0 md:w-4/12 border-t md:border-t-0 md:border-l border-gray-150 dark:border-gray-800 pt-3 md:pt-0 md:pl-4">
+                                  <p className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">ผู้สอนและห้องเรียน</p>
+                                  <div className="space-y-1.5">
+                                    {allAssignments.length > 0 ? (
+                                      allAssignments.map((assign, idx) => {
+                                        let teacherInfo = teacherMap?.[assign.teacherId];
+                                        if (!teacherInfo && profile && assign.teacherId === profile.docId) {
+                                          teacherInfo = {
+                                            id: profile.docId,
+                                            teacherId: profile.teacherId || '',
+                                            name: `${profile.title || ''}${profile.firstName || ''} ${profile.lastName || ''}`.trim()
+                                          } as any;
+                                        }
+                                        const isMe = assign.teacherId === profile?.docId;
+                                        const firstClassId = Array.isArray(course.classId) ? course.classId[0] : course.classId;
+                                        const levelLabel = getLevelLabel(firstClassId || course.gradeLevel || (assign as any).classLevels?.[0]);
+                                        const classGroupName = levelLabel ? `${levelLabel}/${(assign as any).room || "1"}` : ((assign as any).room || "1");
+
+                                        return (
+                                          <div key={idx} className="flex flex-wrap items-center gap-2 text-xs">
+                                            <span className={`font-bold ${isMe ? 'text-indigo-650 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                                              • {teacherInfo?.name || "ไม่พบข้อมูล"}
+                                            </span>
+                                            <span className="inline-flex items-center justify-center text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                                              ห้อง {classGroupName}
+                                            </span>
+                                            {assign.roomIds?.map((rid) => {
+                                              const room = rooms.find(r => r.id === rid);
+                                              return room ? (
+                                                <span key={rid} className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-650 dark:text-emerald-400">
+                                                  <FaMapMarkerAlt size={8} />
+                                                  {room.roomCode || room.roomName}
+                                                </span>
+                                              ) : null;
+                                            })}
+                                          </div>
+                                        );
+                                      })
+                                    ) : (
+                                      <span className="text-xs text-gray-400 italic">ไม่มีข้อมูลผู้สอน</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Right Column: Stats & Actions */}
+                                <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-3 border-t md:border-t-0 md:border-l border-gray-150 dark:border-gray-800 pt-3 md:pt-0 md:pl-4 md:w-3/12 shrink-0">
+                                  {/* Pill Stats */}
+                                  <div className="flex flex-wrap md:flex-col gap-1.5 md:items-end">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-50 dark:bg-gray-800 text-gray-650 dark:text-gray-300 border border-gray-200/50 dark:border-gray-700/50">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                      {(course.credits && Number(course.credits) > 0) ? course.credits : (course.hoursPerWeek && Number(course.hoursPerWeek) > 0 ? (course.hoursPerWeek / 2) : 0)} หน่วยกิต
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-50 dark:bg-gray-800 text-gray-650 dark:text-gray-300 border border-gray-200/50 dark:border-gray-700/50">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                      {(course.hoursPerWeek && Number(course.hoursPerWeek) > 0) ? course.hoursPerWeek : (course.credits && Number(course.credits) > 0 ? Math.round(parseFloat(String(course.credits)) * 2) : 0)} คาบ / สัปดาห์
+                                    </span>
+                                  </div>
+
+                                  {/* Buttons */}
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleViewCourseClick(course)}
+                                      className="p-2 text-gray-400 hover:text-indigo-650 dark:text-gray-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-xl transition-all"
+                                      title="รายละเอียด"
+                                    >
+                                      <FaSearch size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditCourseClick(course)}
+                                      className="p-2 text-gray-400 hover:text-amber-600 dark:text-gray-500 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-xl transition-all"
+                                      title="แก้ไข"
+                                    >
+                                      <FaEdit size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                              </div>
+                            );
+                          })}
+                        </div>                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
                         {filteredTeachingCourses.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((course) => (
                           <div key={course.id} className="group relative flex flex-col bg-white dark:bg-[#1e1f21] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:border-indigo-500/30 transition-all duration-300 overflow-hidden">
 
@@ -1192,52 +1994,31 @@ const ProfilePage: React.FC = () => {
                                                       </span>
                                                     </div>
 
-                                                    <div className="flex flex-wrap items-center gap-1 pl-3">
-                                                      {(() => {
-                                                        const cls = assign.classLevels || [];
-                                                        const rms = assign.roomIds || [];
-                                                        let badges: string[] = [];
+                                                    <div className="flex flex-wrap items-center gap-1.5 pl-3">
+  {(() => {
+    const firstClassId = Array.isArray(course.classId) ? course.classId[0] : course.classId;
+    const levelLabel = getLevelLabel(firstClassId || course.gradeLevel || (assign as any).classLevels?.[0]);
+    const classGroupName = levelLabel ? `${levelLabel}/${(assign as any).room || "1"}` : ((assign as any).room || "1");
 
-                                                        if (cls.length > 0 && rms.length > 0) {
-                                                          cls.forEach(cl => {
-                                                            const className = availableClassOptions.find(opt => String(opt[0]) === String(cl))?.[1] || cl;
-                                                            rms.forEach(r => {
-                                                              badges.push(`${className}/${r}`);
-                                                            });
-                                                          });
-                                                        }
+    return (
+      <>
+        <span className="text-[9.5px] font-black px-2 py-0.5 rounded bg-indigo-600 dark:bg-indigo-500 text-white leading-none shadow-sm flex items-center shrink-0">
+          {classGroupName}
+        </span>
 
-                                                        if (badges.length > 0) {
-                                                          return (
-                                                            <>
-                                                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-indigo-600 text-white leading-none">
-                                                                {badges[0]}
-                                                              </span>
-                                                              {badges.length > 1 && (
-                                                                <span className="text-[8px] font-medium text-gray-500 dark:text-gray-400 italic">
-                                                                  +{badges.length - 1} ห้อง
-                                                                </span>
-                                                              )}
-                                                            </>
-                                                          );
-                                                        }
-
-                                                        return (
-                                                          <>
-                                                            {cls.slice(0, 1).map(cl => (
-                                                              <span key={cl} className="text-[8px] font-medium px-1.5 py-0.5 rounded bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-gray-700 leading-none">
-                                                                {availableClassOptions.find(opt => String(opt[0]) === String(cl))?.[1] || cl}
-                                                              </span>
-                                                            ))}
-                                                            {rms.slice(0, 1).map(r => (
-                                                              <span key={r} className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-indigo-600 text-white leading-none">
-                                                                ห.{r}
-                                                              </span>
-                                                            ))}
-                                                          </>
-                                                        );
-                                                      })()}
-                                                    </div>
+        {assign.roomIds?.map((rid: string) => {
+          const room = rooms.find(r => r.id === rid);
+          return room ? (
+            <span key={rid} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10 dark:border-emerald-500/20 leading-none flex items-center gap-1 shrink-0">
+              <FaMapMarkerAlt size={8} className="text-emerald-500" />
+              {room.roomCode || room.roomName}
+            </span>
+          ) : null;
+        })}
+      </>
+    );
+  })()}
+</div>
                                                   </div>
                                                 </div>
                                               );
@@ -1277,6 +2058,7 @@ const ProfilePage: React.FC = () => {
                           </div>
                         ))}
                       </div>
+                      )}
 
                       {filteredTeachingCourses.length > itemsPerPage && (
                         <div className="flex justify-center items-center mt-8 gap-2">
@@ -1450,11 +2232,7 @@ const ProfilePage: React.FC = () => {
 
               {activeTab === "attendance" && userRole === 'teacher' && (
                 <div className="animate-fade-in space-y-6">
-<<<<<<< HEAD
                   <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || getCurrentThaiYear()})`}>
-=======
-                  <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || new Date().getFullYear() + 543})`}>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 table-responsive pb-4 scrollbar-hide -mx-2 px-2 lg:mx-0 lg:px-0">
                       <div className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800">
                         <div className="text-lg sm:text-xl font-bold text-green-600 dark:text-green-400">{stats.present || 0}</div>

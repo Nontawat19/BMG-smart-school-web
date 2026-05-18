@@ -11,7 +11,6 @@ export const getTodayString = (): string => {
  * Returns the current year in Buddhist Era (BE).
  */
 export const getCurrentThaiYear = (): number => {
-<<<<<<< HEAD
     return getThaiYear(new Date());
 };
 
@@ -20,7 +19,4 @@ export const getCurrentThaiYear = (): number => {
  */
 export const getThaiYear = (date: Date): number => {
     return date.getFullYear() + 543;
-=======
-    return new Date().getFullYear() + 543;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 };

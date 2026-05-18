@@ -13,6 +13,9 @@ export interface Teacher {
     role?: string;
     profileImageUrl?: string;
     avatar?: string;
+    status?: string;
+    learningArea?: string;
+    subjectGroup?: string;
     preferences?: {
         unavailableSlots?: string[];
         unavailableDays?: string[];
@@ -42,7 +45,7 @@ export interface Course {
     semester?: string;
     isCombined?: boolean;
     locked?: boolean;
-    teacherAssignments?: { teacherId: string; roomIds: string[]; classLevels: string[]; groupNumber?: number }[];
+    teacherAssignments?: { teacherId: string; teacherIds?: string[]; roomIds: string[]; classLevels: string[]; groupNumber?: number; room?: string }[];
     isActive?: boolean;
     groupNumber?: number;
 }
@@ -89,6 +92,13 @@ export interface CourseInstance extends Course {
     room?: string[];
     roomDisplay?: string;
 }
+
+export const getAssignmentTeacherIds = (assignment: { teacherId?: string; teacherIds?: string[] } | any): string[] => {
+    const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+        ? assignment.teacherIds
+        : (assignment?.teacherId ? [assignment.teacherId] : []);
+    return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
+};
 
 export interface AssignmentConstraint {
     type?: 'any' | 'single' | 'double' | 'mixed';

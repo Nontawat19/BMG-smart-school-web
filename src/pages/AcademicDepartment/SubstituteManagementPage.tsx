@@ -20,18 +20,15 @@ import Swal from "sweetalert2";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
-import { Home, Users, Calendar, AlertTriangle, CheckCircle, ChevronDown, Check, Clock } from "lucide-react";
+import { Home, Users, Calendar, AlertTriangle, CheckCircle, ChevronDown, Check, Clock, Search, MapPin } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
-<<<<<<< HEAD
 import BackButton from "@/components/Shared/BackButton";
+import Select from "react-select";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
-=======
-import { isNonOfficialHoliday } from "../../utils/calendarUtils";
-import { fetchTeachersMap } from "@/store/slices/userMapSlice";
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
+import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 
 interface LeaveRequest {
   id: string;
@@ -51,6 +48,10 @@ interface ScheduleEntry {
   id: string; // schedule document id
   day: string;
   period: number;
+  periodIndex: number; // Index in periodSettings array
+  periodLabel: string; // Human readable label (e.g. คาบที่ 1)
+  startTime?: string;
+  endTime?: string;
   subjectName: string;
   className: string;
   classId: string;
@@ -60,6 +61,7 @@ interface ScheduleEntry {
   substitutionDocId?: string; // ID ของ document ใน collection 'substitutions'
   availableTeachers?: { value: string; label: string }[]; // ครูที่ว่างในคาบนั้น
   subjectCode?: string; // รหัสวิชา (สำคัญสำหรับ Enrollment)
+  roomName?: string; // สถานที่สอน
 }
 
 interface Teacher {
@@ -85,62 +87,212 @@ interface PeriodSetting {
   isTeachingPeriod: boolean;
 }
 
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const THAI_DAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const THAI_DAY_BY_KEY: Record<string, string> = {
+  sun: 'อาทิตย์',
+  mon: 'จันทร์',
+  tue: 'อังคาร',
+  wed: 'พุธ',
+  thu: 'พฤหัสบดี',
+  fri: 'ศุกร์',
+  sat: 'เสาร์',
+};
 
-// 🎨 Custom Dropdown Component for Premium UI
-const CustomSelect = ({ label, value, options, onChange, icon: Icon, placeholder = "เลือก..." }: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+const normalizeTeachingPeriod = (period: unknown, fallback = 1) => {
+  const parsed = Number(period);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed === 0 ? 1 : parsed;
+};
 
-  const selectedOption = options.find((o: any) => o.value === value);
+
+const selectStyles = (isDarkMode: boolean) => ({
+  control: (base: any, state: any) => ({
+    ...base,
+    minHeight: '36px',
+    height: '36px',
+    borderRadius: '12px',
+    backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.7)' : 'white',
+    borderColor: state.isFocused ? '#6366f1' : (isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+    boxShadow: 'none',
+    fontWeight: '800',
+    fontSize: '11px',
+    transition: 'all 0.2s ease',
+    paddingLeft: '6px',
+    '&:hover': {
+      borderColor: state.isFocused ? '#6366f1' : (isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'),
+    }
+  }),
+  menu: (base: any) => ({
+    ...base,
+    backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
+    borderRadius: '14px',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+    border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.05)',
+    marginTop: '4px',
+    overflowX: 'hidden',
+    zIndex: 9999
+  }),
+  option: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: state.isSelected 
+      ? (isDarkMode ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.1)')
+      : state.isFocused 
+        ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)') 
+        : 'transparent',
+    color: state.isSelected ? '#6366f1' : (isDarkMode ? '#cbd5e1' : '#334155'),
+    cursor: 'pointer',
+    padding: '6px 12px',
+    margin: '1px 8px',
+    borderRadius: '8px',
+    width: 'calc(100% - 16px)',
+    fontSize: '11px',
+    fontWeight: '700',
+    '&:active': {
+      backgroundColor: 'rgba(99, 102, 241, 0.3)'
+    }
+  }),
+  singleValue: (base: any) => ({
+    ...base,
+    color: isDarkMode ? 'white' : '#1e293b',
+    fontWeight: '800',
+    fontSize: '11px',
+    margin: 0,
+    padding: 0,
+  }),
+  placeholder: (base: any) => ({
+    ...base,
+    color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#94a3b8',
+    fontSize: '11px',
+    fontWeight: '700'
+  }),
+  input: (base: any) => ({
+    ...base,
+    color: isDarkMode ? 'white' : '#1e293b',
+    margin: 0,
+    padding: 0,
+    fontSize: '11px',
+  }),
+  indicatorSeparator: () => ({ display: 'none' }),
+  dropdownIndicator: (base: any) => ({
+    ...base,
+    color: isDarkMode ? '#64748b' : '#94a3b8',
+    padding: '0 8px',
+    '&:hover': { color: '#6366f1' }
+  }),
+  clearIndicator: (base: any) => ({
+    ...base,
+    color: isDarkMode ? '#64748b' : '#94a3b8',
+    padding: '0 4px',
+    '&:hover': { color: '#ef4444' }
+  }),
+  indicatorsContainer: (base: any) => ({
+    ...base,
+    height: '34px',
+  }),
+  valueContainer: (base: any) => ({
+    ...base,
+    padding: '0 4px',
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+  }),
+  menuList: (base: any) => ({
+    ...base,
+    maxHeight: '350px',
+    padding: 0,
+  })
+});
+
+const CustomSelect = ({ label, value, options, onChange, placeholder = "เลือก..." }: any) => {
+  const isDarkMode = document.documentElement.classList.contains('dark');
+  const selectedOption = options.find((opt: any) => opt.value === value);
 
   return (
-    <div className={`flex flex-col gap-1.5 ${isOpen ? 'relative z-50' : 'relative'}`} ref={containerRef}>
-      {label && <label className="text-xs font-bold text-gray-500 dark:text-gray-400">{label}</label>}
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`w-full flex items-center justify-between bg-gray-50 dark:bg-[#2a2b2f] border ${isOpen ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-700'} text-gray-700 dark:text-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold transition-all hover:bg-white dark:hover:bg-white/5 outline-none shadow-sm h-[42px]`}
-        >
-          <div className="flex items-center gap-2 truncate">
-            {Icon && <Icon size={16} className="text-indigo-500" />}
-            <span className="truncate">{selectedOption?.label || placeholder}</span>
-          </div>
-          <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-indigo-500' : ''}`} />
-        </button>
+    <div className="flex flex-col gap-1.5 w-full">
+      {label && <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider ml-1">{label}</label>}
+      <Select
+        value={selectedOption}
+        onChange={(opt: any) => onChange(opt?.value)}
+        options={options}
+        placeholder={placeholder}
+        isSearchable={false}
+        styles={selectStyles(isDarkMode)}
+      />
+    </div>
+  );
+};
 
-        {isOpen && (
-          <div className="absolute top-full left-0 right-0 mt-2 z-[50] bg-white dark:bg-[#1e1f21] border border-gray-100 dark:border-gray-700 rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar animate-in zoom-in-95 fade-in-50 duration-200">
-            {options.map((option: any) => (
-              <button
-                key={option.value}
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-all flex items-center justify-between border-b last:border-0 border-gray-50 dark:border-gray-800 ${value === option.value
-                  ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
-                  }`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  {option.label}
-                </div>
-                {value === option.value && <Check size={14} className="text-indigo-500" />}
-              </button>
-            ))}
+const SubstituteTeacherSelect = ({ value, options, onChange, placeholder = "--- เลือกครูสอนแทน ---" }: any) => {
+  const isDarkMode = document.documentElement.classList.contains('dark');
+  const [isFocused, setIsFocused] = useState(false);
+  const selectedOption = options.find((option: any) => option.value === value);
+
+  return (
+    <div className="relative group w-full">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10 text-slate-400 pointer-events-none group-focus-within:text-indigo-500 transition-colors">
+        <Search size={14} />
+      </div>
+      <Select
+        value={selectedOption}
+        onChange={(opt: any) => onChange(opt?.value)}
+        options={options}
+        placeholder={isFocused ? "" : placeholder}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        isSearchable
+        isClearable
+        menuPortalTarget={document.body}
+        styles={{
+          ...selectStyles(isDarkMode),
+          control: (base: any, state: any) => ({
+            ...selectStyles(isDarkMode).control(base, state),
+            paddingLeft: '28px',
+          })
+        }}
+        className="react-select-container"
+        classNamePrefix="react-select"
+        formatOptionLabel={(option: any) => (
+          <div className="flex items-center gap-3 py-1">
+            <div className="relative flex-shrink-0">
+              <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-black text-slate-500 dark:text-slate-400 overflow-hidden ring-1 ring-white/20 shadow-sm">
+                {option.profileImageUrl ? (
+                  <img src={option.profileImageUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="uppercase">
+                    {option.firstName && option.lastName 
+                      ? `${option.firstName.charAt(0)}${option.lastName.charAt(0)}`
+                      : option.label.replace(/^\[.*?\]\s*/, '').replace(/^(นาย|นางสาว|นาง|ครู|ผอ\.|ดร\.|ว่าที่\s*ร\.ต\.)\s*/, '').substring(0, 1)}
+                  </span>
+                )}
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-800"></div>
+            </div>
+            <div className="flex flex-col min-w-0 overflow-hidden text-left">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-md border border-indigo-500/20 tracking-tighter whitespace-nowrap">
+                  {option.teacherId || 'N/A'}
+                </span>
+                <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis">
+                  {option.label.replace(/^\[.*?\]\s*/, '')}
+                </span>
+              </div>
+              {option.metaLabel && (
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">
+                  {option.metaLabel}
+                </span>
+              )}
+            </div>
           </div>
         )}
-      </div>
+      />
     </div>
   );
 };
@@ -154,16 +306,18 @@ const SubstituteManagementPage: React.FC = () => {
   const [isScheduleLoading, setIsScheduleLoading] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
   const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
+  const [roomMap, setRoomMap] = useState<Record<string, string>>({}); // 📌 สำหรับเก็บข้อมูลห้องเรียน
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
-<<<<<<< HEAD
   const calendarState = useSelector((state: RootState) => state.calendar);
   const calendarRawData = calendarState.rawData;
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
-  const teachers = useMemo(() => Object.values(teacherMap || {}).map((t: any) => ({
+  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})).map((t: any) => ({
     value: t.id,
     label: `[${t.teacherId || 'N/A'}] ${t.name}`,
+    teacherId: t.teacherId || 'N/A',
+    profileImageUrl: t.profileImageUrl || t.profileImage || '',
+    firstName: t.firstName || '',
+    lastName: t.lastName || '',
     uid: t.uid || '',
     learningArea: t.learningArea || '',
     homeroomGrade: t.homeroomGrade || '',
@@ -180,10 +334,9 @@ const SubstituteManagementPage: React.FC = () => {
   const [sortCondition, setSortCondition] = useState<'recommended' | 'workload_day' | 'workload_week' | 'missing_stats'>('recommended');
   const dispatch = useDispatch();
 
-<<<<<<< HEAD
   const getScheduleYearTerm = (date?: Date) => {
     const targetDate = date || new Date();
-    const targetDateString = targetDate.toISOString().split('T')[0];
+    const targetDateString = formatDateKey(targetDate);
     const matchedTerm = calendarState.terms.find(term =>
       term.startDate && term.endDate && targetDateString >= term.startDate && targetDateString <= term.endDate
     );
@@ -214,26 +367,18 @@ const SubstituteManagementPage: React.FC = () => {
     return scheduleSnapshot.docs.map(scheduleDoc => ({ id: scheduleDoc.id, ...scheduleDoc.data() }));
   };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   useEffect(() => {
     if (schoolId) {
       fetchLeaveRequests();
       if (teacherMapStatus === 'idle') {
         dispatch(fetchTeachersMap(schoolId) as any);
       }
-<<<<<<< HEAD
       fetchAllSchedules(schoolId);
       fetchPeriodSettings(schoolId);
+      fetchPhysicalRooms(schoolId);
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [filter, schoolId, dispatch, teacherMapStatus, calendarState.academicYear, calendarRawData?.currentTerm]);
-=======
-      fetchAllSchedules(schoolId); // 📌 ดึงตารางสอนทั้งหมดเมื่อ component โหลด
-      fetchPeriodSettings(schoolId);
-    }
-  }, [filter, schoolId, dispatch, teacherMapStatus]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchPeriodSettings = async (currentSchoolId: string) => {
     try {
@@ -253,46 +398,32 @@ const SubstituteManagementPage: React.FC = () => {
     }
   };
 
-<<<<<<< HEAD
+  const fetchPhysicalRooms = async (currentSchoolId: string) => {
+    try {
+      const q = query(collection(firestore, 'school-settings', currentSchoolId, 'physical-rooms'));
+      const snap = await getDocs(q);
+      const map: Record<string, string> = {};
+      snap.forEach(doc => {
+        const data = doc.data();
+        map[doc.id] = data.roomCode || data.roomName || doc.id;
+      });
+      setRoomMap(map);
+    } catch (error) {
+      console.error("Error fetching physical rooms:", error);
+    }
+  };
+
   useEffect(() => {
     if (calendarRawData.events) {
       setCalendarEvents(calendarRawData.events);
     } else if (schoolId) {
       // Fallback: Fetch from Google Calendar API if Redux is empty/missing
-=======
-  // Fetch calendar data (Firestore first, then Google Calendar API fallback)
-  useEffect(() => {
-    if (!schoolId) return;
-
-    // 1. Real-time listener for Firestore (School Settings)
-    const docRef = doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default');
-
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.events) {
-          setCalendarEvents(data.events);
-          return;
-        }
-      }
-
-      // 2. Fallback: Fetch from Google Calendar API if Firestore is empty/missing
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
       if (apiKey) {
         fetchGoogleCalendar(apiKey);
       }
-<<<<<<< HEAD
     }
   }, [calendarRawData, schoolId]);
-=======
-    }, (error) => {
-      console.error("Error listening to calendar:", error);
-    });
-
-    return () => unsubscribe();
-  }, [schoolId]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
   const fetchGoogleCalendar = async (apiKey: string) => {
     try {
@@ -419,14 +550,8 @@ const SubstituteManagementPage: React.FC = () => {
   // 📌 ฟังก์ชันใหม่: ดึงตารางสอนของทุกห้องเรียนมาเก็บไว้
   const fetchAllSchedules = async (currentSchoolId: string) => {
     try {
-<<<<<<< HEAD
       const { academicYear, semester } = getScheduleYearTerm();
       const allSchedulesData = await fetchScheduleDocs(currentSchoolId, academicYear, semester);
-=======
-      const schedulesCollectionRef = collection(firestore, "school-settings", currentSchoolId, "schedules");
-      const scheduleSnapshot = await getDocs(schedulesCollectionRef);
-      const allSchedulesData = scheduleSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       setAllClassSchedules(allSchedulesData);
     } catch (error) {
       console.error("Error fetching all schedules:", error);
@@ -461,13 +586,38 @@ const SubstituteManagementPage: React.FC = () => {
     return { isHoliday: false, description: '' };
   };
 
+  const getEffectiveScheduleDay = (date: Date) => {
+    const dateString = formatDateKey(date);
+    const event = calendarEvents[dateString];
+    const actualDayKey = DAY_KEYS[date.getDay()];
+
+    if (event?.type === 'schoolDay' && event.scheduleDay && DAY_KEYS.includes(event.scheduleDay)) {
+      return {
+        actualDayKey,
+        scheduleDayKey: event.scheduleDay,
+        actualDayName: THAI_DAYS[date.getDay()],
+        scheduleDayName: THAI_DAY_BY_KEY[event.scheduleDay] || THAI_DAYS[date.getDay()],
+        description: event.description || 'สอนชดเชย',
+        isMakeupDay: event.scheduleDay !== actualDayKey,
+      };
+    }
+
+    return {
+      actualDayKey,
+      scheduleDayKey: actualDayKey,
+      actualDayName: THAI_DAYS[date.getDay()],
+      scheduleDayName: THAI_DAYS[date.getDay()],
+      description: event?.description || '',
+      isMakeupDay: false,
+    };
+  };
+
   const toSafeDate = (d: any): Date => {
     if (!d) return new Date();
     if (d.toDate && typeof d.toDate === 'function') return d.toDate();
     return new Date(d);
   };
 
-<<<<<<< HEAD
   const formatClassName = (classId: any): string => {
     const classNames: { [key: string]: string } = {
       k1: 'อ.1', k2: 'อ.2', k3: 'อ.3',
@@ -482,13 +632,10 @@ const SubstituteManagementPage: React.FC = () => {
     }).join(', ');
   };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
   const handleSelectLeave = async (leave: LeaveRequest) => {
     setSelectedLeave(leave);
     setSchedules([]);
     setIsScheduleLoading(true);
-<<<<<<< HEAD
     if (!schoolId) {
       setIsScheduleLoading(false);
       return;
@@ -496,31 +643,10 @@ const SubstituteManagementPage: React.FC = () => {
 
     try {
       const allSchedules: ScheduleEntry[] = [];
-      const thaiDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
-=======
-    if (!schoolId) return;
-
-    try {
-      // 1. ดึงตารางสอนทั้งหมดที่ครูคนนี้สอน
-      const scheduleQuery = query(
-        collection(firestore, "school-settings", schoolId, "schedules"),
-        where("teacherId", "==", leave.teacherDocId)
-      );
-      const scheduleSnapshot = await getDocs(scheduleQuery);
-
-      const allSchedules: ScheduleEntry[] = [];
-      const thaiDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
-      const classNames: { [key: string]: string } = {
-        k1: 'อ.1', k2: 'อ.2', k3: 'อ.3',
-        p1: 'ป.1', p2: 'ป.2', p3: 'ป.3', p4: 'ป.4', p5: 'ป.5', p6: 'ป.6',
-        m1: 'ม.1', m2: 'ม.2', m3: 'ม.3', m4: 'ม.4', m5: 'ม.5', m6: 'ม.6'
-      };
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       // 2. วนลูปตามช่วงวันที่ลา
       const leaveStartDate = toSafeDate(leave.startDate);
       const leaveEndDate = toSafeDate(leave.endDate);
-<<<<<<< HEAD
       const { academicYear, semester } = getScheduleYearTerm(leaveStartDate);
 
       // 1. ดึงตารางสอนรายครูของปี/เทอมเดียวกับวันที่ลา
@@ -531,8 +657,6 @@ const SubstituteManagementPage: React.FC = () => {
       if (!allClassSchedules.some((item: any) => matchesScheduleYearTerm(item, academicYear, semester))) {
         setAllClassSchedules(termScheduleDocs);
       }
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
       // 2.1 ดึงข้อมูลการสอนแทนที่ถูกบันทึกไว้แล้วสำหรับใบลาใบนี้
       const substitutionQuery = query(
@@ -544,18 +668,14 @@ const SubstituteManagementPage: React.FC = () => {
       substitutionSnapshot.forEach(subDoc => {
         const subData = subDoc.data();
         const subDateObj = toSafeDate(subData.date);
-        const dateString = subDateObj.toISOString().split('T')[0];
-        const key = `${dateString}-${subData.period}`;
-<<<<<<< HEAD
+        const dateString = formatDateKey(subDateObj);
+        const key = `${dateString}-${normalizeTeachingPeriod(subData.period)}`;
         existingSubstitutions.set(key, { id: subDoc.id, ...subData });
-=======
-        existingSubstitutions.set(key, subData);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
       });
 
       let currentDate = new Date(leaveStartDate);
       while (currentDate <= leaveEndDate) {
-        const dateString = currentDate.toISOString().split('T')[0];
+        const dateString = formatDateKey(currentDate);
 
         // 📌 ตรวจสอบวันหยุด ถ้าเป็นวันหยุดให้ข้ามไป
         const { isHoliday } = checkIsHoliday(dateString);
@@ -564,31 +684,23 @@ const SubstituteManagementPage: React.FC = () => {
           continue;
         }
 
-        const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, ...
-        const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayOfWeek];
+        const effectiveDay = getEffectiveScheduleDay(currentDate);
+        const dayKey = effectiveDay.scheduleDayKey;
 
         // 📌 ฟังก์ชันสำหรับหาครูที่ว่างในคาบนั้นๆ และคำนวณข้อมูลประกอบ
         const getTeacherLoad = (teacherId: string, date: Date, type: 'day' | 'week') => {
           let count = 0;
-          const dayKeyPrefix = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
+          const dayKeyPrefix = getEffectiveScheduleDay(date).scheduleDayKey;
 
           if (type === 'day') {
-<<<<<<< HEAD
             termScheduleDocs.forEach((classScheduleDoc: any) => {
-=======
-            allClassSchedules.forEach((classScheduleDoc: any) => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               const schedule = classScheduleDoc.schedule || {};
               Object.keys(schedule).forEach(slotKey => {
                 if (slotKey.startsWith(dayKeyPrefix)) {
                   const rawCourse = schedule[slotKey];
                   if (rawCourse) {
                     const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-<<<<<<< HEAD
                     if (classScheduleDoc.teacherId === teacherId || coursesArr.some((c: any) => c.teacherId === teacherId)) {
-=======
-                    if (coursesArr.some((c: any) => c.teacherId === teacherId)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                       count++;
                     }
                   }
@@ -597,21 +709,13 @@ const SubstituteManagementPage: React.FC = () => {
             });
           } else {
             // คำนวณทั้งสัปดาห์ (สมมติว่าเป็นตารางสอนมาตรฐาน)
-<<<<<<< HEAD
             termScheduleDocs.forEach((classScheduleDoc: any) => {
-=======
-            allClassSchedules.forEach((classScheduleDoc: any) => {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               const schedule = classScheduleDoc.schedule || {};
               Object.keys(schedule).forEach(slotKey => {
                 const rawCourse = schedule[slotKey];
                 if (rawCourse) {
                   const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-<<<<<<< HEAD
                   if (classScheduleDoc.teacherId === teacherId || coursesArr.some((c: any) => c.teacherId === teacherId)) {
-=======
-                  if (coursesArr.some((c: any) => c.teacherId === teacherId)) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                     count++;
                   }
                 }
@@ -621,23 +725,17 @@ const SubstituteManagementPage: React.FC = () => {
           return count;
         };
 
-        const findAvailableTeachers = (date: Date, period: number) => {
-          const checkDayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
-          const checkSlotKey = `${checkDayKey}-${period}`;
+        const findAvailableTeachers = (date: Date, period: number, periodIndex: number) => {
+          const checkDayKey = getEffectiveScheduleDay(date).scheduleDayKey;
+          const checkSlotKey = `${checkDayKey}-${periodIndex}`;
 
           const busyTeacherIds = new Set<string>();
-<<<<<<< HEAD
           termScheduleDocs.forEach((classScheduleDoc: any) => {
             const rawCourse = classScheduleDoc.schedule?.[checkSlotKey];
             if (rawCourse) {
               if (classScheduleDoc.teacherId) {
                 busyTeacherIds.add(classScheduleDoc.teacherId);
               }
-=======
-          allClassSchedules.forEach((classScheduleDoc: any) => {
-            const rawCourse = classScheduleDoc.schedule?.[checkSlotKey];
-            if (rawCourse) {
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
               coursesArr.forEach((c: any) => {
                 if (c && c.teacherId) {
@@ -668,23 +766,25 @@ const SubstituteManagementPage: React.FC = () => {
         };
 
         // 3. ตรวจสอบตารางสอนในแต่ละวัน
-<<<<<<< HEAD
         teacherScheduleDocs.forEach((scheduleData: any) => {
-=======
-        scheduleSnapshot.forEach(doc => {
-          const scheduleData = doc.data();
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           const classSchedule = scheduleData.schedule;
 
           for (const slot in classSchedule) {
             if (slot.startsWith(dayKey) && classSchedule[slot]) {
-              const period = parseInt(slot.split('-')[1]);
+              const pIdxMatch = slot.match(/(\d+)$/);
+              const pIdx = pIdxMatch ? parseInt(pIdxMatch[1]) : -1;
+              const setting = periodSettings[pIdx];
+              
+              if (!setting) continue;
+
+              // Parse actual period number from ID (e.g., 'period-1' -> 1)
+              const periodNumber = normalizeTeachingPeriod(parseInt(setting.id.replace('period-', '')), pIdx + 1);
+              const substitutionKey = `${dateString}-${periodNumber}`;
+              const existingSub = existingSubstitutions.get(substitutionKey);
+
               const rawCourse = classSchedule[slot];
               const coursesArray = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-<<<<<<< HEAD
               const coursesForTeacher = coursesArray.filter((course: any) => !course?.teacherId || course.teacherId === leave.teacherDocId);
-              const substitutionKey = `${dateString}-${period}`;
-              const existingSub = existingSubstitutions.get(substitutionKey);
 
               coursesForTeacher.forEach((course: any, courseIndex: number) => {
                 const subjectNameDisplay = !course || typeof course === 'string' ? "ไม่ระบุวิชา" : (course?.title || course?.subjectName || "ไม่ระบุวิชา");
@@ -692,13 +792,19 @@ const SubstituteManagementPage: React.FC = () => {
 
                 // สร้าง ID ที่ไม่ซ้ำกันสำหรับแต่ละคาบที่ต้องสอนแทน
                 const courseKey = typeof course === 'string' ? courseIndex : (course?.instanceId || course?.id || courseIndex);
-                const uniqueScheduleId = `${scheduleData.id}-${currentDate.toISOString().split('T')[0]}-${slot}-${courseKey}`;
+                const uniqueScheduleId = `${scheduleData.id}-${dateString}-${slot}-${courseKey}`;
                 const classId = course?.classId || scheduleData.classId;
 
                 allSchedules.push({
                   id: uniqueScheduleId,
-                  day: thaiDays[dayOfWeek],
-                  period: period,
+                  day: effectiveDay.isMakeupDay
+                    ? `${effectiveDay.actualDayName} (ใช้ตาราง${effectiveDay.scheduleDayName})`
+                    : effectiveDay.actualDayName,
+                  period: periodNumber,
+                  periodIndex: pIdx,
+                  periodLabel: setting.label,
+                  startTime: setting.startTime,
+                  endTime: setting.endTime,
                   subjectName: subjectNameDisplay,
                   subjectCode: subjectCodeDisplay, // เพิ่มรหัสวิชา
                   className: formatClassName(classId),
@@ -708,42 +814,11 @@ const SubstituteManagementPage: React.FC = () => {
                   substituteTeacherId: existingSub?.substituteTeacherId,
                   substituteTeacherName: existingSub?.substituteTeacherName,
                   substitutionDocId: existingSub?.id, // 📌 เก็บ ID ของ substitution document
-                  availableTeachers: findAvailableTeachers(currentDate, period), // 📌 คำนวณและเก็บครูที่ว่าง
+                  availableTeachers: findAvailableTeachers(currentDate, periodNumber, pIdx), // 📌 คำนวณและเก็บครูที่ว่าง
+                  roomName: (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])))
+                    .map((id: string) => roomMap[id] || id)
+                    .join(', ') || 'ไม่ระบุสถานที่',
                 });
-=======
-              const course = coursesArray[0];
-              const subjectNameDisplay = !course || typeof course === 'string' ? "ไม่ระบุวิชา" : (course?.title || course?.subjectName || "ไม่ระบุวิชา");
-              const subjectCodeDisplay = !course || typeof course === 'string' ? "" : (course?.code || course?.subjectCode || "");
-              const substitutionKey = `${dateString}-${period}`;
-              const existingSub = existingSubstitutions.get(substitutionKey);
-
-              // สร้าง ID ที่ไม่ซ้ำกันสำหรับแต่ละคาบที่ต้องสอนแทน
-              const uniqueScheduleId = `${doc.id}-${currentDate.toISOString().split('T')[0]}-${slot}`;
-
-              // จัดรูปแบบชื่อชั้นเรียนและห้อง (เช่น p1/1 -> ป.1/1)
-              let classNameDisplay = scheduleData.classId || "";
-              if (scheduleData.classId) {
-                const [lvl, rm] = scheduleData.classId.split('/');
-                if (classNames[lvl]) {
-                  classNameDisplay = `${classNames[lvl]}${rm ? `/${rm}` : ''}`;
-                }
-              }
-
-              allSchedules.push({
-                id: uniqueScheduleId,
-                day: thaiDays[dayOfWeek],
-                period: period,
-                subjectName: subjectNameDisplay,
-                subjectCode: subjectCodeDisplay, // เพิ่มรหัสวิชา
-                className: classNameDisplay,
-                classId: scheduleData.classId,
-                originalDate: new Date(currentDate), // เก็บวันที่จริงของคาบเรียน
-                // ดึงข้อมูลครูสอนแทนที่เคยบันทึกไว้
-                substituteTeacherId: existingSub?.substituteTeacherId,
-                substituteTeacherName: existingSub?.substituteTeacherName,
-                substitutionDocId: existingSub?.id, // 📌 เก็บ ID ของ substitution document
-                availableTeachers: findAvailableTeachers(currentDate, period), // 📌 คำนวณและเก็บครูที่ว่าง
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               });
             }
           }
@@ -838,6 +913,9 @@ const SubstituteManagementPage: React.FC = () => {
         await updateDoc(substitutionRef, {
           substituteTeacherId: substitute.value,
           substituteTeacherName: substitute.label,
+          roomName: scheduleEntry.roomName || "",
+          startTime: scheduleEntry.startTime || "",
+          endTime: scheduleEntry.endTime || "",
           updatedAt: Timestamp.now(),
         });
       } else {
@@ -855,6 +933,9 @@ const SubstituteManagementPage: React.FC = () => {
           classId: scheduleEntry.classId,
           subjectName: scheduleEntry.subjectName,
           subjectCode: scheduleEntry.subjectCode || "", // บันทึกรหัสวิชา
+          roomName: scheduleEntry.roomName || "",
+          startTime: scheduleEntry.startTime || "",
+          endTime: scheduleEntry.endTime || "",
           leaveRequestId: selectedLeave.id,
           createdAt: Timestamp.now(),
         });
@@ -864,12 +945,17 @@ const SubstituteManagementPage: React.FC = () => {
       const substitutionDate = scheduleEntry.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
       const newTeacherNotificationMessage = `คุณได้รับมอบหมายให้สอนแทนวิชา ${scheduleEntry.subjectName} (${scheduleEntry.className}) ในวันที่ ${substitutionDate} คาบที่ ${scheduleEntry.period} เนื่องจากคุณครู ${selectedLeave.teacherName} ${selectedLeave.leaveType}`;
 
+      const dateYear = scheduleEntry.originalDate.getFullYear();
+      const dateMonth = String(scheduleEntry.originalDate.getMonth() + 1).padStart(2, '0');
+      const dateDay = String(scheduleEntry.originalDate.getDate()).padStart(2, '0');
+      const dateStr = `${dateYear}-${dateMonth}-${dateDay}`;
+
       await addDoc(collection(firestore, "school-settings", schoolId, "notifications"), {
         userId: substitute.uid, // 📌 แก้ไข: ใช้ uid ของครูเพื่อให้ Navbar ดึงข้อมูลเจอ
         message: newTeacherNotificationMessage,
         createdAt: Timestamp.now(),
         isRead: false,
-        link: "/teacher/my-schedule", // ตัวอย่างลิงก์ไปยังหน้าตารางสอน
+        link: `/academic/classroom-attendance?date=${dateStr}&selectSub=${substitutionDocId}`, // นำทางไปยังหน้าเช็คชื่อ
       });
 
 
@@ -881,7 +967,7 @@ const SubstituteManagementPage: React.FC = () => {
           message: oldTeacherNotificationMessage,
           createdAt: Timestamp.now(),
           isRead: false,
-          link: "/teacher/my-schedule",
+          link: `/academic/classroom-attendance?date=${dateStr}`,
         });
       }
 
@@ -935,7 +1021,6 @@ const SubstituteManagementPage: React.FC = () => {
       <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-between items-center mb-6">
-<<<<<<< HEAD
             <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 text-gray-900 dark:text-white flex-grow shadow-sm dark:shadow-none flex items-center gap-4">
               <BackButton to="/academic/hub/scheduling" />
               <div>
@@ -945,21 +1030,6 @@ const SubstituteManagementPage: React.FC = () => {
                 </p>
               </div>
             </div>
-=======
-            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 text-gray-900 dark:text-white flex-grow shadow-sm dark:shadow-none">
-              <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">จัดการสอนแทน</h1>
-              <p className="text-gray-500 dark:text-gray-400">
-                มอบหมายครูสอนแทนสำหรับคาบเรียนที่ว่างลงเนื่องจากการลา
-              </p>
-            </div>
-            <Link
-              to="/academic"
-              className="ml-4 flex-shrink-0 bg-white dark:bg-[#2a2b2f] p-4 rounded-2xl text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-indigo-500 transition-colors duration-300 shadow-sm dark:shadow-none"
-              title="กลับหน้าบริหารงานวิชาการ"
-            >
-              <Home size={24} />
-            </Link>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1121,52 +1191,60 @@ const SubstituteManagementPage: React.FC = () => {
                     <div key={schedule.id} className="bg-gray-50 dark:bg-[#1e1f21] p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between border border-gray-100 dark:border-gray-800 hover:border-indigo-500/30 transition-all group">
                       <div className="mb-4 md:mb-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400">
-                            คาบที่ {schedule.period}
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                            <Clock size={10} />
+                            {schedule.periodLabel}
                           </span>
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400">
                             {schedule.day}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
                             <Clock size={10} />
-                            {periodSettings.find(p => p.id === `period-${schedule.period}`)?.startTime || '--:--'} - {periodSettings.find(p => p.id === `period-${schedule.period}`)?.endTime || '--:--'}
+                            {periodSettings[schedule.periodIndex]?.startTime || '--:--'} - {periodSettings[schedule.periodIndex]?.endTime || '--:--'}
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            <MapPin size={10} />
+                            สถานที่: {schedule.roomName}
                           </span>
                         </div>
                         <p className="font-bold text-lg text-gray-900 dark:text-white">
                           {schedule.subjectName} {schedule.subjectCode ? <span className="text-xs font-normal text-gray-400">({schedule.subjectCode})</span> : null}
                         </p>
                         <p className="text-sm text-indigo-500 font-medium">ชั้น {schedule.className}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {schedule.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <p className="text-xs text-gray-500">
+                            {schedule.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </p>
+                        </div>
                         {schedule.substituteTeacherName && (
                           <div className="mt-2 flex items-center text-xs font-bold text-green-500 bg-green-500/10 w-fit px-2 py-1 rounded-lg">
                             <CheckCircle size={12} className="mr-1" /> สอนแทนโดย: {schedule.substituteTeacherName}
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">มอบหมายครูสอนแทน</label>
-                        <select
-                          onChange={(e) => handleAssignSubstitute(schedule, e.target.value)}
+                      <div className="flex flex-col gap-2 w-full md:w-[320px] lg:w-[380px] flex-shrink-0">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">มอบหมายครูสอนแทน</label>
+                        <SubstituteTeacherSelect
                           value={schedule.substituteTeacherId || ""}
-                          className="bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm min-w-[250px]"
-                        >
-                          <option value="" disabled>--- เลือกครูสอนแทน ---</option>
-                          {getProcessedTeachers(schedule.availableTeachers).map((teacher: any) => {
+                          onChange={(teacherId: string) => handleAssignSubstitute(schedule, teacherId)}
+                          options={getProcessedTeachers(schedule.availableTeachers).map((teacher: any) => {
                             const isSameArea = teacher.learningArea === (teacherMap[selectedLeave.teacherDocId] as any)?.learningArea;
 
                             let suffix = "";
                             if (isSameArea) suffix += " (กลุ่มสาระเดียวกัน)";
                             suffix += ` [วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}]`;
 
-                            return (
-                              <option key={teacher.value} value={teacher.value}>
-                                {teacher.label}{suffix}
-                              </option>
-                            );
+                            return {
+                              ...teacher,
+                              teacherId: teacher.teacherId || (teacherMap[teacher.value] as any)?.teacherId || 'N/A',
+                              profileImageUrl: (teacherMap[teacher.value] as any)?.profileImageUrl || (teacherMap[teacher.value] as any)?.profileImage || '',
+                              firstName: (teacherMap[teacher.value] as any)?.firstName || '',
+                              lastName: (teacherMap[teacher.value] as any)?.lastName || '',
+                              displayLabel: `${teacher.label}${suffix}`,
+                              metaLabel: `${teacher.learningArea || 'ไม่ระบุกลุ่มสาระ'}${teacher.homeroomGrade ? ` • ประจำชั้น ${teacher.homeroomGrade}` : ''} • วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}${isSameArea ? ' • กลุ่มสาระเดียวกัน' : ''}`,
+                            };
                           })}
-                        </select>
+                        />
                       </div>
                     </div>
                   ))}
@@ -1181,8 +1259,4 @@ const SubstituteManagementPage: React.FC = () => {
 };
 
 
-<<<<<<< HEAD
 export default SubstituteManagementPage;
-=======
-export default SubstituteManagementPage;
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)

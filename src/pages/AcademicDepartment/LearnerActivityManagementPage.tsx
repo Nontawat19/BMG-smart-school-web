@@ -10,6 +10,7 @@ import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { BookOpenCheck, Calendar, ChevronLeft, ChevronRight, ClipboardList, Clock, Database, RefreshCw, Save, Search, Trash2, UserCheck, Users, X } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
+import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 
 interface Course {
   id: string;
@@ -20,6 +21,8 @@ interface Course {
   semester?: string | number;
   classId?: string | string[];
   teacherAssignments?: { teacherId?: string; groupNumber?: number }[];
+  sourceCourseIds?: string[];
+  sourceCourseCodes?: string[];
 }
 
 interface LearnerActivity {
@@ -69,6 +72,19 @@ const isClubText = (text: string) => {
 };
 
 const normalizeSemester = (semester?: string | number) => String(semester ?? '').trim() || '0';
+const normalizeActivityTitle = (title?: string) => String(title || '').replace(/\s+/g, '').trim().toLowerCase();
+
+const isLearnerActivityCourse = (course: Course) => {
+  const subjectGroupText = String(course.subjectGroup || '').trim().toLowerCase();
+  const fullText = `${course.code || ''} ${course.title || ''} ${course.subjectGroup || ''} ${course.type || ''}`.toLowerCase();
+  if (isClubText(fullText)) return false;
+
+  return (
+    subjectGroupText === '9' ||
+    subjectGroupText.includes('กิจกรรมพัฒนาผู้เรียน') ||
+    subjectGroupText.includes('พัฒนาผู้เรียน')
+  );
+};
 
 const formatSemester = (semester?: string | number) => {
   const normalized = normalizeSemester(semester);
@@ -88,7 +104,7 @@ const getTeacherDisplayName = (teacher: any) => {
 };
 
 const isActiveStudent = (student: Student) => {
-  const status = String(student.status || 'เรียนอยู่').trim();
+  const status = String(student.status || 'กำลังศึกษา').trim();
   return !['ย้าย', 'ลาออก', 'จำหน่าย', 'สำเร็จการศึกษา', 'ศิษย์เก่า'].includes(status);
 };
 
@@ -216,26 +232,48 @@ const LearnerActivityManagementPage: React.FC = () => {
   };
 
   const activityCourses = useMemo(() => {
-    return courses.filter(course => {
+    const candidateCourses = courses.filter(course => {
       const text = `${course.code || ''} ${course.title || ''} ${course.subjectGroup || ''} ${course.type || ''}`.toLowerCase();
-      if (isClubText(text)) return false;
+      const activityTitleKey = normalizeActivityTitle(course.title);
       const alreadyAssigned = activities.some(activity =>
-        activity.courseId === course.id &&
+        normalizeActivityTitle(activity.name) === activityTitleKey &&
         semesterOverlaps(activity.semester, course.semester)
       );
       if (alreadyAssigned) return false;
-      const isLearnerActivity =
-        text.includes('กิจกรรมพัฒนาผู้เรียน') ||
-        text.includes('แนะแนว') ||
-        text.includes('ลูกเสือ') ||
-        text.includes('เนตรนารี') ||
-        text.includes('ยุวกาชาด') ||
-        text.includes('ผู้บำเพ็ญประโยชน์') ||
-        text.includes('กิจกรรม') ||
-        course.subjectGroup === '9';
       const matchesSearch = !courseSearch || text.includes(courseSearch.toLowerCase());
-      return isLearnerActivity && matchesSearch;
+      return isLearnerActivityCourse(course) && matchesSearch;
     });
+
+    return Array.from(candidateCourses.reduce((courseMap: Map<string, Course>, course) => {
+      const titleKey = normalizeActivityTitle(course.title);
+      if (!titleKey) return courseMap;
+
+      const semesterKey = normalizeSemester(course.semester);
+      const mapKey = `${titleKey}__${semesterKey}`;
+      const existing = courseMap.get(mapKey);
+
+      if (!existing) {
+        courseMap.set(mapKey, {
+          ...course,
+          sourceCourseIds: [course.id],
+          sourceCourseCodes: course.code ? [course.code] : [],
+          teacherAssignments: course.teacherAssignments || [],
+        });
+        return courseMap;
+      }
+
+      const sourceCourseIds = Array.from(new Set([...(existing.sourceCourseIds || []), course.id]));
+      const sourceCourseCodes = Array.from(new Set([...(existing.sourceCourseCodes || []), course.code].filter((code): code is string => Boolean(code))));
+      const teacherAssignments = [...(existing.teacherAssignments || []), ...(course.teacherAssignments || [])];
+
+      courseMap.set(mapKey, {
+        ...existing,
+        sourceCourseIds,
+        sourceCourseCodes,
+        teacherAssignments,
+      });
+      return courseMap;
+    }, new Map<string, Course>()).values());
   }, [activities, courses, courseSearch]);
 
   const selectedCourse = useMemo(
@@ -251,15 +289,15 @@ const LearnerActivityManagementPage: React.FC = () => {
   const activeActivity = useMemo(() => {
     if (!selectedCourse) return null;
     return activities.find(activity =>
-      activity.courseId === selectedCourse.id &&
+      normalizeActivityTitle(activity.name) === normalizeActivityTitle(selectedCourse.title) &&
       semesterOverlaps(activity.semester, selectedCourse.semester)
     ) || null;
   }, [activities, selectedCourse]);
 
   const teachersList = useMemo(() => {
-    return Object.values(teacherMap || {})
-      .filter((teacher: any) => !teacherSearch || String(teacher.name || '').toLowerCase().includes(teacherSearch.toLowerCase()))
-      .sort((a: any, b: any) => String(a.name || '').localeCompare(String(b.name || ''), 'th')) as any[];
+    const term = teacherSearch.toLowerCase();
+    return getActiveSortedTeachers(Object.values(teacherMap || {}))
+      .filter((teacher: any) => !term || String(teacher.name || '').toLowerCase().includes(term) || String(teacher.teacherId || '').toLowerCase().includes(term)) as any[];
   }, [teacherMap, teacherSearch]);
 
   const assignedTeachers = useMemo(() => {
@@ -323,11 +361,38 @@ const LearnerActivityManagementPage: React.FC = () => {
 
   const filteredActivities = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return activities.filter(activity => {
-      const text = `${activity.courseCode || ''} ${activity.name || ''} ${activity.description || ''}`.toLowerCase();
+    const visibleActivities = activities.filter(activity => {
+      const text = `${activity.courseCode || ''} ${activity.name || ''} ${activity.description || ''} ${activity.subjectGroup || ''}`.toLowerCase();
       if (isClubText(text)) return false;
+      if (!isLearnerActivityCourse({
+        id: activity.courseId,
+        code: activity.courseCode,
+        title: activity.name,
+        subjectGroup: activity.subjectGroup,
+        semester: activity.semester,
+      })) return false;
       return !term || text.includes(term);
     });
+
+    return Array.from(visibleActivities.reduce((activityMap: Map<string, LearnerActivity>, activity) => {
+      const mapKey = `${normalizeActivityTitle(activity.name)}__${normalizeSemester(activity.semester)}`;
+      const existing = activityMap.get(mapKey);
+      if (!existing) {
+        activityMap.set(mapKey, activity);
+        return activityMap;
+      }
+
+      const mergedTeacherIds = Array.from(new Set([
+        ...(existing.responsibleTeacherIds || []),
+        ...(activity.responsibleTeacherIds || []),
+      ]));
+
+      activityMap.set(mapKey, {
+        ...existing,
+        responsibleTeacherIds: mergedTeacherIds,
+      });
+      return activityMap;
+    }, new Map<string, LearnerActivity>()).values());
   }, [activities, searchTerm]);
 
   const toggleTeacher = (teacherId: string) => {
@@ -382,7 +447,7 @@ const LearnerActivityManagementPage: React.FC = () => {
     setSelectedAssignedStudentIds([]);
     const courseSemester = normalizeSemester(course.semester);
     const existingActivity = activities.find(activity =>
-      activity.courseId === course.id &&
+      normalizeActivityTitle(activity.name) === normalizeActivityTitle(course.title) &&
       semesterOverlaps(activity.semester, course.semester)
     );
     if (existingActivity) {
@@ -485,7 +550,7 @@ const LearnerActivityManagementPage: React.FC = () => {
 
     const activitySemester = normalizeSemester(selectedCourse.semester);
     const duplicate = activities.find(activity =>
-      activity.courseId === selectedCourse.id &&
+      normalizeActivityTitle(activity.name) === normalizeActivityTitle(selectedCourse.title) &&
       semesterOverlaps(activity.semester, activitySemester) &&
       activity.id !== activeActivity?.id
     );

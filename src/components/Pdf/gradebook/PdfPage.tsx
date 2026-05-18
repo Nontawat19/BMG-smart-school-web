@@ -4,11 +4,7 @@ import { Page, StyleSheet, PageProps, Text } from '@react-pdf/renderer';
 const defaultStyles = StyleSheet.create({
   page: {
     fontFamily: 'TH Sarabun PSK',
-<<<<<<< HEAD
     padding: '10mm 10mm 10mm 15mm', // Reduced right/left margins for more table space
-=======
-    padding: '10mm 15mm 10mm 25mm', // Default padding with 10mm bottom margin
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     fontSize: 11,
     backgroundColor: '#FFFFFF',
     flexDirection: 'column',
@@ -27,11 +23,7 @@ const PdfPage: React.FC<PdfPageProps> = ({ children, style, ...props }) => {
         style={{
           position: 'absolute',
           top: '10mm',
-<<<<<<< HEAD
           right: '10mm', // Adjusted to match new margin
-=======
-          right: '15mm',
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
           fontSize: 14,
           fontFamily: 'TH Sarabun PSK',
           fontWeight: 'bold'

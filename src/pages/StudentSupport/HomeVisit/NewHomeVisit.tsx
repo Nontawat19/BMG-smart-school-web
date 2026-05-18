@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth, storage } from "@/firebase";
-import { doc, getDoc, collection, addDoc, serverTimestamp, GeoPoint } from "firebase/firestore";
+import { compressImage } from "@/utils/imageUtils";
+import { doc, getDoc, collection, addDoc, serverTimestamp, GeoPoint, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
     ArrowLeft,
@@ -62,7 +64,10 @@ interface FamilyMember {
 const NewHomeVisit: React.FC = () => {
     const { studentId } = useParams<{ studentId: string }>();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const shouldCopy = searchParams.get("copy") === "true";
     const [student, setStudent] = useState<Student | null>(null);
+    const [previousVisit, setPreviousVisit] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [currentStep, setCurrentStep] = useState(1);
@@ -208,12 +213,56 @@ const NewHomeVisit: React.FC = () => {
                 const user = auth.currentUser;
                 if (!user) return;
                 const userDoc = await getDoc(doc(firestore, "users", user.uid));
-                const schoolId = userDoc.data()?.schoolId;
+                const userData = userDoc.data();
+                const schoolId = userData?.schoolId;
 
                 if (schoolId) {
                     const studentDoc = await getDoc(doc(firestore, "school-settings", schoolId, "students", studentId));
                     if (studentDoc.exists()) {
                         const studentData = studentDoc.data() as Student;
+                        
+                        // Check if teacher is regular teacher and shouldn't view other classrooms
+                        const roles = Array.isArray(userData?.role) ? userData.role : [userData?.role || ""];
+                        const isPower = roles.some((r: string) =>
+                            r === 'admin' ||
+                            r === 'school_admin' ||
+                            r === 'super_admin' ||
+                            r === 'academic' ||
+                            r === 'academic_admin' ||
+                            r === 'director'
+                        );
+                        
+                        if (!isPower) {
+                            const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", user.uid);
+                            const teacherSnap = await getDoc(teacherRef);
+                            if (teacherSnap.exists()) {
+                                const tData = teacherSnap.data();
+                                const hrGrade = tData.homeroomGrade || "";
+                                const hrRoom = tData.homeroomRoom || "";
+                                
+                                if (studentData.classLevel !== hrGrade || studentData.room !== hrRoom) {
+                                    // Not authorized! Redirect to home visit dashboard
+                                    Swal.fire({
+                                        icon: 'error',
+                                        title: 'ปฏิเสธการเข้าถึง',
+                                        text: 'คุณไม่มีสิทธิ์เข้าถึงหรือบันทึกข้อมูลนักเรียนนอกห้องเรียนประจำชั้นที่รับผิดชอบ',
+                                        confirmButtonColor: '#e11d48'
+                                    });
+                                    navigate("/student-support/home-visit");
+                                    return;
+                                }
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'ปฏิเสธการเข้าถึง',
+                                    text: 'บัญชีผู้สอนของคุณไม่ระบุระดับชั้นประจำปีการศึกษา',
+                                    confirmButtonColor: '#e11d48'
+                                });
+                                navigate("/student-support/home-visit");
+                                return;
+                            }
+                        }
+
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         const { id: _, ...dataWithoutId } = studentData;
                         setStudent({ id: studentDoc.id, ...dataWithoutId } as Student);
@@ -221,6 +270,14 @@ const NewHomeVisit: React.FC = () => {
                         // Pre-fill nickname in formData if available
                         if (studentData.nickname) {
                             setFormData(prev => ({ ...prev, studentNickname: studentData.nickname || "" }));
+                        }
+
+                        // Fetch previous home visit to enable copy feature
+                        const visitsCol = collection(firestore, "school-settings", schoolId, "students", studentId, "home-visits");
+                        const q = query(visitsCol, orderBy("createdAt", "desc"), limit(1));
+                        const querySnapshot = await getDocs(q);
+                        if (!querySnapshot.empty) {
+                            setPreviousVisit(querySnapshot.docs[0].data());
                         }
                     }
                 }
@@ -233,6 +290,123 @@ const NewHomeVisit: React.FC = () => {
         fetchStudentData();
         getCurrentLocation();
     }, [studentId]);
+
+    // Automatically copy data if shouldCopy is true
+    useEffect(() => {
+        if (shouldCopy && previousVisit) {
+            setFormData(prev => {
+                const nextData = { ...prev };
+                
+                const fieldsToCopy = [
+                    'visitorNameBySide',
+                    'relationshipWithStudent',
+                    'bothParentsDeceased',
+                    'oneParentDeceased',
+                    'parentsSeparated',
+                    'notLivingWithParents',
+                    'studentNickname',
+                    'studentPhone',
+                    'studentLineId',
+                    'studentFacebook',
+                    'travelDistance',
+                    'travelTimeHours',
+                    'travelTimeMinutes',
+                    'travelMethod',
+                    'housingType',
+                    'housingCondition',
+                    'housingCleanliness',
+                    'utilitiesElectricity',
+                    'utilitiesWater',
+                    'utilitiesToilet',
+                    'environmentNear',
+                    'familyMaleCount',
+                    'familyFemaleCount',
+                    'familyTotalCount',
+                    'siblingSameParentsMale',
+                    'siblingSameParentsFemale',
+                    'siblingDifferentParentsMale',
+                    'siblingDifferentParentsFemale',
+                    'specialNeedHelpCount',
+                    'familyAtmosphere',
+                    'hoursTogetherPerDay',
+                    'studentResponsibility',
+                    'studentHobby',
+                    'caregiverWhenParentsAway',
+                    'familyMonthlyIncome',
+                    'expensePayer',
+                    'studentWorkingExtra',
+                    'extraJobDetail',
+                    'extraIncome',
+                    'studentAllowancePerDay',
+                    'internetUsage',
+                    'parentConcerns',
+                    'schoolAssistanceNeededDetail',
+                    'assistanceHistory',
+                    'visitSummaryPromoteDetail',
+                    'visitSummaryUrgentDetail',
+                    'teacherComments',
+                    'suggestionForUse',
+                    'overallSuggestions',
+                    'studentResponsibilities',
+                    'studentHobbies',
+                    'computerAccess',
+                    'electronicUsage',
+                    'parentHousePhotoPermission',
+                    'housingTypeOther',
+                    'travelMethodDetail',
+                    'housingCleanlinessOther',
+                    'specialNeedDetail'
+                ];
+
+                fieldsToCopy.forEach(field => {
+                    if (previousVisit[field] !== undefined) {
+                        (nextData as any)[field] = previousVisit[field];
+                    }
+                });
+
+                if (previousVisit.relationships) {
+                    nextData.relationships = {
+                        ...prev.relationships,
+                        ...previousVisit.relationships
+                    };
+                }
+
+                if (Array.isArray(previousVisit.healthRisk)) nextData.healthRisk = [...previousVisit.healthRisk];
+                if (Array.isArray(previousVisit.welfareRisk)) nextData.welfareRisk = [...previousVisit.welfareRisk];
+                if (Array.isArray(previousVisit.drugRisk)) nextData.drugRisk = [...previousVisit.drugRisk];
+                if (Array.isArray(previousVisit.violenceRisk)) nextData.violenceRisk = [...previousVisit.violenceRisk];
+                if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
+                if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
+                if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
+
+                return nextData;
+            });
+
+            if (Array.isArray(previousVisit.familyMembers) && previousVisit.familyMembers.length > 0) {
+                setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
+                    id: m.id || Date.now().toString() + Math.random().toString(),
+                    name: m.name || '',
+                    age: m.age || '',
+                    education: m.education || '',
+                    occupation: m.occupation || '',
+                    income: m.income || ''
+                })));
+            }
+
+            Swal.fire({
+                icon: 'success',
+                title: 'ดึงข้อมูลการเยี่ยมบ้านครั้งก่อนให้เรียบร้อยแล้ว!',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                customClass: {
+                    popup: 'rounded-xl font-bold'
+                }
+            });
+        }
+    }, [shouldCopy, previousVisit]);
 
     const getCurrentLocation = () => {
         setGettingGps(true);
@@ -250,6 +424,161 @@ const NewHomeVisit: React.FC = () => {
         }
     };
 
+    const getCopyBadgeText = () => {
+        if (!previousVisit) return null;
+        
+        const prevYear = previousVisit.academicYear || "";
+        const prevSem = previousVisit.semester || "";
+        const prevClass = previousVisit.studentInfo?.classLevel || "";
+        
+        const currYear = formData.academicYear;
+        const currSem = formData.semester;
+        const currClass = student?.classLevel || "";
+
+        if (currYear === prevYear && currSem === "2" && prevSem === "1") {
+            return `พบข้อมูลการเยี่ยมบ้าน ภาคเรียนที่ 1/${prevYear} (สามารถคัดลอกมาใช้ต่อใน ภาคเรียนที่ 2 ของปีนี้ได้เลย)`;
+        }
+        
+        if (currSem === "1" && prevYear && currYear && parseInt(currYear) > parseInt(prevYear)) {
+            return `พบข้อมูลการเยี่ยมบ้าน ปีการศึกษา ${prevYear} (ตอนชั้น ${prevClass}) (สามารถคัดลอกมาใช้ต่อสำหรับการเลื่อนชั้นขึ้น ชั้น ${currClass} ในปีนี้ได้เลย)`;
+        }
+
+        return `พบข้อมูลการเยี่ยมบ้านครั้งล่าสุดเมื่อ ${previousVisit.visitDate ? new Date(previousVisit.visitDate).toLocaleDateString("th-TH") : ""}`;
+    };
+
+    const handleCopyPreviousVisit = () => {
+        if (!previousVisit) return;
+        
+        Swal.fire({
+            title: 'ดึงข้อมูลจากการเยี่ยมบ้านครั้งก่อน?',
+            text: 'ข้อมูลเดิมในฟอร์มนี้ (อาทิ ข้อมูลครอบครัว ความสัมพันธ์ ความเสี่ยง) จะถูกเขียนทับด้วยข้อมูลจากการเยี่ยมบ้านครั้งล่าสุด แต่จะไม่กระทบต่อวันที่ เวลา พิกัด GPS และรูปภาพของวิสิทใหม่นี้',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'ใช่, ดึงข้อมูลเดิม',
+            cancelButtonText: 'ยกเลิก',
+            customClass: {
+                popup: 'rounded-[2rem] font-bold p-8',
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Copy values from previousVisit
+                setFormData(prev => {
+                    const nextData = { ...prev };
+                    
+                    const fieldsToCopy = [
+                        'visitorNameBySide',
+                        'relationshipWithStudent',
+                        'bothParentsDeceased',
+                        'oneParentDeceased',
+                        'parentsSeparated',
+                        'notLivingWithParents',
+                        'studentNickname',
+                        'studentPhone',
+                        'studentLineId',
+                        'studentFacebook',
+                        'travelDistance',
+                        'travelTimeHours',
+                        'travelTimeMinutes',
+                        'travelMethod',
+                        'housingType',
+                        'housingCondition',
+                        'housingCleanliness',
+                        'utilitiesElectricity',
+                        'utilitiesWater',
+                        'utilitiesToilet',
+                        'environmentNear',
+                        'familyMaleCount',
+                        'familyFemaleCount',
+                        'familyTotalCount',
+                        'siblingSameParentsMale',
+                        'siblingSameParentsFemale',
+                        'siblingDifferentParentsMale',
+                        'siblingDifferentParentsFemale',
+                        'specialNeedHelpCount',
+                        'familyAtmosphere',
+                        'hoursTogetherPerDay',
+                        'studentResponsibility',
+                        'studentHobby',
+                        'caregiverWhenParentsAway',
+                        'familyMonthlyIncome',
+                        'expensePayer',
+                        'studentWorkingExtra',
+                        'extraJobDetail',
+                        'extraIncome',
+                        'studentAllowancePerDay',
+                        'internetUsage',
+                        'parentConcerns',
+                        'schoolAssistanceNeededDetail',
+                        'assistanceHistory',
+                        'visitSummaryPromoteDetail',
+                        'visitSummaryUrgentDetail',
+                        'teacherComments',
+                        'suggestionForUse',
+                        'overallSuggestions',
+                        'studentResponsibilities',
+                        'studentHobbies',
+                        'computerAccess',
+                        'electronicUsage',
+                        'parentHousePhotoPermission',
+                        'housingTypeOther',
+                        'travelMethodDetail',
+                        'housingCleanlinessOther',
+                        'specialNeedDetail'
+                    ];
+
+                    fieldsToCopy.forEach(field => {
+                        if (previousVisit[field] !== undefined) {
+                            (nextData as any)[field] = previousVisit[field];
+                        }
+                    });
+
+                    // Handle nested relationships specifically
+                    if (previousVisit.relationships) {
+                        nextData.relationships = {
+                            ...prev.relationships,
+                            ...previousVisit.relationships
+                        };
+                    }
+
+                    // Handle arrays specifically to ensure safe copy
+                    if (Array.isArray(previousVisit.healthRisk)) nextData.healthRisk = [...previousVisit.healthRisk];
+                    if (Array.isArray(previousVisit.welfareRisk)) nextData.welfareRisk = [...previousVisit.welfareRisk];
+                    if (Array.isArray(previousVisit.drugRisk)) nextData.drugRisk = [...previousVisit.drugRisk];
+                    if (Array.isArray(previousVisit.violenceRisk)) nextData.violenceRisk = [...previousVisit.violenceRisk];
+                    if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
+                    if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
+                    if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
+
+                    return nextData;
+                });
+
+                // Copy familyMembers if present and is a non-empty array
+                if (Array.isArray(previousVisit.familyMembers) && previousVisit.familyMembers.length > 0) {
+                    setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
+                        id: m.id || Date.now().toString() + Math.random().toString(),
+                        name: m.name || '',
+                        age: m.age || '',
+                        education: m.education || '',
+                        occupation: m.occupation || '',
+                        income: m.income || ''
+                    })));
+                }
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'ดึงข้อมูลสำเร็จ',
+                    text: 'คัดลอกข้อมูลการเยี่ยมบ้านครั้งก่อนเข้ามาในแบบฟอร์มแล้ว คุณสามารถตรวจสอบและปรับปรุงข้อมูลเพิ่มเติมให้เป็นปัจจุบันได้ทันที',
+                    confirmButtonColor: '#2563eb',
+                    customClass: {
+                        popup: 'rounded-[2rem] font-bold p-8',
+                    }
+                });
+            }
+        });
+    };
+
     // Auto-sum family members
     useEffect(() => {
         const male = parseInt(formData.familyMaleCount) || 0;
@@ -260,27 +589,35 @@ const NewHomeVisit: React.FC = () => {
         }
     }, [formData.familyMaleCount, formData.familyFemaleCount]);
 
-    const handleSinglePhotoChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'exterior' | 'interior' | 'schoolSign' | 'sketchMap') => {
+    const handleSinglePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'exterior' | 'interior' | 'schoolSign' | 'sketchMap') => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
+        if (!['image/jpeg', 'image/png'].includes(file.type)) {
+            Swal.fire({ icon: 'error', title: 'ไฟล์ไม่ถูกต้อง', text: 'รองรับเฉพาะไฟล์ JPG และ PNG เท่านั้น' });
+            return;
+        }
+
+        try {
+            const compressedFile = await compressImage(file, 1280, 0.75, 'image/jpeg');
+            const previewUrl = URL.createObjectURL(compressedFile);
             if (type === 'exterior') {
-                setExteriorPhoto(file);
-                setExteriorPreview(reader.result as string);
+                setExteriorPhoto(compressedFile);
+                setExteriorPreview(previewUrl);
             } else if (type === 'interior') {
-                setInteriorPhoto(file);
-                setInteriorPreview(reader.result as string);
+                setInteriorPhoto(compressedFile);
+                setInteriorPreview(previewUrl);
             } else if (type === 'schoolSign') {
-                setSchoolSignPhoto(file);
-                setSchoolSignPreview(reader.result as string);
+                setSchoolSignPhoto(compressedFile);
+                setSchoolSignPreview(previewUrl);
             } else if (type === 'sketchMap') {
-                setSketchMapPhoto(file);
-                setSketchMapPreview(reader.result as string);
+                setSketchMapPhoto(compressedFile);
+                setSketchMapPreview(previewUrl);
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+            console.error("Error compressing home visit image:", error);
+            Swal.fire({ icon: 'error', title: 'บีบอัดรูปภาพไม่สำเร็จ', text: 'กรุณาลองเลือกรูปใหม่อีกครั้ง' });
+        }
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -313,16 +650,25 @@ const NewHomeVisit: React.FC = () => {
         setFamilyMembers(familyMembers.map(m => m.id === id ? { ...m, [field]: value } : m));
     };
 
-    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'internal' | 'external') => {
+    const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'internal' | 'external') => {
         if (e.target.files) {
-            const files = Array.from(e.target.files);
-            const urls = files.map(f => URL.createObjectURL(f));
-            if (type === 'internal') {
-                setPhotosInternal([...photosInternal, ...files]);
-                setPreviewsInternal([...previewsInternal, ...urls]);
-            } else {
-                setPhotosExternal([...photosExternal, ...files]);
-                setPreviewsExternal([...previewsExternal, ...urls]);
+            const files = Array.from(e.target.files).filter(file => ['image/jpeg', 'image/png'].includes(file.type));
+            if (files.length !== e.target.files.length) {
+                Swal.fire({ icon: 'warning', title: 'ข้ามบางไฟล์', text: 'ระบบรองรับเฉพาะไฟล์ JPG และ PNG เท่านั้น' });
+            }
+            try {
+                const compressedFiles = await Promise.all(files.map(file => compressImage(file, 1280, 0.75, 'image/jpeg')));
+                const urls = compressedFiles.map(f => URL.createObjectURL(f));
+                if (type === 'internal') {
+                    setPhotosInternal(prev => [...prev, ...compressedFiles]);
+                    setPreviewsInternal(prev => [...prev, ...urls]);
+                } else {
+                    setPhotosExternal(prev => [...prev, ...compressedFiles]);
+                    setPreviewsExternal(prev => [...prev, ...urls]);
+                }
+            } catch (error) {
+                console.error("Error compressing home visit images:", error);
+                Swal.fire({ icon: 'error', title: 'บีบอัดรูปภาพไม่สำเร็จ', text: 'กรุณาลองเลือกรูปใหม่อีกครั้ง' });
             }
         }
     };
@@ -417,7 +763,7 @@ const NewHomeVisit: React.FC = () => {
     if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-blue-600" /></div>;
 
     const Label = ({ children, required }: { children: React.ReactNode, required?: boolean }) => (
-        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
+        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1">
             {children}
             {required && <span className="text-red-500 text-sm">*</span>}
         </label>
@@ -1006,7 +1352,7 @@ const NewHomeVisit: React.FC = () => {
                                     </div>
                                     <label className="cursor-pointer bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
                                         <Plus size={14} /> เลือกรูปภาพ
-                                        <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handlePhotoChange(e, 'external')} />
+                                        <input type="file" multiple accept="image/jpeg,image/png" className="hidden" onChange={(e) => handlePhotoChange(e, 'external')} />
                                     </label>
                                 </div>
 
@@ -1083,7 +1429,7 @@ const NewHomeVisit: React.FC = () => {
                                                     <span className="text-xs font-black text-slate-400 tracking-widest uppercase">ถ่ายรูปหลังคาบ้าน</span>
                                                 </>
                                             )}
-                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'exterior')} />
+                                            <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'exterior')} />
                                         </label>
                                     </div>
 
@@ -1110,7 +1456,7 @@ const NewHomeVisit: React.FC = () => {
                                                     <span className="text-xs font-black text-slate-400 tracking-widest uppercase">ถ่ายรูปในบ้าน</span>
                                                 </>
                                             )}
-                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'interior')} />
+                                            <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'interior')} />
                                         </label>
                                     </div>
                                 </div>
@@ -1137,7 +1483,7 @@ const NewHomeVisit: React.FC = () => {
                                                 <span className="text-xs font-black text-blue-600 tracking-widest uppercase">อัปโหลดรูปป้ายโรงเรียน</span>
                                             </>
                                         )}
-                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'schoolSign')} />
+                                        <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'schoolSign')} />
                                     </label>
                                 </div>
                             )}
@@ -1168,7 +1514,7 @@ const NewHomeVisit: React.FC = () => {
                                         </div>
                                     </>
                                 )}
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'sketchMap')} />
+                                <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'sketchMap')} />
                             </label>
                         </div>
                     </div>
@@ -1307,6 +1653,16 @@ const NewHomeVisit: React.FC = () => {
                                 {submitting ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
                                 บันทึกข้อมูลการเยี่ยมบ้าน
                             </button>
+                            {previousVisit && (
+                                <button
+                                    type="button"
+                                    onClick={handleCopyPreviousVisit}
+                                    className="flex-1 py-5 px-8 rounded-2xl bg-emerald-600 text-white font-black text-lg border-b-4 border-emerald-800 shadow-lg hover:brightness-110 active:scale-[0.98] active:border-b-0 transition-all flex items-center justify-center gap-4"
+                                >
+                                    <RefreshCw size={24} />
+                                    ดึงข้อมูลจากการเยี่ยมบ้านครั้งก่อน
+                                </button>
+                            )}
                             <button onClick={() => navigate(-1)} className="px-8 py-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 hover:text-rose-500 transition-all text-sm">
                                 ยกเลิก
                             </button>
@@ -1326,13 +1682,11 @@ const NewHomeVisit: React.FC = () => {
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-6">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                             <div className="flex items-center gap-5">
-                                <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm bg-slate-50">
-                                    <img
-                                        src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName}+${student?.lastName}&background=1e40af&color=fff`}
-                                        className="w-full h-full object-cover"
-                                        alt="profile"
-                                    />
-                                </div>
+                                <ProfileAvatar
+                                    src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName}+${student?.lastName}&background=1e40af&color=fff`}
+                                    className="w-16 h-16 border border-slate-100 dark:border-slate-800 shadow-sm bg-slate-50"
+                                    alt="profile"
+                                />
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <button
@@ -1366,6 +1720,33 @@ const NewHomeVisit: React.FC = () => {
                             </div>
                         </div>
                     </div>
+
+                    {previousVisit && (
+                        <div className="mb-6 bg-gradient-to-r from-blue-600/10 via-emerald-600/5 to-indigo-600/10 dark:from-blue-500/20 dark:via-emerald-500/10 dark:to-indigo-500/20 p-5 rounded-2xl border border-blue-200/60 dark:border-blue-800/40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm backdrop-blur-md">
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/20">
+                                    <RefreshCw size={24} />
+                                </div>
+                                <div className="space-y-1">
+                                    <h4 className="font-bold text-slate-800 dark:text-slate-200 text-base">มีข้อมูลการเยี่ยมบ้านครั้งก่อน</h4>
+                                    <p className="text-xs text-blue-750 dark:text-blue-400 font-bold">
+                                        {getCopyBadgeText()}
+                                    </p>
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                        คุณสามารถคัดลอกข้อมูลประวัติครอบครัว ความเสี่ยง และลักษณะบ้านจากประวัติการเยี่ยมล่าสุดมาใส่ในฟอร์มนี้ได้ทันทีเพื่อความสะดวกรวดเร็ว
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleCopyPreviousVisit}
+                                className="w-full md:w-auto px-5 py-3 rounded-xl bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0"
+                            >
+                                <RefreshCw size={16} />
+                                ดึงข้อมูลเดิมมาใช้งาน
+                            </button>
+                        </div>
+                    )}
 
                     {/* Main Form Container */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">

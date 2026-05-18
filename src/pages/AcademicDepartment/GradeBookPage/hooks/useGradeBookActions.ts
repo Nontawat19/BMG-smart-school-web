@@ -1,10 +1,6 @@
 import { useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
-<<<<<<< HEAD
 import { doc, writeBatch, Timestamp, collection, getDocs, deleteField } from 'firebase/firestore';
-=======
-import { doc, writeBatch, Timestamp, collection, getDocs } from 'firebase/firestore';
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import { firestore as db } from '@/firebase';
 import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course } from '../types';
 import { CLASSES } from '@/utils/schoolUtils';
@@ -21,10 +17,7 @@ export const useGradeBookActions = (
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
     maxScores: { formative: number; midterm: number; final: number },
-<<<<<<< HEAD
     currentCourse: Course | undefined,
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     courses: Course[],
     sdqMap: Record<string, any>
 ) => {
@@ -43,7 +36,6 @@ export const useGradeBookActions = (
         return '0';
     };
 
-<<<<<<< HEAD
     const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
 
     const distributeFormativeScore = (score: number, existingDetails: Record<string, number> = {}) => {
@@ -87,21 +79,13 @@ export const useGradeBookActions = (
         return nextDetails;
     };
 
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
     const handleScoreChange = useCallback((studentId: string, field: string, value: string, criteriaId?: string) => {
         let numValue = field === 'status' ? 0 : (parseFloat(value) || 0);
 
         // Validation logic
-<<<<<<< HEAD
         if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative);
         else if (field === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm);
         else if (field === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final);
-=======
-        if (field === 'formative') numValue = Math.min(Math.max(0, numValue), maxScores.formative || 60);
-        else if (field === 'midterm') numValue = Math.min(Math.max(0, numValue), maxScores.midterm || 20);
-        else if (field === 'final') numValue = Math.min(Math.max(0, numValue), maxScores.final || 20);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
         else if (['characteristics', 'readingWriting'].includes(field)) numValue = Math.min(Math.max(0, numValue), 3);
 
         setGrades(prev => {
@@ -114,12 +98,9 @@ export const useGradeBookActions = (
                 updated.readingWritingScores = { ...(current.readingWritingScores || {}), [criteriaId]: numValue };
             } else if (field === 'status') {
                 updated.status = value || undefined;
-<<<<<<< HEAD
             } else if (field === 'formative') {
                 updated.formative = numValue;
                 updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
             } else {
                 (updated as any)[field] = numValue;
             }
@@ -131,11 +112,7 @@ export const useGradeBookActions = (
             setModifiedStudentIds(prev => new Set(prev).add(studentId));
             return { ...prev, [studentId]: updated };
         });
-<<<<<<< HEAD
     }, [maxScores, setGrades, currentCourse]);
-=======
-    }, [maxScores, setGrades]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleBulkFill = useCallback((value: number) => {
         setGrades(prev => {
@@ -184,12 +161,9 @@ export const useGradeBookActions = (
                 if (isCharOrRW && criteriaId) {
                     const field = activeTab === 'characteristics' ? 'characteristicsScores' : 'readingWritingScores';
                     updated[field] = { ...(current[field] || {}), [criteriaId]: numValue };
-<<<<<<< HEAD
                 } else if (key === 'formative') {
                     updated.formative = numValue;
                     updated.formativeDetails = distributeFormativeScore(numValue, current.formativeDetails || {});
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
                 } else {
                     (updated as any)[key] = numValue;
                 }
@@ -208,11 +182,7 @@ export const useGradeBookActions = (
             });
             return newGrades;
         });
-<<<<<<< HEAD
     }, [activeTab, maxScores, students, setGrades, currentCourse]);
-=======
-    }, [activeTab, maxScores, students, setGrades]);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
     const handleSyncSDQColumn = useCallback(async (criteriaTitle: string, criteriaId: string) => {
         if (!selectedClass || !selectedCourse) return;
@@ -357,13 +327,10 @@ export const useGradeBookActions = (
                         delete dataToSave[key];
                     }
                 });
-<<<<<<< HEAD
                 if (!record.status) {
                     dataToSave.status = deleteField();
                     dataToSave.grade = calculateGrade(Number(record.total || 0));
                 }
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
                 batch.set(ref, dataToSave, { merge: true });
             });
@@ -396,14 +363,10 @@ export const useGradeBookActions = (
     const handleImportFromOtherCourse = useCallback(async () => {
         if (!selectedClass || !selectedCourse || !schoolId) return;
 
-<<<<<<< HEAD
         const otherCourses = courses.filter(c => {
             const classIds = Array.isArray(c.classId) ? c.classId : [c.classId];
             return classIds.includes(selectedClass) && c.id !== selectedCourse;
         });
-=======
-        const otherCourses = courses.filter(c => c.classId === selectedClass && c.id !== selectedCourse);
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 
         if (otherCourses.length === 0) {
             Swal.fire({

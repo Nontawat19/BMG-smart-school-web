@@ -2,10 +2,6 @@ import React from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { RootState } from "../../store";
-<<<<<<< HEAD
-import BackButton from "@/components/Shared/BackButton";
-=======
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
 import MainLayout from "@/layouts/MainLayout";
 import {
   Home,
@@ -67,31 +63,23 @@ const StudentSupportPage: React.FC = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div>
-<<<<<<< HEAD
               <div className="flex items-center gap-4 mb-2">
-                <BackButton />
+                <Link 
+                  to="/home"
+                  className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
+                >
+                  <Home size={20} />
+                </Link>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <HeartHandshake className="text-pink-600 dark:text-pink-400" size={32} />
                   ระบบดูแลช่วยเหลือนักเรียน
                 </h1>
               </div>
-=======
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
-                <HeartHandshake className="text-pink-600 dark:text-pink-400" size={32} />
-                ระบบดูแลช่วยเหลือนักเรียน
-              </h1>
->>>>>>> 5f8c7e1 (feat: optimize auto-scheduler and update UI labels)
               <p className="text-gray-500 dark:text-gray-400 text-lg">
                 ยินดีต้อนรับ, <span className="text-pink-600 dark:text-pink-400 font-semibold">{userName}</span>
               </p>
             </div>
-            <Link
-              to="/home"
-              className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f] px-5 py-2.5 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-all shadow-sm border border-gray-200 dark:border-gray-700 font-medium"
-            >
-              <Home size={20} />
-              <span>หน้าหลัก</span>
-            </Link>
+            {/* Standardized Layout: Home navigation is now on the left */}
           </div>
 
           {/* Menu Grid */}
