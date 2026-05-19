@@ -69,7 +69,9 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
             group absolute inset-0 transition-all duration-300 flex flex-col items-center justify-center overflow-hidden rounded-xl border
             ${isOverlay 
                 ? 'cursor-grabbing bg-indigo-600 dark:bg-indigo-700 text-white ring-[4px] ring-indigo-500/30 z-[9999] scale-105 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.4)] border-white/30' 
-                : 'cursor-grab bg-white dark:bg-[#1a1b1e] border-gray-100 dark:border-white/5 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 hover:shadow-lg dark:hover:shadow-indigo-500/10'
+                : course.isElective
+                    ? 'cursor-grab bg-rose-50/70 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-900/30 hover:border-rose-400/60 dark:hover:border-rose-500/60 hover:shadow-lg hover:shadow-rose-500/10'
+                    : 'cursor-grab bg-white dark:bg-[#1a1b1e] border-gray-100 dark:border-white/5 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 hover:shadow-lg dark:hover:shadow-indigo-500/10'
             }
         `}>
             {/* Main Content Container - Ultra Compact */}
@@ -78,9 +80,9 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 {/* Subject Code - Smaller & Sharper */}
                 <span className={`
                     text-[9px] font-black tracking-tighter uppercase tabular-nums leading-none truncate w-full px-0.5
-                    ${isOverlay ? 'text-white' : 'text-slate-900 dark:text-slate-100'}
+                    ${isOverlay ? 'text-white' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
                 `}>
-                    {course.code}
+                    {course.code}{course.isElective && <span className="text-[7.5px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
                 </span>
                 
                 {/* Secondary Info Line (Teacher/Class) */}

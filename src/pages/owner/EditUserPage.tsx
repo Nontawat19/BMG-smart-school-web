@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { usePermissions } from "@/hooks/usePermissions";
-import { firestore, storage } from '@/firebase';
+import { firestore, storage, auth } from '@/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -68,6 +69,8 @@ const EditUserPage: React.FC = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [customTitle, setCustomTitle] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -214,16 +217,10 @@ const EditUserPage: React.FC = () => {
   };
 
   const handlePasswordReset = async () => {
-    if (!user || !user.email) return;
-
-    // --- PRODUCTION NOTE ---
-    // The client-side `sendPasswordResetEmail` can only be used for the currently logged-in user.
-    // To allow an admin to reset another user's password, you must use the Firebase Admin SDK
-    // in a secure backend environment (e.g., a Cloud Function).
-    //
-    // For demonstration purposes, this will show a confirmation and simulate the action.
-    // In a real app, you would call your cloud function here.
-    // e.g., `await functions.httpsCallable('adminResetPassword')({ email: user.email });`
+    if (!user || !user.email) {
+      Swal.fire("แจ้งเตือน", "ผู้ใช้นี้ไม่มีข้อมูลอีเมลในระบบ", "warning");
+      return;
+    }
 
     const result = await Swal.fire({
       title: 'ยืนยันการส่งอีเมลรีเซ็ตรหัสผ่าน',
@@ -232,13 +229,73 @@ const EditUserPage: React.FC = () => {
       showCancelButton: true,
       confirmButtonText: 'ใช่, ส่งเลย',
       cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
     });
 
     if (result.isConfirmed) {
+      try {
+        await sendPasswordResetEmail(auth, user.email);
+        Swal.fire({
+          icon: 'success',
+          title: 'ส่งอีเมลสำเร็จ',
+          text: `ระบบได้ส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปยังอีเมล ${user.email} เรียบร้อยแล้ว`,
+        });
+      } catch (error: any) {
+        console.error("Error sending password reset email:", error);
+        const errorMessage = error.code === 'auth/user-not-found' ? "ไม่พบผู้ใช้นี้ในระบบ Authentication" : "เกิดข้อผิดพลาดในการส่งอีเมล";
+        Swal.fire('เกิดข้อผิดพลาด', errorMessage, 'error');
+      }
+    }
+  };
+
+  const handleDirectPasswordChange = async () => {
+    if (!userId || !newPassword || newPassword.length < 6) return;
+
+    const result = await Swal.fire({
+      title: 'ยืนยันการเปลี่ยนรหัสผ่าน',
+      text: `คุณแน่ใจหรือไม่ว่าต้องการเปลี่ยนรหัสผ่านของผู้ใช้นี้โดยตรง?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยันเปลี่ยนรหัสผ่าน',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#4f46e5',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsChangingPassword(true);
+    try {
+      Swal.fire({
+        title: 'กำลังเปลี่ยนรหัสผ่าน...',
+        text: 'กรุณารอสักครู่ ระบบกำลังปรับปรุงรหัสผ่านใหม่',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      const functions = getFunctions();
+      const updateUserPasswordCallable = httpsCallable(functions, 'updateUserPassword');
+      await updateUserPasswordCallable({ userId: userId, password: newPassword });
+
+      setIsChangingPassword(false);
+      setNewPassword("");
       Swal.fire({
         icon: 'success',
-        title: 'ส่งอีเมลสำเร็จ',
-        text: `ได้ส่งลิงก์สำหรับรีเซ็ตรหัสผ่านไปยัง ${user.email} แล้ว (จำลอง)`,
+        title: 'เปลี่ยนรหัสผ่านสำเร็จ',
+        text: 'รหัสผ่านใหม่ได้รับการปรับปรุงเรียบร้อยแล้ว!',
+        confirmButtonColor: '#4f46e5',
+      });
+    } catch (err: any) {
+      console.error("Error changing password:", err);
+      setIsChangingPassword(false);
+      Swal.fire({
+        icon: 'error',
+        title: 'พบข้อผิดพลาด',
+        text: err.message || 'ไม่สามารถเปลี่ยนรหัสผ่านได้ในขณะนี้',
+        confirmButtonColor: '#4f46e5',
       });
     }
   };
@@ -378,7 +435,19 @@ const EditUserPage: React.FC = () => {
             // Preserve existing teacher-specific fields if they exist, or use defaults
             position: sourceTeacherData.position 
               ? sourceTeacherData.position
-              : (roles.includes(ROLES.SUPER_ADMIN) ? "ผู้ดูแลระบบสูงสุด" : (roles.includes(ROLES.SCHOOL_ADMIN) ? "ผู้ดูแลระบบโรงเรียน" : "ครู")),
+              : (roles.includes(ROLES.SUPER_ADMIN)
+                ? "ผู้ดูแลระบบสูงสุด"
+                : roles.includes(ROLES.SCHOOL_ADMIN)
+                  ? "ผู้ดูแลระบบโรงเรียน"
+                  : roles.includes(ROLES.ACADEMIC_ADMIN)
+                    ? "ผู้ดูแลระบบงานวิชาการ"
+                    : roles.includes(ROLES.STUDENT_ATTENDANCE)
+                      ? "เจ้าหน้าที่ลงเวลานักเรียน"
+                      : roles.includes(ROLES.TEACHER_ATTENDANCE)
+                        ? "เจ้าหน้าที่ลงเวลาครู"
+                        : roles.includes(ROLES.SCHOOL_ATTENDANCE)
+                          ? "เจ้าหน้าที่ลงเวลาทั้งโรงเรียน"
+                          : "ครู"),
             department: user.department || "งานบริหารทั่วไป",
             status: sourceTeacherData.status || "อยู่",
             isHomeroomTeacher: sourceTeacherData.isHomeroomTeacher || false,
@@ -503,7 +572,11 @@ const EditUserPage: React.FC = () => {
   const userRoles = [
     { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลระบบสูงสุด (Super Admin)' },
     { value: ROLES.SCHOOL_ADMIN, label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
+    { value: ROLES.ACADEMIC_ADMIN, label: 'ผู้ดูแลระบบงานวิชาการ (Academic Admin)' },
     { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
+    { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
+    { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
+    { value: ROLES.SCHOOL_ATTENDANCE, label: 'ลงเวลาทั้งโรงเรียน (School Attendance)' },
     { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
   ];
 
@@ -768,10 +841,40 @@ const EditUserPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
+                        <div className="flex flex-col p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0 h-6 flex items-center text-gray-400"><FaKey /></div>
+                            <div className="ml-3 text-sm flex-grow">
+                              <label className="block font-medium text-gray-800 dark:text-gray-200 mb-2">
+                                ตั้งค่ารหัสผ่านใหม่โดยตรง (Direct Password Change)
+                              </label>
+                              <div className="flex flex-col sm:flex-row gap-2 max-w-md">
+                                <input
+                                  type="text"
+                                  placeholder="ป้อนรหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)"
+                                  value={newPassword}
+                                  onChange={(e) => setNewPassword(e.target.value)}
+                                  className="block w-full px-4 py-2 bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-900 dark:text-white"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleDirectPasswordChange}
+                                  disabled={isChangingPassword || newPassword.length < 6}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md disabled:bg-indigo-400 disabled:dark:bg-indigo-800/50 disabled:text-gray-200 disabled:cursor-not-allowed flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors"
+                                >
+                                  {isChangingPassword ? "กำลังเปลี่ยน..." : "เปลี่ยนรหัสผ่าน"}
+                                </button>
+                              </div>
+                              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                * รหัสผ่านใหม่จะมีผลทันทีและใช้ลงชื่อเข้าใช้งานได้โดยตรง
+                              </p>
+                            </div>
+                          </div>
+                        </div>
                         <div className="flex items-start p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                           <div className="flex-shrink-0 h-6 flex items-center text-gray-400"><FaKey /></div>
                           <div className="ml-3 text-sm">
-                            <p className="font-medium text-gray-800 dark:text-gray-200">รหัสผ่าน</p>
+                            <p className="font-medium text-gray-800 dark:text-gray-200">ส่งลิงก์รีเซ็ตรหัสผ่านทางอีเมล</p>
                             <button type="button" onClick={handlePasswordReset} className="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">
                               ส่งอีเมลรีเซ็ตรหัสผ่าน
                             </button>

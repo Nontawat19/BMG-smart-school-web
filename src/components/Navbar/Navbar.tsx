@@ -34,6 +34,7 @@ import LeftSidebar from "../Sidebar/LeftSidebar";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { useTheme } from "@/ThemeContext";
 import Swal from "sweetalert2";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 /* -------------------- types -------------------- */
 interface Notification {
@@ -381,48 +382,59 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           <div className="flex items-center gap-4">
             <div
               className="flex items-center gap-2 cursor-pointer"
-              onClick={() => navigate("/home")}
+              onClick={() => {
+                if (isAttendanceEntryOnly(currentUser?.role)) {
+                  navigate("/attendance/checkin-out");
+                } else {
+                  navigate("/home");
+                }
+              }}
             >
               <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
               <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
-                EPP.5 Online
+                ระบบบริหารสถานศึกษาอัจฉริยะ
               </span>
             </div>
 
             {/* Search Icon Only */}
-            <button
-              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
-              onClick={() => {
-                setIsSearchOpen(true);
-                setIsOpenNoti(false);
-                setIsMobileMenuOpen(false);
-              }}
-              aria-label="เปิดส่วนค้นหา (Ctrl + K หรือ Cmd + K)"
-              title="ค้นหา (Ctrl + K)"
-            >
-              <FiSearch className="w-6 h-6" aria-hidden="true" />
-            </button>
+            {!isAttendanceEntryOnly(currentUser?.role) && (
+              <button
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => {
+                  setIsSearchOpen(true);
+                  setIsOpenNoti(false);
+                  setIsMobileMenuOpen(false);
+                }}
+                aria-label="เปิดส่วนค้นหา (Ctrl + K หรือ Cmd + K)"
+                title="ค้นหา (Ctrl + K)"
+              >
+                <FiSearch className="w-6 h-6" aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           {/* Center */}
-          <div className="hidden md:flex items-center gap-6">
-            <FaHome
-              className={iconClass("home")}
-              title="หน้าแรก"
-              onClick={() => navigate("/home")}
-            />
+          {!isAttendanceEntryOnly(currentUser?.role) && (
+            <div className="hidden md:flex items-center gap-6">
+              <FaHome
+                className={iconClass("home")}
+                title="หน้าแรก"
+                onClick={() => navigate("/home")}
+              />
 
-            <FaUserCheck
-              className={iconClass("attendance")}
-              title="ระบบเช็คชื่อ"
-              onClick={() => navigate("/academic/hub/attendance")}
-            />
-          </div>
+              <FaUserCheck
+                className={iconClass("attendance")}
+                title="ระบบเช็คชื่อ"
+                onClick={() => navigate("/academic/hub/attendance")}
+              />
+            </div>
+          )}
 
           {/* Right */}
           <div className="flex items-center gap-3">
             {/* Notification */}
-            <div className="relative" ref={notificationRef}>
+            {!isAttendanceEntryOnly(currentUser?.role) && (
+              <div className="relative" ref={notificationRef}>
               <FaBell
                 className={iconClass('notify')}
                 onClick={() => {
@@ -554,14 +566,24 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 </div>
               )}
             </div>
-            <ProfileAvatar
-              src={profileUrl}
-              onError={(e) => (e.currentTarget.src = defaultProfile)}
-              className="w-9 h-9 cursor-pointer"
-              onClick={() => navigate("/profile")}
-              alt={`รูปโปรไฟล์ของ ${currentUser?.fullName || 'ผู้ใช้'}`}
-              title="ไปที่โปรไฟล์"
-            />
+            )}
+            {isAttendanceEntryOnly(currentUser?.role) ? (
+              <ProfileAvatar
+                src={profileUrl}
+                onError={(e) => (e.currentTarget.src = defaultProfile)}
+                className="w-9 h-9 select-none"
+                alt={`รูปโปรไฟล์ของ ${currentUser?.fullName || 'ผู้ใช้'}`}
+              />
+            ) : (
+              <ProfileAvatar
+                src={profileUrl}
+                onError={(e) => (e.currentTarget.src = defaultProfile)}
+                className="w-9 h-9 cursor-pointer"
+                onClick={() => navigate("/profile")}
+                alt={`รูปโปรไฟล์ของ ${currentUser?.fullName || 'ผู้ใช้'}`}
+                title="ไปที่โปรไฟล์"
+              />
+            )}
 
             {/* Theme Toggle */}
             <button

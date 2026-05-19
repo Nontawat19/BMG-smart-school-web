@@ -33,6 +33,7 @@ export interface Course {
     teacherId?: string;
     teacherIds?: string[];
     type?: 'พื้นฐาน' | 'เพิ่มเติม';
+    isElective?: boolean;
     formativeWeight?: number;
     midtermWeight?: number;
     indicators?: string[];

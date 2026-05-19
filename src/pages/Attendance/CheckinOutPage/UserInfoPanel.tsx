@@ -11,7 +11,7 @@ interface UserInfoPanelProps {
 
 const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime, checkoutTime, affiliation }) => {
   return (
-    <div className="lg:col-span-2 bg-white dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative">
+    <div className="lg:col-span-2 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative border border-gray-200/50 dark:border-none">
       <AnimatePresence mode="wait">
         {displayUser ? (
           <motion.div
@@ -22,7 +22,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="w-full h-full flex flex-col items-center justify-center"
           >
-            <div className="w-72 h-72 rounded-[3rem] border-[8px] border-white dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto mb-8">
+            <div className="w-72 h-72 rounded-[3rem] border-[8px] border-[#fafbfc] dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto mb-8">
               <img
                 src={displayUser.profileImageUrl || `https://ui-avatars.com/api/?name=${displayUser.name}&background=random&color=fff`}
                 alt={displayUser.name}
@@ -102,7 +102,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             exit={{ opacity: 0 }}
             className="flex flex-col items-center"
           >
-            <div className="w-72 h-72 rounded-[3rem] border-[8px] border-dashed border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center mb-8 mx-auto">
+            <div className="w-72 h-72 rounded-[3rem] border-[8px] border-dashed border-gray-300 dark:border-gray-700 bg-[#f0f2f6] dark:bg-gray-800/50 flex items-center justify-center mb-8 mx-auto">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>

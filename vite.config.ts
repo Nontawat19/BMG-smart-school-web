@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['Epp5 online.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'Epp5 Online I BMG Soft tech',
-        short_name: 'Epp5 Online',
-        description: 'ระบบบริหารจัดการโรงเรียนแบบครบวงจร โดย BMG Soft tech',
+        name: 'BMG Smart School',
+        short_name: 'BMG Smart School',
+        description: 'ระบบบริหารจัดการโรงเรียนแบบครบวงจร โดย BMG Smart School',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',

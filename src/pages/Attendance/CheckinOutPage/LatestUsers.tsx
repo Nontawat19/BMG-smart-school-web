@@ -7,7 +7,7 @@ interface LatestUsersProps {
 
 const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ latestUsers, vertical = false }) => {
   return (
-    <div className={`bg-white dark:bg-[#2a2b2f] rounded-3xl p-6 text-gray-900 dark:text-white shadow-sm dark:shadow-none overflow-hidden ${vertical ? 'h-full flex flex-col' : ''}`}>
+    <div className={`bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-6 text-gray-900 dark:text-white shadow-sm dark:shadow-none overflow-hidden border border-gray-200/50 dark:border-none ${vertical ? 'h-full flex flex-col' : ''}`}>
       <h2 className="text-2xl font-extrabold mb-4 text-gray-900 dark:text-white flex items-center gap-3">
         <span className="w-3 h-10 bg-indigo-500 rounded-full"></span>
         ผู้ลงเวลาล่าสุด
@@ -29,9 +29,9 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                   stiffness: 260,
                   damping: 20
                 }}
-                className={`${vertical ? 'w-full transform transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl' : 'flex-shrink-0 w-40 text-center transform transition-transform duration-200 hover:-translate-y-1'}`}
+                className={`${vertical ? 'w-full transform transition-all duration-200 hover:bg-[#f0f2f6] dark:hover:bg-gray-800 rounded-xl' : 'flex-shrink-0 w-40 text-center transform transition-transform duration-200 hover:-translate-y-1'}`}
               >
-                <div className={`bg-gray-50 dark:bg-[#1e1f21] rounded-[1.5rem] p-4 shadow-sm border border-gray-100 dark:border-gray-700/50 flex ${vertical ? 'flex-row items-center gap-4 text-left' : 'flex-col items-center h-full'}`}>
+                <div className={`bg-[#f0f2f6] dark:bg-[#1e1f21] rounded-[1.5rem] p-4 shadow-sm border border-gray-200/50 dark:border-gray-700/50 flex ${vertical ? 'flex-row items-center gap-4 text-left' : 'flex-col items-center h-full'}`}>
                   <div className="relative flex-shrink-0">
                     <img
                       src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${user.name}&background=random&color=fff`}
@@ -123,7 +123,7 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-8 text-center opacity-50">
-          <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
+          <div className="w-16 h-16 bg-[#edf0f4] dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>

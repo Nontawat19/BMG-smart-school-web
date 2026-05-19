@@ -13,5 +13,13 @@ export const isAttendanceEntryOnly = (role: unknown) => {
       ? [role]
       : [];
 
-  return roles.length > 0 && roles.every((item) => ATTENDANCE_ENTRY_ROLES.includes(item));
+  if (roles.length === 0) return false;
+
+  const targetRoles = [
+    'student_attendance',
+    'teacher_attendance',
+    'school_attendance'
+  ];
+
+  return roles.every((item) => targetRoles.includes(item.toLowerCase()));
 };

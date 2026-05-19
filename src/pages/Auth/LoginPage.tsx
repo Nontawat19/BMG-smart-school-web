@@ -252,10 +252,10 @@ const LoginPage: React.FC = () => {
                 )}
               </div>
               <h1 className="text-4xl lg:text-5xl font-black mb-1 tracking-tight text-white drop-shadow-md leading-tight px-4">
-                {tenantSchool?.schoolName || "EPP5 Online"}
+                {tenantSchool?.schoolName || "BMG Smart School"}
               </h1>
               {tenantSchool && <p className="text-indigo-100 text-lg font-medium tracking-wide">ยินดีต้อนรับเข้าสู่ระบบ</p>}
-              {!tenantSchool && <p className="text-indigo-100 text-xl font-medium tracking-wide">ระบบบันทึกผลการเรียนออนไลน์</p>}
+              {!tenantSchool && <p className="text-indigo-100 text-xl font-medium tracking-wide">ระบบบริหารสถานศึกษาอัจฉริยะ</p>}
               <div className="mt-3 inline-block px-3 py-1 bg-white/10 backdrop-blur-sm rounded-full border border-white/10">
                 <p className="text-indigo-200 text-[10px] font-semibold tracking-widest uppercase">
                   {tenantSchool ? "School Portal Access" : "Powered by BMG Smart School"}
@@ -268,7 +268,11 @@ const LoginPage: React.FC = () => {
                 "ใช้งานง่ายสำหรับครู",
                 "เช็คชื่อรายคาบ",
                 "จัดการกิจกรรมชุมนุม",
-                "สรุปผลการเรียนอัตโนมัติ"
+                "สรุปผลการเรียนอัตโนมัติ",
+                "ลงเวลา มา-กลับ บุคลากร/นักเรียน",
+                "ระบบเช็คแถว",
+                "ระบบตารางสอน",
+                "สรุปการมาเรียน"
               ].map((text, idx) => (
                 <div key={idx} className="flex items-center gap-2 p-2 rounded-xl bg-white/10 backdrop-blur-sm border border-white/5 hover:bg-white/20 transition-all duration-200 group">
                   <div className="flex-shrink-0 group-hover:scale-110 transition-transform">
@@ -290,7 +294,7 @@ const LoginPage: React.FC = () => {
             <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-blue-500 rounded-xl flex items-center justify-center mb-2 shadow-lg transform rotate-3">
               <FaBookOpen className="text-white text-2xl" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">EPP5 Online</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">BMG Smart School</h2>
           </div>
 
           <div className="mb-6 text-center lg:text-left">
@@ -445,7 +449,7 @@ const LoginPage: React.FC = () => {
           {/* Footer Text */}
           <div className="mt-4 lg:mt-6 text-center">
             <p className="text-xs text-gray-400 dark:text-gray-500">
-              &copy; 2025-{new Date().getFullYear()} EPP5 Online - BMG Smart School. All rights reserved.
+              &copy; 2025-{new Date().getFullYear()} BMG Smart School. All rights reserved.
             </p>
           </div>
         </div>

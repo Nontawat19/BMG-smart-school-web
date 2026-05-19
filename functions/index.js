@@ -74,3 +74,31 @@ exports.updateUserEmail = functions.region("us-central1").https.onCall(async (da
         );
     }
 });
+
+exports.updateUserPassword = functions.region("us-central1").https.onCall(async (data, context) => {
+    const userId = data.userId;
+    const newPassword = data.password;
+
+    if (!userId || !newPassword) {
+        throw new functions.https.HttpsError(
+            "invalid-argument",
+            "กรุณาระบุ userId และ password"
+        );
+    }
+
+    try {
+        console.log(`กำลังอัปเดตรหัสผ่านของผู้ใช้ ${userId}`);
+
+        // อัปเดตรหัสผ่านใน Firebase Auth
+        await admin.auth().updateUser(userId, { password: newPassword });
+
+        console.log(`อัปเดตรหัสผ่านสำเร็จ: ${userId}`);
+        return { success: true, message: `อัปเดตรหัสผ่านของผู้ใช้ ${userId} สำเร็จ` };
+    } catch (error) {
+        console.error(`เกิดข้อผิดพลาดในการอัปเดตรหัสผ่านผู้ใช้ ${userId}:`, error);
+        throw new functions.https.HttpsError(
+            "internal",
+            `ไม่สามารถอัปเดตรหัสผ่านได้: ${error.message}`
+        );
+    }
+});

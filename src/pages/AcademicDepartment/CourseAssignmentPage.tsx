@@ -60,6 +60,7 @@ interface Course {
     subjectGroup?: string; // กลุ่มสาระการเรียนรู้
     teacherAssignments?: GroupAssignment[];
     isActive?: boolean;
+    isElective?: boolean;
 }
 
 interface Teacher {
@@ -1185,7 +1186,11 @@ const CourseAssignmentPage: React.FC = () => {
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
         const matchesGroup = isSubjectGroupMatch(c.subjectGroup, subjectGroupFilter);
-        const matchesType = categoryFilter === "ประเภท" || categoryFilter === "ทั้งหมด" || (c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase());
+        const matchesType = (() => {
+            if (categoryFilter === "ประเภท" || categoryFilter === "ทั้งหมด") return true;
+            if (categoryFilter === "วิชาเลือกเสรี") return c.isElective === true;
+            return c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase();
+        })();
         const matchesLevelFilter = matchesLevel(c.classId);
         
         let matchesSemester = true;
@@ -1448,7 +1453,8 @@ const CourseAssignmentPage: React.FC = () => {
                                                         { value: 'พื้นฐาน', label: 'พื้นฐาน' },
                                                         { value: 'เพิ่มเติม', label: 'เพิ่มเติม' },
                                                         { value: 'ชุมนุม', label: 'ชุมนุม' },
-                                                        { value: 'กิจกรรม', label: 'กิจกรรม' }
+                                                        { value: 'กิจกรรม', label: 'กิจกรรม' },
+                                                        { value: 'วิชาเลือกเสรี', label: 'วิชาเลือกเสรี' }
                                                     ]}
                                                     value={{ 
                                                         value: categoryFilter, 
@@ -1527,6 +1533,11 @@ const CourseAssignmentPage: React.FC = () => {
                                                             <span className="text-slate-400 shrink-0 w-3 text-center text-[10px]">{course.semester || '0'}</span>
                                                             <span className="text-slate-900 dark:text-white font-black shrink-0">{course.code}</span>
                                                             <span className="text-slate-600 dark:text-slate-300 truncate font-bold text-[11px] whitespace-nowrap">{course.title}</span>
+                                                            {course.isElective && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400 shrink-0">
+                                                                    วิชาเลือก
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1857,6 +1868,11 @@ const CourseAssignmentPage: React.FC = () => {
                                                     <span className="text-slate-400 shrink-0 w-3 text-center text-[10px]">{course.semester || '0'}</span>
                                                     <span className="text-slate-900 dark:text-white font-black shrink-0">{course.code}</span>
                                                     <span className="text-slate-600 dark:text-slate-200 truncate">{course.title}</span>
+                                                    {course.isElective && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400 shrink-0">
+                                                            วิชาเลือก
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 shrink-0 ml-auto">
                                                     {(() => {

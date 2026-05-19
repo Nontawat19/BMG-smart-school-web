@@ -2,6 +2,7 @@ import React, { useState, FormEvent, useEffect } from "react";
 import MainLayout from "@/layouts/MainLayout";
 import { useParams, useNavigate } from "react-router-dom";
 import { auth, firestore, storage } from "@/firebase";
+import { initializeApp, deleteApp } from "firebase/app";
 import {
   collection,
   doc,
@@ -12,7 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { FaUserPlus, FaIdCard, FaEnvelope, FaLock, FaUserTie, FaArrowLeft } from "react-icons/fa";
 import Swal from "sweetalert2";
 import { compressImage } from "@/utils/imageUtils";
@@ -123,6 +124,8 @@ export default function QuickAddTeacherPage() {
       didOpen: () => Swal.showLoading(),
     });
 
+    const secondaryApp = initializeApp(auth.app.options, `AddTeacher-${Date.now()}`);
+
     try {
       // 1. Check for existing ID Card or Email
       const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
@@ -134,7 +137,8 @@ export default function QuickAddTeacherPage() {
       }
 
       // 2. Create Auth User
-      const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const secondaryAuth = getAuth(secondaryApp);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
       const user = userCredential.user;
 
       // 3. Upload Image
@@ -194,6 +198,7 @@ export default function QuickAddTeacherPage() {
         color: "#ffffff",
       });
     } finally {
+      await deleteApp(secondaryApp);
       setIsLoading(false);
     }
   };

@@ -16,8 +16,8 @@ import {
   where,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { FirebaseError } from "firebase/app";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { FirebaseError, initializeApp, deleteApp } from "firebase/app";
+import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
 import Swal from "sweetalert2";
 import { compressImage } from "@/utils/imageUtils";
 import { getLevelsByRange } from "@/utils/schoolUtils";
@@ -368,10 +368,13 @@ export default function AddTeacherPage() {
       didOpen: () => Swal.showLoading(),
     });
 
+    const secondaryApp = initializeApp(auth.app.options, `AddTeacher-${Date.now()}`);
+
     try {
       const { profileImageUrl, email, password, schoolId, ...teacherData } = form;
 
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const secondaryAuth = getAuth(secondaryApp);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
       const user = userCredential.user;
       console.log("User created in Auth with UID:", user.uid);
 
@@ -479,6 +482,7 @@ export default function AddTeacherPage() {
         color: "#ffffff",
       });
     } finally {
+      await deleteApp(secondaryApp);
       setIsLoading(false);
     }
   }

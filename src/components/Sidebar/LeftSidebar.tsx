@@ -4,6 +4,7 @@ import { RootState } from "@/store";
 import { Link, NavLink } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { firestore as db } from "../../firebase";
+import LogoutButton from "@/components/LogoutButton";
 import {
   FaChalkboardTeacher,
   FaUserGraduate,
@@ -53,6 +54,7 @@ interface LeftSidebarProps {
 import CanAccess from "../AccessControl/CanAccess";
 import { ROLES, ROLE_LABELS, Role } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
   const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } = usePermissions();
@@ -137,98 +139,141 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         <div className="w-[280px] h-full flex flex-col gap-6 p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-gray-100 dark:scrollbar-track-gray-900">
 
           {/* โปรไฟล์ผู้ใช้ */}
-          <Link
-            to="/profile"
-            className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-colors duration-200 text-inherit no-underline"
-            onClick={handleLinkClick}
-          >
-            {isLoading ? (
-              <>
-                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 animate-pulse"></div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-                  <img
-                    src={currentUser?.profileUrl || defaultProfile}
-                    alt="Profile"
-                    className="w-full h-full object-cover object-[center_20%] aspect-square"
-                    onError={(e) => {
-                      e.currentTarget.src = defaultProfile;
-                    }}
-                  />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
-                  <span className="text-[10px] text-gray-500 truncate">
-                    {normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
-                  </span>
-                </div>
-              </>
-            )}
-          </Link>
+          {isAttendanceEntryOnly(currentUser?.role) ? (
+            <div
+              className="flex items-center gap-3 p-2 rounded-xl text-inherit no-underline select-none"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 animate-pulse"></div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+                    <img
+                      src={currentUser?.profileUrl || defaultProfile}
+                      alt="Profile"
+                      className="w-full h-full object-cover object-[center_20%] aspect-square"
+                      onError={(e) => {
+                        e.currentTarget.src = defaultProfile;
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
+                    <span className="text-[10px] text-gray-500 truncate">
+                      {normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <Link
+              to="/profile"
+              className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-colors duration-200 text-inherit no-underline"
+              onClick={handleLinkClick}
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 animate-pulse"></div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-11 h-11 min-w-[44px] min-h-[44px] shrink-0 rounded-full overflow-hidden border-2 border-gray-200 dark:border-gray-600 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+                    <img
+                      src={currentUser?.profileUrl || defaultProfile}
+                      alt="Profile"
+                      className="w-full h-full object-cover object-[center_20%] aspect-square"
+                      onError={(e) => {
+                        e.currentTarget.src = defaultProfile;
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
+                    <span className="text-[10px] text-gray-500 truncate">
+                      {normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
+                    </span>
+                  </div>
+                </>
+              )}
+            </Link>
+          )}
 
 
 
           {/* เมนู */}
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
-
-
-            {/* --- งานวิชาการ --- */}
-            {isEnabled('academic') && (
-              <CanAccess roles={STAFF_ACCESS}>
-                <div className="flex flex-col gap-1">
-                  <CanAccess roles={ACADEMIC_MANAGEMENT}>
-                    <NavLink to="/academic/hub/registration" className={navLinkClasses}>
-                      <FaIdCard className="text-lg min-w-[18px]" />
-                      <span>งานทะเบียน</span>
-                    </NavLink>
+            {isAttendanceEntryOnly(currentUser?.role) ? (
+              <div className="flex flex-col gap-1">
+                <NavLink to="/attendance/checkin-out" className={navLinkClasses}>
+                  <FaUserCheck className="text-lg min-w-[18px]" />
+                  <span>ลงเวลาเข้า-ออก</span>
+                </NavLink>
+              </div>
+            ) : (
+              <>
+                {/* --- งานวิชาการ --- */}
+                {isEnabled('academic') && (
+                  <CanAccess roles={STAFF_ACCESS}>
+                    <div className="flex flex-col gap-1">
+                      <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                        <NavLink to="/academic/hub/registration" className={navLinkClasses}>
+                          <FaIdCard className="text-lg min-w-[18px]" />
+                          <span>งานทะเบียน</span>
+                        </NavLink>
+                      </CanAccess>
+                      <NavLink to="/academic/hub/scheduling" className={navLinkClasses}>
+                        <FaClock className="text-lg min-w-[18px]" />
+                        <span>ตารางสอน</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/students" className={navLinkClasses}>
+                        <FaUserGraduate className="text-lg min-w-[18px]" />
+                        <span>ข้อมูลนักเรียน</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/personnel_info" className={navLinkClasses}>
+                        <FaUserTie className="text-lg min-w-[18px]" />
+                        <span>งานบุคลากร</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
+                        <FaUserCheck className="text-lg min-w-[18px]" />
+                        <span>ระบบเช็คชื่อ</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/activities" className={navLinkClasses}>
+                        <FaFlag className="text-lg min-w-[18px]" />
+                        <span>กิจกรรมและชุมนุม</span>
+                      </NavLink>
+                      <NavLink to="/student-support/hub" className={navLinkClasses}>
+                        <FaHandHoldingHeart className="text-lg min-w-[18px]" />
+                        <span>ระบบดูแลช่วยเหลือนักเรียน</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/evaluation" className={navLinkClasses}>
+                        <FaGraduationCap className="text-lg min-w-[18px]" />
+                        <span>วัดผลและประเมินผล</span>
+                      </NavLink>
+                      <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                        <NavLink to="/academic/alumni-management" className={navLinkClasses}>
+                          <FaHistory className="text-lg min-w-[18px]" />
+                          <span>ทำเนียบศิษย์เก่า</span>
+                        </NavLink>
+                      </CanAccess>
+                      <CanAccess roles={ACADEMIC_MANAGEMENT}>
+                        <NavLink to="/academic/hub/settings" className={navLinkClasses}>
+                          <FaCog className="text-lg min-w-[18px]" />
+                          <span>การตั้งค่าระบบ</span>
+                        </NavLink>
+                      </CanAccess>
+                    </div>
                   </CanAccess>
-                  <NavLink to="/academic/hub/scheduling" className={navLinkClasses}>
-                    <FaClock className="text-lg min-w-[18px]" />
-                    <span>ตารางสอน</span>
-                  </NavLink>
-                  <NavLink to="/academic/hub/students" className={navLinkClasses}>
-                    <FaUserGraduate className="text-lg min-w-[18px]" />
-                    <span>ข้อมูลนักเรียน</span>
-                  </NavLink>
-                  <NavLink to="/academic/hub/personnel_info" className={navLinkClasses}>
-                    <FaUserTie className="text-lg min-w-[18px]" />
-                    <span>งานบุคลากร</span>
-                  </NavLink>
-                  <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
-                    <FaUserCheck className="text-lg min-w-[18px]" />
-                    <span>ระบบเช็คชื่อ</span>
-                  </NavLink>
-                  <NavLink to="/academic/hub/activities" className={navLinkClasses}>
-                    <FaFlag className="text-lg min-w-[18px]" />
-                    <span>กิจกรรมและชุมนุม</span>
-                  </NavLink>
-                  <NavLink to="/student-support/hub" className={navLinkClasses}>
-                    <FaHandHoldingHeart className="text-lg min-w-[18px]" />
-                    <span>ระบบดูแลช่วยเหลือนักเรียน</span>
-                  </NavLink>
-                  <NavLink to="/academic/hub/evaluation" className={navLinkClasses}>
-                    <FaGraduationCap className="text-lg min-w-[18px]" />
-                    <span>วัดผลและประเมินผล</span>
-                  </NavLink>
-                  <CanAccess roles={ACADEMIC_MANAGEMENT}>
-                    <NavLink to="/academic/alumni-management" className={navLinkClasses}>
-                      <FaHistory className="text-lg min-w-[18px]" />
-                      <span>ทำเนียบศิษย์เก่า</span>
-                    </NavLink>
-                  </CanAccess>
-                  <CanAccess roles={ACADEMIC_MANAGEMENT}>
-                    <NavLink to="/academic/hub/settings" className={navLinkClasses}>
-                      <FaCog className="text-lg min-w-[18px]" />
-                      <span>การตั้งค่าระบบ</span>
-                    </NavLink>
-                  </CanAccess>
-                </div>
-              </CanAccess>
+                )}
+              </>
             )}
           </nav>
 
@@ -245,9 +290,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
             </div>
           </CanAccess>
 
-          <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700/50 flex flex-col gap-1">
-            <p className="text-[10px] text-gray-400 dark:text-gray-500 px-4 mt-2 leading-relaxed">
-              © 2025-{new Date().getFullYear()} EPP5 Online - BMG Smart School. All rights reserved.
+          <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700/50 flex flex-col gap-2">
+            <LogoutButton className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors duration-200 text-sm font-medium" />
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 px-4 mt-1 leading-relaxed text-center">
+              © 2025-{new Date().getFullYear()} BMG Smart School. All rights reserved.
             </p>
           </div>
         </div>
@@ -258,7 +304,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         !isMobile && toggleSidebar && (
           <button
             onClick={toggleSidebar}
-            className={`hidden lg:block fixed top-[85px] z-[60] bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-r-md p-2 text-gray-500 hover:text-indigo-600 shadow-md transition-all duration-300 ${isCollapsed ? 'left-0' : 'left-[280px]'}`}
+            className={`hidden lg:block fixed top-[180px] z-[60] bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-r-md p-2 text-gray-500 hover:text-indigo-600 shadow-md transition-all duration-300 ${isCollapsed ? 'left-0' : 'left-[280px]'}`}
             title={isCollapsed ? "แสดงเมนู" : "ซ่อนเมนู"}
           >
             {isCollapsed ? <FaAngleDoubleRight size={14} /> : <FaAngleDoubleLeft size={14} />}

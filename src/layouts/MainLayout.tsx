@@ -44,9 +44,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     
     // กำหนด Title
     if (pageName) {
-      document.title = `${pageName} | Epp5 Online I BMG Soft tech`;
+      document.title = `${pageName} | BMG Smart School`;
     } else {
-      document.title = "Epp5 Online I BMG Soft tech";
+      document.title = "BMG Smart School";
     }
   }, [isDarkMode, window.location.pathname]);
 

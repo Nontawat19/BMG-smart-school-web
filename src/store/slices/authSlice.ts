@@ -35,12 +35,12 @@ export const listenToAuthChanges = createAsyncThunk(
               if (docSnap.exists()) {
                 const userData = docSnap.data();
 
-                // 💡 จัดการ role ให้เป็น array เสมอ
+                // 💡 จัดการ role ให้เป็น array เสมอ และแปลงเป็นตัวพิมพ์เล็กเพื่อความถูกต้อง
                 let roles: string[] = [];
                 if (Array.isArray(userData.role)) {
-                  roles = userData.role;
+                  roles = userData.role.map(r => typeof r === 'string' ? r.toLowerCase() : '');
                 } else if (typeof userData.role === 'string') {
-                  roles = [userData.role];
+                  roles = [userData.role.toLowerCase()];
                 } else {
                   roles = ['user'];
                 }

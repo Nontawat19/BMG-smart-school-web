@@ -39,7 +39,16 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
             }}
         >
             <div className="relative w-[240px] p-4 bg-[#1a1b1e] border border-white/10 rounded-[24px] shadow-2xl">
-                <div className="flex items-center justify-between mb-3 px-1 text-indigo-400 font-black text-[10px] uppercase">รายละเอียดวิชา</div>
+                <div className="flex items-center justify-between mb-3 px-1 text-indigo-400 font-black text-[10px] uppercase">
+                    <span>รายละเอียดวิชา</span>
+                    {(() => {
+                        const c = hoveredSlot.courses[0];
+                        const courseDoc = allCourses.find(doc => doc.id === c?.id);
+                        return courseDoc?.isElective ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-900/40 text-rose-400 border border-rose-800/30 tracking-wide animate-pulse">วิชาเลือก</span>
+                        ) : null;
+                    })()}
+                </div>
                 <div className="h-[1px] w-full bg-white/5 mb-4"></div>
                 <div className="space-y-2.5 px-1 text-[11px] font-black text-white">
                     <div className="flex"><span className="w-20 text-gray-500">รหัสวิชา:</span><span className="flex-1 truncate">{hoveredSlot.isDynamicUnavailable ? 'LOCK' : (hoveredSlot.courses[0]?.code || '-')}</span></div>

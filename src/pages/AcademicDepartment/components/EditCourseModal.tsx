@@ -3,7 +3,7 @@ import Select from 'react-select'; // Import react-select
 import {
     X, ChevronRight, ChevronLeft, ChevronDown, Save,
     BookOpen, Calculator, CalendarClock, Ban, LayoutGrid, Check,
-    AlertCircle, Users, Search, Plus
+    AlertCircle, Users, Search, Plus, Award
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useSubjectGroups } from '@/hooks/useSubjectGroups';
@@ -31,6 +31,7 @@ interface Course {
     subjectGroup?: string;
     semester?: string;
     isCombined?: boolean;
+    isElective?: boolean;
     teacherIds?: string[];
     teacherAssignments?: { teacherId: string; roomIds: string[]; classLevels: string[] }[];
 }
@@ -163,6 +164,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                 })(),
                 semester: course.semester || "1", // Default to semester 1 if missing
                 isCombined: course.isCombined || false,
+                isElective: course.isElective || false,
                 teacherAssignments: course.teacherAssignments || [],
                 type: course.type || (course.expectedOutcomes?.length && !course.indicators?.length ? 'เพิ่มเติม' : 'พื้นฐาน')
             });
@@ -370,6 +372,30 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                                     </label>
                                                 ))}
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-2 mb-4 p-4 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl">
+                                                <Award size={20} className="animate-pulse" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-amber-700 dark:text-amber-400">วิชาเลือกเสรี (Elective Course)</label>
+                                                <span className="text-xs text-amber-600/80 dark:text-amber-500/70">เปิดใช้งานหากวิชานี้เป็นวิชาเลือกเสรีที่ให้นักเรียนลงทะเบียนเรียนได้อย่างอิสระ</span>
+                                            </div>
+                                        </div>
+                                        <div
+                                            onClick={() => handleChange('isElective', !formData.isElective)}
+                                            className={`relative w-11 h-6 rounded-full cursor-pointer transition-all duration-300 ease-in-out border ${formData.isElective
+                                                ? 'bg-amber-500 border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                                                : 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
+                                                }`}
+                                        >
+                                            <div
+                                                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-300 shadow-sm ${formData.isElective ? 'translate-x-5' : 'translate-x-0'
+                                                    }`}
+                                            />
                                         </div>
                                     </div>
 

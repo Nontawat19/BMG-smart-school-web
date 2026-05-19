@@ -139,6 +139,8 @@ const CourseManagementPage: React.FC = () => {
   const [room, setRoom] = useState("");
   const [teacherId, setTeacherId] = useState("");
   const [isCombined, setIsCombined] = useState(false); // เพิ่ม state สำหรับเรียนรวม
+  const [isElective, setIsElective] = useState(false); // เพิ่ม state สำหรับวิชาเลือกเสรี
+
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
@@ -367,6 +369,7 @@ const CourseManagementPage: React.FC = () => {
         expectedOutcomes: courseType === "เพิ่มเติม" ? expectedOutcomes.split('\n').map(line => line.trim()).filter(line => line) : [],
         semester: semester, // เพิ่มฟิลด์ภาคเรียน
         isCombined: isCombined, // เรียนรวม
+        isElective: isElective, // เพิ่มสถานะวิชาเลือกเสรี
         // New fields aligned with ImportCoursePage
         titleEn: titleEn,
         codeEn: codeEn,
@@ -408,6 +411,7 @@ const CourseManagementPage: React.FC = () => {
       setDisallowedDays([]);
       setLockedSlots([]);
       setIsCombined(false);
+      setIsElective(false);
 
     } catch (error) {
       console.error("Error adding document: ", error);
@@ -625,12 +629,25 @@ const CourseManagementPage: React.FC = () => {
                 <div className="bg-white dark:bg-[#2a2b2f] p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 h-full">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-800 dark:text-gray-200"><Users size={20} className="text-indigo-500" />กลุ่มเป้าหมาย</h3>
                   <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div className="flex flex-col sm:flex-row gap-6 mb-4">
                       <div className="flex items-center gap-2">
                         <label className="relative inline-flex items-center cursor-pointer">
                           <input type="checkbox" checked={isCombined} onChange={(e) => setIsCombined(e.target.checked)} className="sr-only peer" />
                           <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
                           <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">เรียนรวม</span>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" checked={isElective} onChange={(e) => {
+                            const val = e.target.checked;
+                            setIsElective(val);
+                            if (val) {
+                              setCourseType("เพิ่มเติม"); // วิชาเลือกมักเป็นวิชาเพิ่มเติม
+                            }
+                          }} className="sr-only peer" />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-rose-300 dark:peer-focus:ring-rose-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-rose-600"></div>
+                          <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">วิชาเลือกเสรี (Elective Course)</span>
                         </label>
                       </div>
                     </div>

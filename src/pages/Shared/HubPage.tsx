@@ -38,7 +38,8 @@ import {
   List,
   LayoutGrid,
   MessageSquare,
-  Send
+  Send,
+  Compass
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 
@@ -527,6 +528,14 @@ const HubPage: React.FC = () => {
       title: "กิจกรรมและชุมนุม",
       description: "จัดการข้อมูลชุมนุมและการเข้าทำกิจกรรม",
       items: [
+        {
+          title: "ทำเนียบกิจกรรมชุมนุม",
+          description: "ดูรายชื่อกิจกรรมชุมนุมทั้งหมด รายละเอียด สถิติจำนวนสมาชิก และผู้ดูแล",
+          icon: <Compass size={24} />,
+          path: "/academic/club-list",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: STAFF_ACCESS
+        },
         {
           title: "จัดการชุมนุม",
           description: "เพิ่ม ลบ และแก้ไขข้อมูลกิจกรรมชุมนุม",

@@ -77,10 +77,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   // Role-based authorization check
   if (allowedRoles && allowedRoles.length > 0 && user) {
     const rawRoles = Array.isArray(user.role) ? user.role : [user.role];
-    const userRoles = rawRoles.map(r => r === 'admin' ? 'school_admin' : r);
+    const userRoles = rawRoles.map(r => typeof r === 'string' ? (r.toLowerCase() === 'admin' ? 'school_admin' : r.toLowerCase()) : '');
 
-    // Check if user has ANY of the allowed roles
-    const hasPermission = allowedRoles.some(role => userRoles.includes(role));
+    // Check if user has ANY of the allowed roles (case-insensitive check)
+    const hasPermission = allowedRoles.some(role => {
+      const lowerRole = typeof role === 'string' ? role.toLowerCase() : '';
+      return userRoles.includes(lowerRole);
+    });
 
     if (!hasPermission) {
       // User does not have permission

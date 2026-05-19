@@ -537,6 +537,7 @@ const ImportCoursePage: React.FC = () => {
                     teacherId: 'pending', // ครูผู้สอนตั้งเป็น pending รอการมอบหมายภายหลัง
                     teacherIds: ['pending'], // Added teacherIds array for alignment
                     isCombined: false,
+                    isElective: course.type === 'เพิ่มเติม',
                     constraints: {
                         disallowedDays: [],
                         lockedSlots: [],

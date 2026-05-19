@@ -37,9 +37,17 @@ import {
 import { ROLES } from "../../../constants/roles";
 import { applyAttendanceBehaviorScore } from "../../../utils/behaviorScoreUtils";
 
+// Imports for collapsible right settings panel
+import { createPortal } from "react-dom";
+import { Settings, Sun, Moon, ChevronsLeft, ChevronsRight } from "lucide-react";
+import LogoutButton from "@/components/LogoutButton";
+import { useTheme } from "@/ThemeContext";
+
 const CheckinOutPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolId = currentUser?.schoolId;
+  const { isDarkMode, toggleTheme } = useTheme();
+  const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
   const [schoolName, setSchoolName] = useState<string | null>(null);
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
   const [isAttendanceAdmin, setIsAttendanceAdmin] = useState(false);
@@ -1316,12 +1324,12 @@ const CheckinOutPage: React.FC = () => {
   const userName = (currentUser as any)?.displayName || "ผู้ดูแลระบบ";
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
+    <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
       <main className="flex-grow flex items-center justify-center p-6">
         <div className="w-full max-w-screen-2xl">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
             <div className="xl:col-span-8 flex flex-col gap-10 h-full">
-              <div className="bg-white dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white shadow-sm dark:shadow-none">
+              <div className="bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none">
                 <div className="flex items-center gap-5 mb-8">
                   {schoolSettings?.logoUrl && (
                     <img 
@@ -1464,6 +1472,91 @@ const CheckinOutPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ส่วนควบคุมแบบพับเก็บได้ด้านขวา (Collapsible Right Panel) */}
+      {createPortal(
+        <div 
+          className={`fixed z-[9999] flex items-start transition-transform duration-300 ${
+            isThemePanelOpen ? 'translate-x-0' : 'translate-x-[256px]'
+          }`}
+          style={{ right: 0, top: 'calc(22% + 5px)' }}
+        >
+          {/* ปุ่มดึง/พับเก็บรูปทรงแบบในภาพตัวอย่าง */}
+          <button
+            onClick={() => setIsThemePanelOpen(!isThemePanelOpen)}
+            className={`bg-white dark:bg-[#2a2b2f] border border-r-0 border-gray-200 dark:border-gray-700 text-gray-500 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-indigo-400 p-2.5 shadow-lg transition-all duration-300 ${
+              isThemePanelOpen 
+                ? 'rounded-l-xl' 
+                : 'rounded-l-xl hover:pl-4'
+            }`}
+            style={{ marginRight: '-1px' }}
+            title={isThemePanelOpen ? "ซ่อนเมนูตั้งค่า" : "แสดงเมนูตั้งค่า"}
+          >
+            {isThemePanelOpen ? (
+              <ChevronsRight size={18} className="animate-pulse" />
+            ) : (
+              <div className="flex flex-col items-center gap-1">
+                <ChevronsLeft size={18} />
+                {isDarkMode ? (
+                  <Moon size={14} className="text-yellow-400" />
+                ) : (
+                  <Sun size={14} className="text-amber-500" />
+                )}
+              </div>
+            )}
+          </button>
+
+          {/* ตัวพาเนลควบคุมการแสดงผล (Collapsible Drawer Panel) */}
+          <div
+            className="h-auto w-64 bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur-md border border-r-0 border-gray-200 dark:border-gray-700 rounded-l-2xl shadow-2xl p-5 flex flex-col gap-5"
+            style={{
+              maxHeight: '300px'
+            }}
+          >
+            <div className="flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-3">
+              <Settings size={16} className="text-indigo-600 dark:text-indigo-400 animate-spin" style={{ animationDuration: '6s' }} />
+              <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200">ตั้งค่าการแสดงผล</h4>
+            </div>
+
+            {/* สวิตช์สลับโหมด มืด/สว่าง */}
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">โหมดสีหน้าจอ</span>
+              <button
+                onClick={toggleTheme}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-[#1e1f21] hover:bg-gray-100 dark:hover:bg-[#151618] border border-gray-100 dark:border-gray-800 transition-all duration-200 group"
+              >
+                <div className="flex items-center gap-3">
+                  {isDarkMode ? (
+                    <div className="p-2 bg-yellow-400/10 text-yellow-400 rounded-lg group-hover:scale-110 transition-transform">
+                      <Moon size={16} />
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg group-hover:scale-110 transition-transform">
+                      <Sun size={16} />
+                    </div>
+                  )}
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
+                    {isDarkMode ? "โหมดกลางคืน (มืด)" : "โหมดกลางวัน (สว่าง)"}
+                  </span>
+                </div>
+                
+                {/* แอนิเมชันปุ่ม Toggle pill */}
+                <div className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-300 ${
+                  isDarkMode ? 'bg-indigo-600 justify-end' : 'bg-gray-300 justify-start'
+                }`}>
+                  <div className="bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300"></div>
+                </div>
+              </button>
+            </div>
+
+            {/* ปุ่มออกจากระบบ (สำหรับสิทธิ์สแกนที่ไม่มี Sidebar ทั่วไป) */}
+            <div className="flex flex-col gap-2 mt-auto border-t border-gray-100 dark:border-gray-700 pt-3">
+              <LogoutButton className="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all text-xs font-bold shadow-sm" />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

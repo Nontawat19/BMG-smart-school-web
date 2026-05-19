@@ -41,7 +41,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
     (isWeekend && todayEvent?.type !== 'schoolDay');
 
   return (
-    <div className="lg:col-span-3 bg-white dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col shadow-sm dark:shadow-none h-full">
+    <div className="lg:col-span-3 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none">
       <div className="flex-grow space-y-6">
         <form onSubmit={handleSearch}>
           <label className="text-xl font-bold mb-3 text-gray-500 dark:text-gray-400 flex items-center gap-3">
@@ -53,7 +53,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
             value={searchId}
             onChange={(e) => setSearchId(e.target.value)}
             placeholder="แตะบัตร RFID หรือกรอกรหัสเพื่อลงเวลา"
-            className="w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-2xl px-6 py-5 text-3xl text-gray-900 dark:text-white focus:ring-4 focus:ring-indigo-500 outline-none transition-all placeholder:text-xl"
+            className="w-full bg-[#f0f2f6] dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-2xl px-6 py-5 text-3xl text-gray-900 dark:text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-xl"
             autoFocus
           />
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}

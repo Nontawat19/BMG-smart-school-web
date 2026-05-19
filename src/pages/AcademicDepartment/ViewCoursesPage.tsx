@@ -65,6 +65,7 @@ interface Course {
   semester?: string;
   isCombined?: boolean;
   isActive?: boolean;
+  isElective?: boolean;
   credits?: number;
   teacherAssignments?: { teacherId: string; roomIds: string[]; classLevels: string[] }[];
 }
@@ -125,6 +126,22 @@ const ViewCoursesPage: React.FC = () => {
     } catch (error) {
       console.error(error);
       Swal.fire('Error', 'ไม่สามารถปรับปรุงสถานะวิชาได้', 'error');
+    }
+  };
+
+  const handleToggleElective = async (courseId: string, isElective: boolean) => {
+    if (!schoolId) return;
+    try {
+      await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { isElective });
+      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, isElective } : c));
+
+      Swal.fire({
+        icon: 'success', title: isElective ? 'ตั้งเป็นวิชาเลือกเสรี' : 'ยกเลิกการเป็นวิชาเลือกเสรี', timer: 1000, showConfirmButton: false,
+        toast: true, position: 'top-end', background: '#2a2b2f', color: '#ffffff'
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.fire('Error', 'ไม่สามารถปรับปรุงสถานะวิชาเลือกเสรีได้', 'error');
     }
   };
   const premiumStyles = {
@@ -871,7 +888,7 @@ const ViewCoursesPage: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-gray-700">
-                      {[...Array(9)].map((_, i) => (
+                      {[...Array(10)].map((_, i) => (
                         <th key={i} className="px-6 py-4 text-xs font-semibold">
                           <SkeletonLoader height="1rem" width="80%" className="opacity-50" />
                         </th>
@@ -910,6 +927,7 @@ const ViewCoursesPage: React.FC = () => {
                         <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs">ประเภท</th>
                         <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs text-center">หน่วยกิต</th>
                         <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs text-center">คาบ/สัปดาห์</th>
+                        <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs text-center whitespace-nowrap">วิชาเสรี</th>
                         <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs text-center whitespace-nowrap">สถานะ</th>
                         <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-xs text-right">จัดการ</th>
                       </tr>
@@ -972,7 +990,7 @@ const ViewCoursesPage: React.FC = () => {
                             </td>
 
                             <td className="px-4 py-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${course.type === 'เพิ่มเติม'
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${course.type === 'เพิ่มเติม'
                                 ? 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400'
                                 : 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400'
                                 }`}>
@@ -988,6 +1006,30 @@ const ViewCoursesPage: React.FC = () => {
                               <span className="font-medium text-sm text-gray-900 dark:text-white">
                                 {course.credits ? Math.round(Number(course.credits) * 2) : (course.hoursPerWeek || 0)}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (canManage) {
+                                      handleToggleElective(course.id, !course.isElective);
+                                    }
+                                  }}
+                                  className={`relative w-9 h-5 rounded-full ${canManage ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} transition-all duration-300 ease-in-out border ${course.isElective
+                                    ? 'bg-amber-500 border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                                    : 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
+                                    }`}
+                                >
+                                  <div
+                                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow-sm ${course.isElective ? 'translate-x-[16px]' : 'translate-x-0'
+                                      }`}
+                                  />
+                                </div>
+                                <span className={`text-[10px] font-bold ${course.isElective ? "text-amber-500" : "text-gray-400"}`}>
+                                  {course.isElective ? "วิชาเสรี" : "ไม่ใช่"}
+                                </span>
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-2">
@@ -1040,7 +1082,7 @@ const ViewCoursesPage: React.FC = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={9} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                          <td colSpan={11} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                             <div className="flex flex-col items-center justify-center">
                               <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
                                 <Search size={24} className="text-gray-400" />
