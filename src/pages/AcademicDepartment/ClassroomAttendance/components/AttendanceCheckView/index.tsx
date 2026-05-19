@@ -42,7 +42,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     attendanceSummary,
     children,
 }) => {
-    const displayPeriod = selectedClass.isSubstitute && selectedClass.period === 0 ? 1 : selectedClass.period;
+    const displayPeriod = selectedClass.isSubstitute && selectedClass.period === 0 
+        ? '1' 
+        : selectedClass.isDoublePeriod && selectedClass.periods 
+            ? selectedClass.periods.join(' - ') 
+            : String(selectedClass.period);
     const timeLabel = selectedClass.startTime || selectedClass.endTime ? `${selectedClass.startTime || '-'}-${selectedClass.endTime || '-'}` : '-';
 
     return (

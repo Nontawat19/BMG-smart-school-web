@@ -43,7 +43,11 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
         <div className="grid grid-cols-1 gap-4">
             {filteredSchedules.map((schedule) => {
                 const isNow = isCurrentPeriod(schedule.startTime, schedule.endTime) && currentDate.toDateString() === new Date().toDateString();
-                const displayPeriod = schedule.isSubstitute && schedule.period === 0 ? 1 : schedule.period;
+                const displayPeriod = schedule.isSubstitute && schedule.period === 0 
+                    ? '1' 
+                    : schedule.isDoublePeriod && schedule.periods 
+                        ? schedule.periods.join('-') 
+                        : String(schedule.period);
                 const timeLabel = schedule.startTime || schedule.endTime ? `${schedule.startTime || '-'}-${schedule.endTime || '-'}` : '-';
                 return (
                     <div
@@ -58,8 +62,14 @@ const ScheduleListView: React.FC<ScheduleListViewProps> = ({
                     >
                         {isNow && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-600 shadow-[0_0_8px_rgba(79,70,229,0.6)]"></div>}
                         <div className={`flex items-center gap-4 ${isNow ? 'pl-2' : ''}`}>
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${isNow ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
-                                {!schedule.isSubstitute && schedule.period === 0 ? 'ฮ' : displayPeriod}
+                            <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-bold ${isNow ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'} ${schedule.isDoublePeriod ? 'text-xs' : 'text-lg'}`}>
+                                {!schedule.isSubstitute && schedule.period === 0 ? (
+                                    <span>ฮ</span>
+                                ) : schedule.isDoublePeriod ? (
+                                    <span className="leading-tight text-center">คาบ<br/>{displayPeriod}</span>
+                                ) : (
+                                    <span>{displayPeriod}</span>
+                                )}
                             </div>
                             <div>
                                 <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">

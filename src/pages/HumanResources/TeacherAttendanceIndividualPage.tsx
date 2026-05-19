@@ -360,8 +360,8 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
             <View style={pdfStyles.row}>
               <View style={[pdfStyles.th, { width: "8%" }]}><Text style={pdfStyles.headerText}>ลำดับที่</Text></View>
               <View style={[pdfStyles.th, { width: "27%" }]}><Text style={pdfStyles.headerText}>วันที่</Text></View>
-              <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>เวลาเข้า</Text></View>
-              <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>เวลาเลิก</Text></View>
+              <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>เวลามา</Text></View>
+              <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>เวลากลับ</Text></View>
               <View style={[pdfStyles.th, { width: "10%" }]}><Text style={pdfStyles.headerText}>สาย(นาที)</Text></View>
               <View style={[pdfStyles.th, { width: "15%", borderRightWidth: 0 }]}><Text style={pdfStyles.headerText}>หมายเหตุ</Text></View>
             </View>

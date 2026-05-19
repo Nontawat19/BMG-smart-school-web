@@ -20,4 +20,5 @@ export interface FoundUser {
     noCheckout: number;
     officialTravel: number;
   };
+  role?: any;
 }

@@ -9,7 +9,7 @@ import { firestore, storage, auth } from "@/firebase";
 import { collection, getDocs, query, where, Timestamp, doc, deleteDoc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ref, deleteObject } from "firebase/storage";
-import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaCloudUploadAlt, FaFileExcel, FaCheck, FaTimes } from "react-icons/fa";
+import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaCloudUploadAlt, FaFileExcel, FaCheck, FaTimes, FaIdCard } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, MoreVertical, ChevronDown } from "lucide-react";
 import { syncHeadOfLearningArea } from "@/utils/subjectGroupSync";
 import Swal from 'sweetalert2';
@@ -21,6 +21,7 @@ import Select, { StylesConfig, components } from "react-select";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { isActiveTeacherSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 // กำหนด Type สำหรับข้อมูลครู
 interface Teacher {
@@ -41,6 +42,7 @@ interface Teacher {
   isHeadOfLearningArea?: boolean;
   learningArea?: string;
   subjectGroup?: string;
+  role?: string | string[];
 }
 
 const STAFF_ROLES = new Set([
@@ -465,6 +467,7 @@ export default function TeacherListPage() {
           homeroomGrade: data.homeroomGrade || userData.homeroomGrade || '',
           homeroomRoom: data.homeroomRoom || userData.homeroomRoom || '',
           createdAt: data.createdAt || userData.createdAt || Timestamp.fromMillis(0),
+          role: data.role || userData.role || [],
           ...data,
         } as Teacher;
       });
@@ -480,18 +483,20 @@ export default function TeacherListPage() {
       });
 
       // เรียงลำดับ: "อยู่" มาก่อนสถานะอื่น และเรียงตามวันที่สร้างล่าสุดในแต่ละกลุ่ม
-      const sortedTeachers = Array.from(teachersById.values()).sort((a, b) => {
-        const statusA = a.status || 'อยู่';
-        const statusB = b.status || 'อยู่';
+      const sortedTeachers = Array.from(teachersById.values())
+        .filter(teacher => !isAttendanceEntryOnly(teacher.role))
+        .sort((a, b) => {
+          const statusA = a.status || 'อยู่';
+          const statusB = b.status || 'อยู่';
 
-        if (statusA === 'อยู่' && statusB !== 'อยู่') return -1;
-        if (statusA !== 'อยู่' && statusB === 'อยู่') return 1;
+          if (statusA === 'อยู่' && statusB !== 'อยู่') return -1;
+          if (statusA !== 'อยู่' && statusB === 'อยู่') return 1;
 
-        // ถ้าสถานะเหมือนกัน (หรือเป็นกลุ่มสถานะอื่นเหมือนกัน) ให้เรียงตามวันที่สร้างล่าสุด
-        const dateA = a.createdAt?.toMillis() || 0;
-        const dateB = b.createdAt?.toMillis() || 0;
-        return dateB - dateA;
-      });
+          // ถ้าสถานะเหมือนกัน (หรือเป็นกลุ่มสถานะอื่นเหมือนกัน) ให้เรียงตามวันที่สร้างล่าสุด
+          const dateA = a.createdAt?.toMillis() || 0;
+          const dateB = b.createdAt?.toMillis() || 0;
+          return dateB - dateA;
+        });
 
       setTeachers(sortedTeachers);
     } catch (err) {
@@ -826,6 +831,13 @@ export default function TeacherListPage() {
 
               <div className="flex flex-wrap gap-2 ml-auto">
                 <CanAccess roles={ADMIN_ACCESS}>
+                  <Link
+                    to={schoolId ? `/school/${schoolId}/map-rfid/teachers` : '#'}
+                    className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap animate-pulse"
+                  >
+                    <FaIdCard size={12} />
+                    <span>จับคู่ RFID</span>
+                  </Link>
                   <Link
                     to={schoolId ? `/school/${schoolId}/teachers/add` : '#'}
                     className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"

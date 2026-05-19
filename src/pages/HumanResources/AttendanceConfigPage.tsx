@@ -14,6 +14,7 @@ import { getTodayString } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
 // Helper สำหรับอัปเดต dyasummary (นักเรียน)
@@ -242,6 +243,9 @@ const AttendanceConfigPage: React.FC = () => {
 
         for (const docSnap of usersSnap.docs) {
           const data = docSnap.data();
+          if (collectionName === "teachers" && isAttendanceEntryOnly(data.role)) {
+            continue;
+          }
           // หมายเหตุ: ลบการข้าม (continue) ออก เพื่อให้ตรวจสอบคนที่ลงเวลาเข้าแล้วแต่ยังไม่ลงเวลาออกด้วย
           // if (data.lastAttendanceDate === todayStr) continue;
 

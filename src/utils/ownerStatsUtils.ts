@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
+import { isAttendanceEntryOnly } from "./attendanceRoles";
 
 export interface OwnerDashboardSummary {
   totalSchools: number;
@@ -494,15 +495,13 @@ const calculateSchoolDashboardSummary = async (
   const studentsRef = collection(db, "school-settings", schoolId, "students");
 
   const [
-    teachersCountSnapshot,
-    activeTeachersCountSnapshot,
+    teachersSnap,
     studentsCountSnapshot,
     activeStudentsByStatusCountSnapshot,
     activeStudentsByStudentStatusCountSnapshot,
     ...usageCountSnapshots
   ] = await Promise.all([
-    getCountFromServer(teachersRef),
-    getCountFromServer(query(teachersRef, where("status", "==", ACTIVE_TEACHER_STATUS))),
+    getDocs(teachersRef),
     getCountFromServer(studentsRef),
     getCountFromServer(query(studentsRef, where("status", "==", ACTIVE_STUDENT_STATUS))),
     getCountFromServer(query(studentsRef, where("studentStatus", "==", ACTIVE_STUDENT_STATUS))),
@@ -513,9 +512,13 @@ const calculateSchoolDashboardSummary = async (
       ),
   ]);
 
-  const teacherDocumentCount = teachersCountSnapshot.data().count || 0;
+  const teachersList = teachersSnap.docs.map(doc => doc.data());
+  const activeTeachers = teachersList.filter(t => t.status === ACTIVE_TEACHER_STATUS && !isAttendanceEntryOnly(t.role));
+  const allValidTeachers = teachersList.filter(t => !isAttendanceEntryOnly(t.role));
+
+  const teacherDocumentCount = allValidTeachers.length;
   const studentDocumentCount = studentsCountSnapshot.data().count || 0;
-  const activeTeacherCount = activeTeachersCountSnapshot.data().count || 0;
+  const activeTeacherCount = activeTeachers.length;
   const teacherCount = activeTeacherCount || teacherDocumentCount;
   const studentCount = Math.max(
     activeStudentsByStatusCountSnapshot.data().count || 0,
@@ -773,18 +776,13 @@ export const refreshOwnerDashboardSummaryFromCounts = async (db: Firestore) => {
   const schoolCounts = await Promise.all(
     schoolsSnapshot.docs.map(async (schoolDoc) => {
       const [
-        teachersCountSnapshot,
-        activeTeachersCountSnapshot,
+        teachersSnap,
         studentsCountSnapshot,
         activeStudentsByStatusCountSnapshot,
         activeStudentsByStudentStatusCountSnapshot,
         ...usageCountSnapshots
       ] = await Promise.all([
-        getCountFromServer(collection(db, "school-settings", schoolDoc.id, "teachers")),
-        getCountFromServer(query(
-          collection(db, "school-settings", schoolDoc.id, "teachers"),
-          where("status", "==", ACTIVE_TEACHER_STATUS)
-        )),
+        getDocs(collection(db, "school-settings", schoolDoc.id, "teachers")),
         getCountFromServer(collection(db, "school-settings", schoolDoc.id, "students")),
         getCountFromServer(query(
           collection(db, "school-settings", schoolDoc.id, "students"),
@@ -801,9 +799,13 @@ export const refreshOwnerDashboardSummaryFromCounts = async (db: Firestore) => {
           ),
       ]);
 
-      const teacherDocumentCount = teachersCountSnapshot.data().count || 0;
+      const teachersList = teachersSnap.docs.map(doc => doc.data());
+      const activeTeachers = teachersList.filter(t => t.status === ACTIVE_TEACHER_STATUS && !isAttendanceEntryOnly(t.role));
+      const allValidTeachers = teachersList.filter(t => !isAttendanceEntryOnly(t.role));
+
+      const teacherDocumentCount = allValidTeachers.length;
       const studentDocumentCount = studentsCountSnapshot.data().count || 0;
-      const activeTeacherCount = activeTeachersCountSnapshot.data().count || 0;
+      const activeTeacherCount = activeTeachers.length;
       const teacherCount = activeTeacherCount || teacherDocumentCount;
       const studentCount = Math.max(
         activeStudentsByStatusCountSnapshot.data().count || 0,

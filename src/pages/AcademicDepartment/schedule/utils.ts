@@ -472,6 +472,7 @@ export const findValidSlots = (
 /**
  * Checks if a course is a standard academic course that should be scheduled in the timetable bank.
  * Excludes activities, clubs, and other extracurricular items.
+ * IS courses (กลุ่มสาระค้นคว้า / Independent Study) are always considered academic.
  */
 export const isAcademicCourse = (course: { title?: string; code?: string; subjectGroup?: string; credits?: string | number }): boolean => {
     if (!course) return false;
@@ -479,6 +480,20 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
     const title = (course.title || "").toLowerCase();
     const subjectGroup = (course.subjectGroup || "").toLowerCase();
     const code = (course.code || "").toLowerCase();
+    
+    // IS courses (กลุ่มสาระค้นคว้า / Independent Study) are always academic — they need scheduling
+    const isISCourse = (
+        subjectGroup.includes("ค้นคว้า") ||
+        subjectGroup === "i" ||
+        /^i\d/.test(code) // IS course codes: I30201, I30202, I30203 etc.
+    );
+    if (isISCourse) return true;
+
+    // If the subject group is "กิจกรรมพัฒนาผู้เรียน", it's non-academic for timetable bank
+    // (can still be shown via the "แสดงวิชากิจกรรม" toggle in PeriodConstraintPage)
+    if (subjectGroup.includes("กิจกรรมพัฒนาผู้เรียน")) {
+        return false;
+    }
     
     // Explicit exclusions based on common Thai school subject types and keywords
     const exclusions = [
@@ -498,8 +513,6 @@ export const isAcademicCourse = (course: { title?: string; code?: string; subjec
         subjectGroup.includes(keyword) ||
         code.includes(keyword)
     );
-    
-    // If the subject group is specifically "กิจกรรมพัฒนาผู้เรียน", it's usually non-academic for timetable bank
 
     // Filter out items that are clearly not academic courses (usually have 0 credits or are marked as activity)
     if (course.credits === 0 || course.credits === '0') {

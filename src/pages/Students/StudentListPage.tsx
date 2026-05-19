@@ -6,7 +6,7 @@ import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage, auth } from "@/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, where, updateDoc } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
-import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaFileExcel, FaFilter, FaSortNumericDown } from "react-icons/fa";
+import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaFileExcel, FaFilter, FaSortNumericDown, FaIdCard } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown } from "lucide-react";
 import { deleteStudentLookup } from "@/utils/studentLookupUtils";
 import Swal from 'sweetalert2';
@@ -880,6 +880,14 @@ export default function StudentListPage() {
                     <FaSortNumericDown size={12} />
                     <span>อัพเดทเลขที่</span>
                   </button>
+
+                  <Link
+                    to={schoolId ? `/school/${schoolId}/map-rfid/students` : '#'}
+                    className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap animate-pulse"
+                  >
+                    <FaIdCard size={12} />
+                    <span>จับคู่ RFID</span>
+                  </Link>
 
                   <Link
                     to={schoolId ? `/school/${schoolId}/students/quick-add` : '#'}

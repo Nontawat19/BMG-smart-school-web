@@ -36,6 +36,7 @@ import {
 } from "../../../utils/attendanceLogic";
 import { ROLES } from "../../../constants/roles";
 import { applyAttendanceBehaviorScore } from "../../../utils/behaviorScoreUtils";
+import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
 
 // Imports for collapsible right settings panel
 import { createPortal } from "react-dom";
@@ -773,6 +774,7 @@ const CheckinOutPage: React.FC = () => {
             grade: String(d.homeroomGrade || d.classLevel || d.grade || ""),
             room: String(d.room || d.homeroomRoom || ""),
             position: d.position || "ครู",
+            role: d.role,
           };
         } else if (canScanStudents && !rfidSnap.empty) {
           const d = rfidSnap.docs[0].data();
@@ -1199,18 +1201,20 @@ const CheckinOutPage: React.FC = () => {
         currentAcademicYear
       );
     } else {
-      updatePeriodSummaries(
-        firestore,
-        batch,
-        schoolId,
-        user.id,
-        "teachers",
-        todayStr,
-        oldStatus,
-        status,
-        undefined,
-        currentAcademicYear
-      );
+      if (!isAttendanceEntryOnly(user.role)) {
+        updatePeriodSummaries(
+          firestore,
+          batch,
+          schoolId,
+          user.id,
+          "teachers",
+          todayStr,
+          oldStatus,
+          status,
+          undefined,
+          currentAcademicYear
+        );
+      }
     }
 
     setLatestUsers((prev) => {

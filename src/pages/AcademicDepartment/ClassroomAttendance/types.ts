@@ -38,4 +38,7 @@ export interface CourseSchedule {
     substitutionId?: string;
     originalTeacherId?: string;
     originalTeacherName?: string;
+    isDoublePeriod?: boolean;
+    periods?: number[];
 }
+

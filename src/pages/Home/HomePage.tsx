@@ -26,6 +26,7 @@ interface StatItem { title: string; value: string; change: any; color: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
 interface ActivityItem { id: string; name: string; date: string; }
 interface ScheduleItem {
+    id?: string;
     period: string;
     subject: string;
     class: string;
@@ -33,10 +34,21 @@ interface ScheduleItem {
     startTime?: string;
     endTime?: string;
     subjectCode?: string;
+    courseId?: string;
+    classId?: string | string[];
+    className?: string;
+    groupNumber?: number;
+    roomIds?: string[];
+    day?: string;
     actionPath?: string;
     actionLabel?: string;
     type?: 'classroom' | 'homeroom' | 'club' | 'learnerActivity' | 'substitute';
+    isSubstitute?: boolean;
+    substitutionId?: string;
+    originalTeacherId?: string;
     originalTeacherName?: string;
+    isDoublePeriod?: boolean;
+    periods?: number[];
     _sortIndex?: number;
     _startMinutes?: number;
 }
@@ -482,20 +494,22 @@ const HomePage = () => {
                 const teachersRef = collection(db, 'school-settings', schoolId, 'teachers');
                 const teachersSnap = await getDocs(teachersRef);
 
-                const promises = teachersSnap.docs.map(async (teacherDoc) => {
-                    const teacherData = teacherDoc.data();
-                    const profileImageUrl = teacherData.profileImageUrl || teacherData.photoURL || null;
+                const promises = teachersSnap.docs
+                    .filter((doc) => !isAttendanceEntryOnly(doc.data().role))
+                    .map(async (teacherDoc) => {
+                        const teacherData = teacherDoc.data();
+                        const profileImageUrl = teacherData.profileImageUrl || teacherData.photoURL || null;
 
-                    const leavesRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'leave_summary');
-                    const leavesSnap = await getDocs(leavesRef);
-                    const leavesData = leavesSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'leave_summary', ...doc.data() } as any));
+                        const leavesRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'leave_summary');
+                        const leavesSnap = await getDocs(leavesRef);
+                        const leavesData = leavesSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'leave_summary', ...doc.data() } as any));
 
-                    const travelsRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'travel_summary');
-                    const travelsSnap = await getDocs(travelsRef);
-                    const travelsData = travelsSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'travel_summary', ...doc.data() } as any));
+                        const travelsRef = collection(db, 'school-settings', schoolId, 'teachers', teacherDoc.id, 'travel_summary');
+                        const travelsSnap = await getDocs(travelsRef);
+                        const travelsData = travelsSnap.docs.map(doc => ({ id: doc.id, teacherDocId: teacherDoc.id, profileImageUrl, collection: 'travel_summary', ...doc.data() } as any));
 
-                    return [...leavesData, ...travelsData];
-                });
+                        return [...leavesData, ...travelsData];
+                    });
 
                 const results = await Promise.all(promises);
                 const allLeaves = results.flat();
@@ -658,7 +672,9 @@ const HomePage = () => {
                 });
                 setStudentReport({ total: studentsList.length, active, paused, suspended, transferred, resigned, byLevel });
                 const teachersSnap = await getDocs(collection(db, "school-settings", schoolId, "teachers"));
-                const teachersList = teachersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const teachersList = teachersSnap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter((t: any) => !isAttendanceEntryOnly(t.role));
                 const byDept: Record<string, number> = {};
                 teachersList.forEach((t: any) => { const dept = t.department || 'ไม่ระบุ'; byDept[dept] = (byDept[dept] || 0) + 1; });
                 setTeacherReport({ total: teachersList.length, byDepartment: byDept });
@@ -759,9 +775,10 @@ const HomePage = () => {
 
                             // 3. Fetch period settings & courses & rooms to enrich schedule data
                             let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
-                            const [periodSnap, coursesSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
+                            const [periodSnap, coursesSnap, assignmentSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
                                 getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'courses')),
+                                getDocs(collection(db, 'school-settings', schoolId, 'course_assignments')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'learner-activities'))
@@ -787,6 +804,8 @@ const HomePage = () => {
                                 courseDataMap[cdoc.id] = cdoc.data();
                                 // Also map by code for easier lookup
                                 if (cdoc.data().code) courseDataMap[cdoc.data().code] = cdoc.data();
+                                if (cdoc.data().courseCode) courseDataMap[cdoc.data().courseCode] = cdoc.data();
+                                if (cdoc.data().subjectCode) courseDataMap[cdoc.data().subjectCode] = cdoc.data();
                             });
 
                             // 3.3 Map Rooms for Display Names
@@ -800,121 +819,144 @@ const HomePage = () => {
                                 };
                             });
 
-                            const academicYear = calendarState.academicYear;
-                            let schedQuery = query(collection(db, "school-settings", schoolId, "schedules"), where("teacherId", "==", teacherDocId));
+                            const formatDisplayTime = (time?: string) => String(time || '').replace(':', '.');
+                            const getPeriodNumberFromSlotKey = (slotKey: string, dayKeyVal: string) => {
+                                const periodId = slotKey.replace(`${dayKeyVal}-`, '');
+                                if (periodId === 'homeroom' || periodId === 'lunch') return null;
+                                if (periodId.startsWith('period-')) return Number(periodId.replace('period-', '')) || null;
+                                const parsed = Number(periodId);
+                                return Number.isFinite(parsed) ? (parsed === 0 ? 1 : parsed) : null;
+                            };
+                            const getClassVariants = (classValue: unknown): string[] => {
+                                if (Array.isArray(classValue)) return Array.from(new Set(classValue.flatMap(getClassVariants)));
+                                const value = String(classValue || '').trim();
+                                if (!value) return [];
+                                const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
+                                const classKey = fromLabel || value;
+                                return Array.from(new Set([classKey, CLASSES[classKey], value].filter(Boolean).map(String)));
+                            };
+                            const formatClassDisplay = (classValue: unknown) => {
+                                const values = Array.isArray(classValue) ? classValue : [classValue];
+                                const labels = values
+                                    .flatMap(getClassVariants)
+                                    .filter(Boolean)
+                                    .map(v => CLASSES[v] || v);
+                                return Array.from(new Set(labels)).join(', ') || 'ไม่ระบุชั้น';
+                            };
+                            const formatClassNameWithGroup = (classValue: unknown, groupNumber?: number) => {
+                                const classIdStr = String(Array.isArray(classValue) ? classValue[0] : (classValue || '')).trim();
+                                if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${groupNumber ? `/${groupNumber}` : ''}`;
+                                if (classIdStr.includes('/')) {
+                                    const parts = classIdStr.split('/');
+                                    const levelKey = parts[0];
+                                    const roomNum = parts[parts.length - 1];
+                                    if (CLASSES[levelKey]) return `${CLASSES[levelKey]}/${roomNum}`;
+                                }
+                                return `${formatClassDisplay(classValue)}${groupNumber ? `/${groupNumber}` : ''}`;
+                            };
+                            const normalizeRoomIds = (value: unknown): string[] => {
+                                const values = Array.isArray(value) ? value : [value];
+                                return values.map(v => String(v ?? '').trim()).filter(v => v && v.toLowerCase() !== 'all' && v !== 'ทุกห้อง');
+                            };
+                            const getStableClassKey = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean).join('-') : String(value || '');
+                            const academicYear = calendarState.academicYear || String(getThaiYear(new Date()));
+                            const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            const currentTerm = (calendarState.terms || []).find((t: any) =>
+                                t.startDate && t.endDate && todayDateStr >= t.startDate && todayDateStr <= t.endDate
+                            ) || calendarState.terms?.[0];
+                            const semester = currentTerm?.id === 'term2' || String(currentTerm?.name || '').includes('2') ? "2" : "1";
+                            const assignmentMap: Record<string, any> = {};
+                            assignmentSnap.forEach(assignmentDoc => {
+                                const data = assignmentDoc.data();
+                                const courseId = String(data.courseId || '').trim();
+                                if (!courseId) return;
+                                const dataYear = String(data.academicYear || "");
+                                const dataSemester = String(data.semester || data.term || "");
+                                const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
+                                const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`) || dataSemester.includes(semester);
+                                if (yearMatches && semesterMatches) assignmentMap[courseId] = data;
+                            });
+
+                            let schedQuery = query(collection(db, "school-settings", schoolId, "schedules"));
                             if (academicYear) schedQuery = query(schedQuery, where("academicYear", "==", academicYear));
                             const schedSnap = await getDocs(schedQuery);
                             schedSnap.forEach(sdoc => {
                                 const data = sdoc.data();
+                                const dataYear = String(data.academicYear || "");
+                                const dataSemester = String(data.semester || data.term || "");
+                                const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
+                                const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`) || dataSemester.includes(semester);
+                                if (!yearMatches || !semesterMatches) return;
+
                                 const sch = data.schedule || {};
-                                const classIdRaw = Array.isArray(data.classId) ? data.classId[0] : data.classId;
-                                let baseClassName = classIdRaw || "ไม่ระบุชั้น";
-                                
-                                if (typeof classIdRaw === 'string') {
-                                    if (CLASSES[classIdRaw]) {
-                                        baseClassName = CLASSES[classIdRaw];
-                                    } else if (classIdRaw.includes('/')) {
-                                        const parts = classIdRaw.split('/');
-                                        const levelKey = parts[0];
-                                        const roomNum = parts[parts.length - 1];
-                                        if (CLASSES[levelKey]) {
-                                            baseClassName = `${CLASSES[levelKey]}/${roomNum}`;
-                                        }
-                                    }
-                                }
                                 Object.keys(sch).forEach(key => {
-                                    // Key format is typically "day-periodId" (e.g., "mon-period-1", "mon-homeroom")
                                     if (key.startsWith(dayKey + '-') && sch[key]) {
-                                        const periodId = key.replace(dayKey + '-', ''); // e.g., "period-1", "homeroom"
-
-                                        let displayPeriod = periodId;
-                                        let sortIndex = 999;
-
-                                        // Find matching period time
-                                        const pTime = periodSettings[periodId];
-                                        const startTime = pTime?.startTime || '';
-                                        const endTime = pTime?.endTime || '';
-                                        const startMinutes = timeToMinutes(startTime);
-
-                                        if (periodId === 'homeroom') {
-                                            displayPeriod = 'โฮมรูม';
-                                            sortIndex = 0;
-                                        } else if (periodId === 'lunch') {
-                                            return; // Skip lunch period
-                                        } else if (periodId.startsWith('period-')) {
-                                            const num = parseInt(periodId.split('-')[1]);
-                                            displayPeriod = `คาบ ${num}`;
-                                            sortIndex = num;
-                                        } else if (!isNaN(parseInt(periodId))) {
-                                            const num = parseInt(periodId);
-                                            displayPeriod = `คาบ ${num}`;
-                                            sortIndex = num;
-                                        }
-
+                                        const periodNumber = getPeriodNumberFromSlotKey(key, dayKey);
+                                        if (!periodNumber) return;
+                                        const periodTime = periodSettings[`period-${periodNumber}`] || periodSettings[String(periodNumber)] || {};
                                         const rawCourse = sch[key];
                                         const coursesArray = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-                                        const course = coursesArray[0];
 
-                                        if (!course || course === '-') return; // Skip free periods
-
-                                        const subjectName = typeof course === 'string' ? '-' : (course?.title || course?.subjectName || course?.name || '-');
-                                        if (subjectName === '-') return; // Double check for empty subjects
-
-                                        const subjectCode = typeof course === 'string' ? '' : (course?.code || course?.subjectCode || '');
-                                        const courseId = typeof course === 'string' ? null : (course?.id || course?.courseId);
-
-                                        // --- Advanced Logic for Class/Room based on Teacher Assignments ---
-                                        let finalClassName = baseClassName;
-                                        let finalRoom = '-';
-
-                                        // Lookup Course Document to find Assignments
-                                        const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
-                                        const assignments = fullCourseData?.teacherAssignments || course?.teacherAssignments;
-
-                                        let myAssignment = null;
-                                        if (Array.isArray(assignments)) {
-                                            myAssignment = assignments.find((a: any) =>
-                                                String(a.teacherId) === String(teacherDocId)
+                                        coursesArray.forEach((course: any) => {
+                                            if (!course || course === '-') return;
+                                            const courseId = course.id || course.courseId || '';
+                                            const subjectCode = course.code || course.courseCode || course.subjectCode || '';
+                                            const fullCourseData = courseId ? courseDataMap[courseId] : (subjectCode ? courseDataMap[subjectCode] : null);
+                                            const assignments = [
+                                                ...(Array.isArray(assignmentMap[courseId]?.teacherAssignments) ? assignmentMap[courseId].teacherAssignments : []),
+                                                ...(Array.isArray(fullCourseData?.teacherAssignments) ? fullCourseData.teacherAssignments : []),
+                                                ...(Array.isArray(course.teacherAssignments) ? course.teacherAssignments : [])
+                                            ];
+                                            const myAssignment = assignments.find((assignment: any) =>
+                                                String(assignment.teacherId) === String(teacherDocId) ||
+                                                (Array.isArray(assignment.teacherIds) && assignment.teacherIds.map(String).includes(String(teacherDocId)))
                                             );
-                                        }
+                                            const isMyCourse = String(course.teacherId) === String(teacherDocId) ||
+                                                String(data.teacherId) === String(teacherDocId) ||
+                                                (Array.isArray(course.teacherIds) && course.teacherIds.map(String).includes(String(teacherDocId))) ||
+                                                Boolean(myAssignment);
+                                            if (!isMyCourse) return;
 
-                                        // 1. Format Class Name (e.g., ม.1/1)
-                                        // Removed group identifier appending as per user request to keep class names clean
+                                            const courseClassId = (myAssignment?.classLevels && myAssignment.classLevels.length > 0)
+                                                ? myAssignment.classLevels
+                                                : (course.classId || fullCourseData?.classId || data.classId);
+                                            const groupNumber = Number(course.groupNumber || course.group || 1) || 1;
+                                            const roomIds = normalizeRoomIds(myAssignment?.roomIds || course.room || course.roomIds || course.roomNumber || data.room || data.roomNumber);
+                                            const displayRoom = roomIds.length > 0
+                                                ? roomIds.map((rid: string) => {
+                                                    const r = roomDataMap[rid];
+                                                    if (!r) return rid;
+                                                    return r.code ? `${r.name} (${r.code})` : r.name;
+                                                }).join(', ')
+                                                : String(groupNumber);
+                                            const subjectName = course.title || course.subjectName || course.name || fullCourseData?.title || fullCourseData?.subjectName || "ไม่ระบุชื่อวิชา";
+                                            const className = formatClassNameWithGroup(courseClassId, groupNumber);
+                                            const startTime = formatDisplayTime(periodTime.startTime);
+                                            const endTime = formatDisplayTime(periodTime.endTime);
 
-                                        // 2. Format Room Name (from Physical Rooms map)
-                                        let roomIds: string[] = [];
-                                        if (myAssignment?.roomIds && myAssignment.roomIds.length > 0) {
-                                            roomIds = myAssignment.roomIds;
-                                        } else if (course?.room) {
-                                            roomIds = Array.isArray(course.room) ? course.room : [course.room];
-                                        } else if (data.room) {
-                                            roomIds = Array.isArray(data.room) ? data.room : [data.room];
-                                        }
-
-                                        if (roomIds.length > 0) {
-                                            const roomDisplays = roomIds.map((rid: string) => {
-                                                if (rid === 'all' || rid === 'ทุกห้อง') return 'ทุกห้อง';
-                                                const r = roomDataMap[rid];
-                                                if (!r) return rid;
-                                                return r.code ? `${r.name} (${r.code})` : r.name;
+                                            todaySchedules.push({
+                                                id: `${sdoc.id}-${key}-${courseId || subjectCode || 'course'}-${groupNumber}`,
+                                                courseId,
+                                                subjectCode,
+                                                period: `คาบ ${periodNumber}`,
+                                                subject: subjectName,
+                                                classId: courseClassId,
+                                                class: className,
+                                                className,
+                                                room: displayRoom,
+                                                roomIds,
+                                                groupNumber,
+                                                day: dayKey,
+                                                startTime,
+                                                endTime,
+                                                actionPath: '/academic/classroom-attendance',
+                                                actionLabel: 'เช็คชื่อ',
+                                                type: 'classroom',
+                                                isSubstitute: false,
+                                                _sortIndex: periodNumber,
+                                                _startMinutes: timeToMinutes(startTime)
                                             });
-                                            finalRoom = roomDisplays.join(', ');
-                                        }
-
-                                        todaySchedules.push({
-                                            period: displayPeriod,
-                                            subject: subjectName,
-                                            subjectCode: subjectCode,
-                                            class: finalClassName,
-                                            room: finalRoom,
-                                            startTime,
-                                            endTime,
-                                            actionPath: '/academic/classroom-attendance',
-                                            actionLabel: 'เช็คชื่อ',
-                                            type: 'classroom',
-                                            _sortIndex: sortIndex,
-                                            _startMinutes: startMinutes
-                                        } as any);
+                                        });
                                     }
                                 });
                             });
@@ -1044,21 +1086,32 @@ const HomePage = () => {
                                 const periodNumber = normalizeTeachingPeriod(data.period);
                                 const periodKey = periodNumber ? `period-${periodNumber}` : String(data.period || '');
                                 const periodTime = periodSettings[periodKey] || periodSettings[String(periodNumber)] || {};
-                                const startTime = data.startTime || periodTime.startTime || '';
-                                const endTime = data.endTime || periodTime.endTime || '';
+                                const startTime = formatDisplayTime(data.startTime) || formatDisplayTime(periodTime.startTime) || '';
+                                const endTime = formatDisplayTime(data.endTime) || formatDisplayTime(periodTime.endTime) || '';
                                 const roomDisplay = formatRoomDisplay(data.roomName || data.room || data.roomIds || data.classroom);
+                                const subClassName = formatScheduleClassName(data.classId, data.groupNumber || data.group);
 
                                 todaySchedules.push({
+                                    id: `sub-${subDoc.id}`,
+                                    substitutionId: subDoc.id,
+                                    courseId: data.courseId || data.originalCourseId || '',
                                     period: periodNumber ? `คาบ ${periodNumber}` : 'สอนแทน',
                                     subject: data.subjectName || 'สอนแทน',
                                     subjectCode: data.subjectCode || '',
-                                    class: formatScheduleClassName(data.classId, data.groupNumber || data.group),
+                                    classId: data.classId,
+                                    class: subClassName,
+                                    className: subClassName,
                                     room: roomDisplay,
+                                    roomIds: normalizeRoomIds(data.room || data.roomIds || data.classroom),
+                                    groupNumber: Number(data.groupNumber || data.group || 1) || 1,
+                                    day: dayKey,
                                     startTime,
                                     endTime,
                                     actionPath: '/academic/classroom-attendance',
                                     actionLabel: 'เช็คสอนแทน',
                                     type: 'substitute',
+                                    isSubstitute: true,
+                                    originalTeacherId: data.originalTeacherId || '',
                                     originalTeacherName: data.originalTeacherName || 'ไม่ระบุ',
                                     _sortIndex: periodNumber ? periodNumber + 0.1 : 98,
                                     _startMinutes: timeToMinutes(startTime)
@@ -1066,6 +1119,42 @@ const HomePage = () => {
                             });
 
                             todaySchedules.sort((a: any, b: any) => (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) || (a._sortIndex ?? 999) - (b._sortIndex ?? 999));
+                            const groupedSchedules: ScheduleItem[] = [];
+                            for (let i = 0; i < todaySchedules.length; i++) {
+                                const current = { ...todaySchedules[i] };
+                                const currentPeriod = Number(current._sortIndex);
+                                const periods = Number.isFinite(currentPeriod) ? [Math.floor(currentPeriod)] : [];
+
+                                while (periods.length > 0 && i + 1 < todaySchedules.length) {
+                                    const next = todaySchedules[i + 1];
+                                    const nextPeriod = Number(next._sortIndex);
+                                    const expectedPeriod = periods[0] + periods.length;
+                                    const isConsecutive = Number.isFinite(nextPeriod) && Math.floor(nextPeriod) === expectedPeriod;
+                                    const sameCourse = next.courseId === current.courseId && next.subjectCode === current.subjectCode;
+                                    const sameClass = getStableClassKey(next.classId) === getStableClassKey(current.classId) && next.className === current.className;
+                                    const sameGroup = next.groupNumber === current.groupNumber;
+                                    const sameRoom = next.room === current.room;
+                                    const sameType = next.type === current.type && next.isSubstitute === current.isSubstitute && next.originalTeacherId === current.originalTeacherId;
+
+                                    if (current.type === 'classroom' && isConsecutive && sameCourse && sameClass && sameGroup && sameRoom && sameType) {
+                                        periods.push(Math.floor(nextPeriod));
+                                        current.endTime = next.endTime;
+                                        i++;
+                                    } else {
+                                        break;
+                                    }
+                                }
+
+                                if (periods.length > 1) {
+                                    current.isDoublePeriod = true;
+                                    current.periods = periods;
+                                    current.period = `คาบ ${periods.join('-')}`;
+                                } else if (periods.length === 1 && current.type === 'classroom') {
+                                    current.period = `คาบ ${periods[0]}`;
+                                }
+                                groupedSchedules.push(current);
+                            }
+                            todaySchedules = groupedSchedules;
                         }
                     }
                     setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules, compensationScheduleDay });
@@ -1766,7 +1855,37 @@ const HomePage = () => {
                                                         )}
                                                     </div>
 
-                                                    <button onClick={() => navigate(s.actionPath || '/academic/classroom-attendance')} className={`shrink-0 px-3 py-1 text-white text-[10px] font-bold rounded-md transition-colors shadow-sm flex items-center gap-1.5 ${isSubstitute ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'}`}>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (s.type === 'classroom' || s.type === 'substitute') {
+                                                                const courseSchedule = {
+                                                                    id: s.id || '',
+                                                                    courseId: s.courseId || '',
+                                                                    subjectCode: s.subjectCode || '',
+                                                                    subjectName: s.subject || '',
+                                                                    period: s.isDoublePeriod && s.periods ? s.periods[0] : (Math.floor(Number(s._sortIndex)) || 0),
+                                                                    startTime: s.startTime || '',
+                                                                    endTime: s.endTime || '',
+                                                                    classId: s.classId || '',
+                                                                    className: s.className || s.class || '',
+                                                                    room: s.room || '',
+                                                                    roomIds: s.roomIds || [],
+                                                                    groupNumber: s.groupNumber || 1,
+                                                                    day: s.day || '',
+                                                                    isChecked: false,
+                                                                    isSubstitute: s.isSubstitute || false,
+                                                                    substitutionId: s.substitutionId || '',
+                                                                    originalTeacherId: s.originalTeacherId || '',
+                                                                    originalTeacherName: s.originalTeacherName || '',
+                                                                    isDoublePeriod: s.isDoublePeriod || false,
+                                                                    periods: s.periods || []
+                                                                };
+                                                                sessionStorage.setItem('attendance_selected_class', JSON.stringify(courseSchedule));
+                                                            }
+                                                            navigate(s.actionPath || '/academic/classroom-attendance');
+                                                        }}
+                                                        className={`shrink-0 px-3 py-1 text-white text-[10px] font-bold rounded-md transition-colors shadow-sm flex items-center gap-1.5 ${isSubstitute ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'}`}
+                                                    >
                                                         <CheckCircle size={12} /> {s.actionLabel || 'เช็คชื่อ'}
                                                     </button>
                                                 </div>

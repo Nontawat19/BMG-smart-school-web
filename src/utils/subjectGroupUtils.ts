@@ -90,12 +90,12 @@ export const isPassFailActivityCourse = (
     const normalizedCode = code.toLowerCase();
 
     return (
-        /^i/i.test(code) ||
-        /^ก/u.test(code) ||
+        /^i\d/i.test(code) ||
+        /^ก\d/u.test(code) ||
         normalizedCode === "i" ||
         code === "ก" ||
-        ["i", "ก"].includes(groupValue) ||
-        ["i", "ก"].includes(String(getSubjectGroupInfo(groupValue, subjectGroups)?.code || "")) ||
+        ["i", "ก"].includes(groupValue.toLowerCase()) ||
+        ["i", "ก"].includes(String(getSubjectGroupInfo(groupValue, subjectGroups)?.code || "").toLowerCase()) ||
         normalizedGroup.includes("ค้นคว้า") ||
         normalizedGroup.includes("กิจกรรมพัฒนาผู้เรียน") ||
         normalizedText.includes("กิจกรรม") ||
