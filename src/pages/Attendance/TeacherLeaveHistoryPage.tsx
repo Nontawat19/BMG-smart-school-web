@@ -275,12 +275,12 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                             alt={r.teacherName}
                             className="w-8 h-8"
                           />
-                          <span className="group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors">{r.teacherName}</span>
+                          <span className="text-gray-900 dark:text-white group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors">{r.teacherName}</span>
                         </Link>
                       ) : (
                         <div className="flex items-center gap-3">
                           <ProfileAvatar src={r.profileImageUrl || `https://ui-avatars.com/api/?name=${r.teacherName}&background=random`} alt={r.teacherName} className="w-8 h-8" />
-                          <span>{r.teacherName}</span>
+                          <span className="text-gray-900 dark:text-white">{r.teacherName}</span>
                         </div>
                       )}
                     </td>

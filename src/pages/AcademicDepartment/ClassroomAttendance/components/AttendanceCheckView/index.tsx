@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronLeft, Clock, Edit, MapPin, Save } from 'lucide-react';
-import { usePwaMode } from "@/hooks/usePwaMode";
+import { useResponsivePwaMode as usePwaMode } from "@/hooks/useResponsivePwaMode";
 import { CourseSchedule, Student } from '../../types';
 import AttendanceSummary from './AttendanceSummary';
 import StudentGrid from './StudentGrid';

@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from "react-router-dom";
 import { FaLock, FaRunning } from "react-icons/fa";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { usePwaMode } from "@/hooks/usePwaMode";
+import { useResponsivePwaMode as usePwaMode } from "@/hooks/useResponsivePwaMode";
 import { Student } from '../../types';
 import { StudentCardSkeleton } from '../Skeletons';
 

@@ -18,7 +18,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
-import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
+import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange, getRulePoints } from "@/utils/behaviorScoreUtils";
 import {
   calculateAttendanceStatus,
   GateRecord,
@@ -200,7 +200,7 @@ const getFlagBehaviorStatus = (action?: FlagAction | null) => (
 );
 
 const isFlagDeductionAction = (action?: FlagAction | null) => (
-  action === "noScanPresentDeduct" || action === "scannedAbsentDeduct"
+  !!action && action !== "cancelFlag" && action !== "cancelFlagKeepGate"
 );
 
 // Helper: แปลงสถานะเป็น Key ภาษาอังกฤษสำหรับ Aggregation
@@ -266,7 +266,19 @@ const FlagCeremonyPageSkeleton: React.FC = () => (
 );
 
 const FlagCeremonyPage: React.FC = () => {
-  const isPwaMode = usePwaMode();
+  const isPwaStandaloneMode = usePwaMode();
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isPwaMode = isPwaStandaloneMode || isMobileScreen;
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
   const [selectedClass, setSelectedClass] = useState<string>("");
@@ -999,10 +1011,12 @@ const FlagCeremonyPage: React.FC = () => {
       };
     }
 
-    const flagRecord: FlagRecord = { status: student.attendanceStatus };
-    const result = calculateAttendanceStatus(gateData, flagRecord, leaveData, travelData, { studentLateTime: studentCheckinEnd });
-    const dailyStatus = toThaiAttendanceStatus(result.finalStatus);
-    const behaviorStatus = action === "normal" ? ATTENDANCE_STATUS.PRESENT : dailyStatus;
+    let dailyStatus = student.existingDailyStatus || student.existingBehaviorScoreStatus || ATTENDANCE_STATUS.PRESENT;
+    if (dailyStatus === ATTENDANCE_STATUS.ABSENT) {
+      dailyStatus = ATTENDANCE_STATUS.PRESENT;
+    }
+    const behaviorStatus = dailyStatus;
+    const finalStatusKey = dailyStatus === ATTENDANCE_STATUS.PRESENT ? "present" : (dailyStatus === ATTENDANCE_STATUS.LATE ? "late" : "absent");
 
     return {
       action,
@@ -1010,13 +1024,19 @@ const FlagCeremonyPage: React.FC = () => {
       shouldWriteDaily: true,
       shouldNotify: !gateData?.checkinTime,
       flagStatus: student.attendanceStatus || ATTENDANCE_STATUS.PRESENT,
-      finalStatusKey: result.finalStatus,
+      finalStatusKey,
       dailyStatus,
       behaviorStatus,
-      checkinTime: rawGateCheckinTime || (result.finalStatus === "present" || result.finalStatus === "late" ? Timestamp.now() : null),
+      checkinTime: rawGateCheckinTime || (finalStatusKey === "present" || finalStatusKey === "late" ? Timestamp.now() : null),
       checkinDevice: rawGateCheckinTime ? undefined : "FlagCeremony",
-      description: result.description,
+      description: "เข้าแถวปกติ",
     };
+  };
+
+  const getYesterdayScore = (student: Student) => {
+    const oldAttendancePenalty = getRulePoints(behaviorScoreConfig, student.existingBehaviorScoreStatus || student.existingDailyStatus);
+    const oldFlagCeremonyPenalty = getRulePoints(behaviorScoreConfig, student.existingFlagBehaviorScoreStatus);
+    return (student.behaviorScore ?? 100) + oldAttendancePenalty + oldFlagCeremonyPenalty;
   };
 
   const getBehaviorScorePreview = (student: Student) => {
@@ -1028,58 +1048,47 @@ const FlagCeremonyPage: React.FC = () => {
     const resolved = resolveFlagActionResult(student, gateData, leaveData, travelData);
     if (!resolved.shouldWriteDaily || !resolved.dailyStatus) return null;
 
-    let previewScore = student.behaviorScore ?? 100;
-    let totalDelta = 0;
+    const yesterdayScore = getYesterdayScore(student);
+    const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
+    const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
 
-    const attendancePreview = calculateAttendanceBehaviorScoreChange({
-      currentScore: previewScore,
-      oldStatus: student.existingBehaviorScoreStatus || student.existingDailyStatus,
-      newStatus: isFlagDeductionAction(resolved.action)
+    const newAttendanceStatus = resolved.action === "noScanPresentDeduct"
+      ? ATTENDANCE_STATUS.PRESENT
+      : resolved.action === "scannedAbsentDeduct"
         ? (student.existingBehaviorScoreStatus || student.existingDailyStatus)
-        : resolved.behaviorStatus,
-      config: behaviorScoreConfig,
-    });
-
-    if (attendancePreview) {
-      previewScore = attendancePreview.summary.nextScore;
-      totalDelta += attendancePreview.summary.delta;
-    }
+        : resolved.behaviorStatus;
 
     const nextFlagBehaviorStatus = isFlagDeductionAction(resolved.action)
       ? getFlagBehaviorStatus(resolved.action)
       : null;
 
-    if (student.existingFlagBehaviorScoreStatus || nextFlagBehaviorStatus) {
-      const flagPreview = calculateAttendanceBehaviorScoreChange({
-        currentScore: previewScore,
-        oldStatus: student.existingFlagBehaviorScoreStatus,
-        newStatus: nextFlagBehaviorStatus,
-        config: behaviorScoreConfig,
-      });
+    const newAttendancePenalty = getRulePoints(behaviorScoreConfig, newAttendanceStatus);
+    const newFlagPenalty = getRulePoints(behaviorScoreConfig, nextFlagBehaviorStatus);
 
-      if (flagPreview) {
-        previewScore = flagPreview.summary.nextScore;
-        totalDelta += flagPreview.summary.delta;
-      }
-    }
+    const totalPenalty = newAttendancePenalty + newFlagPenalty;
 
-    if (totalDelta === 0) return null;
+    // หากไม่มีการตัดคะแนนพฤติกรรมในวันนี้ (เป็นปกติ) ไม่ต้องแสดง Preview การคำนวณคะแนนพฤติกรรม
+    if (totalPenalty === 0) return null;
+
+    const nextScore = Math.min(maxScore, Math.max(minScore, yesterdayScore - totalPenalty));
+    const netDelta = nextScore - yesterdayScore;
 
     return {
-      nextScore: previewScore,
-      delta: totalDelta,
+      yesterdayScore,
+      nextScore,
+      delta: netDelta,
     };
   };
 
   // 📌 เพิ่ม: ฟังก์ชันสำหรับบันทึกข้อมูลทั้งหมด
   const handleSaveAll = async () => {
     if (!schoolId) return;
-    const selectedStudents = students.filter((student) => selectedStudentIds.has(student.id));
-    if (selectedStudents.length === 0) {
+    const studentsToSave = students;
+    if (studentsToSave.length === 0) {
       Swal.fire({
         icon: 'warning',
-        title: 'ยังไม่ได้เลือกนักเรียน',
-        text: 'กรุณาเลือกคำสั่งด้านบน แล้วคลิกการ์ดนักเรียนที่ต้องการบันทึก',
+        title: 'ไม่พบนักเรียน',
+        text: 'ไม่สามารถบันทึกข้อมูลเนื่องจากไม่มีนักเรียนในชั้นเรียนนี้',
         background: '#2a2b2f',
         color: '#ffffff',
       });
@@ -1132,7 +1141,7 @@ const FlagCeremonyPage: React.FC = () => {
       }
 
       // 📌 Prepare Loop for Async Operations
-      const promises = selectedStudents.map(async (student) => {
+      const promises = studentsToSave.map(async (student) => {
 
         // 1. Calculate Logic-based Status
         const gateData = (student as any)._gateData;
@@ -1144,9 +1153,11 @@ const FlagCeremonyPage: React.FC = () => {
         savedStatusUpdates.set(student.id, {
           flagStatus: resolved.flagStatus,
           dailyStatus: resolved.dailyStatus,
-          attendanceBehaviorStatus: isFlagDeductionAction(resolved.action)
-            ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
-            : resolved.behaviorStatus,
+          attendanceBehaviorStatus: resolved.action === "noScanPresentDeduct"
+            ? ATTENDANCE_STATUS.PRESENT
+            : resolved.action === "scannedAbsentDeduct"
+              ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
+              : resolved.behaviorStatus,
           flagBehaviorStatus: isFlagDeductionAction(resolved.action) ? getFlagBehaviorStatus(resolved.action) : null,
         });
 
@@ -1178,6 +1189,7 @@ const FlagCeremonyPage: React.FC = () => {
 
         // --- START: Aggregation Logic ---
         const studentRef = doc(firestore, "school-settings", schoolId, "students", student.id);
+        const studentRefUpdates: Record<string, any> = {};
         const newStatus = resolved.flagStatus; // Flag status for stats
         const newStatusKey = getFlagStatusKey(newStatus);
 
@@ -1201,7 +1213,7 @@ const FlagCeremonyPage: React.FC = () => {
             }
 
             if (Object.keys(statsUpdate).length > 0) {
-              batch.update(studentRef, statsUpdate);
+              Object.assign(studentRefUpdates, statsUpdate);
             }
 
             // Update Period Summaries using FINAL STATUS
@@ -1220,7 +1232,7 @@ const FlagCeremonyPage: React.FC = () => {
           }
         } else { // First save
           if (newStatusKey) {
-            batch.update(studentRef, { [`flagCeremonyStats.${newStatusKey}`]: increment(1) });
+            studentRefUpdates[`flagCeremonyStats.${newStatusKey}`] = increment(1);
           }
           // Bulk Update Summaries
           if (finalStatusKey) {
@@ -1241,11 +1253,18 @@ const FlagCeremonyPage: React.FC = () => {
         // --- END: Aggregation Logic ---
 
         // 📌 เพิ่ม: เก็บข้อมูลนักเรียนที่ต้องแจ้งเตือน
-        // Logic ใหม่ (2025-02-08):
+        // Logic ใหม่:
         // 1. ถ้าลงเวลาที่ประตูแล้ว (gateData.checkinTime มีค่า) -> ไม่ต้องแจ้งเตือนซ้ำ (ถือว่าแจ้งตอนเช้าแล้ว)
         // 2. ถ้ายังไม่ลงเวลาที่ประตู -> ให้แจ้งเตือนสถานะจากหน้าเสาธง (มา/สาย/ลา/ขาด)
-        if (resolved.shouldNotify && resolved.flagStatus) {
-          // แจ้งเตือนทุกกรณีหากยังไม่ได้ลงเวลาที่ประตู รวมถึง "มา" (เช็คหน้าเสาธง)
+        // - ครั้งแรกที่บันทึก (!isAlreadySaved) ส่งเฉพาะคนที่มีสถานะไม่ปกติ หรือ ถูกเลือก
+        // - การอัปเดตครั้งถัดไป (isAlreadySaved) ส่งเฉพาะคนที่ถูกเลือกในเซสชันนี้เท่านั้นเพื่อไม่ให้ส่งสแปม
+        const isExplicitlySelected = selectedStudentIds.has(student.id);
+        const isAbnormalStatus = resolved.flagStatus !== ATTENDANCE_STATUS.PRESENT;
+        const shouldTriggerNotification = !isAlreadySaved
+          ? (isExplicitlySelected || isAbnormalStatus)
+          : isExplicitlySelected;
+
+        if (resolved.shouldNotify && resolved.flagStatus && shouldTriggerNotification) {
           studentsToNotify.push({ student, status: resolved.flagStatus });
         }
 
@@ -1268,9 +1287,11 @@ const FlagCeremonyPage: React.FC = () => {
               leave: leaveData?.type || 'none',
               description: resolved.description,
               behaviorScoreStatus: resolved.behaviorStatus,
-              attendanceBehaviorScoreStatus: isFlagDeductionAction(resolved.action)
-                ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
-                : resolved.behaviorStatus,
+              attendanceBehaviorScoreStatus: resolved.action === "noScanPresentDeduct"
+                ? ATTENDANCE_STATUS.PRESENT
+                : resolved.action === "scannedAbsentDeduct"
+                  ? (student.existingBehaviorScoreStatus || student.existingDailyStatus || null)
+                  : resolved.behaviorStatus,
               flagBehaviorScoreStatus: getFlagBehaviorStatus(resolved.action),
             }
           };
@@ -1279,43 +1300,47 @@ const FlagCeremonyPage: React.FC = () => {
             dailyAttendanceData.checkinDevice = resolved.checkinDevice;
           }
 
-          let behaviorScoreAfterUpdate = student.behaviorScore;
-          const attendanceBehaviorScoreResult = applyAttendanceBehaviorScore({
-            batch,
-            studentRef,
-            currentScore: behaviorScoreAfterUpdate,
-            oldStatus: student.existingBehaviorScoreStatus || student.existingDailyStatus,
-            newStatus: isFlagDeductionAction(resolved.action)
+          // Unified behavior score calculation relative to yesterday's score
+          const yesterdayScore = getYesterdayScore(student);
+          const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
+          const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
+
+          const newAttendanceStatus = resolved.action === "noScanPresentDeduct"
+            ? ATTENDANCE_STATUS.PRESENT
+            : resolved.action === "scannedAbsentDeduct"
               ? (student.existingBehaviorScoreStatus || student.existingDailyStatus)
-              : resolved.behaviorStatus,
-            config: behaviorScoreConfig,
-          });
-          if (attendanceBehaviorScoreResult) {
-            behaviorScoreAfterUpdate = attendanceBehaviorScoreResult.nextScore;
-          }
+              : resolved.behaviorStatus;
 
           const nextFlagBehaviorStatus = isFlagDeductionAction(resolved.action)
             ? getFlagBehaviorStatus(resolved.action)
             : null;
-          if (student.existingFlagBehaviorScoreStatus || nextFlagBehaviorStatus) {
-            const flagBehaviorScoreResult = applyAttendanceBehaviorScore({
-              batch,
-              studentRef,
-              currentScore: behaviorScoreAfterUpdate,
-              oldStatus: student.existingFlagBehaviorScoreStatus,
-              newStatus: nextFlagBehaviorStatus,
-              config: behaviorScoreConfig,
-            });
-            if (flagBehaviorScoreResult) {
-              behaviorScoreAfterUpdate = flagBehaviorScoreResult.nextScore;
-            }
-          }
 
-          if (behaviorScoreAfterUpdate !== student.behaviorScore) {
-            behaviorScoreUpdates.set(student.id, behaviorScoreAfterUpdate ?? 100);
+          const newAttendancePenalty = getRulePoints(behaviorScoreConfig, newAttendanceStatus);
+          const newFlagPenalty = getRulePoints(behaviorScoreConfig, nextFlagBehaviorStatus);
+
+          const totalPenalty = newAttendancePenalty + newFlagPenalty;
+          const nextScore = Math.min(maxScore, Math.max(minScore, yesterdayScore - totalPenalty));
+          const netDelta = nextScore - yesterdayScore;
+
+          if (nextScore !== student.behaviorScore) {
+            studentRefUpdates.behaviorScore = nextScore;
+            studentRefUpdates.behaviorScoreUpdatedAt = serverTimestamp();
+            studentRefUpdates.lastBehaviorScoreChange = {
+              delta: netDelta,
+              oldStatus: student.existingDailyStatus || null,
+              newStatus: nextFlagBehaviorStatus || newAttendanceStatus || null,
+              updatedAt: serverTimestamp(),
+              source: "attendance",
+            };
+            behaviorScoreUpdates.set(student.id, nextScore);
           }
 
           batch.set(dailyAttendanceRef, dailyAttendanceData, { merge: true });
+        }
+
+        // Commit all student updates in a single write operation per student
+        if (Object.keys(studentRefUpdates).length > 0) {
+          batch.set(studentRef, studentRefUpdates, { merge: true });
         }
 
       });
@@ -1368,7 +1393,7 @@ const FlagCeremonyPage: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'บันทึกข้อมูลสำเร็จ',
-        text: `ระบบได้บันทึกข้อมูลการเข้าแถวของนักเรียนที่เลือก ${selectedStudents.length} คนแล้ว`,
+        text: `ระบบได้บันทึกข้อมูลการเข้าแถวของนักเรียนทั้งหมด ${studentsToSave.length} คนแล้ว`,
         background: '#2a2b2f',
         color: '#ffffff',
         timer: 2000,
@@ -1652,8 +1677,8 @@ const FlagCeremonyPage: React.FC = () => {
                             เลือกแล้ว
                           </div>
                         )}
-                        <div className={isPwaMode ? "flex flex-col gap-3" : "flex flex-row sm:flex-col items-center gap-4"}>
-                          <div className={isPwaMode ? "flex items-center gap-3 min-w-0 pr-20" : "contents"}>
+                        <div className={isPwaMode ? "flex flex-col gap-3" : "flex flex-col gap-3 sm:flex-col sm:items-center sm:gap-4"}>
+                          <div className={isPwaMode ? "flex items-center gap-3 min-w-0 pr-20" : "flex items-center gap-3 min-w-0 pr-20 sm:pr-0 sm:contents"}>
                           {/* Avatar with Status Dot */}
                           <div className="relative flex-shrink-0">
                             <div className="block relative">
@@ -1681,7 +1706,7 @@ const FlagCeremonyPage: React.FC = () => {
                           </div>
 
                           <div
-                            className={`w-full min-w-0 rounded-xl bg-white/70 dark:bg-black/20 border border-gray-200 dark:border-gray-700 px-3 py-2 ${isPwaMode ? 'mt-0' : 'mt-3 sm:mt-2'}`}
+                            className={`w-full min-w-0 rounded-xl bg-white/70 dark:bg-black/20 border border-gray-200 dark:border-gray-700 px-3 py-2 ${isPwaMode ? 'mt-0' : 'mt-0 sm:mt-2'}`}
                             title={getFlagActionLabel(student.flagAction)}
                           >
                             <div className="flex items-center gap-2 min-w-0">
@@ -1694,25 +1719,27 @@ const FlagCeremonyPage: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className={`w-full flex items-center justify-between gap-2 text-gray-500 dark:text-gray-400 px-1 min-w-0 ${isPwaMode ? 'mt-0 text-[11px]' : 'mt-1.5 text-xs'}`}>
+                          <div className={`w-full flex items-center justify-between gap-2 text-gray-500 dark:text-gray-400 px-1 min-w-0 ${isPwaMode ? 'mt-0 text-[11px]' : 'mt-0 sm:mt-1.5 text-xs'}`}>
                             <span className="min-w-0 truncate">คะแนนความประพฤติ</span>
                             {(() => {
                               const preview = getBehaviorScorePreview(student);
-                              const currentScore = student.behaviorScore ?? 100;
+                              const yesterdayScore = preview ? preview.yesterdayScore : (student.behaviorScore ?? 100);
+                              const nextScore = preview ? preview.nextScore : (student.behaviorScore ?? 100);
+                              const delta = preview ? preview.delta : 0;
                               return (
                                 <span className={`flex shrink-0 items-center font-bold ${isPwaMode ? 'gap-1.5' : 'gap-2'}`}>
-                                  <span className="text-emerald-600 dark:text-emerald-400">{currentScore}</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400">{yesterdayScore}</span>
                                   {preview && (
                                     <>
                                       <span className="text-gray-400 dark:text-gray-500">→</span>
-                                      <span className={preview.delta < 0 ? "text-rose-500 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}>
-                                        {preview.nextScore}
+                                      <span className={delta < 0 ? "text-rose-500 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}>
+                                        {nextScore}
                                       </span>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${preview.delta < 0
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${delta < 0
                                         ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
                                         : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
                                         }`}>
-                                        {preview.delta > 0 ? "+" : ""}{preview.delta}
+                                        {delta > 0 ? "+" : ""}{delta}
                                       </span>
                                     </>
                                   )}

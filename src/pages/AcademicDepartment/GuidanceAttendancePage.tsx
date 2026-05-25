@@ -14,7 +14,7 @@ import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { collection, doc, getDoc, getDocs, query, Timestamp, where, writeBatch } from 'firebase/firestore';
 import { AlertCircle, BookOpen, Calendar, CheckCircle2, ChevronLeft, ClipboardCheck, Clock, Home, Info, LayoutGrid, RefreshCw, Save, Search, Users } from 'lucide-react';
 import Swal from 'sweetalert2';
-
+import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 interface Student {
   id: string;
   firstName?: string;
@@ -41,6 +41,7 @@ const ATTENDANCE_OPTIONS = [
 const GuidanceAttendancePage: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const isPwaMode = usePwaMode();
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
@@ -552,33 +553,36 @@ const GuidanceAttendancePage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        
-        {/* Top Header Card with Back Button */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-800 p-6 rounded-3xl shadow-xl text-white">
-          <div className="flex items-center gap-4">
-            <BackButton to="/academic/hub/attendance" />
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2">
-                <BookOpen className="h-8 w-8" />
-                ระบบเช็คชื่อแนะแนว
-              </h1>
-              <p className="text-indigo-100 text-sm sm:text-base font-medium mt-1">
-                ปีการศึกษา {activeAcademicYear} | ภาคเรียนที่ {activeSemester}
-              </p>
+      <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6 space-y-6'}`}>
+        <div className={`${isPwaMode ? 'max-w-full' : 'max-w-7xl'} mx-auto min-w-0 ${isPwaMode ? 'space-y-4' : 'space-y-6'}`}>
+          
+          {/* Top Header Card with Back Button */}
+          {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
+          
+          <div className={`flex ${isPwaMode ? 'flex-col p-4 rounded-2xl gap-3' : 'flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl'} bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-800 shadow-xl text-white`}>
+            <div className="flex items-center gap-4">
+              {isPwaMode && <BackButton to="/academic/hub/attendance" className="text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl" />}
+              <div>
+                <h1 className={`font-extrabold tracking-tight flex items-center gap-2 ${isPwaMode ? 'text-lg' : 'text-2xl sm:text-3xl'}`}>
+                  <BookOpen className={isPwaMode ? 'h-5 w-5' : 'h-8 w-8'} />
+                  ระบบเช็คชื่อแนะแนว
+                </h1>
+                <p className={`text-indigo-100 font-medium ${isPwaMode ? 'text-xs mt-0.5' : 'text-sm sm:text-base mt-1'}`}>
+                  ปีการศึกษา {activeAcademicYear} | ภาคเรียนที่ {activeSemester}
+                </p>
+              </div>
+            </div>
+            
+            <div className={`flex items-center gap-2 self-start ${isPwaMode ? 'w-full justify-between' : 'sm:self-center'} bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-inner`}>
+              <Calendar className="h-5 w-5 text-indigo-200" />
+              <input
+                type="date"
+                value={toIsoDate(currentDate)}
+                onChange={(e) => setCurrentDate(new Date(e.target.value))}
+                className="bg-transparent text-white focus:outline-none font-bold text-sm"
+              />
             </div>
           </div>
-          
-          <div className="flex items-center gap-2 self-start sm:self-center bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-inner">
-            <Calendar className="h-5 w-5 text-indigo-200" />
-            <input
-              type="date"
-              value={toIsoDate(currentDate)}
-              onChange={(e) => setCurrentDate(new Date(e.target.value))}
-              className="bg-transparent text-white focus:outline-none font-bold text-sm"
-            />
-          </div>
-        </div>
 
         {/* Holiday Warning Banner */}
         {isHoliday && (
@@ -620,7 +624,7 @@ const GuidanceAttendancePage: React.FC = () => {
           <div className="lg:col-span-4 space-y-6">
             
             {/* Filter Glass Card */}
-            <div className="bg-white dark:bg-[#1e1f23] rounded-3xl p-6 shadow-md border border-gray-100 dark:border-gray-800 space-y-5 transition-all">
+            <div className={`bg-white dark:bg-[#1e1f23] shadow-md border border-gray-100 dark:border-gray-800 space-y-5 transition-all ${isPwaMode ? 'p-4 rounded-2xl' : 'p-6 rounded-3xl'}`}>
               <h2 className="text-lg font-extrabold text-gray-800 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 pb-3">
                 <LayoutGrid className="h-5 w-5 text-indigo-500" />
                 ระบุระดับชั้นและห้องเรียน
@@ -660,7 +664,7 @@ const GuidanceAttendancePage: React.FC = () => {
             </div>
 
             {/* Daily Details Glass Card */}
-            <div className="bg-white dark:bg-[#1e1f23] rounded-3xl p-6 shadow-md border border-gray-100 dark:border-gray-800 space-y-5 transition-all">
+            <div className={`bg-white dark:bg-[#1e1f23] shadow-md border border-gray-100 dark:border-gray-800 space-y-5 transition-all ${isPwaMode ? 'p-4 rounded-2xl' : 'p-6 rounded-3xl'}`}>
               <h2 className="text-lg font-extrabold text-gray-800 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 pb-3">
                 <ClipboardCheck className="h-5 w-5 text-indigo-500" />
                 รายละเอียดแนะแนววันนี้
@@ -701,34 +705,34 @@ const GuidanceAttendancePage: React.FC = () => {
           <div className="lg:col-span-8 space-y-6">
 
             {/* Attendance Roster Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+            <div className={`grid ${isPwaMode ? 'grid-cols-2 gap-2.5' : 'grid-cols-2 sm:grid-cols-5 gap-3.5'}`}>
               
               {/* Present Box */}
-              <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl p-4 text-center transition-all duration-300">
+              <div className={`bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl text-center transition-all duration-300 ${isPwaMode ? 'p-3' : 'p-4'}`}>
                 <span className="block text-xs font-black text-emerald-600 dark:text-emerald-400 tracking-wider">มาเรียน</span>
                 <span className="block text-3xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{stats.present}</span>
               </div>
 
               {/* Late Box */}
-              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-2xl p-4 text-center transition-all duration-300">
+              <div className={`bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-2xl text-center transition-all duration-300 ${isPwaMode ? 'p-3' : 'p-4'}`}>
                 <span className="block text-xs font-black text-amber-600 dark:text-amber-400 tracking-wider">สาย</span>
                 <span className="block text-3xl font-black text-amber-700 dark:text-amber-300 mt-1">{stats.late}</span>
               </div>
 
               {/* Leave Box */}
-              <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl p-4 text-center transition-all duration-300">
+              <div className={`bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl text-center transition-all duration-300 ${isPwaMode ? 'p-3' : 'p-4'}`}>
                 <span className="block text-xs font-black text-blue-600 dark:text-blue-400 tracking-wider">ลา</span>
                 <span className="block text-3xl font-black text-blue-700 dark:text-blue-300 mt-1">{stats.leave}</span>
               </div>
 
               {/* Absent Box */}
-              <div className="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl p-4 text-center transition-all duration-300">
+              <div className={`bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-center transition-all duration-300 ${isPwaMode ? 'p-3' : 'p-4'}`}>
                 <span className="block text-xs font-black text-red-600 dark:text-red-400 tracking-wider">ขาดเรียน</span>
                 <span className="block text-3xl font-black text-red-700 dark:text-red-300 mt-1">{stats.absent}</span>
               </div>
 
               {/* Total Box */}
-              <div className="col-span-2 sm:col-span-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-800 rounded-2xl p-4 text-center transition-all duration-300">
+              <div className={`bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-800 rounded-2xl text-center transition-all duration-300 ${isPwaMode ? 'col-span-2 p-3' : 'col-span-2 sm:col-span-1 p-4'}`}>
                 <span className="block text-xs font-black text-gray-500 dark:text-gray-400 tracking-wider">ทั้งหมด</span>
                 <span className="block text-3xl font-black text-gray-700 dark:text-gray-200 mt-1">{students.length}</span>
               </div>
@@ -736,10 +740,10 @@ const GuidanceAttendancePage: React.FC = () => {
             </div>
 
             {/* Master Roster Renders */}
-            <div className="bg-white dark:bg-[#1e1f23] rounded-3xl shadow-md border border-gray-100 dark:border-gray-800 overflow-hidden">
+            <div className={`bg-white dark:bg-[#1e1f23] rounded-3xl shadow-md border border-gray-100 dark:border-gray-800 overflow-hidden ${isPwaMode ? 'p-0 bg-transparent dark:bg-transparent border-none shadow-none' : ''}`}>
               
               {/* Roster Header Panel */}
-              <div className="p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-white/[0.02] flex flex-col sm:flex-row justify-between gap-4 items-center">
+              <div className={`border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-white/[0.02] flex flex-col sm:flex-row justify-between gap-4 items-center ${isPwaMode ? 'p-2.5 bg-transparent dark:bg-transparent border-none' : 'p-5'}`}>
                 <div className="relative w-full sm:w-80">
                   <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
                     <Search size={18} />
@@ -753,7 +757,7 @@ const GuidanceAttendancePage: React.FC = () => {
                   />
                 </div>
 
-                <div className="flex gap-2 w-full sm:w-auto">
+                <div className={`flex gap-2 w-full sm:w-auto ${isPwaMode ? 'flex-col sm:flex-row' : ''}`}>
                   <button
                     onClick={handleSelectAllPresent}
                     disabled={isSubmitted || isHoliday || students.length === 0}
@@ -799,6 +803,75 @@ const GuidanceAttendancePage: React.FC = () => {
                     {studentSearch ? 'ไม่มีรายชื่อที่ตรงกับข้อความที่พิมพ์ค้นหา' : 'ไม่มีนักเรียนในระดับชั้นและห้องเรียนนี้'}
                   </p>
                 </div>
+              ) : isPwaMode ? (
+                <div className="grid grid-cols-1 gap-3">
+                  {filteredStudents.map((st) => {
+                    const stStatus = attendance[st.id] || 'present';
+                    const leaveData = studentLeaves[st.id];
+
+                    return (
+                      <div
+                        key={st.id}
+                        className={`relative group rounded-2xl p-4 border-2 transition-all duration-300 hover:shadow-lg ${
+                          stStatus === 'present' ? 'border-green-200 dark:border-green-900 bg-green-50/30 dark:bg-green-900/5' :
+                          stStatus === 'late' ? 'border-yellow-200 dark:border-yellow-900 bg-yellow-50/30 dark:bg-yellow-900/5' :
+                          stStatus === 'leave' ? 'border-blue-200 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-900/5' :
+                          'border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-900/5'
+                        }`}
+                      >
+                        <div className="flex flex-col gap-3.5">
+                          <div className="flex items-center gap-3.5">
+                            <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-white/5 border border-gray-200/50 dark:border-gray-800 flex items-center justify-center text-xs font-black text-gray-500 dark:text-gray-400 shrink-0">
+                              {st.number || '-'}
+                            </div>
+                            <Link to={`/school/${schoolId}/students/view/${st.id}`} className="flex items-center group gap-3">
+                              <ProfileAvatar
+                                src={st.profileImageUrl || `https://ui-avatars.com/api/?name=${st.firstName}+${st.lastName}&background=random`}
+                                alt={`${st.prefix || st.title || ''}${st.firstName || ''} ${st.lastName || ''}`}
+                                className="h-11 w-11 border border-gray-100 dark:border-gray-800 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate">
+                                  {st.studentId ? `${st.studentId} ` : ''}{st.prefix || st.title || ''}{st.firstName || ''} {st.lastName || ''}
+                                </h4>
+                                <p className="text-gray-400 text-[11px] font-medium truncate">
+                                  เลขประจำตัว: {st.studentId || '-'}
+                                </p>
+                              </div>
+                            </Link>
+                          </div>
+
+                          {leaveData?.isLeave && (
+                            <div className="bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 text-[10px] px-3 py-1 rounded-xl border border-blue-500/20 font-black flex items-center gap-1.5 w-fit">
+                              <Info size={12} /> อนุมัติลา ({leaveData.leaveType})
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-4 gap-1.5 w-full select-none">
+                            {ATTENDANCE_OPTIONS.map((opt) => {
+                              const active = stStatus === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  disabled={isSubmitted}
+                                  onClick={() => handleToggleStatus(st.id, opt.id)}
+                                  className={`h-9 px-1.5 rounded-xl border text-[11px] font-black transition-all ${
+                                    active
+                                      ? `${opt.color} border-transparent text-white shadow-sm active:scale-95`
+                                      : 'bg-white dark:bg-[#1e1f23] border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                                  } ${isSubmitted ? 'cursor-not-allowed opacity-90' : ''}`}
+                                >
+                                  {opt.label === 'ขาดเรียน' ? 'ขาด' : opt.label === 'มาเรียน' ? 'มา' : opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden bg-white dark:bg-[#1e1f21] shadow-sm">
                   {/* Table Header */}
@@ -812,86 +885,86 @@ const GuidanceAttendancePage: React.FC = () => {
 
                   <div className="divide-y divide-gray-100 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
                     {filteredStudents.map((st) => {
-                    const stStatus = attendance[st.id] || 'present';
-                    const leaveData = studentLeaves[st.id];
+                      const stStatus = attendance[st.id] || 'present';
+                      const leaveData = studentLeaves[st.id];
 
-                    return (
-                      <div
-                        key={st.id}
-                        className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-gray-50/50 dark:hover:bg-white/[0.01] transition-all"
-                      >
-                        {/* Student profile details */}
-                        <div className="flex items-center gap-3.5">
-                          {/* Student Number Badge */}
-                          <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-white/5 border border-gray-200/50 dark:border-gray-800 flex items-center justify-center text-xs font-black text-gray-500 dark:text-gray-400 shrink-0">
-                            {st.number || '-'}
+                      return (
+                        <div
+                          key={st.id}
+                          className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-gray-50/50 dark:hover:bg-white/[0.01] transition-all"
+                        >
+                          {/* Student profile details */}
+                          <div className="flex items-center gap-3.5">
+                            {/* Student Number Badge */}
+                            <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-white/5 border border-gray-200/50 dark:border-gray-800 flex items-center justify-center text-xs font-black text-gray-500 dark:text-gray-400 shrink-0">
+                              {st.number || '-'}
+                            </div>
+
+                            <Link to={`/school/${schoolId}/students/view/${st.id}`} className="flex items-center group gap-3.5">
+                              <ProfileAvatar
+                                src={st.profileImageUrl || `https://ui-avatars.com/api/?name=${st.firstName}+${st.lastName}&background=random`}
+                                alt={`${st.prefix || st.title || ''}${st.firstName || ''} ${st.lastName || ''}`}
+                                className="h-10 w-10 border border-gray-100 dark:border-gray-800 shrink-0"
+                              />
+
+                              <div>
+                                <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm sm:text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                  {st.studentId ? `${st.studentId} ` : ''}{st.prefix || st.title || ''}{st.firstName || ''} {st.lastName || ''}
+                                  {st.nickname && (
+                                    <span className="text-gray-400 dark:text-gray-500 text-xs sm:text-sm font-medium ml-1.5">
+                                      ({st.nickname})
+                                    </span>
+                                  )}
+                                </h4>
+                                {leaveData?.isLeave && (
+                                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                                    <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/20 font-black">
+                                      <Info size={11} /> อนุมัติลา ({leaveData.leaveType})
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </Link>
                           </div>
 
-                          <Link to={`/school/${schoolId}/students/view/${st.id}`} className="flex items-center group gap-3.5">
-                            <ProfileAvatar
-                              src={st.profileImageUrl || `https://ui-avatars.com/api/?name=${st.firstName}+${st.lastName}&background=random`}
-                              alt={`${st.prefix || st.title || ''}${st.firstName || ''} ${st.lastName || ''}`}
-                              className="h-10 w-10 border border-gray-100 dark:border-gray-800 shrink-0"
-                            />
+                          {/* Status selection toggles */}
+                          <div className="flex gap-1.5 w-full sm:w-auto shrink-0 select-none">
+                            {ATTENDANCE_OPTIONS.map((opt) => {
+                              const active = stStatus === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  disabled={isSubmitted}
+                                  onClick={() => handleToggleStatus(st.id, opt.id)}
+                                  className={`flex-1 sm:flex-initial h-10 px-3 sm:px-4 rounded-xl border text-xs font-black transition-all ${
+                                    active
+                                      ? `${opt.color} border-transparent text-white shadow-md active:scale-95`
+                                      : 'bg-white dark:bg-[#1e1f23] border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-200'
+                                  } ${isSubmitted ? 'cursor-not-allowed opacity-90' : ''}`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
 
-                            <div>
-                              <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm sm:text-base group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                {st.studentId ? `${st.studentId} ` : ''}{st.prefix || st.title || ''}{st.firstName || ''} {st.lastName || ''}
-                                {st.nickname && (
-                                  <span className="text-gray-400 dark:text-gray-500 text-xs sm:text-sm font-medium ml-1.5">
-                                    ({st.nickname})
-                                  </span>
-                                )}
-                              </h4>
-                              {leaveData?.isLeave && (
-                                <div className="flex flex-wrap items-center gap-2 mt-1">
-                                  <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/20 font-black">
-                                    <Info size={11} /> อนุมัติลา ({leaveData.leaveType})
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </Link>
                         </div>
-
-                        {/* Status selection toggles */}
-                        <div className="flex gap-1.5 w-full sm:w-auto shrink-0 select-none">
-                          {ATTENDANCE_OPTIONS.map((opt) => {
-                            const active = stStatus === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                disabled={isSubmitted}
-                                onClick={() => handleToggleStatus(st.id, opt.id)}
-                                className={`flex-1 sm:flex-initial h-10 px-3 sm:px-4 rounded-xl border text-xs font-black transition-all ${
-                                  active
-                                    ? `${opt.color} border-transparent text-white shadow-md active:scale-95`
-                                    : 'bg-white dark:bg-[#1e1f23] border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-200'
-                                } ${isSubmitted ? 'cursor-not-allowed opacity-90' : ''}`}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-
+              )}
             </div>
+
 
           </div>
 
         </div>
         )}
-
       </div>
-    </MainLayout>
+    </div>
+  </MainLayout>
   );
 };
 

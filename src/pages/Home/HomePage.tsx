@@ -351,6 +351,7 @@ const HomePage = () => {
     const [reportLoading, setReportLoading] = useState(true);
     const [studentReport, setStudentReport] = useState<any>({ total: 0, active: 0, paused: 0, suspended: 0, transferred: 0, resigned: 0, byLevel: {} });
     const [teacherReport, setTeacherReport] = useState<any>({ total: 0, byDepartment: {} });
+    const [activeTeachersCount, setActiveTeachersCount] = useState<number | null>(null);
     const [leaveReport, setLeaveReport] = useState<any>({ 
         studentLeaves: 0, 
         teacherLeaves: 0, 
@@ -495,6 +496,15 @@ const HomePage = () => {
 
                 const teachersRef = collection(db, 'school-settings', schoolId, 'teachers');
                 const teachersSnap = await getDocs(teachersRef);
+
+                // Count active teachers (status === 'อยู่') and not attendant/attendance role
+                const activeTeachers = teachersSnap.docs.filter((doc) => {
+                    const data = doc.data();
+                    const isActive = data.status === 'อยู่';
+                    const isAttendant = isAttendanceEntryOnly(data.role);
+                    return isActive && !isAttendant;
+                });
+                setActiveTeachersCount(activeTeachers.length);
 
                 const promises = teachersSnap.docs
                     .filter((doc) => !isAttendanceEntryOnly(doc.data().role))
@@ -1360,7 +1370,7 @@ const HomePage = () => {
         total: Math.max(totalStudents, sTotalScans)
     };
 
-    const totalTeachers = teacherReport.total || 0;
+    const totalTeachers = activeTeachersCount !== null ? activeTeachersCount : (teacherReport.total || 0);
     const tSummary = teacherTodaySummary || {};
     const tPresent = tSummary.present || 0;
     const tLate = tSummary.late || 0;
@@ -1462,13 +1472,14 @@ const HomePage = () => {
         return null;
     };
 
-    const getPieData = (stats: any) => {
+    const getPieData = (stats: any, isTeacher: boolean = false) => {
         if (!stats || !stats.total) return [];
         return [
-            { name: 'มาเรียน', value: stats.present, color: '#10B981', actualColor: '#10B981', percent: Math.round((stats.present / stats.total) * 100) || 0 },
+            { name: isTeacher ? 'มาปฏิบัติงาน' : 'มาเรียน', value: stats.present, color: '#10B981', actualColor: '#10B981', percent: Math.round((stats.present / stats.total) * 100) || 0 },
             { name: 'สาย', value: stats.late, color: '#F59E0B', actualColor: '#F59E0B', percent: Math.round((stats.late / stats.total) * 100) || 0 },
-            { name: 'ลา/ราชการ', value: (stats.leave + stats.officialTravel), color: '#8B5CF6', actualColor: '#8B5CF6', percent: Math.round(((stats.leave + stats.officialTravel) / stats.total) * 100) || 0 },
-            { name: 'ขาดเรียน', value: stats.absent, color: '#EF4444', actualColor: '#EF4444', percent: Math.round((stats.absent / stats.total) * 100) || 0 }
+            { name: 'ลา', value: stats.leave, color: '#8B5CF6', actualColor: '#8B5CF6', percent: Math.round((stats.leave / stats.total) * 100) || 0 },
+            { name: 'ไปราชการ', value: stats.officialTravel, color: '#6366F1', actualColor: '#6366F1', percent: Math.round((stats.officialTravel / stats.total) * 100) || 0 },
+            { name: isTeacher ? 'ขาดงาน' : 'ขาดเรียน', value: stats.absent, color: '#EF4444', actualColor: '#EF4444', percent: Math.round((stats.absent / stats.total) * 100) || 0 }
         ].filter(d => d.value > 0);
     };
 
@@ -1641,7 +1652,8 @@ const HomePage = () => {
                                         {[
                                             { label: 'มาเรียน', val: studentAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
                                             { label: 'สาย', val: studentAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
-                                            { label: 'ลา/ราชการ', val: (studentAttendanceStats?.leave || 0) + (studentAttendanceStats?.officialTravel || 0), color: 'bg-violet-500', text: 'text-violet-500' },
+                                            { label: 'ลา', val: studentAttendanceStats?.leave || 0, color: 'bg-purple-500', text: 'text-purple-500' },
+                                            { label: 'ไปราชการ', val: studentAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
                                             { label: 'ขาดเรียน', val: studentAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
                                         ].map(item => (
                                             <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
@@ -1681,10 +1693,10 @@ const HomePage = () => {
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
-                                                        data={getPieData(teacherAttendanceStats)}
+                                                        data={getPieData(teacherAttendanceStats, true)}
                                                         cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
                                                     >
-                                                        {getPieData(teacherAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                                        {getPieData(teacherAttendanceStats, true).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                                     </Pie>
                                                     <RechartsTooltip content={<CustomTooltip isPie={true} />} wrapperStyle={{ zIndex: 50 }} />
                                                 </PieChart>
@@ -1699,10 +1711,11 @@ const HomePage = () => {
                                     </div>
                                     <div className="col-span-1 lg:col-span-2 space-y-1 sm:space-y-2">
                                         {[
-                                            { label: 'มาเรียน', val: teacherAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
+                                            { label: 'มาปฏิบัติงาน', val: teacherAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
                                             { label: 'สาย', val: teacherAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
-                                            { label: 'ลา/ราชการ', val: (teacherAttendanceStats?.leave || 0) + (teacherAttendanceStats?.officialTravel || 0), color: 'bg-violet-500', text: 'text-violet-500' },
-                                            { label: 'ขาดเรียน', val: teacherAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
+                                            { label: 'ลา', val: teacherAttendanceStats?.leave || 0, color: 'bg-purple-500', text: 'text-purple-500' },
+                                            { label: 'ไปราชการ', val: teacherAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
+                                            { label: 'ขาดงาน', val: teacherAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
                                         ].map(item => (
                                             <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
                                                 <div className="flex items-center gap-1">
@@ -2202,7 +2215,7 @@ const HomePage = () => {
                                     <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/20 mb-3 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform shadow-sm">
                                         <Briefcase size={24} strokeWidth={2.5} />
                                     </div>
-                                    <div className="text-3xl font-black text-gray-800 dark:text-gray-100 drop-shadow-sm leading-none mb-1">{teacherReport.total || 0}</div>
+                                    <div className="text-3xl font-black text-gray-800 dark:text-gray-100 drop-shadow-sm leading-none mb-1">{totalTeachers}</div>
                                     <div className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">บุคลากรทั้งหมด (คน)</div>
                                 </div>
 

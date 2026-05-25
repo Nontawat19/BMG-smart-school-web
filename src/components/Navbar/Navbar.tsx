@@ -397,7 +397,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
             >
               <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
               <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
-                ระบบบริหารสถานศึกษาอัจฉริยะ
+                BMG Smart School
               </span>
             </div>
 

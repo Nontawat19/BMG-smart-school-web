@@ -15,7 +15,7 @@ import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { isCurrentStudent } from '@/utils/studentStatusUtils';
-import { usePwaMode } from '@/hooks/usePwaMode';
+import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 import { Student, CourseSchedule } from './ClassroomAttendance/types';
 import { DAYS } from './ClassroomAttendance/constants';
 import AttendanceHeader from './ClassroomAttendance/components/AttendanceHeader';

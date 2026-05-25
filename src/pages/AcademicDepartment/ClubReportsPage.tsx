@@ -13,6 +13,7 @@ import {
   View,
   pdf,
 } from "@react-pdf/renderer";
+import { saveAs } from "file-saver";
 import BackButton from "@/components/Shared/BackButton";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
@@ -87,6 +88,8 @@ interface PdfColumn {
   width: number;
   rotate?: boolean;
   align?: "left" | "center";
+  compact?: boolean;
+  compactHeader?: boolean;
 }
 
 interface PdfReportData {
@@ -158,6 +161,7 @@ const statusLabel: Record<string, string> = {
 const getStudentCode = (student?: Student) => student?.studentId || student?.studentCode || "";
 const getStudentName = (student?: Student) => `${student?.title || ""}${student?.firstName || ""} ${student?.lastName || ""}`.trim();
 const formatClassRoom = (student?: Student) => [student?.classLevel, student?.room].filter(Boolean).join("/");
+const sanitizeFileName = (value: string) => value.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_");
 
 const formatThaiDate = (dateStr: string) => {
   const parsed = parseIsoDate(dateStr);
@@ -393,14 +397,15 @@ const ClubReportsPage: React.FC = () => {
   const keyword = search.trim().toLowerCase();
   const matchesSearch = (values: Array<string | undefined>) => !keyword || values.join(" ").toLowerCase().includes(keyword);
 
-  const teacherNames = (club: Club) => {
+  const teacherNameLines = (club: Club) => {
     const ids = club.responsibleTeacherIds || [];
     return ids.map((id, index) => {
       const teacher = (teacherMap as any)?.[id];
       const name = teacher?.name || `${teacher?.title || ""}${teacher?.firstName || ""} ${teacher?.lastName || ""}`.trim();
-      return `อาจารย์คนที่ ${index + 1} : ${name || "-"}`;
-    }).join(" ");
+      return `คุณครูคนที่ ${index + 1} : ${name || "-"}`;
+    });
   };
+  const teacherNames = (club: Club) => teacherNameLines(club).join(" ");
 
   const rows = useMemo(() => {
     if (!reportType) return [];
@@ -440,7 +445,7 @@ const ClubReportsPage: React.FC = () => {
       return {
         ...base,
         title: selectedClub ? `ใบรายชื่อนักเรียน ${selectedClub.name}` : currentReport.title,
-        detail: selectedClub ? `อาจารย์ประจำชุมนุม : ${teacherNames(selectedClub).replace(/\s+/g, " ") || "-"}` : "",
+        detail: selectedClub ? `คุณครูประจำชุมนุม : ${teacherNames(selectedClub).replace(/\s+/g, " ") || "-"}` : "",
         orientation: "landscape",
         columns: [
           { label: "ลำดับ", width: 6, align: "center" },
@@ -490,15 +495,15 @@ const ClubReportsPage: React.FC = () => {
         orientation: "landscape",
         columns: [
           { label: "ลำดับ", width: 4, align: "center" },
-          { label: "โรงเรียน", width: 10, align: "center" },
-          { label: "ชื่อชุมนุม", width: 20, align: "center" },
-          { label: "คาบเรียน", width: 8, align: "center" },
-          { label: "จำนวนสูงสุด", width: 8, align: "center" },
-          { label: "จำนวนทั้งหมด", width: 9, align: "center" },
-          { label: "จำนวนผ่าน", width: 8, align: "center" },
-          { label: "จำนวนไม่ผ่าน", width: 9, align: "center" },
-          { label: "ร้อยละ", width: 8, align: "center" },
-          { label: "อ.ประจำชุมนุม", width: 16, align: "left" },
+          { label: "โรงเรียน", width: 13, align: "center", compact: true },
+          { label: "ชื่อชุมนุม", width: 17, align: "center", compact: true },
+          { label: "คาบเรียน", width: 6, align: "center", compactHeader: true },
+          { label: "จำนวนสูงสุด", width: 6, align: "center", compactHeader: true },
+          { label: "จำนวนทั้งหมด", width: 8, align: "center", compactHeader: true },
+          { label: "จำนวนผ่าน", width: 7, align: "center", compactHeader: true },
+          { label: "จำนวนไม่ผ่าน", width: 8, align: "center", compactHeader: true },
+          { label: "ร้อยละ", width: 6, align: "center" },
+          { label: "คุณครูประจำชุมนุม", width: 25, align: "left" },
         ],
         rows: (rows as Club[]).map((club, index) => {
           const members = students.filter((student) => memberships[student.id]?.clubId === club.id);
@@ -516,7 +521,7 @@ const ClubReportsPage: React.FC = () => {
             String(passed),
             String(failed),
             percent,
-            teacherNames(club),
+            teacherNameLines(club).join("\n"),
           ];
         }),
       };
@@ -551,7 +556,7 @@ const ClubReportsPage: React.FC = () => {
       return {
         ...base,
         title: selectedClub ? `รายงานสรุปการเข้าชุมนุม : ${selectedClub.name}` : currentReport.title,
-        detail: selectedClub ? `อาจารย์ประจำชุมนุม : ${teacherNames(selectedClub).replace(/\s+/g, " ") || "-"}` : "",
+        detail: selectedClub ? `คุณครูประจำชุมนุม : ${teacherNames(selectedClub).replace(/\s+/g, " ") || "-"}` : "",
         orientation: "landscape",
         columns: normalized,
         rows: (rows as Student[]).map((student, index) => {
@@ -604,18 +609,14 @@ const ClubReportsPage: React.FC = () => {
     const data = buildPdfData();
     if (!data || isGeneratingPdf) return;
     setIsGeneratingPdf(true);
-    const previewWindow = window.open("", "_blank");
     try {
       const blob = await pdf(<ClubReportPdfDocument data={data} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      if (previewWindow) {
-        previewWindow.location.href = url;
-      } else {
-        window.open(url, "_blank");
-      }
+      const termLabel = semester === YEARLY_TERM_VALUE
+        ? `ปีการศึกษา_${academicYear || "2568"}`
+        : `ภาคเรียน_${semester}_${academicYear || "2568"}`;
+      saveAs(blob, `${sanitizeFileName(data.title)}_${termLabel}.pdf`);
     } catch (error) {
       console.error("Error generating club report PDF:", error);
-      previewWindow?.close();
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -716,7 +717,7 @@ const ClubReportsPage: React.FC = () => {
 
     if (reportType === "club-student-count-summary") {
       return (
-        <ReportTable headers={["#", "โรงเรียน", "ชื่อชุมนุม", "คาบเรียน", "จำนวนสูงสุด", "จำนวนทั้งหมด", "จำนวนผ่าน", "จำนวนไม่ผ่าน", "ร้อยละ", "อ.ประจำชุมนุม"]}>
+        <ReportTable headers={["#", "โรงเรียน", "ชื่อชุมนุม", "คาบเรียน", "จำนวนสูงสุด", "จำนวนทั้งหมด", "จำนวนผ่าน", "จำนวนไม่ผ่าน", "ร้อยละ", "คุณครูประจำชุมนุม"]}>
           {(rows as Club[]).map((club, index) => {
             const members = students.filter((student) => memberships[student.id]?.clubId === club.id);
             const evalResults = evaluationsByClub[club.id] || {};
@@ -734,7 +735,13 @@ const ClubReportsPage: React.FC = () => {
                 <Td>{passed}</Td>
                 <Td>{failed}</Td>
                 <Td>{percent}</Td>
-                <Td>{teacherNames(club)}</Td>
+                <Td>
+                  <div className="flex flex-col gap-1">
+                    {teacherNameLines(club).map((teacherName, teacherIndex) => (
+                      <span key={`${club.id}-teacher-${teacherIndex}`} className="whitespace-nowrap">{teacherName}</span>
+                    ))}
+                  </div>
+                </Td>
               </tr>
             );
           })}
@@ -1040,6 +1047,12 @@ const pdfStyles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 1,
   },
+  compactHeaderText: {
+    fontSize: 10.5,
+    fontWeight: "bold",
+    textAlign: "center",
+    lineHeight: 1,
+  },
   rotatedText: {
     transform: "rotate(-90deg)",
     width: 68,
@@ -1055,6 +1068,14 @@ const pdfStyles = StyleSheet.create({
   tinyText: {
     fontSize: 8.5,
     lineHeight: 1,
+  },
+  teacherText: {
+    fontSize: 9.5,
+    lineHeight: 1.05,
+  },
+  compactText: {
+    fontSize: 9.5,
+    lineHeight: 1.05,
   },
   centerText: {
     textAlign: "center",
@@ -1106,7 +1127,7 @@ const ClubReportPdfDocument: React.FC<{ data: PdfReportData }> = ({ data }) => {
                     { width: `${column.width}%`, minHeight: hasRotatedColumns ? 74 : 25 },
                   ]}
                 >
-                  <Text style={column.rotate ? pdfStyles.rotatedText : pdfStyles.headerText}>
+                  <Text style={column.rotate ? pdfStyles.rotatedText : column.compactHeader ? pdfStyles.compactHeaderText : pdfStyles.headerText}>
                     {column.label}
                   </Text>
                 </View>
@@ -1115,25 +1136,37 @@ const ClubReportPdfDocument: React.FC<{ data: PdfReportData }> = ({ data }) => {
 
             {pageRows.map((row, rowIndex) => (
               <View key={`${pageIndex}-${rowIndex}-${row.join("-")}`} style={pdfStyles.row} wrap={false}>
-                {data.columns.map((column, colIndex) => (
-                  <View
-                    key={`${pageIndex}-${rowIndex}-${column.label}`}
-                    style={[
-                      pdfStyles.cell,
-                      { width: `${column.width}%` },
-                      column.align === "center" ? { alignItems: "center" } : {},
-                    ]}
-                  >
-                    <Text
+                {data.columns.map((column, colIndex) => {
+                  const cellText = row[colIndex] || "";
+                  const cellLines = cellText.split("\n");
+                  const isTeacherColumn = column.label.includes("คุณครู");
+
+                  return (
+                    <View
+                      key={`${pageIndex}-${rowIndex}-${column.label}`}
                       style={[
-                        data.columns.length > 12 ? pdfStyles.tinyText : pdfStyles.bodyText,
-                        column.align === "center" ? pdfStyles.centerText : {},
+                        pdfStyles.cell,
+                        { width: `${column.width}%` },
+                        column.align === "center" ? { alignItems: "center" } : {},
                       ]}
                     >
-                      {row[colIndex] || ""}
-                    </Text>
-                  </View>
-                ))}
+                      {cellLines.map((line, lineIndex) => (
+                        <Text
+                          key={`${pageIndex}-${rowIndex}-${column.label}-${lineIndex}`}
+                          wrap={!isTeacherColumn}
+                          style={[
+                            data.columns.length > 12 ? pdfStyles.tinyText : pdfStyles.bodyText,
+                            isTeacherColumn ? pdfStyles.teacherText : {},
+                            column.compact ? pdfStyles.compactText : {},
+                            column.align === "center" ? pdfStyles.centerText : {},
+                          ]}
+                        >
+                          {line}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })}
               </View>
             ))}
           </View>

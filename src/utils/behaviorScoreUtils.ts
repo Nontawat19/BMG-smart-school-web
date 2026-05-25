@@ -97,7 +97,7 @@ const getBehaviorFlagCeremonyStatusKey = (status?: string | null): FlagCeremonyS
   return validKeys.includes(key) ? key : null;
 };
 
-const getRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null) => {
+export const getRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null) => {
   const flagStatusKey = getBehaviorFlagCeremonyStatusKey(status);
   if (flagStatusKey) {
     const rules = Array.isArray(config?.flagCeremonyRules) && config.flagCeremonyRules.length > 0

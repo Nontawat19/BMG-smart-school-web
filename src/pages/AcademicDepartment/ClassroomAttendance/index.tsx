@@ -14,7 +14,7 @@ import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { isCurrentStudent } from '@/utils/studentStatusUtils';
-import { usePwaMode } from '@/hooks/usePwaMode';
+import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 
 // Sub-components and Utilities from the same folder
 import { Student, CourseSchedule } from './types';

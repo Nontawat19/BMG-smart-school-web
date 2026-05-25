@@ -1,6 +1,6 @@
 import React from 'react';
 import { FaCheck, FaClock, FaUserSlash, FaTimes, FaRunning } from "react-icons/fa";
-import { usePwaMode } from "@/hooks/usePwaMode";
+import { useResponsivePwaMode as usePwaMode } from "@/hooks/useResponsivePwaMode";
 
 interface AttendanceSummaryProps {
     summary: {
