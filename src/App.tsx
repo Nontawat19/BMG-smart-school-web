@@ -16,7 +16,7 @@ import LeaveHistoryPage from "./pages/Attendance/LeaveHistoryPage"; // 📌 เ�
 import CheckinOutPage from "./pages/Attendance/CheckinOutPage";
 import FlagCeremonyPage from "./pages/Attendance/FlagCeremonyPage"; // 📌 เพิ่มการ import หน้าเช็คชื่อกิจกรรมเข้าแถว
 import ProtectedRoute from "./components/ProtectedRoute";
-import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } from "@/constants/permissions";
+import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from "@/constants/permissions";
 
 
 import UserManagementPage from "./pages/Administrator/UserManagementPage";
@@ -32,6 +32,7 @@ import StudentListPage from "./pages/Students/StudentListPage";
 import EditStudentPage from "./pages/Students/EditStudentPage"; 
 import ViewStudentPage from "./pages/Students/ViewStudentPage"; 
 import MapRfidPage from "./pages/Students/MapRfidPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนบัตร RFID
+import BehaviorScorePage from "./pages/Students/BehaviorScorePage";
 
 
 import BulkUploadStudentImagesPage from "./pages/Administrator/BulkUploadStudentImagesPage"; // 📌 หน้าอัปโหลดรูปนักเรียนจำนวนมาก
@@ -62,22 +63,28 @@ import QuickAddTeacherPage from "./pages/Teachers/QuickAddTeacherPage";
 import ImportTeacherPage from "./pages/Teachers/ImportTeacherPage";
 import ImportStudentPage from "./pages/Students/ImportStudentPage";
 import BulkUploadTeacherImagesPage from "./pages/Administrator/BulkUploadTeacherImagesPage";
+import AdvisorManagementPage from "./pages/Teachers/AdvisorManagementPage";
 
 // Import Academic Pages
 import AcademicAdminPage from "./pages/AcademicDepartment/AcademicAdminPage";
 import CourseManagementPage from "./pages/AcademicDepartment/CourseManagementPage";
 import CourseEnrollmentPage from "@/pages/AcademicDepartment/CourseEnrollmentPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนรายวิชา
 import CourseAssignmentPage from "@/pages/AcademicDepartment/CourseAssignmentPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนครูและสถานที่
+import CourseAssignmentPage2 from "@/pages/AcademicDepartment/CourseAssignmentPage2"; // 📌 เพิ่มการ import หน้ามอบหมายรายวิชา 2 (แบบตาราง)
 import TeacherSchedulePage from "./pages/AcademicDepartment/schedule/TeacherSchedulePage"; // กลับไปใช้ไฟล์ UI เดิมตามคำขอของผู้ใช้
 import StudentSchedulePage from "./pages/AcademicDepartment/StudentSchedulePage"; // 📌 เพิ่มการ import หน้าใหม่
 import MySchedulePage from "./pages/AcademicDepartment/MySchedulePage";
 import SpecialPeriodManagementPage from "./pages/AcademicDepartment/SpecialPeriodManagementPage"; // 📌 เพิ่มการ import หน้าจัดการคาบเรียนพิเศษ
 import ClassroomAttendancePage from "./pages/AcademicDepartment/ClassroomAttendance"; // 📌 เปลี่ยนพาธให้ชี้ที่โฟลเดอร์ใหม่ที่มี index.tsx
 import HomeroomAttendancePage from "./pages/AcademicDepartment/HomeroomAttendancePage";
+import HomeroomStudentListPage from "./pages/AcademicDepartment/HomeroomStudentListPage";
 import GuidanceAttendancePage from "./pages/AcademicDepartment/GuidanceAttendancePage";
 import HistoricalClassroomAttendancePage from "./pages/AcademicDepartment/HistoricalClassroomAttendancePage"; // 📌 เพิ่มการ import หน้าเช็คชื่อย้อนหลัง
 import AttendanceSummaryPage from "./pages/AcademicDepartment/AttendanceSummaryPage"; // 📌 เพิ่มการสรุปการมาเรียน
 import ClassroomAttendanceAuditPage from "./pages/AcademicDepartment/ClassroomAttendanceAuditPage"; // 📌 เพิ่มหน้าตรวจสอบการเช็คชื่อของครู
+import EscapeSummaryPage from "./pages/AcademicDepartment/EscapeSummaryPage";
+import TimeRangeAttendanceSummaryPage from "./pages/AcademicDepartment/TimeRangeAttendanceSummaryPage";
+import StudentBehaviorClassReportPage from "./pages/AcademicDepartment/StudentBehaviorClassReportPage";
 import GradeBookPage from "./pages/AcademicDepartment/GradeBookPage";
 import SchoolCalendarPage from "./pages/AcademicDepartment/SchoolCalendarPage"; // 📌 เพิ่มการ import หน้าใหม่
 import SubstituteManagementPage from "./pages/AcademicDepartment/SubstituteManagementPage"; // 📌 เพิ่มการ import หน้าใหม่
@@ -87,6 +94,8 @@ import ViewCoursesPage from "./pages/AcademicDepartment/ViewCoursesPage"; // �
 // import AssessmentReadingThinkingWritingPage from "./pages/AcademicDepartment/AssessmentReadingThinkingWritingPage"; // 📌 นำออกตามคำขอ
 import DocumentVerificationPage from "./pages/Public/DocumentVerificationPage"; // 📌 เพิ่มหน้าตรวจสอบเอกสาร
 import SlugResolverPage from "./pages/Public/SlugResolverPage"; // 📌 เพิ่มหน้าจัดการ Slug
+import LineRegisterPage from "./pages/Public/LineRegisterPage"; // 📌 เพิ่มหน้าลงทะเบียน LINE
+
 
 import PeriodSettingsPage from "./pages/AcademicDepartment/PeriodSettingsPage"; // 📌 เพิ่มการ import หน้าตั้งค่าคาบเรียน
 
@@ -130,6 +139,8 @@ import BehaviorScoreConfigPage from "./pages/HumanResources/BehaviorScoreConfigP
 import TeacherAttendanceTodayPage from "./pages/HumanResources/TeacherAttendanceTodayPage";
 import TeacherAttendanceSummaryPage from "./pages/HumanResources/TeacherAttendanceSummaryPage";
 import TeacherAttendanceIndividualPage from "./pages/HumanResources/TeacherAttendanceIndividualPage";
+import TeacherAttendanceDateSelectionPage from "./pages/HumanResources/TeacherAttendanceDateSelectionPage";
+import LeaveApprovalPage from "./pages/HumanResources/LeaveApprovalPage";
 import StudentsAttendanceSummaryPage from "./pages/Students/StudentsAttendanceSummaryPage";
 import LineOAManagementPage from "./pages/Administrator/LineOAManagementPage";
 import TelegramManagementPage from "./pages/Administrator/TelegramManagementPage";
@@ -141,6 +152,9 @@ import { ROLES } from "@/constants/roles";
 
 function App() {
   const { loading } = useSelector((state: RootState) => state.auth);
+  const TEACHER_LEAVE_HISTORY_ACCESS = [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
+  const TEACHER_ATTENDANCE_TODAY_ACCESS = [ROLES.SCHOOL_ADMIN, ...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
+  const HUB_ACCESS = [...STAFF_ACCESS, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
 
   // 🔥 Auto-fetch ทุก Redux Slice ครั้งเดียวหลัง login
   useInitializeStore();
@@ -161,12 +175,13 @@ function App() {
           <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
           <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
           <Route path="/verify-doc" element={<DocumentVerificationPage />} />
+          <Route path="/line/register-parent" element={<LineRegisterPage />} />
 
           {/* Protected Pages - General */}
           <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-          <Route path="/my-schedule" element={<MySchedulePage />} />
+          <Route path="/my-schedule" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><MySchedulePage /></ProtectedRoute>} />
 
           {/* Attendance & Leave (Staff Only) */}
           <Route path="/attendance/leave-request" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><LeaveRequestPage /></ProtectedRoute>} />
@@ -175,7 +190,8 @@ function App() {
           <Route path="/school/:schoolId/official-travel-request" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><OfficialTravelRequestPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/official-travel-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><OfficialTravelHistoryPage /></ProtectedRoute>} />
           <Route path="/attendance/leave-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><LeaveHistoryPage /></ProtectedRoute>} />
-          <Route path="/attendance/teacher-leave-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherLeaveHistoryPage /></ProtectedRoute>} />
+          <Route path="/attendance/teacher-leave-history" element={<ProtectedRoute allowedRoles={TEACHER_LEAVE_HISTORY_ACCESS}><TeacherLeaveHistoryPage /></ProtectedRoute>} />
+          <Route path="/attendance/leave-approval" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><LeaveApprovalPage /></ProtectedRoute>} />
 
           {/* Administrator Pages */}
           <Route path="/administrator/user-management" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS} featureFlag="personnel"><UserManagementPage /></ProtectedRoute>} />
@@ -183,27 +199,28 @@ function App() {
           <Route path="/school/:schoolId/students/import-dmc" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><ImportStudentDMCPage /></ProtectedRoute>} />
 
           {/* Student Support System Pages (Staff Access) */}
-          <Route path="/student-support" element={<ProtectedRoute allowedRoles={STAFF_ACCESS} featureFlag="studentAffairs"><StudentSupportPage /></ProtectedRoute>} />
-          <Route path="/student-support/sdq" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><SDQPage /></ProtectedRoute>} />
-          <Route path="/student-support/sdq/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STAFF_ACCESS]}><SDQStudentPage /></ProtectedRoute>} />
-          <Route path="/student-support/sdq/teacher" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><SDQTeacherPage /></ProtectedRoute>} />
-          <Route path="/student-support/sdq/parent" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><SDQParentPage /></ProtectedRoute>} />
+          <Route path="/student-support" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><StudentSupportPage /></ProtectedRoute>} />
+          <Route path="/student-support/sdq" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><SDQPage /></ProtectedRoute>} />
+          <Route path="/student-support/sdq/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STUDENT_SUPPORT_OPERATIONAL_ACCESS]}><SDQStudentPage /></ProtectedRoute>} />
+          <Route path="/student-support/sdq/teacher" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><SDQTeacherPage /></ProtectedRoute>} />
+          <Route path="/student-support/sdq/parent" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><SDQParentPage /></ProtectedRoute>} />
 
-          <Route path="/student-support/screening" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ScreeningHub /></ProtectedRoute>} />
-          <Route path="/student-support/screening/teacher" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ScreeningTeacherPage /></ProtectedRoute>} />
-          <Route path="/student-support/screening/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STAFF_ACCESS]}><ScreeningStudentPage /></ProtectedRoute>} />
-          <Route path="/student-support/screening/parent" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ScreeningParentPage /></ProtectedRoute>} />
+          <Route path="/student-support/screening" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><ScreeningHub /></ProtectedRoute>} />
+          <Route path="/student-support/screening/teacher" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><ScreeningTeacherPage /></ProtectedRoute>} />
+          <Route path="/student-support/screening/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STUDENT_SUPPORT_OPERATIONAL_ACCESS]}><ScreeningStudentPage /></ProtectedRoute>} />
+          <Route path="/student-support/screening/parent" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><ScreeningParentPage /></ProtectedRoute>} />
 
-          <Route path="/student-support/home-visit" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HomeVisitDashboard /></ProtectedRoute>} />
-          <Route path="/student-support/home-visit/new/:studentId" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><NewHomeVisit /></ProtectedRoute>} />
-          <Route path="/student-support/home-visit/summary" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><HomeVisitDashboard /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/new/:studentId" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><NewHomeVisit /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
 
           {/* Student Management */}
           <Route path="/school/:schoolId/students" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentListPage /></ProtectedRoute>} />
+          <Route path="/school/:schoolId/students/behavior" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><BehaviorScorePage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/add" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><AddStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/quick-add" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><QuickAddStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/edit/:studentId" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><EditStudentPage /></ProtectedRoute>} />
-          <Route path="/school/:schoolId/students/view/:studentId" element={<ViewStudentPage />} />
+          <Route path="/school/:schoolId/students/view/:studentId" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><ViewStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/map-rfid/:type" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><MapRfidPage /></ProtectedRoute>} />
 
           {/* Teacher Management */}
@@ -215,10 +232,11 @@ function App() {
           <Route path="/school/:schoolId/teachers/import" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><ImportTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/import" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><ImportStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/bulk-upload-images" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><BulkUploadTeacherImagesPage /></ProtectedRoute>} />
+          <Route path="/school/:schoolId/teachers/advisor-management" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><AdvisorManagementPage /></ProtectedRoute>} />
 
           {/* Academic Hub Routes */}
-          <Route path="/academic/hub/:hubType" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HubPage /></ProtectedRoute>} />
-          <Route path="/student-support/hub" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HubPage /></ProtectedRoute>} />
+          <Route path="/academic/hub/:hubType" element={<ProtectedRoute allowedRoles={HUB_ACCESS}><HubPage /></ProtectedRoute>} />
+          <Route path="/student-support/hub" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><HubPage /></ProtectedRoute>} />
           
           {/* Academic Department (Academic Admin Access) */}
           <Route path="/school/:schoolId/academic" element={<ProtectedRoute allowedRoles={STAFF_ACCESS} featureFlag="academic"><HubPage /></ProtectedRoute>} />
@@ -226,6 +244,7 @@ function App() {
           <Route path="/academic/course-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseManagementPage /></ProtectedRoute>} />
           <Route path="/academic/course-enrollment" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseEnrollmentPage /></ProtectedRoute>} />
           <Route path="/academic/course-assignment" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseAssignmentPage /></ProtectedRoute>} />
+          <Route path="/academic/course-assignment-2" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><CourseAssignmentPage2 /></ProtectedRoute>} />
           <Route path="/academic/score-configuration" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ScoreConfigurationPage /></ProtectedRoute>} />
           <Route path="/academic/formative-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FormativeScoreEntryPage /></ProtectedRoute>} />
           <Route path="/academic/post-midterm-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><PostMidtermScoreEntryPage /></ProtectedRoute>} />
@@ -247,13 +266,14 @@ function App() {
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />
           <Route path="/academic/settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AcademicSettingsPage /></ProtectedRoute>} />
            <Route path="/academic/attendance-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceConfigPage /></ProtectedRoute>} />
-          <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
+          <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
           <Route path="/academic/settings/line-oa" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LineOAManagementPage /></ProtectedRoute>} />
           <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
-          <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
-          <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />
-          <Route path="/academic/teacher-attendance-individual" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherAttendanceIndividualPage /></ProtectedRoute>} />
-          <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={TEACHER_ATTENDANCE_TODAY_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
+          <Route path="/academic/teacher-attendance-date-selection" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN]}><TeacherAttendanceDateSelectionPage /></ProtectedRoute>} />
+          <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/teacher-attendance-individual" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceIndividualPage /></ProtectedRoute>} />
+          <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
 
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
           <Route path="/academic/graduation-pending" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationPendingPage /></ProtectedRoute>} />
@@ -266,7 +286,7 @@ function App() {
           {/* Daily Classroom (Staff Access) */}
           <Route path="/academic/club-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClubAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/club-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubManagementPage /></ProtectedRoute>} />
-          <Route path="/academic/club-members" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubMemberManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/club-members" element={<ProtectedRoute allowedRoles={CLUB_MEMBER_MANAGEMENT_ACCESS}><ClubMemberManagementPage /></ProtectedRoute>} />
           <Route path="/academic/club-reports" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubReportsPage /></ProtectedRoute>} />
           <Route path="/academic/club-reports/:reportType" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClubReportsPage /></ProtectedRoute>} />
           <Route path="/academic/club-list" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ClubListPage /></ProtectedRoute>} />
@@ -279,15 +299,20 @@ function App() {
           <Route path="/academic/guidance-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GuidanceAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
-          <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><AttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-audit" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClassroomAttendanceAuditPage /></ProtectedRoute>} />
+          <Route path="/academic/escape-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><EscapeSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/time-range-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TimeRangeAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/homeroom-student-list" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HomeroomStudentListPage /></ProtectedRoute>} />
+          <Route path="/academic/student-behavior-class-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBehaviorClassReportPage /></ProtectedRoute>} />
+          <Route path="/school/:schoolId/academic/student-behavior-class-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBehaviorClassReportPage /></ProtectedRoute>} />
           <Route path="/academic/student-schedule" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ROLES.STUDENT]}><StudentSchedulePage /></ProtectedRoute>} />
           <Route path="/academic/teacher-schedule-view" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><TeacherScheduleViewPage /></ProtectedRoute>} />
-          <Route path="/academic/my-schedule" element={<MySchedulePage />} />
+          <Route path="/academic/my-schedule" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><MySchedulePage /></ProtectedRoute>} />
           <Route path="/academic/grade-book" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GradeBookPage /></ProtectedRoute>} />
 
           {/* Owner Pages (Super Admin & School Admin) */}
-          <Route path="/owner/hub" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><HubPage /></ProtectedRoute>} />
+          <Route path="/owner/hub" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><HubPage /></ProtectedRoute>} />
           <Route path="/owner/school-info/:schoolId?" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><SchoolInfoPage /></ProtectedRoute>} />
           <Route path="/owner/schools" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolListPage /></ProtectedRoute>} />
           <Route path="/owner/schools/:schoolId" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolDetailsPage /></ProtectedRoute>} />

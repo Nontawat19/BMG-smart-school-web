@@ -2,7 +2,7 @@ import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
-import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndex, getRequiredWeeklyPeriods } from '../utils';
+import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods } from '../utils';
 
 const MySwal = withReactContent(Swal);
 
@@ -62,36 +62,136 @@ export const useDragAndDrop = ({
         return getCourseMoveKey(teacherId, a, true) === getCourseMoveKey(teacherId, b, true);
     };
 
+    const shouldMoveAsDouble = (item: CourseInstance) => {
+        const asgnCst = assignmentConstraints[item.compositeId];
+        return asgnCst?.type === 'double';
+    };
+
+    const getTeachingRuns = () => {
+        const orderedPeriods = periodSettings
+            .map((period, arrayIndex) => ({
+                index: typeof (period as any).index === 'number' ? (period as any).index : arrayIndex,
+                isTeachingPeriod: period.isTeachingPeriod
+            }))
+            .sort((a, b) => a.index - b.index);
+
+        let currentRun: number[] = [];
+        const runs: number[][] = [];
+        orderedPeriods.forEach(period => {
+            if (period.isTeachingPeriod) {
+                currentRun.push(period.index);
+                return;
+            }
+
+            if (currentRun.length) {
+                runs.push(currentRun);
+                currentRun = [];
+            }
+        });
+        if (currentRun.length) runs.push(currentRun);
+        return runs;
+    };
+
+    const getAdjacentTeachingSlots = (slotId: string) => {
+        const [day, pNumStr] = slotId.split('-');
+        const periodIndex = parseInt(pNumStr);
+        const run = getTeachingRuns().find(indexes => indexes.includes(periodIndex));
+        if (!run) return [];
+
+        const position = run.indexOf(periodIndex);
+        return [run[position - 1], run[position + 1]]
+            .filter((index): index is number => typeof index === 'number')
+            .map(index => `${day}-${index}`);
+    };
+
+    const sortMovesBySlot = (moves: { slot: string; item: CourseInstance }[]) => {
+        return [...moves].sort((a, b) => {
+            const [dayA, periodA] = a.slot.split('-');
+            const [dayB, periodB] = b.slot.split('-');
+            if (dayA !== dayB) return DAYS[dayA as keyof typeof DAYS] < DAYS[dayB as keyof typeof DAYS] ? -1 : 1;
+            return Number(periodA) - Number(periodB);
+        });
+    };
+
+    const getTeacherName = (teacherId?: string) => {
+        if (!teacherId) return '-';
+        if (teacherId === 'pending') return 'ยังไม่ระบุครู';
+        if (teacherId.startsWith('GHOST')) {
+            return `ครูสำรอง (${teacherId.replace('GHOST_', '')})`;
+        }
+        const teacher = teacherMap[teacherId];
+        return teacher?.name || `${teacher?.title || ''}${teacher?.firstName || ''} ${teacher?.lastName || ''}`.trim() || teacherId;
+    };
+
+    const formatSlotToThai = (slot: string) => {
+        const [day, pNumStr] = slot.split('-');
+        const periodIndex = parseInt(pNumStr);
+        const dayThai = DAYS[day as keyof typeof DAYS] || day;
+        const periodLabel = periodSettings[periodIndex]?.label || `คาบที่ ${periodIndex + 1}`;
+        return `วัน${dayThai} (${periodLabel})`;
+    };
+
+    const escapeHtml = (value: string) => value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const formatConflictDetails = (conflicts: { slot: string; item: CourseInstance; teacherId: string }[]) => {
+        if (conflicts.length === 0) return 'ไม่พบคาบว่างสำหรับย้ายวิชาที่ถูกทับ';
+        return conflicts.slice(0, 4).map(conflict => {
+            const classes = Array.isArray(conflict.item.classId)
+                ? conflict.item.classId.map(getClassDisplayName).join(', ')
+                : getClassDisplayName(conflict.item.classId as string);
+            const rooms = Array.isArray(conflict.item.room) ? conflict.item.room.filter(r => r && r !== 'all').join(', ') : '';
+            return escapeHtml(`${formatSlotToThai(conflict.slot)}: ${conflict.item.code || '-'} ${conflict.item.title || '-'} / ${classes || 'ไม่ระบุชั้น'} / ครู ${getTeacherName(conflict.teacherId)}${rooms ? ` / ห้อง ${rooms}` : ''}`);
+        }).join('\n');
+    };
+
     const getPairedGridMove = (item: CourseInstance, slotId?: string) => {
         if (!slotId) return [{ slot: '', item }];
 
         const [day, pNumStr] = slotId.split('-');
         const periodIndex = parseInt(pNumStr);
-        const partnerIndex = getPartnerIndex(periodIndex);
+        const partnerIndex = getPartnerIndexForPeriods(periodIndex, periodSettings);
         const partnerSlotId = partnerIndex !== -1 ? `${day}-${partnerIndex}` : null;
         const partnerItem = partnerSlotId
             ? schedule[partnerSlotId]?.find(course => isSameAssignment(course, item))
             : undefined;
 
-        if (!partnerSlotId || !partnerItem) return [{ slot: slotId, item }];
+        const shouldMoveAsPair = shouldMoveAsDouble(item);
 
-        const asgnCst = assignmentConstraints[item.compositeId];
-        const shouldMoveAsPair = asgnCst?.type === 'double' ||
-            asgnCst?.type === 'mixed' ||
-            getRequiredWeeklyPeriods(item) >= 5;
+        if (!shouldMoveAsPair) return [{ slot: slotId, item }];
 
-        return shouldMoveAsPair
-            ? [
+        if (partnerSlotId && partnerItem) {
+            return sortMovesBySlot([
                 { slot: slotId, item },
                 { slot: partnerSlotId, item: partnerItem }
-            ]
-            : [{ slot: slotId, item }];
+            ]);
+        }
+
+        const adjacentPartner = getAdjacentTeachingSlots(slotId)
+            .map(adjacentSlot => ({
+                slot: adjacentSlot,
+                item: schedule[adjacentSlot]?.find(course => isSameAssignment(course, item))
+            }))
+            .find((move): move is { slot: string; item: CourseInstance } => Boolean(move.item));
+
+        if (adjacentPartner) {
+            return sortMovesBySlot([
+                { slot: slotId, item },
+                adjacentPartner
+            ]);
+        }
+
+        return [{ slot: slotId, item }];
     };
 
     const getDoubleTargetSlots = (slotId: string) => {
         const [day, pNumStr] = slotId.split('-');
         const periodIndex = parseInt(pNumStr);
-        const partnerIndex = getPartnerIndex(periodIndex);
+        const partnerIndex = getPartnerIndexForPeriods(periodIndex, periodSettings);
         if (partnerIndex === -1) return null;
         const startIndex = Math.min(periodIndex, partnerIndex);
         const endIndex = Math.max(periodIndex, partnerIndex);
@@ -143,7 +243,7 @@ export const useDragAndDrop = ({
         if (item) setActiveDragItem(item);
     };
 
-    const handleDragEnd = (event: DragEndEvent) => {
+    const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         setActiveDragItem(null);
 
@@ -233,7 +333,7 @@ export const useDragAndDrop = ({
         const hoursRemaining = hoursPerWeek - effectivePlacedCount;
 
         const shouldUseDoubleTarget = movingItems.length > 1 ||
-            ((asgnCst?.type === 'double' || asgnCst?.type === 'mixed' || hoursPerWeek >= 5) && hoursRemaining >= 2);
+            (asgnCst?.type === 'double' && hoursRemaining >= 2);
 
         if (shouldUseDoubleTarget) {
             const doubleSlots = getDoubleTargetSlots(overId);
@@ -273,7 +373,8 @@ export const useDragAndDrop = ({
                 isDoublePartnerSlot ? getConstraintMapForDoublePartner(itemToCheck as CourseInstance) : assignmentConstraints, 
                 dynamicUnavailableSlots,
                 schoolMasterSchedule, // check against everyone
-                isDoubleStartSlot ? 2 : 1
+                isDoubleStartSlot ? 2 : 1,
+                Array.from(movingInstanceIds)
             );
             
             // If forbidden, we only allow it if we can displace the conflict
@@ -284,6 +385,35 @@ export const useDragAndDrop = ({
                 
                 if (hasHardConflict) {
                     MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: check.message });
+                    return;
+                }
+            }
+        }
+
+        // 3. Duplicate teaching on the same day check for single periods
+        if (!partnerSlotId) {
+            const [targetDay] = overId.split('-');
+            const isDuplicateOnSameDay = Object.entries(schedule).some(([slotKey, courses]) => {
+                const [slotDay] = slotKey.split('-');
+                if (slotDay !== targetDay) return false;
+                if (originalCellKey && slotKey === originalCellKey) return false;
+                if (movingItems.some(move => move.slot === slotKey)) return false;
+
+                return courses.some(c => c.compositeId === activeItem!.compositeId && Number(c.groupNumber || 1) === Number(activeItem!.groupNumber || 1));
+            });
+
+            if (isDuplicateOnSameDay) {
+                const confirmResult = await MySwal.fire({
+                    title: 'จัดสอนซ้ำในวันเดียว',
+                    text: 'วิชานี้ถูกจัดสอนในวันเดียวกันอยู่แล้ว คุณต้องการจัดสอนซ้ำใช่หรือไม่?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'ตกลง',
+                    cancelButtonText: 'ยกเลิก'
+                });
+                if (!confirmResult.isConfirmed) {
                     return;
                 }
             }
@@ -386,7 +516,7 @@ export const useDragAndDrop = ({
             MySwal.fire({
                 icon: 'warning',
                 title: 'ไม่สามารถย้ายได้',
-                text: 'ไม่พบคาบว่างสำหรับย้ายวิชาที่ถูกทับ ระบบจึงไม่ย้ายเพื่อป้องกันตารางหาย',
+                html: `<div class="text-left text-sm whitespace-pre-line">${formatConflictDetails(conflictingItems)}</div><p class="mt-3 text-xs text-slate-500">ระบบไม่ย้ายเพื่อป้องกันตารางหาย กรุณาเลือกคาบอื่นหรือเคลียร์คาบที่ชนก่อน</p>`,
                 confirmButtonText: 'ตกลง'
             });
             return;
@@ -494,6 +624,11 @@ export const useDragAndDrop = ({
             if (!courses || courses.length === 0) return prev;
 
             const removedCourse = courses.find(c => c.instanceId === instanceId);
+            if (removedCourse?.locked) {
+                MySwal.fire({ icon: 'error', title: 'ไม่สามารถลบได้', text: 'กรุณาปลดล็อควิชาก่อนลบ' });
+                return prev;
+            }
+
             const updatedCourses = courses.filter(c => c.instanceId !== instanceId);
 
             if (removedCourse) {
@@ -507,7 +642,7 @@ export const useDragAndDrop = ({
         });
     };
 
-    const handleManualAdd = (slotId: string, courseCode: string) => {
+    const handleManualAdd = async (slotId: string, courseCode: string) => {
         if (!courseCode) return;
 
         // Find an instance from the bank
@@ -538,7 +673,7 @@ export const useDragAndDrop = ({
 
         const alreadyPlacedCount = Object.values(schedule).flat().filter(c => c.compositeId === activeItem.compositeId).length;
         const hoursRemaining = hoursPerWeek - alreadyPlacedCount;
-        const shouldTryDoublePlacement = (asgnCst?.type === 'double' || asgnCst?.type === 'mixed' || hoursPerWeek >= 5) && hoursRemaining >= 2;
+        const shouldTryDoublePlacement = asgnCst?.type === 'double' && hoursRemaining >= 2;
 
         if (shouldTryDoublePlacement) {
             const doubleSlots = getDoubleTargetSlots(slotId);
@@ -554,7 +689,9 @@ export const useDragAndDrop = ({
                     specialPeriods, 
                     getConstraintMapForDoublePartner(activeItem), 
                     dynamicUnavailableSlots,
-                    schoolMasterSchedule
+                    schoolMasterSchedule,
+                    1,
+                    [activeItem.instanceId]
                 );
                 
                 const primaryCheck = checkConstraints(
@@ -566,7 +703,8 @@ export const useDragAndDrop = ({
                     assignmentConstraints,
                     dynamicUnavailableSlots,
                     schoolMasterSchedule,
-                    2
+                    2,
+                    [activeItem.instanceId]
                 );
 
                 if (!primaryCheck.forbidden && !partnerCheck.forbidden && (!schedule[primarySlotId] || schedule[primarySlotId].length === 0) && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
@@ -594,12 +732,41 @@ export const useDragAndDrop = ({
                 specialPeriods,
                 assignmentConstraints,
                 dynamicUnavailableSlots,
-                schoolMasterSchedule
+                schoolMasterSchedule,
+                1,
+                [activeItem.instanceId]
             );
 
             if (forbidden) {
                 MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางได้', text: message });
                 return;
+            }
+        }
+
+        // Check for duplicate teaching on the same day for single periods
+        if (!partnerSlotId) {
+            const [targetDay] = slotId.split('-');
+            const isDuplicateOnSameDay = Object.entries(schedule).some(([slotKey, courses]) => {
+                const [slotDay] = slotKey.split('-');
+                if (slotDay !== targetDay) return false;
+
+                return courses.some(c => c.compositeId === activeItem.compositeId && Number(c.groupNumber || 1) === Number(activeItem.groupNumber || 1));
+            });
+
+            if (isDuplicateOnSameDay) {
+                const confirmResult = await MySwal.fire({
+                    title: 'จัดสอนซ้ำในวันเดียว',
+                    text: 'วิชานี้ถูกจัดสอนในวันเดียวกันอยู่แล้ว คุณต้องการจัดสอนซ้ำใช่หรือไม่?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'ตกลง',
+                    cancelButtonText: 'ยกเลิก'
+                });
+                if (!confirmResult.isConfirmed) {
+                    return;
+                }
             }
         }
 

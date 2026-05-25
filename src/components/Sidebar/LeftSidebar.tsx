@@ -55,11 +55,14 @@ import CanAccess from "../AccessControl/CanAccess";
 import { ROLES, ROLE_LABELS, Role } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { usePwaMode } from "@/hooks/usePwaMode";
+import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
-  const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } = usePermissions();
+  const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS } = usePermissions();
   const isLoading = useSelector((state: RootState) => state.auth.loading);
   const schoolId = currentUser?.schoolId;
+  const isPwaMode = usePwaMode();
 
   // ฟังก์ชันสำหรับสร้าง className ของ NavLink
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
@@ -139,7 +142,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         <div className="w-[280px] h-full flex flex-col gap-6 p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-gray-100 dark:scrollbar-track-gray-900">
 
           {/* โปรไฟล์ผู้ใช้ */}
-          {isAttendanceEntryOnly(currentUser?.role) ? (
+          {isPwaMode || isAttendanceEntryOnly(currentUser?.role) ? (
             <div
               className="flex items-center gap-3 p-2 rounded-xl text-inherit no-underline select-none"
             >
@@ -211,12 +214,39 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
 
           {/* เมนู */}
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
-            {isAttendanceEntryOnly(currentUser?.role) ? (
+            {isPwaMode ? (
+              <div className="flex flex-col gap-1">
+                <NavLink to={PWA_ATTENDANCE_HUB_PATH} className={navLinkClasses}>
+                  <FaUserCheck className="text-lg min-w-[18px]" />
+                  <span>ระบบเช็คชื่อ</span>
+                </NavLink>
+              </div>
+            ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
                 <NavLink to="/attendance/checkin-out" className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
                   <span>ลงเวลาเข้า-ออก</span>
                 </NavLink>
+                <CanAccess roles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}>
+                  <NavLink to="/student-support/hub" className={navLinkClasses}>
+                    <FaHandHoldingHeart className="text-lg min-w-[18px]" />
+                    <span>ระบบดูแลช่วยเหลือนักเรียน</span>
+                  </NavLink>
+                </CanAccess>
+                <CanAccess roles={STUDENT_AFFAIRS_MANAGEMENT}>
+                  {isEnabled('studentAffairs') && (
+                    <>
+                      <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
+                        <FaChartBar className="text-lg min-w-[18px]" />
+                        <span>รายงานกิจการนักเรียน</span>
+                      </NavLink>
+                      <NavLink to="/academic/hub/settings" className={navLinkClasses}>
+                        <FaCog className="text-lg min-w-[18px]" />
+                        <span>ตั้งค่าคะแนนพฤติกรรม</span>
+                      </NavLink>
+                    </>
+                  )}
+                </CanAccess>
               </div>
             ) : (
               <>
@@ -250,10 +280,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                         <FaFlag className="text-lg min-w-[18px]" />
                         <span>กิจกรรมและชุมนุม</span>
                       </NavLink>
-                      <NavLink to="/student-support/hub" className={navLinkClasses}>
-                        <FaHandHoldingHeart className="text-lg min-w-[18px]" />
-                        <span>ระบบดูแลช่วยเหลือนักเรียน</span>
-                      </NavLink>
+                      <CanAccess roles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}>
+                        <NavLink to="/student-support/hub" className={navLinkClasses}>
+                          <FaHandHoldingHeart className="text-lg min-w-[18px]" />
+                          <span>ระบบดูแลช่วยเหลือนักเรียน</span>
+                        </NavLink>
+                      </CanAccess>
                       <NavLink to="/academic/hub/evaluation" className={navLinkClasses}>
                         <FaGraduationCap className="text-lg min-w-[18px]" />
                         <span>วัดผลและประเมินผล</span>
@@ -273,22 +305,41 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                     </div>
                   </CanAccess>
                 )}
+
+                <CanAccess roles={STUDENT_AFFAIRS_MANAGEMENT}>
+                  <div className="flex flex-col gap-1">
+                    {isEnabled('studentAffairs') && (
+                      <>
+                        <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
+                          <FaChartBar className="text-lg min-w-[18px]" />
+                          <span>รายงานกิจการนักเรียน</span>
+                        </NavLink>
+                        <NavLink to="/academic/hub/settings" className={navLinkClasses}>
+                          <FaCog className="text-lg min-w-[18px]" />
+                          <span>ตั้งค่าคะแนนพฤติกรรม</span>
+                        </NavLink>
+                      </>
+                    )}
+                  </div>
+                </CanAccess>
               </>
             )}
           </nav>
 
           {/* Owner Menu */}
-          <CanAccess roles={OWNER_ONLY}>
-            <div>
-              {renderSectionHeader("เจ้าของระบบ", "owner")}
-              <div className={!openSections["owner"] ? "hidden" : "block"}>
-                <NavLink to="/owner/hub" className={navLinkClasses}>
-                  <FaShieldAlt className="text-lg min-w-[18px]" />
-                  <span>จัดการระบบ (Owner)</span>
-                </NavLink>
+          {!isPwaMode && (
+            <CanAccess roles={OWNER_ONLY}>
+              <div>
+                {renderSectionHeader("เจ้าของระบบ", "owner")}
+                <div className={!openSections["owner"] ? "hidden" : "block"}>
+                  <NavLink to="/owner/hub" className={navLinkClasses}>
+                    <FaShieldAlt className="text-lg min-w-[18px]" />
+                    <span>จัดการระบบ (Owner)</span>
+                  </NavLink>
+                </div>
               </div>
-            </div>
-          </CanAccess>
+            </CanAccess>
+          )}
 
           <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700/50 flex flex-col gap-2">
             <LogoutButton className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors duration-200 text-sm font-medium" />
@@ -304,7 +355,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         !isMobile && toggleSidebar && (
           <button
             onClick={toggleSidebar}
-            className={`hidden lg:block fixed top-[180px] z-[60] bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-r-md p-2 text-gray-500 hover:text-indigo-600 shadow-md transition-all duration-300 ${isCollapsed ? 'left-0' : 'left-[280px]'}`}
+            className={`hidden lg:block fixed top-[180px] z-[45] bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-r-md p-2 text-gray-500 hover:text-indigo-600 shadow-md transition-all duration-300 ${isCollapsed ? 'left-0' : 'left-[280px]'}`}
             title={isCollapsed ? "แสดงเมนู" : "ซ่อนเมนู"}
           >
             {isCollapsed ? <FaAngleDoubleRight size={14} /> : <FaAngleDoubleLeft size={14} />}

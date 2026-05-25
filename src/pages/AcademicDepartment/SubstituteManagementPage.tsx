@@ -38,7 +38,8 @@ interface LeaveRequest {
   endDate: Timestamp;
   startDateString: string;
   endDateString: string;
-  status: "approved" | "substitution_assigned";
+  status: "pending" | "approved" | "substitution_assigned";
+  approvedBy?: string | null;
   leaveType: string;
   reason: string;
   substituteStatus?: "pending" | "completed"; // UI state, not from DB
@@ -484,7 +485,7 @@ const SubstituteManagementPage: React.FC = () => {
       // 📌 กรองข้อมูลใน Memory (Client-side filtering)
       const filteredDocs = allLeaves.filter(data => {
         // กรองเงื่อนไขพื้นฐาน
-        if (data.requiresSubstitute !== true || !["approved", "substitution_assigned"].includes(data.status)) {
+        if (data.requiresSubstitute !== true || !["pending", "approved", "substitution_assigned"].includes(data.status)) {
           return false;
         }
 
@@ -524,6 +525,7 @@ const SubstituteManagementPage: React.FC = () => {
           startDateString: safeFormatDate(data.startDate),
           endDateString: safeFormatDate(data.endDate),
           status: data.status,
+          approvedBy: data.approvedBy || null,
           leaveType: data.leaveType || (data.collection === 'travel_summary' ? 'ไปราชการ' : 'ลา'),
           reason: data.reason,
           collection: data.collection, // 📌 เก็บชื่อ collection ไว้เพื่อใช้อัปเดตสถานะ
@@ -1059,7 +1061,14 @@ const SubstituteManagementPage: React.FC = () => {
                     className={`p-3 rounded-lg cursor-pointer transition-all ${selectedLeave?.id === leave.id ? 'bg-indigo-600 shadow-lg text-white' : 'bg-gray-50 dark:bg-[#1e1f21] hover:bg-gray-100 dark:hover:bg-indigo-500/20'}`}>
                     <div className="flex justify-between items-start">
                       <p className={`font-bold ${selectedLeave?.id === leave.id ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{leave.teacherName}</p>
-                      {leave.substituteStatus === 'completed' ? <CheckCircle size={18} className="text-green-400" /> : <AlertTriangle size={18} className="text-yellow-400" />}
+                      <div className="flex items-center gap-1.5">
+                        {!leave.approvedBy && (leave.status === "pending" || leave.status === "substitution_assigned") && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${selectedLeave?.id === leave.id ? 'bg-white/20 text-white animate-pulse' : 'bg-amber-500/15 text-amber-500 border border-amber-500/20'}`}>
+                            รออนุมัติ
+                          </span>
+                        )}
+                        {leave.substituteStatus === 'completed' ? <CheckCircle size={18} className="text-green-400" /> : <AlertTriangle size={18} className="text-yellow-400" />}
+                      </div>
                     </div>
                     <p className={`text-sm ${selectedLeave?.id === leave.id ? 'text-indigo-100' : 'text-gray-600 dark:text-gray-300'}`}>{leave.leaveType}</p>
                     <p className={`text-xs ${selectedLeave?.id === leave.id ? 'text-indigo-200' : 'text-gray-500 dark:text-gray-400'}`}>{leave.startDateString} - {leave.endDateString}</p>

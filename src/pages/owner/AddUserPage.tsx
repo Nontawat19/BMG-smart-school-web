@@ -29,13 +29,15 @@ const departmentOptions = [
     "งานบริหารงบประมาณ",
     "งานบริหารบุคคล",
     "งานบริหารทั่วไป",
-    "งานบริหารกิจการนักเรียน"
+    "งานบริหารกิจการนักเรียน",
+    "ฝ่ายบริหาร"
 ];
 
 const STAFF_ROLES: string[] = [
     ROLES.TEACHER,
     ROLES.SCHOOL_ADMIN,
     ROLES.ACADEMIC_ADMIN,
+    ROLES.STUDENT_AFFAIRS,
     ROLES.SUPER_ADMIN,
     ROLES.STUDENT_ATTENDANCE,
     ROLES.TEACHER_ATTENDANCE,
@@ -308,13 +310,15 @@ const AddUserPage = () => {
                                 ? "ผู้ดูแลระบบโรงเรียน"
                                 : roles.includes(ROLES.ACADEMIC_ADMIN)
                                     ? "ผู้ดูแลระบบงานวิชาการ"
-                                    : roles.includes(ROLES.STUDENT_ATTENDANCE)
-                                        ? "เจ้าหน้าที่ลงเวลานักเรียน"
-                                        : roles.includes(ROLES.TEACHER_ATTENDANCE)
-                                            ? "เจ้าหน้าที่ลงเวลาครู"
-                                            : roles.includes(ROLES.SCHOOL_ATTENDANCE)
-                                                ? "เจ้าหน้าที่ลงเวลาทั้งโรงเรียน"
-                                                : "ครู",
+                                    : roles.includes(ROLES.STUDENT_AFFAIRS)
+                                        ? "เจ้าหน้าที่งานกิจการนักเรียน"
+                                        : roles.includes(ROLES.STUDENT_ATTENDANCE)
+                                            ? "เจ้าหน้าที่ลงเวลานักเรียน"
+                                            : roles.includes(ROLES.TEACHER_ATTENDANCE)
+                                                ? "เจ้าหน้าที่ลงเวลาครู"
+                                                : roles.includes(ROLES.SCHOOL_ATTENDANCE)
+                                                    ? "เจ้าหน้าที่ลงเวลาทั้งโรงเรียน"
+                                                    : "ครู",
                         department: formData.department || "งานบริหารทั่วไป",
                         status: "อยู่",
                         gender: "", // Basic info
@@ -406,6 +410,7 @@ const AddUserPage = () => {
         { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลสูงสุด (Super Admin)' },
         { value: ROLES.SCHOOL_ADMIN, label: 'แอดมินโรงเรียน (School Admin)' },
         { value: ROLES.ACADEMIC_ADMIN, label: 'ผู้ดูแลระบบงานวิชาการ (Academic Admin)' },
+        { value: ROLES.STUDENT_AFFAIRS, label: 'งานกิจการนักเรียน (Student Affairs)' },
         { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
         { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
         { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },

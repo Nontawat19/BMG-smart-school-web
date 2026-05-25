@@ -41,6 +41,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
 import Swal from 'sweetalert2';
 
@@ -187,7 +188,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
         if (schoolId && calendarState.status === 'succeeded') {
             fetchAuditData();
         }
-    }, [selectedDate, schoolId, calendarState.status]);
+    }, [selectedDate, schoolId, calendarState.status, periodSettings]);
 
     const loadSchoolConfig = async (currentSchoolId: string) => {
         try {
@@ -197,7 +198,10 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
             if (configSnap.exists()) {
                 const data = configSnap.data();
                 if (data.periods) {
-                    setPeriodSettings(data.periods.map((p: any, idx: number) => ({ ...p, index: idx })));
+                    setPeriodSettings(data.periods.map((p: any, idx: number) => ({
+                        ...p,
+                        index: typeof p.index === 'number' ? p.index : idx
+                    })));
                 }
             }
 
@@ -372,6 +376,13 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
             attendanceSnap.forEach((doc) => {
                 const data = doc.data();
+                const isHomeroomAttendance =
+                    data.attendanceType === 'homeroom' ||
+                    data.courseId === 'homeroom' ||
+                    data.subjectCode === 'homeroom' ||
+                    data.period === 0;
+                if (isHomeroomAttendance) return;
+
                 const classId = data.classId;
                 const subjectCode = data.subjectCode;
                 const period = data.period;
@@ -390,6 +401,50 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
             // 4. Parse schedules and merge with dynamic Course Assignments
             const parsedSlots: AuditSlot[] = [];
             const scheduledKeys = new Set<string>();
+            const normalizedPeriods = normalizePeriodSettings(periodSettings);
+            const teachingPeriods = getTimetableDisplayPeriods(normalizedPeriods)
+                .filter(period => {
+                    const id = String(period.id || '').toLowerCase();
+                    const label = String(period.label || '');
+                    if (id === 'homeroom' || id === 'lunch' || label === 'โฮมรูม' || label.includes('พัก')) return false;
+                    return period.isTeachingPeriod !== false || id.startsWith('period-');
+                });
+            const getPeriodNumber = (setting: PeriodSetting, fallbackIndex: number) => {
+                const idNumber = String(setting.id || '').match(/^period-(\d+)$/)?.[1];
+                if (idNumber) return Number(idNumber);
+
+                const labelNumber = String(setting.label || '').match(/\d+/)?.[0];
+                if (labelNumber) return Number(labelNumber);
+
+                const stableIndex = Number(setting.index ?? fallbackIndex);
+                return Number.isFinite(stableIndex) && stableIndex > 0 ? stableIndex : fallbackIndex + 1;
+            };
+            const resolveTeachingSlot = (slot: string) => {
+                if (!slot.startsWith(`${scheduleDayKey}-`)) return null;
+
+                const exactIndex = teachingPeriods.findIndex((period, periodIndex) =>
+                    getScheduleSlotCandidates(scheduleDayKey, period, periodIndex).includes(slot)
+                );
+                if (exactIndex >= 0) {
+                    const setting = teachingPeriods[exactIndex];
+                    return {
+                        setting,
+                        periodNum: getPeriodNumber(setting, exactIndex)
+                    };
+                }
+
+                const suffix = slot.replace(`${scheduleDayKey}-`, '');
+                const legacyIndex = Number(suffix);
+                if (Number.isFinite(legacyIndex) && legacyIndex >= 0 && teachingPeriods[legacyIndex]) {
+                    const setting = teachingPeriods[legacyIndex];
+                    return {
+                        setting,
+                        periodNum: getPeriodNumber(setting, legacyIndex)
+                    };
+                }
+
+                return null;
+            };
 
             schedulesSnap.forEach((schedDoc) => {
                 const data = schedDoc.data();
@@ -399,14 +454,10 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 Object.entries(scheduleMap).forEach(([slot, rawCourse]) => {
                     // Check if slot starts with scheduleDayKey (e.g. mon-1)
                     if (slot.startsWith(`${scheduleDayKey}-`) && rawCourse) {
-                        const pIdxMatch = slot.match(/(\d+)$/);
-                        const pIdx = pIdxMatch ? parseInt(pIdxMatch[1]) : -1;
-                        const setting = periodSettings.find(p => p.index === pIdx) || periodSettings[pIdx];
+                        const resolvedSlot = resolveTeachingSlot(slot);
+                        if (!resolvedSlot) return;
 
-                        if (!setting) return;
-
-                        // Parse period standard number from setting or fallback
-                        const periodNum = parseInt(setting.id.replace('period-', '')) || (pIdx + 1);
+                        const { setting, periodNum } = resolvedSlot;
 
                         const courses = Array.isArray(rawCourse) ? rawCourse : [rawCourse].filter(Boolean);
                         

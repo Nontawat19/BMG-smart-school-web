@@ -9,6 +9,11 @@ import { Course, CourseInstance, Schedule, SpecialPeriod, PeriodSetting, SchoolS
 import { CLASSES } from '../utils';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
+import { isActiveTeacher } from '@/utils/teacherSortUtils';
+
+const getScheduleDocId = (teacherId: string, academicYear: string, semester: string) => {
+    return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
+};
 
 export const useScheduleData = (
     schoolId: string | undefined,
@@ -48,11 +53,35 @@ export const useScheduleData = (
         const masterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]> = {};
         const schedulesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'schedules');
         const querySnapshot = await getDocs(schedulesCollectionRef);
+        const matchingScheduleDocs = querySnapshot.docs
+            .map(scheduleDoc => {
+                const data = scheduleDoc.data();
+                if (!matchesYearSemester(data)) return null;
+                const teacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+                const dataYear = String(data.academicYear || targetYear || "");
+                const dataSemester = String(data.semester || targetSemester || "1");
+                const canonicalDocId = getScheduleDocId(teacherId, dataYear, dataSemester);
 
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            if (!matchesYearSemester(data)) return;
-            const teacherId = data.teacherId || doc.id.split('__')[0];
+                return {
+                    id: scheduleDoc.id,
+                    data,
+                    teacherId,
+                    isCanonical: scheduleDoc.id === canonicalDocId || scheduleDoc.id.includes('__')
+                };
+            })
+            .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+
+        const teachersWithCanonicalDocs = new Set(
+            matchingScheduleDocs
+                .filter(scheduleDoc => scheduleDoc.isCanonical)
+                .map(scheduleDoc => scheduleDoc.teacherId)
+        );
+
+        matchingScheduleDocs.forEach((scheduleDoc) => {
+            if (!scheduleDoc.isCanonical && teachersWithCanonicalDocs.has(scheduleDoc.teacherId)) return;
+
+            const data = scheduleDoc.data;
+            const teacherId = scheduleDoc.teacherId;
             const classId = data.classId;
             const scheduleData = data.schedule as Schedule;
 
@@ -116,7 +145,12 @@ export const useScheduleData = (
                     if (semesterAssignment && semesterAssignment.teacherAssignments) {
                         return { ...course, teacherAssignments: semesterAssignment.teacherAssignments };
                     }
-                    return course;
+                    return {
+                        ...course,
+                        teacherAssignments: [],
+                        teacherId: undefined,
+                        teacherIds: []
+                    };
                 });
 
                 setAllCourses(coursesData);
@@ -130,7 +164,7 @@ export const useScheduleData = (
                             const teacherIds = getAssignmentTeacherIds(asgn);
                             teacherIds.forEach(teacherId => {
                                 const teacher = teacherMap[teacherId];
-                                if (teacher && teacher.status && teacher.status !== 'อยู่') return;
+                                if (teacher && !isActiveTeacher(teacher)) return;
 
                                 flattened.push({
                                     ...course,
@@ -144,17 +178,6 @@ export const useScheduleData = (
                                 } as CourseInstance);
                             });
                         });
-                    } else {
-                        // Fallback: only include if the course itself has a valid teacher assigned
-                        const tId = course.teacherId || (course.teacherIds && course.teacherIds[0]);
-                        if (tId && tId !== 'pending' && !tId.startsWith('GHOST')) {
-                            flattened.push({ 
-                                ...course, 
-                                instanceId: course.id,
-                                compositeId: course.id,
-                                groupNumber: 1
-                            } as CourseInstance);
-                        }
                     }
                 });
                 setAvailableCourseInstances(flattened);

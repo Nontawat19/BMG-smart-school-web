@@ -32,6 +32,9 @@ import { CalendarOff, Sparkles, School } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+import { getStudentStatus } from "@/utils/studentStatusUtils";
+import { isActiveStudentSummaryStatus } from "@/utils/ownerStatsUtils";
+import { usePwaMode } from "@/hooks/usePwaMode";
 
 interface Student {
   id: string;
@@ -47,6 +50,8 @@ interface Student {
   existingDailyStatus?: string | null;
   existingBehaviorScoreStatus?: string | null;
   existingFlagBehaviorScoreStatus?: string | null;
+  status?: string;
+  studentStatus?: string;
 }
 
 interface FoundUser {
@@ -79,6 +84,11 @@ type FlagAction =
   | "scannedAbsentDeduct"
   | "cancelFlagKeepGate";
 
+type SelectionSnapshot = {
+  flagAction?: FlagAction;
+  attendanceStatus?: AttendanceStatus;
+};
+
 const FLAG_ACTION_OPTIONS: { value: FlagAction; label: string }[] = [
   { value: "normal", label: "เข้าแถวปกติ" },
   { value: "sickLeave", label: "ลาป่วย" },
@@ -97,6 +107,70 @@ const getDefaultFlagAction = (status?: AttendanceStatus): FlagAction => {
 
 const getFlagActionLabel = (action?: FlagAction) => (
   FLAG_ACTION_OPTIONS.find(option => option.value === action)?.label || ""
+);
+
+const getFlagActionTone = (action?: FlagAction | null, fallbackStatus?: AttendanceStatus | null) => {
+  switch (action) {
+    case "sickLeave":
+    case "personalLeave":
+      return {
+        card: "border-blue-500/50 bg-blue-50/50 dark:bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]",
+        badge: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+        dot: "bg-blue-500",
+      };
+    case "noScanPresentDeduct":
+    case "scannedAbsentDeduct":
+      return {
+        card: "border-rose-500/50 bg-rose-50/50 dark:bg-rose-500/10 shadow-[0_0_15px_rgba(244,63,94,0.1)]",
+        badge: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300",
+        dot: "bg-rose-500",
+      };
+    case "cancelFlag":
+    case "cancelFlagKeepGate":
+      return {
+        card: "border-slate-400/50 bg-slate-50/70 dark:bg-slate-500/10",
+        badge: "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-200",
+        dot: "bg-slate-400",
+      };
+    case "noScanPresentNoDeduct":
+    case "normal":
+      return {
+        card: "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.1)]",
+        badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+        dot: "bg-green-500",
+      };
+    default:
+      if (fallbackStatus === ATTENDANCE_STATUS.LATE) {
+        return {
+          card: "border-amber-500/50 bg-amber-50/50 dark:bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.1)]",
+          badge: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+          dot: "bg-yellow-500",
+        };
+      }
+      if (fallbackStatus === ATTENDANCE_STATUS.LEAVE) {
+        return {
+          card: "border-blue-500/50 bg-blue-50/50 dark:bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]",
+          badge: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+          dot: "bg-blue-500",
+        };
+      }
+      if (fallbackStatus === ATTENDANCE_STATUS.ABSENT) {
+        return {
+          card: "border-rose-500/50 bg-rose-50/50 dark:bg-rose-500/10 shadow-[0_0_15px_rgba(244,63,94,0.1)]",
+          badge: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300",
+          dot: "bg-red-500",
+        };
+      }
+      return {
+        card: "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.1)]",
+        badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+        dot: "bg-green-500",
+      };
+  }
+};
+
+const getFlagDisplayLabel = (action?: FlagAction | null, status?: AttendanceStatus | null) => (
+  action && action !== "normal" ? getFlagActionLabel(action) : (status || ATTENDANCE_STATUS.ABSENT)
 );
 
 const getStatusFromAction = (action: FlagAction): AttendanceStatus => {
@@ -192,6 +266,7 @@ const FlagCeremonyPageSkeleton: React.FC = () => (
 );
 
 const FlagCeremonyPage: React.FC = () => {
+  const isPwaMode = usePwaMode();
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = user?.schoolId;
   const [selectedClass, setSelectedClass] = useState<string>("");
@@ -213,6 +288,7 @@ const FlagCeremonyPage: React.FC = () => {
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
   const [selectedFlagAction, setSelectedFlagAction] = useState<FlagAction>("normal");
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [selectionSnapshots, setSelectionSnapshots] = useState<Map<string, SelectionSnapshot>>(new Map());
 
   const dayOfWeek = new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' });
   const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
@@ -438,20 +514,25 @@ const FlagCeremonyPage: React.FC = () => {
         }
 
         const studentsSnapshot = await getDocs(studentsQuery);
-        const classStudents: Student[] = studentsSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: `${doc.data().title || ''}${doc.data().firstName} ${doc.data().lastName}`.trim(),
-          profileImageUrl: doc.data().profileImageUrl || "",
-          studentId: doc.data().studentId,
-          class: `${doc.data().classLevel}/${doc.data().room}`,
-          attendanceStatus: ATTENDANCE_STATUS.PRESENT,
-          isLeave: false,
-          parentLineUserIds: doc.data().parentLineUserIds || [],
-          behaviorScore: doc.data().behaviorScore ?? 100,
-          flagAction: "normal",
-          existingDailyStatus: null,
-          existingBehaviorScoreStatus: null,
-        }));
+        const classStudents: Student[] = studentsSnapshot.docs
+          .map((studentDoc) => ({ id: studentDoc.id, ...studentDoc.data() }))
+          .filter((studentData) => isActiveStudentSummaryStatus(getStudentStatus(studentData)))
+          .map((studentData: any) => ({
+            id: studentData.id,
+            name: `${studentData.title || ''}${studentData.firstName} ${studentData.lastName}`.trim(),
+            profileImageUrl: studentData.profileImageUrl || "",
+            studentId: studentData.studentId,
+            class: `${studentData.classLevel}/${studentData.room}`,
+            attendanceStatus: ATTENDANCE_STATUS.PRESENT,
+            isLeave: false,
+            parentLineUserIds: studentData.parentLineUserIds || [],
+            behaviorScore: studentData.behaviorScore ?? 100,
+            flagAction: "normal",
+            existingDailyStatus: null,
+            existingBehaviorScoreStatus: null,
+            status: studentData.status,
+            studentStatus: studentData.studentStatus,
+          }));
 
         // 2. ดึงข้อมูลการเข้าแถวของนักเรียนทีละคน (วิธีนี้ไม่ต้องสร้าง Index ใน Firebase)
         let hasBeenSaved = false;
@@ -759,13 +840,52 @@ const FlagCeremonyPage: React.FC = () => {
     }
   };
 
-  const applySelectedActionToStudent = (studentId: string) => {
+  const toggleSelectedActionForStudent = (studentId: string) => {
+    const currentStudent = students.find((student) => student.id === studentId);
+    if (!currentStudent || currentStudent.isLeave) return;
+
+    if (selectedStudentIds.has(studentId)) {
+      const snapshot = selectionSnapshots.get(studentId);
+      setSelectedStudentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(studentId);
+        return next;
+      });
+      setSelectionSnapshots((prev) => {
+        const next = new Map(prev);
+        next.delete(studentId);
+        return next;
+      });
+      if (snapshot) {
+        setStudents((prevStudents) =>
+          prevStudents.map((student) =>
+            student.id === studentId
+              ? {
+                ...student,
+                flagAction: snapshot.flagAction,
+                attendanceStatus: snapshot.attendanceStatus,
+              }
+              : student
+          )
+        );
+      }
+      return;
+    }
+
+    setSelectionSnapshots((prev) => {
+      const next = new Map(prev);
+      next.set(studentId, {
+        flagAction: currentStudent.flagAction,
+        attendanceStatus: currentStudent.attendanceStatus,
+      });
+      return next;
+    });
     setSelectedStudentIds((prev) => new Set(prev).add(studentId));
     setStudents((prevStudents) =>
-      prevStudents.map((s) =>
-        s.id === studentId && !s.isLeave
-          ? { ...s, flagAction: selectedFlagAction, attendanceStatus: getStatusFromAction(selectedFlagAction) }
-          : s
+      prevStudents.map((student) =>
+        student.id === studentId
+          ? { ...student, flagAction: selectedFlagAction, attendanceStatus: getStatusFromAction(selectedFlagAction) }
+          : student
       )
     );
   };
@@ -882,6 +1002,7 @@ const FlagCeremonyPage: React.FC = () => {
     const flagRecord: FlagRecord = { status: student.attendanceStatus };
     const result = calculateAttendanceStatus(gateData, flagRecord, leaveData, travelData, { studentLateTime: studentCheckinEnd });
     const dailyStatus = toThaiAttendanceStatus(result.finalStatus);
+    const behaviorStatus = action === "normal" ? ATTENDANCE_STATUS.PRESENT : dailyStatus;
 
     return {
       action,
@@ -891,7 +1012,7 @@ const FlagCeremonyPage: React.FC = () => {
       flagStatus: student.attendanceStatus || ATTENDANCE_STATUS.PRESENT,
       finalStatusKey: result.finalStatus,
       dailyStatus,
-      behaviorStatus: dailyStatus,
+      behaviorStatus,
       checkinTime: rawGateCheckinTime || (result.finalStatus === "present" || result.finalStatus === "late" ? Timestamp.now() : null),
       checkinDevice: rawGateCheckinTime ? undefined : "FlagCeremony",
       description: result.description,
@@ -1266,6 +1387,7 @@ const FlagCeremonyPage: React.FC = () => {
         return next;
       });
       setSelectedStudentIds(new Set());
+      setSelectionSnapshots(new Map());
     } catch (error) {
       console.error("Error saving all attendance:", error);
       Swal.fire({
@@ -1300,16 +1422,16 @@ const FlagCeremonyPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-50/50 dark:bg-[#1e1f21] p-4 sm:p-6 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto space-y-6">
+      <div className={`min-h-screen bg-gray-50/50 dark:bg-[#1e1f21] transition-colors duration-300 overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6'}`}>
+        <div className={`${isPwaMode ? 'max-w-full space-y-4' : 'max-w-7xl space-y-6'} mx-auto min-w-0`}>
 
           {/* Header Section */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+          <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 ${isPwaMode ? 'p-4' : 'p-6'}`}>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400">
+              <h1 className={`${isPwaMode ? 'text-xl' : 'text-2xl sm:text-3xl'} font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400`}>
                 เช็คชื่อกิจกรรมเข้าแถว
               </h1>
-              <div className="flex items-center gap-2 mt-2 text-gray-500 dark:text-gray-400">
+              <div className={`${isPwaMode ? 'text-xs' : ''} flex items-center gap-2 mt-2 text-gray-500 dark:text-gray-400`}>
                 <FaClock className="text-indigo-500" />
                 <span>{new Date().toLocaleDateString("th-TH", { dateStyle: 'long' })}</span>
               </div>
@@ -1415,72 +1537,72 @@ const FlagCeremonyPage: React.FC = () => {
               {!isLoading && selectedClass && (
                 <>
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group">
+                  <div className={isPwaMode ? "grid grid-cols-2 gap-3" : "grid grid-cols-2 lg:grid-cols-4 gap-4"}>
+                    <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group min-w-0 ${isPwaMode ? 'p-3' : 'p-4'}`}>
 
                       <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">มาเรียน</p>
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{attendanceSummary.มา}</p>
+                        <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400`}>มาเรียน</p>
+                        <p className={`${isPwaMode ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 dark:text-white mt-1`}>{attendanceSummary.มา}</p>
                       </div>
-                      <div className="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400">
-                        <FaCheck className="text-xl" />
+                      <div className={`${isPwaMode ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl bg-green-100 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400 shrink-0`}>
+                        <FaCheck className={isPwaMode ? "text-lg" : "text-xl"} />
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group">
+                    <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group min-w-0 ${isPwaMode ? 'p-3' : 'p-4'}`}>
 
                       <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">มาสาย</p>
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{attendanceSummary.สาย}</p>
+                        <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400`}>มาสาย</p>
+                        <p className={`${isPwaMode ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 dark:text-white mt-1`}>{attendanceSummary.สาย}</p>
                       </div>
-                      <div className="w-12 h-12 rounded-xl bg-yellow-100 dark:bg-yellow-500/20 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                        <FaClock className="text-xl" />
+                      <div className={`${isPwaMode ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl bg-yellow-100 dark:bg-yellow-500/20 flex items-center justify-center text-yellow-600 dark:text-yellow-400 shrink-0`}>
+                        <FaClock className={isPwaMode ? "text-lg" : "text-xl"} />
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group">
+                    <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group min-w-0 ${isPwaMode ? 'p-3' : 'p-4'}`}>
 
                       <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">ลา</p>
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{attendanceSummary.ลา}</p>
+                        <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400`}>ลา</p>
+                        <p className={`${isPwaMode ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 dark:text-white mt-1`}>{attendanceSummary.ลา}</p>
                       </div>
-                      <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                        <FaUserSlash className="text-xl" />
+                      <div className={`${isPwaMode ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0`}>
+                        <FaUserSlash className={isPwaMode ? "text-lg" : "text-xl"} />
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group">
+                    <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between relative group min-w-0 ${isPwaMode ? 'p-3' : 'p-4'}`}>
                       <div className="absolute right-0 top-0 w-24 h-24 bg-red-500/5 rounded-full -mr-6 -mt-6 transition-transform group-hover:scale-110"></div>
                       <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">ขาดเรียน</p>
-                        <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{attendanceSummary.ขาด}</p>
+                        <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} font-medium text-gray-500 dark:text-gray-400`}>ขาดเรียน</p>
+                        <p className={`${isPwaMode ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900 dark:text-white mt-1`}>{attendanceSummary.ขาด}</p>
                       </div>
-                      <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-500/20 flex items-center justify-center text-red-600 dark:text-red-400">
-                        <FaTimes className="text-xl" />
+                      <div className={`${isPwaMode ? 'w-10 h-10' : 'w-12 h-12'} rounded-xl bg-red-100 dark:bg-red-500/20 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0`}>
+                        <FaTimes className={isPwaMode ? "text-lg" : "text-xl"} />
                       </div>
                     </div>
                   </div>
 
                   {/* Sticky Action Bar */}
-                  <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 sticky top-[70px] z-10 backdrop-blur-md bg-white/90 dark:bg-[#2a2b2f]/90">
-                    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                  <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 sticky top-[70px] z-10 backdrop-blur-md bg-white/90 dark:bg-[#2a2b2f]/90 ${isPwaMode ? 'p-3' : 'p-4'}`}>
+                    <div className={`flex flex-col lg:flex-row lg:items-end justify-between ${isPwaMode ? 'gap-3' : 'gap-4'}`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-3">
                           <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
                             <FaUserGraduate />
                           </div>
-                          <span className="text-gray-600 dark:text-gray-300 font-medium">
+                          <span className={`${isPwaMode ? 'text-sm' : ''} text-gray-600 dark:text-gray-300 font-medium`}>
                             นักเรียนทั้งหมด <span className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">{students.length}</span> คน
                           </span>
                         </div>
 
-                        <label className="block text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                        <label className={`block font-semibold text-gray-500 dark:text-gray-400 mb-2 ${isPwaMode ? 'text-xs' : 'text-sm'}`}>
                           คำสั่งรวมสำหรับเช็คแถว
                         </label>
                         <select
                           value={selectedFlagAction}
                           onChange={(e) => setSelectedFlagAction(e.target.value as FlagAction)}
-                          className="w-full lg:max-w-2xl px-4 py-3 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-base font-bold text-gray-900 dark:text-white"
+                          className={`w-full lg:max-w-2xl bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-900 dark:text-white ${isPwaMode ? 'px-3 py-3 text-sm' : 'px-4 py-3 text-base'}`}
                         >
                           <option value="" disabled>กรุณาเลือกสถานะ</option>
                           {FLAG_ACTION_OPTIONS.map(option => (
@@ -1489,7 +1611,7 @@ const FlagCeremonyPage: React.FC = () => {
                             </option>
                           ))}
                         </select>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                        <p className={`${isPwaMode ? 'text-[11px]' : 'text-xs'} text-gray-400 dark:text-gray-500 mt-2`}>
                           เลือกคำสั่งด้านบน แล้วคลิกการ์ดนักเรียนเพื่อกำหนดสถานะ
                         </p>
                       </div>
@@ -1497,7 +1619,7 @@ const FlagCeremonyPage: React.FC = () => {
                       <button
                         onClick={handleSaveAll}
                         disabled={isLoading}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-200 flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:shadow-none transform active:scale-95"
+                        className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all duration-200 flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:shadow-none transform active:scale-95 ${isPwaMode ? 'py-3 px-4 text-sm' : 'py-3 px-6'}`}
                       >
                         <FaCheck /> {isAlreadySaved ? 'อัปเดตข้อมูล' : 'บันทึกข้อมูล'}
                       </button>
@@ -1505,28 +1627,33 @@ const FlagCeremonyPage: React.FC = () => {
                   </div>
 
                   {/* Student Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-                    {students.map((student) => (
+                  <div className={isPwaMode ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"}>
+                    {students.map((student) => {
+                      const actionTone = getFlagActionTone(student.flagAction, student.attendanceStatus);
+                      const actionLabel = getFlagDisplayLabel(student.flagAction, student.attendanceStatus);
+
+                      return (
                       <div
                         key={student.id}
                         role="button"
                         tabIndex={student.isLeave ? -1 : 0}
-                        onClick={() => applySelectedActionToStudent(student.id)}
+                        onClick={() => toggleSelectedActionForStudent(student.id)}
                         onKeyDown={(e) => {
                           if ((e.key === "Enter" || e.key === " ") && !student.isLeave) {
                             e.preventDefault();
-                            applySelectedActionToStudent(student.id);
+                            toggleSelectedActionForStudent(student.id);
                           }
                         }}
-                        className={`relative group rounded-2xl p-4 sm:p-6 border-2 transition-all duration-300 hover:shadow-lg ${student.isLeave ? "cursor-not-allowed opacity-80" : "cursor-pointer active:scale-[0.98]"} ${selectedStudentIds.has(student.id) ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#1e1f21]" : ""} ${getStatusStyle(student.attendanceStatus)}`}
+                        className={`relative group rounded-2xl border-2 transition-all duration-300 hover:shadow-lg min-w-0 overflow-hidden ${isPwaMode ? 'p-3' : 'p-4 sm:p-6'} ${student.isLeave ? "cursor-not-allowed opacity-80" : "cursor-pointer active:scale-[0.98]"} ${selectedStudentIds.has(student.id) ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#1e1f21]" : ""} ${actionTone.card}`}
                       >
                         {selectedStudentIds.has(student.id) && (
-                          <div className="absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-1 text-xs font-bold text-white shadow-lg">
+                          <div className={`absolute top-3 right-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-1 font-bold text-white shadow-lg ${isPwaMode ? 'text-[11px]' : 'text-xs'}`}>
                             <FaCheck className="w-3 h-3" />
                             เลือกแล้ว
                           </div>
                         )}
-                        <div className="flex flex-row sm:flex-col items-center gap-4">
+                        <div className={isPwaMode ? "flex flex-col gap-3" : "flex flex-row sm:flex-col items-center gap-4"}>
+                          <div className={isPwaMode ? "flex items-center gap-3 min-w-0 pr-20" : "contents"}>
                           {/* Avatar with Status Dot */}
                           <div className="relative flex-shrink-0">
                             <div className="block relative">
@@ -1534,55 +1661,46 @@ const FlagCeremonyPage: React.FC = () => {
                               <img
                                 src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.name}&background=random`}
                                 alt={student.name}
-                                className="relative w-16 h-16 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105"
+                                className={`relative rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105 ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
                               />
                             </div>
-                            <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${student.attendanceStatus === 'มา' ? 'bg-green-500' :
-                              student.attendanceStatus === 'สาย' ? 'bg-yellow-500' :
-                                student.attendanceStatus === 'ลา' ? 'bg-blue-500' : 'bg-red-500'
-                              }`}></div>
+                            <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${actionTone.dot}`}></div>
                           </div>
 
                           {/* Info */}
-                          <div className="flex-grow min-w-0 text-left sm:text-center">
-                            <h3 className="font-bold text-lg sm:text-xl text-gray-900 dark:text-white truncate" title={student.name}>
+                          <div className={`flex-grow min-w-0 ${isPwaMode ? 'text-left' : 'text-left sm:text-center'}`}>
+                            <h3 className={`font-bold text-gray-900 dark:text-white truncate ${isPwaMode ? 'text-base' : 'text-lg sm:text-xl'}`} title={student.name}>
                               {student.name}
                             </h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-2">
-                              <span className="inline-block bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono text-xs sm:text-sm">
+                            <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-2`}>
+                              <span className={`inline-block max-w-full bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono truncate ${isPwaMode ? 'text-[11px]' : 'text-xs sm:text-sm'}`}>
                                 {student.studentId}
                               </span>
                             </p>
                           </div>
+                          </div>
 
                           <div
-                            className="w-full mt-3 sm:mt-2 rounded-xl bg-white/70 dark:bg-black/20 border border-gray-200 dark:border-gray-700 px-3 py-2"
+                            className={`w-full min-w-0 rounded-xl bg-white/70 dark:bg-black/20 border border-gray-200 dark:border-gray-700 px-3 py-2 ${isPwaMode ? 'mt-0' : 'mt-3 sm:mt-2'}`}
                             title={getFlagActionLabel(student.flagAction)}
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className={`shrink-0 inline-flex items-center justify-center min-w-10 rounded-lg px-2 py-1 text-sm font-extrabold ${student.attendanceStatus === ATTENDANCE_STATUS.PRESENT
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
-                                : student.attendanceStatus === ATTENDANCE_STATUS.LATE
-                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
-                                  : student.attendanceStatus === ATTENDANCE_STATUS.LEAVE
-                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
-                                    : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'
-                                }`}>
-                                {student.attendanceStatus || ATTENDANCE_STATUS.ABSENT}
+                              <span className={`shrink-0 inline-flex min-w-10 max-w-[72%] items-center justify-center rounded-lg px-2 py-1 font-extrabold ${isPwaMode ? 'text-xs' : 'text-sm'} ${actionTone.badge}`}>
+                                <span className="truncate">{actionLabel}</span>
                               </span>
-                              <span className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900 dark:text-white">
-                                {getFlagActionLabel(student.flagAction)}
+                              <span className={`min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white ${isPwaMode ? 'text-xs' : 'text-sm'}`}>
+                                {student.flagAction && student.flagAction !== "normal" ? student.attendanceStatus : getFlagActionLabel(student.flagAction)}
                               </span>
                             </div>
                           </div>
 
-                          <div className="w-full flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
-                            <span>คะแนนความประพฤติ</span>
+                          <div className={`w-full flex items-center justify-between gap-2 text-gray-500 dark:text-gray-400 px-1 min-w-0 ${isPwaMode ? 'mt-0 text-[11px]' : 'mt-1.5 text-xs'}`}>
+                            <span className="min-w-0 truncate">คะแนนความประพฤติ</span>
                             {(() => {
                               const preview = getBehaviorScorePreview(student);
                               const currentScore = student.behaviorScore ?? 100;
                               return (
-                                <span className="flex items-center gap-2 font-bold">
+                                <span className={`flex shrink-0 items-center font-bold ${isPwaMode ? 'gap-1.5' : 'gap-2'}`}>
                                   <span className="text-emerald-600 dark:text-emerald-400">{currentScore}</span>
                                   {preview && (
                                     <>
@@ -1604,7 +1722,8 @@ const FlagCeremonyPage: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}

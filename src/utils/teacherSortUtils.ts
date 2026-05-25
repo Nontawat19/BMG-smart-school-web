@@ -55,7 +55,27 @@ export const getTeacherSubjectGroupOrder = (teacher: any) => {
 
 export const isActiveTeacher = (teacher: any) => {
   const status = String(teacher?.status || 'อยู่').trim();
-  return !status || status === 'อยู่';
+  if (status && status !== 'อยู่') return false;
+
+  // Exclude accounts meant for registration/attendance tools
+  const name = String(teacher?.name || '').toLowerCase();
+  const firstName = String(teacher?.firstName || '').toLowerCase();
+  const lastName = String(teacher?.lastName || '').toLowerCase();
+  const id = String(teacher?.id || '').toLowerCase();
+  const teacherId = String(teacher?.teacherId || '').toLowerCase();
+  const email = String(teacher?.email || '').toLowerCase();
+  const role = String(teacher?.role || '').toLowerCase();
+
+  const isAttendanceAccount = 
+    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(name) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(firstName) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(lastName) ||
+    /attendance|atthendance|athemdance|athendance/.test(id) ||
+    /attendance|atthendance|athemdance|athendance/.test(teacherId) ||
+    /attendance|atthendance|athemdance|athendance/.test(email) ||
+    /attendance|atthendance|athemdance|athendance/.test(role);
+
+  return !isAttendanceAccount;
 };
 
 export const compareTeacherIds = (first: unknown, second: unknown) => {

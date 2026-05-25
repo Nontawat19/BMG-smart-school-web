@@ -30,7 +30,12 @@ export interface DroppableCellProps {
     onHover?: (rect: DOMRect | null) => void;
     selectedCourseCode?: string;
     onCellClick?: (slotId: string) => void;
+    onCourseClick?: (course: CourseInstance) => void;
     span?: number;
+    getCoursePeriodSummary?: (course: CourseInstance) => {
+        scheduled: number;
+        total: number;
+    };
 }
 
 export const DroppableCell: React.FC<DroppableCellProps> = ({
@@ -59,7 +64,9 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     onHover,
     selectedCourseCode,
     onCellClick,
+    onCourseClick,
     span = 1,
+    getCoursePeriodSummary,
 }) => {
     const { setNodeRef, isOver } = useDroppable({ 
         id,
@@ -138,6 +145,8 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
                             onLockToggle={() => onLockToggle?.(rawSlotId, c.instanceId)}
                             viewType={type}
                             teachers={teachers}
+                            onClick={onCourseClick}
+                            periodSummary={getCoursePeriodSummary?.(c)}
                             onHover={(rect) => {
                                 if (!rect) {
                                     onHover?.(null);

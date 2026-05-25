@@ -11,7 +11,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from '@/components/Shared/BackButton';
 import Swal from 'sweetalert2';
 import { useTheme } from '@/ThemeContext';
-import { isAcademicCourse, getPartnerIndex, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
+import { isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getEffectivePeriodEnd, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 
@@ -82,6 +82,19 @@ interface SpecialPeriodItem {
     id: string; title: string; startTime: string; endTime: string; day?: string; linkedPeriodId?: string;
 }
 
+interface ScheduledOccupancy {
+    teacherId: string;
+    classId: string | string[];
+    groupNumber: number;
+    course: (Omit<Course, 'room' | 'classId'> & {
+        groupNumber?: number;
+        teacherId?: string;
+        teacherIds?: string[];
+        room?: string | string[];
+        classId?: string | string[];
+    }) | null;
+}
+
 const DAYS = [
     { key: 'mon', label: 'จันทร์' },
     { key: 'tue', label: 'อังคาร' },
@@ -116,11 +129,127 @@ const getAssignmentCompositeId = (courseId: string, groupNumber?: number | strin
     return `${courseId}_${normalizeGroupNumber(groupNumber)}`;
 };
 
-const getAssignmentTeacherIds = (assignment?: TeacherAssignment | null): string[] => {
+const getAssignmentTeacherIds = (assignment?: { teacherId?: string; teacherIds?: string[] } | null): string[] => {
     const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
         ? assignment.teacherIds
         : (assignment?.teacherId ? [assignment.teacherId] : []);
     return Array.from(new Set(ids.filter(Boolean)));
+};
+
+const normalizeClassList = (value: unknown): string[] => {
+    const list = Array.isArray(value) ? value : [value];
+    return list
+        .filter(Boolean)
+        .map(item => String(item).trim())
+        .filter(Boolean);
+};
+
+const getAssignmentClassIds = (assignment: AssignmentRow): string[] => {
+    const courseClassIds = normalizeClassList(assignment.classId);
+    const assignmentClassIds = normalizeClassList(assignment.assignment.classLevels);
+    const classIds = assignmentClassIds.length > 0 ? assignmentClassIds : courseClassIds;
+    const groupRoom = assignment.assignment.room;
+
+    return Array.from(new Set(classIds.map(classId => {
+        if (classId.includes('/')) return classId;
+        if (groupRoom && groupRoom !== 'all') return `${classId}/${groupRoom}`;
+        return classId;
+    })));
+};
+
+const toArray = <T,>(value: T | T[] | undefined | null): T[] => {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    return value ? [value] : [];
+};
+
+const getPhysicalRoomSortValue = (room: any) => {
+    const candidates = [room?.roomCode, room?.roomName, room?.id].map(value => String(value || ''));
+    for (const value of candidates) {
+        const parenthesizedCode = value.match(/\((\d+)\)/)?.[1];
+        const numberLike = parenthesizedCode || value.match(/\d+/)?.[0];
+        if (numberLike) return Number(numberLike);
+    }
+    return Number.MAX_SAFE_INTEGER;
+};
+
+const sortPhysicalRooms = (rooms: any[]) => {
+    return [...rooms].sort((first, second) => {
+        const firstValue = getPhysicalRoomSortValue(first);
+        const secondValue = getPhysicalRoomSortValue(second);
+        if (firstValue !== secondValue) return firstValue - secondValue;
+
+        const firstName = `${first?.roomName || ''} ${first?.roomCode || ''}`.trim();
+        const secondName = `${second?.roomName || ''} ${second?.roomCode || ''}`.trim();
+        return firstName.localeCompare(secondName, 'th');
+    });
+};
+
+const getSpecificRoomIds = (assignment: AssignmentRow): string[] => (
+    (assignment.assignment.roomIds || [])
+        .filter(roomId => roomId && roomId.toLowerCase() !== 'all')
+);
+
+const classGroupsOverlap = (first: AssignmentRow, second: AssignmentRow): boolean => {
+    const firstClasses = getAssignmentClassIds(first);
+    const secondClasses = getAssignmentClassIds(second);
+    const firstGroup = normalizeGroupNumber(first.assignment.groupNumber);
+    const secondGroup = normalizeGroupNumber(second.assignment.groupNumber);
+
+    return firstClasses.some(firstClassId => {
+        const firstLevel = firstClassId.split('/')[0];
+        return secondClasses.some(secondClassId => {
+            const secondLevel = secondClassId.split('/')[0];
+            const sameClassRoom = firstClassId === secondClassId;
+            const sameLevelWholeClass = !firstClassId.includes('/') && !secondClassId.includes('/') && firstLevel === secondLevel;
+            const sameStudentGroup = firstGroup === secondGroup || firstGroup === 0 || secondGroup === 0;
+            return (sameClassRoom || sameLevelWholeClass) && sameStudentGroup;
+        });
+    });
+};
+
+const physicalRoomsOverlap = (first: AssignmentRow, second: AssignmentRow): boolean => {
+    const firstRooms = getSpecificRoomIds(first);
+    const secondRooms = getSpecificRoomIds(second);
+    return firstRooms.length > 0 && secondRooms.length > 0 && firstRooms.some(roomId => secondRooms.includes(roomId));
+};
+
+const getAssignmentConflict = (
+    current: AssignmentRow,
+    other: AssignmentRow,
+    currentTeacherIds: string[],
+    otherTeacherIds: string[]
+) => {
+    const sameTeacherId = currentTeacherIds.find(id => otherTeacherIds.includes(id));
+    if (sameTeacherId) return { type: 'teacher' as const, teacherId: sameTeacherId };
+    if (classGroupsOverlap(current, other)) return { type: 'class' as const };
+    if (physicalRoomsOverlap(current, other)) return { type: 'room' as const };
+    return null;
+};
+
+const hasThreeConsecutivePeriods = (slots: string[]): boolean => {
+    const daySlots: Record<string, number[]> = {};
+    slots.forEach(slotId => {
+        const [dayKey, indexStr] = slotId.split('-');
+        if (dayKey && indexStr) {
+            const idx = parseInt(indexStr);
+            if (!isNaN(idx)) {
+                if (!daySlots[dayKey]) {
+                    daySlots[dayKey] = [];
+                }
+                daySlots[dayKey].push(idx);
+            }
+        }
+    });
+
+    for (const day in daySlots) {
+        const indices = daySlots[day].sort((a, b) => a - b);
+        for (let i = 0; i < indices.length - 2; i++) {
+            if (indices[i + 1] === indices[i] + 1 && indices[i + 2] === indices[i] + 2) {
+                return true;
+            }
+        }
+    }
+    return false;
 };
 
 const PeriodConstraintPage: React.FC = () => {
@@ -150,6 +279,7 @@ const PeriodConstraintPage: React.FC = () => {
     const [filterSubjectGroup, setFilterSubjectGroup] = useState('all');
     const [filterPhysicalRoom, setFilterPhysicalRoom] = useState('all'); // NEW
     const [physicalRooms, setPhysicalRooms] = useState<any[]>([]); // NEW
+    const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, ScheduledOccupancy[]>>({});
     const [showActivityCourses, setShowActivityCourses] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 20;
@@ -265,6 +395,55 @@ const PeriodConstraintPage: React.FC = () => {
         }));
     }, [formatTeacherDisplayName, getTeacherCode, teacherMap]);
 
+    const formatClassDisplayName = useCallback((classId: string | string[] | undefined | null) => {
+        const values = toArray(classId);
+        if (values.length === 0) return '-';
+
+        return values.map(raw => {
+            const text = String(raw || '').trim();
+            if (!text) return '-';
+            const [level, room] = text.split('/');
+            const levelLabel = ALL_CLASSES[level] || level;
+            return room ? `${levelLabel}/${room}` : levelLabel;
+        }).join(', ');
+    }, []);
+
+    const getScheduledOccupancyConflict = useCallback((
+        current: AssignmentRow,
+        occupancy: ScheduledOccupancy,
+        currentTeacherIds: string[]
+    ) => {
+        const scheduledCourse = occupancy.course;
+        if (!scheduledCourse?.id) return null;
+
+        const currentGroupNumber = normalizeGroupNumber(current.assignment.groupNumber);
+        const scheduledGroupNumber = normalizeGroupNumber(occupancy.groupNumber || scheduledCourse.groupNumber);
+        if (scheduledCourse.id === current.id && scheduledGroupNumber === currentGroupNumber) return null;
+
+        const scheduledTeacherIds = Array.from(new Set([
+            occupancy.teacherId,
+            ...getAssignmentTeacherIds(scheduledCourse),
+        ].filter(Boolean)));
+
+        const scheduledRow = {
+            ...scheduledCourse,
+            classId: occupancy.classId || scheduledCourse.classId || '',
+            assignment: {
+                groupNumber: scheduledGroupNumber,
+                teacherId: occupancy.teacherId,
+                teacherIds: scheduledTeacherIds,
+                roomIds: toArray(scheduledCourse.room).map(String),
+                classLevels: toArray(occupancy.classId || scheduledCourse.classId).map(String),
+                room: ''
+            },
+            academicYear: selectedYear,
+            semester: filterSemester,
+            compositeId: getAssignmentCompositeId(scheduledCourse.id, scheduledGroupNumber)
+        } as AssignmentRow;
+
+        return getAssignmentConflict(current, scheduledRow, currentTeacherIds, scheduledTeacherIds);
+    }, [filterSemester, selectedYear]);
+
     // Create a flattened list of all assignments (rows)
     const allAssignments = useMemo(() => {
         return courseAssignments.flatMap(courseDoc => {
@@ -348,7 +527,66 @@ const PeriodConstraintPage: React.FC = () => {
                 // 6. Load Physical Rooms
                 const roomsRef = collection(db, 'school-settings', schoolId, 'physical-rooms');
                 const roomsSnap = await getDocs(roomsRef);
-                setPhysicalRooms(roomsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setPhysicalRooms(sortPhysicalRooms(roomsSnap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+                // 7. Load the existing school timetable so locked-period choices show real teaching periods.
+                const scheduleMatchesFilter = (data: any) => {
+                    const dataYear = String(data.academicYear || '');
+                    const dataSemester = String(data.semester || '');
+                    const yearMatches = !selectedYear || !dataYear || dataYear === selectedYear;
+                    const semesterMatches = !dataSemester ||
+                        dataSemester === filterSemester ||
+                        dataSemester.startsWith(`${filterSemester}/`) ||
+                        filterSemester.startsWith(`${dataSemester}/`);
+                    return yearMatches && semesterMatches;
+                };
+                const scheduleDocId = (teacherId: string, year: string, semester: string) => `${teacherId}__${year || 'unknown'}__${semester || '1'}`;
+                const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
+                const schedulesSnap = await getDocs(schedulesRef);
+                const matchingSchedules = schedulesSnap.docs
+                    .map(scheduleDoc => {
+                        const data = scheduleDoc.data();
+                        if (!scheduleMatchesFilter(data)) return null;
+                        const teacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+                        const canonicalId = scheduleDocId(teacherId, String(data.academicYear || selectedYear || ''), String(data.semester || filterSemester || '1'));
+                        return {
+                            id: scheduleDoc.id,
+                            data,
+                            teacherId,
+                            isCanonical: scheduleDoc.id === canonicalId || scheduleDoc.id.includes('__')
+                        };
+                    })
+                    .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+
+                const teachersWithCanonicalDocs = new Set(
+                    matchingSchedules.filter(item => item.isCanonical).map(item => item.teacherId)
+                );
+                const masterSchedule: Record<string, ScheduledOccupancy[]> = {};
+                matchingSchedules.forEach(scheduleDoc => {
+                    if (!scheduleDoc.isCanonical && teachersWithCanonicalDocs.has(scheduleDoc.teacherId)) return;
+
+                    Object.entries(scheduleDoc.data.schedule || {}).forEach(([slotId, slotData]) => {
+                        const coursesInSlot = Array.isArray(slotData) ? slotData : [slotData];
+                        coursesInSlot.filter(Boolean).forEach((course: any) => {
+                            const resolvedClassId = course.classId || scheduleDoc.data.classId;
+                            const resolvedRoom = course.room || scheduleDoc.data.room || [];
+
+                            if (!masterSchedule[slotId]) masterSchedule[slotId] = [];
+                            masterSchedule[slotId].push({
+                                teacherId: scheduleDoc.teacherId,
+                                classId: resolvedClassId,
+                                groupNumber: normalizeGroupNumber(course.groupNumber || 1),
+                                course: {
+                                    ...course,
+                                    classId: resolvedClassId,
+                                    room: resolvedRoom,
+                                    groupNumber: normalizeGroupNumber(course.groupNumber || 1)
+                                }
+                            });
+                        });
+                    });
+                });
+                setSchoolMasterSchedule(masterSchedule);
 
             } catch (error) {
                 console.error("Error loading constraints:", error);
@@ -369,6 +607,12 @@ const PeriodConstraintPage: React.FC = () => {
             confirmButtonColor: '#f59e0b',
             background: isDarkMode ? '#1a1b1e' : '#ffffff',
             color: isDarkMode ? '#ffffff' : '#000000',
+            didOpen: () => {
+                const container = Swal.getContainer();
+                if (container) {
+                    container.style.zIndex = '10000';
+                }
+            }
         });
     };
 
@@ -422,6 +666,70 @@ const PeriodConstraintPage: React.FC = () => {
         });
     };
 
+    const handleAutoConfigureConstraints = async () => {
+        if (allAssignments.length === 0) {
+            showLimitWarning('ยังไม่มีข้อมูลรายวิชา', 'ไม่พบรายการมอบหมายรายวิชาสำหรับปี/ภาคเรียนที่เลือก');
+            return;
+        }
+
+        const result = await Swal.fire({
+            icon: 'question',
+            title: 'กำหนดรูปแบบคาบอัตโนมัติ?',
+            text: 'ระบบจะเลือกคาบเดี่ยว/คาบคู่ตามจำนวนคาบต่อสัปดาห์ โดยยังคงคาบที่ล็อกและวันยกเว้นเดิมไว้',
+            showCancelButton: true,
+            confirmButtonText: 'กำหนดอัตโนมัติ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#4f46e5',
+            background: isDarkMode ? '#1a1b1e' : '#ffffff',
+            color: isDarkMode ? '#ffffff' : '#000000',
+        });
+
+        if (!result.isConfirmed) return;
+
+        setConstraints(prev => {
+            const next = { ...prev };
+            allAssignments.forEach(asgn => {
+                const requiredPeriods = getRequiredWeeklyPeriods(asgn);
+                const current = prev[asgn.compositeId] || { isLocked: false, excludedDays: [] };
+                const title = `${asgn.title || ''} ${asgn.subjectGroup || ''}`.toLowerCase();
+                const isActivity = title.includes('แนะแนว') ||
+                    title.includes('ลูกเสือ') ||
+                    title.includes('ชุมนุม') ||
+                    title.includes('กิจกรรมพัฒนาผู้เรียน') ||
+                    title.includes('scout') ||
+                    title.includes('club');
+
+                let type: PeriodConstraint['type'] = 'any';
+                if (requiredPeriods <= 0) type = 'any';
+                else if (requiredPeriods === 1) type = 'single';
+                else if (requiredPeriods === 2) type = 'double';
+                else if (requiredPeriods === 3) type = 'mixed';
+                else if (requiredPeriods === 4) type = 'double';
+                else type = 'mixed';
+
+                next[asgn.compositeId] = {
+                    ...current,
+                    type,
+                    singlePreference: type === 'double' ? 'any' : (current.singlePreference || 'any'),
+                    doublePreference: type === 'single' ? 'any' : (current.doublePreference || (isActivity ? 'afternoon' : 'morning')),
+                    excludedDays: current.excludedDays || [],
+                    isLocked: Boolean(current.lockedSlots?.length || current.isLocked),
+                };
+            });
+            return next;
+        });
+
+        Swal.fire({
+            icon: 'success',
+            title: 'กำหนดรูปแบบคาบแล้ว',
+            text: 'กรุณาตรวจสอบรายการที่ล็อกคาบไว้ แล้วกดบันทึกข้อมูล',
+            timer: 1800,
+            showConfirmButton: false,
+            background: isDarkMode ? '#1a1b1e' : '#ffffff',
+            color: isDarkMode ? '#ffffff' : '#000000',
+        });
+    };
+
     const toggleLock = (assignmentId: string) => {
         setConstraints(prev => ({
             ...prev,
@@ -467,17 +775,35 @@ const PeriodConstraintPage: React.FC = () => {
                 if (!cst?.isLocked || !cst.lockedSlots?.includes(slotId)) return false;
                 
                 const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
-                const hasTeacherOverlap = teacherIds.some(id => otherTeacherIds.includes(id));
-                return hasTeacherOverlap || (c.classId && a.classId === c.classId);
+                return Boolean(getAssignmentConflict(c, a, teacherIds, otherTeacherIds));
             });
 
             if (overlap) {
                 const overlapTeacherIds = getAssignmentTeacherIds(overlap.assignment);
-                const sameTeacherId = teacherIds.find(id => overlapTeacherIds.includes(id));
-                const msg = sameTeacherId
-                    ? `ครู ${sameTeacherId ? formatTeacherDisplayName(sameTeacherId) : ''} ติดสอนวิชา ${overlap.code} ในคาบนี้`
-                    : `ห้อง ${overlap.classId} มีเรียนวิชา ${overlap.code} ในคาบนี้`;
+                const conflict = getAssignmentConflict(c, overlap, teacherIds, overlapTeacherIds);
+                const msg = conflict?.type === 'teacher'
+                    ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} ติดสอนวิชา ${overlap.code} ในคาบนี้`
+                    : conflict?.type === 'room'
+                        ? `สถานที่สอนถูกใช้กับวิชา ${overlap.code} ในคาบนี้`
+                        : `ชั้น/ห้องเดียวกันมีเรียนวิชา ${overlap.code} ในคาบนี้`;
                 showLimitWarning('คาบนี้ถูกล็อคไว้แล้ว', msg);
+                return;
+            }
+
+            // 3. Overlap with subjects already placed in the school timetable.
+            const scheduledOverlap = (schoolMasterSchedule[slotId] || []).find(occupancy =>
+                Boolean(getScheduledOccupancyConflict(c, occupancy, teacherIds))
+            );
+
+            if (scheduledOverlap?.course) {
+                const conflict = getScheduledOccupancyConflict(c, scheduledOverlap, teacherIds);
+                const scheduledClass = formatClassDisplayName(scheduledOverlap.classId || scheduledOverlap.course.classId);
+                const msg = conflict?.type === 'teacher'
+                    ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} มีสอนวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`
+                    : conflict?.type === 'room'
+                        ? `สถานที่สอนถูกใช้กับวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`
+                        : `ชั้น/ห้องเดียวกันมีเรียนวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`;
+                showLimitWarning('คาบนี้มีวิชาสอนอยู่แล้ว', msg);
                 return;
             }
         }
@@ -487,7 +813,7 @@ const PeriodConstraintPage: React.FC = () => {
             const shouldPair = remaining >= 2 && (type === 'double' || (type === 'mixed' && remaining >= 2));
 
             if (shouldPair) {
-                const partnerIndex = getPartnerIndex(index);
+                const partnerIndex = getPartnerIndexForPeriods(index, periodSettings);
                 const partnerId = `${dayKey}-${partnerIndex}`;
                 const partnerSetting = periodSettings[partnerIndex];
 
@@ -516,19 +842,41 @@ const PeriodConstraintPage: React.FC = () => {
                     const cst = constraints[a.compositeId];
                     if (!cst?.isLocked || !cst.lockedSlots?.includes(partnerId)) return false;
                     const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
-                    const hasTeacherOverlap = teacherIds.some(id => otherTeacherIds.includes(id));
-                    return hasTeacherOverlap || (c.classId && a.classId === c.classId);
+                    return Boolean(getAssignmentConflict(c, a, teacherIds, otherTeacherIds));
                 });
 
                 if (partnerOverlap) {
-                    showLimitWarning('คาบคู่ติดวิชาอื่น', `คู่ของคาบนี้ (${partnerSetting.label}) ถูกล็อกไว้แล้วสำหรับวิชา ${partnerOverlap.code}`);
+                    const overlapTeacherIds = getAssignmentTeacherIds(partnerOverlap.assignment);
+                    const conflict = getAssignmentConflict(c, partnerOverlap, teacherIds, overlapTeacherIds);
+                    const reason = conflict?.type === 'teacher'
+                        ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} ติดสอน`
+                        : conflict?.type === 'room'
+                            ? 'สถานที่สอนถูกใช้แล้ว'
+                            : 'ชั้น/ห้องเดียวกันมีเรียนแล้ว';
+                    showLimitWarning('คาบคู่ติดวิชาอื่น', `คู่ของคาบนี้ (${partnerSetting.label}) ${reason}: ${partnerOverlap.code}`);
+                    return;
+                }
+
+                const scheduledPartnerOverlap = (schoolMasterSchedule[partnerId] || []).find(occupancy =>
+                    Boolean(getScheduledOccupancyConflict(c, occupancy, teacherIds))
+                );
+
+                if (scheduledPartnerOverlap?.course) {
+                    const conflict = getScheduledOccupancyConflict(c, scheduledPartnerOverlap, teacherIds);
+                    const scheduledClass = formatClassDisplayName(scheduledPartnerOverlap.classId || scheduledPartnerOverlap.course.classId);
+                    const reason = conflict?.type === 'teacher'
+                        ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} มีสอน`
+                        : conflict?.type === 'room'
+                            ? 'สถานที่สอนถูกใช้แล้ว'
+                            : 'ชั้น/ห้องเดียวกันมีเรียนแล้ว';
+                    showLimitWarning('คาบคู่ติดวิชาสอน', `คู่ของคาบนี้ (${partnerSetting.label}) ${reason}: ${scheduledPartnerOverlap.course.code || ''} ${scheduledClass}`);
                     return;
                 }
 
                 targets.push(partnerId);
             }
         } else if (isRemoving) {
-            const partnerIndex = getPartnerIndex(index);
+            const partnerIndex = getPartnerIndexForPeriods(index, periodSettings);
             if (partnerIndex !== -1) {
                 const partnerId = `${dayKey}-${partnerIndex}`;
                 if (slots.includes(partnerId) && (type === 'double' || type === 'mixed')) {
@@ -558,13 +906,21 @@ const PeriodConstraintPage: React.FC = () => {
             }
 
             newSlots = [...newSlots, ...slotsToAdd];
+
+            if (hasThreeConsecutivePeriods(newSlots)) {
+                showLimitWarning(
+                    'ไม่สามารถล็อกคาบนี้ได้',
+                    'ไม่อนุญาตให้ล็อกสามคาบติดกันขึ้นไป สามารถล็อกได้สูงสุดสองคาบติดกันเท่านั้น'
+                );
+                return;
+            }
         }
 
         setConstraints(prev => ({
             ...prev,
             [assignmentId]: { ...existing, isLocked: newSlots.length > 0, lockedSlots: newSlots }
         }));
-    }, [constraints, isDarkMode, periodSettings, allAssignments, teacherMap, formatTeacherDisplayName]);
+    }, [constraints, isDarkMode, periodSettings, allAssignments, teacherMap, formatTeacherDisplayName, schoolMasterSchedule, getScheduledOccupancyConflict, formatClassDisplayName]);
 
     const handleSave = async () => {
         if (!schoolId) return;
@@ -582,6 +938,56 @@ const PeriodConstraintPage: React.FC = () => {
             showLimitWarning(
                 'ยังบันทึกไม่ได้',
                 `${first.code} ${first.title} ล็อกไว้ ${lockedCount} คาบ แต่กำหนดได้สูงสุด ${requiredPeriods} คาบ/สัปดาห์`
+            );
+            return;
+        }
+
+        const assignmentsWithThreeConsecutive = allAssignments.filter(asgn => {
+            const lockedSlots = constraints[asgn.compositeId]?.lockedSlots || [];
+            return hasThreeConsecutivePeriods(lockedSlots);
+        });
+
+        if (assignmentsWithThreeConsecutive.length > 0) {
+            const first = assignmentsWithThreeConsecutive[0];
+            showLimitWarning(
+                'ยังบันทึกไม่ได้',
+                `วิชา ${first.code} ${first.title} มีการล็อกสามคาบติดกันขึ้นไป ซึ่งไม่ได้รับอนุญาต`
+            );
+            return;
+        }
+
+        const lockedSlotConflicts: string[] = [];
+        for (let i = 0; i < allAssignments.length; i++) {
+            const first = allAssignments[i];
+            const firstSlots = constraints[first.compositeId]?.lockedSlots || [];
+            if (firstSlots.length === 0) continue;
+            const firstTeacherIds = getAssignmentTeacherIds(first.assignment);
+
+            for (let j = i + 1; j < allAssignments.length; j++) {
+                const second = allAssignments[j];
+                const secondSlots = constraints[second.compositeId]?.lockedSlots || [];
+                if (secondSlots.length === 0) continue;
+
+                const sharedSlots = firstSlots.filter(slotId => secondSlots.includes(slotId));
+                if (sharedSlots.length === 0) continue;
+
+                const secondTeacherIds = getAssignmentTeacherIds(second.assignment);
+                const conflict = getAssignmentConflict(first, second, firstTeacherIds, secondTeacherIds);
+                if (!conflict) continue;
+
+                const reason = conflict.type === 'teacher'
+                    ? `ครู ${formatTeacherDisplayName(conflict.teacherId)}`
+                    : conflict.type === 'room'
+                        ? 'สถานที่สอนเดียวกัน'
+                        : 'ชั้น/ห้อง/กลุ่มเดียวกัน';
+                lockedSlotConflicts.push(`${sharedSlots[0]}: ${first.code} ชนกับ ${second.code} (${reason})`);
+            }
+        }
+
+        if (lockedSlotConflicts.length > 0) {
+            showLimitWarning(
+                'ยังบันทึกไม่ได้',
+                `พบคาบล็อกชนกัน: ${lockedSlotConflicts.slice(0, 3).join(' / ')}${lockedSlotConflicts.length > 3 ? ` และอีก ${lockedSlotConflicts.length - 3} รายการ` : ''}`
             );
             return;
         }
@@ -692,10 +1098,10 @@ const PeriodConstraintPage: React.FC = () => {
 
     return (
         <MainLayout>
-            <div className="flex flex-col bg-slate-50 dark:bg-[#020408] text-slate-900 dark:text-white transition-colors duration-300 font-inter select-none">
+            <div className="flex flex-col text-slate-900 dark:text-white transition-colors duration-300 font-inter select-none">
                 
                 {/* 1. TOP HEADER SECTION */}
-                <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#07090e]/95 backdrop-blur-2xl border-b border-slate-200 dark:border-white/[0.03] shadow-lg px-6 py-5">
+                <header className="sticky top-[60px] z-[44] bg-white/95 dark:bg-[#2a2b2f]/95 backdrop-blur-2xl border-b border-slate-200 dark:border-white/[0.03] shadow-lg px-6 py-5">
                     <div className="max-w-[1600px] mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-5">
                             <div className="ml-12 mr-2"> {/* Added margin to clear the sidebar collapse button */}
@@ -719,7 +1125,7 @@ const PeriodConstraintPage: React.FC = () => {
                                     >
                                         {[0, -1, -2].map(offset => {
                                             const year = (getCurrentThaiYear() + offset).toString();
-                                            return <option key={year} value={year} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ปี {year}</option>;
+                                            return <option key={year} value={year} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ปี {year}</option>;
                                         })}
                                     </select>
                                     <ChevronDown size={12} className="absolute right-0 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
@@ -728,7 +1134,11 @@ const PeriodConstraintPage: React.FC = () => {
 
                             <div className="h-8 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
 
-                            <button className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all text-[11px] font-black uppercase tracking-widest shadow-lg">
+                            <button
+                                onClick={handleAutoConfigureConstraints}
+                                disabled={isLoading || allAssignments.length === 0}
+                                className="flex items-center gap-2 px-6 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all text-[11px] font-black uppercase tracking-widest shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
                                 <Zap size={16} />
                                 <span>กำหนดรูปแบบคาบอัตโนมัติ</span>
                             </button>
@@ -744,175 +1154,175 @@ const PeriodConstraintPage: React.FC = () => {
                     </div>
                 </header>
 
-                <main className="max-w-[1600px] mx-auto w-full px-6 py-8">
+                <main className="max-w-[1600px] mx-auto w-full px-6 py-5">
                     
                     {/* 2. FILTER BAR SECTION */}
-                    <section className="relative z-10 bg-white dark:bg-[#0a0c10]/50 border border-slate-200 dark:border-white/[0.03] rounded-2xl p-8 shadow-xl mb-8">
-                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-8 items-end">
+                    <section className="relative z-10 bg-white dark:bg-[#2a2b2f] border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-lg mb-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 items-end">
 
                             {/* Search */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ค้นหา</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">ค้นหา</label>
                                 <div className="relative group">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={15} />
                                     <input 
                                         type="text" 
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                         placeholder="รหัส, ชื่อวิชา..."
-                                        className="w-full h-12 pl-12 pr-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 pl-9 pr-3 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold focus:outline-none focus:border-indigo-500/50 transition-all"
                                     />
                                 </div>
                             </div>
 
                             {/* Semester */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">ภาคเรียน</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">ภาคเรียน</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterSemester}
                                         onChange={(e) => setFilterSemester(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="1" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 1</option>
-                                        <option value="2" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 2</option>
+                                        <option value="1" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 1</option>
+                                        <option value="2" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ภาคเรียนที่ 2</option>
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                             {/* Class Level */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">ระดับชั้น</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">ระดับชั้น</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterClass}
                                         onChange={(e) => setFilterClass(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกระดับชั้น</option>
+                                        <option value="all" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ทุกระดับชั้น</option>
                                         {availableClasses.map(c => (
-                                            <option key={c.key} value={c.key} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">{c.label}</option>
+                                            <option key={c.key} value={c.key} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">{c.label}</option>
                                         ))}
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                             {/* Room */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">ห้อง</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">ห้อง</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterRoom}
                                         onChange={(e) => setFilterRoom(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกห้อง</option>
+                                        <option value="all" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ทุกห้อง</option>
                                         {Array.from({ length: 20 }, (_, i) => {
                                             const num = (i + 1).toString();
-                                            return <option key={num} value={num} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ห้อง {num}</option>;
+                                            return <option key={num} value={num} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ห้อง {num}</option>;
                                         })}
-                                        <option value="แผน" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ห้อง แผน</option>
+                                        <option value="แผน" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ห้อง แผน</option>
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                             {/* Group */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มเรียน</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มเรียน</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterGroup}
                                         onChange={(e) => setFilterGroup(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกกลุ่มเรียน</option>
-                                        {Array.from({ length: 20 }, (_, i) => i + 1).map(num => <option key={num} value={String(num)} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">กลุ่ม {num}</option>)}
+                                        <option value="all" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ทุกกลุ่มเรียน</option>
+                                        {Array.from({ length: 20 }, (_, i) => i + 1).map(num => <option key={num} value={String(num)} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">กลุ่ม {num}</option>)}
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                             {/* Subject Group */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มสาระฯ</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">กลุ่มสาระฯ</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterSubjectGroup}
                                         onChange={(e) => setFilterSubjectGroup(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกกลุ่มสาระฯ</option>
-                                        {subjectGroups.map(group => <option key={group} value={group} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">{group}</option>)}
+                                        <option value="all" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ทุกกลุ่มสาระฯ</option>
+                                        {subjectGroups.map(group => <option key={group} value={group} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">{group}</option>)}
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                             {/* Physical Room */}
-                            <div className="space-y-3">
-                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-normal ml-1">สถานที่</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-normal ml-1">สถานที่</label>
                                 <div className="relative group">
                                     <select 
                                         value={filterPhysicalRoom}
                                         onChange={(e) => setFilterPhysicalRoom(e.target.value)}
-                                        className="w-full h-12 px-5 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
+                                        className="w-full h-10 px-4 pr-9 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 appearance-none cursor-pointer focus:outline-none focus:border-indigo-500/50 transition-all"
                                     >
-                                        <option value="all" className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">ทุกสถานที่</option>
+                                        <option value="all" className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">ทุกสถานที่</option>
                                         {physicalRooms.map(room => (
-                                            <option key={room.id} value={room.roomName} className="bg-white dark:bg-[#1a1b20] text-slate-700 dark:text-slate-200">
+                                            <option key={room.id} value={room.roomName} className="bg-white dark:bg-[#2a2b2f] text-slate-700 dark:text-slate-200">
                                                 {room.roomName} ({room.roomCode})
                                             </option>
                                         ))}
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" />
                                 </div>
                             </div>
 
                         </div>
 
-                        <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-3">
+                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2.5">
                                     <button 
                                         onClick={() => setShowActivityCourses(!showActivityCourses)}
-                                        className={`w-10 h-5 rounded-full transition-all relative ${showActivityCourses ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/10'}`}
+                                        className={`w-9 h-5 rounded-full transition-all relative ${showActivityCourses ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-white/10'}`}
                                     >
-                                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showActivityCourses ? 'left-6' : 'left-1'}`}></div>
+                                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${showActivityCourses ? 'left-5' : 'left-1'}`}></div>
                                     </button>
-                                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">แสดงวิชากิจกรรมพัฒนาผู้เรียน</span>
+                                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-normal">แสดงวิชากิจกรรมพัฒนาผู้เรียน</span>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+                            <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-normal italic">
                                 <span>*คาบคู่ = (2), คาบเดี่ยว = (1), ผสม = (2+1)</span>
                             </div>
                         </div>
                     </section>
 
                     {/* 3. DATA TABLE SECTION */}
-                    <div className="bg-white dark:bg-[#0a0c10]/50 border border-slate-200 dark:border-white/[0.03] rounded-2xl overflow-visible shadow-2xl">
+                    <div className="bg-white dark:bg-[#2a2b2f] border border-slate-200 dark:border-white/5 rounded-2xl overflow-visible shadow-2xl">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-100 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.05]">
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ชั้นเรียน</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">สถานที่สอน</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">รหัส/ชื่อวิชา</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">กลุ่ม</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ครูผู้สอน</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">หน่วยกิต</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">คาบ/สัปดาห์</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">รูปแบบคาบ</th>
-                                    <th className="px-5 py-5 text-[13px] font-black text-slate-500 uppercase tracking-normal text-center">ล็อกคาบสอน</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">ชั้นเรียน</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">สถานที่สอน</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">รหัส/ชื่อวิชา</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">กลุ่ม</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">ครูผู้สอน</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">หน่วยกิต</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">คาบ/สัปดาห์</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">รูปแบบคาบ</th>
+                                    <th className="px-2 py-4 text-[12px] font-black text-slate-500 uppercase tracking-normal text-center">ล็อกคาบสอน</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                                 {isLoading ? (
                                     Array.from({ length: 8 }).map((_, i) => (
                                         <tr key={i} className="animate-pulse">
-                                            <td colSpan={7} className="px-8 py-6 h-20 bg-slate-50/50 dark:bg-white/[0.01]"></td>
+                                            <td colSpan={9} className="px-8 py-6 h-20 bg-slate-50/50 dark:bg-white/[0.01]"></td>
                                         </tr>
                                     ))
                                 ) : paginatedAssignments.length > 0 ? (
@@ -940,8 +1350,8 @@ const PeriodConstraintPage: React.FC = () => {
 
                                         return (
                                             <tr key={asgn.compositeId} className={`group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors border-b border-slate-100 dark:border-white/5 last:border-0 ${openExcludedMenu === asgn.compositeId ? 'relative z-50' : ''}`}>
-                                                <td className="px-4 py-4 text-center min-w-[100px]">
-                                                    <div className="flex flex-wrap justify-center gap-2">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <div className="flex flex-wrap justify-center gap-1.5">
                                                         {(() => {
                                                             const classLevels = asgn.assignment.classLevels || (Array.isArray(asgn.classId) ? asgn.classId : [asgn.classId]);
                                                             const roomNumber = asgn.assignment.room;
@@ -959,8 +1369,8 @@ const PeriodConstraintPage: React.FC = () => {
                                                         })()}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center min-w-[100px]">
-                                                    <div className="flex flex-wrap justify-center gap-2">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <div className="flex flex-wrap justify-center gap-1.5">
                                                         {asgn.assignment.roomIds && asgn.assignment.roomIds.map(roomId => {
                                                             const room = physicalRooms.find(r => r.id === roomId);
                                                             if (!room) return null;
@@ -972,33 +1382,33 @@ const PeriodConstraintPage: React.FC = () => {
                                                         })}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <div className="flex items-center justify-center gap-2 overflow-hidden">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <div className="flex items-center justify-center gap-1.5 overflow-hidden">
                                                         <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider shrink-0">{asgn.code}</span>
-                                                        <span className="text-[13px] font-black text-slate-900 dark:text-white truncate max-w-[200px]" title={asgn.title}>{asgn.title}</span>
+                                                        <span className="text-[12px] font-bold text-slate-900 dark:text-white truncate max-w-[130px]" title={asgn.title}>{asgn.title}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <span className="text-sm font-black text-slate-700 dark:text-slate-300">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300">
                                                         {groupNumber}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <div className="relative group/teachers flex items-center justify-center gap-2">
-                                                        <span className="text-[11px] font-black text-slate-400 shrink-0">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <div className="relative group/teachers flex items-center justify-center gap-1.5">
+                                                        <span className="text-[10px] font-black text-slate-400 shrink-0">
                                                             {primaryTeacher?.code || '-'}
                                                         </span>
-                                                        <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate max-w-[150px]">
+                                                        <span className="text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate max-w-[110px]">
                                                             {primaryTeacher?.name || 'ไม่ระบุครู'}
                                                         </span>
                                                         {teacherCount > 1 && (
-                                                            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-[10px] font-black text-indigo-600 dark:text-indigo-300 shadow-sm">
-                                                                <Users size={11} strokeWidth={3} />
+                                                            <span className="inline-flex items-center gap-0.5 rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-black text-indigo-600 dark:text-indigo-300 shadow-sm">
+                                                                <Users size={10} strokeWidth={3} />
                                                                 +{teacherCount - 1}
                                                             </span>
                                                         )}
                                                         {teacherCount > 0 && (
-                                                            <div className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-2xl group-hover/teachers:block dark:border-white/10 dark:bg-[#151820]">
+                                                            <div className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-2xl group-hover/teachers:block dark:border-white/10 dark:bg-[#2a2b2f]">
                                                                 <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2 dark:border-white/5">
                                                                     <Users size={14} className="text-indigo-500" />
                                                                     <span className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
@@ -1021,14 +1431,14 @@ const PeriodConstraintPage: React.FC = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
+                                                <td className="px-2 py-3.5 text-center">
                                                     <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
                                                         {asgn.credits !== undefined ? asgn.credits : (asgn.hoursPerWeek ? (asgn.hoursPerWeek / 2) : 0)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
+                                                <td className="px-2 py-3.5 text-center">
                                                     <div className="flex flex-col items-center">
-                                                        <span className={`text-sm font-black ${isOverLocked || (asgn.credits && asgn.hoursPerWeek && Math.round(parseScheduleNumber(asgn.hoursPerWeek)) !== Math.round(parseScheduleNumber(asgn.credits) * 2)) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                                                        <span className={`text-xs font-black ${isOverLocked || (asgn.credits && asgn.hoursPerWeek && Math.round(parseScheduleNumber(asgn.hoursPerWeek)) !== Math.round(parseScheduleNumber(asgn.credits) * 2)) ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
                                                             {requiredPeriods}
                                                         </span>
                                                         {lockedCount > 0 && (
@@ -1038,9 +1448,9 @@ const PeriodConstraintPage: React.FC = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        <div className="relative min-w-[130px]">
+                                                <td className="px-2 py-3.5 text-center">
+                                                    <div className="flex flex-col gap-1.5 items-center justify-center">
+                                                        <div className="relative w-full min-w-[130px] max-w-[140px]">
                                                             <select 
                                                                 value={current.type}
                                                                 onChange={(e) => handleConstraintChange(asgn.compositeId, e.target.value as any)}
@@ -1051,36 +1461,36 @@ const PeriodConstraintPage: React.FC = () => {
                                                                     'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10 focus:ring-slate-500/20'
                                                                 }`}
                                                             >
-                                                                <option value="any" className="bg-white dark:bg-[#1a1b20]">รูปแบบ (อัตโนมัติ)</option>
+                                                                <option value="any" className="bg-white dark:bg-[#2a2b2f]">รูปแบบ (อัตโนมัติ)</option>
                                                                 {(() => {
                                                                     const h = getRequiredWeeklyPeriods(asgn);
                                                                     if (h === 1) return (
-                                                                        <option value="single" className="bg-white dark:bg-[#1a1b20]">คาบเดี่ยว (1)</option>
+                                                                        <option value="single" className="bg-white dark:bg-[#2a2b2f]">คาบเดี่ยว (1)</option>
                                                                     );
                                                                     if (h === 2) return (
                                                                         <>
-                                                                            <option value="single" className="bg-white dark:bg-[#1a1b20]">คาบเดี่ยว (1+1)</option>
-                                                                            <option value="double" className="bg-white dark:bg-[#1a1b20]">คาบคู่ (2)</option>
+                                                                            <option value="single" className="bg-white dark:bg-[#2a2b2f]">คาบเดี่ยว (1+1)</option>
+                                                                            <option value="double" className="bg-white dark:bg-[#2a2b2f]">คาบคู่ (2)</option>
                                                                         </>
                                                                     );
                                                                     if (h === 3) return (
                                                                         <>
-                                                                            <option value="single" className="bg-white dark:bg-[#1a1b20]">คาบเดี่ยว (1+1+1)</option>
-                                                                            <option value="mixed" className="bg-white dark:bg-[#1a1b20]">คู่+เดี่ยว (2+1)</option>
+                                                                            <option value="single" className="bg-white dark:bg-[#2a2b2f]">คาบเดี่ยว (1+1+1)</option>
+                                                                            <option value="mixed" className="bg-white dark:bg-[#2a2b2f]">คู่+เดี่ยว (2+1)</option>
                                                                         </>
                                                                     );
                                                                     if (h === 4) return (
                                                                         <>
-                                                                            <option value="single" className="bg-white dark:bg-[#1a1b20]">คาบเดี่ยว (1*4)</option>
-                                                                            <option value="double" className="bg-white dark:bg-[#1a1b20]">คาบคู่ x2 (2+2)</option>
-                                                                            <option value="mixed" className="bg-white dark:bg-[#1a1b20]">ผสม (2+1+1)</option>
+                                                                            <option value="single" className="bg-white dark:bg-[#2a2b2f]">คาบเดี่ยว (1*4)</option>
+                                                                            <option value="double" className="bg-white dark:bg-[#2a2b2f]">คาบคู่ x2 (2+2)</option>
+                                                                            <option value="mixed" className="bg-white dark:bg-[#2a2b2f]">ผสม (2+1+1)</option>
                                                                         </>
                                                                     );
                                                                     return (
                                                                         <>
-                                                                            <option value="single" className="bg-white dark:bg-[#1a1b20]">เดี่ยวทั้งหมด (1*{h})</option>
-                                                                            <option value="double" className="bg-white dark:bg-[#1a1b20]">เน้นคู่ (2+2+...)</option>
-                                                                            <option value="mixed" className="bg-white dark:bg-[#1a1b20]">ผสม (2+1+...)</option>
+                                                                            <option value="single" className="bg-white dark:bg-[#2a2b2f]">เดี่ยวทั้งหมด (1*{h})</option>
+                                                                            <option value="double" className="bg-white dark:bg-[#2a2b2f]">เน้นคู่ (2+2+...)</option>
+                                                                            <option value="mixed" className="bg-white dark:bg-[#2a2b2f]">ผสม (2+1+...)</option>
                                                                         </>
                                                                     );
                                                                 })()}
@@ -1093,33 +1503,33 @@ const PeriodConstraintPage: React.FC = () => {
                                                             }`} />
                                                         </div>
                                                         
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex items-center justify-center gap-1.5 w-full">
                                                             {/* Preference for Double Part */}
                                                             {(current.type === 'double' || current.type === 'mixed') && (
-                                                                <div className="relative min-w-[80px] animate-in fade-in zoom-in-95 duration-200">
+                                                                <div className="relative min-w-[75px] animate-in fade-in zoom-in-95 duration-200">
                                                                     <select 
                                                                         value={current.doublePreference || 'any'}
                                                                         onChange={(e) => handlePreferenceChange(asgn.compositeId, 'doublePreference', e.target.value as any)}
                                                                         className="w-full h-8 px-2 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[10px] font-black text-indigo-700 dark:text-indigo-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition-all"
                                                                     >
-                                                                        <option value="any" className="bg-white dark:bg-[#1a1b20]">คู่: อัตโนมัติ</option>
-                                                                        <option value="morning" className="bg-white dark:bg-[#1a1b20]">คู่: เช้า</option>
-                                                                        <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">คู่: บ่าย</option>
+                                                                        <option value="any" className="bg-white dark:bg-[#2a2b2f]">คู่: อัตโนมัติ</option>
+                                                                        <option value="morning" className="bg-white dark:bg-[#2a2b2f]">คู่: เช้า</option>
+                                                                        <option value="afternoon" className="bg-white dark:bg-[#2a2b2f]">คู่: บ่าย</option>
                                                                     </select>
                                                                 </div>
                                                             )}
 
                                                             {/* Preference for Single Part */}
                                                             {(current.type === 'single' || current.type === 'mixed') && (
-                                                                <div className="relative min-w-[80px] animate-in fade-in zoom-in-95 duration-200">
+                                                                <div className="relative min-w-[75px] animate-in fade-in zoom-in-95 duration-200">
                                                                     <select 
                                                                         value={current.singlePreference || 'any'}
                                                                         onChange={(e) => handlePreferenceChange(asgn.compositeId, 'singlePreference', e.target.value as any)}
                                                                         className="w-full h-8 px-2 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-black text-emerald-700 dark:text-emerald-300 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all"
                                                                     >
-                                                                        <option value="any" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: อัตโนมัติ</option>
-                                                                        <option value="morning" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: เช้า</option>
-                                                                        <option value="afternoon" className="bg-white dark:bg-[#1a1b20]">เดี่ยว: บ่าย</option>
+                                                                        <option value="any" className="bg-white dark:bg-[#2a2b2f]">เดี่ยว: อัตโนมัติ</option>
+                                                                        <option value="morning" className="bg-white dark:bg-[#2a2b2f]">เดี่ยว: เช้า</option>
+                                                                        <option value="afternoon" className="bg-white dark:bg-[#2a2b2f]">เดี่ยว: บ่าย</option>
                                                                     </select>
                                                                 </div>
                                                             )}
@@ -1135,7 +1545,7 @@ const PeriodConstraintPage: React.FC = () => {
                                                                 >
                                                                     <CalendarX size={14} />
                                                                     {current.excludedDays && current.excludedDays.length > 0 && (
-                                                                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1b20]">
+                                                                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#2a2b2f]">
                                                                             {current.excludedDays.length}
                                                                         </span>
                                                                     )}
@@ -1144,7 +1554,7 @@ const PeriodConstraintPage: React.FC = () => {
                                                                 {openExcludedMenu === asgn.compositeId && (
                                                                     <>
                                                                         <div className="fixed inset-0 z-40" onClick={() => setOpenExcludedMenu(null)} />
-                                                                        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#1a1b20] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl p-2 min-w-[140px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-[#2a2b2f] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl p-2 min-w-[140px] animate-in fade-in slide-in-from-top-2 duration-200">
                                                                             <div className="px-2 py-1.5 mb-1 border-b border-slate-100 dark:border-white/5">
                                                                                 <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest">ยกเว้นวันสอน:</span>
                                                                             </div>
@@ -1170,12 +1580,12 @@ const PeriodConstraintPage: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-5 py-4 text-center">
+                                                <td className="px-2 py-3.5 text-center">
                                                     <button 
                                                         onClick={() => setSlotModalCourse(asgn)}
-                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 shadow-sm ${current.isLocked ? 'bg-amber-500 text-white shadow-amber-500/20 scale-110' : 'bg-slate-100 dark:bg-white/[0.03] text-slate-400 dark:text-slate-600 border border-transparent hover:border-amber-500/30 hover:text-amber-500 hover:scale-110'}`}
+                                                        className={`w-9 h-9 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 shadow-sm ${current.isLocked ? 'bg-amber-500 text-white shadow-amber-500/20 scale-110' : 'bg-slate-100 dark:bg-white/[0.03] text-slate-400 dark:text-slate-600 border border-transparent hover:border-amber-500/30 hover:text-amber-500 hover:scale-110'}`}
                                                     >
-                                                        {current.isLocked ? <Lock size={18} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" /> : <Unlock size={18} />}
+                                                        {current.isLocked ? <Lock size={16} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" /> : <Unlock size={16} />}
                                                     </button>
                                                 </td>
                                             </tr>
@@ -1183,7 +1593,7 @@ const PeriodConstraintPage: React.FC = () => {
                                     })
                                 ) : (
                                     <tr>
-                                        <td colSpan={6} className="px-8 py-20 text-center">
+                                        <td colSpan={9} className="px-8 py-20 text-center">
                                             <div className="flex flex-col items-center">
                                                 <BookOpen size={48} className="text-slate-200 dark:text-white/5 mb-4" />
                                                 <span className="text-sm font-black text-slate-400 uppercase tracking-widest">ไม่พบข้อมูลรายวิชา</span>
@@ -1268,6 +1678,7 @@ const PeriodConstraintPage: React.FC = () => {
                 const totalHours = getRequiredWeeklyPeriods(c);
                 const hasReachedLimit = totalHours > 0 && locked.length >= totalHours;
                 const isOverLimit = totalHours > 0 && locked.length > totalHours;
+                const currentClassLabel = getAssignmentClassIds(c).map(id => formatClassDisplayName(id)).join(', ');
 
                 // Build merged columns: teaching periods + special periods mapped by position
                 // Special periods that match a teaching period's time slot get overlaid
@@ -1284,37 +1695,53 @@ const PeriodConstraintPage: React.FC = () => {
                 const unavailableSlotTeachers = (slotId: string) => teacherIds
                     .map(id => ({ id, teacher: teacherMap[id] as Teacher | undefined }))
                     .filter(item => item.teacher?.preferences?.unavailableSlots?.includes(slotId));
-                const classId = c.classId;
 
-                // Pre-calculate other subjects locked in these slots
-                const otherLockedMap = allAssignments.reduce((acc, a) => {
-                    if (a.compositeId === c.compositeId) return acc;
+                // Pre-calculate subjects that would make this slot unavailable:
+                // existing timetable entries first, then manual period locks.
+                const otherLockedMap = Object.entries(schoolMasterSchedule).reduce((acc, [slotId, occupancies]) => {
+                    occupancies.forEach(occupancy => {
+                        const conflict = getScheduledOccupancyConflict(c, occupancy, teacherIds);
+                        if (!conflict || !occupancy.course) return;
+
+                        if (!acc[slotId]) acc[slotId] = [];
+                        acc[slotId].push({
+                            type: conflict.type,
+                            code: occupancy.course.code || '-',
+                            title: occupancy.course.title || 'ไม่ระบุชื่อวิชา',
+                            classLabel: formatClassDisplayName(occupancy.classId || occupancy.course.classId),
+                            teacherNames: conflict.type === 'teacher' && conflict.teacherId ? [formatTeacherDisplayName(conflict.teacherId)] : [],
+                            source: 'schedule'
+                        });
+                    });
+                    return acc;
+                }, {} as Record<string, any[]>);
+
+                allAssignments.forEach(a => {
+                    if (a.compositeId === c.compositeId) return;
                     const cst = constraints[a.compositeId];
                     if (cst?.isLocked && cst.lockedSlots) {
                         const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
-                        const sameTeacherIds = teacherIds.filter(id => otherTeacherIds.includes(id));
-                        const isSameTeacher = sameTeacherIds.length > 0;
-                        const isSameClass = classId && a.classId === classId;
+                        const conflict = getAssignmentConflict(c, a, teacherIds, otherTeacherIds);
                         
-                        if (isSameTeacher || isSameClass) {
+                        if (conflict) {
                             cst.lockedSlots.forEach(slotId => {
-                                if (!acc[slotId]) acc[slotId] = [];
-                                acc[slotId].push({
-                                    type: isSameTeacher ? 'teacher' : 'class',
+                                if (!otherLockedMap[slotId]) otherLockedMap[slotId] = [];
+                                otherLockedMap[slotId].push({
+                                    type: conflict.type,
                                     code: a.code,
                                     title: a.title,
-                                    classLabel: ALL_CLASSES[a.classId] || a.classId,
-                                    teacherNames: sameTeacherIds.map(formatTeacherDisplayName)
+                                    classLabel: getAssignmentClassIds(a).map(id => formatClassDisplayName(id)).join(', '),
+                                    teacherNames: conflict.type === 'teacher' && conflict.teacherId ? [formatTeacherDisplayName(conflict.teacherId)] : [],
+                                    source: 'constraint'
                                 });
                             });
                         }
                     }
-                    return acc;
-                }, {} as Record<string, any[]>);
+                });
 
                 return (
                     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSlotModalCourse(null)}>
-                        <div className="bg-white dark:bg-[#1a1b20] rounded-2xl w-[810px] max-w-[95vw] shadow-2xl border border-slate-200 dark:border-white/10" onClick={e => e.stopPropagation()}>
+                        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl w-[810px] max-w-[95vw] shadow-2xl border border-slate-200 dark:border-white/10" onClick={e => e.stopPropagation()}>
                             {/* Header */}
                             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 dark:border-white/5">
                                 <div className="flex items-center gap-3 flex-wrap">
@@ -1343,7 +1770,7 @@ const PeriodConstraintPage: React.FC = () => {
                             </div>
 
                             {/* Grid */}
-                            <div className="px-5 py-3">
+                            <div className="px-5 py-3 overflow-x-auto">
                                 <table className="w-full border-collapse">
                                     <thead>
                                         <tr className="border-b border-slate-100 dark:border-white/5">
@@ -1430,15 +1857,16 @@ const PeriodConstraintPage: React.FC = () => {
                                                     if (otherLocked && otherLocked.length > 0) {
                                                         const first = otherLocked[0];
                                                         const isTeacherOverlap = otherLocked.some(o => o.type === 'teacher');
+                                                        const sourceLabel = first.source === 'schedule' ? 'ตารางสอน' : 'ล็อกคาบ';
                                                         return (
                                                             <td key={p.id} className="px-0.5 py-1.5">
                                                                 <div 
                                                                     className={`relative w-full h-9 rounded-lg border flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner ${
                                                                         isTeacherOverlap 
-                                                                            ? 'bg-[#1a1b20] border-rose-900/30' 
+                                                                            ? 'bg-[#2a2b2f] border-rose-900/30' 
                                                                             : 'bg-indigo-950/30 border-indigo-500/20'
                                                                     }`}
-                                                                    title={`${isTeacherOverlap ? `ครู ${(first.teacherNames || []).join(', ')} ติดสอน` : `ห้อง ${first.classLabel} มีเรียน`}: ${first.code} ${first.title}`}
+                                                                    title={`${sourceLabel} • ${isTeacherOverlap ? `ครู ${(first.teacherNames || []).join(', ')} ติดสอน` : `ห้อง ${first.classLabel} มีเรียน`}: ${first.code} ${first.title}`}
                                                                 >
                                                                     {/* Top-Left Badge for Teacher Overlap */}
                                                                     {isTeacherOverlap && (
@@ -1450,8 +1878,11 @@ const PeriodConstraintPage: React.FC = () => {
                                                                     <span className={`text-[8px] font-black truncate px-1 uppercase leading-none ${isTeacherOverlap ? 'text-rose-500' : 'text-indigo-400'}`}>
                                                                         {first.code}
                                                                     </span>
+                                                                    <span className={`max-w-full truncate px-1 text-[7px] font-black leading-none mt-0.5 ${isTeacherOverlap ? 'text-rose-300/80' : 'text-indigo-200/80'}`}>
+                                                                        {first.classLabel}
+                                                                    </span>
                                                                     {/* Bottom Status Dot */}
-                                                                    <div className={`w-1 h-1 rounded-full mt-1 ${isTeacherOverlap ? 'bg-rose-600' : 'bg-indigo-500'}`} />
+                                                                    <div className={`w-1 h-1 rounded-full mt-0.5 ${isTeacherOverlap ? 'bg-rose-600' : 'bg-indigo-500'}`} />
                                                                 </div>
                                                             </td>
                                                         );
@@ -1471,7 +1902,12 @@ const PeriodConstraintPage: React.FC = () => {
                                                                         : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:border-amber-400/50 hover:bg-amber-50 dark:hover:bg-amber-500/5'
                                                                 }`}
                                                             >
-                                                                {isSelected && <Check size={14} strokeWidth={3} />}
+                                                                {isSelected ? (
+                                                                    <span className="flex max-w-full flex-col items-center justify-center leading-none">
+                                                                        <span className="max-w-full truncate px-1 text-[8px] font-black uppercase">{c.code}</span>
+                                                                        <span className="max-w-full truncate px-1 text-[7px] font-black text-white/80 mt-0.5">{currentClassLabel}</span>
+                                                                    </span>
+                                                                ) : null}
                                                             </button>
                                                         </td>
                                                     );

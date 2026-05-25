@@ -44,6 +44,17 @@ const assignmentIncludesTeacher = (assignment: any, teacherId: string) => {
   return ids.length === 0 || ids.includes(teacherId);
 };
 
+const getTeacherPeriodLabel = (assignment: any, teacherId: string) => {
+  const periodRange = assignment?.teacherPeriods?.[teacherId];
+  if (!periodRange) return '';
+
+  const start = Number(periodRange.start);
+  const end = Number(periodRange.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end < start) return '';
+
+  return start === end ? `คาบสอน ${start}` : `คาบสอน ${start}-${end}`;
+};
+
 const matchesYearTermValue = (data: any, year: string, term: string): boolean => {
   const dataYear = String(data.academicYear || '');
   const dataTerm = String(data.semester || '');
@@ -419,7 +430,11 @@ const TeacherScheduleViewPage: React.FC = () => {
 
                 const groupNum = (course as any).groupNumber || 1;
                 const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
-                const courseWithGroup = { ...course, groupNumber: groupNum };
+                const courseWithGroup = {
+                  ...course,
+                  groupNumber: groupNum,
+                  teacherPeriodLabel: getTeacherPeriodLabel(assignment, data.teacherId),
+                };
 
                 const roomIds = assignment?.roomIds || course.room || [];
                 let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')
@@ -489,7 +504,11 @@ const TeacherScheduleViewPage: React.FC = () => {
 
               const groupNum = (course as any).groupNumber || 1;
               const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
-              const courseWithGroup = { ...course, groupNumber: groupNum };
+              const courseWithGroup = {
+                ...course,
+                groupNumber: groupNum,
+                teacherPeriodLabel: getTeacherPeriodLabel(assignment, data.teacherId),
+              };
 
               const roomIds = assignment?.roomIds || course.room || [];
               let roomDisplay = roomIds.length > 0 && !roomIds.includes('all')

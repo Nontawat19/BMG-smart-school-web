@@ -19,6 +19,7 @@ import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
 import { isValidBirthDate, normalizeBirthDateInput, toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
 import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -554,6 +555,7 @@ export default function AddStudentPage() {
       if (isActiveStudentSummaryStatus(studentData.studentStatus)) {
         await updateOwnerAndSchoolCounts(firestore, schoolId, { students: 1 });
       }
+      await updateStudentReportSummaryForChange(firestore, schoolId, null, dataToSave);
 
       // --- อัปเดต Lookup Table สำหรับการ Login ที่รวดเร็ว ---
       try {

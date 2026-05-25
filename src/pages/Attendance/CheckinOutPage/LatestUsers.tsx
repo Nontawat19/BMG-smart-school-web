@@ -1,9 +1,101 @@
+import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FoundUser } from './types';
 
 interface LatestUsersProps {
   latestUsers: FoundUser[];
 }
+
+type FaceLandmark = {
+  type?: string;
+  locations?: Array<{ x: number; y: number }>;
+};
+
+type FaceDetection = {
+  boundingBox: DOMRectReadOnly;
+  landmarks?: FaceLandmark[];
+};
+
+type FaceDetectorConstructor = new (options?: {
+  fastMode?: boolean;
+  maxDetectedFaces?: number;
+}) => {
+  detect: (source: HTMLImageElement) => Promise<FaceDetection[]>;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getSmartFacePosition = (face: FaceDetection, image: HTMLImageElement) => {
+  const landmarkPoints = face.landmarks
+    ?.flatMap((landmark) => landmark.locations || [])
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) || [];
+
+  const landmarkCenterX = landmarkPoints.length
+    ? landmarkPoints.reduce((sum, point) => sum + point.x, 0) / landmarkPoints.length
+    : face.boundingBox.x + face.boundingBox.width / 2;
+  const landmarkCenterY = landmarkPoints.length
+    ? landmarkPoints.reduce((sum, point) => sum + point.y, 0) / landmarkPoints.length
+    : face.boundingBox.y + face.boundingBox.height / 2;
+
+  const x = clamp((landmarkCenterX / image.naturalWidth) * 100, 35, 65);
+  const y = clamp((landmarkCenterY / image.naturalHeight) * 100, 18, 34);
+
+  return `${x}% ${y}%`;
+};
+
+const SmartProfileImage: React.FC<{
+  src: string;
+  alt: string;
+  status?: string;
+}> = ({ src, alt, status }) => {
+  const [objectFit, setObjectFit] = useState<'contain' | 'cover'>('cover');
+  const [objectPosition, setObjectPosition] = useState('center 24%');
+
+  const useUpperBodyCrop = useCallback(() => {
+    setObjectFit('cover');
+    setObjectPosition('center 24%');
+  }, []);
+
+  const handleLoad = useCallback(async (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    const FaceDetector = (window as typeof window & { FaceDetector?: FaceDetectorConstructor }).FaceDetector;
+
+    if (!FaceDetector || !image.naturalWidth || !image.naturalHeight) {
+      useUpperBodyCrop();
+      return;
+    }
+
+    try {
+      const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      const [face] = await detector.detect(image);
+
+      if (!face) {
+        useUpperBodyCrop();
+        return;
+      }
+
+      setObjectFit('cover');
+      setObjectPosition(getSmartFacePosition(face, image));
+    } catch {
+      useUpperBodyCrop();
+    }
+  }, [useUpperBodyCrop]);
+
+  return (
+    <img
+      src={src}
+      className={`w-24 h-24 rounded-xl border-2 bg-[#f0f2f6] dark:bg-[#1e1f21] ${status === 'มา' ? 'border-green-500 shadow-lg shadow-green-500/20' :
+        status === 'สาย' ? 'border-yellow-500 shadow-lg shadow-yellow-500/20' :
+          status === 'ล' ? 'border-blue-500 shadow-lg shadow-blue-500/20' :
+            status === 'กลับก่อน' ? 'border-orange-500 shadow-lg shadow-orange-500/20' :
+              'border-gray-300 dark:border-gray-600'
+        }`}
+      style={{ objectFit, objectPosition }}
+      onLoad={handleLoad}
+      alt={alt}
+    />
+  );
+};
 
 const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ latestUsers, vertical = false }) => {
   return (
@@ -33,15 +125,10 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
               >
                 <div className={`bg-[#f0f2f6] dark:bg-[#1e1f21] rounded-[1.5rem] p-4 shadow-sm border border-gray-200/50 dark:border-gray-700/50 flex ${vertical ? 'flex-row items-center gap-4 text-left' : 'flex-col items-center h-full'}`}>
                   <div className="relative flex-shrink-0">
-                    <img
+                    <SmartProfileImage
                       src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${user.name}&background=random&color=fff`}
-                      className={`${vertical ? 'w-24 h-24' : 'w-24 h-24'} rounded-[1rem] border-2 object-cover ${user.status === 'มา' ? 'border-green-500 shadow-lg shadow-green-500/20' :
-                        user.status === 'สาย' ? 'border-yellow-500 shadow-lg shadow-yellow-500/20' :
-                          user.status === 'ล' ? 'border-blue-500 shadow-lg shadow-blue-500/20' :
-                            user.status === 'กลับก่อน' ? 'border-orange-500 shadow-lg shadow-orange-500/20' :
-                              'border-gray-300 dark:border-gray-600'
-                        }`}
                       alt={user.name}
+                      status={user.status}
                     />
                     <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-lg border-[3px] border-white dark:border-[#1e1f21] flex items-center justify-center text-[8px] text-white
                     ${user.status === 'มา' ? 'bg-green-500' :

@@ -227,6 +227,42 @@ export const getPartnerIndex = (idx: number): number => {
     return -1;
 };
 
+export const getPartnerIndexForPeriods = (idx: number, periodSettings: Array<PeriodSetting & { index?: number }> = []): number => {
+    if (!periodSettings.length) return getPartnerIndex(idx);
+
+    const orderedPeriods = periodSettings
+        .map((period, arrayIndex) => ({
+            index: typeof period.index === 'number' ? period.index : arrayIndex,
+            isTeachingPeriod: period.isTeachingPeriod,
+        }))
+        .sort((a, b) => a.index - b.index);
+
+    let currentTeachingRun: number[] = [];
+    const teachingRuns: number[][] = [];
+    orderedPeriods.forEach(period => {
+        if (period.isTeachingPeriod) {
+            currentTeachingRun.push(period.index);
+            return;
+        }
+
+        if (currentTeachingRun.length) {
+            teachingRuns.push(currentTeachingRun);
+            currentTeachingRun = [];
+        }
+    });
+    if (currentTeachingRun.length) teachingRuns.push(currentTeachingRun);
+
+    for (const teachingIndexes of teachingRuns) {
+        const position = teachingIndexes.indexOf(idx);
+        if (position === -1) continue;
+
+        const pairPosition = position % 2 === 0 ? position + 1 : position - 1;
+        return teachingIndexes[pairPosition] ?? -1;
+    }
+
+    return -1;
+};
+
 export const isDoublePeriodStart = (idx: number): boolean => {
     return getPartnerIndex(idx) === idx + 1;
 };
@@ -240,7 +276,9 @@ export const checkConstraints = (
     assignmentConstraints: AssignmentConstraintMap = {},
     dynamicUnavailableSlots: string[] = [],
     schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]> = {},
-    duration: number = 1
+    duration: number = 1,
+    ignoredInstanceIds: string[] = [],
+    isExplicitlyLocked: boolean = false
 ): { forbidden: boolean; message: string } => {
     const [dayKey, periodNumberStr] = targetSlotId.split('-');
     const periodIndex = parseInt(periodNumberStr);
@@ -252,6 +290,52 @@ export const checkConstraints = (
     // Constraint 1: Non-teaching periods (Lunch, Homeroom, etc.)
     if (!periodSetting || !periodSetting.isTeachingPeriod) {
         return { forbidden: true, message: `ไม่สามารถวางรายวิชาในคาบ '${periodSetting?.label || 'พิเศษ'}' ได้` };
+    }
+
+    if (isExplicitlyLocked) {
+        // For explicitly locked slots, we only check physical Master Schedule conflicts (Constraint 10)
+        // Bypass all other preference-based/soft constraints.
+        const currentTeacherId = teacher?.id || course.teacherId;
+        const occupancies = schoolMasterSchedule[targetSlotId] || [];
+        const courseClasses = Array.isArray(course.classId) ? course.classId : [course.classId || ''];
+        const courseRooms = course.room && course.room.length > 0 ? course.room : ['all'];
+
+        for (const occ of occupancies) {
+            // A) Teacher Conflict: Same teacher teaching another course/group in the same slot
+            const isSameAssignment = (occ.course?.id === course.id && Number(occ.course?.groupNumber) === Number(course.groupNumber));
+            if (occ.teacherId === currentTeacherId && !isSameAssignment) {
+                return { forbidden: true, message: `ครู ${teacher?.name || 'ผู้นี้'} มีสอนวิชาอื่น (${occ.course?.title || 'ไม่ทราบชื่อ'}) อยู่แล้วในคาบนี้` };
+            }
+
+            // B) Class Conflict: This class group already has another teacher in this slot
+            const occClasses = Array.isArray(occ.classId) ? occ.classId : [occ.classId];
+            const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
+            
+            if (sharedClass) {
+                const occGroup = Number(occ.groupNumber || occ.course?.groupNumber || 0);
+                const currentGroup = Number(course.groupNumber || 0);
+                
+                // Conflict if:
+                // 1. Same group is already occupied by a DIFFERENT teacher
+                // 2. Either occupancy is for 'all groups' (0) and teacher is DIFFERENT
+                const isSameGroup = occGroup === currentGroup;
+                const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
+                
+                if ((isSameGroup || isEitherAllGroups) && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+                    const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
+                    return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                }
+            }
+
+            // C) Room Conflict: Another teacher is using the same room
+            const occRooms = occ.course?.room && occ.course.room.length > 0 ? occ.course.room : ['all'];
+            const hasSpecificRoomConflict = !courseRooms.includes('all') && !occRooms.includes('all') && courseRooms.some(r => occRooms.includes(r));
+            if (hasSpecificRoomConflict && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+                return { forbidden: true, message: `ห้องปฏิบัติการถูกใช้งานโดยครูท่านอื่นในคาบนี้` };
+            }
+        }
+
+        return { forbidden: false, message: '' };
     }
 
     // Constraint 2: Teacher's permanent unavailability
@@ -314,8 +398,9 @@ export const checkConstraints = (
 
     // Constraint 5: Double Period Type Check
     if (asgnCst?.type === 'double' && duration === 2) {
-        const partnerIdx = getPartnerIndex(periodIndex);
-        if (partnerIdx === -1 || partnerIdx !== periodIndex + 1) {
+        const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
+        const orderedDoubleSlots = [periodIndex, partnerIdx].sort((a, b) => a - b);
+        if (partnerIdx === -1 || orderedDoubleSlots[0] !== periodIndex) {
             return { forbidden: true, message: 'วิชานี้ต้องจัดเป็นคาบคู่ (2 คาบติดกันในบล็อกที่กำหนด)' };
         }
         const partnerSetting = periodSettings[partnerIdx];
@@ -391,6 +476,64 @@ export const checkConstraints = (
         }
     }
 
+    // Constraint 11: Max 2 consecutive periods of the same course on the same day for the same student cohort
+    if (periodSetting) {
+        const newPeriods = Array.from({ length: duration }, (_, i) => periodIndex + i);
+        const currentGroup = Number(course.groupNumber || 0);
+
+        for (const classId of courseClasses) {
+            if (!classId) continue;
+            const relevantPeriods = new Set<number>();
+            newPeriods.forEach(p => relevantPeriods.add(p));
+
+            periodSettings.forEach((ps, pIdx) => {
+                if (newPeriods.includes(pIdx)) return;
+
+                const slotId = `${dayKey}-${pIdx}`;
+                const slotOccs = schoolMasterSchedule[slotId] || [];
+
+                for (const occ of slotOccs) {
+                    if (!occ.course) continue;
+                    const occInstanceId = (occ.course as CourseInstance).instanceId;
+                    if (occInstanceId && ignoredInstanceIds.includes(occInstanceId)) {
+                        continue;
+                    }
+                    if (occ.course.id !== course.id) continue;
+
+                    const occClasses = Array.isArray(occ.classId) ? occ.classId : [occ.classId];
+                    if (occClasses.includes(classId)) {
+                        const occGroup = Number(occ.groupNumber || occ.course.groupNumber || 0);
+                        const isSameGroup = occGroup === currentGroup;
+                        const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
+
+                        if (isSameGroup || isEitherAllGroups) {
+                            relevantPeriods.add(pIdx);
+                        }
+                    }
+                }
+            });
+
+            const sortedPeriods = Array.from(relevantPeriods).sort((a, b) => a - b);
+            let maxConsecutive = 0;
+            if (sortedPeriods.length > 0) {
+                let currentConsecutive = 1;
+                maxConsecutive = 1;
+                for (let i = 1; i < sortedPeriods.length; i++) {
+                    if (sortedPeriods[i] === sortedPeriods[i - 1] + 1) {
+                        currentConsecutive++;
+                        maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
+                    } else {
+                        currentConsecutive = 1;
+                    }
+                }
+            }
+
+            if (maxConsecutive >= 3) {
+                return { forbidden: true, message: `ไม่อนุญาตให้จัดวิชาเดียวกัน (${course.title}) ติดกันตั้งแต่ 3 คาบขึ้นไปในวันเดียวกัน` };
+            }
+        }
+    }
+
     return { forbidden: false, message: '' };
 };
 
@@ -417,7 +560,18 @@ export const findValidSlots = (
             const slot = `${day}-${periodIndex}`;
 
             // 1. Basic Constraints
-            const { forbidden } = checkConstraints(course, slot, teacher, periodSettings, specialPeriods, assignmentConstraints, dynamicUnavailableSlots, schoolMasterSchedule);
+            const { forbidden } = checkConstraints(
+                course, 
+                slot, 
+                teacher, 
+                periodSettings, 
+                specialPeriods, 
+                assignmentConstraints, 
+                dynamicUnavailableSlots, 
+                schoolMasterSchedule,
+                1,
+                [course.instanceId]
+            );
             if (forbidden) return;
 
             // 2. Check Local Schedule (Self-Conflict)
@@ -425,7 +579,7 @@ export const findValidSlots = (
 
             // 3. Double Period validation
             if (asgnCst?.type === 'double' || asgnCst?.type === 'mixed') {
-                const partnerIdx = getPartnerIndex(periodIndex);
+                const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
                 if (partnerIdx !== -1) {
                     const partnerSlot = `${day}-${partnerIdx}`;
                     if (currentSchedule[partnerSlot]) {
@@ -455,7 +609,7 @@ export const findValidSlots = (
 
                 // Extra points for double if the partner slot is also free
                 if (asgnCst.type === 'double' || asgnCst.type === 'mixed') {
-                    const partnerIdx = getPartnerIndex(periodIndex);
+                    const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
                     if (partnerIdx !== -1 && !currentSchedule[`${day}-${partnerIdx}`]) {
                         score += 40;
                     }

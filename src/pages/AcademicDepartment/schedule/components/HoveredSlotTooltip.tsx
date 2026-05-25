@@ -38,22 +38,22 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                 left: Math.max(10, Math.min(window.innerWidth - 250, hoveredSlot.rect.left + (hoveredSlot.rect.width / 2) - 120))
             }}
         >
-            <div className="relative w-[240px] p-4 bg-[#1a1b1e] border border-white/10 rounded-[24px] shadow-2xl">
-                <div className="flex items-center justify-between mb-3 px-1 text-indigo-400 font-black text-[10px] uppercase">
+            <div className="relative w-[240px] p-4 bg-white/95 dark:bg-[#1a1b1e] border border-slate-200/80 dark:border-white/10 rounded-[24px] shadow-2xl shadow-slate-900/10 dark:shadow-black/40 backdrop-blur-xl">
+                <div className="flex items-center justify-between mb-3 px-1 text-indigo-600 dark:text-indigo-400 font-black text-[10px] uppercase">
                     <span>รายละเอียดวิชา</span>
                     {(() => {
                         const c = hoveredSlot.courses[0];
                         const courseDoc = allCourses.find(doc => doc.id === c?.id);
                         return courseDoc?.isElective ? (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-900/40 text-rose-400 border border-rose-800/30 tracking-wide animate-pulse">วิชาเลือก</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/30 tracking-wide animate-pulse">วิชาเลือก</span>
                         ) : null;
                     })()}
                 </div>
-                <div className="h-[1px] w-full bg-white/5 mb-4"></div>
-                <div className="space-y-2.5 px-1 text-[11px] font-black text-white">
-                    <div className="flex"><span className="w-20 text-gray-500">รหัสวิชา:</span><span className="flex-1 truncate">{hoveredSlot.isDynamicUnavailable ? 'LOCK' : (hoveredSlot.courses[0]?.code || '-')}</span></div>
-                    <div className="flex"><span className="w-20 text-gray-500">ชื่อวิชา:</span><span className="flex-1 leading-tight">{hoveredSlot.isDynamicUnavailable ? 'คาบล็อครายบุคคล' : (hoveredSlot.courses[0]?.title || 'ไม่มีข้อมูล')}</span></div>
-                    <div className="flex"><span className="w-20 text-gray-500">ครูผู้สอน:</span><span className="flex-1 truncate">
+                <div className="h-[1px] w-full bg-slate-200/80 dark:bg-white/5 mb-4"></div>
+                <div className="space-y-2.5 px-1 text-[11px] font-black text-slate-900 dark:text-white">
+                    <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">รหัสวิชา:</span><span className="flex-1 truncate">{hoveredSlot.isDynamicUnavailable ? 'LOCK' : (hoveredSlot.courses[0]?.code || '-')}</span></div>
+                    <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">ชื่อวิชา:</span><span className="flex-1 leading-tight">{hoveredSlot.isDynamicUnavailable ? 'คาบล็อครายบุคคล' : (hoveredSlot.courses[0]?.title || 'ไม่มีข้อมูล')}</span></div>
+                    <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">ครูผู้สอน:</span><span className="flex-1 truncate">
                         {(() => {
                             if (hoveredSlot.isDynamicUnavailable) return '(คาบล็อค)';
                             const c = hoveredSlot.courses[0];
@@ -76,8 +76,8 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                             }).join(', ');
                         })()}
                     </span></div>
-                    <div className="flex"><span className="w-20 text-gray-500">ชั้น:</span><span className="flex-1">{hoveredSlot.isDynamicUnavailable ? 'global' : formatClassWithGroup(hoveredSlot.courses[0])}</span></div>
-                    <div className="flex"><span className="w-20 text-gray-500">สถานที่:</span><span className="flex-1 text-[#4ade80]">
+                    <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">ชั้น:</span><span className="flex-1">{hoveredSlot.isDynamicUnavailable ? 'global' : formatClassWithGroup(hoveredSlot.courses[0])}</span></div>
+                    <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">สถานที่:</span><span className="flex-1 text-emerald-600 dark:text-[#4ade80]">
                         {(() => {
                             if (hoveredSlot.isDynamicUnavailable) return '(คาบว่าง)';
                             const c = hoveredSlot.courses[0];

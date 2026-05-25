@@ -14,6 +14,8 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { usePwaMode } from '@/hooks/usePwaMode';
 import { Student, CourseSchedule } from './ClassroomAttendance/types';
 import { DAYS } from './ClassroomAttendance/constants';
 import AttendanceHeader from './ClassroomAttendance/components/AttendanceHeader';
@@ -38,11 +40,12 @@ type PendingHomeroomPhoto = {
 };
 
 const HomeroomAttendancePage: React.FC = () => {
+    const isPwaMode = usePwaMode();
     const navigate = useNavigate();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedClass, setSelectedClass] = useState<CourseSchedule | null>(null);
     const [students, setStudents] = useState<Student[]>([]);
-    const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
+    const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
     const [studentLeaves, setStudentLeaves] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
     const [studentsLoading, setStudentsLoading] = useState(false);
@@ -241,11 +244,12 @@ const HomeroomAttendancePage: React.FC = () => {
                         prefix: data.title || data.prefix || '',
                         nickname: data.nickname || '',
                     } as Student;
-                }).sort((a, b) => (parseInt(a.number || '0', 10) || 0) - (parseInt(b.number || '0', 10) || 0));
+                }).filter(isCurrentStudent)
+                  .sort((a, b) => (parseInt(a.number || '0', 10) || 0) - (parseInt(b.number || '0', 10) || 0));
 
                 setStudents(studentList);
 
-                const initialAttendance: Record<string, 'present' | 'absent' | 'late' | 'leave'> = {};
+                const initialAttendance: Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'> = {};
                 const initialLeaves: Record<string, boolean> = {};
                 studentList.forEach(student => initialAttendance[student.id] = 'present');
 
@@ -500,7 +504,7 @@ const HomeroomAttendancePage: React.FC = () => {
         setHomeroomPhotos(prev => prev.filter(photo => photo.id !== photoId));
     };
 
-    const toggleStatus = (studentId: string, status: 'present' | 'absent' | 'late' | 'leave') => {
+    const toggleStatus = (studentId: string, status: 'present' | 'absent' | 'late' | 'leave' | 'escape') => {
         if (isSubmitted || isHoliday || studentLeaves[studentId]) return;
         setAttendance(prev => ({ ...prev, [studentId]: status }));
     };
@@ -508,17 +512,17 @@ const HomeroomAttendancePage: React.FC = () => {
     const attendanceSummary = useMemo(() => {
         return students.reduce((acc, student) => {
             const status = attendance[student.id] || 'present';
-            const key = status === 'present' ? 'มา' : status === 'late' ? 'สาย' : status === 'leave' ? 'ลา' : 'ขาด';
+            const key = status === 'present' ? 'มา' : status === 'late' ? 'สาย' : status === 'leave' ? 'ลา' : status === 'escape' ? 'หนีเรียน' : 'ขาด';
             acc[key as keyof typeof acc]++;
             return acc;
-        }, { มา: 0, สาย: 0, ลา: 0, ขาด: 0 });
+        }, { มา: 0, สาย: 0, ลา: 0, ขาด: 0, หนีเรียน: 0 });
     }, [students, attendance]);
 
     return (
         <MainLayout>
-            <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300 min-h-screen">
-                <div className="max-w-5xl mx-auto">
-                    <BackButton to="/academic/hub/attendance" className="mb-4" />
+            <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6'}`}>
+                <div className={`${isPwaMode ? 'max-w-full' : 'max-w-5xl'} mx-auto min-w-0`}>
+                    {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}

@@ -14,6 +14,8 @@ import { RootState } from "@/store";
 import BackButton from "@/components/Shared/BackButton";
 import { isExitStudentStatus } from "@/utils/studentStatusUtils";
 import { normalizeBirthDateInput, toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
+import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
 
 // --- Reusable Components (from AddStudentPage) ---
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -143,6 +145,7 @@ export default function EditStudentPage() {
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [subSchools, setSubSchools] = useState<{ id: string, name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<string>("general");
+  const [originalStudentData, setOriginalStudentData] = useState<any | null>(null);
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
 
@@ -174,6 +177,7 @@ export default function EditStudentPage() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
+          setOriginalStudentData({ id: docSnap.id, ...data });
 
           const formattedBirthDate = data.birthDate ? normalizeBirthDateInput(data.birthDate) : "";
 
@@ -371,6 +375,18 @@ export default function EditStudentPage() {
 
       const docRef = doc(firestore, "school-settings", schoolId, "students", studentId);
       await updateDoc(docRef, dataToUpdate);
+      const updatedStudentForSummary = {
+        ...(originalStudentData || {}),
+        ...dataToUpdate,
+        id: studentId,
+      };
+      const wasActive = isActiveStudentSummaryStatus(originalStudentData?.studentStatus || originalStudentData?.status);
+      const isActive = isActiveStudentSummaryStatus(updatedStudentForSummary.studentStatus || updatedStudentForSummary.status);
+      if (wasActive !== isActive) {
+        await updateOwnerAndSchoolCounts(firestore, schoolId, { students: isActive ? 1 : -1 });
+      }
+      await updateStudentReportSummaryForChange(firestore, schoolId, originalStudentData, updatedStudentForSummary);
+      setOriginalStudentData(updatedStudentForSummary);
 
       // --- อัปเดต Lookup Table เพื่อให้ข้อมูล Login เป็นปัจจุบัน ---
       try {

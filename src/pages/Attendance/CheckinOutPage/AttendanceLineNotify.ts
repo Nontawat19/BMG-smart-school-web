@@ -355,19 +355,25 @@ export const sendLineAttendanceNotification = async (
 
         const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
-        let targetUrl = "https://api.line.me/v2/bot/message/broadcast";
-        let bodyPayload: any = { messages: [flexMessage] };
-
-        if (parentUserIds && parentUserIds.length > 0) {
-            targetUrl = "https://api.line.me/v2/bot/message/multicast";
-            bodyPayload = {
-                to: parentUserIds,
-                messages: [flexMessage]
-            };
-            console.log(`🎯 ส่งข้อความแบบ Dashboard Multicast ไปยังผู้ปกครอง ${parentUserIds.length} ท่าน`);
-        } else {
-            console.log("📢 ส่งข้อความแบบ Dashboard Broadcast");
+        if (!parentUserIds || parentUserIds.length === 0) {
+            console.warn("⚠️ ไม่มีรายชื่อผู้รับ LINE User ID (ผู้ปกครอง/ครูประจำชั้น) สำหรับนักเรียนคนนี้ - ยกเลิกการส่งแบบ Broadcast เพื่อความปลอดภัย");
+            return;
         }
+
+        // กรองเอาเฉพาะ User ID ที่มีค่าจริง และลบรายการซ้ำออก
+        const uniqueRecipients = Array.from(new Set(parentUserIds.filter(id => id && id.trim() !== "")));
+
+        if (uniqueRecipients.length === 0) {
+            console.warn("⚠️ ไม่มีรายชื่อผู้รับที่ถูกต้องหลังจากกรองข้อมูล - ยกเลิกการส่ง");
+            return;
+        }
+
+        const targetUrl = "https://api.line.me/v2/bot/message/multicast";
+        const bodyPayload = {
+            to: uniqueRecipients,
+            messages: [flexMessage]
+        };
+        console.log(`🎯 ส่งข้อความแบบ Dashboard Multicast ไปยังผู้รับที่ได้รับอนุญาตทั้งหมด ${uniqueRecipients.length} ท่าน`);
 
         const url = isLocalhost ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : targetUrl;
 

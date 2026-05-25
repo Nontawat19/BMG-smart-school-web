@@ -36,6 +36,7 @@ interface TeacherLeaveRequest {
   reason: string;
   createdAt: Timestamp;
   profileImageUrl?: string;
+  status?: 'approved' | 'rejected' | 'pending';
 }
 
 const TeacherLeaveHistoryPageSkeleton: React.FC = () => {
@@ -258,6 +259,7 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">ประเภทการลา</th>
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">วันที่เริ่มลา</th>
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">วันที่สิ้นสุด</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-center">สถานะ</th>
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-center">ส่งออก</th>
                 </tr>
               </thead>
@@ -285,6 +287,14 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{r.leaveType}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{thaiDate(r.startDate)}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{thaiDate(r.endDate)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+                        ${r.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          r.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'}`}>
+                        {r.status === 'approved' ? 'อนุมัติ' : r.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา'}
+                      </span>
+                    </td>
                     <td className="text-center px-4 py-3">
                       <button
                         onClick={() => handleExportPdf(r)}

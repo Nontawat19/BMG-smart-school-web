@@ -73,7 +73,7 @@ export const useScheduleActions = ({
             Object.entries(schedule).forEach(([slotId, courses]) => {
                 if (courses && courses.length > 0) {
                     scheduleToSave[slotId] = courses.map(course => {
-                        const { instanceId, className, locked, ...courseData } = course;
+                        const { instanceId, className, ...courseData } = course;
                         return courseData;
                     });
                 }
@@ -103,6 +103,23 @@ export const useScheduleActions = ({
             batch.set(teacherRef, {
                 preferences: { unavailableSlots: dynamicUnavailableSlots }
             }, { merge: true });
+
+            const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
+            const existingSchedules = await getDocs(schedulesRef);
+            existingSchedules.docs.forEach(scheduleDoc => {
+                if (scheduleDoc.id === scheduleDocId) return;
+                const data = scheduleDoc.data();
+                const docTeacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+                if (docTeacherId !== selectedTeacher) return;
+
+                const dataYear = String(data.academicYear || "");
+                const dataSemester = String(data.semester || "");
+                const yearMatches = !selectedYear || !dataYear || dataYear === selectedYear;
+                const semesterMatches = !dataSemester || dataSemester === selectedSemester || dataSemester.startsWith(selectedSemester + '/') || selectedSemester.startsWith(dataSemester + '/');
+                if (!yearMatches || !semesterMatches) return;
+
+                batch.delete(scheduleDoc.ref);
+            });
 
             await batch.commit();
 
@@ -243,7 +260,7 @@ export const useScheduleActions = ({
 
             } catch (error) {
                 console.error(error);
-                MySwal.fire('Error', 'Failed to clear schedules', 'error');
+                MySwal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถล้างข้อมูลตารางสอนทั้งหมดได้', 'error');
             } finally {
                 setIsSaving(false);
             }

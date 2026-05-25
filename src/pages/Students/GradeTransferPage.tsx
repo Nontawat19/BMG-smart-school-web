@@ -12,6 +12,7 @@ import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
+import { updateStudentReportSummaryForChanges } from '@/utils/studentReportSummaryUtils';
 
 // Dark mode styles for react-select
 const selectStyles = {
@@ -257,6 +258,15 @@ const GradeTransferPage: React.FC = () => {
             });
 
             // 2. Perform updates
+            const studentSummaryChanges = movingStudents.map(student => ({
+                before: student,
+                after: {
+                    ...student,
+                    classLevel: toClassLevel,
+                    room: toRoomNumber,
+                    roomNumber: toRoomNumber,
+                },
+            }));
             for (const docId of movingDocIds) {
                 const ref = doc(firestore, 'school-settings', schoolId, 'students', docId);
                 promises.push(updateDoc(ref, {
@@ -266,6 +276,7 @@ const GradeTransferPage: React.FC = () => {
                 }));
             }
             await Promise.all(promises);
+            await updateStudentReportSummaryForChanges(firestore, schoolId, studentSummaryChanges);
 
             // 3. Re-fetch all students to get the updated state before re-numbering
             const studentsRef = collection(firestore, 'school-settings', schoolId, 'students');

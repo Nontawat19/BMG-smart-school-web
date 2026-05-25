@@ -13,12 +13,12 @@ const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
   imageClassName = '',
   ...imgProps
 }) => (
-  <div className={`shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700 ${className}`}>
+  <div className={`${className} aspect-square shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700`}>
     <img
       src={src}
       alt={alt}
       {...imgProps}
-      className={`h-full w-full object-cover object-[center_20%] ${imageClassName}`}
+      className={`h-full w-full rounded-full object-cover object-[center_20%] ${imageClassName}`}
     />
   </div>
 );

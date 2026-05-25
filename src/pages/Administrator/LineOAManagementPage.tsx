@@ -22,6 +22,7 @@ interface Teacher {
   lineChannelSecret?: string;
   lineChannelId?: string;
   lineOABasicId?: string; // LINE ID like @123xyz
+  liffId?: string; // LINE LIFF ID
   enableNotification?: boolean;
 }
 
@@ -62,6 +63,7 @@ const LineOAManagementPage: React.FC = () => {
     lineChannelSecret: "",
     lineChannelId: "",
     lineOABasicId: "",
+    liffId: "",
     enableNotification: false
   });
 
@@ -147,6 +149,7 @@ const LineOAManagementPage: React.FC = () => {
       lineChannelSecret: configData.lineChannelSecret || "",
       lineChannelId: configData.lineChannelId || "",
       lineOABasicId: configData.lineOABasicId || "",
+      liffId: configData.liffId || "",
       enableNotification: configData.enableNotification || false
     });
     setIsModalOpen(true);
@@ -155,7 +158,7 @@ const LineOAManagementPage: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedTarget(null);
-    setFormData({ lineChannelAccessToken: "", lineChannelSecret: "", lineChannelId: "", lineOABasicId: "", enableNotification: false });
+    setFormData({ lineChannelAccessToken: "", lineChannelSecret: "", lineChannelId: "", lineOABasicId: "", liffId: "", enableNotification: false });
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,6 +181,7 @@ const LineOAManagementPage: React.FC = () => {
           lineChannelSecret: formData.lineChannelSecret,
           lineChannelId: formData.lineChannelId,
           lineOABasicId: formData.lineOABasicId,
+          liffId: formData.liffId,
           enableNotification: formData.enableNotification
         };
         await updateDoc(teacherRef, updatedData);
@@ -534,6 +538,20 @@ const LineOAManagementPage: React.FC = () => {
                     required
                     placeholder="ระบุ Channel Secret"
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    LIFF ID (สำหรับลงทะเบียนผู้ปกครอง/ครู)
+                  </label>
+                  <input
+                    type="text"
+                    name="liffId"
+                    value={formData.liffId}
+                    onChange={handleInputChange}
+                    placeholder="ระบุ LIFF ID (เช่น 2000123456-abcdefgh)"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono text-xs"
                   />
                 </div>
 

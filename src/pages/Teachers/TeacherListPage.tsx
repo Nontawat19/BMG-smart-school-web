@@ -28,6 +28,8 @@ interface Teacher {
   id: string;
   profileImageUrl?: string;
   teacherId: string;
+  idCardNumber?: string;
+  rfid?: string;
   title: string;
   firstName: string;
   lastName: string;
@@ -81,6 +83,8 @@ const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): 
     role: roles,
     profileImageUrl: data.profileImageUrl || data.profileUrl || '',
     teacherId: data.teacherId || '',
+    idCardNumber: data.idCardNumber || '',
+    rfid: data.rfid || '',
     position: data.position || (isSuperAdmin ? 'ผู้ดูแลระบบสูงสุด' : isSchoolAdmin ? 'ผู้ดูแลระบบโรงเรียน' : 'ครู'),
     department: data.department || 'งานบริหารทั่วไป',
     status: data.status || 'อยู่',
@@ -168,6 +172,7 @@ export default function TeacherListPage() {
     { value: 'งานบริหารบุคคล', label: 'งานบริหารบุคคล' },
     { value: 'งานบริหารทั่วไป', label: 'งานบริหารทั่วไป' },
     { value: 'งานบริหารกิจการนักเรียน', label: 'งานบริหารกิจการนักเรียน' },
+    { value: 'ฝ่ายบริหาร', label: 'ฝ่ายบริหาร' },
   ];
 
   const getStatusStyles = (status: string) => {
@@ -453,6 +458,8 @@ export default function TeacherListPage() {
           id: doc.id,
           schoolId: currentSchoolId,
           teacherId: data.teacherId || userData.teacherId || '',
+          idCardNumber: data.idCardNumber || userData.idCardNumber || '',
+          rfid: data.rfid || userData.rfid || '',
           title,
           firstName,
           lastName,
@@ -549,7 +556,9 @@ export default function TeacherListPage() {
 
     const filteredTeachers = teachers.filter(teacher => {
       const matchesSearch = `${teacher.title}${teacher.firstName} ${teacher.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (teacher.teacherId || '').toLowerCase().includes(searchTerm.toLowerCase());
+        (teacher.teacherId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (teacher.idCardNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (teacher.rfid || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
 
@@ -563,9 +572,10 @@ export default function TeacherListPage() {
         <table className="min-w-full divide-y divide-gray-700">
           <thead className="bg-gray-100 dark:bg-[#2a2b2f]">
             <tr>
-              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
               <th scope="col" className="py-3 px-2 text-xs font-semibold text-gray-600 dark:text-gray-300 w-12 text-center">ลำดับ</th>
+              <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
+              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เลขบัตรประชาชน / RFID</th>
               <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">วิทยฐานะ</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">กลุ่มสาระ</th>
               <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ฝ่ายงาน</th>
@@ -581,6 +591,7 @@ export default function TeacherListPage() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
             {currentTeachers.map((teacher, index) => (
               <tr key={teacher.id} className="hover:bg-gray-50 dark:hover:bg-[#2a2b2f]/50 transition-colors">
+                <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400 font-medium">
                   <CanAccess roles={ADMIN_ACCESS} fallback={<span>{teacher.teacherId}</span>}>
                     {editingTeacherId === teacher.id ? (
@@ -613,7 +624,6 @@ export default function TeacherListPage() {
                     )}
                   </CanAccess>
                 </td>
-                <td className="whitespace-nowrap py-3 px-2 text-xs text-center font-medium text-gray-500 dark:text-gray-400">{indexOfFirstItem + index + 1}</td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
                   <Link to={`/school/${teacher.schoolId}/teachers/view/${teacher.id}`} className="flex items-center group">
                     <ProfileAvatar
@@ -625,6 +635,16 @@ export default function TeacherListPage() {
                         {`${teacher.title || ''}${teacher.firstName} ${teacher.lastName}`}
                       </div>
                   </Link>
+                </td>
+                <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
+                  {(teacher.idCardNumber || teacher.rfid) ? (
+                    <ul className="list-disc list-inside space-y-0.5 font-mono">
+                      {teacher.idCardNumber && <li>{teacher.idCardNumber}</li>}
+                      {teacher.rfid && <li>{teacher.rfid}</li>}
+                    </ul>
+                  ) : (
+                    "-"
+                  )}
                 </td>
                 <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{teacher.academicStanding || '-'}</td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs">

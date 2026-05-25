@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import Select from "react-select";
 import BackButton from "@/components/Shared/BackButton";
@@ -268,6 +268,8 @@ const CourseEnrollmentPage: React.FC = () => {
     const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const saveInFlightRef = useRef(false);
     const [pendingChanges, setPendingChanges] = useState<{ 
         type: 'add' | 'remove', 
         studentId: string, 
@@ -839,7 +841,7 @@ const CourseEnrollmentPage: React.FC = () => {
         
         setPendingChanges(newChanges);
         setSelectedSourceIds([]);
-        Swal.fire({ icon: 'info', title: 'เพิ่มลงในรายการรอยืนยัน', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+        Swal.fire({ icon: 'info', title: 'เพิ่มแล้ว ระบบจะบันทึกอัตโนมัติ', toast: true, position: 'top-end', timer: 1400, showConfirmButton: false });
     };
 
     const handleBatchUnenroll = () => {
@@ -900,31 +902,37 @@ const CourseEnrollmentPage: React.FC = () => {
 
         setPendingChanges(newChanges);
         setSelectedEnrolledIds([]);
-        Swal.fire({ icon: 'info', title: 'เพิ่มรายการยกเลิกลงในคิว', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+        Swal.fire({ icon: 'info', title: 'เพิ่มรายการถอนแล้ว ระบบจะบันทึกอัตโนมัติ', toast: true, position: 'top-end', timer: 1400, showConfirmButton: false });
     };
 
-    const handleCommitAll = async () => {
-        if (pendingChanges.length === 0) return;
-        
-        const confirm = await Swal.fire({
-            title: 'ยืนยันการบันทึก?',
-            text: `คุณกำลังจะบันทึกการเปลี่ยนแปลงทั้งหมด ${pendingChanges.length} รายการ`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'ยืนยันบันทึก',
-            cancelButtonText: 'ตรวจสอบอีกครั้ง',
-            confirmButtonColor: '#4f46e5',
-            background: '#161a27',
-            color: '#fff'
-        });
+    const commitPendingChanges = useCallback(async (
+        changesSnapshot = pendingChanges,
+        options: { confirm?: boolean; silent?: boolean } = {}
+    ) => {
+        if (changesSnapshot.length === 0 || !schoolId || saveInFlightRef.current) return;
 
-        if (!confirm.isConfirmed) return;
+        if (options.confirm) {
+            const confirm = await Swal.fire({
+                title: 'ยืนยันการบันทึก?',
+                text: `คุณกำลังจะบันทึกการเปลี่ยนแปลงทั้งหมด ${changesSnapshot.length} รายการ`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'ยืนยันบันทึก',
+                cancelButtonText: 'ตรวจสอบอีกครั้ง',
+                confirmButtonColor: '#4f46e5',
+                background: '#161a27',
+                color: '#fff'
+            });
 
+            if (!confirm.isConfirmed) return;
+        }
+
+        saveInFlightRef.current = true;
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
             
-            pendingChanges.forEach(change => {
+            changesSnapshot.forEach(change => {
                 const normCId = String(change.courseId);
                 const normG = String(change.groupName).trim();
                 const normY = String(change.academicYear).trim();
@@ -962,20 +970,51 @@ const CourseEnrollmentPage: React.FC = () => {
             });
 
             await batch.commit();
-            setPendingChanges([]);
-            Swal.fire({ icon: 'success', title: 'บันทึกข้อมูลเรียบร้อย', text: 'ข้อมูลทั้งหมดถูกอัปเดตลงฐานข้อมูลแล้ว' });
+            setPendingChanges(prev => prev.filter(change => !changesSnapshot.includes(change)));
+            if (options.silent) {
+                Swal.fire({ icon: 'success', title: `บันทึกอัตโนมัติแล้ว (${changesSnapshot.length})`, toast: true, position: 'top-end', timer: 1300, showConfirmButton: false });
+            } else {
+                Swal.fire({ icon: 'success', title: 'บันทึกข้อมูลเรียบร้อย', text: 'ข้อมูลทั้งหมดถูกอัปเดตลงฐานข้อมูลแล้ว' });
+            }
         } catch (error) {
             console.error(error);
-            Swal.fire('Error', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
+            Swal.fire(options.silent ? 'บันทึกอัตโนมัติไม่สำเร็จ' : 'Error', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
         } finally {
+            saveInFlightRef.current = false;
             setIsSaving(false);
         }
-    };
+    }, [allStudents, courses, enrollments, pendingChanges, schoolId]);
+
+    const handleCommitAll = useCallback(async () => {
+        if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+        }
+        await commitPendingChanges(pendingChanges, { confirm: true });
+    }, [commitPendingChanges, pendingChanges]);
+
+    useEffect(() => {
+        if (pendingChanges.length === 0 || !schoolId || isLoading) return;
+
+        if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+        }
+
+        const changesSnapshot = [...pendingChanges];
+        autoSaveTimerRef.current = setTimeout(() => {
+            commitPendingChanges(changesSnapshot, { silent: true });
+        }, 1800);
+
+        return () => {
+            if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+            }
+        };
+    }, [commitPendingChanges, isLoading, pendingChanges, schoolId]);
 
     const handleResetPending = () => {
         if (pendingChanges.length > 0) {
             setPendingChanges([]);
-            Swal.fire({ icon: 'success', title: 'ล้างรายการรอยืนยันแล้ว', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+            Swal.fire({ icon: 'success', title: 'ล้างรายการรอบันทึกแล้ว', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
         }
     };
 
@@ -1108,7 +1147,7 @@ const CourseEnrollmentPage: React.FC = () => {
                             ) : (
                                 <Save size={18} className={pendingChanges.length > 0 ? "animate-bounce" : ""} />
                             )}
-                            {pendingChanges.length > 0 ? `บันทึกข้อมูล (${pendingChanges.length})` : 'ไม่มีรายการรอยืนยัน'}
+                            {pendingChanges.length > 0 ? `บันทึกตอนนี้ (${pendingChanges.length})` : 'บันทึกอัตโนมัติแล้ว'}
                         </button>
                     </div>
                 </header>

@@ -1132,7 +1132,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
                 <div className="flex flex-col md:flex-row items-center gap-2">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">{selectedTeacher.fullName}</h2>
                   <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 dark:bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                    ID: {selectedTeacher.teacherId || "ไม่มีข้อมูลรหัส"}
+                    รหัสครู: {selectedTeacher.teacherId || "ไม่มีข้อมูลรหัส"}
                   </span>
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">ตำแหน่ง: {selectedTeacher.position || "ครู"}</p>

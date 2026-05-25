@@ -537,7 +537,7 @@ const TeacherLeaveRequestPage: React.FC = () => {
         startDate: Timestamp.fromDate(sDate),
         endDate: Timestamp.fromDate(eDate),
         returnDate: Timestamp.fromDate(rDate),
-        status: "approved", // อนุมัติอัตโนมัติ
+        status: "pending", // รอฝ่ายบุคคลอนุมัติ
         createdAt: Timestamp.now(),
         requiresSubstitute: requiresSubstitute, // 📌 เพิ่ม field นี้ตอนบันทึกข้อมูล
         docNo: docNo, // 📌 เพิ่มเลขที่เอกสาร
@@ -545,79 +545,12 @@ const TeacherLeaveRequestPage: React.FC = () => {
         schoolAffiliation: schoolAffiliation, // 📌 เพิ่มสังกัด (อ้างอิงจากหน้าข้อมูลโรงเรียน)
       });
 
-      // 2. อัปเดต Attendance ในแต่ละวัน
-      const loopDate = new Date(sDate);
-      let leaveDaysCount = 0; // ตัวแปรสำหรับนับจำนวนวันลาจริง (ไม่รวมวันหยุด)
-
-      while (loopDate <= eDate) {
-        const dateStr = loopDate.toLocaleDateString("en-CA"); // YYYY-MM-DD
-
-        // ตรวจสอบวันหยุด/วันเรียนชดเชย
-        const { isHoliday } = checkIsHoliday(dateStr);
-
-        // ถ้าเป็นวันหยุด ให้ข้ามการบันทึกการลาในวันนั้น
-        if (isHoliday) {
-          loopDate.setDate(loopDate.getDate() + 1);
-          continue;
-        }
-
-        leaveDaysCount++; // นับจำนวนวันลา
-
-        // สร้างวันที่ใหม่สำหรับรอบถัดไป
-        loopDate.setDate(loopDate.getDate() + 1);
-
-        // บันทึกข้อมูลการมาปฏิบัติงาน
-        // 📌 แก้ไข: ย้ายไปเก็บใต้ teachers/{teacherId}/attendance/{date}
-        const attendanceRef = doc(
-          firestore,
-          "school-settings",
-          schoolId,
-          "teachers",
-          selectedTeacher.value,
-          "attendance",
-          dateStr
-        );
-        batch.set(
-          attendanceRef,
-          {
-            status: "ล", // 'ล' หมายถึง ลา
-            checkinTime: null,
-            checkoutTime: null,
-            leaveRequestId: leaveRequestRef.id,
-          },
-          { merge: true }
-        );
-
-        // **Daily Summary (School-wide)**
-        const summaryRef = doc(firestore, 'school-settings', schoolId, 'summaries', 'attendance', 'days', dateStr);
-        batch.set(summaryRef, {
-          teacherStats: {
-            absent: increment(-1),
-            leave: increment(1)
-          },
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-
-        // Update Period Summaries (Week, Month, Year, Semester) for Teachers
-        updatePeriodSummaries(firestore, batch, schoolId, selectedTeacher.value, 'teachers', dateStr, 'absent', 'leave');
-      }
-
-      // 3. อัปเดตยอดรวมการลาในโปรไฟล์ครู (Aggregation)
-      if (leaveDaysCount > 0) {
-        const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", selectedTeacher.value);
-        batch.set(teacherRef, {
-          attendanceStats: {
-            leave: increment(leaveDaysCount)
-          }
-        }, { merge: true });
-      }
-
       await batch.commit();
 
       Swal.fire({
         icon: "success",
-        title: "บันทึกการลาสำเร็จ",
-        text: `ระบบได้บันทึกการลาของ ${selectedTeacher.label} เรียบร้อยแล้ว`,
+        title: "ยื่นคำขอลาสำเร็จ",
+        text: `ยื่นคำขอลาของ ${selectedTeacher.label} สำเร็จ (รอฝ่ายบุคคลอนุมัติ)`,
         background: "#2a2b2f",
         color: "#ffffff",
       });

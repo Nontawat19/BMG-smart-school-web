@@ -402,7 +402,7 @@ const CheckinOutPage: React.FC = () => {
         setCheckoutTime(null);
         setSearchedUser(null);
         setError(null);
-      }, 1200);
+      }, 1800);
     }
     return () => {
       if (displayUserTimeoutRef.current) clearTimeout(displayUserTimeoutRef.current);
@@ -929,6 +929,8 @@ const CheckinOutPage: React.FC = () => {
       };
 
       let finalConfig: any = null;
+      let recipientUserIds: string[] = [...(user.parentLineUserIds || [])];
+
       if (user.grade) {
         const teacherQuery = query(
           collection(firestore, "school-settings", schoolId!, "teachers"),
@@ -939,6 +941,12 @@ const CheckinOutPage: React.FC = () => {
         const teacherSnap = await getDocs(teacherQuery);
         if (!teacherSnap.empty) {
           const teacherData = teacherSnap.docs[0].data();
+          
+          // ดึง lineUserId ของครูมาใส่ร่วมกับกลุ่มรับข้อความแจ้งเตือน (ถ้าครูลงทะเบียนไว้)
+          if (teacherData.lineUserId) {
+            recipientUserIds.push(teacherData.lineUserId);
+          }
+
           if (
             teacherData.lineChannelAccessToken &&
             teacherData.enableNotification !== false
@@ -964,7 +972,7 @@ const CheckinOutPage: React.FC = () => {
           status,
           time,
           finalConfig,
-          user.parentLineUserIds || []
+          recipientUserIds
         );
       }
     } catch (error) {
@@ -1333,7 +1341,7 @@ const CheckinOutPage: React.FC = () => {
         <div className="w-full max-w-screen-2xl">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
             <div className="xl:col-span-8 flex flex-col gap-10 h-full">
-              <div className="bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none">
+              <div className="bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col">
                 <div className="flex items-center gap-5 mb-8">
                   {schoolSettings?.logoUrl && (
                     <img 
@@ -1343,11 +1351,11 @@ const CheckinOutPage: React.FC = () => {
                     />
                   )}
                   <div className="flex flex-col">
-                    <h1 className="text-5xl font-extrabold text-gray-900 dark:text-white">
+                    <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white">
                       ระบบลงเวลา{schoolName ? ` | ${schoolName}` : ""}
                     </h1>
                     {schoolSettings?.affiliation && (
-                      <p className="text-xl text-gray-900 dark:text-white font-bold mt-1">
+                      <p className="text-lg text-gray-900 dark:text-white font-bold mt-1">
                         สังกัด: {schoolSettings.affiliation}
                       </p>
                     )}
@@ -1357,13 +1365,12 @@ const CheckinOutPage: React.FC = () => {
                   calendarEvents={calendarEvents}
                   getTodayString={getTodayString}
                 />
-                <div>
+                <div className="flex-1 flex">
                   <div className="grid grid-cols-1 lg:grid-cols-5 gap-10 flex-1">
                     <UserInfoPanel
                       displayUser={displayUser}
                       checkinTime={checkinTime}
                       checkoutTime={checkoutTime}
-                      affiliation={schoolSettings?.affiliation}
                     />
                     <SearchPanel
                       handleSearch={handleSearch}

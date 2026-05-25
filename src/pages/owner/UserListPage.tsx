@@ -71,6 +71,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
   const roleHierarchy: { [key: string]: number } = {
     [ROLES.SUPER_ADMIN]: 100,
     [ROLES.SCHOOL_ADMIN]: 80,
+    [ROLES.STUDENT_AFFAIRS]: 60,
     [ROLES.TEACHER_ATTENDANCE]: 55,
     [ROLES.STUDENT_ATTENDANCE]: 50,
     [ROLES.SCHOOL_ATTENDANCE]: 50,
@@ -81,6 +82,7 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
   const roleStyles: { [key: string]: { icon: React.ReactNode, text: string, className: string } } = {
     [ROLES.SUPER_ADMIN]: { icon: <FaShieldAlt />, text: 'ผู้ดูแลสูงสุด (Super Admin)', className: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' },
     [ROLES.SCHOOL_ADMIN]: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
+    [ROLES.STUDENT_AFFAIRS]: { icon: <FaUserGraduate />, text: 'งานกิจการนักเรียน', className: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20' },
     [ROLES.TEACHER]: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
     [ROLES.STUDENT_ATTENDANCE]: { icon: <FaIdBadge />, text: 'ลงเวลานักเรียน', className: 'bg-cyan-50 text-cyan-700 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20' },
     [ROLES.TEACHER_ATTENDANCE]: { icon: <FaBriefcase />, text: 'ลงเวลาครู', className: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20' },
@@ -463,6 +465,7 @@ const UserListPage: React.FC = () => {
                   <option value="all">ทุกบทบาท</option>
                   <option value={ROLES.SUPER_ADMIN}>ผู้ดูแลระบบสูงสุด (Super Admin)</option>
                   <option value={ROLES.SCHOOL_ADMIN}>ผู้ดูแลระบบโรงเรียน (School Admin)</option>
+                  <option value={ROLES.STUDENT_AFFAIRS}>งานกิจการนักเรียน (Student Affairs)</option>
                   <option value={ROLES.TEACHER}>ครู (Teacher)</option>
                   <option value={ROLES.STUDENT_ATTENDANCE}>ลงเวลานักเรียน (Student Attendance)</option>
                   <option value={ROLES.TEACHER_ATTENDANCE}>ลงเวลาครู (Teacher Attendance)</option>

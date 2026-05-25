@@ -13,6 +13,7 @@ import {
 import BackButton from "@/components/Shared/BackButton";
 import { toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
 import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { updateStudentReportSummaryForChanges } from "@/utils/studentReportSummaryUtils";
 
 // --- Configuration ---
 const REQUIRED_FIELDS = [
@@ -238,6 +239,7 @@ export default function ImportStudentPage() {
         });
 
         const studentsRef = collection(firestore, "school-settings", schoolId, "students");
+        const studentSummaryChanges: Array<{ before?: any | null; after?: any | null }> = [];
 
         for (let i = 0; i < readyData.length; i++) {
             const student = readyData[i];
@@ -260,18 +262,24 @@ export default function ImportStudentPage() {
 
                 if (!snapshotId.empty) {
                     // Update existing
-                    const docId = snapshotId.docs[0].id;
+                    const existingDoc = snapshotId.docs[0];
+                    const docId = existingDoc.id;
+                    const beforeData = { id: docId, ...existingDoc.data() };
+                    const afterData = { ...beforeData, ...studentData };
                     await setDoc(doc(studentsRef, docId), studentData, { merge: true });
+                    studentSummaryChanges.push({ before: beforeData, after: afterData });
                     updateCount++;
                 } else {
                     // Create new
-                    await addDoc(studentsRef, {
+                    const createdStudent = {
                         ...studentData,
                         studentStatus: 'กำลังศึกษา',
                         behaviorScore: 100,
                         createdAt: serverTimestamp(),
                         role: ["student"]
-                    });
+                    };
+                    await addDoc(studentsRef, createdStudent);
+                    studentSummaryChanges.push({ before: null, after: createdStudent });
                     successCount++;
                 }
 
@@ -291,6 +299,9 @@ export default function ImportStudentPage() {
         setIsProcessing(false);
         if (successCount > 0) {
             await updateOwnerAndSchoolCounts(firestore, schoolId, { students: successCount });
+        }
+        if (studentSummaryChanges.length > 0) {
+            await updateStudentReportSummaryForChanges(firestore, schoolId, studentSummaryChanges);
         }
         Swal.fire({
             icon: (successCount + updateCount) > 0 ? 'success' : 'error',

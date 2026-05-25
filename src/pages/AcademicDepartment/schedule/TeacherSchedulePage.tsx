@@ -181,6 +181,102 @@ const TeacherSchedulePage: React.FC = () => {
 
     const selectedTeacherData = teachers.find((t: Teacher) => t.id === selectedTeacher);
 
+    const isCourseAllowedInScheduleViews = useCallback((courseId: string | undefined, teacherId?: string, groupNumber?: number) => {
+        if (!courseId) return true;
+        const courseDoc = allCourses.find(c => c.id === courseId);
+        if (!courseDoc) return false;
+
+        return (courseDoc.teacherAssignments || []).some((assignment: any) => {
+            const teacherIds = getAssignmentTeacherIds(assignment);
+            const groupMatches = !groupNumber || !assignment.groupNumber || Number(assignment.groupNumber) === Number(groupNumber);
+            const teacherMatches = !teacherId || teacherIds.includes(teacherId);
+            return groupMatches && teacherMatches && teacherIds.length > 0;
+        });
+    }, [allCourses]);
+
+    const selectedTeacherPeriodProgress = useMemo(() => {
+        if (!selectedTeacher || selectedTeacher === 'pending' || selectedTeacher.startsWith('GHOST')) {
+            return { scheduled: 0, total: 0 };
+        }
+
+        const targetSem = String(selectedSemester || "1");
+        const total = allCourses.reduce((sum, course: Course) => {
+            const semStr = String(course.semester || "");
+            const isCorrectSemester = !course.semester ||
+                semStr === targetSem ||
+                semStr.startsWith(targetSem + '/') ||
+                targetSem.startsWith(semStr + '/');
+
+            if (!isCorrectSemester || !isAcademicCourse(course)) return sum;
+
+            const assignments = course.teacherAssignments || [];
+            const relevantAssignments = assignments.filter((assignment: any) => {
+                const teacherIds = getAssignmentTeacherIds(assignment);
+                const groupNumber = assignment.groupNumber || 1;
+                return teacherIds.includes(selectedTeacher) &&
+                    isCourseAllowedInScheduleViews(course.id, selectedTeacher, groupNumber);
+            });
+
+            if (relevantAssignments.length > 0) {
+                return sum + relevantAssignments.length * getRequiredWeeklyPeriods(course);
+            }
+
+            return sum;
+        }, 0);
+
+        const scheduled = Object.values(schedule).reduce((sum, coursesInSlot) => {
+            const uniqueAssignmentsInSlot = new Set<string>();
+
+            coursesInSlot.forEach(course => {
+                if (!isCourseAllowedInScheduleViews(course.id, selectedTeacher, course.groupNumber)) return;
+                uniqueAssignmentsInSlot.add(course.compositeId || `${course.id}_${course.groupNumber || 1}`);
+            });
+
+            return sum + uniqueAssignmentsInSlot.size;
+        }, 0);
+
+        return { scheduled, total };
+    }, [selectedTeacher, selectedSemester, allCourses, schedule, isCourseAllowedInScheduleViews]);
+
+    const selectedTeacherScheduleSubtitle = selectedTeacherData
+        ? `${selectedTeacherData.name} • จัดสำเร็จ ${selectedTeacherPeriodProgress.scheduled}/${selectedTeacherPeriodProgress.total} คาบ`
+        : 'กรุณาเลือกครูผู้สอน';
+
+    const getClassFilterFromCourse = useCallback((course: CourseInstance) => {
+        const classIds = Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[];
+        const preferredClassId = classIds.find(id => String(id).includes('/')) || classIds[0] || '';
+        const rawClassId = String(preferredClassId || '').trim();
+        const displayName = getClassDisplayName(rawClassId);
+        const source = rawClassId || displayName;
+        const [levelPartRaw, roomPartRaw] = source.split(/[/-]/);
+        const levelPart = String(levelPartRaw || '').replace(/\s+/g, '').toLowerCase();
+        const roomPart = String(roomPartRaw || '').trim();
+
+        const classKey = Object.entries(CLASSES).find(([key, label]) => {
+            const normalizedLabel = String(label).replace(/\s+/g, '').toLowerCase();
+            return key === levelPart ||
+                normalizedLabel === levelPart ||
+                normalizedLabel.replace('.', '') === levelPart.replace('.', '') ||
+                levelPart === key.replace('.', '');
+        })?.[0] || (CLASSES[source as keyof typeof CLASSES] ? source : '');
+
+        return {
+            classKey,
+            room: roomPart,
+        };
+    }, []);
+
+    const focusPreviewFromCourse = useCallback((course: CourseInstance) => {
+        const { classKey, room } = getClassFilterFromCourse(course);
+        if (classKey) setFilterClass(classKey);
+        setFilterRoom(room || 'all');
+        setFilterGroup('all');
+
+        const roomIds = Array.isArray(course.room) ? course.room : [];
+        const firstPhysicalRoom = roomIds.find(roomId => roomId && roomId !== 'all');
+        setFilterPhysicalRoom(firstPhysicalRoom || 'all');
+    }, [getClassFilterFromCourse]);
+
     const {
         handleDragStart,
         handleDragEnd, 
@@ -237,6 +333,7 @@ const TeacherSchedulePage: React.FC = () => {
                 if (teacherOcc.course) {
                     const courseDoc = allCourses.find(c => c.id === teacherOcc.course?.id);
                     const groupNum = teacherOcc.course?.groupNumber || 1;
+                    if (!isCourseAllowedInScheduleViews(teacherOcc.course?.id, selectedTeacher, groupNum)) return;
                     const assign = courseDoc?.teacherAssignments?.find(a => getAssignmentTeacherIds(a).includes(selectedTeacher) && a.groupNumber === groupNum);
 
                     const courseData = {
@@ -268,6 +365,7 @@ const TeacherSchedulePage: React.FC = () => {
                             compositeId: `${courseData.id}_${groupNum}`,
                             groupNumber: groupNum,
                             roomDisplay,
+                            classId: teacherOcc.classId,
                             className: Array.isArray(teacherOcc.classId)
                                 ? teacherOcc.classId.map(getClassDisplayName).join(' + ')
                                 : getClassDisplayName(teacherOcc.classId as string)
@@ -283,8 +381,6 @@ const TeacherSchedulePage: React.FC = () => {
 
         const teacherCourses = allCourses.filter((c: Course) => {
             const isAssignedToTeacher = c.teacherAssignments?.some((a: any) => getAssignmentTeacherIds(a).includes(selectedTeacher));
-            const hasLegacyTeacher = c.teacherId === selectedTeacher || c.teacherIds?.includes(selectedTeacher);
-            const hasTeacher = isAssignedToTeacher || (c.teacherAssignments?.length === 0 && hasLegacyTeacher);
             
             const isGhost = !selectedTeacher || selectedTeacher === 'pending' || selectedTeacher.startsWith('GHOST');
             if (isGhost) return false;
@@ -293,7 +389,7 @@ const TeacherSchedulePage: React.FC = () => {
             const targetSem = String(selectedSemester || "1");
             const isCorrectSemester = (!c.semester || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/'));
 
-            if (!hasTeacher || !isCorrectSemester || !isAcademicCourse(c)) return false;
+            if (!isAssignedToTeacher || !isCorrectSemester || !isAcademicCourse(c)) return false;
 
             if (filterClass !== 'all') {
                 const classIds = Array.isArray(c.classId) ? c.classId : [c.classId].filter(Boolean) as string[];
@@ -333,16 +429,6 @@ const TeacherSchedulePage: React.FC = () => {
         teacherCourses.forEach((course: Course) => {
             const totalHours = getRequiredWeeklyPeriods(course);
             const relevantAssignments = course.teacherAssignments?.filter((a: any) => getAssignmentTeacherIds(a).includes(selectedTeacher)) || [];
-
-            if (relevantAssignments.length === 0 && (course.teacherId === selectedTeacher || course.teacherIds?.includes(selectedTeacher))) {
-                relevantAssignments.push({
-                    groupNumber: 1,
-                    teacherId: selectedTeacher,
-                    teacherIds: [selectedTeacher],
-                    roomIds: [],
-                    classLevels: []
-                });
-            }
 
             relevantAssignments.forEach((assign: any) => {
                 const groupNum = assign.groupNumber || 1;
@@ -393,7 +479,7 @@ const TeacherSchedulePage: React.FC = () => {
             });
         });
         setAvailableCourseInstances(bank);
-    }, [selectedTeacher, selectedSemester, schoolId, teachers, allCourses, schoolMasterSchedule, selectedTeacherData, setSchedule, setAvailableCourseInstances, localUnavailableSlotsMap, filterClass, filterRoom, filterGroup, searchTerm]);
+    }, [selectedTeacher, selectedSemester, schoolId, teachers, allCourses, schoolMasterSchedule, selectedTeacherData, setSchedule, setAvailableCourseInstances, localUnavailableSlotsMap, filterClass, filterRoom, filterGroup, searchTerm, isCourseAllowedInScheduleViews]);
 
     const saveTeacherUnavailableSlots = useCallback(async (teacherId: string, slots: string[]) => {
         if (!schoolId || !teacherId) return;
@@ -409,8 +495,50 @@ const TeacherSchedulePage: React.FC = () => {
     }, [schoolId]);
 
     const roomSchedule = useMemo(() => {
-        if (filterPhysicalRoom === 'all') return {};
+        const hasPhysicalRoomFilter = filterPhysicalRoom !== 'all';
+        const hasClassFilter = filterClass !== 'all' || filterRoom !== 'all' || filterGroup !== 'all';
+        if (!hasPhysicalRoomFilter && !hasClassFilter) return {};
         const filtered: Schedule = {};
+        const classLabel = CLASSES[filterClass as keyof typeof CLASSES] || filterClass;
+        const clean = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+        const normFilterClass = clean(filterClass);
+        const normClassLabel = clean(classLabel);
+        const normFilterRoom = clean(filterRoom);
+
+        const hasSpecificPhysicalRoom = (roomVal: unknown) => {
+            const rooms = Array.isArray(roomVal) ? roomVal : [roomVal].filter(Boolean);
+            return rooms.some(roomId => roomId && String(roomId).toLowerCase() !== 'all');
+        };
+
+        const matchesSelectedClassRoom = (targetClass: string | string[] | undefined, groupNumber?: number) => {
+            const targets = Array.isArray(targetClass) ? targetClass : [targetClass].filter(Boolean) as string[];
+            const matchesClass = filterClass === 'all' || targets.some(t => {
+                const nt = clean(t);
+                return nt === normFilterClass ||
+                    nt === normClassLabel ||
+                    nt.startsWith(normFilterClass + '/') ||
+                    nt.startsWith(normClassLabel + '/') ||
+                    nt.startsWith(normFilterClass + '-') ||
+                    nt.startsWith(normClassLabel + '-');
+            });
+            if (!matchesClass) return false;
+
+            const matchesRoom = filterRoom === 'all' || targets.some(t => {
+                const displayName = clean(getClassDisplayName(t));
+                if (displayName.endsWith('/' + normFilterRoom) || displayName.endsWith('-' + normFilterRoom) || displayName === normFilterRoom) return true;
+
+                const nt = clean(t);
+                if (nt.includes('/')) {
+                    const parts = nt.split('/');
+                    const lastPart = parts[parts.length - 1];
+                    return lastPart === normFilterRoom || (!isNaN(Number(lastPart)) && Number(lastPart) === Number(normFilterRoom));
+                }
+                return nt === normFilterRoom || nt === clean(`Room_${filterRoom}`);
+            });
+            if (!matchesRoom) return false;
+
+            return filterGroup === 'all' || clean(groupNumber) === clean(filterGroup) || String(groupNumber || 1) === filterGroup;
+        };
 
         const addCourseToSlot = (slot: string, course: CourseInstance) => {
             if (!filtered[slot]) filtered[slot] = [];
@@ -428,10 +556,12 @@ const TeacherSchedulePage: React.FC = () => {
 
         Object.entries(schoolMasterSchedule).forEach(([slot, items]) => {
             items.forEach(item => {
-                if (item.teacherId === selectedTeacher) return;
+                if (!isCourseAllowedInScheduleViews(item.course?.id, item.teacherId, item.groupNumber)) return;
                 const roomVal = item.course?.room;
                 if (!roomVal) return;
-                const hasMatch = Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom;
+                const hasMatch = hasPhysicalRoomFilter
+                    ? (Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom)
+                    : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber);
                 if (hasMatch && item.course) {
                     addCourseToSlot(slot, {
                         ...item.course,
@@ -445,15 +575,18 @@ const TeacherSchedulePage: React.FC = () => {
 
         Object.entries(schedule).forEach(([slot, items]) => {
             items.forEach(item => {
+                if (!isCourseAllowedInScheduleViews(item.id, item.teacherId, item.groupNumber)) return;
                 const roomVal = item.room;
                 if (!roomVal) return;
-                const hasMatch = Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom;
+                const hasMatch = hasPhysicalRoomFilter
+                    ? (Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom)
+                    : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber);
                 if (hasMatch) addCourseToSlot(slot, item);
             });
         });
 
         return filtered;
-    }, [schoolMasterSchedule, filterPhysicalRoom, schedule, selectedTeacher]);
+    }, [schoolMasterSchedule, filterPhysicalRoom, filterClass, filterRoom, filterGroup, schedule, isCourseAllowedInScheduleViews]);
 
     const classSchedule = useMemo(() => {
         if (filterClass === 'all' && filterRoom === 'all' && filterGroup === 'all') return {};
@@ -498,6 +631,7 @@ const TeacherSchedulePage: React.FC = () => {
 
         Object.entries(schoolMasterSchedule).forEach(([slot, items]) => {
             items.forEach(item => {
+                if (!isCourseAllowedInScheduleViews(item.course?.id, item.teacherId, item.groupNumber)) return;
                 // If filtering by specific class, room, or group, show even if it's the selected teacher
                 const isExplicitFilter = filterClass !== 'all' || filterRoom !== 'all' || filterGroup !== 'all';
                 if (!isExplicitFilter && item.teacherId === selectedTeacher) return;
@@ -546,6 +680,7 @@ const TeacherSchedulePage: React.FC = () => {
 
         Object.entries(schedule).forEach(([slot, items]) => {
             items.forEach(item => {
+                if (!isCourseAllowedInScheduleViews(item.id, item.teacherId, item.groupNumber)) return;
                 const matchesRoom = filterRoom === 'all' || (() => {
                     const displayName = clean(getClassDisplayName(item.classId));
                     if (displayName.endsWith('/' + normFilterRoom) || displayName.endsWith('-' + normFilterRoom) || displayName === normFilterRoom) return true;
@@ -574,13 +709,79 @@ const TeacherSchedulePage: React.FC = () => {
         });
 
         return filtered;
-    }, [schoolMasterSchedule, filterClass, filterRoom, filterGroup, schedule, selectedTeacher, allCourses]);
+    }, [schoolMasterSchedule, filterClass, filterRoom, filterGroup, schedule, selectedTeacher, allCourses, isCourseAllowedInScheduleViews]);
 
     const selectedPhysicalRoomName = useMemo(() => {
         if (filterPhysicalRoom === 'all') return '';
         const room = physicalRooms.find(r => r.id === filterPhysicalRoom);
         return room ? `${room.roomName} ${room.roomCode ? `(${room.roomCode})` : ''}` : '';
     }, [filterPhysicalRoom, physicalRooms]);
+
+    const roomScheduleSubtitle = useMemo(() => {
+        if (filterPhysicalRoom !== 'all') return `ห้อง: ${selectedPhysicalRoomName}`;
+        if (filterClass !== 'all') {
+            return `ชั้น: ${CLASSES[filterClass as keyof typeof CLASSES] || filterClass}${filterRoom !== 'all' ? `/${filterRoom}` : ''}${filterGroup !== 'all' ? ` กลุ่ม ${filterGroup}` : ''} (ทุกสถานที่)`;
+        }
+        if (filterRoom !== 'all') return `ห้องเรียน: ${filterRoom} (ทุกสถานที่)`;
+        return 'กรุณาเลือกชั้น/ห้อง หรือสถานที่';
+    }, [filterPhysicalRoom, selectedPhysicalRoomName, filterClass, filterRoom, filterGroup]);
+
+    const previewSelectClassName = "h-8 min-w-[118px] rounded-xl border border-gray-200 bg-gray-50 px-3 text-[11px] font-black text-gray-800 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white";
+    const classroomPreviewReady = filterClass !== 'all' && filterRoom !== 'all';
+    const physicalRoomPreviewReady = filterPhysicalRoom !== 'all';
+
+    const classroomPreviewControls = (
+        <>
+            <select
+                aria-label="เลือกชั้นเรียน"
+                className={previewSelectClassName}
+                value={filterClass}
+                onChange={(event) => {
+                    const nextClass = event.target.value || 'all';
+                    setFilterClass(nextClass);
+                    setFilterRoom(nextClass === 'all' ? 'all' : '1');
+                    setFilterGroup('all');
+                }}
+            >
+                <option value="all">เลือกชั้น...</option>
+                {schoolSettings.availableClasses.map((classKey) => (
+                    <option key={classKey} value={classKey}>
+                        {CLASSES[classKey as keyof typeof CLASSES] || classKey}
+                    </option>
+                ))}
+            </select>
+            <select
+                aria-label="เลือกห้องเรียน"
+                className={previewSelectClassName}
+                value={filterRoom}
+                onChange={(event) => setFilterRoom(event.target.value || 'all')}
+                disabled={filterClass === 'all'}
+            >
+                <option value="all">เลือกห้อง...</option>
+                {Array.from({ length: 20 }, (_, index) => {
+                    const room = String(index + 1);
+                    return <option key={room} value={room}>ห้อง {room}</option>;
+                })}
+                <option value="แผน">ห้อง แผน</option>
+            </select>
+        </>
+    );
+
+    const physicalRoomPreviewControls = (
+        <select
+            aria-label="เลือกห้องปฏิบัติการ"
+            className="h-8 min-w-[190px] rounded-xl border border-gray-200 bg-gray-50 px-3 text-[11px] font-black text-gray-800 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
+            value={filterPhysicalRoom}
+            onChange={(event) => setFilterPhysicalRoom(event.target.value || 'all')}
+        >
+            <option value="all">เลือกห้องปฏิบัติการ...</option>
+            {physicalRooms.map((room: any) => (
+                <option key={room.id} value={room.id}>
+                    {`${room.roomCode ? `(${room.roomCode}) ` : ''}${room.roomName}`}
+                </option>
+            ))}
+        </select>
+    );
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
@@ -657,7 +858,7 @@ const TeacherSchedulePage: React.FC = () => {
                         <div className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm h-auto">
                             <TimetableGrid
                                 title="ตารางสอนครูผู้สอน"
-                                subtitle={selectedTeacherData ? selectedTeacherData.name : 'กรุณาเลือกครูผู้สอน'}
+                                subtitle={selectedTeacherScheduleSubtitle}
                                 type="teacher"
                                 allDroppableIds={allDroppableIds}
                                 periodSettings={periodSettings}
@@ -693,6 +894,7 @@ const TeacherSchedulePage: React.FC = () => {
                                 assignmentConstraints={assignmentConstraints}
                                 selectedTeacherData={selectedTeacherData}
                                 onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
+                                onCourseClick={focusPreviewFromCourse}
                                 selectedCourseCode={searchTerm}
                             />
                         </div>
@@ -705,6 +907,9 @@ const TeacherSchedulePage: React.FC = () => {
                                         ? `ชั้น: ${CLASSES[filterClass as keyof typeof CLASSES] || filterClass}${filterRoom !== 'all' ? `/${filterRoom}` : ''}${filterGroup !== 'all' ? ` กลุ่ม ${filterGroup}` : ''}` 
                                         : 'กรุณาเลือกชั้นเรียน'
                                     }
+                                    headerActions={classroomPreviewControls}
+                                    showGrid={classroomPreviewReady}
+                                    emptyMessage="กรุณาเลือกชั้นเรียนและห้องเรียนก่อนแสดงตาราง"
                                     type="class"
                                     allDroppableIds={allDroppableIds}
                                     periodSettings={periodSettings}
@@ -733,7 +938,10 @@ const TeacherSchedulePage: React.FC = () => {
                             <div className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm h-auto">
                                 <TimetableGrid
                                     title="ตารางการใช้งานห้องปฏิบัติการ"
-                                    subtitle={filterPhysicalRoom !== 'all' ? `ห้อง: ${selectedPhysicalRoomName}` : 'กรุณาเลือกสถานที่'}
+                                    subtitle={roomScheduleSubtitle}
+                                    headerActions={physicalRoomPreviewControls}
+                                    showGrid={physicalRoomPreviewReady}
+                                    emptyMessage="กรุณาเลือกห้องปฏิบัติการก่อนแสดงตาราง"
                                     type="room"
                                     allDroppableIds={allDroppableIds}
                                     periodSettings={periodSettings}

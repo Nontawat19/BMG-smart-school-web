@@ -29,6 +29,7 @@ export interface Course {
     room?: string[];
     isCombined?: boolean;
     groupNumber?: number;
+    teacherPeriodLabel?: string;
 }
 
 export interface ScheduleEntry {
@@ -176,6 +177,7 @@ const styles = StyleSheet.create({
 
     // Content inside cells
     courseTitle: { fontWeight: 'bold', fontSize: 11, marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
+    teacherPeriodLabel: { fontSize: 9, color: '#c2410c', fontWeight: 'bold', marginBottom: 1 },
     courseCode: { fontSize: 10, marginBottom: 1, color: '#333' },
     className: { fontSize: 10, color: '#444', marginBottom: 1 },
     roomDisplay: { fontSize: 11, color: '#000', fontWeight: 'bold', marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
@@ -199,8 +201,8 @@ const styles = StyleSheet.create({
         alignItems: 'stretch',
     },
     summaryHeader: {
-        backgroundColor: '#4f46e5', // Indigo-600
-        color: '#ffffff',
+        backgroundColor: '#f1f5f9',
+        color: '#000000',
         minHeight: 40,
     },
     summaryCell: {
@@ -445,12 +447,12 @@ const CourseSummaryPage = ({
             <View style={styles.summaryTable}>
                 {/* Header */}
                 <View style={[styles.summaryRow, styles.summaryHeader]} fixed>
-                    <View style={[styles.summaryCell, styles.colNo, { borderColor: '#6366f1' }]}><Text>ที่</Text></View>
-                    <View style={[styles.summaryCell, styles.colCourseTitle, { borderColor: '#6366f1' }]}><Text>ชื่อวิชา</Text></View>
-                    <View style={[styles.summaryCell, styles.colCourseCode, { borderColor: '#6366f1' }]}><Text>รหัสวิชา</Text></View>
-                    <View style={[styles.summaryCell, styles.colClass, { borderColor: '#6366f1' }]}><Text>ระดับชั้น</Text></View>
-                    <View style={[styles.summaryCell, styles.colPeriods, { borderColor: '#6366f1' }]}><Text>จำนวนคาบ</Text></View>
-                    <View style={[styles.summaryCell, styles.colCredits, styles.summaryCellLast, { borderColor: '#6366f1' }]}><Text>หน่วยกิต</Text></View>
+                    <View style={[styles.summaryCell, styles.colNo, { borderColor: '#e2e8f0' }]}><Text>ที่</Text></View>
+                    <View style={[styles.summaryCell, styles.colCourseTitle, { borderColor: '#e2e8f0' }]}><Text>ชื่อวิชา</Text></View>
+                    <View style={[styles.summaryCell, styles.colCourseCode, { borderColor: '#e2e8f0' }]}><Text>รหัสวิชา</Text></View>
+                    <View style={[styles.summaryCell, styles.colClass, { borderColor: '#e2e8f0' }]}><Text>ระดับชั้น</Text></View>
+                    <View style={[styles.summaryCell, styles.colPeriods, { borderColor: '#e2e8f0' }]}><Text>จำนวนคาบ</Text></View>
+                    <View style={[styles.summaryCell, styles.colCredits, styles.summaryCellLast, { borderColor: '#e2e8f0' }]}><Text>หน่วยกิต</Text></View>
                 </View>
 
                 {/* Rows */}
@@ -616,6 +618,7 @@ export const TeacherSchedulePDF = ({
                                 const sameEntry = entry && nextEntry && 
                                                  entry.course.id === nextEntry.course.id && 
                                                  entry.course.groupNumber === nextEntry.course.groupNumber &&
+                                                 entry.course.teacherPeriodLabel === nextEntry.course.teacherPeriodLabel &&
                                                  entry.className === nextEntry.className;
                                 
                                 // 2. Both have same special title
@@ -679,6 +682,7 @@ export const TeacherSchedulePDF = ({
                                             <View key={sIndex} style={[styles.cell, styles.periodCell, { width: `${teachingWidth * span}%` }, (showEmptyBox || isUnavailable) ? styles.emptyCell : {}]}>
                                                 {entry ? (
                                                     <>
+                                                        {entry.course.teacherPeriodLabel && <Text style={styles.teacherPeriodLabel}>{entry.course.teacherPeriodLabel}</Text>}
                                                         <Text style={styles.courseTitle}>{entry.course.title}</Text>
                                                         <Text style={styles.courseCode}>{entry.course.code}</Text>
                                                         <Text style={styles.className}>{entry.className?.split(' (กลุ่ม')[0]}</Text>
@@ -846,6 +850,7 @@ export const BulkTeacherSchedulePDF = ({
                                             const sameEntry = entry && nextEntry && 
                                                              entry.course.id === nextEntry.course.id && 
                                                              entry.course.groupNumber === nextEntry.course.groupNumber &&
+                                                             entry.course.teacherPeriodLabel === nextEntry.course.teacherPeriodLabel &&
                                                              entry.className === nextEntry.className;
                                             
                                             const sameSpecial = !entry && !nextEntry && specialTitle && nextSpecialTitle && specialTitle === nextSpecialTitle;
@@ -905,6 +910,7 @@ export const BulkTeacherSchedulePDF = ({
                                                         <View key={sIndex} style={[styles.cell, styles.periodCell, { width: `${teachingWidth * span}%` }, (showEmptyBox || isUnavailable) ? styles.emptyCell : {}]}>
                                                             {entry ? (
                                                                 <>
+                                                                    {entry.course.teacherPeriodLabel && <Text style={styles.teacherPeriodLabel}>{entry.course.teacherPeriodLabel}</Text>}
                                                                     <Text style={styles.courseTitle}>{entry.course.title}</Text>
                                                                     <Text style={styles.courseCode}>{entry.course.code}</Text>
                                                                     <Text style={styles.className}>{entry.className?.split(' (กลุ่ม')[0]}</Text>

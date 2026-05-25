@@ -14,6 +14,8 @@ import defaultProfile from "@/assets/profile.png";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -375,14 +377,27 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
           where("status", "==", "อยู่")
         );
         const snapshot = await getDocs(q);
-        const teacherList = snapshot.docs.map(doc => {
-          const data = doc.data();
+        const teacherList = (await Promise.all(snapshot.docs.map(async (docSnap) => {
+          const data = docSnap.data();
+          let linkedUserData: any = null;
+
+          try {
+            const userSnap = await getDoc(doc(firestore, "users", data.uid || docSnap.id));
+            linkedUserData = userSnap.exists() ? userSnap.data() : null;
+          } catch (error) {
+            console.warn("Error fetching linked user for attendance summary:", error);
+          }
+
+          const role = linkedUserData?.role || data.role || [];
+          if (isAttendanceEntryOnly(role)) return null;
+
           return {
-            id: doc.id,
+            id: docSnap.id,
             fullName: `${data.title || ''}${data.firstName || ''} ${data.lastName || ''}`.trim(),
-            ...data
+            ...data,
+            role
           };
-        });
+        }))).filter(Boolean);
         setTeachers(teacherList);
       } catch (error) {
         console.error("Error fetching teachers:", error);
@@ -945,12 +960,12 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
           {/* Table */}
           <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full min-w-max text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-[#323338] border-b border-gray-200 dark:border-gray-700">
                     <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-center">ลำดับ</th>
                     <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">รหัสครู</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300">ชื่อ - นามสกุล</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 min-w-[320px] whitespace-nowrap">ชื่อ - นามสกุล</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-green-600 dark:text-green-400">มา (ปกติ)</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-yellow-600 dark:text-yellow-400">สาย</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-blue-600 dark:text-blue-400">ลา</th>
@@ -983,15 +998,15 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                         <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">
                           {record.teacherId || "-"}
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <img
+                        <td className="px-6 py-4 min-w-[320px] whitespace-nowrap">
+                          <div className="flex items-center gap-3 whitespace-nowrap">
+                            <ProfileAvatar
                               src={record.profileUrl || defaultProfile}
                               alt={record.fullName}
-                              className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-600"
+                              className="w-10 h-10 border border-gray-200 dark:border-gray-600"
                               onError={(e) => { (e.target as HTMLImageElement).src = defaultProfile; }}
                             />
-                            <span className="font-medium text-gray-900 dark:text-white">{record.fullName}</span>
+                            <span className="font-medium text-gray-900 dark:text-white whitespace-nowrap">{record.fullName}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-green-600 dark:text-green-400">

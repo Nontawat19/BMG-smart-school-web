@@ -13,6 +13,8 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { usePwaMode } from '@/hooks/usePwaMode';
 
 // Sub-components and Utilities from the same folder
 import { Student, CourseSchedule } from './types';
@@ -146,6 +148,7 @@ const parseTimeParts = (time: string) => {
 };
 
 const ClassroomAttendancePage: React.FC = () => {
+    const isPwaMode = usePwaMode();
     const [searchParams] = useSearchParams();
     const [currentDate, setCurrentDate] = useState(() => {
         const dateParam = searchParams.get('date');
@@ -185,7 +188,7 @@ const ClassroomAttendancePage: React.FC = () => {
         return null;
     });
     const [students, setStudents] = useState<Student[]>([]);
-    const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
+    const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [studentLeaves, setStudentLeaves] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
@@ -312,7 +315,7 @@ const ClassroomAttendancePage: React.FC = () => {
             return Number(periodId.replace('period-', '')) || null;
         }
 
-        const activePeriods = periodSettings.length > 0 ? periodSettings : [
+        const rawPeriods = periodSettings.length > 0 ? periodSettings : [
             { id: 'homeroom', label: 'โฮมรูม', startTime: '08:30', endTime: '08:40', isTeachingPeriod: false },
             { id: 'period-1', label: 'คาบที่ 1', startTime: '08:40', endTime: '09:30', isTeachingPeriod: true },
             { id: 'period-2', label: 'คาบที่ 2', startTime: '09:30', endTime: '10:20', isTeachingPeriod: true },
@@ -325,12 +328,25 @@ const ClassroomAttendancePage: React.FC = () => {
             { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true }
         ];
 
+        // Normalize indices to make it robust and match school-settings layout perfectly
+        const activePeriods = rawPeriods.map((p: any, arrIdx: number) => {
+            const stableIndex = typeof p.index !== 'undefined'
+                ? p.index
+                : (typeof p.order !== 'undefined' ? p.order : arrIdx);
+            return {
+                ...p,
+                index: stableIndex,
+            };
+        }).sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0));
+
         const index = Number(periodId);
-        if (Number.isFinite(index) && activePeriods[index]) {
-            const setting = activePeriods[index];
-            if (setting.id === 'homeroom' || setting.id === 'lunch') return null;
-            const match = String(setting.id || '').match(/^period-(\d+)$/);
-            if (match) return Number(match[1]);
+        if (Number.isFinite(index) && activePeriods.length > 0) {
+            const setting = activePeriods.find((p: any) => p.index === index);
+            if (setting) {
+                if (setting.id === 'homeroom' || setting.id === 'lunch') return null;
+                const match = String(setting.id || '').match(/^period-(\d+)$/);
+                if (match) return Number(match[1]);
+            }
         }
 
         const parsed = Number(periodId);
@@ -641,7 +657,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                         endTime: timeInfo.endTime,
                                         classId: courseClassId,
                                         className: (() => {
-                                            const classIdStr = String(courseClassId);
+                                            const classIdStr = String(Array.isArray(courseClassId) ? courseClassId[0] : courseClassId);
                                             if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${groupNumber ? `/${groupNumber}` : ''}`;
                                             if (classIdStr.includes('/')) {
                                                 const parts = classIdStr.split('/');
@@ -728,7 +744,30 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
                 });
 
-                dailySchedules.sort((a, b) => a.period - b.period);
+                // Sort based on course identity fields first to keep consecutive periods of the same class/course adjacent
+                dailySchedules.sort((a, b) => {
+                    const aClassKey = getStableClassKey(a.classId);
+                    const bClassKey = getStableClassKey(b.classId);
+                    if (aClassKey !== bClassKey) return aClassKey.localeCompare(bClassKey);
+                    
+                    const aCourse = a.courseId || a.subjectCode || '';
+                    const bCourse = b.courseId || b.subjectCode || '';
+                    if (aCourse !== bCourse) return aCourse.localeCompare(bCourse);
+                    
+                    if (a.groupNumber !== b.groupNumber) return (a.groupNumber || 0) - (b.groupNumber || 0);
+                    
+                    const aRoom = a.room || '';
+                    const bRoom = b.room || '';
+                    if (aRoom !== bRoom) return aRoom.localeCompare(bRoom);
+                    
+                    if (a.isSubstitute !== b.isSubstitute) return (a.isSubstitute ? 1 : 0) - (b.isSubstitute ? 1 : 0);
+                    
+                    const aOrig = a.originalTeacherId || '';
+                    const bOrig = b.originalTeacherId || '';
+                    if (aOrig !== bOrig) return aOrig.localeCompare(bOrig);
+                    
+                    return a.period - b.period;
+                });
 
                 // Group consecutive double/multiple periods (คาบคู่/คาบติดต่อกัน)
                 const groupedSchedules: CourseSchedule[] = [];
@@ -763,6 +802,13 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
                     groupedSchedules.push(current);
                 }
+
+                // Sort grouped schedules back to chronological order
+                groupedSchedules.sort((a, b) => {
+                    const aIdx = a.isDoublePeriod && a.periods ? a.periods[0] : a.period;
+                    const bIdx = b.isDoublePeriod && b.periods ? b.periods[0] : b.period;
+                    return aIdx - bIdx;
+                });
 
                 setSchedules(groupedSchedules);
 
@@ -807,6 +853,7 @@ const ClassroomAttendancePage: React.FC = () => {
                     selectedClass.subjectCode?.toUpperCase?.(),
                     selectedClass.subjectCode?.replace(/\s/g, '').toUpperCase?.(),
                 ].filter(Boolean).map(String)));
+                const shouldUseEnrollmentOnly = Boolean(selectedClass.courseId || subjectCodeVariants.length > 0);
 
                 if (selectedClass.courseId) {
                     if (academicYear && semester) {
@@ -884,6 +931,8 @@ const ClassroomAttendancePage: React.FC = () => {
                                 prefix: data.title || data.prefix || '',
                                 profileImageUrl: data.profileImageUrl || '',
                                 nickname: data.nickname || '',
+                                status: data.status || '',
+                                studentStatus: data.studentStatus || '',
                             } as Student);
                         });
                     }
@@ -904,10 +953,14 @@ const ClassroomAttendancePage: React.FC = () => {
                                 prefix: data.prefix || data.title || '',
                                 profileImageUrl: data.profileImageUrl || '',
                                 nickname: data.nickname || '',
+                                status: data.status || '',
+                                studentStatus: data.studentStatus || '',
                             } as Student);
                         }
                     });
-                    studentList = Array.from(studentMap.values());
+                    studentList = Array.from(studentMap.values()).filter(isCurrentStudent);
+                } else if (shouldUseEnrollmentOnly) {
+                    studentList = [];
                 } else {
                     const studentsRef = collection(db, 'school-settings', schoolId, 'students');
                     const classVariants = getClassVariants(selectedClass.classId);
@@ -926,7 +979,8 @@ const ClassroomAttendancePage: React.FC = () => {
                             prefix: data.title || data.prefix || "",
                             nickname: data.nickname || ""
                         } as Student;
-                    }).filter(student => matchesClassValue((student as any).classLevel || selectedClass.className, selectedClass.classId));
+                    }).filter(student => matchesClassValue((student as any).classLevel || selectedClass.className, selectedClass.classId))
+                      .filter(isCurrentStudent);
                 }
 
                 studentList.sort((a, b) => {
@@ -1157,7 +1211,7 @@ const ClassroomAttendancePage: React.FC = () => {
         }
     };
 
-    const toggleStatus = (studentId: string, status: 'present' | 'absent' | 'late' | 'leave') => {
+    const toggleStatus = (studentId: string, status: 'present' | 'absent' | 'late' | 'leave' | 'escape') => {
         if (isSubmitted || isHoliday || studentLeaves[studentId]) return;
         setAttendance(prev => ({ ...prev, [studentId]: status }));
     };
@@ -1166,19 +1220,19 @@ const ClassroomAttendancePage: React.FC = () => {
         return students.reduce(
             (acc, student) => {
                 const status = attendance[student.id] || 'present';
-                const key = status === 'present' ? 'มา' : status === 'late' ? 'สาย' : status === 'leave' ? 'ลา' : 'ขาด';
+                const key = status === 'present' ? 'มา' : status === 'late' ? 'สาย' : status === 'leave' ? 'ลา' : status === 'escape' ? 'หนีเรียน' : 'ขาด';
                 acc[key as keyof typeof acc]++;
                 return acc;
             },
-            { "มา": 0, "สาย": 0, "ลา": 0, "ขาด": 0 }
+            { "มา": 0, "สาย": 0, "ลา": 0, "ขาด": 0, "หนีเรียน": 0 }
         );
     }, [students, attendance]);
 
     return (
         <MainLayout>
-            <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300 min-h-screen">
-                <div className="max-w-5xl mx-auto">
-                    <BackButton to="/academic/hub/attendance" className="mb-4" />
+            <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6'}`}>
+                <div className={`${isPwaMode ? 'max-w-full' : 'max-w-5xl'} mx-auto min-w-0`}>
+                    {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}

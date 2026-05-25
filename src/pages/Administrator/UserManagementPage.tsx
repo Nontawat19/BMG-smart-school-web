@@ -595,6 +595,7 @@ const UserManagementPage: React.FC = () => {
                         <option value="งานบริหารบุคคล">งานบริหารบุคคล</option>
                         <option value="งานบริหารทั่วไป">งานบริหารทั่วไป</option>
                         <option value="งานบริหารกิจการนักเรียน">งานบริหารกิจการนักเรียน</option>
+                        <option value="ฝ่ายบริหาร">ฝ่ายบริหาร</option>
                       </select>
                     </div>
                     <div>

@@ -1,19 +1,22 @@
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { ROLES } from '@/constants/roles';
-import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL } from '@/constants/permissions';
+import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from '@/constants/permissions';
 
 export const usePermissions = () => {
     const user = useSelector((state: RootState) => state.auth.user);
 
     const normalizeRoleValue = (role: string) => {
-        if (role === 'admin' || role === 'academic' || role === ROLES.ACADEMIC_ADMIN) {
+        if (role === 'admin') {
             return ROLES.SCHOOL_ADMIN;
+        }
+        if (role === 'academic') {
+            return ROLES.ACADEMIC_ADMIN;
         }
         return role;
     };
 
-    // Normalize roles: legacy academic/admin permissions now collapse into School Admin
+    // Normalize legacy role names while preserving each permission lane.
     const normalizedRoles = Array.isArray(user?.role)
         ? user.role.map(normalizeRoleValue)
         : typeof user?.role === 'string'
@@ -31,7 +34,8 @@ export const usePermissions = () => {
 
     const isSuperAdmin = normalizedRoles.includes(ROLES.SUPER_ADMIN);
     const isSchoolAdmin = normalizedRoles.includes(ROLES.SCHOOL_ADMIN);
-    const isAcademicAdmin = isSchoolAdmin || normalizedRoles.includes(ROLES.ACADEMIC_ADMIN);
+    const isAcademicAdmin = normalizedRoles.includes(ROLES.ACADEMIC_ADMIN);
+    const isStudentAffairs = normalizedRoles.includes(ROLES.STUDENT_AFFAIRS);
     const isTeacher = normalizedRoles.includes(ROLES.TEACHER);
     const isStudent = normalizedRoles.includes(ROLES.STUDENT);
 
@@ -42,10 +46,11 @@ export const usePermissions = () => {
         isSuperAdmin,      // เจ้าของระบบ/Owner
         isSchoolAdmin,     // แอดมินจัดการบุคคลากรระดับโรงเรียน
         isAcademicAdmin,   // ฝ่ายวิชาการระดับโรงเรียน
+        isStudentAffairs,  // งานกิจการนักเรียน
         isTeacher,
         isStudent,
         isAdmin: isSchoolAdmin, // แอดมินเน้นบริหารบุคคล (School Admin เท่านั้น)
-        isAcademic: isSchoolAdmin, // งานวิชาการใช้สิทธิ์ School Admin
+        isAcademic: isSchoolAdmin || isAcademicAdmin,
         isOwner: isSuperAdmin, // ใช้เรียกแทน Super Admin
         OWNER_ONLY,
         ADMIN_ACCESS,
@@ -53,6 +58,11 @@ export const usePermissions = () => {
         STAFF_ACCESS,
         ACADEMIC_STAFF,
         ACADEMIC_MANAGEMENT,
-        TEACHER_OPERATIONAL
+        TEACHER_OPERATIONAL,
+        STUDENT_AFFAIRS_ACCESS,
+        STUDENT_AFFAIRS_MANAGEMENT,
+        STUDENT_SUPPORT_OPERATIONAL_ACCESS,
+        STUDENT_ATTENDANCE_REPORT_ACCESS,
+        CLUB_MEMBER_MANAGEMENT_ACCESS
     };
 };

@@ -9,6 +9,7 @@ import { FaUserClock, FaSearch, FaAngleLeft, FaAngleRight, FaAngleDoubleLeft, Fa
 import defaultProfile from "@/assets/profile.png";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 interface AttendanceRecord {
   id: string;
@@ -80,8 +81,14 @@ const TeacherAttendanceTodayPage: React.FC = () => {
         
         const records: AttendanceRecord[] = [];
         
+        // กรองเอาเฉพาะครูที่ไม่ได้มีสิทธิ์ ลงเวลา Attendance (isAttendanceEntryOnly)
+        const filteredDocs = teachersSnap.docs.filter((teacherDoc) => {
+          const teacherData = teacherDoc.data();
+          return !isAttendanceEntryOnly(teacherData.role);
+        });
+
         // 2. ดึงข้อมูลการลงเวลาของครูแต่ละคนในวันนี้
-        await Promise.all(teachersSnap.docs.map(async (teacherDoc) => {
+        await Promise.all(filteredDocs.map(async (teacherDoc) => {
           const teacherData = teacherDoc.data();
           const attendanceRef = doc(firestore, "school-settings", schoolId, "teachers", teacherDoc.id, "attendance", todayStr);
           const attendanceSnap = await getDoc(attendanceRef);

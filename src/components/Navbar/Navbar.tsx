@@ -35,6 +35,8 @@ import SkeletonLoader from "@/components/SkeletonLoader";
 import { useTheme } from "@/ThemeContext";
 import Swal from "sweetalert2";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { usePwaMode } from "@/hooks/usePwaMode";
+import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
 
 /* -------------------- types -------------------- */
 interface Notification {
@@ -64,6 +66,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const profileUrl = currentUser?.profileUrl || defaultProfile;
+  const isPwaMode = usePwaMode();
 
   const [activeIcon, setActiveIcon] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -383,7 +386,9 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
             <div
               className="flex items-center gap-2 cursor-pointer"
               onClick={() => {
-                if (isAttendanceEntryOnly(currentUser?.role)) {
+                if (isPwaMode) {
+                  navigate(PWA_ATTENDANCE_HUB_PATH);
+                } else if (isAttendanceEntryOnly(currentUser?.role)) {
                   navigate("/attendance/checkin-out");
                 } else {
                   navigate("/home");
@@ -397,7 +402,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
             </div>
 
             {/* Search Icon Only */}
-            {!isAttendanceEntryOnly(currentUser?.role) && (
+            {!isPwaMode && !isAttendanceEntryOnly(currentUser?.role) && (
               <button
                 className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
                 onClick={() => {
@@ -414,7 +419,15 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           </div>
 
           {/* Center */}
-          {!isAttendanceEntryOnly(currentUser?.role) && (
+          {isPwaMode ? (
+            <div className="hidden md:flex items-center gap-6">
+              <FaUserCheck
+                className={iconClass("attendance")}
+                title="ระบบเช็คชื่อ"
+                onClick={() => navigate(PWA_ATTENDANCE_HUB_PATH)}
+              />
+            </div>
+          ) : !isAttendanceEntryOnly(currentUser?.role) && (
             <div className="hidden md:flex items-center gap-6">
               <FaHome
                 className={iconClass("home")}
@@ -433,7 +446,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           {/* Right */}
           <div className="flex items-center gap-3">
             {/* Notification */}
-            {!isAttendanceEntryOnly(currentUser?.role) && (
+            {!isPwaMode && !isAttendanceEntryOnly(currentUser?.role) && (
               <div className="relative" ref={notificationRef}>
               <FaBell
                 className={iconClass('notify')}
@@ -567,7 +580,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               )}
             </div>
             )}
-            {isAttendanceEntryOnly(currentUser?.role) ? (
+            {isPwaMode || isAttendanceEntryOnly(currentUser?.role) ? (
               <ProfileAvatar
                 src={profileUrl}
                 onError={(e) => (e.currentTarget.src = defaultProfile)}

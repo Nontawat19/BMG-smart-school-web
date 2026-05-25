@@ -7,6 +7,7 @@ import { RootState } from '@/store';
 import { doc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '../firebase';
 import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
+import { isPwaStandalone, PWA_ATTENDANCE_HUB_PATH } from '@/utils/pwaMode';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -70,18 +71,42 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return <Navigate to="/login" replace />;
   }
 
-  if (user && isAttendanceEntryOnly(user.role) && location.pathname !== "/attendance/checkin-out") {
+  const isPwaAttendanceHub = isPwaStandalone() && location.pathname === PWA_ATTENDANCE_HUB_PATH;
+
+  const isAllowedPathForAttendanceEntry =
+    location.pathname === "/attendance/checkin-out" ||
+    location.pathname.startsWith("/student-support") ||
+    location.pathname.includes("/students/behavior") ||
+    location.pathname.includes("student-behavior-class-report") ||
+    location.pathname.includes("attendance-summary") ||
+    location.pathname.includes("escape-summary") ||
+    location.pathname.startsWith("/academic/hub/");
+
+  if (
+    user &&
+    isAttendanceEntryOnly(user.role) &&
+    !isPwaAttendanceHub &&
+    !isAllowedPathForAttendanceEntry
+  ) {
     return <Navigate to="/attendance/checkin-out" replace />;
   }
 
   // Role-based authorization check
-  if (allowedRoles && allowedRoles.length > 0 && user) {
+  if (allowedRoles && allowedRoles.length > 0 && user && !isPwaAttendanceHub) {
+    const normalizeRole = (role: unknown) => {
+      if (typeof role !== 'string') return '';
+      const lowerRole = role.toLowerCase();
+      if (lowerRole === 'admin') return 'school_admin';
+      if (lowerRole === 'academic') return 'academic_admin';
+      return lowerRole;
+    };
+
     const rawRoles = Array.isArray(user.role) ? user.role : [user.role];
-    const userRoles = rawRoles.map(r => typeof r === 'string' ? (r.toLowerCase() === 'admin' ? 'school_admin' : r.toLowerCase()) : '');
+    const userRoles = rawRoles.map(normalizeRole).filter(Boolean);
 
     // Check if user has ANY of the allowed roles (case-insensitive check)
     const hasPermission = allowedRoles.some(role => {
-      const lowerRole = typeof role === 'string' ? role.toLowerCase() : '';
+      const lowerRole = normalizeRole(role);
       return userRoles.includes(lowerRole);
     });
 

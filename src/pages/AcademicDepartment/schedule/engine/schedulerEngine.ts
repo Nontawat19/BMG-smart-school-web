@@ -49,10 +49,13 @@ type RuntimeConflictIndex = {
     classDayLoad: Map<string, number>;
     roomDayLoad: Map<string, number>;
     classCourseDayCount: Map<string, number>;
+    teacherClassCourseDayCount: Map<string, number>;
+    classCourseSlots: Map<string, { periodIdx: number; groupNumber: number }[]>; // key: classId|courseId|dayKey
     teacherDailySchedule: Map<string, number[]>; // key: teacherId|dayKey, value: sorted array of period indices
     classDailySchedule: Map<string, number[]>; // key: classId|dayKey, value: sorted array of period indices
     teacherPeriodLoad: Map<string, number>;
     classPeriodLoad: Map<string, number>;
+    processedPlacements: Map<string, Set<string>>;
 };
 
 export type SchedulingEngineInput = {
@@ -101,10 +104,13 @@ const createRuntimeConflictIndex = (): RuntimeConflictIndex => ({
     classDayLoad: new Map(),
     roomDayLoad: new Map(),
     classCourseDayCount: new Map(),
+    teacherClassCourseDayCount: new Map(),
+    classCourseSlots: new Map(),
     teacherDailySchedule: new Map(),
     classDailySchedule: new Map(),
     teacherPeriodLoad: new Map(),
-    classPeriodLoad: new Map()
+    classPeriodLoad: new Map(),
+    processedPlacements: new Map()
 });
 
 const addSetValue = (map: Map<string, Set<string>>, key: string, value: string) => {
@@ -146,33 +152,57 @@ const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupa
     daySched.sort((a, b) => a - b);
     index.teacherDailySchedule.set(teacherDayKey, daySched);
 
+    const placementKey = occupancy.taskId !== undefined 
+        ? `task-${occupancy.taskId}` 
+        : `course-${occupancy.courseId}-${occupancy.groupNumber}`;
+
+    if (!index.processedPlacements.has(slotId)) {
+        index.processedPlacements.set(slotId, new Set());
+    }
+    const slotPlacements = index.processedPlacements.get(slotId)!;
+
+    if (!slotPlacements.has(placementKey)) {
+        slotPlacements.add(placementKey);
+
+        normalizeClassIds(occupancy.classId).forEach(classId => {
+            const classDayKey = `${classId}|${dayKey}`;
+            index.classDayLoad.set(classDayKey, (index.classDayLoad.get(classDayKey) || 0) + 1);
+            const classPeriodKey = `${classId}|${periodIdx}`;
+            index.classPeriodLoad.set(classPeriodKey, (index.classPeriodLoad.get(classPeriodKey) || 0) + 1);
+
+            const classDaySched = index.classDailySchedule.get(classDayKey) || [];
+            classDaySched.push(periodIdx);
+            classDaySched.sort((a, b) => a - b);
+            index.classDailySchedule.set(classDayKey, classDaySched);
+
+            if (!index.classSlots.has(classId)) index.classSlots.set(classId, new Map());
+            const slotMap = index.classSlots.get(classId)!;
+            if (!slotMap.has(slotId)) slotMap.set(slotId, new Set());
+            const gNum = (occupancy as any).groupNumber || 0;
+            slotMap.get(slotId)!.add(gNum);
+
+            const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
+            index.classCourseDayCount.set(courseDayKey, (index.classCourseDayCount.get(courseDayKey) || 0) + 1);
+
+            if (!index.classCourseSlots.has(courseDayKey)) {
+                index.classCourseSlots.set(courseDayKey, []);
+            }
+            index.classCourseSlots.get(courseDayKey)!.push({
+                periodIdx,
+                groupNumber: occupancy.groupNumber || 0
+            });
+        });
+
+        normalizeSpecificRooms(occupancy.room).forEach(roomId => {
+            addSetValue(index.roomSlots, roomId, slotId);
+            const roomDayKey = `${roomId}|${dayKey}`;
+            index.roomDayLoad.set(roomDayKey, (index.roomDayLoad.get(roomDayKey) || 0) + 1);
+        });
+    }
+
     normalizeClassIds(occupancy.classId).forEach(classId => {
-        const classDayKey = `${classId}|${dayKey}`;
-        index.classDayLoad.set(classDayKey, (index.classDayLoad.get(classDayKey) || 0) + 1);
-        const classPeriodKey = `${classId}|${periodIdx}`;
-        index.classPeriodLoad.set(classPeriodKey, (index.classPeriodLoad.get(classPeriodKey) || 0) + 1);
-
-        const classDaySched = index.classDailySchedule.get(classDayKey) || [];
-        classDaySched.push(periodIdx);
-        classDaySched.sort((a, b) => a - b);
-        index.classDailySchedule.set(classDayKey, classDaySched);
-
-        if (!index.classSlots.has(classId)) index.classSlots.set(classId, new Map());
-        const slotMap = index.classSlots.get(classId)!;
-        if (!slotMap.has(slotId)) slotMap.set(slotId, new Set());
-        // Use groupNumber from course if available, or taskId's group if we had it, or 0 as default (whole class)
-        // Note: EngineTask has groupNumber, we should probably pass it through TimetableOccupancy
-        const gNum = (occupancy as any).groupNumber || 0;
-        slotMap.get(slotId)!.add(gNum);
-
-        const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
-        index.classCourseDayCount.set(courseDayKey, (index.classCourseDayCount.get(courseDayKey) || 0) + 1);
-    });
-
-    normalizeSpecificRooms(occupancy.room).forEach(roomId => {
-        addSetValue(index.roomSlots, roomId, slotId);
-        const roomDayKey = `${roomId}|${dayKey}`;
-        index.roomDayLoad.set(roomDayKey, (index.roomDayLoad.get(roomDayKey) || 0) + 1);
+        const teacherClassCourseDayKey = `${occupancy.teacherId}|${classId}|${occupancy.courseId}|${dayKey}`;
+        index.teacherClassCourseDayCount.set(teacherClassCourseDayKey, (index.teacherClassCourseDayCount.get(teacherClassCourseDayKey) || 0) + 1);
     });
 };
 
@@ -199,47 +229,74 @@ const removeOccupancyFromIndex = (index: RuntimeConflictIndex, slotId: string, o
         if (daySched.length === 0) index.teacherDailySchedule.delete(teacherDayKey);
     }
 
-    normalizeClassIds(occupancy.classId).forEach(classId => {
-        const classDayKey = `${classId}|${dayKey}`;
-        const nextClassLoad = (index.classDayLoad.get(classDayKey) || 1) - 1;
-        if (nextClassLoad <= 0) index.classDayLoad.delete(classDayKey);
-        else index.classDayLoad.set(classDayKey, nextClassLoad);
+    const placementKey = occupancy.taskId !== undefined 
+        ? `task-${occupancy.taskId}` 
+        : `course-${occupancy.courseId}-${occupancy.groupNumber}`;
 
-        const classPeriodKey = `${classId}|${periodIdx}`;
-        const nextClassPeriodLoad = (index.classPeriodLoad.get(classPeriodKey) || 1) - 1;
-        if (nextClassPeriodLoad <= 0) index.classPeriodLoad.delete(classPeriodKey);
-        else index.classPeriodLoad.set(classPeriodKey, nextClassPeriodLoad);
+    const slotPlacements = index.processedPlacements.get(slotId);
 
-        const classDaySched = index.classDailySchedule.get(classDayKey);
-        if (classDaySched) {
-            const idx = classDaySched.indexOf(periodIdx);
-            if (idx !== -1) classDaySched.splice(idx, 1);
-            if (classDaySched.length === 0) index.classDailySchedule.delete(classDayKey);
+    if (slotPlacements && slotPlacements.has(placementKey)) {
+        slotPlacements.delete(placementKey);
+        if (slotPlacements.size === 0) {
+            index.processedPlacements.delete(slotId);
         }
 
-        const slotMap = index.classSlots.get(classId);
-        if (slotMap) {
-            const groupSet = slotMap.get(slotId);
-            if (groupSet) {
-                const gNum = (occupancy as any).groupNumber || 0;
-                groupSet.delete(gNum);
-                if (groupSet.size === 0) slotMap.delete(slotId);
+        normalizeClassIds(occupancy.classId).forEach(classId => {
+            const classDayKey = `${classId}|${dayKey}`;
+            const nextClassLoad = (index.classDayLoad.get(classDayKey) || 1) - 1;
+            if (nextClassLoad <= 0) index.classDayLoad.delete(classDayKey);
+            else index.classDayLoad.set(classDayKey, nextClassLoad);
+
+            const classPeriodKey = `${classId}|${periodIdx}`;
+            const nextClassPeriodLoad = (index.classPeriodLoad.get(classPeriodKey) || 1) - 1;
+            if (nextClassPeriodLoad <= 0) index.classPeriodLoad.delete(classPeriodKey);
+            else index.classPeriodLoad.set(classPeriodKey, nextClassPeriodLoad);
+
+            const classDaySched = index.classDailySchedule.get(classDayKey);
+            if (classDaySched) {
+                const idx = classDaySched.indexOf(periodIdx);
+                if (idx !== -1) classDaySched.splice(idx, 1);
+                if (classDaySched.length === 0) index.classDailySchedule.delete(classDayKey);
             }
-            if (slotMap.size === 0) index.classSlots.delete(classId);
-        }
 
-        const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
-        const nextCount = (index.classCourseDayCount.get(courseDayKey) || 1) - 1;
-        if (nextCount <= 0) index.classCourseDayCount.delete(courseDayKey);
-        else index.classCourseDayCount.set(courseDayKey, nextCount);
-    });
+            const slotMap = index.classSlots.get(classId);
+            if (slotMap) {
+                const groupSet = slotMap.get(slotId);
+                if (groupSet) {
+                    const gNum = (occupancy as any).groupNumber || 0;
+                    groupSet.delete(gNum);
+                    if (groupSet.size === 0) slotMap.delete(slotId);
+                }
+                if (slotMap.size === 0) index.classSlots.delete(classId);
+            }
 
-    normalizeSpecificRooms(occupancy.room).forEach(roomId => {
-        deleteSetValue(index.roomSlots, roomId, slotId);
-        const roomDayKey = `${roomId}|${dayKey}`;
-        const nextRoomLoad = (index.roomDayLoad.get(roomDayKey) || 1) - 1;
-        if (nextRoomLoad <= 0) index.roomDayLoad.delete(roomDayKey);
-        else index.roomDayLoad.set(roomDayKey, nextRoomLoad);
+            const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
+            const nextCount = (index.classCourseDayCount.get(courseDayKey) || 1) - 1;
+            if (nextCount <= 0) index.classCourseDayCount.delete(courseDayKey);
+            else index.classCourseDayCount.set(courseDayKey, nextCount);
+
+            const courseSlots = index.classCourseSlots.get(courseDayKey);
+            if (courseSlots) {
+                const idx = courseSlots.findIndex(s => s.periodIdx === periodIdx && s.groupNumber === (occupancy.groupNumber || 0));
+                if (idx !== -1) courseSlots.splice(idx, 1);
+                if (courseSlots.length === 0) index.classCourseSlots.delete(courseDayKey);
+            }
+        });
+
+        normalizeSpecificRooms(occupancy.room).forEach(roomId => {
+            deleteSetValue(index.roomSlots, roomId, slotId);
+            const roomDayKey = `${roomId}|${dayKey}`;
+            const nextRoomLoad = (index.roomDayLoad.get(roomDayKey) || 1) - 1;
+            if (nextRoomLoad <= 0) index.roomDayLoad.delete(roomDayKey);
+            else index.roomDayLoad.set(roomDayKey, nextRoomLoad);
+        });
+    }
+
+    normalizeClassIds(occupancy.classId).forEach(classId => {
+        const teacherClassCourseDayKey = `${occupancy.teacherId}|${classId}|${occupancy.courseId}|${dayKey}`;
+        const nextTeacherClassCount = (index.teacherClassCourseDayCount.get(teacherClassCourseDayKey) || 1) - 1;
+        if (nextTeacherClassCount <= 0) index.teacherClassCourseDayCount.delete(teacherClassCourseDayKey);
+        else index.teacherClassCourseDayCount.set(teacherClassCourseDayKey, nextTeacherClassCount);
     });
 };
 
@@ -365,11 +422,61 @@ const orderTasksForRun = (
 const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: RuntimeConflictIndex) => {
     const requestedRooms = normalizeSpecificRooms(task.targetRooms);
     const teacherIds = getTaskTeacherIds(task);
+    const isDoubleSession = task.duration > 1;
+    const allowSameDaySingleRepeat = task.duration === 1 && getRequiredWeeklyPeriods(task.course) > 6;
 
     for (const slotId of sessionSlots) {
         if (teacherIds.some(teacherId => hasSlot(index.teacherSlots, teacherId, slotId))) return false;
         if (task.targetClasses.some(classId => hasClassConflict(index, classId, slotId, task.groupNumber))) return false;
         if (requestedRooms.some(roomId => hasSlot(index.roomSlots, roomId, slotId))) return false;
+    }
+
+    if (task.requiredSlot) return true;
+
+    if (sessionSlots.length > 0) {
+        const [dayKey] = sessionSlots[0].split('-');
+        const newPeriods = sessionSlots.map(s => parseInt(s.split('-')[1]));
+        const currentGroup = task.groupNumber || 0;
+
+        for (const classId of task.targetClasses) {
+            if (!isDoubleSession && !allowSameDaySingleRepeat) {
+                const alreadySameTeacherClassDay = teacherIds.some(teacherId =>
+                    (index.teacherClassCourseDayCount.get(`${teacherId}|${classId}|${task.course.id}|${dayKey}`) || 0) > 0
+                );
+                if (alreadySameTeacherClassDay) {
+                    return false;
+                }
+            }
+
+            const courseDayKey = `${classId}|${task.course.id}|${dayKey}`;
+            const existingSlots = index.classCourseSlots?.get(courseDayKey) || [];
+
+            // Filter to those that share the same students:
+            // either same group, or one of them is 0 (whole class)
+            const relevantPeriods = existingSlots
+                .filter(s => s.groupNumber === currentGroup || s.groupNumber === 0 || currentGroup === 0)
+                .map(s => s.periodIdx);
+
+            const combinedPeriods = Array.from(new Set([...relevantPeriods, ...newPeriods])).sort((a, b) => a - b);
+
+            let maxConsecutive = 0;
+            if (combinedPeriods.length > 0) {
+                let currentConsecutive = 1;
+                maxConsecutive = 1;
+                for (let i = 1; i < combinedPeriods.length; i++) {
+                    if (combinedPeriods[i] === combinedPeriods[i - 1] + 1) {
+                        currentConsecutive++;
+                        maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
+                    } else {
+                        currentConsecutive = 1;
+                    }
+                }
+            }
+
+            if (maxConsecutive >= 3) {
+                return false;
+            }
+        }
     }
 
     return true;
@@ -615,7 +722,14 @@ const evaluateScheduleQuality = (
     const classCourseDay = new Map<string, { count: number; course: Course | null }>();
     Object.entries(timetable).forEach(([slotId, occupancies]) => {
         const [dayKey] = slotId.split('-');
+        const processedInSlot = new Set<string>();
         occupancies.forEach(occupancy => {
+            const placementKey = occupancy.taskId !== undefined 
+                ? `task-${occupancy.taskId}` 
+                : `course-${occupancy.courseId}-${occupancy.groupNumber}`;
+            if (processedInSlot.has(placementKey)) return;
+            processedInSlot.add(placementKey);
+
             normalizeClassIds(occupancy.classId).forEach(classId => {
                 const key = `${classId}|${occupancy.courseId}|${dayKey}`;
                 const current = classCourseDay.get(key) || { count: 0, course: occupancy.course };

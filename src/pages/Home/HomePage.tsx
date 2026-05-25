@@ -19,6 +19,8 @@ import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getThaiYear } from "@/utils/dateUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { fetchStudentReportSummary } from "@/utils/studentReportSummaryUtils";
+import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
 interface AttendanceItem { name: string; present?: number; late?: number; leave?: number; absent?: number; earlyReturn?: number; noCheckout?: number; officialTravel?: number; }
@@ -660,28 +662,83 @@ const HomePage = () => {
         const fetchReportData = async () => {
             setReportLoading(true);
             try {
-                const studentsSnap = await getDocs(collection(db, "school-settings", schoolId, "students"));
-                const studentsList = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                const byLevel: Record<string, number> = {};
-                let active = 0, paused = 0, suspended = 0, transferred = 0, resigned = 0;
-                studentsList.forEach((s: any) => {
-                    const status = s.studentStatus || 'เรียนอยู่';
-                    if (status === 'เรียนอยู่') active++; else if (status === 'พักการเรียน') paused++; else if (status === 'แขวนลอย') suspended++; else if (status === 'ย้าย') transferred++; else if (status === 'ลาออก') resigned++;
-                    const lvl = CLASSES[s.classLevel] || s.classLevel || 'ไม่ระบุ';
-                    byLevel[lvl] = (byLevel[lvl] || 0) + 1;
-                });
-                setStudentReport({ total: studentsList.length, active, paused, suspended, transferred, resigned, byLevel });
-                const teachersSnap = await getDocs(collection(db, "school-settings", schoolId, "teachers"));
-                const teachersList = teachersSnap.docs
-                    .map(d => ({ id: d.id, ...d.data() }))
-                    .filter((t: any) => !isAttendanceEntryOnly(t.role));
-                const byDept: Record<string, number> = {};
-                teachersList.forEach((t: any) => { const dept = t.department || 'ไม่ระบุ'; byDept[dept] = (byDept[dept] || 0) + 1; });
-                setTeacherReport({ total: teachersList.length, byDepartment: byDept });
+                const studentSummary = await fetchStudentReportSummary(db, schoolId);
+                setStudentReport(studentSummary);
+                
+                const schoolSummary = await fetchSchoolDashboardSummary(db, schoolId);
+                setTeacherReport({ total: schoolSummary.teacherCount || 0, byDepartment: {} });
                 try {
                     const todayStr = new Date().toISOString().split('T')[0];
                     const studentLeaveSnap = await getDocs(query(collection(db, "school-settings", schoolId, "leave_summary"), orderBy("createdAt", "desc"), limit(50)));
-                    const studentLeaveList = studentLeaveSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const rawStudentLeaveList = studentLeaveSnap.docs.map(d => {
+                        const data = d.data();
+                        return {
+                            id: d.id,
+                            studentName: data.studentName || 'ไม่ระบุชื่อ',
+                            profileImageUrl: data.profileImageUrl || null,
+                            classLevel: data.classLevel || '',
+                            room: data.room || '',
+                            studentNumber: data.studentNumber || '',
+                            studentId: data.studentId || '',
+                            studentDocId: data.studentDocId || '',
+                            ...data
+                        };
+                    });
+
+                    const studentsRef = collection(db, "school-settings", schoolId, "students");
+                    const studentMap: Record<string, any> = {};
+                    const uniqueDocIds = Array.from(new Set(
+                        rawStudentLeaveList
+                            .flatMap((leave: any) => [leave.studentDocId, leave.studentId])
+                            .map((value: any) => String(value || '').trim())
+                            .filter(Boolean)
+                    ));
+
+                    const studentDocs = await Promise.all(uniqueDocIds.map(async (studentDocId) => {
+                        const snap = await getDoc(doc(db, "school-settings", schoolId, "students", studentDocId));
+                        return snap.exists() ? { id: snap.id, data: snap.data() } : null;
+                    }));
+
+                    studentDocs.forEach((studentDoc) => {
+                        if (!studentDoc) return;
+                        studentMap[studentDoc.id] = studentDoc.data;
+                        const studentCode = String(studentDoc.data.studentId || '').trim();
+                        if (studentCode) studentMap[studentCode] = studentDoc.data;
+                    });
+
+                    const missingStudentCodes = Array.from(new Set(
+                        rawStudentLeaveList
+                            .map((leave: any) => String(leave.studentId || '').trim())
+                            .filter((studentId: string) => studentId && !studentMap[studentId])
+                    ));
+
+                    const fallbackStudentDocs = await Promise.all(missingStudentCodes.map(async (studentId) => {
+                        const snap = await getDocs(query(studentsRef, where("studentId", "==", studentId), limit(1)));
+                        const match = snap.docs[0];
+                        return match ? { id: match.id, data: match.data() } : null;
+                    }));
+
+                    fallbackStudentDocs.forEach((studentDoc) => {
+                        if (!studentDoc) return;
+                        studentMap[studentDoc.id] = studentDoc.data;
+                        const studentCode = String(studentDoc.data.studentId || '').trim();
+                        if (studentCode) studentMap[studentCode] = studentDoc.data;
+                    });
+
+                    const studentLeaveList = rawStudentLeaveList.map((leave: any) => {
+                        const studentData = studentMap[String(leave.studentDocId || '').trim()] || studentMap[String(leave.studentId || '').trim()] || {};
+                        const fullName = `${studentData.title || ''}${studentData.firstName || ''} ${studentData.lastName || ''}`.trim();
+
+                        return {
+                            ...leave,
+                            studentName: leave.studentName && leave.studentName !== 'ไม่ระบุชื่อ' ? leave.studentName : (fullName || 'ไม่ระบุชื่อ'),
+                            profileImageUrl: leave.profileImageUrl || studentData.profileImageUrl || studentData.photoURL || studentData.imageUrl || null,
+                            classLevel: leave.classLevel || studentData.classLevel || studentData.level || '',
+                            room: leave.room || studentData.room || studentData.roomNumber || '',
+                            studentNumber: leave.studentNumber || studentData.studentNumber || studentData.number || studentData.classNumber || studentData.no || studentData['เลขที่'] || '',
+                            studentId: leave.studentId || studentData.studentId || ''
+                        };
+                    });
                     
                     let sSick = 0, sPersonal = 0, sOfficial = 0;
                     studentLeaveList.forEach((l: any) => {
@@ -715,7 +772,44 @@ const HomePage = () => {
                 } catch (e) { console.warn("TodaySummary fetch error:", e); }
 
                 try {
-                    const [coursesSnap, clubsSnap, enrollmentsSnap] = await Promise.all([getDocs(collection(db, "school-settings", schoolId, "courses")), getDocs(collection(db, "school-settings", schoolId, "clubs")), getDocs(collection(db, "school-settings", schoolId, "enrollments"))]);
+                    const [coursesSnap, clubsSnap, enrollmentsSnap, assignmentSnap] = await Promise.all([
+                        getDocs(collection(db, "school-settings", schoolId, "courses")),
+                        getDocs(collection(db, "school-settings", schoolId, "clubs")),
+                        getDocs(collection(db, "school-settings", schoolId, "enrollments")),
+                        getDocs(collection(db, "school-settings", schoolId, "course_assignments"))
+                    ]);
+
+                    let totalOpenCourses = 0;
+                    try {
+                        const now = new Date();
+                        const academicYear = calendarState.academicYear || String(getThaiYear(now));
+                        const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                        const currentTerm = (calendarState.terms || []).find((t: any) =>
+                            t.startDate && t.endDate && todayDateStr >= t.startDate && todayDateStr <= t.endDate
+                        ) || calendarState.terms?.[0];
+                        const semester = currentTerm?.id === 'term2' || String(currentTerm?.name || '').includes('2') ? "2" : "1";
+
+                        const activeCourses = coursesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)).filter((c: any) => c.isActive !== false);
+                        
+                        const assignments = assignmentSnap.docs.map(doc => doc.data()).filter((a: any) => {
+                            const dataYear = String(a.academicYear || "");
+                            const dataSemester = String(a.semester || a.term || "");
+                            const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
+                            const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`) || dataSemester.includes(semester);
+                            return yearMatches && semesterMatches;
+                        });
+
+                        activeCourses.forEach((c: any) => {
+                            const assignment = assignments.find((a: any) => a.courseId === c.id);
+                            const teacherAssignments = assignment ? assignment.teacherAssignments : [];
+                            if (teacherAssignments && teacherAssignments.length > 0) {
+                                totalOpenCourses++;
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Error computing totalOpenCourses:", e);
+                        totalOpenCourses = coursesSnap.size;
+                    }
                     let todaySchedules: ScheduleItem[] = [];
                     let compensationScheduleDay = '';
                     const uid = currentUser?.uid;
@@ -785,9 +879,21 @@ const HomePage = () => {
                             ]);
 
                             // 3.1 Map Periods
+                            let activePeriods: any[] = [];
                             if (periodSnap.exists()) {
                                 const data = periodSnap.data();
                                 if (data.periods && Array.isArray(data.periods)) {
+                                    activePeriods = data.periods.map((p: any, arrIdx: number) => {
+                                        const stableIndex = typeof p.index !== 'undefined'
+                                            ? p.index
+                                            : (typeof p.order !== 'undefined' ? p.order : arrIdx);
+                                        return {
+                                            ...p,
+                                            id: p.id || `period-${stableIndex}`,
+                                            index: stableIndex,
+                                        };
+                                    }).sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0));
+
                                     data.periods.forEach((p: any) => {
                                         periodSettings[p.id] = { startTime: p.startTime, endTime: p.endTime };
                                         if (p.id.startsWith('period-')) {
@@ -808,7 +914,6 @@ const HomePage = () => {
                                 if (cdoc.data().subjectCode) courseDataMap[cdoc.data().subjectCode] = cdoc.data();
                             });
 
-                            // 3.3 Map Rooms for Display Names
                             // 3.3 Map Rooms for Display Names & Codes
                             const roomDataMap: Record<string, { name: string, code: string }> = {};
                             roomsSnap.forEach(rdoc => {
@@ -824,6 +929,17 @@ const HomePage = () => {
                                 const periodId = slotKey.replace(`${dayKeyVal}-`, '');
                                 if (periodId === 'homeroom' || periodId === 'lunch') return null;
                                 if (periodId.startsWith('period-')) return Number(periodId.replace('period-', '')) || null;
+
+                                const index = Number(periodId);
+                                if (Number.isFinite(index) && activePeriods.length > 0) {
+                                    const setting = activePeriods.find((p: any) => p.index === index);
+                                    if (setting) {
+                                        if (setting.id === 'homeroom' || setting.id === 'lunch') return null;
+                                        const match = String(setting.id || '').match(/^period-(\d+)$/);
+                                        if (match) return Number(match[1]);
+                                    }
+                                }
+
                                 const parsed = Number(periodId);
                                 return Number.isFinite(parsed) ? (parsed === 0 ? 1 : parsed) : null;
                             };
@@ -882,6 +998,9 @@ const HomePage = () => {
                             const schedSnap = await getDocs(schedQuery);
                             schedSnap.forEach(sdoc => {
                                 const data = sdoc.data();
+                                const docTeacherId = data.teacherId || sdoc.id.split('__')[0];
+                                if (String(docTeacherId) !== String(teacherDocId)) return;
+
                                 const dataYear = String(data.academicYear || "");
                                 const dataSemester = String(data.semester || data.term || "");
                                 const yearMatches = !academicYear || !dataYear || dataYear === academicYear;
@@ -1000,12 +1119,29 @@ const HomePage = () => {
                                     club.responsibleTeacherIds.includes(uid)
                                 ));
                             const fallbackClubPeriod = findSpecialPeriod(['ชุมนุม', 'club']);
+                            
+                            // Group clubs by specialPeriodId (or fallback if empty)
+                            const clubsByPeriodMap: Record<string, typeof myClubs> = {};
                             myClubs.forEach(club => {
-                                const clubPeriod = periodsForToday.find(period => period.id === club.specialPeriodId) || fallbackClubPeriod;
+                                const periodId = club.specialPeriodId || fallbackClubPeriod?.id || 'fallback';
+                                if (!clubsByPeriodMap[periodId]) {
+                                    clubsByPeriodMap[periodId] = [];
+                                }
+                                clubsByPeriodMap[periodId].push(club);
+                            });
+
+                            Object.entries(clubsByPeriodMap).forEach(([periodId, clubsList]) => {
+                                const clubPeriod = periodsForToday.find(period => period.id === periodId) || fallbackClubPeriod;
                                 if (!clubPeriod) return;
+
+                                // Join the club names nicely
+                                const firstClubName = clubsList[0]?.name || '';
+                                const displayClubName = clubsList.length > 1
+                                    ? `${firstClubName} +${clubsList.length - 1}`
+                                    : firstClubName;
                                 todaySchedules.push({
                                     period: 'ชุมนุม',
-                                    subject: `ชุมนุม${club.name ? `: ${club.name}` : ''}`,
+                                    subject: `ชุมนุม${displayClubName ? `: ${displayClubName}` : ''}`,
                                     subjectCode: '',
                                     class: 'ครูผู้ดูแล',
                                     room: '-',
@@ -1025,13 +1161,30 @@ const HomePage = () => {
                                     activity.responsibleTeacherIds.includes(teacherDocId) ||
                                     activity.responsibleTeacherIds.includes(uid)
                                 ));
+
+                            // Group learner activities by specialPeriodId
+                            const activitiesByPeriodMap: Record<string, typeof learnerActivities> = {};
                             learnerActivities.forEach(activity => {
-                                const activityPeriod = periodsForToday.find(period => period.id === activity.specialPeriodId);
+                                const periodId = activity.specialPeriodId || 'unknown';
+                                if (!activitiesByPeriodMap[periodId]) {
+                                    activitiesByPeriodMap[periodId] = [];
+                                }
+                                activitiesByPeriodMap[periodId].push(activity);
+                            });
+
+                            Object.entries(activitiesByPeriodMap).forEach(([periodId, activitiesList]) => {
+                                const activityPeriod = periodsForToday.find(period => period.id === periodId);
                                 if (!activityPeriod) return;
+
+                                // Join names of activities
+                                const firstActivityName = activitiesList[0]?.name || 'กิจกรรมพัฒนาผู้เรียน';
+                                const displayActivityName = activitiesList.length > 1
+                                    ? `${firstActivityName} +${activitiesList.length - 1}`
+                                    : firstActivityName;
                                 todaySchedules.push({
                                     period: activityPeriod.title || 'กิจกรรม',
-                                    subject: activity.name || 'กิจกรรมพัฒนาผู้เรียน',
-                                    subjectCode: activity.courseCode || '',
+                                    subject: displayActivityName,
+                                    subjectCode: activitiesList[0]?.courseCode || '',
                                     class: 'กิจกรรมพัฒนาผู้เรียน',
                                     room: '-',
                                     startTime: activityPeriod.startTime,
@@ -1118,6 +1271,18 @@ const HomePage = () => {
                                 });
                             });
 
+                            // Deduplicate schedules to prevent duplicate entries for the same slot
+                            const uniqueSchedulesMap = new Map<string, ScheduleItem>();
+                            todaySchedules.forEach(item => {
+                                const periodKey = item.period || `period-${item._sortIndex}`;
+                                const classKey = Array.isArray(item.classId) ? item.classId.join('-') : String(item.classId || '');
+                                const courseKey = item.courseId || item.subjectCode || item.subject;
+                                const subKey = item.isSubstitute ? `sub-${item.substitutionId}` : 'normal';
+                                const key = `${item.type}-${periodKey}-${classKey}-${courseKey}-${subKey}`;
+                                uniqueSchedulesMap.set(key, item);
+                            });
+                            todaySchedules = Array.from(uniqueSchedulesMap.values());
+
                             todaySchedules.sort((a: any, b: any) => (a._startMinutes ?? 9999) - (b._startMinutes ?? 9999) || (a._sortIndex ?? 999) - (b._sortIndex ?? 999));
                             const groupedSchedules: ScheduleItem[] = [];
                             for (let i = 0; i < todaySchedules.length; i++) {
@@ -1157,7 +1322,7 @@ const HomePage = () => {
                             todaySchedules = groupedSchedules;
                         }
                     }
-                    setAcademicReport({ totalCourses: coursesSnap.size, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules, compensationScheduleDay });
+                    setAcademicReport({ totalCourses: totalOpenCourses, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules, compensationScheduleDay });
                 } catch (e) { console.warn("Academic report fetch:", e); }
             } catch (error) { console.error("Error fetching report data:", error); }
             finally { setReportLoading(false); }
@@ -1269,22 +1434,26 @@ const HomePage = () => {
             if (isPie) {
                 const data = payload[0].payload;
                 return (
-                    <div className="relative group">
-                        <div className="absolute -inset-1 bg-gradient-to-r from-white/20 to-transparent blur-xl opacity-50 group-hover:opacity-100 transition-opacity" />
-                        <div className="relative bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl p-4 border border-white/20 dark:border-white/5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] rounded-2xl text-sm z-50 min-w-[200px] ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-                            <div className="flex items-center gap-3 mb-3 pb-2 border-b border-gray-100 dark:border-white/5">
-                                <div className="w-4 h-4 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, white, ${data.actualColor})`, boxShadow: `0 4px 12px ${data.actualColor}44, inset -2px -2px 4px rgba(0,0,0,0.2)` }} />
-                                <p className="font-black text-gray-900 dark:text-white text-lg tracking-tight">{data.name}</p>
+                    <div className="relative bg-white/95 dark:bg-[#1a1b1e]/95 backdrop-blur-md p-3.5 border border-gray-200/80 dark:border-gray-800 shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-none rounded-xl text-xs z-50 min-w-[170px] pointer-events-none transition-all duration-200">
+                        {/* Status Header */}
+                        <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-gray-100 dark:border-white/5">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.actualColor, boxShadow: `0 0 8px ${data.actualColor}` }} />
+                            <p className="font-extrabold text-gray-800 dark:text-gray-200 text-[13px] tracking-tight">{data.name}</p>
+                        </div>
+                        {/* Metrics */}
+                        <div className="space-y-1.5 font-medium">
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 dark:text-gray-500 font-semibold">จำนวน:</span>
+                                <span className="font-extrabold text-gray-900 dark:text-white text-right">{data.value} คน</span>
                             </div>
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-gray-400 dark:text-gray-500 font-bold uppercase text-[9px] tracking-widest pb-0.5">Quantity</span>
-                                    <span className="font-black text-gray-900 dark:text-white text-2xl leading-none">{data.value}<span className="text-[10px] ml-1 font-bold opacity-40">PERS</span></span>
-                                </div>
-                                <div className="h-2 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden p-[1px]"><div className="h-full rounded-full transition-all duration-1000" style={{ width: `${data.percent}%`, backgroundColor: data.actualColor }} /></div>
-                                <div className="flex justify-center"><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-cyan-400 font-black text-3xl italic tracking-tighter">{data.percent}%</span></div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-400 dark:text-gray-500 font-semibold">คิดเป็น:</span>
+                                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-right">{data.percent}%</span>
                             </div>
+                        </div>
+                        {/* Micro Progress Bar */}
+                        <div className="mt-2.5 h-1 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${data.percent}%`, backgroundColor: data.actualColor }} />
                         </div>
                     </div>
                 );
@@ -1444,7 +1613,11 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {reportLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                        {reportLoading ? (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
+                                            </div>
+                                        ) : (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
@@ -1453,11 +1626,11 @@ const HomePage = () => {
                                                     >
                                                         {getPieData(studentAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                                     </Pie>
-                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} />
+                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} wrapperStyle={{ zIndex: 50 }} />
                                                 </PieChart>
                                             </ResponsiveContainer>
                                         )}
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
                                             <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-indigo-600 dark:text-indigo-400 leading-none tracking-tighter">
                                                 {studentAttendanceStats?.total ? Math.round(((studentAttendanceStats.present + studentAttendanceStats.late + studentAttendanceStats.officialTravel) / studentAttendanceStats.total) * 100) : 0}%
                                             </span>
@@ -1500,7 +1673,11 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {reportLoading ? <SkeletonLoader height="100%" variant="circle" /> : (
+                                        {reportLoading ? (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
+                                            </div>
+                                        ) : (
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <PieChart>
                                                     <Pie
@@ -1509,11 +1686,11 @@ const HomePage = () => {
                                                     >
                                                         {getPieData(teacherAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                                                     </Pie>
-                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} />
+                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} wrapperStyle={{ zIndex: 50 }} />
                                                 </PieChart>
                                             </ResponsiveContainer>
                                         )}
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
                                             <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-emerald-600 dark:text-emerald-400 leading-none tracking-tighter">
                                                 {teacherAttendanceStats?.total ? Math.round(((teacherAttendanceStats.present + teacherAttendanceStats.late + teacherAttendanceStats.officialTravel) / teacherAttendanceStats.total) * 100) : 0}%
                                             </span>
@@ -1929,23 +2106,61 @@ const HomePage = () => {
                                             : (typeof leave.startDate === 'string' ? new Date(leave.startDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '-');
 
                                         const isSick = leave.leaveType === 'ลาป่วย';
+                                        const isPersonal = leave.leaveType === 'ลากิจ';
+                                        const isOfficial = leave.leaveType === 'ไปราชการ' || leave.leaveType === 'ไปราชการ/กิจกรรม';
+
+                                        // Determine badge color
+                                        let leaveBadgeColor = '';
+                                        if (isSick) {
+                                            leaveBadgeColor = 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30';
+                                        } else if (isPersonal) {
+                                            leaveBadgeColor = 'bg-cyan-50 text-cyan-600 border border-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:border-cyan-800/30';
+                                        } else {
+                                            leaveBadgeColor = 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30';
+                                        }
+
+                                        // Build class, room, number display
+                                        const classLevelDisplay = CLASSES[String(leave.classLevel || '') as keyof typeof CLASSES] || leave.classLevel || '';
+                                        const classDisplay = classLevelDisplay && leave.room ? `${classLevelDisplay}/${leave.room}` : (leave.className || 'ไม่ระบุห้อง');
+                                        const numberDisplay = leave.studentNumber ? ` เลขที่ ${leave.studentNumber}` : '';
+                                        const idDisplay = leave.studentId ? ` (รหัส: ${leave.studentId})` : '';
 
                                         return (
-                                            <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/30 border border-gray-50 dark:border-gray-800">
-                                                <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center ${isSick ? 'bg-orange-100 text-orange-600' : 'bg-cyan-100 text-cyan-600'}`}>
-                                                    <FileText size={14} />
+                                            <div key={idx} className="flex items-center gap-3 p-3 rounded-2xl bg-gray-50/80 dark:bg-[#1e1f21]/80 border border-transparent hover:border-gray-100 dark:hover:border-gray-700/50 hover:shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] dark:hover:shadow-none transition-all duration-300 group">
+                                                <div className="relative shrink-0">
+                                                    {leave.profileImageUrl ? (
+                                                        <ProfileAvatar
+                                                            src={leave.profileImageUrl}
+                                                            alt={leave.studentName}
+                                                            className="w-12 h-12 border-2 border-white dark:border-[#2a2b2f] shadow-sm transform transition-transform group-hover:scale-105"
+                                                        />
+                                                    ) : (
+                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-sm border-2 border-white dark:border-[#2a2b2f] transform transition-transform group-hover:scale-105 ${isSick ? 'bg-gradient-to-br from-orange-100 to-orange-200 text-orange-600 dark:from-orange-900/40 dark:to-orange-800/40 dark:text-orange-400' : isPersonal ? 'bg-gradient-to-br from-cyan-100 to-cyan-200 text-cyan-600 dark:from-cyan-900/40 dark:to-cyan-800/40 dark:text-cyan-400' : 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-600 dark:from-blue-900/40 dark:to-blue-800/40 dark:text-blue-400'}`}>
+                                                            <Users size={20} />
+                                                        </div>
+                                                    )}
+                                                    <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-[#2a2b2f] shadow-sm ${isSick ? 'bg-orange-500' : isPersonal ? 'bg-cyan-500' : 'bg-blue-500'}`} title={leave.leaveType}></div>
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-sm font-bold text-gray-900 dark:text-white truncate">{leave.studentName}</div>
-                                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                                        <span>{leave.className || 'ไม่ระบุห้อง'}</span>
+
+                                                <div className="flex-1 min-w-0 ml-1">
+                                                    <div className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                                        {leave.studentName}
+                                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-normal ml-1">
+                                                            {idDisplay}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-0.5 font-medium">
+                                                        <span>{classDisplay}{numberDisplay}</span>
                                                         <span className="w-1 h-1 rounded-full bg-gray-300"></span>
                                                         <span>{ds}</span>
                                                     </div>
                                                 </div>
-                                                <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold ${isSick ? 'bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400' : 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400'}`}>
-                                                    {leave.leaveType}
-                                                </span>
+
+                                                <div className="shrink-0 text-right flex flex-col items-end gap-1.5">
+                                                    <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold inline-block shadow-sm ${leaveBadgeColor}`}>
+                                                        {leave.leaveType}
+                                                    </span>
+                                                </div>
                                             </div>
                                         );
                                     })
@@ -1991,17 +2206,15 @@ const HomePage = () => {
                                     <div className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">บุคลากรทั้งหมด (คน)</div>
                                 </div>
 
-                                {/* Today's Leave */}
                                 <div className="p-5 rounded-2xl bg-white dark:bg-[#2a2b2f] border border-gray-100 dark:border-gray-800 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-lg hover:-translate-y-1 hover:border-red-500/30 transition-all duration-300 group flex flex-col justify-center items-center text-center relative overflow-hidden">
                                     <div className="absolute inset-0 bg-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                     <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 mb-3 flex items-center justify-center text-red-600 dark:text-red-400 group-hover:scale-110 transition-transform shadow-sm">
                                         <Clock size={24} strokeWidth={2.5} />
                                     </div>
-                                    <div className="text-3xl font-black text-gray-800 dark:text-gray-100 drop-shadow-sm leading-none mb-1">{todayTeacherLeaves.length || 0}</div>
+                                    <div className="text-3xl font-black text-gray-800 dark:text-gray-100 drop-shadow-sm leading-none mb-1">{(tLeave + tOfficial) || 0}</div>
                                     <div className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">บุคลากรที่ลาวันนี้ (คน)</div>
                                 </div>
 
-                                {/* Courses */}
                                 <div className="p-5 rounded-2xl bg-white dark:bg-[#2a2b2f] border border-gray-100 dark:border-gray-800 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-lg hover:-translate-y-1 hover:border-emerald-500/30 transition-all duration-300 group flex flex-col justify-center items-center text-center relative overflow-hidden">
                                     <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                     <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 mb-3 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform shadow-sm">
@@ -2014,9 +2227,6 @@ const HomePage = () => {
                         </div>
                     </div>
 
-
-
-                    {/* BOTTOM SECTION */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2 bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border-none outline-none ring-0 flex flex-col">
                             <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
@@ -2044,20 +2254,24 @@ const HomePage = () => {
                                             const isSick = leave.leaveType === 'ลาป่วย';
                                             const isTravel = leave.leaveType === 'ไปราชการ';
 
-                                            // Determine badge colors based on status
-                                            let statusColor = 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30';
-                                            let statusIcon = <Clock size={12} className="mr-1" />;
-                                            let statusText = 'รออนุมัติ';
+                                            // Determine Approval Status
+                                            const isApproved = leave.status === 'approved' || !!leave.approvedBy;
+                                            let approvalBadgeColor = '';
+                                            let approvalIcon = null;
+                                            let approvalText = '';
 
-                                            if (leave.status === 'substitution_assigned') {
-                                                statusColor = 'text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30';
-                                                statusIcon = <Check size={12} className="mr-1" />;
-                                                statusText = 'สอนแทนแล้ว';
-                                            } else if (leave.status === 'approved') {
-                                                statusColor = 'text-indigo-600 bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-900/30';
-                                                statusIcon = <CheckCircle size={12} className="mr-1" />;
-                                                statusText = 'อนุมัติแล้ว';
+                                            if (isApproved) {
+                                                approvalBadgeColor = 'text-emerald-600 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-900/30';
+                                                approvalIcon = <CheckCircle size={10} className="mr-1" />;
+                                                approvalText = 'อนุมัติแล้ว';
+                                            } else {
+                                                approvalBadgeColor = 'text-amber-600 bg-amber-50 border-amber-100 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-900/30';
+                                                approvalIcon = <Clock size={10} className="mr-1" />;
+                                                approvalText = 'ยังไม่อนุมัติ';
                                             }
+
+                                            // Determine Substitution Status
+                                            const hasSubstitute = leave.status === 'substitution_assigned';
 
                                             return (
                                                 <li key={idx} className="flex items-center space-x-3 pb-3 border-b border-gray-100 dark:border-gray-800/60 last:border-0 last:pb-0 group hover:bg-gray-50/80 dark:hover:bg-[#1e1f21]/80 p-3 rounded-2xl transition-all duration-300 -mx-3 hover:shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] dark:hover:shadow-none border border-transparent hover:border-gray-100 dark:hover:border-gray-700/50">
@@ -2073,7 +2287,6 @@ const HomePage = () => {
                                                                 {isTravel ? <Briefcase size={20} /> : <Users size={20} />}
                                                             </div>
                                                         )}
-                                                        {/* Status dot on avatar */}
                                                         <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-[#2a2b2f] shadow-sm ${isSick ? 'bg-orange-500' : isTravel ? 'bg-blue-500' : 'bg-cyan-500'}`} title={leave.leaveType}></div>
                                                     </div>
 
@@ -2085,13 +2298,18 @@ const HomePage = () => {
                                                         </div>
                                                     </div>
 
-                                                    <div className="shrink-0 text-right flex flex-col items-end gap-2">
+                                                    <div className="shrink-0 text-right flex flex-col items-end gap-1.5">
                                                         <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold inline-block shadow-sm ${isSick ? 'bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30' : isTravel ? 'bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/30' : 'bg-cyan-50 text-cyan-600 border border-cyan-100 dark:bg-cyan-900/20 dark:text-cyan-400 dark:border-cyan-800/30'}`}>
                                                             {leave.leaveType}
                                                         </span>
-                                                        <div className={`flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${statusColor}`}>
-                                                            {statusIcon} {statusText}
+                                                        <div className={`flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${approvalBadgeColor}`}>
+                                                            {approvalIcon} {approvalText}
                                                         </div>
+                                                        {hasSubstitute && (
+                                                            <div className="flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border border-indigo-100 text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950/40 dark:border-indigo-900/30">
+                                                                <Check size={10} className="mr-1" /> สอนแทนแล้ว
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </li>
                                             );

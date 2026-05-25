@@ -4,21 +4,61 @@ import { ROLES } from "./roles";
 export const OWNER_ONLY = [ROLES.SUPER_ADMIN];
 
 // สิทธิ์สำหรับแอดมินโรงเรียน (School Admin) เน้นจัดการข้อมูลบุคลากรในโรงเรียนเท่านั้น
-export const ADMIN_ACCESS = [ROLES.SCHOOL_ADMIN, ROLES.TEACHER];
+export const ADMIN_ACCESS = [ROLES.SCHOOL_ADMIN];
 
-// สิทธิ์สำหรับฝ่ายงานวิชาการ (ตอนนี้ใช้สิทธิ์ School Admin แทน)
-export const ACADEMIC_ACCESS = [ROLES.SCHOOL_ADMIN];
+// สิทธิ์สำหรับฝ่ายงานวิชาการ
+export const ACADEMIC_ACCESS = [ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN];
 
 // สิทธิ์ระดับบริหารจัดการงานวิชาการ
-export const ACADEMIC_MANAGEMENT = [ROLES.SCHOOL_ADMIN, ROLES.TEACHER];
+export const ACADEMIC_MANAGEMENT = [ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN];
 
-// สิทธิ์สำหรับงานบุคลากรโรงเรียนที่เข้าใช้งานระบบได้ทั่วไป (ครูและแอดมิน)
-export const STAFF_ACCESS = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN];
+// สิทธิ์สำหรับงานกิจการนักเรียน: ระบบดูแลช่วยเหลือฯ คะแนนพฤติกรรม และรายงานที่เกี่ยวข้อง
+export const STUDENT_AFFAIRS_ACCESS = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.STUDENT_AFFAIRS,
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
+export const STUDENT_AFFAIRS_MANAGEMENT = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.STUDENT_AFFAIRS,
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
 
-// สิทธิ์ระดับปฏิบัติการวิชาการ (ครู + แอดมินโรงเรียน) - ใช้สำหรับหน้าบันทึกคะแนน/เช็คชื่อ
-export const TEACHER_OPERATIONAL = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN];
+// สิทธิ์ปฏิบัติการระบบดูแลช่วยเหลือนักเรียน: ทุกสิทธิ์เจ้าหน้าที่เข้าเมนูได้
+export const STUDENT_SUPPORT_OPERATIONAL_ACCESS = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.ACADEMIC_ADMIN,
+    ROLES.STUDENT_AFFAIRS,
+    ROLES.TEACHER,
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
+
+// สิทธิ์สำหรับรายงานการมาเรียน/พฤติกรรมของนักเรียน
+export const STUDENT_ATTENDANCE_REPORT_ACCESS = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.ACADEMIC_ADMIN,
+    ROLES.STUDENT_AFFAIRS,
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
+
+// สิทธิ์สำหรับจัดการสมาชิก/อนุมัติคำขอชุมนุม
+export const CLUB_MEMBER_MANAGEMENT_ACCESS = [ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN, ROLES.TEACHER];
+
+// สิทธิ์สำหรับบุคลากรโรงเรียนที่เข้าใช้งานระบบได้ทั่วไป
+export const STAFF_ACCESS = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN, ROLES.STUDENT_AFFAIRS];
+
+// สิทธิ์ระดับปฏิบัติการแบบครู - ใช้สำหรับหน้าบันทึกคะแนน/เช็คชื่อ/งานประจำชั้น
+export const TEACHER_OPERATIONAL = [ROLES.TEACHER, ROLES.STUDENT_AFFAIRS, ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN];
 
 // สิทธิ์สำหรับพนักงานฝ่ายที่เกี่ยวข้องกับงานวิชาการ (เน้นครู)
 export const ACADEMIC_STAFF = [ROLES.TEACHER];
 
-export const ALL_USERS = [ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN, ROLES.TEACHER, ROLES.STUDENT];
+export const ALL_USERS = [ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN, ROLES.ACADEMIC_ADMIN, ROLES.TEACHER, ROLES.STUDENT_AFFAIRS, ROLES.STUDENT];

@@ -5,6 +5,9 @@ import { firestore } from '@/firebase';
 import { collection, getDocs, doc, writeBatch, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { FaIdCard, FaSearch, FaSave, FaArrowLeft, FaEye, FaEyeSlash, FaUserGraduate, FaChalkboardTeacher, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight } from 'react-icons/fa';
+import { getStudentStatus } from '@/utils/studentStatusUtils';
+import { isActiveStudentSummaryStatus, isActiveTeacherSummaryStatus } from '@/utils/ownerStatsUtils';
+import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
 
 // Generic User interface for both Students and Teachers
 interface Person {
@@ -18,6 +21,9 @@ interface Person {
   room?: string; // For students
   studentNumber?: string; // For students
   department?: string; // For teachers
+  status?: string;
+  studentStatus?: string;
+  role?: string | string[];
   rfid?: string;
   profileImageUrl?: string;
 }
@@ -46,10 +52,18 @@ const MapRfidPage: React.FC = () => {
       try {
         const peopleCollection = collection(firestore, "school-settings", schoolId, type);
         const querySnapshot = await getDocs(peopleCollection);
-        const peopleData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        } as Person));
+        const peopleData = querySnapshot.docs
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          } as Person))
+          .filter(person => {
+            if (isAttendanceEntryOnly(person.role)) return false;
+            if (isStudent) {
+              return isActiveStudentSummaryStatus(getStudentStatus(person));
+            }
+            return isActiveTeacherSummaryStatus(person.status || 'อยู่');
+          });
 
         // Client-side sorting
         peopleData.sort((a, b) => {

@@ -93,14 +93,14 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                     <div className="w-1 h-5 rounded-full bg-indigo-600"></div>
-                    <h2 className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-[0.2em]">แผงควบคุมการเลือกวิชา</h2>
+                    <h2 className="text-sm font-black text-gray-700 dark:text-gray-300 tracking-normal">แผงควบคุมการเลือกวิชา</h2>
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_1.5fr_0.6fr_0.6fr_0.6fr_1fr] gap-4">
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-indigo-500/20 text-indigo-400 text-[10px] font-black border border-indigo-500/30">1</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">รายวิชา</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">รายวิชา</label>
                     </div>
                     <div className="relative group/input">
                         <Select
@@ -187,7 +187,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/30">2</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">ครูผู้สอน</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">ครูผู้สอน</label>
                     </div>
                     <TeacherSelect teachers={teachers} selectedTeacher={selectedTeacher} setSelectedTeacher={setSelectedTeacher} setSchedule={setSchedule} />
                 </div>
@@ -195,7 +195,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[10px] font-black border border-emerald-500/30">3</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">ระดับชั้น</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">ระดับชั้น</label>
                     </div>
                     <div className="relative group/input">
                         <Select
@@ -258,7 +258,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-cyan-500/20 text-cyan-400 text-[10px] font-black border border-cyan-500/30">4</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">ห้อง</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">ห้อง</label>
                     </div>
                     <div className="relative group/input">
                         <Select
@@ -323,7 +323,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-500/20 text-blue-400 text-[10px] font-black border border-blue-500/30">5</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">กลุ่มเรียน</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">กลุ่มเรียน</label>
                     </div>
                     <div className="relative group/input">
                         <Select
@@ -387,7 +387,7 @@ export const TeacherScheduleControlPanel: React.FC<TeacherScheduleControlPanelPr
                 <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                         <span className="flex items-center justify-center w-5 h-5 rounded-lg bg-violet-500/20 text-violet-400 text-[10px] font-black border border-violet-500/30">6</span>
-                        <label className="text-[10px] font-black text-gray-600 dark:text-gray-400 uppercase tracking-widest">สถานที่</label>
+                        <label className="text-[11px] font-black text-gray-600 dark:text-gray-400 tracking-normal">สถานที่</label>
                     </div>
                     <div className="relative group/input">
                         <Select

@@ -13,6 +13,7 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { CLASSES } from '@/utils/schoolUtils';
+import { getClassDisplayName } from './schedule/utils';
 
 interface PeriodSetting {
   id: string;
@@ -88,8 +89,18 @@ const formatTeacherName = (teacher: any) => {
 
 const formatClassNames = (classIds: any, roomNum?: string | number) => {
   const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
-  const roomSuffix = roomNum ? `/${roomNum}` : '';
-  return ids.map(c => `${CLASSES[String(c)] || c}${roomSuffix}`).join(', ');
+  return ids.map(rawClassId => {
+    const classText = String(rawClassId || '').trim();
+    if (!classText) return '';
+
+    if (classText.includes('/')) {
+      const [levelPart, roomPart] = classText.split('/');
+      const room = roomPart?.trim();
+      return `${getClassDisplayName(levelPart.trim())}${room ? `/${room}` : ''}`;
+    }
+
+    return `${getClassDisplayName(classText)}${roomNum ? `/${roomNum}` : ''}`;
+  }).filter(Boolean).join(' + ');
 };
 
 const getCourseTitle = (course: any) => course?.title || course?.courseName || course?.subjectName || 'วิชาไม่ระบุชื่อ';
@@ -105,6 +116,17 @@ const getAssignmentTeacherIds = (assignment: any): string[] => {
 const assignmentIncludesTeacher = (assignment: any, teacherId: string) => {
   const ids = getAssignmentTeacherIds(assignment);
   return ids.length === 0 || ids.includes(teacherId);
+};
+
+const getTeacherPeriodLabel = (assignment: any, teacherId: string) => {
+  const periodRange = assignment?.teacherPeriods?.[teacherId];
+  if (!periodRange) return '';
+
+  const start = Number(periodRange.start);
+  const end = Number(periodRange.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end < start) return '';
+
+  return start === end ? `คาบสอน ${start}` : `คาบสอน ${start}-${end}`;
 };
 
 const matchesYearTerm = (data: any, year: string, term: string) => {
@@ -358,8 +380,13 @@ const MySchedulePage: React.FC = () => {
                 const className = assignment?.classLevels?.length
                   ? formatClassNames(assignment.classLevels, assignment.room)
                   : formatClassNames(data.classId, Array.isArray(course.room) ? undefined : course.room);
+                const teacherPeriodLabel = getTeacherPeriodLabel(assignment, person.docId);
 
-                mergeScheduleEntry(merged, slot, { course: { ...course, groupNumber: groupNum }, className, roomDisplay }, 'teacher');
+                mergeScheduleEntry(merged, slot, {
+                  course: { ...course, groupNumber: groupNum, teacherPeriodLabel },
+                  className,
+                  roomDisplay,
+                }, 'teacher');
 
                 return;
               }

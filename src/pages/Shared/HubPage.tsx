@@ -22,11 +22,13 @@ import {
   Trophy,
   BarChart3,
   GitMerge,
+  Award,
   Settings,
   ListChecks,
   FileText,
   Home,
   ShieldCheck,
+  ShieldAlert,
   Search,
   HeartPulse,
   MapPin,
@@ -39,9 +41,13 @@ import {
   LayoutGrid,
   MessageSquare,
   Send,
-  Compass
+  Compass,
+  CircleAlert,
+  CalendarRange
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
+import { usePwaMode } from "@/hooks/usePwaMode";
+import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
 
 interface HubItem {
   title: string;
@@ -63,7 +69,8 @@ interface HubConfig {
 const HubPage: React.FC = () => {
   const { hubType: paramHubType } = useParams<{ hubType: string }>();
   const location = useLocation();
-  const { user: currentUser, roles: userRoles, hasRole, STAFF_ACCESS, ACADEMIC_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, OWNER_ONLY, ADMIN_ACCESS } = usePermissions();
+  const { user: currentUser, hasRole, STAFF_ACCESS, ACADEMIC_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS, OWNER_ONLY, ADMIN_ACCESS } = usePermissions();
+  const isPwaMode = usePwaMode();
   
   // Handle static routes and "all" mode
   let hubType = paramHubType;
@@ -79,6 +86,10 @@ const HubPage: React.FC = () => {
   }
 
   const schoolId = (currentUser as any)?.schoolId;
+  const teacherLeaveHistoryAccess = React.useMemo(
+    () => [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE],
+    [STAFF_ACCESS]
+  );
 
   const [features, setFeatures] = React.useState<Record<string, any>>({});
 
@@ -131,7 +142,7 @@ const HubPage: React.FC = () => {
           icon: <ClipboardList size={24} />,
           path: "/academic/view-courses",
           colorClass: "bg-lime-100 text-lime-600 dark:bg-lime-500/20 dark:text-lime-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: TEACHER_OPERATIONAL
         },
         {
           title: "นำเข้าหลักสูตร (Excel)",
@@ -229,6 +240,22 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
+          title: "มอบหมายรายวิชา 2",
+          description: "กำหนดครูผู้สอนและห้องเรียนสำหรับแต่ละวิชา (แบบตาราง)",
+          icon: <UserCheck size={24} />,
+          path: "/academic/course-assignment-2",
+          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ตั้งค่าคาบคู่ / เดี่ยว",
+          description: "กำหนดประเภทคาบเรียนเดี่ยวหรือคาบคู่สำหรับรายวิชา",
+          icon: <Settings size={24} />,
+          path: "/academic/period-constraints",
+          colorClass: "bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
           title: "จัดการตารางสอน",
           description: "จัดตารางสอนสำหรับครูและชั้นเรียน",
           icon: <CalendarDays size={24} />,
@@ -250,7 +277,7 @@ const HubPage: React.FC = () => {
           icon: <UserCheck size={24} />,
           path: "/academic/teacher-schedule-view",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: TEACHER_OPERATIONAL
         },
         {
           title: "ตารางเรียน (นักเรียน)",
@@ -258,7 +285,7 @@ const HubPage: React.FC = () => {
           icon: <School size={24} />,
           path: "/academic/student-schedule",
           colorClass: "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: TEACHER_OPERATIONAL
         },
         {
           title: "จัดการสอนแทน",
@@ -281,6 +308,14 @@ const HubPage: React.FC = () => {
           icon: <User size={24} />,
           path: schoolId ? `/school/${schoolId}/students` : "/students",
           colorClass: "bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-400",
+          allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "รายชื่อนักเรียนประจำชั้น",
+          description: "พิมพ์รายชื่อนักเรียนแยกตามชั้น/ห้อง และส่งออก PDF",
+          icon: <ClipboardList size={24} />,
+          path: "/academic/homeroom-student-list",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: STAFF_ACCESS
         },
         {
@@ -330,6 +365,46 @@ const HubPage: React.FC = () => {
           path: "/attendance/leave-request",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
           allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "ประวัติใบลานักเรียน",
+          description: "ดูประวัติการลาของนักเรียนและพิมพ์เอกสารใบลา",
+          icon: <History size={24} />,
+          path: "/attendance/leave-history",
+          colorClass: "bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400",
+          allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "คะแนนพฤติกรรมนักเรียน",
+          description: "จัดการและแก้ไขคะแนนพฤติกรรมของนักเรียนโดยตรง",
+          icon: <Award size={24} />,
+          path: schoolId ? `/school/${schoolId}/students/behavior` : "#",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "รายงานคะแนนความประพฤติ",
+          description: "รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน พร้อมรายละเอียดและพิมพ์รายคน",
+          icon: <ShieldAlert size={24} />,
+          path: schoolId ? `/school/${schoolId}/academic/student-behavior-class-report` : "/academic/student-behavior-class-report",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "สรุปยอดการหนีเรียน",
+          description: "รายงานประวัติและสถิติการหนีเรียนของนักเรียนรายวิชาและห้องเรียน",
+          icon: <CircleAlert size={24} />,
+          path: "/academic/escape-summary",
+          colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "สรุปมาเรียนตามช่วงเวลา",
+          description: "รายงานการมาเรียนรายห้องตามช่วงวันที่ พร้อมสรุป มา สาย ลา ขาด",
+          icon: <CalendarRange size={24} />,
+          path: "/academic/time-range-attendance-summary",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },
@@ -344,7 +419,15 @@ const HubPage: React.FC = () => {
           icon: <Users size={24} />,
           path: schoolId ? `/school/${schoolId}/teachers` : "/teachers",
           colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: [...ADMIN_ACCESS, ...ACADEMIC_ACCESS]
+        },
+        {
+          title: "จัดการครูที่ปรึกษา",
+          description: "มอบหมายและจัดการครูประจำชั้น/ครูที่ปรึกษา",
+          icon: <GraduationCap size={24} />,
+          path: schoolId ? `/school/${schoolId}/teachers/advisor-management` : "#",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: ADMIN_ACCESS
         },
         {
           title: "ใบลาครู",
@@ -355,12 +438,28 @@ const HubPage: React.FC = () => {
           allowedRoles: STAFF_ACCESS
         },
         {
+          title: "ประวัติใบลาครู",
+          description: "ดูประวัติการลาของครูและพิมพ์เอกสารใบลา",
+          icon: <History size={24} />,
+          path: "/attendance/teacher-leave-history",
+          colorClass: "bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400",
+          allowedRoles: teacherLeaveHistoryAccess
+        },
+        {
           title: "ใบขอไปราชการ",
           description: "ยื่นคำขอไปราชการและดูประวัติ",
           icon: <ClipboardCheck size={24} />,
           path: schoolId ? `/school/${schoolId}/official-travel-request` : "#",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
           allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "อนุมัติใบลา & ไปราชการ",
+          description: "อนุมัติคำขอลาและใบไปราชการของบุคลากร",
+          icon: <ClipboardCheck size={24} />,
+          path: "/attendance/leave-approval",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: [ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]
         },
         {
           title: "อัปโหลดรูปภาพครู (Bulk)",
@@ -379,12 +478,20 @@ const HubPage: React.FC = () => {
           allowedRoles: STAFF_ACCESS
         },
         {
+          title: "ดูบันทึกการลงเวลาแบบเลือกวัน",
+          description: "ตรวจสอบรายการลงเวลาเข้า-ออกของครูและบุคลากรตามวันที่ที่ต้องการ",
+          icon: <CalendarDays size={24} />,
+          path: "/academic/teacher-attendance-date-selection",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
+          allowedRoles: [ROLES.SCHOOL_ADMIN]
+        },
+        {
           title: "รายงานลงเวลา (ครู)",
           description: "สรุปสถิติการลงเวลา ขาด ลา มา สาย ของครูรายวัน/รายเดือน/ภาคเรียน",
           icon: <ClipboardList size={24} />,
           path: "/academic/teacher-attendance-summary",
           colorClass: "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
           title: "การลงเวลารายบุคคล",
@@ -392,7 +499,7 @@ const HubPage: React.FC = () => {
           icon: <UserCheck size={24} />,
           path: "/academic/teacher-attendance-individual",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
           title: "รายงานการมาเรียน (นักเรียน)",
@@ -400,7 +507,7 @@ const HubPage: React.FC = () => {
           icon: <ListChecks size={24} />,
           path: "/academic/students-attendance-summary",
           colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },
@@ -472,7 +579,7 @@ const HubPage: React.FC = () => {
           icon: <BarChart3 size={24} />,
           path: "/academic/classroom-attendance-summary",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
         },
         {
           title: "ตรวจเช็คการเข้าสอนของครู",
@@ -495,7 +602,7 @@ const HubPage: React.FC = () => {
           icon: <BarChart3 size={24} />,
           path: "/student-support",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
           title: "ระบบคัดกรองนักเรียน",
@@ -503,7 +610,7 @@ const HubPage: React.FC = () => {
           icon: <Search size={24} />,
           path: "/student-support/screening",
           colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_SUPPORT_OPERATIONAL_ACCESS
         },
         {
           title: "แบบประเมิน SDQ",
@@ -511,7 +618,7 @@ const HubPage: React.FC = () => {
           icon: <HeartPulse size={24} />,
           path: "/student-support/sdq",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_SUPPORT_OPERATIONAL_ACCESS
         },
         {
           title: "ระบบเยี่ยมบ้าน",
@@ -519,7 +626,7 @@ const HubPage: React.FC = () => {
           icon: <MapPin size={24} />,
           path: "/student-support/home-visit",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: STUDENT_SUPPORT_OPERATIONAL_ACCESS
         }
       ]
     },
@@ -550,7 +657,7 @@ const HubPage: React.FC = () => {
           icon: <UserCog size={24} />,
           path: "/academic/club-members",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: CLUB_MEMBER_MANAGEMENT_ACCESS
         },
         {
           title: "รายงานชุมนุม",
@@ -576,14 +683,6 @@ const HubPage: React.FC = () => {
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
-        {
-          title: "เช็คชื่อกิจกรรมพัฒนาผู้เรียน",
-          description: "เช็คชื่อนักเรียนตามกิจกรรมที่ได้รับมอบหมาย",
-          icon: <ClipboardCheck size={24} />,
-          path: "/academic/learner-activity-attendance",
-          colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: TEACHER_OPERATIONAL
-        }
       ]
     },
     evaluation: {
@@ -685,7 +784,7 @@ const HubPage: React.FC = () => {
           icon: <ShieldCheck size={24} />,
           path: "/academic/behavior-score-config",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: STUDENT_AFFAIRS_MANAGEMENT
         },
         {
           title: "ปฏิทินการศึกษา",
@@ -693,7 +792,7 @@ const HubPage: React.FC = () => {
           icon: <Calendar size={24} />,
           path: "/academic/school-calendar",
           colorClass: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400",
-          allowedRoles: STAFF_ACCESS
+          allowedRoles: TEACHER_OPERATIONAL
         },
         {
           title: "ข้อมูลอาคาร/สถานที่",
@@ -709,7 +808,7 @@ const HubPage: React.FC = () => {
           icon: <School size={24} />,
           path: schoolId ? `/owner/school-info/${schoolId}` : "/owner/school-info",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: ADMIN_ACCESS
         },
         {
           title: "จัดการผู้ใช้งาน",
@@ -717,7 +816,7 @@ const HubPage: React.FC = () => {
           icon: <Users size={24} />,
           path: "/owner/users",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: ADMIN_ACCESS
         },
         {
           title: "จัดการ LINE OA",
@@ -865,6 +964,10 @@ const HubPage: React.FC = () => {
     return <Navigate to="/home" replace />;
   }
 
+  if (isPwaMode && location.pathname !== PWA_ATTENDANCE_HUB_PATH) {
+    return <Navigate to={PWA_ATTENDANCE_HUB_PATH} replace />;
+  }
+
   return (
     <MainLayout>
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#1c1c24]">
@@ -872,12 +975,14 @@ const HubPage: React.FC = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div className="flex items-center gap-4">
-              <Link 
-                to="/home"
-                className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
-              >
-                <Home size={20} />
-              </Link>
+              {!isPwaMode && (
+                <Link
+                  to="/home"
+                  className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
+                >
+                  <Home size={20} />
+                </Link>
+              )}
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
                   {isMasterHub ? "หน้าหลักงานวิชาการ" : currentHub?.title}
@@ -921,7 +1026,7 @@ const HubPage: React.FC = () => {
                 </button>
               </div>
 
-              {!isMasterHub && (
+              {!isPwaMode && !isMasterHub && (
                 <Link to="/academic-admin" className="px-5 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl text-sm font-bold border border-indigo-100 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all flex items-center gap-2 group">
                   <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
                   ดูหมวดหมู่ทั้งหมด

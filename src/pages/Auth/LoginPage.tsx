@@ -400,22 +400,6 @@ const LoginPage: React.FC = () => {
             ) : (
               <form onSubmit={handleStudentLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชน</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaIdCard className="text-gray-400" />
-                    </div>
-                    <input
-                      type="text"
-                      value={nationalId}
-                      onChange={(e) => setNationalId(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="เลขบัตรประชาชน 13 หลัก"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสนักเรียน</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -427,6 +411,22 @@ const LoginPage: React.FC = () => {
                       onChange={(e) => setStudentId(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="ระบุรหัสนักเรียน"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชน (ปปช.)</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <FaIdCard className="text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      value={nationalId}
+                      onChange={(e) => setNationalId(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
+                      placeholder="เลขบัตรประชาชน 13 หลัก"
                       required
                     />
                   </div>

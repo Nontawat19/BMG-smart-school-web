@@ -89,6 +89,8 @@ export interface CourseInstance extends Course {
     compositeId: string; // courseId_groupNumber
     groupNumber: number;
     locked?: boolean;
+    isTemporarySchedule?: boolean;
+    scheduleWarning?: string;
     className?: string;
     room?: string[];
     roomDisplay?: string;

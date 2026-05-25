@@ -11,6 +11,7 @@ import { getLevelsByRange } from "@/utils/schoolUtils";
 import BackButton from "@/components/Shared/BackButton";
 import { buildDuplicateStudentHtml, isExitStudentStatus } from "@/utils/studentStatusUtils";
 import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
 
 const InputField: React.FC<{ label: string; name: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; placeholder?: string; maxLength?: number; required?: boolean }> = ({ label, name, value, onChange, type = "text", placeholder, maxLength, required }) => (
   <div>
@@ -214,6 +215,7 @@ export default function QuickAddStudentPage() {
       if (isActiveStudentSummaryStatus(studentData.studentStatus)) {
         await updateOwnerAndSchoolCounts(firestore, formSchoolId, { students: 1 });
       }
+      await updateStudentReportSummaryForChange(firestore, formSchoolId, null, dataToSave);
       const { updateStudentLookup } = await import("@/utils/studentLookupUtils");
       await updateStudentLookup(studentData.idCardNumber, studentData.studentId, formSchoolId, docRef.id);
       Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ!', timer: 1500, showConfirmButton: false, background: '#2a2b2f', color: '#ffffff' });

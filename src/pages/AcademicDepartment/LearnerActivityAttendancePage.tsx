@@ -11,6 +11,8 @@ import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } fro
 import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, ClipboardCheck, Clock, LayoutGrid, RefreshCw, Save, Search, Users } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
+import { Link } from 'react-router-dom';
+import { usePwaMode } from '@/hooks/usePwaMode';
 
 interface LearnerActivity {
   id: string;
@@ -62,13 +64,14 @@ interface SpecialPeriod {
 }
 
 const ATTENDANCE_OPTIONS = [
-  { id: 'present', label: 'มา', color: 'bg-emerald-500' },
-  { id: 'late', label: 'สาย', color: 'bg-amber-500' },
-  { id: 'leave', label: 'ลา', color: 'bg-blue-500' },
-  { id: 'absent', label: 'ขาด', color: 'bg-red-500' },
+  { id: 'present', label: 'มา', color: 'bg-emerald-500', activeClass: 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm ring-1 ring-emerald-200' },
+  { id: 'late', label: 'สาย', color: 'bg-amber-500', activeClass: 'bg-white dark:bg-gray-700 text-amber-600 shadow-sm ring-1 ring-amber-200' },
+  { id: 'leave', label: 'ลา', color: 'bg-blue-500', activeClass: 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm ring-1 ring-blue-200' },
+  { id: 'absent', label: 'ขาด', color: 'bg-red-500', activeClass: 'bg-white dark:bg-gray-700 text-red-600 shadow-sm ring-1 ring-red-200' },
 ] as const;
 
 const LearnerActivityAttendancePage: React.FC = () => {
+  const isPwaMode = usePwaMode();
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
@@ -295,6 +298,22 @@ const LearnerActivityAttendancePage: React.FC = () => {
     setAttendance(prev => ({ ...prev, [studentId]: status }));
   };
 
+  const getStatusStyle = (status?: string) => {
+    switch (status) {
+      case 'present': return 'border-green-200 dark:border-green-900 bg-green-50/30 dark:bg-green-900/5';
+      case 'late': return 'border-yellow-200 dark:border-yellow-900 bg-yellow-50/30 dark:bg-yellow-900/5';
+      case 'leave': return 'border-blue-200 dark:border-blue-900 bg-blue-50/30 dark:bg-blue-900/5';
+      case 'absent': return 'border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-900/5';
+      default: return 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f]';
+    }
+  };
+
+  const getStatusDot = (status?: string) => (
+    status === 'present' ? 'bg-green-500' :
+      status === 'late' ? 'bg-yellow-500' :
+        status === 'leave' ? 'bg-blue-500' : 'bg-red-500'
+  );
+
   const handleSaveAttendance = async () => {
     if (!schoolId || !selectedActivity || isSaving) return;
     if (!selectedSpecialPeriod) {
@@ -457,12 +476,14 @@ const LearnerActivityAttendancePage: React.FC = () => {
                     เลือกกิจกรรมเพื่อเริ่มเช็คชื่อ
                   </div>
                 ) : (
-                  <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f]">
-                    <div className="border-b border-gray-100 bg-teal-50/60 p-4 dark:border-gray-700 dark:bg-teal-500/10">
+                  <div className="space-y-5">
+                    <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f]">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
-                          <h2 className="truncate text-lg font-black text-teal-700 dark:text-teal-300">{selectedActivity.name}</h2>
-                          <p className="text-xs font-bold text-gray-500">
+                          <h2 className="truncate text-lg font-black text-teal-700 dark:text-teal-300">
+                            {selectedActivity.name}
+                          </h2>
+                          <p className="truncate text-xs font-bold text-gray-500">
                             นักเรียน {students.length} คน • {selectedSpecialPeriod ? `${selectedSpecialPeriod.title} ${formatSpecialPeriodDay(selectedSpecialPeriod.day)} ${selectedSpecialPeriod.startTime}-${selectedSpecialPeriod.endTime} น.` : 'ยังไม่พบคาบกิจกรรม'} • {isSubmitted ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}
                           </p>
                         </div>
@@ -475,60 +496,89 @@ const LearnerActivityAttendancePage: React.FC = () => {
                           {isSubmitted ? 'อัปเดตข้อมูล' : 'บันทึกการเช็คชื่อ'}
                         </button>
                       </div>
-                      <div className="mt-4 grid grid-cols-4 gap-2">
-                        <SummaryChip label="มา" value={summary.present} className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" />
-                        <SummaryChip label="สาย" value={summary.late} className="bg-amber-500/10 text-amber-600 dark:text-amber-300" />
-                        <SummaryChip label="ลา" value={summary.leave} className="bg-blue-500/10 text-blue-600 dark:text-blue-300" />
-                        <SummaryChip label="ขาด" value={summary.absent} className="bg-red-500/10 text-red-600 dark:text-red-300" />
-                      </div>
                     </div>
 
-                    <div className="border-b border-gray-100 p-4 dark:border-gray-700">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
-                        <input
-                          value={studentSearch}
-                          onChange={e => setStudentSearch(e.target.value)}
-                          placeholder="ค้นหาชื่อนักเรียน รหัส หรือชั้น/ห้อง..."
-                          className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
-                        />
-                      </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <SummaryChip label="มา" value={summary.present} className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" />
+                      <SummaryChip label="สาย" value={summary.late} className="bg-amber-500/10 text-amber-600 dark:text-amber-300" />
+                      <SummaryChip label="ลา" value={summary.leave} className="bg-blue-500/10 text-blue-600 dark:text-blue-300" />
+                      <SummaryChip label="ขาด" value={summary.absent} className="bg-red-500/10 text-red-600 dark:text-red-300" />
                     </div>
 
-                    <div className="p-4">
-                      {studentsLoading ? (
-                        <div className="py-16 text-center text-gray-500">กำลังโหลดรายชื่อนักเรียน...</div>
-                      ) : filteredStudents.length === 0 ? (
-                        <div className="py-16 text-center text-gray-500">ไม่พบนักเรียนในกิจกรรมนี้</div>
-                      ) : (
-                        <div className="space-y-3">
-                          {filteredStudents.map((student, index) => (
-                            <article key={student.id} className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-[#1e1f21] sm:flex-row sm:items-center sm:justify-between">
-                              <div className="flex min-w-0 items-center gap-3">
-                                <span className="w-6 text-center text-xs font-black text-gray-400">{index + 1}</span>
-                                <ProfileAvatar src={student.profileImageUrl || avatarUrl(student)} className="h-11 w-11" />
-                                <div className="min-w-0">
-                                  <p className="truncate font-black text-gray-900 dark:text-white">{student.title || student.prefix || ''}{student.firstName || ''} {student.lastName || ''}</p>
-                                  <p className="truncate text-xs text-gray-500">รหัส: {student.studentId || '-'} | ชั้น {student.classLevel || '-'}/{student.room || '-'}</p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+                      <input
+                        value={studentSearch}
+                        onChange={e => setStudentSearch(e.target.value)}
+                        placeholder="ค้นหาชื่อนักเรียน รหัส หรือชั้น/ห้อง..."
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                      />
+                    </div>
+
+                    {studentsLoading ? (
+                      <div className="rounded-2xl border border-gray-100 bg-white py-16 text-center text-gray-500 dark:border-gray-700 dark:bg-[#2a2b2f]">กำลังโหลดรายชื่อนักเรียน...</div>
+                    ) : filteredStudents.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center text-gray-500 dark:border-gray-700 dark:bg-[#2a2b2f]">ไม่พบนักเรียนในกิจกรรมนี้</div>
+                    ) : (
+                      <div className={isPwaMode ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"}>
+                        {filteredStudents.map((student) => {
+                          const status = attendance[student.id] || 'present';
+
+                          return (
+                            <div
+                              key={student.id}
+                              className={`relative group rounded-2xl border-2 transition-all duration-300 hover:shadow-lg min-w-0 overflow-hidden ${isPwaMode ? 'p-3' : 'p-4'} ${getStatusStyle(status)}`}
+                            >
+                              <div className={isPwaMode ? "flex flex-col gap-3" : "flex flex-row sm:flex-col items-center gap-4"}>
+                                <div className={isPwaMode ? "flex items-center gap-3 min-w-0" : "contents"}>
+                                  <div className="relative flex-shrink-0">
+                                    <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block relative">
+                                      <div className="absolute -inset-1 bg-gradient-to-br from-teal-500 to-emerald-500 rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur"></div>
+                                      <ProfileAvatar
+                                        src={student.profileImageUrl || avatarUrl(student)}
+                                        alt={student.firstName || 'student'}
+                                        className={`relative border-4 border-white dark:border-[#2a2b2f] shadow-sm ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
+                                        imageClassName="transition-transform group-hover:scale-105"
+                                      />
+                                    </Link>
+                                    <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${getStatusDot(status)}`} />
+                                  </div>
+
+                                  <div className={`flex-grow min-w-0 overflow-hidden w-full space-y-0.5 ${isPwaMode ? 'text-left' : 'text-left sm:text-center'}`}>
+                                    <Link to={`/school/${schoolId}/students/view/${student.id}`} className="block transition-colors min-w-0">
+                                      <h3 className={`text-gray-900 dark:text-white font-bold mb-0.5 truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors ${isPwaMode ? 'mt-0 text-sm' : 'mt-2 sm:mt-0 text-sm sm:text-base'}`}>
+                                        {student.title || student.prefix || ''}{student.firstName || ''} {student.lastName || ''}
+                                      </h3>
+                                    </Link>
+                                    <div className={`text-gray-500 dark:text-gray-400 w-full truncate ${isPwaMode ? 'mt-1' : 'mt-1 sm:mt-1.5'}`}>
+                                      <span className={`inline-block max-w-full bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono truncate ${isPwaMode ? 'text-[10px]' : 'text-[10px] sm:text-[11px]'}`}>
+                                        รหัส {student.studentId || '-'} | ชั้น {student.classLevel || '-'}/{student.room || '-'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="w-full min-w-0 grid grid-cols-4 gap-1.5 mt-0">
+                                  {ATTENDANCE_OPTIONS.map(option => (
+                                    <button
+                                      key={option.id}
+                                      type="button"
+                                      onClick={() => toggleStatus(student.id, option.id)}
+                                      className={`flex min-w-0 items-center justify-center py-2 rounded-xl font-bold transition-all duration-200 ${isPwaMode ? 'text-[11px]' : 'text-xs'} ${status === option.id
+                                        ? `${option.activeClass} ring-2 ring-offset-1 ring-offset-white dark:ring-offset-[#2a2b2f] transform scale-105 shadow-md`
+                                        : 'bg-white/50 dark:bg-black/20 text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-300'
+                                      }`}
+                                    >
+                                      <span className="truncate">{option.label}</span>
+                                    </button>
+                                  ))}
                                 </div>
                               </div>
-                              <div className="grid grid-cols-4 gap-1 rounded-xl border border-gray-100 bg-white p-1 dark:border-gray-700 dark:bg-black/20 sm:flex">
-                                {ATTENDANCE_OPTIONS.map(option => (
-                                  <button
-                                    key={option.id}
-                                    type="button"
-                                    onClick={() => toggleStatus(student.id, option.id)}
-                                    className={`h-9 rounded-lg px-3 text-xs font-black transition ${attendance[student.id] === option.id ? `${option.color} text-white shadow-sm` : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'}`}
-                                  >
-                                    {option.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>

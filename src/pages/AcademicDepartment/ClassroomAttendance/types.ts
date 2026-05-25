@@ -11,11 +11,13 @@ export interface Student {
     profileImageUrl?: string;
     studentId?: string;
     nickname?: string;
+    status?: string;
+    studentStatus?: string;
 }
 
 export interface AttendanceRecord {
     studentId: string;
-    status: 'present' | 'absent' | 'late' | 'leave';
+    status: 'present' | 'absent' | 'late' | 'leave' | 'escape';
     remark?: string;
 }
 

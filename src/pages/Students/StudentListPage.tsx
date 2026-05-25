@@ -4,7 +4,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage, auth } from "@/firebase";
-import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, where, updateDoc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, where, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { ref, deleteObject } from "firebase/storage";
 import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaFileExcel, FaFilter, FaSortNumericDown, FaIdCard } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown } from "lucide-react";
@@ -13,12 +13,14 @@ import Swal from 'sweetalert2';
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
+import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { getStudentStatus, isCurrentStudent } from "@/utils/studentStatusUtils";
 import Select, { StylesConfig, components } from "react-select";
 import { useTheme } from "@/ThemeContext";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
 
 // กำหนด Type สำหรับข้อมูลนักเรียน
 interface Student {
@@ -26,6 +28,7 @@ interface Student {
   profileImageUrl?: string;
   studentId: string;
   idCardNumber?: string;
+  rfid?: string;
   gender?: string;
   title: string;
   firstName: string;
@@ -37,6 +40,9 @@ interface Student {
   studentStatus: string;
   contact?: string;
   phoneNumber?: string;
+  fatherPhone?: string;
+  motherPhone?: string;
+  guardianPhone?: string;
   lineId?: string;
   createdAt: Timestamp;
   behaviorScore?: number;
@@ -75,6 +81,7 @@ const SkeletonLoader = () => (
           <th scope="col" className="py-3.5 pr-3 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">รหัสนักเรียน</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">ชั้น/ห้อง</th>
+          <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">เลขประจำตัวประชาชน</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">เบอร์ติดต่อผู้ปกครอง</th>
           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
           <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6"><span className="sr-only">Actions</span></th>
@@ -92,6 +99,7 @@ const SkeletonLoader = () => (
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-4 w-20 rounded bg-gray-300 dark:bg-gray-700"></div></td>
             <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-4 w-12 rounded bg-gray-300 dark:bg-gray-700"></div></td>
+            <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-4 w-28 rounded bg-gray-300 dark:bg-gray-700"></div></td>
             <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-4 w-24 rounded bg-gray-300 dark:bg-gray-700"></div></td>
             <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-5 w-16 rounded-md bg-gray-300 dark:bg-gray-700"></div></td>
             <td className="whitespace-nowrap px-3 py-4 text-sm"><div className="h-6 w-32 rounded-md bg-gray-300 dark:bg-gray-700"></div></td>
@@ -126,6 +134,7 @@ export default function StudentListPage() {
   const [itemsPerPage] = useState(20);
   const [sortBy, setSortBy] = useState<'studentNumber' | 'studentId' | 'latest'>('studentNumber');
   const [editingStudentNumberId, setEditingStudentNumberId] = useState<string | null>(null);
+  const [editingBehaviorScoreId, setEditingBehaviorScoreId] = useState<string | null>(null);
 
   const selectStyles: StylesConfig<any, false> = {
     control: (provided) => ({
@@ -222,14 +231,52 @@ export default function StudentListPage() {
       const currentStudent = students.find(s => s.id === studentId);
       const previousStatus = getStudentStatus(currentStudent);
       const nextStatus = String(updates.status || updates.studentStatus || previousStatus).trim();
+
+      // If updating behaviorScore, write a history log entry
+      if (updates.behaviorScore !== undefined) {
+        const prevScore = currentStudent?.behaviorScore ?? 100;
+        const nextScore = updates.behaviorScore;
+        const logsRef = collection(firestore, "school-settings", schoolId, "students", studentId, "behavior_logs");
+        await addDoc(logsRef, {
+          type: "direct_edit",
+          title: "ปรับปรุงคะแนนโดยผู้ดูแลระบบ",
+          category: "ระบบ",
+          action: "overwrite",
+          points: nextScore - prevScore,
+          previousScore: prevScore,
+          nextScore: nextScore,
+          notes: "แก้ไขคะแนนความประพฤติโดยตรงจากหน้าต่างรายชื่อนักเรียน",
+          createdBy: auth.currentUser?.email || auth.currentUser?.displayName || "ผู้ดูแลระบบ",
+          createdAt: serverTimestamp(),
+          academicYear: String(getCurrentThaiYear()),
+        });
+      }
+
       await updateDoc(studentDocRef, updates);
       const wasActive = isActiveStudentSummaryStatus(previousStatus);
       const isActive = isActiveStudentSummaryStatus(nextStatus);
       if (wasActive !== isActive) {
         await updateOwnerAndSchoolCounts(firestore, schoolId, { students: isActive ? 1 : -1 });
       }
+      const nextStudentForSummary = {
+        ...(currentStudent || {}),
+        ...updates,
+        ...(updates.status && !updates.studentStatus ? { studentStatus: updates.status } : {}),
+        ...(updates.studentStatus ? { status: updates.studentStatus } : {}),
+      };
+      await updateStudentReportSummaryForChange(firestore, schoolId, currentStudent, nextStudentForSummary);
       setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s));
-      toast.success("อัปเดตสถานะเรียบร้อยแล้ว", {
+
+      let successMessage = "อัปเดตข้อมูลเรียบร้อยแล้ว";
+      if (updates.status || updates.studentStatus) {
+        successMessage = "อัปเดตสถานะเรียบร้อยแล้ว";
+      } else if (updates.behaviorScore !== undefined) {
+        successMessage = "อัปเดตคะแนนพฤติกรรมเรียบร้อยแล้ว";
+      } else if (updates.studentNumber !== undefined) {
+        successMessage = "อัปเดตเลขที่เรียบร้อยแล้ว";
+      }
+
+      toast.success(successMessage, {
         position: "top-right",
         autoClose: 2000,
         hideProgressBar: true,
@@ -289,6 +336,7 @@ export default function StudentListPage() {
           if (isActiveStudentSummaryStatus(getStudentStatus(student))) {
             await updateOwnerAndSchoolCounts(firestore, student.schoolId, { students: -1 });
           }
+          await updateStudentReportSummaryForChange(firestore, student.schoolId, student, null);
 
           // 3. Delete from Storage if image exists
           if (student.profileImageUrl) {
@@ -614,7 +662,8 @@ export default function StudentListPage() {
               <th scope="col" className="py-3 px-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชื่อ-สกุล</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">รหัสนักเรียน</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">ชั้น/ห้อง</th>
-              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์โทรศัพท์</th>
+              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เลขบัตรประชาชน / RFID</th>
+              <th scope="col" className="hidden lg:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">เบอร์โทรผู้ปกครอง</th>
               <th scope="col" className="hidden md:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สิทธิ์ (Role)</th>
               <th scope="col" className="hidden xl:table-cell px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">คะแนนความประพฤติ</th>
               <th scope="col" className="px-2 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
@@ -683,7 +732,17 @@ export default function StudentListPage() {
                 <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
                   {`${student.classLevel}/${student.room}`}
                 </td>
-                <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{student.phoneNumber || student.contact || '-'}</td>
+                <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
+                  {(student.idCardNumber || student.rfid) ? (
+                    <ul className="list-disc list-inside space-y-0.5 font-mono">
+                      {student.idCardNumber && <li>{student.idCardNumber}</li>}
+                      {student.rfid && <li>{student.rfid}</li>}
+                    </ul>
+                  ) : (
+                    "-"
+                  )}
+                </td>
+                <td className="hidden lg:table-cell whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{student.guardianPhone || student.motherPhone || student.fatherPhone || student.phoneNumber || student.contact || '-'}</td>
                 <td className="hidden md:table-cell whitespace-nowrap px-2 py-3 text-xs">
                   <div className="flex flex-wrap gap-1">
                     {(student.role || ["student"]).map((r, i) => (
@@ -697,9 +756,46 @@ export default function StudentListPage() {
                   </div>
                 </td>
                 <td className="hidden xl:table-cell whitespace-nowrap px-2 py-3 text-xs">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${(student.behaviorScore ?? 100) >= 50 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
-                    {student.behaviorScore ?? 100}
-                  </span>
+                  <CanAccess roles={ACADEMIC_ACCESS} fallback={
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${(student.behaviorScore ?? 100) >= 50 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
+                      {student.behaviorScore ?? 100}
+                    </span>
+                  }>
+                    {editingBehaviorScoreId !== student.id ? (
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all ${(student.behaviorScore ?? 100) >= 50 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}
+                        onClick={() => setEditingBehaviorScoreId(student.id)}
+                        title="คลิกเพื่อแก้ไขคะแนนพฤติกรรม"
+                      >
+                        {student.behaviorScore ?? 100}
+                      </span>
+                    ) : (
+                      <input
+                        type="number"
+                        className="w-16 text-center border border-gray-300 dark:border-gray-700 dark:bg-[#1e1f21] rounded px-1.5 py-0.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900 dark:text-white"
+                        value={student.behaviorScore ?? 100}
+                        autoFocus={editingBehaviorScoreId === student.id}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Number(e.target.value);
+                          setStudents(prev => prev.map(s => s.id === student.id ? { ...s, behaviorScore: val } : s));
+                        }}
+                        onBlur={(e) => {
+                          const val = e.target.value === "" ? 100 : Number(e.target.value);
+                          handleUpdateField(student.id, { behaviorScore: val });
+                          setEditingBehaviorScoreId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();
+                          } else if (e.key === 'Escape') {
+                            setEditingBehaviorScoreId(null);
+                          }
+                        }}
+                        min="0"
+                        max="100"
+                      />
+                    )}
+                  </CanAccess>
                 </td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs">
                   <CanAccess roles={ACADEMIC_ACCESS} fallback={

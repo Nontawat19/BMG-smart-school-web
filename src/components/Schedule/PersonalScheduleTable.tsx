@@ -89,6 +89,11 @@ const getEntryRoom = (entry: any, mode: 'teacher' | 'student') => {
   return mode === 'student' ? entry.roomCode : entry.roomDisplay;
 };
 
+const getTeacherPeriodLabel = (entry: any, mode: 'teacher' | 'student') => {
+  if (mode !== 'teacher') return '';
+  return entry?.course?.teacherPeriodLabel || '';
+};
+
 const isSameCourseEntry = (a: any, b: any, mode: 'teacher' | 'student') => {
   if (!a || !b) return false;
   const aCourse = a.course || {};
@@ -96,7 +101,8 @@ const isSameCourseEntry = (a: any, b: any, mode: 'teacher' | 'student') => {
   return (
     (aCourse.id || getCourseTitle(aCourse)) === (bCourse.id || getCourseTitle(bCourse)) &&
     Number(aCourse.groupNumber || 1) === Number(bCourse.groupNumber || 1) &&
-    getEntryMeta(a, mode) === getEntryMeta(b, mode)
+    getEntryMeta(a, mode) === getEntryMeta(b, mode) &&
+    getTeacherPeriodLabel(a, mode) === getTeacherPeriodLabel(b, mode)
   );
 };
 
@@ -268,11 +274,17 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
                   const courseCode = getCourseCode(cell.entry.course);
                   const meta = getEntryMeta(cell.entry, mode);
                   const room = getEntryRoom(cell.entry, mode);
+                  const teacherPeriodLabel = getTeacherPeriodLabel(cell.entry, mode);
                   const colors = getCourseColors(courseCode);
 
                   return (
                     <td key={`course-${dayKey}-${idx}`} className={`border-r last:border-none border-r-gray-200 dark:border-r-gray-700 text-center align-middle p-0 cursor-default border-t border-b ${colors.bg} ${colors.text} ${colors.border}`} colSpan={cell.colSpan}>
                       <div className="flex min-h-[52px] min-[420px]:min-h-[60px] sm:min-h-[72px] landscape:min-h-[60px] md:landscape:min-h-[72px] flex-col items-center justify-center gap-0.5 px-0.5 min-[420px]:px-1 sm:px-1.5 py-1 sm:py-1.5">
+                        {teacherPeriodLabel && (
+                          <div className="mb-0.5 inline-flex max-w-full items-center justify-center rounded-full bg-white/70 dark:bg-black/20 px-1.5 py-0.5 text-[5px] min-[420px]:text-[6px] sm:text-[8px] font-black text-orange-600 dark:text-orange-300 ring-1 ring-orange-200/70 dark:ring-orange-800/50">
+                            <span className="truncate">{teacherPeriodLabel}</span>
+                          </div>
+                        )}
                         <div className="max-w-full font-black text-[6px] min-[420px]:text-[7px] sm:text-[10px] md:text-[11px] leading-tight line-clamp-2" title={courseTitle}>
                           {courseTitle}
                         </div>

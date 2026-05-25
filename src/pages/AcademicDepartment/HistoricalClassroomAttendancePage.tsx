@@ -1585,12 +1585,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             const day = d.split('-')[0];
             return meta?.periodNumber ? `${day} (ค.${meta.periodNumber})` : day;
         });
-        const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...excelHeaders, 'มา', 'สาย', 'ลา', 'ขาด', 'ร้อยละการมาเรียน'];
+        const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...excelHeaders, 'มา', 'สาย', 'ลา', 'ขาด', 'หนีเรียน', 'ร้อยละการมาเรียน'];
         wsData.push(header);
 
         students.forEach(s => {
             const row: any[] = [s.number, s.studentNumber, `${s.firstName} ${s.lastName}`];
-            let p = 0, l = 0, v = 0, a = 0;
+            let p = 0, l = 0, v = 0, a = 0, esc = 0;
             let totalPossible = 0;
 
             dates.forEach(date => {
@@ -1606,11 +1606,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 else if (status === 'late') { row.push('สาย'); l++; }
                 else if (status === 'leave') { row.push('ลา'); v++; }
                 else if (status === 'absent') { row.push('ขาด'); a++; }
+                else if (status === 'escape') { row.push('หนีเรียน'); esc++; }
                 else row.push('-');
             });
 
             const percentage = totalPossible > 0 ? ((p + l) / totalPossible * 100).toFixed(2) : '0.00';
-            row.push(p, l, v, a, percentage + '%');
+            row.push(p, l, v, a, esc, percentage + '%');
             wsData.push(row);
         });
 
@@ -1681,6 +1682,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         </div>
                     );
                     break;
+                case 'escape':
+                    content = (
+                        <div className={`
+                            mx-auto w-[16px] h-[16px] rounded-sm flex items-center justify-center text-[7px] font-bold transition-all
+                            ${isLockedRecord ? 'bg-orange-600 text-white' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50'}
+                        `}>
+                            น
+                        </div>
+                    );
+                    break;
                 default:
                     content = (
                         <div className="mx-auto w-[16px] h-[16px] rounded-sm bg-transparent border border-black/10 dark:border-white/10 text-black/20 dark:text-white/20 flex items-center justify-center text-[7px] hover:bg-black/5 dark:hover:bg-white/5 transition-all font-light">
@@ -1735,7 +1746,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             if (meta?.isCheckable) {
                 const st = attendanceData[s.id]?.[d];
                 // Only include in calculation if mass attendance has actually been recorded for this student/date
-                if (st && ['present', 'late', 'leave', 'absent'].sort().includes(st)) {
+                if (st && ['present', 'late', 'leave', 'absent', 'escape'].sort().includes(st)) {
                     totalRecorded++;
                     // "Present" and "Late" are counted as attending
                     if (st === 'present' || st === 'late') presentCount++;
@@ -1755,7 +1766,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
         const checked = students.reduce((count, student) => {
             const status = attendanceData[student.id]?.[date];
-            return typeof status === 'string' && ['present', 'late', 'leave', 'absent'].includes(status) ? count + 1 : count;
+            return typeof status === 'string' && ['present', 'late', 'leave', 'absent', 'escape'].includes(status) ? count + 1 : count;
         }, 0);
 
         return {
@@ -2273,12 +2284,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         <th className="p-0 text-center bg-amber-50/50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 min-w-[22px] w-[22px] text-[7px] font-black uppercase tracking-tighter">สาย</th>
                                         <th className="p-0 text-center bg-sky-50/50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 min-w-[22px] w-[22px] text-[7px] font-black uppercase tracking-tighter">ลา</th>
                                         <th className="p-0 text-center bg-rose-50/50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 min-w-[22px] w-[22px] text-[7px] font-black uppercase tracking-tighter">ขาด</th>
+                                        <th className="p-0 text-center bg-orange-50/50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 min-w-[22px] w-[22px] text-[7px] font-black uppercase tracking-tighter">หนี</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                                     {students.length === 0 ? (
                                         <tr>
-                                            <td colSpan={dates.length + 7} className="p-20 text-center text-gray-400">
+                                            <td colSpan={dates.length + 8} className="p-20 text-center text-gray-400">
                                                 {loading ? (
                                                     <div className="flex flex-col items-center justify-center gap-3">
                                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -2296,13 +2308,14 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         </tr>
                                     ) : (
                                         students.map((student, idx) => {
-                                            const stats = { present: 0, late: 0, leave: 0, absent: 0 };
+                                            const stats = { present: 0, late: 0, leave: 0, absent: 0, escape: 0 };
                                             dates.forEach(d => {
                                                 const s = attendanceData[student.id]?.[d];
                                                 if (s === 'present') stats.present++;
                                                 else if (s === 'late') stats.late++;
                                                 else if (s === 'leave') stats.leave++;
                                                 else if (s === 'absent') stats.absent++;
+                                                else if (s === 'escape') stats.escape++;
                                             });
 
                                             return (
@@ -2358,6 +2371,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     <td className="p-0 text-center bg-amber-50/20 dark:bg-amber-900/5 text-amber-600 dark:text-amber-400 font-black text-[8px] w-[22px]">{stats.late}</td>
                                                     <td className="p-0 text-center bg-sky-50/20 dark:bg-sky-900/5 text-sky-600 dark:text-sky-400 font-black text-[8px] w-[22px]">{stats.leave}</td>
                                                     <td className="p-0 text-center bg-rose-50/20 dark:bg-rose-900/5 text-rose-600 dark:text-rose-400 font-black text-[8px] w-[22px]">{stats.absent}</td>
+                                                    <td className="p-0 text-center bg-orange-50/20 dark:bg-orange-900/5 text-orange-600 dark:text-orange-400 font-black text-[8px] w-[22px]">{stats.escape}</td>
                                                 </tr>
                                             );
                                         })
@@ -2388,6 +2402,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             { id: 'late', label: 'สาย', char: 'ส', color: 'bg-yellow-500', hover: 'hover:bg-yellow-50 dark:hover:bg-yellow-900/20', text: 'text-yellow-600' },
                             { id: 'leave', label: 'ลา', char: 'ล', color: 'bg-blue-500', hover: 'hover:bg-blue-50 dark:hover:bg-blue-900/20', text: 'text-blue-600' },
                             { id: 'absent', label: 'ขาด', char: 'ข', color: 'bg-red-500', hover: 'hover:bg-red-50 dark:hover:bg-red-900/20', text: 'text-red-600' },
+                            { id: 'escape', label: 'หนีเรียน', char: 'น', color: 'bg-orange-500', hover: 'hover:bg-orange-50 dark:hover:bg-orange-900/20', text: 'text-orange-600' },
                         ].map((btn) => (
                             <button
                                 key={btn.id}

@@ -636,7 +636,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                     transportType,
                     transportDetail,
                     requiresSubstitute,
-                    status: 'approved',
+                    status: 'pending',
                     createdAt: Timestamp.now(),
                     requesterId: finalRequesterId,
                     requesterType,
@@ -653,105 +653,6 @@ const OfficialTravelRequestPage: React.FC = () => {
                 const requestRef = doc(collection(requesterRef, "travel_summary"));
                 transaction.set(requestRef, travelDataToSave);
                 setSavedData(travelDataToSave); // Store for PDF
-
-                // 4. Update Attendance (Inside Transaction)
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-
-                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                    const dateStr = d.toISOString().split('T')[0];
-                    const attRef = doc(collection(requesterRef, "attendance"), dateStr);
-                    transaction.set(attRef, {
-                        date: dateStr,
-                        status: 'official_travel',
-                        checkInTime: '08:00',
-                        checkOutTime: '16:30',
-                        note: 'ไปราชการ: ' + reason,
-                        timestamp: Timestamp.now()
-                    }, { merge: true });
-
-                    // **Daily Summary (School-wide Updates)**
-                    if (requesterType === 'student') {
-                        const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "daysummary", dateStr);
-                        const classMatch = position.match(/ชั้น\s+([^/]+)/);
-                        const cls = classMatch ? classMatch[1].trim() : "ไม่ระบุชั้น";
-
-                        transaction.set(summaryRef, {
-                            absent: increment(-1),
-                            officialTravel: increment(1),
-                            [`classes.${cls}.absent`]: increment(-1),
-                            [`classes.${cls}.officialTravel`]: increment(1),
-                            updatedAt: serverTimestamp()
-                        }, { merge: true });
-
-                        // Update Period Summaries (Week, Month, Year, Semester)
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'students', dateStr, 'absent', 'officialTravel', cls, academicYear);
-
-                        // For co-adventurers as well
-                        if (travelDataToSave.coAdventurers) {
-                            for (const adv of travelDataToSave.coAdventurers) {
-                                if (adv.type === 'student') {
-                                    const advClassMatch = adv.position.match(/ชั้น\s+([^/]+)/);
-                                    const advCls = advClassMatch ? advClassMatch[1].trim() : "ไม่ระบุชั้น";
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'students', dateStr, 'absent', 'officialTravel', advCls, academicYear);
-                                }
-                            }
-                        }
-                    } else if (requesterType === 'teacher') {
-                        // For teachers, we can keep the old summary or leave it for now as teachers have fewer records
-                        const oldSummaryRef = doc(firestore, 'school-settings', schoolId, 'summaries', 'attendance', 'days', dateStr);
-                        transaction.set(oldSummaryRef, {
-                            [`teacherStats.absent`]: increment(-1),
-                            [`teacherStats.officialTravel`]: increment(1),
-                            updatedAt: serverTimestamp()
-                        }, { merge: true });
-
-                        // Update Period Summaries (Week, Month, Year, Semester)
-                        updatePeriodSummaries(firestore, transaction as any, schoolId, user.uid, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
-
-                        // For co-adventurers as well
-                        if (travelDataToSave.coAdventurers) {
-                            for (const adv of travelDataToSave.coAdventurers) {
-                                if (adv.type === 'teacher') {
-                                    updatePeriodSummaries(firestore, transaction as any, schoolId, adv.id, 'teachers', dateStr, 'absent', 'officialTravel', undefined, academicYear);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 5. Update Statistics (Inside Transaction)
-                const diffTime = Math.abs(end.getTime() - start.getTime());
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-                transaction.set(requesterRef, {
-                    attendanceStats: {
-                        official_travel_days: increment(diffDays),
-                        present: increment(diffDays)
-                    }
-                }, { merge: true });
-
-                // 📌 6. Auto-create Leave Records for Student Co-Adventurers
-                if (travelDataToSave.coAdventurers) {
-                    for (const adv of travelDataToSave.coAdventurers) {
-                        if (adv.type === 'student') {
-                            // Create a leave request record for this student
-                            // Path: school-settings/{schoolId}/students/{studentId}/leave_summary
-                            const leaveRef = doc(collection(firestore, "school-settings", schoolId, "students", adv.id, "leave_summary"));
-                            transaction.set(leaveRef, {
-                                leaveType: 'ไปราชการ/กิจกรรม',
-                                reason: 'ไปราชการ: ' + reason,
-                                startDate: Timestamp.fromDate(new Date(startDate)),
-                                endDate: Timestamp.fromDate(new Date(endDate)),
-                                status: 'approved', // Auto-approved
-                                approvedBy: requesterName, // Teacher who requested
-                                approvedAt: serverTimestamp(),
-                                createdAt: serverTimestamp(),
-                                studentId: adv.id // Redundant but good for querying if needed
-                            });
-                        }
-                    }
-                }
             });
 
             setIsSaved(true);
@@ -759,7 +660,7 @@ const OfficialTravelRequestPage: React.FC = () => {
             Swal.fire({
                 icon: "success",
                 title: "บันทึกสำเร็จ",
-                text: "ระบบได้บันทึกคำขอไปราชการเรียบร้อยแล้ว ท่านสามารถเตรียมไฟล์ PDF และดาวน์โหลดได้ทันที",
+                text: "ยื่นคำขอไปราชการสำเร็จ (รอฝ่ายบุคคลอนุมัติ)",
                 background: isDarkMode ? "#2a2b2f" : "#fff",
                 color: isDarkMode ? "#ffffff" : "#111827",
                 confirmButtonText: "ตกลง",
