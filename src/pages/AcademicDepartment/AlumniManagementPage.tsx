@@ -347,8 +347,8 @@ const AlumniManagementPage: React.FC = () => {
                         classLevel: reactivateForm.classLevel,
                         room: reactivateForm.room,
                         roomNumber: reactivateForm.room,
-                        status: 'กำลังศึกษา',
-                        studentStatus: 'กำลังศึกษา',
+                        status: 'กำลังศึกษาอยู่',
+                        studentStatus: 'กำลังศึกษาอยู่',
                         reEnrollmentDetails: {
                             fromStatus: student.status,
                             fromClassLevel: student.classLevel,
@@ -725,7 +725,7 @@ const AlumniManagementPage: React.FC = () => {
                                 </div>
 
                                 <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 p-4 text-xs font-bold text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                                    ถ้ากดยืนยัน ระบบจะเปลี่ยนสถานะเป็น “กำลังศึกษา” และย้ายข้อมูลออกจากหน้าศิษย์เก่าไปแสดงในรายชื่อนักเรียนปัจจุบัน
+                                    ถ้ากดยืนยัน ระบบจะเปลี่ยนสถานะเป็น “กำลังศึกษาอยู่” และย้ายข้อมูลออกจากหน้าศิษย์เก่าไปแสดงในรายชื่อนักเรียนปัจจุบัน
                                 </div>
                             </div>
 

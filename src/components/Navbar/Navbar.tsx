@@ -24,7 +24,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { th } from "date-fns/locale";
 
-import { FaBell, FaBars, FaBookOpen, FaSun, FaMoon, FaHome, FaUserCheck } from "react-icons/fa";
+import { FaBell, FaBars, FaBookOpen, FaSun, FaMoon, FaHome, FaUserCheck, FaChalkboardTeacher } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
 // import liff from "@line/liff"; // 📌 นำ LIFF ออกตามคำขอ
 
@@ -36,7 +36,7 @@ import { useTheme } from "@/ThemeContext";
 import Swal from "sweetalert2";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { usePwaMode } from "@/hooks/usePwaMode";
-import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
+import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 
 /* -------------------- types -------------------- */
 interface Notification {
@@ -425,6 +425,11 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 className={iconClass("attendance")}
                 title="ระบบเช็คชื่อ"
                 onClick={() => navigate(PWA_ATTENDANCE_HUB_PATH)}
+              />
+              <FaChalkboardTeacher
+                className={iconClass("schedule")}
+                title="ตารางสอน"
+                onClick={() => navigate(PWA_MY_SCHEDULE_PATH)}
               />
             </div>
           ) : !isAttendanceEntryOnly(currentUser?.role) && (

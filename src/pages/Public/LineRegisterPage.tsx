@@ -33,6 +33,13 @@ interface SchoolData {
   liffId?: string;
 }
 
+const findLineOASettingsLiffId = (lineOASettings: any) => {
+  if (!lineOASettings || typeof lineOASettings !== 'object') return '';
+  return Object.values(lineOASettings)
+    .map((config: any) => config?.liffId)
+    .find((value) => typeof value === 'string' && value.trim()) as string | undefined || '';
+};
+
 const LineRegisterPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'parent' | 'teacher'>('parent');
@@ -74,14 +81,26 @@ const LineRegisterPage: React.FC = () => {
         // Load school settings only to resolve the LIFF ID; the form itself does not show a school selector.
         const schoolColl = collection(firestore, 'school-settings');
         const snap = await getDocs(schoolColl);
-        const schoolList: SchoolData[] = snap.docs.map((docSnap) => {
+        const schoolList: SchoolData[] = await Promise.all(snap.docs.map(async (docSnap) => {
           const data = docSnap.data();
+          let liffId =
+            data.lineOASettings?.school?.liffId ||
+            data.lineOASettings?.classroom?.liffId ||
+            findLineOASettingsLiffId(data.lineOASettings);
+
+          if (!liffId) {
+            const teacherSnap = await getDocs(collection(firestore, 'school-settings', docSnap.id, 'teachers'));
+            liffId = teacherSnap.docs
+              .map((teacherDoc) => teacherDoc.data()?.liffId)
+              .find((value) => typeof value === 'string' && value.trim()) || '';
+          }
+
           return {
             id: docSnap.id,
             schoolName: data.schoolName || 'โรงเรียนนิรนาม',
-            liffId: data.lineOASettings?.school?.liffId || data.lineOASettings?.classroom?.liffId,
+            liffId,
           };
-        });
+        }));
 
         setSchools(schoolList);
 
@@ -194,10 +213,22 @@ const LineRegisterPage: React.FC = () => {
     }
 
     const data = schoolSnap.data();
+    let liffId =
+      data.lineOASettings?.school?.liffId ||
+      data.lineOASettings?.classroom?.liffId ||
+      findLineOASettingsLiffId(data.lineOASettings);
+
+    if (!liffId) {
+      const teacherSnap = await getDocs(collection(firestore, 'school-settings', schoolId, 'teachers'));
+      liffId = teacherSnap.docs
+        .map((teacherDoc) => teacherDoc.data()?.liffId)
+        .find((value) => typeof value === 'string' && value.trim()) || '';
+    }
+
     return {
       id: schoolId,
       schoolName: data.schoolName || 'ไม่ระบุชื่อโรงเรียน',
-      liffId: data.lineOASettings?.school?.liffId || data.lineOASettings?.classroom?.liffId,
+      liffId,
     };
   };
 
@@ -227,8 +258,9 @@ const LineRegisterPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      // Query student
-      const studentsRef = collectionGroup(firestore, 'students');
+      const studentsRef = selectedSchoolId
+        ? collection(firestore, 'school-settings', selectedSchoolId, 'students')
+        : collectionGroup(firestore, 'students');
       const q = query(studentsRef, where('studentId', '==', normalizedStudentId));
       let querySnap = await getDocs(q);
 
@@ -330,8 +362,9 @@ const LineRegisterPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      // Query teacher
-      const teachersRef = collectionGroup(firestore, 'teachers');
+      const teachersRef = selectedSchoolId
+        ? collection(firestore, 'school-settings', selectedSchoolId, 'teachers')
+        : collectionGroup(firestore, 'teachers');
       const q = query(teachersRef, where('teacherId', '==', normalizedTeacherId));
       const querySnap = await getDocs(q);
       const matchedTeacherDoc = querySnap.docs.find((docSnap) => digitsOnly(String(docSnap.data().idCardNumber || '')) === normalizedTeacherIdCard);

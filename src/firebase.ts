@@ -2,7 +2,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, initializeFirestore } from "firebase/firestore"; // เปลี่ยนจาก database เป็น firestore
+import { initializeFirestore, setLogLevel } from "firebase/firestore"; // เปลี่ยนจาก database เป็น firestore
 import { getStorage } from "firebase/storage";
 
 export const firebaseConfig = {
@@ -16,6 +16,8 @@ export const firebaseConfig = {
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+setLogLevel("silent");
 
 export const auth = getAuth(app);
 export const firestore = initializeFirestore(app, {

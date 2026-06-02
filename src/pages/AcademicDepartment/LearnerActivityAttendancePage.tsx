@@ -681,7 +681,7 @@ const formatClassIds = (classId?: string | string[]) => {
 };
 
 const isActiveStudent = (student: Student) => {
-  const status = String(student.status || 'กำลังศึกษา').trim();
+  const status = String(student.status || 'กำลังศึกษาอยู่').trim();
   return !['ย้าย', 'ลาออก', 'จำหน่าย', 'สำเร็จการศึกษา', 'ศิษย์เก่า'].includes(status);
 };
 

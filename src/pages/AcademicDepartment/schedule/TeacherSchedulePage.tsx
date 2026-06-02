@@ -14,8 +14,8 @@ import { CLASSES, getClassDisplayName, isAcademicCourse, getRequiredWeeklyPeriod
 import { CourseCard } from './components/CourseCard';
 import { TimetableGrid } from './components/TimetableGrid';
 import { TeacherScheduleHeader } from './components/TeacherScheduleHeader';
-import { TeacherScheduleControlPanel } from './components/TeacherScheduleControlPanel';
-import { SchedulePreviewActions } from './components/SchedulePreviewActions';
+import { CompactScheduleToolbar } from './components/CompactScheduleToolbar';
+import { TeacherSelect } from './components/TeacherSelect';
 import { HoveredSlotTooltip } from './components/HoveredSlotTooltip';
 import { useScheduleData } from './hooks/useScheduleData';
 import { useSmartMove } from './hooks/useSmartMove';
@@ -43,6 +43,7 @@ const TeacherSchedulePage: React.FC = () => {
     const [filterRoom, setFilterRoom] = useState<string>('all');
     const [filterGroup, setFilterGroup] = useState<string>('all');
     const [filterPhysicalRoom, setFilterPhysicalRoom] = useState<string>('all');
+    const [filterPhysicalRoomTeacher, setFilterPhysicalRoomTeacher] = useState<string>('all');
     const [physicalRooms, setPhysicalRooms] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [activeDragItem, setActiveDragItem] = useState<CourseInstance | null>(null);
@@ -309,6 +310,12 @@ const TeacherSchedulePage: React.FC = () => {
         return map;
     }, [physicalRooms]);
 
+    const getTeacherDisplayName = useCallback((teacherId: string) => {
+        const teacher = teachers.find(t => t.id === teacherId || (t.teacherId && t.teacherId === teacherId));
+        if (!teacher) return teacherId;
+        return `${teacher.title || ''}${teacher.firstName || ''} ${teacher.lastName || teacher.name || ''}`.trim();
+    }, [teachers]);
+
     useEffect(() => {
         if (!selectedTeacher || !schoolId) {
             setSchedule({});
@@ -496,8 +503,9 @@ const TeacherSchedulePage: React.FC = () => {
 
     const roomSchedule = useMemo(() => {
         const hasPhysicalRoomFilter = filterPhysicalRoom !== 'all';
+        const hasTeacherFilter = filterPhysicalRoomTeacher !== 'all';
         const hasClassFilter = filterClass !== 'all' || filterRoom !== 'all' || filterGroup !== 'all';
-        if (!hasPhysicalRoomFilter && !hasClassFilter) return {};
+        if (!hasPhysicalRoomFilter && !hasTeacherFilter && !hasClassFilter) return {};
         const filtered: Schedule = {};
         const classLabel = CLASSES[filterClass as keyof typeof CLASSES] || filterClass;
         const clean = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
@@ -508,6 +516,26 @@ const TeacherSchedulePage: React.FC = () => {
         const hasSpecificPhysicalRoom = (roomVal: unknown) => {
             const rooms = Array.isArray(roomVal) ? roomVal : [roomVal].filter(Boolean);
             return rooms.some(roomId => roomId && String(roomId).toLowerCase() !== 'all');
+        };
+
+        const matchesSelectedTeacher = (teacherId?: string, teacherIds?: string[]) => {
+            if (!hasTeacherFilter) return true;
+            const ids = Array.isArray(teacherIds) && teacherIds.length > 0 ? teacherIds : [teacherId].filter(Boolean) as string[];
+            return ids.includes(filterPhysicalRoomTeacher);
+        };
+
+        const matchesSelectedPhysicalRoom = (roomVal: unknown) => {
+            if (!hasPhysicalRoomFilter) return true;
+            const rooms = Array.isArray(roomVal) ? roomVal : [roomVal].filter(Boolean);
+            return rooms.some(roomId => String(roomId) === filterPhysicalRoom);
+        };
+
+        const withRoomDisplay = (course: CourseInstance) => {
+            const rooms = (Array.isArray(course.room) ? course.room : [course.room]).filter(Boolean) as string[];
+            const roomDisplay = rooms.length > 0 && !rooms.includes('all')
+                ? rooms.map((id: string) => roomMap[id] || id).join(', ')
+                : course.roomDisplay || '';
+            return { ...course, roomDisplay };
         };
 
         const matchesSelectedClassRoom = (targetClass: string | string[] | undefined, groupNumber?: number) => {
@@ -559,16 +587,18 @@ const TeacherSchedulePage: React.FC = () => {
                 if (!isCourseAllowedInScheduleViews(item.course?.id, item.teacherId, item.groupNumber)) return;
                 const roomVal = item.course?.room;
                 if (!roomVal) return;
-                const hasMatch = hasPhysicalRoomFilter
-                    ? (Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom)
-                    : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber);
+                if (!matchesSelectedTeacher(item.teacherId, item.course?.teacherIds)) return;
+                const hasMatch = matchesSelectedPhysicalRoom(roomVal) &&
+                    (hasPhysicalRoomFilter || hasTeacherFilter
+                        ? hasSpecificPhysicalRoom(roomVal)
+                        : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber));
                 if (hasMatch && item.course) {
-                    addCourseToSlot(slot, {
+                    addCourseToSlot(slot, withRoomDisplay({
                         ...item.course,
                         teacherId: item.teacherId,
                         classId: item.classId,
                         instanceId: `global-${item.course.id}-${item.teacherId}-${slot}`
-                    } as CourseInstance);
+                    } as CourseInstance));
                 }
             });
         });
@@ -578,15 +608,17 @@ const TeacherSchedulePage: React.FC = () => {
                 if (!isCourseAllowedInScheduleViews(item.id, item.teacherId, item.groupNumber)) return;
                 const roomVal = item.room;
                 if (!roomVal) return;
-                const hasMatch = hasPhysicalRoomFilter
-                    ? (Array.isArray(roomVal) ? roomVal.includes(filterPhysicalRoom) : String(roomVal) === filterPhysicalRoom)
-                    : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber);
-                if (hasMatch) addCourseToSlot(slot, item);
+                if (!matchesSelectedTeacher(item.teacherId, item.teacherIds)) return;
+                const hasMatch = matchesSelectedPhysicalRoom(roomVal) &&
+                    (hasPhysicalRoomFilter || hasTeacherFilter
+                        ? hasSpecificPhysicalRoom(roomVal)
+                        : hasSpecificPhysicalRoom(roomVal) && matchesSelectedClassRoom(item.classId, item.groupNumber));
+                if (hasMatch) addCourseToSlot(slot, withRoomDisplay(item));
             });
         });
 
         return filtered;
-    }, [schoolMasterSchedule, filterPhysicalRoom, filterClass, filterRoom, filterGroup, schedule, isCourseAllowedInScheduleViews]);
+    }, [schoolMasterSchedule, filterPhysicalRoom, filterPhysicalRoomTeacher, filterClass, filterRoom, filterGroup, schedule, roomMap, isCourseAllowedInScheduleViews]);
 
     const classSchedule = useMemo(() => {
         if (filterClass === 'all' && filterRoom === 'all' && filterGroup === 'all') return {};
@@ -718,69 +750,127 @@ const TeacherSchedulePage: React.FC = () => {
     }, [filterPhysicalRoom, physicalRooms]);
 
     const roomScheduleSubtitle = useMemo(() => {
+        const teacherName = filterPhysicalRoomTeacher !== 'all' ? getTeacherDisplayName(filterPhysicalRoomTeacher) : '';
+        if (filterPhysicalRoom !== 'all' && teacherName) return `ครู: ${teacherName} • ห้อง: ${selectedPhysicalRoomName}`;
+        if (teacherName) return `ครู: ${teacherName} (ทุกห้องปฏิบัติการ)`;
         if (filterPhysicalRoom !== 'all') return `ห้อง: ${selectedPhysicalRoomName}`;
         if (filterClass !== 'all') {
             return `ชั้น: ${CLASSES[filterClass as keyof typeof CLASSES] || filterClass}${filterRoom !== 'all' ? `/${filterRoom}` : ''}${filterGroup !== 'all' ? ` กลุ่ม ${filterGroup}` : ''} (ทุกสถานที่)`;
         }
         if (filterRoom !== 'all') return `ห้องเรียน: ${filterRoom} (ทุกสถานที่)`;
-        return 'กรุณาเลือกชั้น/ห้อง หรือสถานที่';
-    }, [filterPhysicalRoom, selectedPhysicalRoomName, filterClass, filterRoom, filterGroup]);
+        return 'กรุณาเลือกครูหรือห้องปฏิบัติการ';
+    }, [filterPhysicalRoom, filterPhysicalRoomTeacher, selectedPhysicalRoomName, filterClass, filterRoom, filterGroup, getTeacherDisplayName]);
 
-    const previewSelectClassName = "h-8 min-w-[118px] rounded-xl border border-gray-200 bg-gray-50 px-3 text-[11px] font-black text-gray-800 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white";
+    const previewSelectClassName = "appearance-none h-8 w-[90px] sm:w-[105px] md:w-[120px] rounded-xl border border-gray-200/80 bg-gray-50/50 pl-2.5 pr-6 text-[10px] sm:text-[11px] font-black text-gray-800 outline-none transition-all duration-200 hover:border-gray-300 dark:hover:border-white/20 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.03] dark:text-white cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed";
+
+    const previewSelectChevron = (
+        <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 transition-colors group-hover:text-indigo-500">
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+        </div>
+    );
+
     const classroomPreviewReady = filterClass !== 'all' && filterRoom !== 'all';
-    const physicalRoomPreviewReady = filterPhysicalRoom !== 'all';
+    const physicalRoomPreviewReady = filterPhysicalRoom !== 'all' || filterPhysicalRoomTeacher !== 'all';
 
     const classroomPreviewControls = (
-        <>
-            <select
-                aria-label="เลือกชั้นเรียน"
-                className={previewSelectClassName}
-                value={filterClass}
-                onChange={(event) => {
-                    const nextClass = event.target.value || 'all';
-                    setFilterClass(nextClass);
-                    setFilterRoom(nextClass === 'all' ? 'all' : '1');
-                    setFilterGroup('all');
-                }}
-            >
-                <option value="all">เลือกชั้น...</option>
-                {schoolSettings.availableClasses.map((classKey) => (
-                    <option key={classKey} value={classKey}>
-                        {CLASSES[classKey as keyof typeof CLASSES] || classKey}
-                    </option>
-                ))}
-            </select>
-            <select
-                aria-label="เลือกห้องเรียน"
-                className={previewSelectClassName}
-                value={filterRoom}
-                onChange={(event) => setFilterRoom(event.target.value || 'all')}
-                disabled={filterClass === 'all'}
-            >
-                <option value="all">เลือกห้อง...</option>
-                {Array.from({ length: 20 }, (_, index) => {
-                    const room = String(index + 1);
-                    return <option key={room} value={room}>ห้อง {room}</option>;
-                })}
-                <option value="แผน">ห้อง แผน</option>
-            </select>
-        </>
+        <div className="flex flex-row items-center gap-1.5 justify-end">
+            <div className="relative group">
+                <select
+                    aria-label="เลือกชั้นเรียน"
+                    className={previewSelectClassName}
+                    value={filterClass}
+                    onChange={(event) => {
+                        const nextClass = event.target.value || 'all';
+                        setFilterClass(nextClass);
+                        setFilterRoom(nextClass === 'all' ? 'all' : '1');
+                        setFilterGroup('all');
+                    }}
+                >
+                    <option value="all" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">เลือกชั้น...</option>
+                    {schoolSettings.availableClasses.map((classKey) => (
+                        <option key={classKey} value={classKey} className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">
+                            {CLASSES[classKey as keyof typeof CLASSES] || classKey}
+                        </option>
+                    ))}
+                </select>
+                {previewSelectChevron}
+            </div>
+
+            <div className="relative group">
+                <select
+                    aria-label="เลือกห้องเรียน"
+                    className={previewSelectClassName}
+                    value={filterRoom}
+                    onChange={(event) => setFilterRoom(event.target.value || 'all')}
+                    disabled={filterClass === 'all'}
+                >
+                    <option value="all" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">เลือกห้อง...</option>
+                    {Array.from({ length: 20 }, (_, index) => {
+                        const room = String(index + 1);
+                        return (
+                            <option key={room} value={room} className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">
+                                ห้อง {room}
+                            </option>
+                        );
+                    })}
+                    <option value="แผน" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">ห้อง แผน</option>
+                </select>
+                {previewSelectChevron}
+            </div>
+
+            <div className="relative group">
+                <select
+                    aria-label="เลือกกลุ่มเรียน"
+                    className={previewSelectClassName}
+                    value={filterGroup}
+                    onChange={(event) => setFilterGroup(event.target.value || 'all')}
+                    disabled={filterClass === 'all'}
+                >
+                    <option value="all" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">ทุกกลุ่มเรียน</option>
+                    {Array.from({ length: 20 }, (_, index) => {
+                        const group = String(index + 1);
+                        return (
+                            <option key={group} value={group} className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">
+                                กลุ่ม {group}
+                            </option>
+                        );
+                    })}
+                </select>
+                {previewSelectChevron}
+            </div>
+        </div>
     );
 
     const physicalRoomPreviewControls = (
-        <select
-            aria-label="เลือกห้องปฏิบัติการ"
-            className="h-8 min-w-[190px] rounded-xl border border-gray-200 bg-gray-50 px-3 text-[11px] font-black text-gray-800 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
-            value={filterPhysicalRoom}
-            onChange={(event) => setFilterPhysicalRoom(event.target.value || 'all')}
-        >
-            <option value="all">เลือกห้องปฏิบัติการ...</option>
-            {physicalRooms.map((room: any) => (
-                <option key={room.id} value={room.id}>
-                    {`${room.roomCode ? `(${room.roomCode}) ` : ''}${room.roomName}`}
-                </option>
-            ))}
-        </select>
+        <div className="flex flex-row items-center gap-1.5 justify-end">
+            <div className="relative group w-[120px] sm:w-[145px] md:w-[165px]">
+                <TeacherSelect
+                    teachers={teachers}
+                    selectedTeacher={filterPhysicalRoomTeacher === 'all' ? '' : filterPhysicalRoomTeacher}
+                    setSelectedTeacher={(value) => setFilterPhysicalRoomTeacher(value || 'all')}
+                    setSchedule={() => { }}
+                />
+            </div>
+
+            <div className="relative group w-[130px] sm:w-[155px] md:w-[175px]">
+                <select
+                    aria-label="เลือกห้องปฏิบัติการ"
+                    className="appearance-none h-8 w-full rounded-xl border border-gray-200/80 bg-gray-50/50 pl-2.5 pr-6 text-[10px] sm:text-[11px] font-black text-gray-800 outline-none transition-all duration-200 hover:border-gray-300 dark:hover:border-white/20 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 dark:border-white/10 dark:bg-white/[0.03] dark:text-white cursor-pointer shadow-sm"
+                    value={filterPhysicalRoom}
+                    onChange={(event) => setFilterPhysicalRoom(event.target.value || 'all')}
+                >
+                    <option value="all" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">ทุกห้องปฏิบัติการ</option>
+                    {physicalRooms.map((room: any) => (
+                        <option key={room.id} value={room.id} className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">
+                            {`${room.roomCode ? `(${room.roomCode}) ` : ''}${room.roomName}`}
+                        </option>
+                    ))}
+                </select>
+                {previewSelectChevron}
+            </div>
+        </div>
     );
 
     const sensors = useSensors(
@@ -810,55 +900,53 @@ const TeacherSchedulePage: React.FC = () => {
             modifiers={[restrictToWindowEdges]}
         >
             <MainLayout>
-                <div className="flex flex-col bg-gray-50/50 dark:bg-[#1a1b1e] text-gray-900 dark:text-white transition-colors duration-300 font-inter select-none custom-scrollbar">
+                <div className="flex flex-col h-[calc(100vh-60px)] overflow-hidden bg-gray-50/50 dark:bg-[#1a1b1e] text-gray-900 dark:text-white transition-colors duration-300 font-inter select-none">
 
                     <TeacherScheduleHeader
                         selectedYear={selectedYear}
                         availableYears={availableYears}
                         selectedSemester={selectedSemester}
                         isSaving={isSaving}
+                        isAutoScheduling={isAutoScheduling}
                         setSelectedYear={setSelectedYear}
                         setSelectedSemester={setSelectedSemester}
+                        handleGenerateSchoolTimetable={handleGenerateSchoolTimetable}
                         handleSaveSchedule={handleSaveSchedule}
                     />
 
-                    <main className="max-w-[1600px] mx-auto w-full px-6 pt-2 pb-6 space-y-6">
-                        <TeacherScheduleControlPanel
-                            isDarkMode={isDarkMode}
-                            allCourses={allCourses}
-                            availableCourseInstances={availableCourseInstances}
-                            teachers={teachers}
-                            selectedTeacher={selectedTeacher}
-                            selectedSemester={selectedSemester}
-                            filterClass={filterClass}
-                            filterRoom={filterRoom}
-                            filterGroup={filterGroup}
-                            filterPhysicalRoom={filterPhysicalRoom}
-                            physicalRooms={physicalRooms}
-                            searchTerm={searchTerm}
-                            schoolSettings={schoolSettings}
-                            setSearchTerm={setSearchTerm}
-                            setSelectedTeacher={setSelectedTeacher}
-                            setSchedule={setSchedule}
-                            setFilterClass={setFilterClass}
-                            setFilterRoom={setFilterRoom}
-                            setFilterGroup={setFilterGroup}
-                            setFilterPhysicalRoom={setFilterPhysicalRoom}
-                        />
-
-                        <SchedulePreviewActions
-                            selectedTeacher={selectedTeacher}
-                            isAutoScheduling={isAutoScheduling}
-                            handleClearSchedule={handleClearSchedule}
-                            handleClearAllSchedules={handleClearAllSchedules}
-                            handleAutoScheduleForTeacherAndClasses={handleAutoScheduleForTeacherAndClasses}
-                            handleGenerateSchoolTimetable={handleGenerateSchoolTimetable}
-                        />
-
-                        <div className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm h-auto">
+                    <main className="max-w-[1600px] mx-auto w-full flex-grow flex flex-col min-h-0 px-4 pt-1 pb-2 gap-3">
+                        <div className="flex-[5_5_0%] flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                             <TimetableGrid
                                 title="ตารางสอนครูผู้สอน"
                                 subtitle={selectedTeacherScheduleSubtitle}
+                                headerActions={
+                                    <CompactScheduleToolbar
+                                        isDarkMode={isDarkMode}
+                                        allCourses={allCourses}
+                                        availableCourseInstances={availableCourseInstances}
+                                        teachers={teachers}
+                                        selectedTeacher={selectedTeacher}
+                                        selectedSemester={selectedSemester}
+                                        filterClass={filterClass}
+                                        filterRoom={filterRoom}
+                                        filterGroup={filterGroup}
+                                        filterPhysicalRoom={filterPhysicalRoom}
+                                        physicalRooms={physicalRooms}
+                                        searchTerm={searchTerm}
+                                        schoolSettings={schoolSettings}
+                                        isAutoScheduling={isAutoScheduling}
+                                        setSearchTerm={setSearchTerm}
+                                        setSelectedTeacher={setSelectedTeacher}
+                                        setSchedule={setSchedule}
+                                        setFilterClass={setFilterClass}
+                                        setFilterRoom={setFilterRoom}
+                                        setFilterGroup={setFilterGroup}
+                                        setFilterPhysicalRoom={setFilterPhysicalRoom}
+                                        handleClearSchedule={handleClearSchedule}
+                                        handleClearAllSchedules={handleClearAllSchedules}
+                                        handleAutoScheduleForTeacherAndClasses={handleAutoScheduleForTeacherAndClasses}
+                                    />
+                                }
                                 type="teacher"
                                 allDroppableIds={allDroppableIds}
                                 periodSettings={periodSettings}
@@ -899,8 +987,8 @@ const TeacherSchedulePage: React.FC = () => {
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 h-auto">
-                            <div className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm h-auto">
+                        <div className="flex-[4_4_0%] grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
+                            <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                                 <TimetableGrid
                                     title="ตารางเรียนห้องเรียน"
                                     subtitle={filterClass !== 'all' 
@@ -935,13 +1023,13 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedCourseCode={searchTerm}
                                 />
                             </div>
-                            <div className="bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm h-auto">
+                            <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                                 <TimetableGrid
                                     title="ตารางการใช้งานห้องปฏิบัติการ"
                                     subtitle={roomScheduleSubtitle}
                                     headerActions={physicalRoomPreviewControls}
                                     showGrid={physicalRoomPreviewReady}
-                                    emptyMessage="กรุณาเลือกห้องปฏิบัติการก่อนแสดงตาราง"
+                                    emptyMessage="กรุณาเลือกครูหรือห้องปฏิบัติการก่อนแสดงตาราง"
                                     type="room"
                                     allDroppableIds={allDroppableIds}
                                     periodSettings={periodSettings}

@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom'; // Import useNavigate and useParams
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
 import { usePermissions } from "@/hooks/usePermissions";
 import { firestore as db, storage } from '../../firebase';
-import { doc, getDoc, setDoc, addDoc, collection, query, getDocs, serverTimestamp } from 'firebase/firestore'; // Import addDoc, collection, serverTimestamp
+import { doc, getDoc, setDoc, addDoc, collection, query, getDocs, serverTimestamp, where } from 'firebase/firestore'; // Import addDoc, collection, serverTimestamp
 import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
-import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup } from 'react-icons/fa';
+import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
 import {
@@ -30,6 +30,18 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+interface CameraConfig {
+  id: string;
+  name: string;
+  sourceType: 'webcam' | 'ipcamera';
+  ipCameraUrl?: string;
+  mirrorFeed?: boolean;
+  pairedUserId?: string; // ไอดีของผู้ใช้ลงเวลาที่จับคู่กับกล้องตัวนี้
+  userType?: 'all' | 'teachers' | 'students' | 'specific';
+  assignedUserIds?: string[];
+}
+
 
 interface SchoolInfo {
   schoolName?: string;
@@ -61,6 +73,13 @@ interface SchoolInfo {
   schoolType?: string;
   opportunityExpansionLevel?: string;
   useEnrollmentSystem?: boolean;
+  useFaceScanMode?: boolean;
+  faceScanConfig?: {
+    endpoint?: string;
+    confidenceThreshold?: number;
+    token?: string;
+    cameras?: CameraConfig[];
+  };
   features?: {
     academic?: boolean;
     studentAffairs?: boolean;
@@ -104,7 +123,7 @@ const SchoolInfoPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId?: string }>(); // schoolId is now optional
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { user: currentUser, isSchoolAdmin } = usePermissions();
+  const { user: currentUser, isSchoolAdmin, isSuperAdmin } = usePermissions();
 
   const [info, setInfo] = useState<SchoolInfo>({});
   const [customPrefixModes, setCustomPrefixModes] = useState<Record<string, boolean>>({});
@@ -119,6 +138,9 @@ const SchoolInfoPage: React.FC = () => {
   const [mapZoom, setMapZoom] = useState(13);
   const [currentStep, setCurrentStep] = useState(1);
   const [teachers, setTeachers] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [attendanceUsers, setAttendanceUsers] = useState<any[]>([]);
+  const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
 
   const collectionName = 'school-settings';
 
@@ -168,7 +190,7 @@ const SchoolInfoPage: React.FC = () => {
   }, [fetchData]);
 
   useEffect(() => {
-    const fetchTeachers = async () => {
+    const fetchTeachersAndStudents = async () => {
       if (schoolId) {
         try {
           const q = query(collection(db, 'school-settings', schoolId, 'teachers'));
@@ -178,10 +200,59 @@ const SchoolInfoPage: React.FC = () => {
         } catch (error) {
           console.error("Error fetching teachers:", error);
         }
+        try {
+          const q = query(collection(db, 'school-settings', schoolId, 'students'));
+          const querySnapshot = await getDocs(q);
+          const studentList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setStudents(studentList);
+        } catch (error) {
+          console.error("Error fetching students:", error);
+        }
+        try {
+          const q = query(collection(db, 'users'), where('schoolId', '==', schoolId));
+          const querySnapshot = await getDocs(q);
+          const userList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const filtered = userList.filter((u: any) => {
+            const roles = Array.isArray(u.role) ? u.role : [u.role];
+            return roles.some((r: string) => 
+              r === 'teacher_attendance' || 
+              r === 'student_attendance' || 
+              r === 'school_attendance'
+            );
+          });
+          setAttendanceUsers(filtered);
+        } catch (error) {
+          console.error("Error fetching attendance users:", error);
+        }
       }
     };
-    fetchTeachers();
+    fetchTeachersAndStudents();
   }, [schoolId]);
+
+  const allSchoolUsers = useMemo(() => {
+    const teacherList = teachers.map(t => {
+      const fullName = `${t.title || ''}${t.firstName || ''} ${t.lastName || ''}`.trim();
+      return {
+        id: t.id,
+        label: `[ครู] ${fullName}`,
+        role: 'teacher' as const,
+        searchStr: `${fullName} ครู teacher`.toLowerCase(),
+      };
+    });
+
+    const studentList = students.map(s => {
+      const fullName = `${s.title || ''}${s.firstName || ''} ${s.lastName || ''}`.trim();
+      const classRoom = s.classLevel ? ` (${s.classLevel}/${s.room || '1'})` : '';
+      return {
+        id: s.id,
+        label: `[นักเรียน] ${fullName}${classRoom}`,
+        role: 'student' as const,
+        searchStr: `${fullName} นักเรียน student ${s.classLevel || ''}/${s.room || ''}`.toLowerCase(),
+      };
+    });
+
+    return [...teacherList, ...studentList];
+  }, [teachers, students]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -426,6 +497,35 @@ const SchoolInfoPage: React.FC = () => {
     e.preventDefault();
     if (!validateStep(currentStep)) return;
 
+    // Validate duplicate IP cameras globally
+    const cameras = info.faceScanConfig?.cameras || [];
+    const ipUrls = cameras
+      .filter(c => c.sourceType === 'ipcamera' && c.ipCameraUrl?.trim())
+      .map(c => c.ipCameraUrl!.trim());
+    
+    const hasDuplicateIp = ipUrls.some((url, idx) => ipUrls.indexOf(url) !== idx);
+    if (hasDuplicateIp) {
+      const seen = new Set<string>();
+      let duplicateUrl = '';
+      for (const url of ipUrls) {
+        if (seen.has(url)) {
+          duplicateUrl = url;
+          break;
+        }
+        seen.add(url);
+      }
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่สามารถบันทึกข้อมูลได้',
+        text: `ตรวจพบกล้องที่ระบุที่อยู่สตรีม IP ซ้ำกัน (${duplicateUrl}) กรุณาแก้ไขไม่ให้กล้องตรงกันครับ`,
+        background: '#2a2b2f',
+        color: '#ffffff',
+        confirmButtonColor: '#f97316'
+      });
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -461,6 +561,8 @@ const SchoolInfoPage: React.FC = () => {
       const dataToSave: SchoolInfo = {
         ...info,
         logoUrl: finalLogoUrl,
+        useEnrollmentSystem: info.useEnrollmentSystem === true,
+        useFaceScanMode: info.useFaceScanMode === true,
       };
 
       if (currentSchoolId) {
@@ -839,7 +941,8 @@ const SchoolInfoPage: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <div className="pt-4 border-t border-gray-100 dark:border-gray-700 md:col-span-2">
+                      <div className="space-y-3">
                       <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-500/10 rounded-2xl border border-orange-100 dark:border-orange-500/20">
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-orange-600 shadow-sm">
@@ -860,6 +963,364 @@ const SchoolInfoPage: React.FC = () => {
                           />
                           <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
                         </label>
+                      </div>
+                      {isSuperAdmin && (
+                        <div className="flex items-center justify-between p-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl border border-indigo-100 dark:border-indigo-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-indigo-600 shadow-sm">
+                              <FaCamera size={20} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white">โหมดสแกนใบหน้า</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">แสดงแผงรีวิวการสแกนใบหน้าในหน้าลงเวลา เพื่อรองรับ FindFace/Webhook</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              name="useFaceScanMode"
+                              checked={info.useFaceScanMode || false}
+                              onChange={handleInputChange}
+                              className="sr-only peer"
+                            />
+                            <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                          </label>
+                        </div>
+                      )}
+                      {info.useFaceScanMode && (
+                        <div className="flex flex-col gap-4 rounded-2xl border border-indigo-100 bg-white/70 p-4 dark:border-indigo-500/20 dark:bg-[#1e1f21]/70">
+                          {isSuperAdmin && (
+                            <>
+                              <div>
+                                <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                  Endpoint สำหรับส่งภาพไป FindFace/Proxy
+                                </label>
+                                <input
+                                  type="text"
+                                  value={info.faceScanConfig?.endpoint || ''}
+                                  onChange={(e) => setInfo(prev => ({
+                                    ...prev,
+                                    faceScanConfig: {
+                                      ...(prev.faceScanConfig || {}),
+                                      endpoint: e.target.value,
+                                    },
+                                  }))}
+                                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white placeholder-gray-400"
+                                  placeholder="เช่น https://your-server.local/api/face/identify"
+                                />
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Token (Authorization)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={info.faceScanConfig?.token || ''}
+                                    onChange={(e) => setInfo(prev => ({
+                                      ...prev,
+                                      faceScanConfig: {
+                                        ...(prev.faceScanConfig || {}),
+                                        token: e.target.value,
+                                      },
+                                    }))}
+                                    className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white placeholder-gray-400"
+                                    placeholder="เช่น Token abc123xyz..."
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    ความมั่นใจขั้นต่ำ
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={info.faceScanConfig?.confidenceThreshold ?? 0.85}
+                                    onChange={(e) => setInfo(prev => ({
+                                      ...prev,
+                                      faceScanConfig: {
+                                        ...(prev.faceScanConfig || {}),
+                                        confidenceThreshold: Number(e.target.value),
+                                      },
+                                    }))}
+                                    className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white"
+                                    placeholder="0.85"
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* 📷 School Camera Manager UI */}
+                          <div className={isSuperAdmin ? "mt-4 pt-4 border-t border-indigo-100 dark:border-indigo-500/20" : "pt-2"}>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                                <FaCamera />
+                                อุปกรณ์กล้องสำหรับลงเวลาของโรงเรียน ({info.faceScanConfig?.cameras?.length || 0} ตัว)
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newCam: CameraConfig = {
+                                    id: Date.now().toString(),
+                                    name: `กล้องสแกนหน้า ${((info.faceScanConfig?.cameras || []).length + 1)}`,
+                                    sourceType: 'ipcamera',
+                                    ipCameraUrl: '',
+                                    mirrorFeed: false,
+                                    userType: 'all',
+                                    assignedUserIds: []
+                                  };
+                                  setInfo(prev => ({
+                                    ...prev,
+                                    faceScanConfig: {
+                                      ...(prev.faceScanConfig || {}),
+                                      cameras: [...(prev.faceScanConfig?.cameras || []), newCam]
+                                    }
+                                  }));
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm shadow-indigo-200 dark:shadow-none hover:scale-105 active:scale-95"
+                              >
+                                <FaPlus size={10} />
+                                เพิ่มกล้องใหม่
+                              </button>
+                            </div>
+
+                            {(!info.faceScanConfig?.cameras || info.faceScanConfig.cameras.length === 0) ? (
+                              <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-800 p-6 text-center text-xs text-gray-500 dark:text-gray-400">
+                                <FaCamera size={24} className="mx-auto text-gray-300 dark:text-gray-700 mb-2" />
+                                ยังไม่มีการเพิ่มกล้องสำหรับโรงเรียนนี้ กรุณากด "เพิ่มกล้องใหม่" เพื่อกำหนดค่ากล้อง IP หรือเว็บแคม
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {info.faceScanConfig.cameras.map((cam, idx) => (
+                                  <div key={cam.id} className="p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-all flex flex-col gap-3 relative group">
+                                    
+                                    {/* Top bar with Camera Index & Delete */}
+                                    <div className="flex items-center justify-between border-b border-gray-150 dark:border-neutral-800 pb-2">
+                                      <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                        <FaCamera size={10} />
+                                        อุปกรณ์ที่ #{idx + 1} - {cam.name || 'ไม่มีชื่อ'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          Swal.fire({
+                                            title: 'ยืนยันการลบกล้อง?',
+                                            text: `คุณต้องการลบกล้อง "${cam.name}" หรือไม่?`,
+                                            icon: 'warning',
+                                            showCancelButton: true,
+                                            confirmButtonText: 'ลบออก',
+                                            cancelButtonText: 'ยกเลิก',
+                                            confirmButtonColor: '#d33',
+                                            background: '#2a2b2f',
+                                            color: '#ffffff',
+                                          }).then((result) => {
+                                            if (result.isConfirmed) {
+                                              setInfo(prev => {
+                                                const currentCameras = prev.faceScanConfig?.cameras || [];
+                                                const updated = currentCameras.filter(c => c.id !== cam.id);
+                                                return {
+                                                  ...prev,
+                                                  faceScanConfig: {
+                                                    ...(prev.faceScanConfig || {}),
+                                                    cameras: updated
+                                                  }
+                                                };
+                                              });
+                                            }
+                                          });
+                                        }}
+                                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50/10 transition-colors"
+                                        title="ลบกล้องนี้"
+                                      >
+                                        <FaTrash size={12} />
+                                      </button>
+                                    </div>
+
+                                    {/* Input fields in responsive 3-column layout */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">ชื่อกล้อง / จุดติดตั้ง</label>
+                                        <input
+                                          type="text"
+                                          value={cam.name}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setInfo(prev => {
+                                              const current = prev.faceScanConfig?.cameras || [];
+                                              const updated = current.map(c => c.id === cam.id ? { ...c, name: val } : c);
+                                              return {
+                                                ...prev,
+                                                faceScanConfig: {
+                                                  ...(prev.faceScanConfig || {}),
+                                                  cameras: updated
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          placeholder="เช่น ประตูสแกนหลัก, อาคาร 1"
+                                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">ประเภทกล้อง (Video Source)</label>
+                                        <select
+                                          value={cam.sourceType}
+                                          onChange={(e) => {
+                                            const val = e.target.value as 'webcam' | 'ipcamera';
+                                            setInfo(prev => {
+                                              const current = prev.faceScanConfig?.cameras || [];
+                                              const updated = current.map(c => c.id === cam.id ? { 
+                                                ...c, 
+                                                sourceType: val,
+                                                mirrorFeed: val === 'webcam'
+                                              } : c);
+                                              return {
+                                                ...prev,
+                                                faceScanConfig: {
+                                                  ...(prev.faceScanConfig || {}),
+                                                  cameras: updated
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white cursor-pointer"
+                                        >
+                                          <option value="webcam">กล้อง Webcam / USB</option>
+                                          <option value="ipcamera">กล้อง IP Camera (HTTP Snapshot / RTSP)</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">ผู้ใช้สิทธิ์ลงเวลาที่จับคู่ (Paired Kiosk User)</label>
+                                        <select
+                                          value={cam.pairedUserId || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setInfo(prev => {
+                                              const current = prev.faceScanConfig?.cameras || [];
+                                              const updated = current.map(c => c.id === cam.id ? { 
+                                                ...c, 
+                                                pairedUserId: val
+                                              } : c);
+                                              return {
+                                                ...prev,
+                                                faceScanConfig: {
+                                                  ...(prev.faceScanConfig || {}),
+                                                  cameras: updated
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white cursor-pointer"
+                                        >
+                                          <option value="">-- ไม่เลือก (ใช้สำหรับสแกนหน้าทั่วไป) --</option>
+                                          {attendanceUsers
+                                            .filter(user => {
+                                              const isPairedToOther = (info.faceScanConfig?.cameras || []).some(
+                                                c => c.id !== cam.id && c.pairedUserId === user.id
+                                              );
+                                              return !isPairedToOther;
+                                            })
+                                            .map(user => {
+                                              const roleNames = (Array.isArray(user.role) ? user.role : [user.role])
+                                                .map((r: string) => {
+                                                  if (r === 'teacher_attendance') return 'ลงเวลาครู';
+                                                  if (r === 'student_attendance') return 'ลงเวลานักเรียน';
+                                                  if (r === 'school_attendance') return 'ลงเวลาทั้งหมด';
+                                                  return r;
+                                                })
+                                                .join(', ');
+                                              return (
+                                                <option key={user.id} value={user.id}>
+                                                  {user.fullName} ({roleNames})
+                                                </option>
+                                              );
+                                            })}
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    {/* IP Camera stream address (only if sourceType is ipcamera) */}
+                                    {cam.sourceType === 'ipcamera' && (
+                                      <div className="mt-2.5">
+                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">ที่อยู่สตรีมกล้อง IP (HTTP Snapshot หรือ RTSP URL)</label>
+                                        <input
+                                          type="text"
+                                          value={cam.ipCameraUrl || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setInfo(prev => {
+                                              const current = prev.faceScanConfig?.cameras || [];
+                                              const updated = current.map(c => c.id === cam.id ? { ...c, ipCameraUrl: val } : c);
+                                              return {
+                                                ...prev,
+                                                faceScanConfig: {
+                                                  ...(prev.faceScanConfig || {}),
+                                                  cameras: updated
+                                                }
+                                              };
+                                            });
+                                          }}
+                                          onBlur={(e) => {
+                                            const val = e.target.value.trim();
+                                            if (val !== '') {
+                                              const duplicate = (info.faceScanConfig?.cameras || []).find(
+                                                c => c.id !== cam.id && c.sourceType === 'ipcamera' && c.ipCameraUrl?.trim() === val
+                                              );
+                                              if (duplicate) {
+                                                Swal.fire({
+                                                  icon: 'warning',
+                                                  title: 'ที่อยู่กล้องซ้ำกัน',
+                                                  text: `ที่อยู่สตรีม IP Camera นี้ตรงกับกล้อง "${duplicate.name}" กรุณาใช้กล้องตัวอื่นเพื่อไม่ให้ระบบสตรีมชนกันครับ`,
+                                                  background: '#2a2b2f',
+                                                  color: '#ffffff',
+                                                  confirmButtonColor: '#f97316'
+                                                });
+                                              }
+                                            }
+                                          }}
+                                          placeholder="เช่น rtsp://user:pass@192.168.1.64:554/stream1 หรือ http://admin:password@192.168.1.64/.../picture"
+                                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white font-mono"
+                                        />
+                                      </div>
+                                    )}
+
+                                    {/* Options Row (Mirror Feed) */}
+                                    <div className="flex items-center gap-2 px-1">
+                                      <input
+                                        type="checkbox"
+                                        id={`mirror-${cam.id}`}
+                                        checked={cam.mirrorFeed ?? false}
+                                        onChange={(e) => {
+                                          const val = e.target.checked;
+                                          setInfo(prev => {
+                                            const current = prev.faceScanConfig?.cameras || [];
+                                            const updated = current.map(c => c.id === cam.id ? { ...c, mirrorFeed: val } : c);
+                                            return {
+                                              ...prev,
+                                              faceScanConfig: {
+                                                ...(prev.faceScanConfig || {}),
+                                                cameras: updated
+                                              }
+                                            };
+                                          });
+                                        }}
+                                        className="rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                                      />
+                                      <label htmlFor={`mirror-${cam.id}`} className="text-[10px] font-bold text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+                                        กลับด้านภาพ (Mirror Video)
+                                      </label>
+                                    </div>
+
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       </div>
                     </div>
                   </div>

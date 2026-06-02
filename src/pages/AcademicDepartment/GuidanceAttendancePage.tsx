@@ -15,6 +15,7 @@ import { collection, doc, getDoc, getDocs, query, Timestamp, where, writeBatch }
 import { AlertCircle, BookOpen, Calendar, CheckCircle2, ChevronLeft, ClipboardCheck, Clock, Home, Info, LayoutGrid, RefreshCw, Save, Search, Users } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
+import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
 interface Student {
   id: string;
   firstName?: string;
@@ -317,7 +318,7 @@ const GuidanceAttendancePage: React.FC = () => {
         })
         .filter(student => {
           const status = String(student.status || (student as any).studentStatus || '').trim();
-          const activeStatus = !status || status === 'กำลังศึกษา' || status === 'active';
+          const activeStatus = !status || isActiveStudentStatus(status);
           return activeStatus &&
             classVariants.includes(String(student.classLevel || '').trim()) &&
             roomVariants.includes(String(student.room || '').trim());

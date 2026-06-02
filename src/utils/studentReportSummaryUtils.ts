@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import { CLASSES } from "@/utils/schoolUtils";
+import { ACTIVE_STUDENT_STATUS, normalizeStudentStatus } from "@/utils/studentStatusUtils";
 
 export interface StudentReportSummary {
   total: number;
@@ -42,17 +43,17 @@ const toNumber = (value: unknown) => {
 };
 
 export const getStudentReportStatus = (student: any) => (
-  String(student?.studentStatus || student?.status || "กำลังศึกษา").trim()
+  normalizeStudentStatus(student?.studentStatus || student?.status || ACTIVE_STUDENT_STATUS)
 );
 
 export const isStudyingStudentForReport = (student: any) => {
   const status = getStudentReportStatus(student);
-  return status === "กำลังศึกษา" || status === "กำลังศึกษาอยู่";
+  return status === ACTIVE_STUDENT_STATUS;
 };
 
 const getStatusBucket = (student: any): keyof Omit<StudentReportSummary, "total" | "byLevel"> | null => {
   const status = getStudentReportStatus(student);
-  if (status === "กำลังศึกษา" || status === "กำลังศึกษาอยู่") return "active";
+  if (status === ACTIVE_STUDENT_STATUS) return "active";
   if (status === "พักการเรียน") return "paused";
   if (status === "แขวนลอย") return "suspended";
   if (status === "ย้าย") return "transferred";

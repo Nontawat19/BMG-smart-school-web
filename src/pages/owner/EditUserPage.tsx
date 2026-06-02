@@ -485,7 +485,7 @@ const EditUserPage: React.FC = () => {
             studentId: studentSnap.exists() ? (studentSnap.data().studentId || "") : "",
             classLevel: studentSnap.exists() ? (studentSnap.data().classLevel || "") : "",
             room: studentSnap.exists() ? (studentSnap.data().room || "") : "",
-            studentStatus: studentSnap.exists() ? (studentSnap.data().studentStatus || "ปกติ") : "ปกติ",
+            studentStatus: studentSnap.exists() ? (studentSnap.data().studentStatus || "กำลังศึกษาอยู่") : "กำลังศึกษาอยู่",
             gender: studentSnap.exists() ? (studentSnap.data().gender || "") : "",
           };
 

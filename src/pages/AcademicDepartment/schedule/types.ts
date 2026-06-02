@@ -90,6 +90,7 @@ export interface CourseInstance extends Course {
     groupNumber: number;
     locked?: boolean;
     isTemporarySchedule?: boolean;
+    isRelaxedSchedule?: boolean;
     scheduleWarning?: string;
     className?: string;
     room?: string[];

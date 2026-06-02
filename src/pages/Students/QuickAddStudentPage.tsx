@@ -30,7 +30,7 @@ const InputField: React.FC<{ label: string; name: string; value: string; onChang
 );
 
 const statusColorMap: { [key: string]: { bg: string; text: string } } = {
-  "กำลังศึกษา": { bg: "bg-green-600", text: "text-white" },
+  "กำลังศึกษาอยู่": { bg: "bg-green-600", text: "text-white" },
   "พักการเรียน": { bg: "bg-yellow-500", text: "text-gray-900" },
   "แขวนลอย": { bg: "bg-amber-600", text: "text-white" },
   "ย้าย": { bg: "bg-blue-600", text: "text-white" },
@@ -71,7 +71,7 @@ const initialState = {
   firstNameEn: "", lastNameEn: "", nickname: "", gender: "", birthDate: "",
   ageYear: "", ageMonth: "", bloodType: "", birthProvince: "", nationality: "ไทย",
   race: "ไทย", religion: "พุทธ", schoolId: "", classLevel: "", room: "",
-  studentNumber: "", studentStatus: "กำลังศึกษา", studentType: "ปกติ", gpa: "", gpax: "",
+  studentNumber: "", studentStatus: "กำลังศึกษาอยู่", studentType: "ปกติ", gpa: "", gpax: "",
   exitDate: "", exitReason: "", exitDestinationSchool: "",
   elderBrotherCount: "0", youngerBrotherCount: "0", elderSisterCount: "0", youngerSisterCount: "0",
   childOrder: "1", childOrderInCategory: "1", studyingSiblingCount: "0",
@@ -102,7 +102,7 @@ export default function QuickAddStudentPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
 
-  const studentStatusOptions = ["กำลังศึกษา", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+  const studentStatusOptions = ["กำลังศึกษาอยู่", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
 

@@ -11,6 +11,11 @@ const getScheduleDocId = (teacherId: string, academicYear: string, semester: str
     return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
 };
 
+const hasScheduleEntries = (scheduleData: any) => {
+    const entries = scheduleData?.schedule || scheduleData;
+    return Object.values(entries || {}).some((courses: any) => Array.isArray(courses) && courses.length > 0);
+};
+
 interface UseScheduleActionsProps {
     schoolId: string | undefined;
     selectedTeacher: string;
@@ -198,7 +203,10 @@ export const useScheduleActions = ({
         }
     };
     
-    const { handleGenerateSchoolTimetable, handleAutoScheduleForTeacherAndClasses } = useAutoScheduleAction({
+    const {
+        handleGenerateSchoolTimetable: runGenerateSchoolTimetable,
+        handleAutoScheduleForTeacherAndClasses: runAutoScheduleForTeacherAndClasses
+    } = useAutoScheduleAction({
         schoolId,
         selectedTeacher,
         selectedYear,
@@ -220,6 +228,67 @@ export const useScheduleActions = ({
         scheduleSectionRef,
         assignmentConstraints
     });
+
+    const hasExistingScheduleForCurrentTerm = async (teacherId?: string) => {
+        if (!schoolId) return false;
+
+        if (teacherId && teacherId === selectedTeacher && hasScheduleEntries(schedule)) {
+            return true;
+        }
+
+        const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
+        const snapshot = await getDocs(schedulesRef);
+
+        return snapshot.docs.some(scheduleDoc => {
+            const data = scheduleDoc.data();
+            const docTeacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+            if (teacherId && docTeacherId !== teacherId) return false;
+
+            const dataYear = String(data.academicYear || "");
+            const dataSemester = String(data.semester || "");
+            const yearMatches = !selectedYear || !dataYear || dataYear === selectedYear;
+            const semesterMatches = !dataSemester || dataSemester === selectedSemester || dataSemester.startsWith(selectedSemester + '/') || selectedSemester.startsWith(dataSemester + '/');
+
+            return yearMatches && semesterMatches && hasScheduleEntries(data);
+        });
+    };
+
+    const confirmReschedule = async (scope: 'school' | 'teacher') => {
+        const hasExistingSchedule = await hasExistingScheduleForCurrentTerm(scope === 'teacher' ? selectedTeacher : undefined);
+        if (!hasExistingSchedule) return true;
+
+        const result = await MySwal.fire({
+            title: scope === 'teacher' ? 'จัดตารางสอนครูท่านนี้ใหม่?' : 'จัดตารางสอนทั้งโรงเรียนใหม่?',
+            text: scope === 'teacher'
+                ? 'ครูท่านนี้มีตารางสอนอยู่แล้ว หากยืนยัน ระบบจะจัดตารางใหม่ทับข้อมูลเดิม'
+                : 'มีตารางสอนในปีการศึกษาและภาคเรียนนี้อยู่แล้ว หากยืนยัน ระบบจะจัดตารางใหม่ทับข้อมูลเดิม',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'ยืนยันจัดใหม่',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        return result.isConfirmed;
+    };
+
+    const handleGenerateSchoolTimetable = async () => {
+        if (await confirmReschedule('school')) {
+            await runGenerateSchoolTimetable();
+        }
+    };
+
+    const handleAutoScheduleForTeacherAndClasses = async () => {
+        if (!selectedTeacher) {
+            await runAutoScheduleForTeacherAndClasses();
+            return;
+        }
+
+        if (await confirmReschedule('teacher')) {
+            await runAutoScheduleForTeacherAndClasses();
+        }
+    };
 
     const handleClearAllTeachersSchedules = async () => {
         if (!schoolId) return;

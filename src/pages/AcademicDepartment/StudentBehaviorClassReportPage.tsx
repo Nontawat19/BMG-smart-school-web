@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Users,
 } from "lucide-react";
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
@@ -22,6 +23,7 @@ import { firestore } from "@/firebase";
 import { RootState } from "@/store";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { isCurrentStudent } from "@/utils/studentStatusUtils";
+import { CLASSES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -160,6 +162,19 @@ const getClassLabel = (student: Student) => {
   if (!level) return "-";
   return room ? `${level}/${room}` : level;
 };
+
+const getClassKey = (value: unknown) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if ((CLASSES as Record<string, string>)[raw]) return raw;
+  return Object.entries(CLASSES).find(([, label]) => label === raw)?.[0] || raw;
+};
+
+const joinThaiName = (...parts: Array<string | undefined>) => parts
+  .map((part) => String(part || "").trim())
+  .filter(Boolean)
+  .join(" ")
+  .trim();
 
 const getScoreBadgeClass = (score: number) => {
   if (score >= 90) return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20";
@@ -381,6 +396,28 @@ const behaviorPdfStyles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 8,
   },
+  signatureSection: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 34,
+    paddingHorizontal: 18,
+  },
+  signatureBox: {
+    width: "42%",
+    alignItems: "center",
+  },
+  signatureLine: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  signatureNameLine: {
+    fontSize: 12,
+    marginBottom: 3,
+  },
+  signaturePosition: {
+    fontSize: 12,
+    fontWeight: "bold",
+  },
   footer: {
     position: "absolute",
     left: 42,
@@ -403,6 +440,7 @@ interface BehaviorReportPdfDocumentProps {
   startDate: string;
   endDate: string;
   schoolName: string;
+  directorName: string;
   behaviorScoreConfig: BehaviorScoreConfig;
 }
 
@@ -412,6 +450,7 @@ const BehaviorReportPdfDocument: React.FC<BehaviorReportPdfDocumentProps> = ({
   startDate,
   endDate,
   schoolName,
+  directorName,
   behaviorScoreConfig,
 }) => {
   const studentName = getStudentName(row.student);
@@ -424,6 +463,7 @@ const BehaviorReportPdfDocument: React.FC<BehaviorReportPdfDocumentProps> = ({
   const initialScore = sortedLogs[0]?.previousScore ?? (row.currentScore - netScoreChange);
   const currentScore = sortedLogs[sortedLogs.length - 1]?.nextScore ?? row.currentScore;
   const schoolDisplayName = schoolName?.startsWith("โรงเรียน") ? schoolName : `โรงเรียน${schoolName || "-"}`;
+  const directorPosition = schoolName ? `ผู้อำนวยการ${schoolDisplayName}` : "ผู้อำนวยการโรงเรียน";
 
   return (
     <Document>
@@ -505,6 +545,19 @@ const BehaviorReportPdfDocument: React.FC<BehaviorReportPdfDocumentProps> = ({
           ))}
         </View>
 
+        <View style={behaviorPdfStyles.signatureSection} wrap={false}>
+          <View style={behaviorPdfStyles.signatureBox}>
+            <Text style={behaviorPdfStyles.signatureLine}>ลงชื่อ..................................................</Text>
+            <Text style={behaviorPdfStyles.signatureNameLine}>(..................................................)</Text>
+            <Text style={behaviorPdfStyles.signaturePosition}>หัวหน้างานกิจการนักเรียน</Text>
+          </View>
+          <View style={behaviorPdfStyles.signatureBox}>
+            <Text style={behaviorPdfStyles.signatureLine}>ลงชื่อ..................................................</Text>
+            <Text style={behaviorPdfStyles.signatureNameLine}>({directorName || ".................................................."})</Text>
+            <Text style={behaviorPdfStyles.signaturePosition}>{directorPosition}</Text>
+          </View>
+        </View>
+
         <View style={behaviorPdfStyles.footer} fixed>
           <Text
             style={behaviorPdfStyles.footerText}
@@ -541,6 +594,8 @@ const StudentBehaviorClassReportPage: React.FC = () => {
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [activeRow, setActiveRow] = useState<ReportRow | null>(null);
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<BehaviorScoreConfig>(DEFAULT_BEHAVIOR_CONFIG);
+  const [directorName, setDirectorName] = useState(joinThaiName(schoolSettings.directorPrefix, schoolSettings.directorName));
+  const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [printingStudentId, setPrintingStudentId] = useState<string | null>(null);
@@ -554,6 +609,13 @@ const StudentBehaviorClassReportPage: React.FC = () => {
         if (schoolSnap.exists()) {
           const schoolData = schoolSnap.data();
           setSchoolName(schoolData.schoolName || schoolSettings.schoolName || "");
+          setDirectorName(
+            joinThaiName(schoolData.directorPrefix, schoolData.directorName)
+            || joinThaiName(schoolSettings.directorPrefix, schoolSettings.directorName)
+          );
+          setAvailableClassOptions(
+            getClassOptionsBySchoolSettings(schoolData.opportunityExpansionLevel || "", schoolData.schoolType || "")
+          );
           setBehaviorScoreConfig(normalizeBehaviorConfig(schoolData.behaviorScoreConfig));
         }
 
@@ -577,27 +639,32 @@ const StudentBehaviorClassReportPage: React.FC = () => {
     };
 
     fetchStudents();
-  }, [schoolId, schoolSettings.schoolName]);
+  }, [schoolId, schoolSettings.directorName, schoolSettings.directorPrefix, schoolSettings.schoolName]);
 
-  const classLevels = useMemo(() => {
-    return Array.from(new Set(students.map((student) => String(student.classLevel || "").trim()).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, "th", { numeric: true }));
-  }, [students]);
+  const classLevelOptions = useMemo(() => {
+    if (availableClassOptions.length > 0) return availableClassOptions;
+    const studentClassKeys = Array.from(new Set(students.map((student) => getClassKey(student.classLevel)).filter(Boolean)));
+    return Object.entries(CLASSES)
+      .filter(([key]) => studentClassKeys.includes(key))
+      .concat(studentClassKeys
+        .filter((key) => !(CLASSES as Record<string, string>)[key])
+        .map((key) => [key, key] as [string, string]));
+  }, [availableClassOptions, students]);
 
   const roomOptions = useMemo(() => {
     return Array.from(new Set(
       students
-        .filter((student) => !selectedClassLevel || student.classLevel === selectedClassLevel)
+        .filter((student) => !selectedClassLevel || getClassKey(student.classLevel) === selectedClassLevel)
         .map((student) => normalizeRoom(student.room))
         .filter(Boolean)
     )).sort((a, b) => a.localeCompare(b, "th", { numeric: true }));
   }, [selectedClassLevel, students]);
 
   useEffect(() => {
-    if (!selectedClassLevel && classLevels.length > 0) {
-      setSelectedClassLevel(classLevels[0]);
+    if (!selectedClassLevel && classLevelOptions.length > 0) {
+      setSelectedClassLevel(classLevelOptions[0][0]);
     }
-  }, [classLevels, selectedClassLevel]);
+  }, [classLevelOptions, selectedClassLevel]);
 
   useEffect(() => {
     if (selectedRoom && !roomOptions.includes(selectedRoom)) {
@@ -607,7 +674,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
 
   const targetStudents = useMemo(() => {
     return students.filter((student) => {
-      if (selectedClassLevel && student.classLevel !== selectedClassLevel) return false;
+      if (selectedClassLevel && getClassKey(student.classLevel) !== selectedClassLevel) return false;
       if (selectedRoom && normalizeRoom(student.room) !== selectedRoom) return false;
       return true;
     });
@@ -720,6 +787,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           startDate={startDate}
           endDate={endDate}
           schoolName={schoolName}
+          directorName={directorName}
           behaviorScoreConfig={behaviorScoreConfig}
         />
       ).toBlob();
@@ -782,14 +850,18 @@ const StudentBehaviorClassReportPage: React.FC = () => {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ชั้นเรียน</label>
-                <select
-                  value={selectedClassLevel}
-                  onChange={(event) => setSelectedClassLevel(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:focus:ring-indigo-500/20"
-                >
-                  <option value="">เลือกชั้นเรียน</option>
-                  {classLevels.map((level) => <option key={level} value={level}>{level}</option>)}
-                </select>
+                <div className="relative">
+                  <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <select
+                    value={selectedClassLevel}
+                    onChange={(event) => setSelectedClassLevel(event.target.value)}
+                    className="block w-full appearance-none rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-9 pr-10 text-sm font-semibold text-slate-900 outline-none transition hover:bg-slate-100 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-white/10 dark:bg-[#1f2024] dark:text-white dark:hover:bg-white/10 dark:focus:ring-indigo-500/20"
+                  >
+                    <option value="">-- กรุณาเลือกชั้นเรียน --</option>
+                    {classLevelOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+                  </select>
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">ห้องเรียน</label>

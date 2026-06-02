@@ -62,6 +62,8 @@ import ViewTeacherPage from "./pages/Teachers/ViewTeacherPage";
 import QuickAddTeacherPage from "./pages/Teachers/QuickAddTeacherPage";
 import ImportTeacherPage from "./pages/Teachers/ImportTeacherPage";
 import ImportStudentPage from "./pages/Students/ImportStudentPage";
+import StudentAttendanceDateSelectionPage from "./pages/Students/StudentAttendanceDateSelectionPage";
+import StudentBK14ReportPage from "./pages/Students/StudentBK14ReportPage";
 import BulkUploadTeacherImagesPage from "./pages/Administrator/BulkUploadTeacherImagesPage";
 import AdvisorManagementPage from "./pages/Teachers/AdvisorManagementPage";
 
@@ -148,6 +150,7 @@ import TelegramManagementPage from "./pages/Administrator/TelegramManagementPage
 
 
 
+import { useEffect } from "react";
 import { ROLES } from "@/constants/roles";
 
 function App() {
@@ -155,6 +158,38 @@ function App() {
   const TEACHER_LEAVE_HISTORY_ACCESS = [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
   const TEACHER_ATTENDANCE_TODAY_ACCESS = [ROLES.SCHOOL_ADMIN, ...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
   const HUB_ACCESS = [...STAFF_ACCESS, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
+
+  // ⚡ PWA Auto-Updater & Periodic SW Check (Perfect for 24/7 Kiosks & Tablets)
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      // 1. Listen for new service worker taking control -> reload page automatically
+      const handleControllerChange = () => {
+        console.log("🚀 PWA: New service worker active! Reloading to apply update...");
+        window.location.reload();
+      };
+      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+
+      // 2. Perform periodic update checks (every 1 hour) to ensure 24/7 kiosks get updates
+      const checkUpdate = () => {
+        navigator.serviceWorker.ready.then((registration) => {
+          registration.update().catch((err) => {
+            console.warn("PWA: Update check failed:", err);
+          });
+        });
+      };
+
+      // Check on initial load
+      checkUpdate();
+
+      // Check periodically
+      const intervalId = setInterval(checkUpdate, 3600_000); // 1 hour
+
+      return () => {
+        navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+        clearInterval(intervalId);
+      };
+    }
+  }, []);
 
   // 🔥 Auto-fetch ทุก Redux Slice ครั้งเดียวหลัง login
   useInitializeStore();
@@ -273,6 +308,8 @@ function App() {
           <Route path="/academic/teacher-attendance-date-selection" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN]}><TeacherAttendanceDateSelectionPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-individual" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceIndividualPage /></ProtectedRoute>} />
+          <Route path="/academic/student-attendance-date-selection" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentAttendanceDateSelectionPage /></ProtectedRoute>} />
+          <Route path="/academic/student-bk14-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBK14ReportPage /></ProtectedRoute>} />
           <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
 
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />

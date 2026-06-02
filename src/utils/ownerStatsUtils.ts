@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import { isAttendanceEntryOnly } from "./attendanceRoles";
+import { ACTIVE_STUDENT_STATUS, isActiveStudentStatus } from "./studentStatusUtils";
 
 export interface OwnerDashboardSummary {
   totalSchools: number;
@@ -143,14 +144,13 @@ export const FIREBASE_COST_ESTIMATE = {
   freeFirestoreDeletesPerDay: 20000,
 };
 export const ACTIVE_TEACHER_STATUS = "อยู่";
-export const ACTIVE_STUDENT_STATUS = "กำลังศึกษา";
 
 export const isActiveTeacherSummaryStatus = (status?: string) => {
   return String(status || "").trim() === ACTIVE_TEACHER_STATUS;
 };
 
 export const isActiveStudentSummaryStatus = (status?: string) => {
-  return String(status || "").trim() === ACTIVE_STUDENT_STATUS;
+  return isActiveStudentStatus(status);
 };
 
 const schoolSubcollectionsForUsageEstimate = [

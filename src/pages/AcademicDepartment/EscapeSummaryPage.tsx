@@ -4,10 +4,9 @@ import { RootState } from '@/store';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore as db } from '@/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { FileSpreadsheet, Loader2, Minus, Plus, Printer, RefreshCw, Search } from 'lucide-react';
+import { Loader2, Minus, Plus, Printer, RefreshCw, Search } from 'lucide-react';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
-import * as XLSX from 'xlsx';
 import Select from 'react-select';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -775,39 +774,6 @@ const EscapeSummaryPage: React.FC = () => {
         setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
-    const handleExportExcel = () => {
-        if (filteredRecords.length === 0) {
-            Swal.fire('ไม่มีข้อมูล', 'ไม่มีข้อมูลสำหรับออกรายงาน', 'warning');
-            return;
-        }
-
-        const summaryRows = reportGroups.map((group, index) => ({
-            '#': index + 1,
-            'ห้องเรียน': group.className,
-            'รายวิชา': group.subjectLabel,
-            'คาบที่': group.periods,
-            'จำนวนนักเรียนที่หนีเรียน': group.uniqueStudentCount
-        }));
-
-        const detailRows = filteredRecords.map((record) => ({
-            'วันที่': formatDateThai(record.date),
-            'ห้องเรียน': getClassLabel(record),
-            'คาบที่': record.period ?? '',
-            'รหัสนักเรียน': record.studentId || '',
-            'เลขที่': record.studentNumber || '',
-            'ชื่อ-นามสกุล': record.studentName || '',
-            'รหัสวิชา': record.subjectCode || '',
-            'รายวิชา': record.subjectName || '',
-            'ครูผู้สอน': record.teacherName || '',
-            'ผู้บันทึก': record.checkedByName || record.checkedBy || ''
-        }));
-
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
-        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), 'Students');
-        XLSX.writeFile(workbook, `รายงานสรุปหนีเรียน_${academicYear}_${semester}_${selectedDate}.xlsx`);
-    };
-
     const handleExportPdf = async () => {
         setPdfGenerating(true);
         try {
@@ -863,14 +829,6 @@ const EscapeSummaryPage: React.FC = () => {
                             >
                                 {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
                                 PDF
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleExportExcel}
-                                className="inline-flex h-[30px] items-center gap-1.5 rounded bg-blue-500 px-3 text-[12px] font-semibold text-white hover:bg-blue-600"
-                            >
-                                <FileSpreadsheet size={14} />
-                                Excel
                             </button>
                         </div>
                     </div>

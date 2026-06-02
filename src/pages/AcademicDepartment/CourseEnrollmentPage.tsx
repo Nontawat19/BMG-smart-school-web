@@ -23,7 +23,7 @@ import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
-import { getStudentStatus, isCurrentStudent } from "@/utils/studentStatusUtils";
+import { isActiveStudentStatus } from "@/utils/studentStatusUtils";
 import {
     Users,
     BookOpen,
@@ -554,11 +554,7 @@ const CourseEnrollmentPage: React.FC = () => {
                 // Students
                 const studentsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
                 const studentsData = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
-                // กรองเฉพาะนักเรียนที่มีสถานะ "กำลังศึกษา" และไม่เป็นศิษย์เก่า (isCurrentStudent)
-                const activeStudents = studentsData.filter(s => {
-                    const status = getStudentStatus(s);
-                    return status === "กำลังศึกษา" && isCurrentStudent(s);
-                });
+                const activeStudents = studentsData.filter(s => isActiveStudentStatus(s.status || s.studentStatus));
                 setAllStudents(activeStudents);
 
                 // Rooms

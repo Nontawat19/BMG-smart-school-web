@@ -1043,7 +1043,7 @@ const ImportStudentDMCPage: React.FC = () => {
                         ...allStudentData,
                         schoolId: schoolId,
                         role: roles,
-                        studentStatus: 'กำลังศึกษา',
+                        studentStatus: 'กำลังศึกษาอยู่',
                         profileImageUrl: "",
                         behaviorScore: 100,
                         createdAt: serverTimestamp(),

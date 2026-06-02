@@ -182,15 +182,17 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.01] to-transparent pointer-events-none"></div>
 
             {/* Grid Header */}
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex flex-col gap-3 bg-white dark:bg-white/[0.03] backdrop-blur-md sm:flex-row sm:items-center sm:justify-start">
-                <div className="flex min-w-0 flex-col items-start">
-                    <h3 className="text-sm sm:text-base font-black text-gray-950 dark:text-white tracking-wide leading-tight">
+            <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 flex flex-row items-center justify-between w-full gap-2 bg-white dark:bg-white/[0.03] backdrop-blur-md">
+                <div className="flex min-w-0 flex-col items-start shrink-0 max-w-[35%] sm:max-w-[40%]">
+                    <h3 className="text-xs sm:text-sm font-black text-gray-950 dark:text-white tracking-wide leading-tight truncate">
                         {title}
                     </h3>
-                    <p className="text-[11px] sm:text-xs font-bold text-gray-700 dark:text-gray-200 mt-1 leading-snug">{subtitle}</p>
+                    <p className="text-[9px] sm:text-[10px] font-bold text-gray-500 dark:text-gray-400 mt-0.5 leading-snug truncate">
+                        {subtitle}
+                    </p>
                 </div>
                 {headerActions && (
-                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-4">
+                    <div className="flex-grow min-w-0 flex justify-end">
                         {headerActions}
                     </div>
                 )}
@@ -203,8 +205,8 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                     </div>
                 </div>
             ) : (
-            <div className="flex-grow px-1.5 py-1.5 flex flex-col bg-transparent">
-                <div className="min-w-0 flex flex-col gap-0.5 pb-2">
+            <div className="flex-grow px-1.5 py-1.5 flex flex-col bg-transparent min-h-0">
+                <div className="min-w-0 flex-grow flex flex-col gap-0.5 pb-1">
                         
                         {/* Days / Times Header Row - High Precision Alignment */}
                         <div className="grid gap-0.5 bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5" style={{ gridTemplateColumns }}>
@@ -281,7 +283,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                             }
 
                             return (
-                                <div key={dayKey} className="grid gap-0.5 items-stretch h-[48px]" style={{ gridTemplateColumns }}>
+                                <div key={dayKey} className="grid gap-0.5 items-stretch flex-1 min-h-[38px]" style={{ gridTemplateColumns }}>
                                     <div className="flex items-center justify-center bg-transparent">
                                         <span className="text-[10px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-tight">{dayLabel}</span>
                                     </div>

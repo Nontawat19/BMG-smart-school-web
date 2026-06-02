@@ -108,7 +108,7 @@ const HomeVisitDashboard: React.FC = () => {
                     id: doc.id,
                     ...doc.data(),
                 } as Student))
-                .filter(student => getStudentStatus(student) === "กำลังศึกษา");
+                .filter(student => getStudentStatus(student) === "กำลังศึกษาอยู่");
             setStudents(studentsData);
 
             // ดึงสถานะการเยี่ยมบ้านสำหรับนักเรียนที่โหลดมา

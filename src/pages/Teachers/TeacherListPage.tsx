@@ -209,6 +209,7 @@ export default function TeacherListPage() {
       padding: 0,
       flex: 1,
       display: 'flex',
+      overflow: 'visible',
     }),
     input: (provided) => ({
       ...provided,
@@ -220,6 +221,9 @@ export default function TeacherListPage() {
       ...provided,
       padding: 0,
       marginLeft: 'auto',
+    }),
+    indicatorSeparator: () => ({
+      display: 'none',
     }),
     dropdownIndicator: (provided) => ({
       ...provided,
@@ -255,6 +259,8 @@ export default function TeacherListPage() {
       ...provided,
       color: 'inherit',
       margin: 0,
+      overflow: 'visible',
+      whiteSpace: 'nowrap',
     }),
     menuList: (provided) => ({
       ...provided,
@@ -653,7 +659,7 @@ export default function TeacherListPage() {
                       {teacher.learningArea || teacher.subjectGroup || '-'}
                     </span>
                   }>
-                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[140px]`}>
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[210px]`}>
                       <Select
                         className="w-full"
                         options={[
@@ -683,7 +689,7 @@ export default function TeacherListPage() {
                       {teacher.department || '-'}
                     </span>
                   }>
-                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[140px]`}>
+                    <div className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] transition-all bg-gray-100 dark:bg-white/5 border border-transparent ${isUpdating === teacher.id ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500/50'} group cursor-pointer w-fit min-w-[185px]`}>
                       <Select
                         className="w-full"
                         options={departmentOptions}

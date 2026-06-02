@@ -67,9 +67,10 @@ export const fetchSubjectGroups = createAsyncThunk(
             }));
 
             // สร้าง default groups ถ้ายังไม่มี (logic เดียวกับ useSubjectGroups hook)
-            const existingCodes = new Set(data.map((g) => g.code));
+            const existingCodes = new Set(data.map((g) => g.code).filter(Boolean));
+            const existingNames = new Set(data.map((g) => (g.name || "").trim()).filter(Boolean));
             const missingDefaults = DEFAULT_GROUPS.filter(
-                (dg) => !existingCodes.has(dg.code)
+                (dg) => !existingCodes.has(dg.code) && !existingNames.has(dg.name)
             );
 
             if (missingDefaults.length > 0) {
@@ -87,6 +88,17 @@ export const fetchSubjectGroups = createAsyncThunk(
                 await batch.commit();
                 data = [...data, ...addedData];
             }
+
+            // กรองข้อมูลให้ไม่มีชื่อกลุ่มสาระซ้ำกัน
+            const seenNames = new Set<string>();
+            data = data.filter(g => {
+                const trimmedName = (g.name || "").trim();
+                if (!trimmedName || seenNames.has(trimmedName)) {
+                    return false;
+                }
+                seenNames.add(trimmedName);
+                return true;
+            });
 
             // เรียงตาม code (รองรับทั้งตัวเลข และตัวอักษรอย่าง I)
             data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));

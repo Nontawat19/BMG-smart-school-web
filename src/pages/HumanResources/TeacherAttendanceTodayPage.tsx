@@ -19,6 +19,7 @@ interface AttendanceRecord {
   checkInTime?: string;
   checkOutTime?: string;
   status?: string;
+  leaveType?: string;
   userType?: string;
   teacherId?: string;
 }
@@ -87,6 +88,8 @@ const TeacherAttendanceTodayPage: React.FC = () => {
           return !isAttendanceEntryOnly(teacherData.role);
         });
 
+        const isLeaveStatus = (value?: string) => ["ลา", "ล", "Leave"].includes(String(value || ""));
+
         // 2. ดึงข้อมูลการลงเวลาของครูแต่ละคนในวันนี้
         await Promise.all(filteredDocs.map(async (teacherDoc) => {
           const teacherData = teacherDoc.data();
@@ -96,6 +99,7 @@ const TeacherAttendanceTodayPage: React.FC = () => {
           let checkInTime = undefined;
           let checkOutTime = undefined;
           let status = undefined;
+          let leaveType = undefined;
 
           if (attendanceSnap.exists()) {
             const attData = attendanceSnap.data();
@@ -106,6 +110,15 @@ const TeacherAttendanceTodayPage: React.FC = () => {
               checkOutTime = attData.checkoutTime.toDate().toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit' });
             }
             status = attData.status === 'สาย' ? 'Late' : (attData.status === 'มา' ? 'OnTime' : attData.status);
+            leaveType = attData.leaveType || attData.leaveName || attData.note;
+
+            if (isLeaveStatus(status) && !leaveType && attData.leaveRequestId) {
+              const leaveRef = doc(firestore, "school-settings", schoolId, "teachers", teacherDoc.id, "leave_summary", attData.leaveRequestId);
+              const leaveSnap = await getDoc(leaveRef);
+              if (leaveSnap.exists()) {
+                leaveType = leaveSnap.data().leaveType;
+              }
+            }
           }
 
           records.push({
@@ -116,6 +129,7 @@ const TeacherAttendanceTodayPage: React.FC = () => {
             checkInTime,
             checkOutTime,
             status,
+            leaveType,
             userType: 'teacher',
             teacherId: teacherData.teacherId || "",
           });
@@ -275,6 +289,10 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                                             ) : record.status === 'OnTime' ? (
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
                                                     ปกติ
+                                                </span>
+                                            ) : record.status === 'ลา' || record.status === 'ล' || record.status === 'Leave' ? (
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                                                    {record.leaveType || 'ลา'}
                                                 </span>
                                             ) : record.status ? (
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">

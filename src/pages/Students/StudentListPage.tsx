@@ -51,7 +51,7 @@ interface Student {
 }
 
 const statusColorMap: { [key: string]: string } = {
-  "กำลังศึกษา": "bg-green-500/20 text-green-400 border-green-500/30",
+  "กำลังศึกษาอยู่": "bg-green-500/20 text-green-400 border-green-500/30",
   "ปกติ": "bg-green-500/20 text-green-400 border-green-500/30",
   "พักการเรียน": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   "แขวนลอย": "bg-amber-500/20 text-amber-400 border-amber-500/30",
@@ -62,7 +62,7 @@ const statusColorMap: { [key: string]: string } = {
 };
 
 const statusOptions = [
-  { value: 'กำลังศึกษา', label: 'กำลังศึกษา' },
+  { value: 'กำลังศึกษาอยู่', label: 'กำลังศึกษาอยู่' },
   { value: 'พักการเรียน', label: 'พักการเรียน' },
   { value: 'แขวนลอย', label: 'แขวนลอย' },
   { value: 'ย้าย', label: 'ย้าย' },

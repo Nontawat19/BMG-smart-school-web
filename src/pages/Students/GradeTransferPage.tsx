@@ -160,7 +160,7 @@ const GradeTransferPage: React.FC = () => {
                 lastName: doc.data().lastName || '',
                 classLevel: doc.data().classLevel || '',
                 roomNumber: doc.data().room || doc.data().roomNumber || '',
-                status: doc.data().status || doc.data().studentStatus || 'active',
+                status: doc.data().status || doc.data().studentStatus || 'กำลังศึกษาอยู่',
             })).filter(s => isActiveStudentStatus(s.status));
 
             setStudents(studentDocs);
@@ -288,7 +288,7 @@ const GradeTransferPage: React.FC = () => {
                 lastName: doc.data().lastName || '',
                 classLevel: doc.data().classLevel || '',
                 roomNumber: doc.data().room || doc.data().roomNumber || '',
-                status: doc.data().status || doc.data().studentStatus || 'active',
+                status: doc.data().status || doc.data().studentStatus || 'กำลังศึกษาอยู่',
             })).filter(s => isActiveStudentStatus(s.status));
 
             const renumberPromises: any[] = [];

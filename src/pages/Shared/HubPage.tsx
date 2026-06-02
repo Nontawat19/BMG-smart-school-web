@@ -43,11 +43,12 @@ import {
   Send,
   Compass,
   CircleAlert,
-  CalendarRange
+  CalendarRange,
+  AlertTriangle
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
-import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
+import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 
 interface HubItem {
   title: string;
@@ -373,6 +374,22 @@ const HubPage: React.FC = () => {
           path: "/attendance/leave-history",
           colorClass: "bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400",
           allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "ลงเวลาของนักเรียน",
+          description: "ดูรายการลงเวลาเข้า-ออกของนักเรียนทั้งโรงเรียนแบบเลือกวันที่",
+          icon: <Clock size={24} />,
+          path: "/academic/student-attendance-date-selection",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "รายงาน บค.14",
+          description: "คัดกรองนักเรียนมาสาย/ขาดเรียนติดต่อกัน หรือรวมเกินเกณฑ์รายเดือน",
+          icon: <AlertTriangle size={24} />,
+          path: "/academic/student-bk14-report",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
           title: "คะแนนพฤติกรรมนักเรียน",
@@ -964,7 +981,7 @@ const HubPage: React.FC = () => {
     return <Navigate to="/home" replace />;
   }
 
-  if (isPwaMode && location.pathname !== PWA_ATTENDANCE_HUB_PATH) {
+  if (isPwaMode && location.pathname !== PWA_ATTENDANCE_HUB_PATH && location.pathname !== PWA_MY_SCHEDULE_PATH) {
     return <Navigate to={PWA_ATTENDANCE_HUB_PATH} replace />;
   }
 

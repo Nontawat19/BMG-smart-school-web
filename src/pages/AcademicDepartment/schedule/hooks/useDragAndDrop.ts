@@ -235,6 +235,23 @@ export const useDragAndDrop = ({
         });
     };
 
+    const checkIfPlacementIsRelaxed = (item: CourseInstance, slot: string, isDoubleStart: boolean, isDoublePartner: boolean) => {
+        const itemTeacher = teacherMap[item.teacherId || selectedTeacher];
+        const check = checkConstraints(
+            item,
+            slot,
+            itemTeacher,
+            periodSettings,
+            specialPeriods,
+            isDoublePartner ? getConstraintMapForDoublePartner(item) : assignmentConstraints,
+            dynamicUnavailableSlots,
+            {},
+            isDoubleStart ? 2 : 1,
+            [item.instanceId]
+        );
+        return check.forbidden;
+    };
+
     const handleDragStart = (event: DragStartEvent) => {
         const activeId = String(event.active.id);
         const item = availableCourseInstances.find(c => c.instanceId === activeId) ||
@@ -321,10 +338,11 @@ export const useDragAndDrop = ({
             return;
         }
 
-        // --- DOUBLE PERIOD PARTNER CALCULATION ---
+        // --- DOUBLE PERIOD PARTNER CALCULATION & RESCUE LOGIC ---
         const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
         let forcedDoubleStartSlotId: string | null = null;
+        let wasRescued = false;
         
         const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
 
@@ -335,30 +353,123 @@ export const useDragAndDrop = ({
         const shouldUseDoubleTarget = movingItems.length > 1 ||
             (asgnCst?.type === 'double' && hoursRemaining >= 2);
 
+        const checkSlotValidity = (slot: string, itemToCheck: CourseInstance, isPartner: boolean) => {
+            const check = checkConstraints(
+                itemToCheck,
+                slot,
+                selectedTeacherData,
+                periodSettings,
+                specialPeriods,
+                isPartner ? getConstraintMapForDoublePartner(itemToCheck) : assignmentConstraints,
+                dynamicUnavailableSlots,
+                schoolMasterSchedule,
+                1,
+                Array.from(movingInstanceIds)
+            );
+            
+            if (check.forbidden) {
+                const globalConflicts = schoolMasterSchedule[slot] || [];
+                if (globalConflicts.length === 0) return false; // hard constraint
+            }
+            
+            if ((schedule[slot] || []).some(c => c.locked && !movingInstanceIds.has(c.instanceId))) {
+                return false;
+            }
+
+            return true;
+        };
+
+        let targetSlots = [overId];
+
         if (shouldUseDoubleTarget) {
             const doubleSlots = getDoubleTargetSlots(overId);
+            let standardDoubleSuccessful = false;
 
             if (doubleSlots) {
-                forcedDoubleStartSlotId = doubleSlots[0];
-                overId = forcedDoubleStartSlotId;
-                partnerSlotId = doubleSlots[1];
-            } else if (movingItems.length > 1 || asgnCst?.type === 'double') {
-                MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางคาบคู่ได้', text: 'คาบนี้ไม่ได้อยู่ในบล็อกสำหรับคาบคู่' });
-                return;
+                const trialStart = doubleSlots[0];
+                const trialPartner = doubleSlots[1];
+                const item1 = movingItems[0]?.item || activeItem;
+                const item2 = movingItems[1]?.item || activeItem;
+
+                if (checkSlotValidity(trialStart, item1, false) && checkSlotValidity(trialPartner, item2, true)) {
+                    forcedDoubleStartSlotId = trialStart;
+                    overId = trialStart;
+                    partnerSlotId = trialPartner;
+                    targetSlots = [trialStart, trialPartner];
+                    standardDoubleSuccessful = true;
+                }
+            }
+
+            if (!standardDoubleSuccessful) {
+                // Rescue orphan period!
+                let rescueSlot: string | null = null;
+                const [targetDay] = overId.split('-');
+                const item2 = movingItems[1]?.item || activeItem;
+
+                // 1. Search on the same day, sorting by proximity to overId, prefer earlier periods if distance is equal
+                const [_, overPeriodIdxStr] = overId.split('-');
+                const overPeriodIdx = parseInt(overPeriodIdxStr);
+
+                const sameDayTeachingSlots: { slot: string; index: number }[] = [];
+                periodSettings.forEach((p, pIdx) => {
+                    if (p.isTeachingPeriod) {
+                        sameDayTeachingSlots.push({ slot: `${targetDay}-${pIdx}`, index: pIdx });
+                    }
+                });
+
+                sameDayTeachingSlots.sort((a, b) => {
+                    const distA = Math.abs(a.index - overPeriodIdx);
+                    const distB = Math.abs(b.index - overPeriodIdx);
+                    if (distA !== distB) return distA - distB;
+                    return a.index - b.index; // Prefer earlier period
+                });
+
+                for (const entry of sameDayTeachingSlots) {
+                    if (checkSlotValidity(entry.slot, item2, true)) {
+                        rescueSlot = entry.slot;
+                        break;
+                    }
+                }
+
+                // 2. Search other days if not found on the same day
+                if (!rescueSlot) {
+                    const otherDays = Object.keys(DAYS).filter(d => d !== targetDay);
+                    for (const day of otherDays) {
+                        const teachingSlots: { slot: string; index: number }[] = [];
+                        periodSettings.forEach((p, pIdx) => {
+                            if (p.isTeachingPeriod) {
+                                teachingSlots.push({ slot: `${day}-${pIdx}`, index: pIdx });
+                            }
+                        });
+                        for (const entry of teachingSlots) {
+                            if (checkSlotValidity(entry.slot, item2, true)) {
+                                rescueSlot = entry.slot;
+                                break;
+                            }
+                        }
+                        if (rescueSlot) break;
+                    }
+                }
+
+                if (rescueSlot) {
+                    partnerSlotId = rescueSlot;
+                    targetSlots = [overId, rescueSlot];
+                    wasRescued = true;
+                } else {
+                    // Could not rescue! Placed count will be 1/2 instead of 2/2
+                    partnerSlotId = null;
+                    targetSlots = [overId];
+                }
             }
         }
 
-        // Calculate Target Slots
-        const targetSlots = [overId];
-        if (partnerSlotId) targetSlots.push(partnerSlotId);
-
+        // Lock checks for final targetSlots
         if (targetSlots.some(slot => (schedule[slot] || []).some(c => c.locked && !movingInstanceIds.has(c.instanceId)))) {
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
         }
 
-        // 2. Comprehensive Constraints Check for Active Item
-        // Check constraints for active item in all target slots
+        // 2. Comprehensive Constraints Check for Active Item in all final targetSlots
         for (let i = 0; i < targetSlots.length; i++) {
             const slot = targetSlots[i];
             const itemToCheck = movingItems[i]?.item || activeItem;
@@ -377,11 +488,9 @@ export const useDragAndDrop = ({
                 Array.from(movingInstanceIds)
             );
             
-            // If forbidden, we only allow it if we can displace the conflict
             if (check.forbidden) {
-                // Determine if the conflict is "soft" (displaceable) or "hard" (permanent constraint)
                 const globalConflicts = schoolMasterSchedule[slot] || [];
-                const hasHardConflict = globalConflicts.length === 0; // if no items but forbidden, it's a hard constraint (e.g. lunch)
+                const hasHardConflict = globalConflicts.length === 0;
                 
                 if (hasHardConflict) {
                     MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: check.message });
@@ -564,24 +673,47 @@ export const useDragAndDrop = ({
 
         // 2. Process displacements
         displacementMoves.forEach(move => {
-            updateGlobal(move.teacherId, move.fromSlot, move.toSlot, move.item);
+            const isRelaxed = checkIfPlacementIsRelaxed(move.item, move.toSlot, false, false);
+            const updatedItem = { ...move.item };
+            if (isRelaxed) {
+                updatedItem.isRelaxedSchedule = true;
+                updatedItem.scheduleWarning = 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)';
+            } else {
+                delete updatedItem.isRelaxedSchedule;
+                delete updatedItem.scheduleWarning;
+            }
+
+            updateGlobal(move.teacherId, move.fromSlot, move.toSlot, updatedItem);
             if (move.teacherId === selectedTeacher) {
                 if (newLocalSchedule[move.fromSlot]) {
                     newLocalSchedule[move.fromSlot] = newLocalSchedule[move.fromSlot].filter(c => !isSameCourseInstance(move.teacherId, c, move.item));
                     if (newLocalSchedule[move.fromSlot].length === 0) delete newLocalSchedule[move.fromSlot];
                 }
                 if (!newLocalSchedule[move.toSlot]) newLocalSchedule[move.toSlot] = [];
-                newLocalSchedule[move.toSlot].push({ ...move.item, locked: false });
+                newLocalSchedule[move.toSlot].push({ ...updatedItem, locked: false });
             }
         });
 
         // 3. Place active item(s)
         targetSlots.forEach((slot, index) => {
             const itemToPlace = movingItems[index]?.item || activeItem;
-            updateGlobal(itemToPlace.teacherId!, null, slot, itemToPlace);
-            if (itemToPlace.teacherId === selectedTeacher) {
+            const isDoubleStartSlot = Boolean(partnerSlotId && slot === (forcedDoubleStartSlotId || overId));
+            const isDoublePartnerSlot = Boolean(partnerSlotId && slot !== (forcedDoubleStartSlotId || overId));
+            
+            const isRelaxed = checkIfPlacementIsRelaxed(itemToPlace, slot, isDoubleStartSlot, isDoublePartnerSlot);
+            const updatedItem = { ...itemToPlace };
+            if (isRelaxed) {
+                updatedItem.isRelaxedSchedule = true;
+                updatedItem.scheduleWarning = 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)';
+            } else {
+                delete updatedItem.isRelaxedSchedule;
+                delete updatedItem.scheduleWarning;
+            }
+
+            updateGlobal(updatedItem.teacherId!, null, slot, updatedItem);
+            if (updatedItem.teacherId === selectedTeacher) {
                 if (!newLocalSchedule[slot]) newLocalSchedule[slot] = [];
-                newLocalSchedule[slot].push({ ...itemToPlace, locked: false });
+                newLocalSchedule[slot].push({ ...updatedItem, locked: false });
             }
         });
 
@@ -593,15 +725,30 @@ export const useDragAndDrop = ({
 
         if (isFromBank) {
             removeInstancesFromBank(activeId, activeItem, targetSlots.length);
+        } else if (movingItems.length > targetSlots.length) {
+            const unplacedItems = movingItems.slice(targetSlots.length);
+            setAvailableCourseInstances((prevBank: CourseInstance[]) => [
+                ...prevBank,
+                ...unplacedItems.map(move => ({ ...move.item, locked: false }))
+            ]);
+        }
+
+        let successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย';
+        if (shouldUseDoubleTarget) {
+            if (wasRescued) {
+                successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย (แยกคาบคู่อัตโนมัติเพื่อไม่ให้คาบหาย)';
+            } else if (targetSlots.length === 1) {
+                successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย (คาบเหลือถูกเก็บเข้าคลัง คาบวาง 1/2)';
+            }
         }
 
         MySwal.fire({
             toast: true,
             position: 'top-end',
-            icon: 'success',
-            title: 'ปรับเปลี่ยนตำแหน่งเรียบร้อย',
+            icon: targetSlots.length === 1 && shouldUseDoubleTarget ? 'warning' : 'success',
+            title: successMessage,
             showConfirmButton: false,
-            timer: 1500
+            timer: 3000
         });
     };
 
@@ -664,10 +811,11 @@ export const useDragAndDrop = ({
             return;
         }
 
-        // --- DOUBLE PERIOD AUTO-PLACEMENT ---
+        // --- DOUBLE PERIOD AUTO-PLACEMENT & RESCUE LOGIC ---
         const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
         let primarySlotId = slotId;
+        let wasRescued = false;
         
         const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
 
@@ -675,51 +823,97 @@ export const useDragAndDrop = ({
         const hoursRemaining = hoursPerWeek - alreadyPlacedCount;
         const shouldTryDoublePlacement = asgnCst?.type === 'double' && hoursRemaining >= 2;
 
+        const checkSlotValidityManual = (slot: string, isPartner: boolean) => {
+            const check = checkConstraints(
+                activeItem,
+                slot,
+                selectedTeacherData,
+                periodSettings,
+                specialPeriods,
+                isPartner ? getConstraintMapForDoublePartner(activeItem) : assignmentConstraints,
+                dynamicUnavailableSlots,
+                schoolMasterSchedule,
+                1,
+                [activeItem.instanceId]
+            );
+            if (check.forbidden) return false;
+            if ((schedule[slot] || []).some(c => c.locked)) return false;
+            if (schedule[slot] && schedule[slot].length > 0) return false;
+            return true;
+        };
+
         if (shouldTryDoublePlacement) {
             const doubleSlots = getDoubleTargetSlots(slotId);
-            
-            if (doubleSlots) {
-                primarySlotId = doubleSlots[0];
-                const potPartnerId = doubleSlots[1];
-                const partnerCheck = checkConstraints(
-                    activeItem, 
-                    potPartnerId, 
-                    selectedTeacherData, 
-                    periodSettings, 
-                    specialPeriods, 
-                    getConstraintMapForDoublePartner(activeItem), 
-                    dynamicUnavailableSlots,
-                    schoolMasterSchedule,
-                    1,
-                    [activeItem.instanceId]
-                );
-                
-                const primaryCheck = checkConstraints(
-                    activeItem,
-                    primarySlotId,
-                    selectedTeacherData,
-                    periodSettings,
-                    specialPeriods,
-                    assignmentConstraints,
-                    dynamicUnavailableSlots,
-                    schoolMasterSchedule,
-                    2,
-                    [activeItem.instanceId]
-                );
+            let standardDoubleSuccessful = false;
 
-                if (!primaryCheck.forbidden && !partnerCheck.forbidden && (!schedule[primarySlotId] || schedule[primarySlotId].length === 0) && (!schedule[potPartnerId] || schedule[potPartnerId].length === 0)) {
-                    partnerSlotId = potPartnerId;
-                } else if (asgnCst?.type === 'double' || hoursPerWeek >= 5) {
-                    MySwal.fire({ 
-                        icon: 'warning', 
-                        title: 'ไม่สามารถวางคาบคู่ได้', 
-                        text: primaryCheck.message || partnerCheck.message || 'คาบต่อเนื่องไม่ว่าง' 
+            if (doubleSlots) {
+                const trialStart = doubleSlots[0];
+                const trialPartner = doubleSlots[1];
+
+                if (checkSlotValidityManual(trialStart, false) && checkSlotValidityManual(trialPartner, true)) {
+                    primarySlotId = trialStart;
+                    partnerSlotId = trialPartner;
+                    standardDoubleSuccessful = true;
+                }
+            }
+
+            if (!standardDoubleSuccessful) {
+                const isPrimaryValid = checkSlotValidityManual(primarySlotId, false);
+                if (isPrimaryValid) {
+                    let rescueSlot: string | null = null;
+                    const [targetDay] = primarySlotId.split('-');
+
+                    const [_, primaryPeriodIdxStr] = primarySlotId.split('-');
+                    const primaryPeriodIdx = parseInt(primaryPeriodIdxStr);
+
+                    const sameDayTeachingSlots: { slot: string; index: number }[] = [];
+                    periodSettings.forEach((p, pIdx) => {
+                        if (p.isTeachingPeriod) {
+                            sameDayTeachingSlots.push({ slot: `${targetDay}-${pIdx}`, index: pIdx });
+                        }
                     });
+
+                    sameDayTeachingSlots.sort((a, b) => {
+                        const distA = Math.abs(a.index - primaryPeriodIdx);
+                        const distB = Math.abs(b.index - primaryPeriodIdx);
+                        if (distA !== distB) return distA - distB;
+                        return a.index - b.index;
+                    });
+
+                    for (const entry of sameDayTeachingSlots) {
+                        if (checkSlotValidityManual(entry.slot, true)) {
+                            rescueSlot = entry.slot;
+                            break;
+                        }
+                    }
+
+                    if (!rescueSlot) {
+                        const otherDays = Object.keys(DAYS).filter(d => d !== targetDay);
+                        for (const day of otherDays) {
+                            const teachingSlots: { slot: string; index: number }[] = [];
+                            periodSettings.forEach((p, pIdx) => {
+                                if (p.isTeachingPeriod) {
+                                    teachingSlots.push({ slot: `${day}-${pIdx}`, index: pIdx });
+                                }
+                            });
+                            for (const entry of teachingSlots) {
+                                if (checkSlotValidityManual(entry.slot, true)) {
+                                    rescueSlot = entry.slot;
+                                    break;
+                                }
+                            }
+                            if (rescueSlot) break;
+                        }
+                    }
+
+                    if (rescueSlot) {
+                        partnerSlotId = rescueSlot;
+                        wasRescued = true;
+                    }
+                } else {
+                    MySwal.fire({ icon: 'warning', title: 'ไม่สามารถเพิ่มได้', text: 'คาบเรียนหลักที่เลือกไม่สามารถจัดได้เนื่องจากติดเงื่อนไข' });
                     return;
                 }
-            } else if (asgnCst?.type === 'double' || hoursPerWeek >= 5) {
-                MySwal.fire({ icon: 'warning', title: 'ไม่สามารถวางคาบคู่ได้', text: 'คาบนี้ไม่ได้อยู่ในบล็อกสำหรับคาบคู่' });
-                return;
             }
         }
 
@@ -771,22 +965,88 @@ export const useDragAndDrop = ({
         }
 
         // --- UPDATE STATE ---
+        const isPrimaryRelaxed = checkIfPlacementIsRelaxed(activeItem, primarySlotId, partnerSlotId ? true : false, false);
+        const primaryItem = {
+            ...activeItem,
+            instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}`,
+            locked: false,
+            ...(isPrimaryRelaxed ? {
+                isRelaxedSchedule: true,
+                scheduleWarning: 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)'
+            } : {})
+        };
+
+        let partnerItem: CourseInstance | null = null;
+        if (partnerSlotId) {
+            const isPartnerRelaxed = checkIfPlacementIsRelaxed(activeItem, partnerSlotId, false, true);
+            partnerItem = {
+                ...activeItem,
+                instanceId: `${activeItem.id}-${partnerSlotId}-${Date.now() + 1}`,
+                locked: false,
+                ...(isPartnerRelaxed ? {
+                    isRelaxedSchedule: true,
+                    scheduleWarning: 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)'
+                } : {})
+            };
+        }
+
         setSchedule((prev: Schedule) => {
             const next = { ...prev };
             
             removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
             
             // Primary Slot
-            const newInstance = { ...activeItem, instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}`, locked: false };
-            next[primarySlotId] = [...(next[primarySlotId] || []), newInstance];
+            next[primarySlotId] = [...(next[primarySlotId] || []), primaryItem];
 
             // Partner Slot (if double)
-            if (partnerSlotId) {
-                const partnerInstance = { ...activeItem, instanceId: `${activeItem.id}-${partnerSlotId}-${Date.now() + 1}`, locked: false };
-                next[partnerSlotId] = [...(next[partnerSlotId] || []), partnerInstance];
+            if (partnerSlotId && partnerItem) {
+                next[partnerSlotId] = [...(next[partnerSlotId] || []), partnerItem];
             }
             
             return next;
+        });
+
+        // Also update schoolMasterSchedule immediately
+        setSchoolMasterSchedule((prev) => {
+            const next = { ...prev };
+            
+            if (!next[primarySlotId]) next[primarySlotId] = [];
+            next[primarySlotId].push({
+                teacherId: selectedTeacher,
+                classId: primaryItem.classId,
+                groupNumber: primaryItem.groupNumber || 1,
+                course: primaryItem
+            });
+
+            if (partnerSlotId && partnerItem) {
+                if (!next[partnerSlotId]) next[partnerSlotId] = [];
+                next[partnerSlotId].push({
+                    teacherId: selectedTeacher,
+                    classId: partnerItem.classId,
+                    groupNumber: partnerItem.groupNumber || 1,
+                    course: partnerItem
+                });
+            }
+            
+            return next;
+        });
+
+        let successMessage = 'เพิ่มวิชาเรียบร้อย';
+        if (shouldTryDoublePlacement) {
+            if (wasRescued) {
+                successMessage = 'เพิ่มวิชาเรียบร้อย (แยกคาบคู่อัตโนมัติเพื่อไม่ให้คาบหาย)';
+            } else if (!partnerSlotId) {
+                successMessage = 'เพิ่มวิชาเรียบร้อย (คาบที่สองคงอยู่ในคลัง คาบวาง 1/2)';
+            }
+        }
+
+        MySwal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: !partnerSlotId && shouldTryDoublePlacement ? 'warning' : 'success',
+            title: successMessage,
+            showConfirmButton: false,
+            timer: 3000
         });
     };
 

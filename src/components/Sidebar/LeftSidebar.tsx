@@ -56,7 +56,7 @@ import { ROLES, ROLE_LABELS, Role } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { usePwaMode } from "@/hooks/usePwaMode";
-import { PWA_ATTENDANCE_HUB_PATH } from "@/utils/pwaMode";
+import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
   const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS } = usePermissions();
@@ -219,6 +219,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                 <NavLink to={PWA_ATTENDANCE_HUB_PATH} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
                   <span>ระบบเช็คชื่อ</span>
+                </NavLink>
+                <NavLink to={PWA_MY_SCHEDULE_PATH} className={navLinkClasses}>
+                  <FaChalkboardTeacher className="text-lg min-w-[18px]" />
+                  <span>ตารางสอน</span>
                 </NavLink>
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (

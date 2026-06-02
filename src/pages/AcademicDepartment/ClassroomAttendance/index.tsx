@@ -602,6 +602,9 @@ const ClassroomAttendancePage: React.FC = () => {
                     const semesterMatches = !semester || !dataSemester || dataSemester === semester || dataSemester.startsWith(`${semester}/`) || semester.startsWith(`${dataSemester}/`) || dataSemester.includes(semester);
                     if (!yearMatches || !semesterMatches) return;
 
+                    const docTeacherId = data.teacherId || doc.id.split('__')[0];
+                    if (String(docTeacherId) !== String((currentTeacher as any).id)) return;
+
                     const scheduleMap = data.schedule || {};
 
                     Object.keys(scheduleMap)
@@ -744,8 +747,20 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
                 });
 
+                // Deduplicate schedules to prevent duplicate entries for the same slot
+                const uniqueSchedulesMap = new Map<string, CourseSchedule>();
+                dailySchedules.forEach(item => {
+                    const periodKey = item.period ? `period-${item.period}` : 'unknown';
+                    const classKey = Array.isArray(item.classId) ? item.classId.join('-') : String(item.classId || '');
+                    const courseKey = item.courseId || item.subjectCode || item.subjectName || '';
+                    const subKey = item.isSubstitute ? `sub-${item.substitutionId}` : 'normal';
+                    const key = `${periodKey}-${classKey}-${courseKey}-${subKey}`;
+                    uniqueSchedulesMap.set(key, item);
+                });
+                const deduplicatedSchedules = Array.from(uniqueSchedulesMap.values());
+
                 // Sort based on course identity fields first to keep consecutive periods of the same class/course adjacent
-                dailySchedules.sort((a, b) => {
+                deduplicatedSchedules.sort((a, b) => {
                     const aClassKey = getStableClassKey(a.classId);
                     const bClassKey = getStableClassKey(b.classId);
                     if (aClassKey !== bClassKey) return aClassKey.localeCompare(bClassKey);
@@ -771,13 +786,13 @@ const ClassroomAttendancePage: React.FC = () => {
 
                 // Group consecutive double/multiple periods (คาบคู่/คาบติดต่อกัน)
                 const groupedSchedules: CourseSchedule[] = [];
-                for (let i = 0; i < dailySchedules.length; i++) {
-                    const current = { ...dailySchedules[i] };
+                for (let i = 0; i < deduplicatedSchedules.length; i++) {
+                    const current = { ...deduplicatedSchedules[i] };
                     const periods = [current.period];
                     let currentEndTime = current.endTime;
 
-                    while (i + 1 < dailySchedules.length) {
-                        const next = dailySchedules[i + 1];
+                    while (i + 1 < deduplicatedSchedules.length) {
+                        const next = deduplicatedSchedules[i + 1];
 
                         const isConsecutive = next.period === current.period + periods.length;
                         const sameCourse = next.courseId === current.courseId && next.subjectCode === current.subjectCode;

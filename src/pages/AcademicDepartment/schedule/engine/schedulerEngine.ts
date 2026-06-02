@@ -836,6 +836,8 @@ export const runSchedulingEngine = (
 
                 if (canPlaceWithIndex(task, sessionSlots, conflictIndex)) {
                     const teacherIds = getTaskTeacherIds(task);
+                    const isRelaxedPlacement = !validSlotsByTaskIndex[taskIndex]?.includes(startSlotId);
+
                     sessionSlots.forEach(slotId => {
                         teacherIds.forEach(teacherId => {
                             const occupancy: TimetableOccupancy = {
@@ -844,7 +846,11 @@ export const runSchedulingEngine = (
                                 classId: task.targetClasses,
                                 room: task.targetRooms,
                                 courseId: task.course.id,
-                                course: task.course,
+                                course: isRelaxedPlacement ? {
+                                    ...task.course,
+                                    isRelaxedSchedule: true,
+                                    scheduleWarning: `จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)`
+                                } as any : task.course,
                                 taskId: taskIndex,
                                 groupNumber: task.groupNumber
                             };
@@ -867,6 +873,10 @@ export const runSchedulingEngine = (
                                         groupNumber: task.groupNumber,
                                         compositeId: task.compositeId,
                                         taskId: taskIndex,
+                                        ...(isRelaxedPlacement ? {
+                                            isRelaxedSchedule: true,
+                                            scheduleWarning: `จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)`
+                                        } : {}),
                                         instanceId: `${task.course.id}-${task.groupNumber}-${slotId}-${cId}-${teacherId}`
                                     }
                                 ];
@@ -882,10 +892,6 @@ export const runSchedulingEngine = (
         for (const task of orderedTasks) {
             if (tryPlaceInRun(task, false, currentTimetable, currentBatchUpdates, currentConflictIndex)) {
                 currentPlacedPeriods += task.duration;
-            } else if (relaxedValidSlotsByTaskIndex && tryPlaceInRun(task, true, currentTimetable, currentBatchUpdates, currentConflictIndex, relaxedValidSlotsByTaskIndex)) {
-                currentPlacedPeriods += task.duration;
-            } else if (tryPlaceInRun(task, true, currentTimetable, currentBatchUpdates, currentConflictIndex, emergencySlotPoolByTaskIndex)) {
-                currentPlacedPeriods += task.duration;
             } else {
                 currentUnplacedTasks.push(task);
             }
@@ -899,7 +905,14 @@ export const runSchedulingEngine = (
                 const task = currentUnplacedTasks.shift()!;
                 const taskIndex = taskIndexByRef.get(task) ?? tasks.indexOf(task);
                 let repaired = false;
-                const repairSlotPool = emergencySlotPoolByTaskIndex;
+
+                // Two-phase repair:
+                // Phase 1 (Strict): use strict valid slots and enforce preferences (first 60% of attempts)
+                // Phase 2 (Relaxed): use relaxed fallback slots and ignore preferences
+                const useStrict = repairCount < maxRepairAttempts * 0.6;
+                const repairSlotPool = useStrict ? validSlotsByTaskIndex : emergencySlotPoolByTaskIndex;
+                const ignorePrefs = !useStrict;
+
                 const potentialSlots = getWeightedSlots(
                     task,
                     allTeachingSlots,
@@ -907,7 +920,7 @@ export const runSchedulingEngine = (
                     repairSlotPool,
                     taskIndex,
                     assignmentConstraints,
-                    true,
+                    ignorePrefs,
                     currentConflictIndex,
                     tasks
                 );
@@ -916,6 +929,10 @@ export const runSchedulingEngine = (
                     potentialSlots.length,
                     Math.max(30, Math.ceil(allTeachingSlots.length * 0.75))
                 );
+
+                let bestSlotId: string | null = null;
+                let bestBlockers: TimetableOccupancy[] = [];
+                let minBlockerCost = Infinity;
 
                 for (const slotId of potentialSlots.slice(0, repairSearchLimit)) {
                     const [dayKey, pStr] = slotId.split('-');
@@ -954,40 +971,68 @@ export const runSchedulingEngine = (
                         blockers.push(...localBlockers);
                     }
 
+                    if (fatalConflict) continue;
+
                     const uniqueBlockers = Array.from(new Map(blockers.map(b => [b.taskId, b])).values());
 
-                    if (!fatalConflict && uniqueBlockers.length > 0 && uniqueBlockers.length <= 2) {
-                        uniqueBlockers.forEach(b => {
-                            if (b.taskId === undefined) return;
-                            for (const sId in currentTimetable) {
-                                const removed = currentTimetable[sId].filter(o => o.taskId === b.taskId);
-                                removed.forEach(occupancy => removeOccupancyFromIndex(currentConflictIndex, sId, occupancy));
-                                currentTimetable[sId] = currentTimetable[sId].filter(o => o.taskId !== b.taskId);
+                    // Ejecting limit
+                    if (uniqueBlockers.length <= 2) {
+                        let blockerCost = 0;
+                        for (const b of uniqueBlockers) {
+                            if (b.taskId === undefined) {
+                                blockerCost = Infinity;
+                                break;
                             }
                             const bTask = tasks[b.taskId];
-                            if (bTask) {
-                                getTaskTeacherIds(bTask).forEach(teacherId => {
-                                    bTask.targetClasses.forEach(cId => {
-                                        const docId = `${teacherId}_${cId}`;
-                                        if (currentBatchUpdates[docId]) {
-                                            for (const sId in currentBatchUpdates[docId]) {
-                                                const items = currentBatchUpdates[docId][sId] as any[];
-                                                currentBatchUpdates[docId][sId] = items.filter(it => it.taskId !== b.taskId);
-                                                if (currentBatchUpdates[docId][sId].length === 0) delete currentBatchUpdates[docId][sId];
-                                            }
-                                        }
-                                    });
-                                });
-                                currentUnplacedTasks.push(bTask);
-                                currentPlacedPeriods -= bTask.duration;
+                            if (!bTask || bTask.requiredSlot) {
+                                blockerCost = Infinity;
+                                break;
                             }
-                        });
-
-                        if (tryPlaceInRun(task, true, currentTimetable, currentBatchUpdates, currentConflictIndex, repairSlotPool)) {
-                            currentPlacedPeriods += task.duration;
-                            repaired = true;
-                            break;
+                            // Strongly prefer ejecting single period tasks over double periods
+                            const blockerWeight = bTask.duration > 1 ? 10 : 1;
+                            blockerCost += blockerWeight;
                         }
+
+                        if (blockerCost < minBlockerCost) {
+                            minBlockerCost = blockerCost;
+                            bestSlotId = slotId;
+                            bestBlockers = uniqueBlockers;
+                        }
+                    }
+                }
+
+                if (bestSlotId && minBlockerCost < Infinity) {
+                    bestBlockers.forEach(b => {
+                        if (b.taskId === undefined) return;
+                        for (const sId in currentTimetable) {
+                            const removed = currentTimetable[sId].filter(o => o.taskId === b.taskId);
+                            removed.forEach(occupancy => removeOccupancyFromIndex(currentConflictIndex, sId, occupancy));
+                            currentTimetable[sId] = currentTimetable[sId].filter(o => o.taskId !== b.taskId);
+                        }
+                        const bTask = tasks[b.taskId];
+                        if (bTask) {
+                            getTaskTeacherIds(bTask).forEach(teacherId => {
+                                bTask.targetClasses.forEach(cId => {
+                                    const docId = `${teacherId}_${cId}`;
+                                    if (currentBatchUpdates[docId]) {
+                                        for (const sId in currentBatchUpdates[docId]) {
+                                            const items = currentBatchUpdates[docId][sId] as any[];
+                                            currentBatchUpdates[docId][sId] = items.filter(it => it.taskId !== b.taskId);
+                                            if (currentBatchUpdates[docId][sId].length === 0) delete currentBatchUpdates[docId][sId];
+                                        }
+                                    }
+                                });
+                            });
+                            currentUnplacedTasks.push(bTask);
+                            currentPlacedPeriods -= bTask.duration;
+                        }
+                    });
+
+                    const tempPool: string[][] = [];
+                    tempPool[taskIndex] = [bestSlotId];
+                    if (tryPlaceInRun(task, ignorePrefs, currentTimetable, currentBatchUpdates, currentConflictIndex, tempPool)) {
+                        currentPlacedPeriods += task.duration;
+                        repaired = true;
                     }
                 }
 

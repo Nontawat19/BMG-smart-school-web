@@ -62,7 +62,7 @@ const CheckboxField: React.FC<{ label: string; name: string; checked: boolean; o
 );
 
 const statusColorMap: { [key: string]: { bg: string; hover: string; text: string } } = {
-  "กำลังศึกษา": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
+  "กำลังศึกษาอยู่": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
   "พักการเรียน": { bg: "bg-yellow-500", hover: "hover:bg-yellow-600", text: "text-gray-900" },
   "แขวนลอย": { bg: "bg-amber-600", hover: "hover:bg-amber-700", text: "text-white" },
   "ย้าย": { bg: "bg-blue-600", hover: "hover:bg-blue-700", text: "text-white" },
@@ -133,7 +133,7 @@ const initialState = {
   classLevel: "",
   room: "",
   studentNumber: "",
-  studentStatus: "กำลังศึกษา",
+  studentStatus: "กำลังศึกษาอยู่",
   exitDate: "",
   exitReason: "",
   exitDestinationSchool: "",
@@ -256,7 +256,7 @@ export default function AddStudentPage() {
     { id: "travel", label: "การเดินทาง", icon: <FaBus /> },
   ];
 
-  const studentStatusOptions = ["กำลังศึกษา", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+  const studentStatusOptions = ["กำลังศึกษาอยู่", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
   const showExitDetails = isExitStudentStatus(form.studentStatus);
   const exitReasonLabel = `เหตุผลที่${form.studentStatus}`;
 

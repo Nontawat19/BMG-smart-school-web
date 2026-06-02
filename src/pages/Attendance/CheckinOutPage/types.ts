@@ -21,4 +21,11 @@ export interface FoundUser {
     officialTravel: number;
   };
   role?: any;
+  rfid?: string;
+  scanMethod?: string;
+  faceConfidence?: number;
+  findfaceCardId?: string;
+  faceScanImageUrl?: string;
+  checkinTime?: string | null;
+  checkoutTime?: string | null;
 }

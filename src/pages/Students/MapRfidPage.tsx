@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore } from '@/firebase';
 import { collection, getDocs, doc, writeBatch, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { FaIdCard, FaSearch, FaSave, FaArrowLeft, FaEye, FaEyeSlash, FaUserGraduate, FaChalkboardTeacher, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight } from 'react-icons/fa';
-import { getStudentStatus } from '@/utils/studentStatusUtils';
-import { isActiveStudentSummaryStatus, isActiveTeacherSummaryStatus } from '@/utils/ownerStatsUtils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
+import { isActiveTeacherSummaryStatus } from '@/utils/ownerStatsUtils';
 import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
+import { getLevelsByRange } from '@/utils/schoolUtils';
 
 // Generic User interface for both Students and Teachers
 interface Person {
@@ -28,8 +29,21 @@ interface Person {
   profileImageUrl?: string;
 }
 
+const normalizeFilterValue = (value: unknown) => String(value || '').trim();
+
+const isLikelyEmailAutofill = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const compareNumericText = (a: string, b: string) => {
+  const numA = Number(a);
+  const numB = Number(b);
+  if (Number.isFinite(numA) && Number.isFinite(numB) && numA !== numB) return numA - numB;
+  return a.localeCompare(b, 'th', { numeric: true, sensitivity: 'base' });
+};
+
 const MapRfidPage: React.FC = () => {
   const { schoolId, type } = useParams<{ schoolId: string; type: 'students' | 'teachers' }>();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchAutocompleteTokenRef = useRef(`bms-rfid-filter-${Math.random().toString(36).slice(2)}`);
   const [people, setPeople] = useState<Person[]>([]);
   const [rfidMap, setRfidMap] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -43,6 +57,28 @@ const MapRfidPage: React.FC = () => {
   const itemsPerPage = 20;
 
   const isStudent = type === 'students';
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(isLikelyEmailAutofill(value) ? '' : value);
+  };
+
+  useEffect(() => {
+    setSearchTerm('');
+
+    const clearBrowserEmailAutofill = () => {
+      const input = searchInputRef.current;
+      if (!input) return;
+
+      if (isLikelyEmailAutofill(input.value)) {
+        input.value = '';
+        setSearchTerm('');
+      }
+    };
+
+    clearBrowserEmailAutofill();
+    const timers = [50, 250, 1000, 2000].map((delay) => window.setTimeout(clearBrowserEmailAutofill, delay));
+    return () => timers.forEach(window.clearTimeout);
+  }, [schoolId, type]);
 
   useEffect(() => {
     if (!schoolId || !type) return;
@@ -60,7 +96,7 @@ const MapRfidPage: React.FC = () => {
           .filter(person => {
             if (isAttendanceEntryOnly(person.role)) return false;
             if (isStudent) {
-              return isActiveStudentSummaryStatus(getStudentStatus(person));
+              return isStudyingStudent(person);
             }
             return isActiveTeacherSummaryStatus(person.status || 'อยู่');
           });
@@ -70,7 +106,7 @@ const MapRfidPage: React.FC = () => {
           if (isStudent) {
             const classCompare = (a.classLevel || '').localeCompare(b.classLevel || '');
             if (classCompare !== 0) return classCompare;
-            const roomCompare = (a.room || '').localeCompare(b.room || '');
+            const roomCompare = compareNumericText(normalizeFilterValue(a.room), normalizeFilterValue(b.room));
             if (roomCompare !== 0) return roomCompare;
             return (parseInt(a.studentNumber || '0', 10)) - (parseInt(b.studentNumber || '0', 10));
           } else {
@@ -107,21 +143,7 @@ const MapRfidPage: React.FC = () => {
         const schoolSnap = await getDoc(schoolRef);
         if (schoolSnap.exists()) {
           const data = schoolSnap.data();
-          const levelRange = data.opportunityExpansionLevel;
-          
-          const primary = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
-          const junior = ["ม.1", "ม.2", "ม.3"];
-          const senior = ["ม.4", "ม.5", "ม.6"];
-          
-          let levels: string[] = [];
-          if (levelRange === 'ป.1-ป.6') levels = primary;
-          else if (levelRange === 'ม.1-ม.6') levels = [...junior, ...senior];
-          else if (levelRange === 'ป.1-ม.3') levels = [...primary, ...junior];
-          else if (levelRange === 'ป.1-ม.6') levels = [...primary, ...junior, ...senior];
-          else {
-             levels = [...primary, ...junior, ...senior];
-          }
-          setAvailableLevels(levels);
+          setAvailableLevels(getLevelsByRange(data.opportunityExpansionLevel));
         }
       } catch (error) {
         console.error("Error fetching school levels:", error);
@@ -129,6 +151,32 @@ const MapRfidPage: React.FC = () => {
     };
     fetchLevels();
   }, [schoolId, isStudent]);
+
+  const classLevelOptions = useMemo(() => {
+    if (!isStudent) return [];
+
+    const levelsFromStudents = Array.from(new Set(
+      people
+        .map(person => normalizeFilterValue(person.classLevel))
+        .filter(Boolean)
+    ));
+    const mergedLevels = Array.from(new Set([...availableLevels, ...levelsFromStudents]));
+
+    return mergedLevels.filter(level =>
+      people.some(person => normalizeFilterValue(person.classLevel) === level) || availableLevels.includes(level)
+    );
+  }, [availableLevels, people, isStudent]);
+
+  const roomOptions = useMemo(() => {
+    if (!isStudent) return [];
+
+    const rooms = people
+      .filter(person => !selectedClassLevel || normalizeFilterValue(person.classLevel) === selectedClassLevel)
+      .map(person => normalizeFilterValue(person.room))
+      .filter(Boolean);
+
+    return Array.from(new Set(rooms)).sort(compareNumericText);
+  }, [people, selectedClassLevel, isStudent]);
 
   const handleRfidChange = (personId: string, rfid: string) => {
     setRfidMap(prev => ({
@@ -177,19 +225,22 @@ const MapRfidPage: React.FC = () => {
   };
 
   const filteredPeople = useMemo(() => {
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+
     return people.filter(person => {
       const name = `${person.title}${person.firstName} ${person.lastName}`.toLowerCase();
       const id = (person.studentId || person.teacherId || '').toLowerCase();
       const rfid = (rfidMap[person.id] || '').toLowerCase();
       
       const matchesSearch = 
-        name.includes(searchTerm.toLowerCase()) ||
-        id.includes(searchTerm.toLowerCase()) ||
-        rfid.includes(searchTerm.toLowerCase());
+        !normalizedSearchTerm ||
+        name.includes(normalizedSearchTerm) ||
+        id.includes(normalizedSearchTerm) ||
+        rfid.includes(normalizedSearchTerm);
 
       if (isStudent) {
-        const matchesClass = selectedClassLevel === '' || person.classLevel === selectedClassLevel;
-        const matchesRoom = selectedRoom === '' || person.room === selectedRoom;
+        const matchesClass = selectedClassLevel === '' || normalizeFilterValue(person.classLevel) === selectedClassLevel;
+        const matchesRoom = selectedRoom === '' || normalizeFilterValue(person.room) === selectedRoom;
         return matchesSearch && matchesClass && matchesRoom;
       }
 
@@ -208,6 +259,12 @@ const MapRfidPage: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedClassLevel, selectedRoom]);
+
+  useEffect(() => {
+    if (selectedRoom && !roomOptions.includes(selectedRoom)) {
+      setSelectedRoom('');
+    }
+  }, [roomOptions, selectedRoom]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, currentIndex: number) => {
     if (e.key === 'Enter') {
@@ -246,15 +303,41 @@ const MapRfidPage: React.FC = () => {
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
               <div className="relative w-full sm:w-64">
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="absolute h-0 w-0 opacity-0 pointer-events-none"
+                />
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="absolute h-0 w-0 opacity-0 pointer-events-none"
+                />
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FaSearch className="text-gray-400" />
                 </div>
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder={`ค้นหาชื่อ, ${isStudent ? 'รหัสนักเรียน' : 'รหัสครู'}, RFID...`}
+                  name={searchAutocompleteTokenRef.current}
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-form-type="other"
                   className="pl-10 pr-4 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  onInput={(e) => handleSearchChange((e.target as HTMLInputElement).value)}
                 />
               </div>
               
@@ -266,7 +349,7 @@ const MapRfidPage: React.FC = () => {
                     className="pl-3 pr-8 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
                   >
                     <option value="">ทุกชั้น</option>
-                    {availableLevels.map(level => <option key={level} value={level}>{level}</option>)}
+                    {classLevelOptions.map(level => <option key={level} value={level}>{level}</option>)}
                   </select>
                   <select
                     value={selectedRoom}
@@ -274,7 +357,7 @@ const MapRfidPage: React.FC = () => {
                     className="pl-3 pr-8 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
                   >
                     <option value="">ทุกห้อง</option>
-                    {Array.from({ length: 20 }, (_, i) => i + 1).map(r => <option key={r} value={r}>{r}</option>)}
+                    {roomOptions.map(room => <option key={room} value={room}>{room}</option>)}
                   </select>
                 </div>
               )}
@@ -352,11 +435,19 @@ const MapRfidPage: React.FC = () => {
                             <div className="relative">
                               <input
                                 id={`rfid-input-${person.id}`}
+                                name={`rfid-${person.id}`}
                                 type={visibilityMap[person.id] ? "text" : "password"}
                                 value={rfidMap[person.id] || ''}
                                 onChange={(e) => handleRfidChange(person.id, e.target.value)}
                                 placeholder="แตะบัตรหรือกรอกรหัส..."
-                                onKeyDown={(e) => handleKeyDown(e, index)}
+                                onKeyDown={(e) => handleKeyDown(e, (currentPage - 1) * itemsPerPage + index)}
+                                autoComplete="new-password"
+                                autoCorrect="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
                                 className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 pr-10 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                               />
                               <button

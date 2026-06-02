@@ -18,6 +18,7 @@ export interface CourseCardProps {
 export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [], onHover, periodSummary }) => {
     const isLocked = course.locked || (course.constraints?.lockedSlots && course.constraints.lockedSlots.length > 0);
     const isTemporary = Boolean(course.isTemporarySchedule);
+    const isRelaxed = Boolean((course as any).isRelaxedSchedule);
     
     // Determine primary label based on view type
     const courseTeacherIds = Array.isArray(course.teacherIds) && course.teacherIds.length > 0 ? course.teacherIds : [course.teacherId];
@@ -68,6 +69,13 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
     };
 
     const secondaryLabel = getGroupLabel(classDisplay, course.groupNumber || 1);
+    const roomDisplay = course.roomDisplay || '';
+    const tertiaryLabel = viewType === 'room' && roomDisplay
+        ? roomDisplay
+        : (viewType === 'teacher'
+            ? secondaryLabel
+            : getGroupLabel(classDisplay, course.groupNumber || 1)
+        );
 
     return (
         <div className={`
@@ -76,6 +84,8 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 ? 'cursor-grabbing bg-indigo-600 dark:bg-indigo-700 text-white ring-[4px] ring-indigo-500/30 z-[9999] scale-105 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.4)] border-white/30' 
                 : isTemporary
                     ? 'cursor-grab bg-amber-50/90 dark:bg-amber-950/30 border-amber-300/80 dark:border-amber-700/60 hover:border-amber-500/80 dark:hover:border-amber-500/80 hover:shadow-lg hover:shadow-amber-500/10'
+                    : isRelaxed
+                    ? 'cursor-grab bg-orange-50/80 dark:bg-orange-950/20 border-orange-200/60 dark:border-orange-900/30 hover:border-orange-400/60 dark:hover:border-orange-500/60 hover:shadow-lg hover:shadow-orange-500/10'
                     : course.isElective
                     ? 'cursor-grab bg-rose-50/70 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-900/30 hover:border-rose-400/60 dark:hover:border-rose-500/60 hover:shadow-lg hover:shadow-rose-500/10'
                     : 'cursor-grab bg-white dark:bg-[#1a1b1e] border-gray-100 dark:border-white/5 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 hover:shadow-lg dark:hover:shadow-indigo-500/10'
@@ -87,9 +97,9 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 {/* Subject Code */}
                 <span className={`
                     text-[9px] font-black uppercase tabular-nums leading-tight truncate w-full px-0.5
-                    ${isOverlay ? 'text-white' : isTemporary ? 'text-amber-800 dark:text-amber-200' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
+                    ${isOverlay ? 'text-white' : isTemporary ? 'text-amber-800 dark:text-amber-200' : isRelaxed ? 'text-orange-800 dark:text-orange-300' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
                 `}>
-                    {course.code}{isTemporary && <span className="text-[8px] font-black text-amber-600/90 ml-0.5">รอตรวจ</span>}{course.isElective && <span className="text-[8px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
+                    {course.code}{isTemporary && <span className="text-[8px] font-black text-amber-600/90 ml-0.5">รอตรวจ</span>}{isRelaxed && <span className="text-[7.5px] font-black text-orange-600/90 ml-0.5">(เงื่อนไขไม่ตรง)</span>}{course.isElective && <span className="text-[8px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
                 </span>
 
                 {/* Subject Name */}
@@ -115,18 +125,15 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 `}>
                     {periodSummary
                         ? `${periodSummary.scheduled}/${periodSummary.total || '-'} คาบ`
-                        : (viewType === 'teacher' 
-                            ? secondaryLabel 
-                            : getGroupLabel(classDisplay, course.groupNumber || 1)
-                        )
+                        : tertiaryLabel
                     }
                 </span>
             </div>
 
             {/* Lock Indicator */}
-            {(isLocked || isTemporary) && (
+            {(isLocked || isTemporary || isRelaxed) && (
                 <div className="absolute top-1 right-1">
-                    {isTemporary ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-amber-600/80'} /> : <Lock size={7} className={isOverlay ? 'text-white/40' : 'text-amber-500/60'} />}
+                    {isTemporary ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-amber-600/80'} /> : isRelaxed ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-orange-500/80'} /> : <Lock size={7} className={isOverlay ? 'text-white/40' : 'text-amber-500/60'} />}
                 </div>
             )}
 

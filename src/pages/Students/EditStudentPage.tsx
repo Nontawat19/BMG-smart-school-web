@@ -46,7 +46,7 @@ const InputField: React.FC<{ label: string; name: string; value: string | number
 );
 
 const statusColorMap: { [key: string]: { bg: string; hover: string; text: string } } = {
-  "กำลังศึกษา": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
+  "กำลังศึกษาอยู่": { bg: "bg-green-600", hover: "hover:bg-green-700", text: "text-white" },
   "พักการเรียน": { bg: "bg-yellow-500", hover: "hover:bg-yellow-600", text: "text-gray-900" },
   "แขวนลอย": { bg: "bg-amber-600", hover: "hover:bg-amber-700", text: "text-white" },
   "ย้าย": { bg: "bg-blue-600", hover: "hover:bg-blue-700", text: "text-white" },
@@ -80,7 +80,7 @@ const initialState = {
 
   // 2. ข้อมูลการเรียน (Educational Info)
   studentId: "", studentNumber: "", classLevel: "", room: "",
-  studentStatus: "กำลังศึกษา", enrollmentDate: "",
+  studentStatus: "กำลังศึกษาอยู่", enrollmentDate: "",
   exitDate: "", exitReason: "", exitDestinationSchool: "",
   gpa: "", gpax: "", behaviorScore: 100,
   subSchoolId: "", subSchoolName: "",
@@ -132,7 +132,7 @@ const initialState = {
   profileImageUrl: "",
 };
 
-const studentStatusOptions = ["กำลังศึกษา", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
+const studentStatusOptions = ["กำลังศึกษาอยู่", "พักการเรียน", "แขวนลอย", "ย้าย", "ลาออก", "จำหน่าย"] as const;
 
 export default function EditStudentPage() {
   const { schoolId, studentId } = useParams<{ schoolId: string, studentId: string }>();

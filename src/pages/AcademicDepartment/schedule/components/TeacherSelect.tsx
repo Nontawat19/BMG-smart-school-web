@@ -51,7 +51,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                 isClearable
                 className="react-select-container"
                 classNamePrefix="react-select"
-                formatOptionLabel={(data: any) => (
+                formatOptionLabel={(data: any, { context }: any) => (
                     <div className="flex items-center gap-3 py-1">
                         <div className="relative flex-shrink-0">
                             <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-black text-slate-500 dark:text-slate-400 overflow-hidden ring-1 ring-white/20 shadow-sm">
@@ -67,7 +67,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                             <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-md border border-amber-500/20 tracking-tighter whitespace-nowrap">
                                 {data.teacher?.teacherId || 'ID:N/A'}
                             </span>
-                            <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap overflow-hidden">
+                            <span className={`text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap ${context === 'value' ? '' : 'overflow-hidden text-ellipsis'}`}>
                                 {data.label}
                             </span>
                         </div>
@@ -77,15 +77,15 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                     control: (base, state) => ({
                         ...base,
                         paddingLeft: '6px',
-                        minHeight: '36px',
-                        height: '36px',
+                        minHeight: '32px',
+                        height: '32px',
                         borderRadius: '12px',
-                        borderColor: state.isFocused ? '#f59e0b' : isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                        borderColor: state.isFocused ? '#f59e0b' : isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
                         boxShadow: 'none',
                         '&:hover': {
                             borderColor: state.isFocused ? '#f59e0b' : isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'
                         },
-                        backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.7)' : 'white',
+                        backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.7)' : 'rgba(249, 250, 251, 0.9)',
                         transition: 'all 0.2s ease',
                     }),
                     menuPortal: (base) => ({ ...base, zIndex: 9999 }),
@@ -162,7 +162,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                     }),
                     indicatorsContainer: (base) => ({
                         ...base,
-                        height: '34px',
+                        height: '30px',
                     })
                 }}
             />

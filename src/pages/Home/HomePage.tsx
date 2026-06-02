@@ -6,7 +6,7 @@ import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, collectionGroup, Timestamp, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { firestore as db } from "../../firebase";
 
@@ -19,12 +19,10 @@ import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getThaiYear } from "@/utils/dateUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
-import { fetchStudentReportSummary } from "@/utils/studentReportSummaryUtils";
+import { fetchStudentReportSummary, syncStudentReportSummary } from "@/utils/studentReportSummaryUtils";
 import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
-interface AttendanceItem { name: string; present?: number; late?: number; leave?: number; absent?: number; earlyReturn?: number; noCheckout?: number; officialTravel?: number; }
-interface StatItem { title: string; value: string; change: any; color: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
 interface ActivityItem { id: string; name: string; date: string; }
 interface ScheduleItem {
@@ -363,125 +361,11 @@ const HomePage = () => {
         recentLeaves: [] 
     });
     const [academicReport, setAcademicReport] = useState<any>({ totalCourses: 0, totalClubs: 0, totalEnrollments: 0, todaySchedules: [], compensationScheduleDay: '' });
-    const [attendanceData, setAttendanceData] = useState<any[]>([]);
-    const [attendanceLoading, setAttendanceLoading] = useState(true);
     const [studentTodaySummary, setStudentTodaySummary] = useState<any>(null);
     const [teacherTodaySummary, setTeacherTodaySummary] = useState<any>(null);
-    const [refreshKey, setRefreshKey] = useState(0); // Added for manual/auto refresh
 
     const [todayTeacherLeaves, setTodayTeacherLeaves] = useState<any[]>([]);
     const [todayTeacherLeavesLoading, setTodayTeacherLeavesLoading] = useState(true);
-
-
-
-    // === EFFECT: Refresh Tracker (Handles visibility and date changes) ===
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                console.log("[Dashboard] Tab became visible, refreshing data...");
-                setRefreshKey(prev => prev + 1);
-            }
-        };
-
-        // Check for date change every minute
-        let lastDate = new Date().toDateString();
-        const dateCheckInterval = setInterval(() => {
-            const currentDate = new Date().toDateString();
-            if (currentDate !== lastDate) {
-                console.log("[Dashboard] Date changed, refreshing boundaries...");
-                lastDate = currentDate;
-                setRefreshKey(prev => prev + 1);
-            }
-        }, 60000);
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            clearInterval(dateCheckInterval);
-        };
-    }, []);
-
-    // === EFFECT: Student Attendance By Class (From ClassroomAttendance Real Data) ===
-    useEffect(() => {
-        const schoolId = currentUser?.schoolId;
-        if (!schoolId) return;
-
-        setAttendanceLoading(true);
-
-        // Create start and end of today for query
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        const startTimestamp = Timestamp.fromDate(today);
-        const endTimestamp = Timestamp.fromDate(tomorrow);
-
-        console.log(`[Attendance Query] Fetching for range: ${today.toLocaleString()} to ${tomorrow.toLocaleString()} (School: ${schoolId})`);
-
-        // Real-time listener for Classroom Attendance
-        // Note: This requires a composite index on Firestore (schoolId ASC, date ASC)
-        const q = query(
-            collectionGroup(db, 'ClassroomAttendance'),
-            where('schoolId', '==', schoolId),
-            where('date', '>=', startTimestamp),
-            where('date', '<', endTimestamp) // Changed from <= to < for strict daily boundary
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const rawData: Record<string, any> = {};
-            console.log(`[Attendance Snapshot] Received ${snapshot.size} records`);
-
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                // Ensure we have a grouping key. 
-                // Using 'className' (e.g., "ม.1/1") or 'subjectCode' if class is not available.
-                // Fallback to "ไม่ระบุห้อง"
-                const groupKey = data.className || data.roomName || data.subjectCode || "อื่นๆ";
-                const status = data.status || 'absent'; // 'present', 'late', 'leave', 'absent', etc.
-
-                if (!rawData[groupKey]) {
-                    rawData[groupKey] = {
-                        name: groupKey,
-                        present: 0,
-                        late: 0,
-                        leave: 0,
-                        absent: 0,
-                        officialTravel: 0,
-                        earlyReturn: 0,
-                        noCheckout: 0
-                    };
-                }
-
-                if (status === 'present') rawData[groupKey].present++;
-                else if (status === 'late') rawData[groupKey].late++;
-                else if (status === 'leave') rawData[groupKey].leave++;
-                else if (status === 'absent') rawData[groupKey].absent++;
-                else if (status === 'officialTravel') rawData[groupKey].officialTravel++;
-                else if (status === 'earlyReturn' || status === 'escape') rawData[groupKey].earlyReturn++;
-            });
-
-            // Convert to array and sort
-            const processed = Object.values(rawData).sort((a: any, b: any) => {
-                // Natural sort for class names (e.g., ม.1/1, ม.1/2, ม.2/1)
-                return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-            });
-
-            setAttendanceData(processed);
-            setAttendanceLoading(false);
-        }, (error) => {
-            console.error("Error fetching classroom attendance:", error);
-            // Check for missing index error
-            if (error.message.includes('index')) {
-                console.error("CRITICAL: Composite index (schoolId ASC, date ASC) is missing for 'ClassroomAttendance' collection group.");
-            }
-            setAttendanceLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, [currentUser, refreshKey]);
-
-
 
     // === EFFECT: Teacher Leaves Today ===
     useEffect(() => {
@@ -672,7 +556,7 @@ const HomePage = () => {
         const fetchReportData = async () => {
             setReportLoading(true);
             try {
-                const studentSummary = await fetchStudentReportSummary(db, schoolId);
+                const studentSummary = await syncStudentReportSummary(db, schoolId);
                 setStudentReport(studentSummary);
                 
                 const schoolSummary = await fetchSchoolDashboardSummary(db, schoolId);
@@ -1350,7 +1234,7 @@ const HomePage = () => {
     useEffect(() => { if (showNewsModal && currentNews && !viewedNewsIds.current.has(currentNews.id)) { incrementViewCount(currentNews.id); viewedNewsIds.current.add(currentNews.id); } }, [currentNews, showNewsModal]);
 
     // === DERIVED STATS FOR BMG SMART SCHOOL STYLE REPORT ===
-    const totalStudents = studentReport.total || 0;
+    const totalStudents = studentReport.active || 0; // count only studying students (กำลังศึกษาอยู่)
     const stSummary = studentTodaySummary || {};
     const sPresent = stSummary.present || 0;
     const sLate = stSummary.late || 0;
@@ -1522,18 +1406,18 @@ const HomePage = () => {
                     )}
 
                     {/* ENHANCED PREMIUM HEADER - SINGLE ROW */}
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-[24px] p-4 sm:p-5 mb-8 border-none shadow-sm dark:shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all duration-300 relative overflow-hidden group">
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-[24px] p-4 sm:p-5 mb-8 border border-gray-100 dark:border-gray-800 shadow-sm transition-all duration-300 relative overflow-hidden group">
                         {/* Decorative Background Elements */}
                         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-full -mr-24 -mt-24 blur-3xl pointer-events-none"></div>
 
                         <div className="relative flex flex-row justify-between items-center gap-3 sm:gap-6">
                             {/* Left Side: Welcome Info */}
                             <div className="flex flex-col min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 text-[9px] sm:text-xs font-black uppercase tracking-wider text-gray-800 dark:text-white mb-1">
-                                    <Activity size={12} className="animate-pulse flex-shrink-0 text-indigo-500 dark:text-indigo-400" />
+                                <div className="flex items-center gap-1.5 text-[9px] sm:text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1">
+                                    <Activity size={12} className="animate-pulse flex-shrink-0" />
                                     <span className="truncate">ยินดีต้อนรับ</span>
                                 </div>
-                                <h1 className="text-lg sm:text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2 min-w-0">
+                                <h1 className="text-lg sm:text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2 min-w-0 leading-tight">
                                     <span className="opacity-90 flex-shrink-0 hidden xs:inline">สวัสดี,</span>
                                     <span className="truncate">
                                         {user?.fullName || userName}
@@ -1542,33 +1426,32 @@ const HomePage = () => {
                                 </h1>
                                 <div className="mt-1 flex items-center gap-1.5">
                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></div>
-                                    <span className="text-[10px] sm:text-xs font-bold text-gray-700 dark:text-gray-200 truncate">ระบบ ปพ.5 ออนไลน์</span>
+                                    <span className="text-[10px] sm:text-xs font-bold text-gray-700 dark:text-gray-200 truncate">BMG Smart School</span>
                                 </div>
                             </div>
 
                             {/* Right Side: Compact Premium Date Badge */}
                             <div className="flex-shrink-0">
-                                <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50/80 dark:bg-white/[0.03] rounded-[18px] border border-gray-100 dark:border-white/5 shadow-inner backdrop-blur-sm">
-                                    <div className="hidden sm:block text-right">
-                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider leading-none mb-1">
+                                <div className="flex items-center gap-2 sm:gap-3.5 px-3 sm:px-4 py-2 bg-gray-50/80 dark:bg-white/[0.03] rounded-[18px] border border-gray-100 dark:border-white/5 shadow-inner backdrop-blur-sm">
+                                    <div className="text-right">
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider leading-none mb-0.5 sm:mb-1">
                                             วันที่ปัจจุบัน
                                         </p>
-                                        <p className="text-xs sm:text-sm font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                                        {/* Desktop Date */}
+                                        <p className="hidden sm:block text-xs sm:text-sm font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
                                             {new Date().toLocaleDateString('th-TH', {
                                                 day: 'numeric',
                                                 month: 'long',
                                                 year: 'numeric'
                                             })}
                                         </p>
-                                    </div>
-                                    <div className="p-1.5 sm:p-2 bg-gradient-to-tr from-indigo-500 to-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-                                        <CalendarCheck size={18} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
-                                    </div>
-                                    {/* Mobile/Small Screen compact date */}
-                                    <div className="sm:hidden text-right leading-tight">
-                                        <p className="text-[11px] font-black text-gray-800 dark:text-gray-100">
-                                            {new Date().getDate()} {thaiMonths[new Date().getMonth()]}
+                                        {/* Mobile Date */}
+                                        <p className="sm:hidden text-xs font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                                            {new Date().getDate()} {thaiMonths[new Date().getMonth()]} {new Date().getFullYear() + 543}
                                         </p>
+                                    </div>
+                                    <div className="p-1.5 sm:p-2 bg-gradient-to-tr from-indigo-500 to-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform flex-shrink-0">
+                                        <CalendarCheck size={18} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
                                     </div>
                                 </div>
                             </div>
@@ -1581,8 +1464,8 @@ const HomePage = () => {
 
 
 
-                    {/* SYSTEM REPORT - Only for Admin/Academic */}
-                    <CanAccess roles={ACADEMIC_ACCESS}>
+                    {/* SYSTEM REPORT - For all roles except Super Admin */}
+                    {!isSuperAdmin && (
                         <div className="mb-8">
                             <div className="flex items-center gap-2 mb-5"><div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" /><h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2><span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span></div>
                             {
@@ -1602,9 +1485,9 @@ const HomePage = () => {
                                         ))}
                                     </div></>)}
                         </div>
-                    </CanAccess>
+                    )}
 
-                    <CanAccess roles={ACADEMIC_ACCESS}>
+                    {!isSuperAdmin && (
                         <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:gap-6 mb-8">
                             {/* Student Attendance Donut */}
                             <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
@@ -1729,215 +1612,7 @@ const HomePage = () => {
                                 </div>
                             </div>
                         </div>
-                    </CanAccess>
-
-                    <CanAccess roles={ACADEMIC_ACCESS}>
-                        <div className="mb-10">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-600/20">
-                                    <BarChart3 className="text-white w-5 h-5" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">สถิติการมาเรียนวันนี้</h3>
-                                        <button 
-                                            onClick={() => setRefreshKey(prev => prev + 1)}
-                                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-400 hover:text-indigo-600 transition-all duration-300"
-                                            title="รีเฟรชข้อมูล"
-                                        >
-                                            <RefreshCw size={16} className={attendanceLoading ? 'animate-spin' : ''} />
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">ข้อมูล Real-time ทั้งโรงเรียน</p>
-                                </div>
-                            </div>
-
-                            {attendanceLoading ? (
-                                <div className="bg-white dark:bg-[#2a2b2f] p-8 rounded-2xl shadow-sm"><SkeletonLoader height="250px" className="rounded-xl" /></div>
-                            ) : attendanceData.length > 0 ? (
-                                (() => {
-                                    const schoolTotal = attendanceData.reduce((acc, item) => ({
-                                        present: acc.present + (item.present || 0),
-                                        late: acc.late + (item.late || 0),
-                                        leave: acc.leave + (item.leave || 0),
-                                        absent: acc.absent + (item.absent || 0),
-                                        officialTravel: acc.officialTravel + (item.officialTravel || 0),
-                                        earlyReturn: acc.earlyReturn + (item.earlyReturn || 0),
-                                        noCheckout: acc.noCheckout + (item.noCheckout || 0),
-                                    }), { present: 0, late: 0, leave: 0, absent: 0, officialTravel: 0, earlyReturn: 0, noCheckout: 0 });
-
-                                    const totalStudents = schoolTotal.present + schoolTotal.late + schoolTotal.leave + schoolTotal.absent + schoolTotal.officialTravel + schoolTotal.earlyReturn + schoolTotal.noCheckout;
-                                    const presentPercentage = totalStudents > 0 ? Math.round((schoolTotal.present / totalStudents) * 100) : 0;
-
-                                    // Prepare Chart Data
-                                    const chartData = [
-                                        { name: 'มาเรียน', value: schoolTotal.present, color: '#10b981', gradient: ['#10b981', '#34d399'] },
-                                        { name: 'มาสาย', value: schoolTotal.late, color: '#f59e0b', gradient: ['#f59e0b', '#fbbf24'] },
-                                        { name: 'ลา', value: schoolTotal.leave, color: '#a855f7', gradient: ['#a855f7', '#c084fc'] },
-                                        { name: 'ขาด', value: schoolTotal.absent, color: '#ef4444', gradient: ['#ef4444', '#f87171'] },
-                                        { name: 'ราชการ/อื่นๆ', value: schoolTotal.officialTravel + schoolTotal.earlyReturn, color: '#6366f1', gradient: ['#6366f1', '#818cf8'] }
-                                    ].filter(d => d.value > 0);
-
-                                    if (chartData.length === 0) {
-                                        chartData.push({ name: 'ไม่มีข้อมูล', value: 1, color: '#e5e7eb', gradient: ['#e5e7eb', '#f3f4f6'] });
-                                    }
-
-                                    const StatCard = ({ label, value, total, color, bgClass, textClass, icon }: any) => {
-                                        const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-                                        const colorName = textClass.split('-')[1]; // e.g., 'emerald', 'amber', 'purple', etc.
-
-                                        return (
-                                            <div className={`relative overflow-hidden bg-white dark:bg-[#1e1f21] border border-gray-100 dark:border-gray-800/60 p-5 rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group dark:hover:border-${colorName}-500/30`}>
-                                                <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500 bg-${colorName}-500`}></div>
-
-                                                <div className="flex justify-between items-start mb-1 relative z-10">
-                                                    <p className="text-sm font-bold text-gray-500 dark:text-gray-400">{label}</p>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-xs font-black px-2 py-0.5 rounded-full ${bgClass} ${textClass}`}>
-                                                            {percent}%
-                                                        </span>
-                                                        <div className={`opacity-20 group-hover:opacity-100 transition-opacity ${textClass} scale-75 origin-right transform`}>
-                                                            {icon}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mb-2 relative z-10">
-                                                    <h4 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight drop-shadow-sm">{value}</h4>
-                                                </div>
-
-                                                {/* Progress Bar */}
-                                                <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-full overflow-hidden mt-4 relative z-10">
-                                                    <div
-                                                        className={`h-full rounded-full shadow-[0_0_10px_rgba(0,0,0,0.1)] bg-${colorName}-500`}
-                                                        style={{ width: `${percent}%`, transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    };
-
-                                    return (
-                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-white dark:bg-[#2a2b2f] p-6 lg:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-800">
-                                            {/* Left: Chart & Overview */}
-                                            <div className="lg:col-span-1 flex flex-col items-center justify-center relative min-h-[280px]">
-                                                <div className="w-full h-[260px] relative">
-                                                    {totalStudents > 0 ? (
-                                                        <ResponsiveContainer width="100%" height={260} debounce={50}>
-                                                            <PieChart>
-                                                                <Pie
-                                                                    data={chartData}
-                                                                    cx="50%"
-                                                                    cy="50%"
-                                                                    innerRadius={85}
-                                                                    outerRadius={115}
-                                                                    paddingAngle={4}
-                                                                    dataKey="value"
-                                                                    stroke="none"
-                                                                    cornerRadius={6}
-                                                                >
-                                                                    {chartData.map((entry, index) => (
-                                                                        <Cell
-                                                                            key={`cell-${index}`}
-                                                                            fill={entry.color}
-                                                                            className="hover:opacity-80 transition-opacity cursor-pointer"
-                                                                        />
-                                                                    ))}
-                                                                </Pie>
-                                                                <RechartsTooltip
-                                                                    formatter={(value: any) => [value, 'จำนวน']}
-                                                                    contentStyle={{
-                                                                        borderRadius: '12px',
-                                                                        border: 'none',
-                                                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                                                                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                                                        color: '#333'
-                                                                    }}
-                                                                    itemStyle={{ color: '#000', fontWeight: 600 }}
-                                                                />
-                                                            </PieChart>
-                                                        </ResponsiveContainer>
-                                                    ) : (
-                                                        <div className="flex items-center justify-center h-full text-gray-400">ยังไม่มีข้อมูลวันนี้</div>
-                                                    )}
-                                                    {/* Center Stat */}
-                                                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                                                        <div className="text-5xl font-black bg-gradient-to-br from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 bg-clip-text text-transparent drop-shadow-sm">
-                                                            {presentPercentage}%
-                                                        </div>
-                                                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">เข้าเรียน</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Right: Detailed Grid */}
-                                            <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-4 content-center">
-                                                <StatCard
-                                                    label="มาเรียน"
-                                                    value={schoolTotal.present}
-                                                    total={totalStudents}
-                                                    bgClass="bg-emerald-100 dark:bg-emerald-900/20"
-                                                    textClass="text-emerald-600 dark:text-emerald-400"
-                                                    icon={<Check size={24} />}
-                                                />
-                                                <StatCard
-                                                    label="มาสาย"
-                                                    value={schoolTotal.late}
-                                                    total={totalStudents}
-                                                    bgClass="bg-amber-100 dark:bg-amber-900/20"
-                                                    textClass="text-amber-600 dark:text-amber-400"
-                                                    icon={<Clock size={24} />}
-                                                />
-                                                <StatCard
-                                                    label="ลา"
-                                                    value={schoolTotal.leave}
-                                                    total={totalStudents}
-                                                    bgClass="bg-purple-100 dark:bg-purple-900/20"
-                                                    textClass="text-purple-600 dark:text-purple-400"
-                                                    icon={<FileText size={24} />}
-                                                />
-                                                <StatCard
-                                                    label="ขาด"
-                                                    value={schoolTotal.absent}
-                                                    total={totalStudents}
-                                                    bgClass="bg-red-100 dark:bg-red-900/20"
-                                                    textClass="text-red-600 dark:text-red-400"
-                                                    icon={<X size={24} />}
-                                                />
-                                                <StatCard
-                                                    label="ราชการ/อื่นๆ"
-                                                    value={schoolTotal.officialTravel + schoolTotal.earlyReturn}
-                                                    total={totalStudents}
-                                                    bgClass="bg-indigo-100 dark:bg-indigo-900/20"
-                                                    textClass="text-indigo-600 dark:text-indigo-400"
-                                                    icon={<Award size={24} />}
-                                                />
-
-                                                {/* Summary Total Card */}
-                                                <div className="hidden md:flex flex-col justify-center items-center p-5 bg-gradient-to-br from-gray-50/50 to-gray-100/50 dark:from-[#1e1f21]/30 dark:to-[#1e1f21]/80 rounded-2xl border border-gray-100 dark:border-gray-800/60 text-center shadow-inner relative overflow-hidden group hover:border-gray-200 dark:hover:border-gray-700/50 transition-colors">
-                                                    <div className="absolute inset-0 bg-white/20 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                                                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1 relative z-10 uppercase tracking-wide">นักเรียนทั้งหมดที่เช็คชื่อ</p>
-                                                    <div className="text-5xl font-black text-slate-800 dark:text-slate-200 relative z-10 drop-shadow-sm my-1">{totalStudents}</div>
-                                                    <div className="text-[10px] text-gray-400 font-bold relative z-10 uppercase tracking-widest">คน</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()
-                            ) : (
-                                <div className="p-12 text-center bg-white dark:bg-[#2a2b2f] rounded-3xl border border-gray-100 dark:border-gray-800 shadow-sm">
-                                    <div className="w-16 h-16 bg-gray-50 dark:bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <CalendarX className="w-8 h-8 text-gray-400" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">ยังไม่มีข้อมูลการเช็คชื่อวันนี้</h3>
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 max-w-xs mx-auto">
-                                        เมื่อคุณครูเริ่มเช็คชื่อ ข้อมูลสถิติจะปรากฏที่นี่โดยอัตโนมัติ
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </CanAccess>
-
+                    )}
 
                     {/* Secondary Stats Section */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

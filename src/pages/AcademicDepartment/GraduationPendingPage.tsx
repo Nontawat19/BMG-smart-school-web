@@ -303,7 +303,7 @@ const GraduationPendingPage: React.FC = () => {
                     break;
                 case 'promote':
                 case 'promote_next':
-                    updateData = { ...updateData, status: 'กำลังศึกษา', studentStatus: 'กำลังศึกษา' };
+                    updateData = { ...updateData, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่' };
                     break;
                 case 'repeat':
                     updateData = { ...updateData, status: 'ซ้ำชั้น', studentStatus: 'ซ้ำชั้น', graduationDetails: { ...currentDetails, remark: 'ซ้ำชั้นเรียน' } };
@@ -429,13 +429,13 @@ const GraduationPendingPage: React.FC = () => {
                         updateData.status = 'ซ้ำชั้น';
                         updateData.studentStatus = 'ซ้ำชั้น';
                     } else if (action === 'promote_next_m1') {
-                        updateData.status = 'active';
-                        updateData.studentStatus = 'ปกติ';
+                        updateData.status = 'กำลังศึกษาอยู่';
+                        updateData.studentStatus = 'กำลังศึกษาอยู่';
                         updateData.classLevel = 'm1';
                         updateData.room = '1'; // Default to room 1
                     } else if (action === 'promote_next_m4') {
-                        updateData.status = 'active';
-                        updateData.studentStatus = 'ปกติ';
+                        updateData.status = 'กำลังศึกษาอยู่';
+                        updateData.studentStatus = 'กำลังศึกษาอยู่';
                         updateData.classLevel = 'm4';
                         updateData.room = '1'; // Default to room 1
                     } else if (action === 'exit_other') {

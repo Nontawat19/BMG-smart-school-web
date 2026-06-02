@@ -362,98 +362,101 @@ const ScoreConfigurationPage: React.FC = () => {
             <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e14] text-slate-600 dark:text-slate-300 font-sans flex flex-col">
                 
                 {/* Header Area */}
-                <div className="bg-white dark:bg-[#161a27] border-b border-slate-200 dark:border-white/5 p-4 sm:p-6 lg:pl-16 sticky top-[60px] z-40 backdrop-blur-md bg-white/90 dark:bg-[#161a27]/90">
-                    <div className="max-w-[1600px] mx-auto flex flex-row items-center justify-between gap-6">
-                        <div className="flex items-center gap-4">
+                <div className="bg-white/95 dark:bg-[#161a27]/95 border-b border-slate-200 dark:border-white/5 px-4 py-4 sm:px-6 lg:pl-16 sticky top-[60px] z-40 backdrop-blur-md shadow-sm">
+                    <div className="max-w-[1600px] mx-auto space-y-4">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="flex min-w-0 items-center gap-4">
                             <BackButton to="/academic/hub/evaluation" />
-                            <div className="flex items-center gap-3">
-                                <div className="p-3 bg-emerald-500/10 dark:bg-emerald-500/20 rounded-2xl shadow-lg border border-emerald-500/20">
-                                    <Settings size={24} className="text-emerald-500 dark:text-emerald-400" />
+                            <div className="flex min-w-0 items-center gap-3">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                    <Settings size={22} />
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">ตั้งค่าคะแนนเต็มรายวิชา</h1>
-                                        <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded border border-indigo-500/20">Config</span>
+                                <div className="min-w-[260px]">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h1 className="text-2xl font-black leading-tight tracking-tight text-slate-950 dark:text-white">ตั้งค่าคะแนนเต็มรายวิชา</h1>
+                                        <span className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">Config</span>
                                     </div>
-                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider mt-0.5">กำหนดสัดส่วนคะแนนเก็บ กลางภาค และปลายภาค</p>
+                                    <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">กำหนดสัดส่วนคะแนนเก็บ กลางภาค และปลายภาค</p>
                                 </div>
                             </div>
                         </div>
 
+                            <button 
+                                onClick={handleSave}
+                                disabled={isSaving || dirtyVisibleCourseCount === 0}
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-black text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-white/80 disabled:shadow-none dark:disabled:bg-emerald-500/20 dark:disabled:text-emerald-100/50"
+                            >
+                                <Save size={16} />
+                                {dirtyVisibleCourseCount > 0 ? `บันทึก ${dirtyVisibleCourseCount} วิชา` : 'บันทึกตั้งค่า'}
+                            </button>
+                        </div>
+
                         {/* Filters & Actions */}
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
-                                <span className="pl-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ชั้น</span>
+                        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-inner dark:border-white/10 dark:bg-[#1e2235]/70 md:grid-cols-2 xl:grid-cols-[180px_180px_minmax(280px,1fr)_250px]">
+                            <label className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-white/10 dark:bg-[#161a27] dark:focus-within:ring-indigo-500/20">
+                                <span className="w-10 shrink-0 text-[11px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500">ชั้น</span>
                                 <select 
                                     value={selectedLevel}
                                     onChange={(e) => setSelectedLevel(e.target.value)}
-                                    className="bg-transparent border-none text-[12px] font-bold text-slate-900 dark:text-white px-3 py-2 outline-none min-w-[110px]"
+                                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-slate-900 outline-none dark:text-white"
                                 >
                                     <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทุกชั้น</option>
                                     {availableClassOptions.map(([id, name]) => (
                                         <option key={id} value={id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{name}</option>
                                     ))}
                                 </select>
-                            </div>
+                            </label>
 
-                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
-                                <span className="pl-3 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">ภาค</span>
+                            <label className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-white/10 dark:bg-[#161a27] dark:focus-within:ring-indigo-500/20">
+                                <span className="w-10 shrink-0 text-[11px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500">ภาค</span>
                                 <select 
                                     value={selectedSemester}
                                     onChange={(e) => setSelectedSemester(e.target.value)}
-                                    className="bg-transparent border-none text-[12px] font-bold text-slate-900 dark:text-white px-3 py-2 outline-none min-w-[110px]"
+                                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-slate-900 outline-none dark:text-white"
                                 >
                                     <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทุกภาค</option>
                                     <option value="1" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ภาคเรียนที่ 1</option>
                                     <option value="2" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ภาคเรียนที่ 2</option>
                                     <option value="annual" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">รายปี</option>
                                 </select>
-                            </div>
+                            </label>
 
-                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] rounded-2xl border border-slate-200 dark:border-white/5 p-1 gap-1">
+                            <label className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-white/10 dark:bg-[#161a27] dark:focus-within:ring-indigo-500/20">
+                                <span className="shrink-0 text-[11px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500">กลุ่มสาระ</span>
                                 <select 
                                     value={selectedGroup}
                                     onChange={(e) => setSelectedGroup(e.target.value)}
-                                    className="bg-transparent border-none text-[12px] font-bold text-slate-900 dark:text-white px-4 py-2 outline-none min-w-[200px]"
+                                    className="min-w-0 flex-1 bg-transparent text-sm font-bold text-slate-900 outline-none dark:text-white"
                                 >
                                     <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">เลือกกลุ่มสาระการเรียนรู้</option>
                                     {subjectGroups.map(g => (
                                         <option key={g.id} value={g.name} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{g.name}</option>
                                     ))}
                                 </select>
-                            </div>
+                            </label>
 
-                            <div className="flex items-center bg-slate-100 dark:bg-[#1e2235] px-4 py-2 rounded-2xl border border-slate-200 dark:border-white/5 gap-4">
-                                <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="grid h-12 grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#161a27]">
+                                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "group" ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10'}`}>
                                     <input 
                                         type="radio" 
                                         name="scope" 
                                         checked={filterScope === "group"} 
                                         onChange={() => setFilterScope("group")}
-                                        className="w-4 h-4 accent-indigo-500"
+                                        className="sr-only"
                                     />
-                                    <span className={`text-[11px] font-bold ${filterScope === "group" ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-50 dark:group-hover:text-slate-300'}`}>เฉพาะกลุ่ม</span>
+                                    เฉพาะกลุ่ม
                                 </label>
-                                <label className="flex items-center gap-2 cursor-pointer group">
+                                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "all" ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10'}`}>
                                     <input 
                                         type="radio" 
                                         name="scope" 
                                         checked={filterScope === "all"} 
                                         onChange={() => setFilterScope("all")}
-                                        className="w-4 h-4 accent-indigo-500"
+                                        className="sr-only"
                                     />
-                                    <span className={`text-[11px] font-bold ${filterScope === "all" ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-50 dark:group-hover:text-slate-300'}`}>ทั้งหมด</span>
+                                    ทั้งหมด
                                 </label>
                             </div>
-
-                            <button 
-                                onClick={handleSave}
-                                disabled={isSaving || dirtyVisibleCourseCount === 0}
-                                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl font-black text-[12px] shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 whitespace-nowrap"
-                            >
-                                <Save size={16} />
-                                {dirtyVisibleCourseCount > 0 ? `บันทึก ${dirtyVisibleCourseCount} วิชา` : 'บันทึกตั้งค่า'}
-                            </button>
                         </div>
                     </div>
                 </div>

@@ -14,6 +14,7 @@ import { useTheme } from '@/ThemeContext';
 import { isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getEffectivePeriodEnd, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
+import { normalizeSubjectGroupValue } from '@/utils/subjectGroupUtils';
 
 interface TeacherAssignment {
     groupNumber: number;
@@ -507,7 +508,10 @@ const PeriodConstraintPage: React.FC = () => {
                 const activity = sgData.find((g: any) => g.name === 'กิจกรรมพัฒนาผู้เรียน');
                 const groupNames = sorted.map((g: any) => g.name);
                 if (activity) groupNames.push(activity.name);
-                setSubjectGroups(groupNames);
+                
+                // Deduplicate subject group names to prevent duplicate items in the filter dropdown
+                const uniqueGroupNames = Array.from(new Set(groupNames.filter(Boolean)));
+                setSubjectGroups(uniqueGroupNames);
 
                 // 4. Load Period Settings
                 const settingsRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
@@ -1067,7 +1071,27 @@ const PeriodConstraintPage: React.FC = () => {
             })();
 
             const matchesGroupValue = filterGroup === 'all' || String(asgn.assignment.groupNumber) === filterGroup;
-            const matchesSubjectGroup = filterSubjectGroup === 'all' || asgn.subjectGroup === filterSubjectGroup;
+            const matchesSubjectGroup = (() => {
+                if (filterSubjectGroup === 'all') return true;
+                if (!asgn.subjectGroup) return false;
+                
+                const cg = asgn.subjectGroup.trim().toLowerCase();
+                const fg = filterSubjectGroup.trim().toLowerCase();
+                if (cg === fg) return true;
+                
+                // Robust check for IS / Search / ค้นคว้า courses
+                if (cg.includes('ค้นคว้า') && fg.includes('ค้นคว้า')) return true;
+                
+                const normCg = normalizeSubjectGroupValue(cg);
+                const normFg = normalizeSubjectGroupValue(fg);
+                if (normCg === normFg) return true;
+                if (normCg.includes('ค้นคว้า') && normFg.includes('ค้นคว้า')) return true;
+                
+                // Fallback for code/name matching
+                if ((cg === 'i' || cg === 'is' || /^i\d/.test(cg)) && (fg.includes('ค้นคว้า') || fg === 'i' || fg === 'is')) return true;
+                
+                return false;
+            })();
             const matchesActivity = showActivityCourses ? true : isAcademicCourse(asgn);
 
             const matchesPhysicalRoom = (() => {

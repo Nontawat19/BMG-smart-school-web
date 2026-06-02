@@ -102,3 +102,91 @@ exports.updateUserPassword = functions.region("us-central1").https.onCall(async 
         );
     }
 });
+
+exports.sendLineMulticast = functions.region("us-central1").https.onCall(async (data, context) => {
+    const token = data?.lineChannelAccessToken;
+    const recipients = Array.isArray(data?.recipientUserIds) ? data.recipientUserIds : [];
+    const messages = Array.isArray(data?.messages) ? data.messages : [];
+
+    const uniqueRecipients = Array.from(new Set(
+        recipients
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+    ));
+
+    if (!token) {
+        throw new functions.https.HttpsError("invalid-argument", "Missing LINE channel access token");
+    }
+    if (uniqueRecipients.length === 0) {
+        throw new functions.https.HttpsError("invalid-argument", "Missing LINE recipients");
+    }
+    if (messages.length === 0) {
+        throw new functions.https.HttpsError("invalid-argument", "Missing LINE messages");
+    }
+
+    const response = await fetch("https://api.line.me/v2/bot/message/multicast", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+            to: uniqueRecipients,
+            messages,
+        }),
+    });
+
+    const responseText = await response.text();
+    if (!response.ok) {
+        console.error("LINE multicast failed:", response.status, responseText);
+        throw new functions.https.HttpsError(
+            "internal",
+            `LINE multicast failed: ${response.status} ${responseText}`
+        );
+    }
+
+    console.log(`LINE multicast sent successfully to ${uniqueRecipients.length} recipients.`);
+    return {
+        success: true,
+        recipientCount: uniqueRecipients.length,
+        lineResponse: responseText || null,
+    };
+});
+
+exports.cleanupFaceScanSnapshots = functions
+    .region("us-central1")
+    .pubsub.schedule("every 24 hours")
+    .timeZone("Asia/Bangkok")
+    .onRun(async () => {
+        const bucket = admin.storage().bucket();
+        const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+        let checkedCount = 0;
+        let deletedCount = 0;
+
+        const [files] = await bucket.getFiles({ prefix: "school-settings/" });
+        const snapshotFiles = files.filter((file) =>
+            file.name.includes("/face-scan-snapshots/")
+        );
+
+        await Promise.all(snapshotFiles.map(async (file) => {
+            checkedCount += 1;
+            const [metadata] = await file.getMetadata();
+            const createdAt = metadata.timeCreated
+                ? new Date(metadata.timeCreated).getTime()
+                : 0;
+
+            if (!createdAt || createdAt > cutoffMs) return;
+
+            try {
+                await file.delete();
+                deletedCount += 1;
+            } catch (error) {
+                if (error?.code !== 404) {
+                    console.error("Failed to delete old face scan snapshot:", file.name, error);
+                }
+            }
+        }));
+
+        console.log(`Face scan snapshot cleanup checked ${checkedCount} files, deleted ${deletedCount} files.`);
+        return { checkedCount, deletedCount };
+    });

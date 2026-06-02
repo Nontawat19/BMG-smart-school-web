@@ -14,6 +14,8 @@ interface SearchPanelProps {
   teacherCheckoutTime: string;
   canScanStudents?: boolean;
   canScanTeachers?: boolean;
+  hideInput?: boolean;
+  className?: string;
 }
 
 const SearchPanel: React.FC<SearchPanelProps> = ({
@@ -30,6 +32,8 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
   teacherCheckoutTime,
   canScanStudents = true,
   canScanTeachers = true,
+  hideInput = false,
+  className = "lg:col-span-3",
 }) => {
   const todayStr = getTodayString();
   const todayEvent = calendarEvents[todayStr];
@@ -40,25 +44,29 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
     (isWeekend && todayEvent?.type !== 'schoolDay');
 
   return (
-    <div className="lg:col-span-3 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none">
+    <div className={`${className} bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none`}>
       <div className="flex-grow flex flex-col justify-evenly gap-8">
-        <form onSubmit={handleSearch}>
-          <input
-            type="text"
-            value={searchId}
-            onChange={(e) => setSearchId(e.target.value)}
-            placeholder="แตะบัตร RFID หรือกรอกรหัสเพื่อลงเวลา"
-            className="w-full bg-[#f0f2f6] dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-2xl px-8 py-5 text-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-xl"
-            autoFocus
-          />
-          {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-        </form>
+        {!hideInput && (
+          <form onSubmit={handleSearch}>
+            <input
+              type="text"
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              placeholder="แตะบัตร RFID หรือกรอกรหัสเพื่อลงเวลา"
+              className="w-full bg-[#f0f2f6] dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-2xl px-8 py-5 text-2xl text-gray-900 dark:text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-xl"
+              autoFocus
+            />
+            {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+          </form>
+        )}
 
-        <div className="text-center">
-          <p className="text-6xl 2xl:text-7xl font-black text-gray-900 dark:text-white tracking-tight">{currentTime}</p>
-        </div>
+        {!hideInput && (
+          <div className="text-center">
+            <p className="text-6xl 2xl:text-7xl font-black text-gray-900 dark:text-white tracking-tight">{currentTime}</p>
+          </div>
+        )}
 
-        {!isHoliday && (
+        {!hideInput && !isHoliday && (
           <div className={`grid gap-10 pt-8 border-t border-gray-100 dark:border-gray-700 ${canScanStudents && canScanTeachers ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 text-center'}`}>
             {canScanStudents && (
               <div className="text-center">

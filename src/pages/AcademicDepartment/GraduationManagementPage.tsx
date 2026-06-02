@@ -165,7 +165,7 @@ const GraduationManagementPage: React.FC = () => {
                 lastName: doc.data().lastName || '',
                 classLevel: doc.data().classLevel || '',
                 roomNumber: doc.data().room || doc.data().roomNumber || '',
-                status: doc.data().status || doc.data().studentStatus || 'active',
+                status: doc.data().status || doc.data().studentStatus || 'กำลังศึกษาอยู่',
                 graduationDetails: doc.data().graduationDetails || {}
             })).filter(s => {
                 const sStatus = String(s.status).toLowerCase();
@@ -315,7 +315,7 @@ const GraduationManagementPage: React.FC = () => {
 
             let updateData: any = { updatedAt: new Date().toISOString() };
             switch (action) {
-                case 'promote': updateData = { ...updateData, classLevel: nextClass, status: 'เรียนอยู่', studentStatus: 'เรียนอยู่' }; break;
+                case 'promote': updateData = { ...updateData, classLevel: nextClass, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่' }; break;
                 case 'repeat': updateData = { ...updateData, status: 'ซ้ำชั้น', studentStatus: 'ซ้ำชั้น' }; break;
                 case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'สำเร็จการศึกษา (รอดำเนินการ)', date: new Date().toISOString().split('T')[0] } }; break;
                 case 'pending_grad': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'ติด 0, ร, มส' } }; break;
@@ -356,7 +356,7 @@ const GraduationManagementPage: React.FC = () => {
 
                 let updateData: any = { updatedAt: new Date().toISOString() };
                 switch (batchActionType) {
-                    case 'promote': updateData = { ...updateData, classLevel: nextClass, room: batchDetails.nextRoom || s.roomNumber, status: 'เรียนอยู่' }; break;
+                    case 'promote': updateData = { ...updateData, classLevel: nextClass, room: batchDetails.nextRoom || s.roomNumber, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่' }; break;
                     case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', graduationDetails: { date: batchDetails.gradDate } }; break;
                     case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก' }; break;
                 }

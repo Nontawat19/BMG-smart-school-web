@@ -119,18 +119,22 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
           const leaveData = leaveDoc?.data();
           const travelData = travelDoc?.data();
           const hasAttendance = Boolean(attendance);
+          const isPending = (data: any) => data?.status === "pending";
+
           const category = travelData
-            ? "ไปราชการ"
+            ? `ไปราชการ${isPending(travelData) ? " (รออนุมัติ)" : ""}`
             : leaveData
-              ? (leaveData.leaveType || "ลา")
+              ? `${leaveData.leaveType || "ลา"}${isPending(leaveData) ? " (รออนุมัติ)" : ""}`
               : getAttendanceCategory(attendance?.status, hasAttendance);
+
           const note = travelData
-            ? (travelData.reason || "ไปราชการ")
+            ? `${isPending(travelData) ? "(รออนุมัติ) " : ""}ไปราชการ: ${travelData.reason || travelData.subject || "ไปราชการ"}${travelData.location ? ` [สถานที่: ${travelData.location}]` : ""}`
             : leaveData
-              ? (leaveData.reason || leaveData.leaveType || "ลา")
+              ? `${isPending(leaveData) ? "(รออนุมัติ) " : ""}[${leaveData.leaveType || "ลา"}] ${leaveData.reason || "ไม่ได้ระบุเหตุผล"}`
               : hasAttendance
                 ? (attendance?.metadata?.description || attendance?.note || "ปกติ")
                 : "เช็คขาดโดยระบบ";
+
 
           return {
             id: teacher.id,
@@ -144,7 +148,29 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
             lateText: attendance?.status === "สาย" || attendance?.status === "Late" ? "สาย" : "-",
             category,
             note,
-            type: hasAttendance ? (attendance?.scanType || attendance?.checkinType || attendance?.type || "บัตร") : "-",
+            type: (() => {
+              if (leaveData || travelData) return "-";
+              if (!hasAttendance) return "-";
+              const inTime = formatTime(attendance?.checkinTime || attendance?.time);
+              const outTime = formatTime(attendance?.checkoutTime);
+              if (inTime === "-" && outTime === "-") return "-";
+
+              const rawType = (attendance?.scanType || attendance?.checkinType || attendance?.type || "").toString().toLowerCase().trim();
+              if (rawType.includes("face") || rawType.includes("ใบหน้า") || rawType.includes("หน้า")) {
+                return "สแกนใบหน้า";
+              }
+              if (rawType.includes("manual") || rawType.includes("พิมพ์") || rawType.includes("key") || rawType === "พิมพ์รหัสเอง") {
+                return "พิมพ์รหัสเอง";
+              }
+              if (rawType.includes("rfid") || rawType.includes("บัตร") || rawType.includes("card") || rawType === "สแกนบัตร") {
+                return "สแกนบัตร";
+              }
+              // Deduce based on system metadata for legacy data
+              if (attendance?.metadata?.isGateCheckin) {
+                return "สแกนบัตร";
+              }
+              return "สแกนใบหน้า"; // Default fallback (Gateway Face Scan)
+            })(),
           };
         }));
 
@@ -274,8 +300,8 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
               </label>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 dark:border-slate-700">
-              <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+            <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
+              <table className="w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-100 text-xs font-bold text-slate-700 dark:bg-[#323338] dark:text-slate-300">
                   <tr>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">
@@ -285,8 +311,6 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
                       </label>
                     </th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 text-center dark:border-slate-700">#</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">โรงเรียน</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">วันที่</th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">ชื่อ-นามสกุล</th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">ตำแหน่ง</th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">เวลาบันทึกเข้า</th>
@@ -301,14 +325,14 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
                   {loading ? (
                     Array.from({ length: 8 }).map((_, index) => (
                       <tr key={index}>
-                        <td colSpan={12} className="px-3 py-2">
+                        <td colSpan={10} className="px-3 py-2">
                           <SkeletonLoader height="24px" />
                         </td>
                       </tr>
                     ))
                   ) : filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
                         ไม่พบข้อมูลการลงเวลาตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
@@ -319,15 +343,13 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
                           <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleRow(row.id)} />
                         </td>
                         <td className="border-r border-slate-200 px-3 py-2 text-center font-bold dark:border-slate-700">{index + 1}</td>
-                        <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.schoolName}</td>
-                        <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.date}</td>
                         <td className="border-r border-slate-200 px-3 py-2 font-semibold whitespace-nowrap dark:border-slate-700">{row.fullName}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.position}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.checkInTime}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.checkOutTime}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.lateText}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.category}</td>
-                        <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.note}</td>
+                        <td className="border-r border-slate-200 px-3 py-2 dark:border-slate-700 min-w-[200px] max-w-[400px] break-words">{row.note}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{row.type}</td>
                       </tr>
                     ))

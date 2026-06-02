@@ -347,7 +347,7 @@ const AddUserPage = () => {
                         studentId: "", // Default empty
                         classLevel: "",
                         room: "",
-                        studentStatus: "ปกติ",
+                        studentStatus: "กำลังศึกษาอยู่",
                         gender: "",
                         createdAt: serverTimestamp(),
                     };

@@ -1,4 +1,8 @@
-export const ACTIVE_STUDENT_STATUSES = ['กำลังศึกษา', 'เรียนอยู่', 'พักการเรียน', 'แขวนลอย', 'active', 'ปกติ'];
+export const ACTIVE_STUDENT_STATUS = 'กำลังศึกษาอยู่';
+
+export const ACTIVE_STUDENT_STATUS_ALIASES = ['กำลังศึกษา', 'กำลังศึกษาอยู่', 'เรียนอยู่', 'active', 'ปกติ'];
+
+export const ACTIVE_STUDENT_STATUSES = [ACTIVE_STUDENT_STATUS];
 
 export const ARCHIVED_STUDENT_STATUSES = [
   'ย้าย',
@@ -16,7 +20,15 @@ export const ARCHIVED_STUDENT_STATUSES = [
 
 export const EXIT_STUDENT_STATUSES = ['ย้าย', 'ลาออก', 'จำหน่าย', 'จำหน่ายชื่อออก'];
 
-export const getStudentStatus = (student: any) => String(student?.status || student?.studentStatus || 'กำลังศึกษา').trim();
+export const normalizeStudentStatus = (status?: string) => {
+  const normalized = String(status || '').trim();
+  const lower = normalized.toLowerCase();
+  return ACTIVE_STUDENT_STATUS_ALIASES.some(s => s.toLowerCase() === lower)
+    ? ACTIVE_STUDENT_STATUS
+    : normalized;
+};
+
+export const getStudentStatus = (student: any) => normalizeStudentStatus(student?.status || student?.studentStatus || ACTIVE_STUDENT_STATUS);
 
 export const isArchivedStudentStatus = (status?: string) => {
   const normalized = String(status || '').trim().toLowerCase();
@@ -29,13 +41,14 @@ export const isExitStudentStatus = (status?: string) => {
 };
 
 export const isActiveStudentStatus = (status?: string) => {
-  const normalized = String(status || '').trim().toLowerCase();
-  return ACTIVE_STUDENT_STATUSES.some(s => s.toLowerCase() === normalized) && !isArchivedStudentStatus(status);
+  return normalizeStudentStatus(status) === ACTIVE_STUDENT_STATUS && !isArchivedStudentStatus(status);
 };
 
 export const isArchivedStudent = (student: any) => isArchivedStudentStatus(getStudentStatus(student));
 
 export const isCurrentStudent = (student: any) => !isArchivedStudent(student);
+
+export const isStudyingStudent = (student: any) => getStudentStatus(student) === ACTIVE_STUDENT_STATUS;
 
 export const buildDuplicateStudentHtml = (student: any) => {
   const status = getStudentStatus(student);

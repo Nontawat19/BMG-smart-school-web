@@ -597,7 +597,7 @@ const ClubReportsPage: React.FC = () => {
           getStudentCode(student),
           getStudentName(student),
           membership?.clubName || "-",
-          student.status === "inactive" ? "พ้นสภาพ" : "กำลังศึกษา",
+          student.status === "inactive" ? "พ้นสภาพ" : "กำลังศึกษาอยู่",
           statusLabel[membership?.status || ""] || "-",
           statusLabel[result || "pending"] || "รอตรวจ",
         ];
@@ -808,7 +808,7 @@ const ClubReportsPage: React.FC = () => {
               <Td>{getStudentCode(student)}</Td>
               <Td>{getStudentName(student)}</Td>
               <Td>{membership?.clubName || "-"}</Td>
-              <Td>{student.status === "inactive" ? "พ้นสภาพ" : "กำลังศึกษา"}</Td>
+              <Td>{student.status === "inactive" ? "พ้นสภาพ" : "กำลังศึกษาอยู่"}</Td>
               <Td>{statusLabel[membership?.status || ""] || "-"}</Td>
               <Td>{statusLabel[result || "pending"] || "รอตรวจ"}</Td>
             </tr>

@@ -61,23 +61,23 @@ const pdfStyles = StyleSheet.create({
     fontWeight: "bold"
   },
   mainTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "bold",
     textAlign: "center",
-    marginTop: 8,
-    marginBottom: 12
+    marginTop: 4,
+    marginBottom: 8
   },
   profileSection: {
     flexDirection: "row",
-    marginBottom: 15,
+    marginBottom: 10,
     alignItems: "flex-start"
   },
   profilePhotoBox: {
-    width: 90,
-    height: 110,
+    width: 75,
+    height: 90,
     borderWidth: 1,
     borderColor: "#000",
-    marginRight: 20,
+    marginRight: 15,
     backgroundColor: "#fff"
   },
   profilePhoto: {
@@ -92,7 +92,7 @@ const pdfStyles = StyleSheet.create({
   },
   profileRow: {
     flexDirection: "row",
-    marginBottom: 5,
+    marginBottom: 4,
     fontSize: 13,
     lineHeight: 1.2
   },
@@ -104,27 +104,43 @@ const pdfStyles = StyleSheet.create({
     flex: 1
   },
   sectionTitleCenter: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 6,
-    marginTop: 8
+    marginBottom: 4,
+    marginTop: 4
   },
   sectionTitleLeft: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "bold",
     textAlign: "left",
-    marginBottom: 6,
-    marginTop: 12
+    marginBottom: 4,
+    marginTop: 8
   },
   table: {
     borderWidth: 1,
     borderColor: "#000",
     width: "100%",
-    marginBottom: 8
+    marginBottom: 6
   },
   row: {
     flexDirection: "row"
+  },
+  tableHeaderRow: {
+    flexDirection: "row",
+    height: 24
+  },
+  tableDataRow: {
+    flexDirection: "row",
+    height: 21
+  },
+  firstPageTableHeaderRow: {
+    flexDirection: "row",
+    height: 24
+  },
+  firstPageTableDataRow: {
+    flexDirection: "row",
+    height: 21
   },
   th: {
     borderRightWidth: 1,
@@ -133,7 +149,7 @@ const pdfStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#f2f2f2",
-    paddingVertical: 4
+    paddingVertical: 3
   },
   td: {
     borderRightWidth: 1,
@@ -141,7 +157,7 @@ const pdfStyles = StyleSheet.create({
     borderColor: "#000",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 3
+    paddingVertical: 2
   },
   lastCol: {
     borderRightWidth: 0
@@ -180,6 +196,8 @@ const pdfStyles = StyleSheet.create({
   }
 });
 
+const PDF_RECORDS_PER_PAGE = 25;
+
 interface Teacher {
   id: string;
   teacherId?: string;
@@ -190,6 +208,9 @@ interface Teacher {
   position?: string;
   role?: string | string[];
   fullName: string;
+  learningArea?: string;
+  subjectGroup?: string;
+  department?: string;
 }
 
 const getTeacherPosition = (teacherData: any, userData?: any) => {
@@ -265,29 +286,12 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
   reportPrintedAt,
   academicYearTerm
 }) => {
-  // Page chunking setup
-  // First page can hold 10 rows (due to Profile Card)
-  // Subsequent pages can hold 18 rows
-  const chunks: DailyRecord[][] = [];
-  let temp: DailyRecord[] = [];
-  let isFirstPage = true;
-  let rowsLimit = 10;
-
-  for (let i = 0; i < records.length; i++) {
-    temp.push(records[i]);
-    if (temp.length === rowsLimit) {
-      chunks.push(temp);
-      temp = [];
-      isFirstPage = false;
-      rowsLimit = 18;
-    }
-  }
-  if (temp.length > 0) {
-    chunks.push(temp);
-  }
-  if (chunks.length === 0) {
-    chunks.push([]);
-  }
+  const chunks: DailyRecord[][] = records.length > 0
+    ? Array.from(
+      { length: Math.ceil(records.length / PDF_RECORDS_PER_PAGE) },
+      (_, index) => records.slice(index * PDF_RECORDS_PER_PAGE, (index + 1) * PDF_RECORDS_PER_PAGE)
+    )
+    : [[]];
 
   const getStatusText = (status: string, note?: string) => {
     switch (status) {
@@ -357,7 +361,7 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
           {/* Table 1: Detailed Ledger Table */}
           <View style={pdfStyles.table}>
             {/* Table 1 Headers */}
-            <View style={pdfStyles.row}>
+            <View style={pageIndex === 0 ? pdfStyles.firstPageTableHeaderRow : pdfStyles.tableHeaderRow} wrap={false}>
               <View style={[pdfStyles.th, { width: "8%" }]}><Text style={pdfStyles.headerText}>ลำดับที่</Text></View>
               <View style={[pdfStyles.th, { width: "27%" }]}><Text style={pdfStyles.headerText}>วันที่</Text></View>
               <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>เวลามา</Text></View>
@@ -368,10 +372,10 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
 
             {/* Table 1 Rows */}
             {chunk.map((rec, rowIndex) => {
-              const recordIndex = pageIndex === 0 ? rowIndex + 1 : 10 + (pageIndex - 1) * 18 + rowIndex + 1;
+              const recordIndex = pageIndex * PDF_RECORDS_PER_PAGE + rowIndex + 1;
               const isLastRow = rowIndex === chunk.length - 1;
               return (
-                <View key={rec.date} style={pdfStyles.row}>
+                <View key={rec.date} style={pageIndex === 0 ? pdfStyles.firstPageTableDataRow : pdfStyles.tableDataRow} wrap={false}>
                   <View style={[pdfStyles.td, { width: "8%" }, isLastRow ? pdfStyles.lastRowCell : {}]}>
                     <Text style={pdfStyles.cellText}>{recordIndex}</Text>
                   </View>
@@ -479,13 +483,13 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 20;
 
   // Format Helper for React-Select Option
   const teacherOptions = useMemo(() => {
     return teachers.map((teacher) => ({
       value: teacher.id,
-      label: teacher.fullName,
+      label: `[${teacher.teacherId || "ไม่มีรหัส"}] ${teacher.fullName}`,
       teacher
     }));
   }, [teachers]);
@@ -525,12 +529,27 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
             lastName: data.lastName || userData?.lastName || "",
             profileImageUrl: data.profileImageUrl || userData?.profileImageUrl || userData?.profileUrl || "",
             role: userData?.role || data.role || [],
-            position: getTeacherPosition(data, userData)
+            position: getTeacherPosition(data, userData),
+            learningArea: data.learningArea || data.subjectGroup || userData?.learningArea || userData?.subjectGroup || "",
+            subjectGroup: data.subjectGroup || data.learningArea || userData?.subjectGroup || userData?.learningArea || "",
+            department: data.department || userData?.department || ""
           } as Teacher;
         }));
 
-        // Sort alphabetically by first name
-        list.sort((a, b) => a.firstName.localeCompare(b.firstName, "th"));
+        // Sort by subject group (กลุ่มสาระ - learningArea/subjectGroup), then alphabetically by first name
+        list.sort((a, b) => {
+          const groupA = a.learningArea || a.subjectGroup || "";
+          const groupB = b.learningArea || b.subjectGroup || "";
+
+          // Put empty groups at the bottom
+          if (groupA === "" && groupB !== "") return 1;
+          if (groupA !== "" && groupB === "") return -1;
+
+          const groupCompare = groupA.localeCompare(groupB, "th");
+          if (groupCompare !== 0) return groupCompare;
+          return a.firstName.localeCompare(b.firstName, "th");
+        });
+
         setTeachers(list);
 
         // Pre-select first teacher if available

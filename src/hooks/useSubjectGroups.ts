@@ -25,8 +25,19 @@ export function useSubjectGroups(_schoolId?: string) {
     const groups = useSelector((state: RootState) => state.subjectGroups.groups);
     const status = useSelector((state: RootState) => state.subjectGroups.status);
 
+    // ป้องกันกลุ่มสาระซ้ำกันทางหน้าจอ โดยดึงรายการที่เป็น unique ตามชื่อกลุ่มสาระ (name)
+    const seenNames = new Set<string>();
+    const uniqueGroups = groups.filter(g => {
+        const trimmedName = (g.name || "").trim();
+        if (!trimmedName || seenNames.has(trimmedName)) {
+            return false;
+        }
+        seenNames.add(trimmedName);
+        return true;
+    });
+
     // แปลง SubjectGroup → SubjectGroupOption (backward compatible)
-    const subjectGroups: SubjectGroupOption[] = groups.map(g => ({
+    const subjectGroups: SubjectGroupOption[] = uniqueGroups.map(g => ({
         id: g.id,
         name: g.name,
         code: g.code,

@@ -1,4 +1,12 @@
 import { FoundUser } from "./types";
+import { getFunctions, httpsCallable } from "firebase/functions";
+
+const isLineUserId = (value: string) => /^U[0-9a-f]{32}$/i.test(value.trim());
+const maskLineRecipient = (value: string) => {
+    const text = value.trim();
+    if (text.length <= 10) return text;
+    return `${text.slice(0, 4)}...${text.slice(-4)}`;
+};
 
 /**
  * ฟังก์ชันสำหรับส่งแจ้งเตือน LINE OA เมื่อนักเรียนลงเวลาเข้า/ออก
@@ -78,6 +86,36 @@ export const sendLineAttendanceNotification = async (
         const bubbleIcon = isLate ? "!" : "✓";
         const bubbleTextColor = isLate ? "#92400e" : "#166534";
         const bubbleMessage = isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ";
+        const faceScanImageUrl = user.scanMethod === "สแกนใบหน้า" &&
+            user.faceScanImageUrl &&
+            user.faceScanImageUrl.startsWith("https://")
+            ? user.faceScanImageUrl
+            : "";
+        const faceScanEvidenceSection = faceScanImageUrl ? {
+            type: "box",
+            layout: "vertical",
+            margin: "xl",
+            spacing: "sm",
+            contents: [
+                { type: "text", text: "ภาพยืนยันจากการสแกนใบหน้า", weight: "bold", size: "sm", color: "#333333" },
+                {
+                    type: "image",
+                    url: faceScanImageUrl,
+                    size: "full",
+                    aspectRatio: "16:9",
+                    aspectMode: "cover",
+                    backgroundColor: "#f3f4f6"
+                },
+                {
+                    type: "text",
+                    text: user.faceConfidence !== undefined
+                        ? `ความมั่นใจในการยืนยันตัวตน ${Math.round(user.faceConfidence * 100)}%`
+                        : "บันทึกจากระบบสแกนใบหน้า",
+                    size: "xs",
+                    color: "#777777"
+                }
+            ]
+        } : null;
 
         // สร้างชื่อแสดงผลสำหรับ grade (เหมือน Gateway: ม.3/4)
         let gradeDisplay = user.grade || "-";
@@ -310,100 +348,44 @@ export const sendLineAttendanceNotification = async (
                             ]
                         },
 
-                        // --- ส่วนที่ 4: ข่าวสารจากโรงเรียน ---
-                        {
-                            type: "box",
-                            layout: "vertical",
-                            margin: "xl",
-                            contents: [
-                                { type: "text", text: "ข่าวสารจากโรงเรียน", weight: "bold", size: "sm", color: "#333333" },
-                                {
-                                    type: "box",
-                                    layout: "vertical",
-                                    margin: "md",
-                                    spacing: "sm",
-                                    contents: [
-                                        {
-                                            type: "box", layout: "horizontal", spacing: "md", alignItems: "center", contents: [
-                                                { type: "text", text: "📄", size: "md", flex: 0 },
-                                                { type: "text", text: "ใบแจ้งหนี้ค่าเทอม", size: "sm", color: "#444444", flex: 1 },
-                                                { type: "text", text: "📑", size: "md", flex: 0, color: "#aaaaaa" }
-                                            ]
-                                        },
-                                        {
-                                            type: "box", layout: "horizontal", spacing: "md", alignItems: "center", contents: [
-                                                { type: "text", text: "📅", size: "md", flex: 0 },
-                                                { type: "text", text: "ประกาศวันหยุดราชการ", size: "sm", color: "#444444", flex: 1 },
-                                                { type: "text", text: "📑", size: "md", flex: 0, color: "#aaaaaa" }
-                                            ]
-                                        },
-                                        {
-                                            type: "box", layout: "horizontal", spacing: "md", alignItems: "center", contents: [
-                                                { type: "text", text: "🖋️", size: "md", flex: 0 },
-                                                { type: "text", text: "ใบอนุญาตไปทัศนศึกษา", size: "sm", color: "#444444", flex: 1 },
-                                                { type: "text", text: "เซ็นรับรองออนไลน์", size: "xs", color: "#1DB446", weight: "bold", flex: 0 }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
+                        ...(faceScanEvidenceSection ? [faceScanEvidenceSection] : [])
                     ]
                 }
             }
         };
-
-        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
         if (!parentUserIds || parentUserIds.length === 0) {
             console.warn("⚠️ ไม่มีรายชื่อผู้รับ LINE User ID (ผู้ปกครอง/ครูประจำชั้น) สำหรับนักเรียนคนนี้ - ยกเลิกการส่งแบบ Broadcast เพื่อความปลอดภัย");
             return;
         }
 
-        // กรองเอาเฉพาะ User ID ที่มีค่าจริง และลบรายการซ้ำออก
-        const uniqueRecipients = Array.from(new Set(parentUserIds.filter(id => id && id.trim() !== "")));
+        const rawRecipients = Array.from(new Set(parentUserIds.map(id => id?.trim()).filter(Boolean))) as string[];
+        const invalidRecipients = rawRecipients.filter(id => !isLineUserId(id));
+        if (invalidRecipients.length > 0) {
+            console.warn("⚠️ พบ LINE User ID ไม่ถูกต้อง ระบบจะไม่ส่งให้รายการเหล่านี้:", invalidRecipients.map(maskLineRecipient));
+        }
+
+        // กรองเอาเฉพาะ LINE User ID จริงที่ขึ้นต้นด้วย U และลบรายการซ้ำออก
+        const uniqueRecipients = rawRecipients.filter(isLineUserId);
 
         if (uniqueRecipients.length === 0) {
             console.warn("⚠️ ไม่มีรายชื่อผู้รับที่ถูกต้องหลังจากกรองข้อมูล - ยกเลิกการส่ง");
             return;
         }
 
-        const targetUrl = "https://api.line.me/v2/bot/message/multicast";
-        const bodyPayload = {
-            to: uniqueRecipients,
-            messages: [flexMessage]
-        };
         console.log(`🎯 ส่งข้อความแบบ Dashboard Multicast ไปยังผู้รับที่ได้รับอนุญาตทั้งหมด ${uniqueRecipients.length} ท่าน`);
+        console.log("📨 กำลังส่ง LINE ผ่าน Cloud Function sendLineMulticast...");
 
-        const url = isLocalhost ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : targetUrl;
-
-        // ใช้ AbortController สำหรับ timeout (เหมือน Gateway timeout=15)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${lineChannelAccessToken}`
-            },
-            body: JSON.stringify(bodyPayload),
-            signal: controller.signal
+        const functions = getFunctions(undefined, "us-central1");
+        const sendLineMulticast = httpsCallable(functions, "sendLineMulticast");
+        const result = await sendLineMulticast({
+            lineChannelAccessToken,
+            recipientUserIds: uniqueRecipients,
+            messages: [flexMessage],
         });
 
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-            console.log(`✅ Dashboard LINE Notification sent successfully for ${user.name}`);
-        } else {
-            const errorText = await response.text();
-            console.error(`❌ Failed to send Dashboard LINE notification: ${response.status} - ${errorText}`);
-        }
+        console.log(`✅ Dashboard LINE Notification sent successfully for ${user.name}`, result.data);
     } catch (error: any) {
-        if (error.name === 'AbortError') {
-            console.error("❌ LINE notification timed out after 15 seconds");
-        } else {
-            console.error("❌ Error in sendLineAttendanceNotification:", error);
-        }
+        console.error("❌ Error in sendLineAttendanceNotification:", error);
     }
 };

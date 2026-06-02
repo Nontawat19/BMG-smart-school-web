@@ -111,7 +111,7 @@ const HomeVisitSummary: React.FC = () => {
                 const studentsSnap = await getDocs(collection(firestore, "school-settings", sid, "students"));
                 const allStudents = studentsSnap.docs
                     .map(d => ({ id: d.id, ...d.data() } as Student))
-                    .filter(student => getStudentStatus(student) === "กำลังศึกษา");
+                    .filter(student => getStudentStatus(student) === "กำลังศึกษาอยู่");
                 
                 let studentsList: Student[] = [];
                 if (!isPower) {

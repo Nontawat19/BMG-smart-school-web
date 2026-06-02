@@ -19,78 +19,120 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
     status = 'success'
 }) => {
     const lastProcessedTimestamp = useRef<number>(0);
+    const speechQueue = useRef<{ message: string; timestamp: number }[]>([]);
+    const isSpeaking = useRef<boolean>(false);
+
+    const processQueue = () => {
+        if (!enabled) {
+            speechQueue.current = [];
+            isSpeaking.current = false;
+            return;
+        }
+
+        if (isSpeaking.current || speechQueue.current.length === 0) {
+            return;
+        }
+
+        const nextSpeech = speechQueue.current.shift();
+        if (!nextSpeech) return;
+
+        isSpeaking.current = true;
+
+        const utterance = new SpeechSynthesisUtterance(nextSpeech.message);
+        utterance.lang = 'th-TH';
+        utterance.rate = 0.95; // Slightly slower for clear name pronunciation
+        utterance.pitch = 1.0;
+
+        // Get voices
+        const voices = window.speechSynthesis.getVoices();
+        const thaiVoices = voices.filter(v => v.lang.startsWith('th'));
+
+        let selectedVoice = null;
+        if (selectedVoiceURI) {
+            selectedVoice = voices.find(v => v.voiceURI === selectedVoiceURI);
+        }
+
+        const femaleKeywords = ['kanru', 'pattara', 'kanya', 'narisa', 'female', 'เคนรุ', 'ภัทรา', 'กัญญา', 'นริศา'];
+
+        if (!selectedVoice) {
+            selectedVoice = thaiVoices.find(v => {
+                const name = v.name.toLowerCase();
+                return femaleKeywords.some(kw => name.includes(kw)) && !name.includes('male');
+            });
+        }
+
+        if (!selectedVoice) {
+            selectedVoice = thaiVoices.find(v => v.name.toLowerCase().includes('google'));
+        }
+
+        if (!selectedVoice) {
+            selectedVoice = thaiVoices[0];
+        }
+
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+
+        utterance.onend = () => {
+            isSpeaking.current = false;
+            // Short delay between speech announcements for natural spacing
+            setTimeout(() => {
+                processQueue();
+            }, 300);
+        };
+
+        utterance.onerror = (e) => {
+            console.error("SpeechSynthesisUtterance error:", e);
+            isSpeaking.current = false;
+            processQueue();
+        };
+
+        window.speechSynthesis.speak(utterance);
+    };
 
     useEffect(() => {
-        if (!enabled || timestamp === lastProcessedTimestamp.current) return;
+        if (!enabled || timestamp === 0 || timestamp === lastProcessedTimestamp.current) return;
 
         lastProcessedTimestamp.current = timestamp;
 
-        const speak = () => {
-            // ยกเลิกการพูดเดิมที่ค้างอยู่ (ถ้ามี)
-            window.speechSynthesis.cancel();
+        let message = "";
+        if (status === 'error') {
+            message = "ไม่ผ่านค่ะ";
+        } else {
+            const nameToSpeak = user ? user.name : '';
+            message = nameToSpeak ? `${nameToSpeak} ผ่านค่ะ` : "ผ่านค่ะ";
+        }
 
-            let message = "";
+        // Add to queue
+        speechQueue.current.push({ message, timestamp });
+        
+        // Try processing queue
+        processQueue();
+    }, [user, actionType, timestamp, enabled, status]);
 
-            if (status === 'error') {
-                message = "ไม่ผ่านค่ะ";
-            } else {
-                message = "ผ่านค่ะ";
-            }
+    // Handle initial voices loading
+    useEffect(() => {
+        if (!enabled) return;
 
-            const utterance = new SpeechSynthesisUtterance(message);
-            utterance.lang = 'th-TH';
-            utterance.rate = 1.0; // โทนปกติ ทางการ
-            utterance.pitch = 1.0; // โทนปกติ ทางการ
-
-            // ดึงรายชื่อเสียงทั้งหมด
-            const voices = window.speechSynthesis.getVoices();
-            const thaiVoices = voices.filter(v => v.lang.startsWith('th'));
-
-            // 1. ลองหาเสียงตาม URI ที่ส่งมา (ถ้ามี)
-            let selectedVoice = null;
-            if (selectedVoiceURI) {
-                selectedVoice = voices.find(v => v.voiceURI === selectedVoiceURI);
-            }
-
-            // Keyword ที่ระบุว่าเป็นเสียงผู้หญิง
-            const femaleKeywords = ['kanru', 'pattara', 'kanya', 'narisa', 'female', 'เคนรุ', 'ภัทรา', 'กัญญา', 'นริศา'];
-
-            // 2. ถ้าไม่มีหรือหาไม่เจอตาม URI ให้ลองหาเสียงผู้หญิงจากคีย์เวิร์ด
-            if (!selectedVoice) {
-                selectedVoice = thaiVoices.find(v => {
-                    const name = v.name.toLowerCase();
-                    return femaleKeywords.some(kw => name.includes(kw)) && !name.includes('male');
-                });
-            }
-
-            // 3. ถ้าไม่เจอ ลองหาเสียง Google (มักเป็นผู้หญิง)
-            if (!selectedVoice) {
-                selectedVoice = thaiVoices.find(v => v.name.toLowerCase().includes('google'));
-            }
-
-            // 4. สุดท้ายเลือกเสียงแรกที่มี
-            if (!selectedVoice) {
-                selectedVoice = thaiVoices[0];
-            }
-
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-            }
-
-            window.speechSynthesis.speak(utterance);
+        const handleVoicesChanged = () => {
+            processQueue();
         };
 
-        // Handle initial voices loading
         if (window.speechSynthesis.getVoices().length === 0) {
-            const handleVoicesChanged = () => {
-                speak();
-                window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
-            };
             window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
-        } else {
-            speak();
         }
-    }, [user, actionType, timestamp, enabled, selectedVoiceURI, status]);
+
+        return () => {
+            window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        };
+    }, [enabled]);
+
+    // Cleanup speech on unmount
+    useEffect(() => {
+        return () => {
+            window.speechSynthesis.cancel();
+        };
+    }, []);
 
     return null;
 };

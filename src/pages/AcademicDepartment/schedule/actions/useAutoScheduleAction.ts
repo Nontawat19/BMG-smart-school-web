@@ -852,7 +852,7 @@ export const useAutoScheduleAction = ({
                         specialPeriods,
                         constraintMap,
                         dynamicUnavailableSlots,
-                        schoolTimetable,
+                        {},
                         task.duration,
                         [],
                         isExplicitlyLocked
@@ -878,15 +878,30 @@ export const useAutoScheduleAction = ({
                         for (let d = 1; d < task.duration; d++) {
                             const nextIndex = d === 1 ? partnerIdx : pIdx + d;
                             const nextSlotId = `${dayKey}-${nextIndex}`;
-                            const nextPeriod = periodSettings[nextIndex];
-                            const isTeacherUnavailable = !isExplicitlyLocked && taskTeacherIds.some(teacherId => {
+                            
+                            // Check all constraints for the next slot (including Special Periods, Lunch, Teacher Unavailability, Excluded Days, etc.)
+                            const { forbidden: nextForbidden } = checkConstraints(
+                                { ...task.course, compositeId: task.compositeId, classId: task.targetClasses } as CourseInstance,
+                                nextSlotId,
+                                teacher,
+                                periodSettings,
+                                specialPeriods,
+                                constraintMap,
+                                dynamicUnavailableSlots,
+                                {},
+                                1,
+                                [],
+                                isExplicitlyLocked
+                            );
+
+                            const coTeacherUnavailableNext = !isExplicitlyLocked && taskTeacherIds.some(teacherId => {
                                 const coTeacher = teachersMap[teacherId];
                                 return coTeacher?.preferences?.unavailableDays?.includes(dayKey) ||
                                     coTeacher?.preferences?.unavailableSlots?.includes(nextSlotId) ||
                                     (selectedTeacher === teacherId && dynamicUnavailableSlots.includes(nextSlotId));
                             });
-                            const isDayExcluded = !isExplicitlyLocked && taskConstraints?.excludedDays?.includes(dayKey);
-                            if (!nextPeriod?.isTeachingPeriod || isTeacherUnavailable || isDayExcluded) {
+
+                            if (nextForbidden || coTeacherUnavailableNext) {
                                 blockValid = false;
                                 break;
                             }
@@ -1237,22 +1252,145 @@ export const useAutoScheduleAction = ({
                 });
             });
 
-            const teacherIdsToWrite = Object.keys(teacherUpdates);
-            const legacyDocsToDelete = existingSchedulesSnapshot.docs.filter(scheduleDoc => {
-                const storedTeacherId = scheduleDocMeta[scheduleDoc.id]?.teacherId;
-                if (!storedTeacherId || !teacherIdsToWrite.includes(storedTeacherId)) return false;
-                const expectedDocId = getScheduleDocId(storedTeacherId, selectedYear, selectedSemester);
-                return scheduleDoc.id !== expectedDocId;
+            // Deduplicate teacher schedules per slot to avoid double counting and duplicate cards
+            Object.keys(teacherUpdates).forEach(tId => {
+                const schedule = teacherUpdates[tId];
+                Object.keys(schedule).forEach(slotId => {
+                    const courses = schedule[slotId];
+                    if (!Array.isArray(courses) || courses.length <= 1) return;
+
+                    const deduped: any[] = [];
+                    const seen = new Map<string, any>(); // key -> deduped course object
+
+                    courses.forEach((course: any) => {
+                        // Create a unique key for the course instance in this slot
+                        const key = `${course.id || course.courseId || ''}_${course.groupNumber || 1}`;
+                        
+                        if (seen.has(key)) {
+                            const existing = seen.get(key);
+                            
+                            // Merge classIds
+                            const existingClasses = Array.isArray(existing.classId) 
+                                ? existing.classId 
+                                : [existing.classId].filter(Boolean);
+                            const newClasses = Array.isArray(course.classId) 
+                                ? course.classId 
+                                : [course.classId].filter(Boolean);
+                            
+                            const mergedClasses = Array.from(new Set([...existingClasses, ...newClasses]));
+                            existing.classId = mergedClasses.length === 1 ? mergedClasses[0] : mergedClasses;
+
+                            // Merge rooms
+                            const existingRooms = Array.isArray(existing.room) 
+                                ? existing.room 
+                                : [existing.room].filter(Boolean);
+                            const newRooms = Array.isArray(course.room) 
+                                ? course.room 
+                                : [course.room].filter(Boolean);
+                            
+                            const mergedRooms = Array.from(new Set([...existingRooms, ...newRooms]))
+                                .filter(r => r && r.toLowerCase() !== 'all');
+                            existing.room = mergedRooms.length === 0 ? ['all'] : mergedRooms;
+
+                            // Merge teacherIds
+                            const existingTeachers = Array.isArray(existing.teacherIds) 
+                                ? existing.teacherIds 
+                                : [existing.teacherId || tId].filter(Boolean);
+                            const newTeachers = Array.isArray(course.teacherIds) 
+                                ? course.teacherIds 
+                                : [course.teacherId].filter(Boolean);
+                            
+                            existing.teacherIds = Array.from(new Set([...existingTeachers, ...newTeachers]));
+                        } else {
+                            // Clone the course object to avoid mutating the original
+                            const clone = { 
+                                ...course,
+                                classId: Array.isArray(course.classId) ? [...course.classId] : (course.classId ? [course.classId] : []),
+                                room: Array.isArray(course.room) ? [...course.room] : (course.room ? [course.room] : []),
+                                teacherIds: Array.isArray(course.teacherIds) ? [...course.teacherIds] : [course.teacherId || tId].filter(Boolean)
+                            };
+                            
+                            seen.set(key, clone);
+                            deduped.push(clone);
+                        }
+                    });
+
+                    // Update classId and room fields to be strings if they only contain a single element
+                    deduped.forEach(course => {
+                        if (Array.isArray(course.classId)) {
+                            if (course.classId.length === 1) {
+                                course.classId = course.classId[0];
+                            } else if (course.classId.length === 0) {
+                                course.classId = '';
+                            }
+                        }
+                        if (Array.isArray(course.room)) {
+                            if (course.room.length === 1) {
+                                course.room = course.room[0];
+                            } else if (course.room.length === 0) {
+                                course.room = ['all'];
+                            }
+                        }
+                    });
+
+                    if (deduped.length === 0) {
+                        delete schedule[slotId];
+                    } else {
+                        schedule[slotId] = deduped;
+                    }
+                });
             });
 
-            const writes = [
-                ...teacherIdsToWrite.map(teacherId => ({
-                    type: 'set' as const,
-                    id: getScheduleDocId(teacherId, selectedYear, selectedSemester),
-                    teacherId
-                })),
-                ...legacyDocsToDelete.map(scheduleDoc => ({ type: 'delete' as const, id: scheduleDoc.id, teacherId: scheduleDocMeta[scheduleDoc.id]?.teacherId || '' }))
-            ];
+            const teacherIdsToWrite = Object.keys(teacherUpdates);
+            const affectedTeacherIds = allowedTeacherWriteIds
+                ? Array.from(allowedTeacherWriteIds)
+                : allTeachersData.map(t => t.id);
+            const affectedTeacherSet = new Set(affectedTeacherIds);
+
+            // Collect all writes (sets and deletes)
+            const writes: Array<{ type: 'set' | 'delete'; id: string; teacherId: string }> = [];
+
+            // 1. Process all affected teachers
+            affectedTeacherIds.forEach(teacherId => {
+                const expectedDocId = getScheduleDocId(teacherId, selectedYear, selectedSemester);
+                const hasNewSchedule = teacherIdsToWrite.includes(teacherId);
+
+                if (hasNewSchedule) {
+                    writes.push({
+                        type: 'set',
+                        id: expectedDocId,
+                        teacherId
+                    });
+                } else {
+                    // Force delete/clear the canonical document if it exists in Firestore
+                    writes.push({
+                        type: 'delete',
+                        id: expectedDocId,
+                        teacherId
+                    });
+                }
+            });
+
+            // 2. Identify and delete all other matching legacy/duplicate documents for these teachers
+            existingSchedulesSnapshot.docs.forEach(doc => {
+                const docId = doc.id;
+                const meta = scheduleDocMeta[docId];
+                if (!meta) return; // Not matching the target year/semester
+
+                const storedTeacherId = meta.teacherId;
+                if (!storedTeacherId || !affectedTeacherSet.has(storedTeacherId)) return;
+
+                const expectedDocId = getScheduleDocId(storedTeacherId, selectedYear, selectedSemester);
+                // If it's a legacy or duplicate document (different from canonical ID), delete it!
+                if (docId !== expectedDocId) {
+                    writes.push({
+                        type: 'delete',
+                        id: docId,
+                        teacherId: storedTeacherId
+                    });
+                }
+            });
+
             const batchSize = 450;
             const numBatches = Math.max(1, Math.ceil(writes.length / batchSize));
 

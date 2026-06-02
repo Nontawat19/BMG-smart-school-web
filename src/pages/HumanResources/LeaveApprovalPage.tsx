@@ -270,6 +270,8 @@ const LeaveApprovalPage: React.FC = () => {
             checkinTime: null,
             checkoutTime: null,
             leaveRequestId: r.id,
+            leaveType: r.leaveType,
+            note: r.leaveType,
           },
           { merge: true }
         );

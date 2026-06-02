@@ -27,6 +27,78 @@ const datePartsFromExcelSerial = (value: number): DateParts | null => {
   };
 };
 
+const THAI_MONTHS: Record<string, number> = {
+  "มกราคม": 1,
+  "มค": 1,
+  "ม.ค": 1,
+  "กุมภาพันธ์": 2,
+  "กพ": 2,
+  "ก.พ": 2,
+  "มีนาคม": 3,
+  "มีค": 3,
+  "มี.ค": 3,
+  "เมษายน": 4,
+  "เมย": 4,
+  "เม.ย": 4,
+  "พฤษภาคม": 5,
+  "พค": 5,
+  "พ.ค": 5,
+  "มิถุนายน": 6,
+  "มิย": 6,
+  "มิ.ย": 6,
+  "กรกฎาคม": 7,
+  "กค": 7,
+  "ก.ค": 7,
+  "สิงหาคม": 8,
+  "สค": 8,
+  "ส.ค": 8,
+  "กันยายน": 9,
+  "กย": 9,
+  "ก.ย": 9,
+  "ตุลาคม": 10,
+  "ตค": 10,
+  "ต.ค": 10,
+  "พฤศจิกายน": 11,
+  "พย": 11,
+  "พ.ย": 11,
+  "ธันวาคม": 12,
+  "ธค": 12,
+  "ธ.ค": 12,
+};
+
+const toArabicDigits = (value: string) => value.replace(/[๐-๙]/g, (digit) =>
+  String("๐๑๒๓๔๕๖๗๘๙".indexOf(digit))
+);
+
+const normalizeThaiMonthKey = (value: string) => value
+  .trim()
+  .replace(/\s+/g, "")
+  .replace(/\.$/, "");
+
+const parseThaiTextDateParts = (value: string): DateParts | null => {
+  const normalizedText = toArabicDigits(value)
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const thaiTextDateMatch = normalizedText.match(/^(\d{1,2})\s+([ก-๙.]+)\s+(\d{2,4})$/);
+  if (!thaiTextDateMatch) return null;
+
+  const monthKey = normalizeThaiMonthKey(thaiTextDateMatch[2]);
+  const month = THAI_MONTHS[monthKey];
+  if (!month) return null;
+
+  const rawYear = Number(thaiTextDateMatch[3]);
+  const year = rawYear < 100 ? rawYear + 2500 : rawYear;
+  const parts = {
+    day: Number(thaiTextDateMatch[1]),
+    month,
+    year,
+  };
+
+  return isValidDateParts(parts) ? parts : null;
+};
+
 export const parseStudentBirthDateParts = (value: unknown): DateParts | null => {
   if (!value) return null;
 
@@ -49,8 +121,11 @@ export const parseStudentBirthDateParts = (value: unknown): DateParts | null => 
     return datePartsFromExcelSerial(value);
   }
 
-  const text = String(value).trim();
+  const text = toArabicDigits(String(value).trim());
   if (!text) return null;
+
+  const thaiTextDateParts = parseThaiTextDateParts(text);
+  if (thaiTextDateParts) return thaiTextDateParts;
 
   const numericValue = Number(text);
   if (Number.isFinite(numericValue) && /^\d+(\.\d+)?$/.test(text)) {

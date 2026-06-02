@@ -11,13 +11,14 @@ import {
     FaTimes, FaCloudUploadAlt, FaDownload, FaArrowLeft, FaEdit, FaUserPlus, FaUsers, FaGraduationCap
 } from 'react-icons/fa';
 import BackButton from "@/components/Shared/BackButton";
-import { toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
+import { formatStudentBirthDateThai, isValidBirthDate, normalizeBirthDateInput, toBuddhistBirthDateForSave } from "@/utils/birthDateUtils";
 import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 import { updateStudentReportSummaryForChanges } from "@/utils/studentReportSummaryUtils";
 
 // --- Configuration ---
 const REQUIRED_FIELDS = [
     { key: 'studentId', label: 'รหัสนักเรียน', required: true },
+    { key: 'idCardNumber', label: 'เลขบัตรประจำตัวประชาชน', required: false },
     { key: 'title', label: 'คำนำหน้า', required: true },
     { key: 'firstName', label: 'ชื่อ', required: true },
     { key: 'lastName', label: 'นามสกุล', required: true },
@@ -26,8 +27,39 @@ const REQUIRED_FIELDS = [
     { key: 'birthDate', label: 'วันเกิด', required: false },
 ];
 
+const FIELD_ALIASES: Record<string, string[]> = {
+    studentId: ['รหัสนักเรียน', 'เลขประจำตัวนักเรียน', 'studentid', 'student id'],
+    idCardNumber: ['เลขบัตรประชาชน', 'เลขประจำตัวประชาชน', 'เลขบัตรประจำตัวประชาชน', 'บัตรประชาชน', 'เลข 13 หลัก', 'เลข13หลัก', 'idcard', 'id card', 'nationalid', 'national id', 'citizenid', 'citizen id'],
+    title: ['คำนำหน้า', 'คำนำหน้าชื่อ', 'prefix', 'title'],
+    firstName: ['ชื่อ', 'ชื่อนักเรียน', 'firstname', 'first name'],
+    lastName: ['นามสกุล', 'สกุล', 'lastname', 'last name'],
+    classLevel: ['ชั้น', 'ระดับชั้น', 'classlevel', 'class level', 'class'],
+    room: ['ห้อง', 'ห้องเรียน', 'room'],
+    birthDate: ['วันเกิด', 'วัน/เดือน/ปีเกิด', 'วันเดือนปีเกิด', 'ว/ด/ปเกิด', 'ว.ด.ป.เกิด', 'birthdate', 'birth date', 'dob', 'dateofbirth'],
+};
+
+const normalizeHeader = (value: unknown) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[()._-]/g, '');
+
+const findMatchingHeader = (headers: string[], field: { key: string; label: string }) => {
+    const aliases = [field.label, field.key, ...(FIELD_ALIASES[field.key] || [])].map(normalizeHeader);
+    return headers.find((header) => {
+        const normalizedHeader = normalizeHeader(header);
+        return aliases.some((alias) => normalizedHeader === alias || normalizedHeader.includes(alias) || alias.includes(normalizedHeader));
+    });
+};
+
+const normalizeDigitValue = (value: unknown, maxLength?: number) => {
+    const digits = String(value || '').replace(/[^0-9]/g, '');
+    return maxLength ? digits.slice(0, maxLength) : digits;
+};
+
 interface MappedStudent {
     studentId: string;
+    idCardNumber?: string;
     title: string;
     firstName: string;
     lastName: string;
@@ -59,19 +91,41 @@ export default function ImportStudentPage() {
     const [tempColumnMapping, setTempColumnMapping] = useState<Record<string, string>>({});
 
     // --- Template Download ---
-    const handleDownloadTemplate = (extension: 'xlsx' | 'xls') => {
+    const handleDownloadTemplate = (extension: 'xlsx' | 'xls' | 'csv') => {
         const headers = REQUIRED_FIELDS.map(f => f.label);
         
         const exampleData = [
-            ['01234', 'เด็กชาย', 'สมชาย', 'ใจดี', 'ป.1', '1', '2553-05-24'],
-            ['01235', 'เด็กหญิง', 'สมศรี', 'ดีงาม', 'ป.1', '2', '2553-08-12'],
+            ['01234', '1234567890123', 'เด็กชาย', 'สมชาย', 'ใจดี', 'ป.1', '1', '2553-05-24'],
+            ['01235', '1234567890124', 'เด็กหญิง', 'สมศรี', 'ดีงาม', 'ป.1', '2', '2553-08-12'],
         ];
 
         const worksheetData = [headers, ...exampleData];
+
+        if (extension === 'csv') {
+            const csv = worksheetData
+                .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+                .join('\n');
+            const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'Student_Import_Template.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            return;
+        }
+
         const ws = XLSX.utils.aoa_to_sheet(worksheetData);
 
-        const wscols = headers.map(() => ({ wch: 15 }));
+        const wscols = headers.map((header) => ({ wch: header === 'เลขบัตรประจำตัวประชาชน' ? 24 : 15 }));
         ws['!cols'] = wscols;
+
+        exampleData.forEach((_, rowIndex) => {
+            const idCardCell = XLSX.utils.encode_cell({ r: rowIndex + 1, c: 1 });
+            if (ws[idCardCell]) ws[idCardCell].t = 's';
+        });
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Students_Template");
@@ -87,10 +141,10 @@ export default function ImportStudentPage() {
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         const selectedFile = e.dataTransfer.files?.[0];
-        if (selectedFile && (selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls'))) {
+        if (selectedFile && (selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls') || selectedFile.name.endsWith('.csv'))) {
             handleFileProcess(selectedFile);
         } else {
-            Swal.fire('ไฟล์ไม่ถูกต้อง', 'กรุณาอัปโหลดไฟล์ (.xlsx, .xls) เท่านั้น', 'warning');
+            Swal.fire('ไฟล์ไม่ถูกต้อง', 'กรุณาอัปโหลดไฟล์ (.xlsx, .xls, .csv) เท่านั้น', 'warning');
         }
     };
 
@@ -102,7 +156,8 @@ export default function ImportStudentPage() {
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            const wb = XLSX.read(e.target?.result, { type: 'binary' });
+            const isCsv = file.name.toLowerCase().endsWith('.csv');
+            const wb = XLSX.read(e.target?.result, { type: isCsv ? 'string' : 'binary', cellDates: true });
             const ws = wb.Sheets[wb.SheetNames[0]];
             const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
@@ -112,7 +167,7 @@ export default function ImportStudentPage() {
                 
                 // Try to auto-map based on headers
                 REQUIRED_FIELDS.forEach((field) => {
-                    const match = headers.find(h => h.includes(field.label) || h.toLowerCase() === field.key.toLowerCase());
+                    const match = findMatchingHeader(headers, field);
                     if (match) {
                         newMapping[field.key] = match;
                     }
@@ -126,7 +181,11 @@ export default function ImportStudentPage() {
                 generatePreview(newMapping, data.slice(1), headers);
             }
         };
-        reader.readAsBinaryString(file);
+        if (file.name.toLowerCase().endsWith('.csv')) {
+            reader.readAsText(file, 'utf-8');
+        } else {
+            reader.readAsBinaryString(file);
+        }
     };
 
     const generatePreview = (mapping: Record<string, string>, rawData: any[], headers: string[]) => {
@@ -135,7 +194,8 @@ export default function ImportStudentPage() {
             Object.entries(mapping).forEach(([key, header]) => {
                 const colIndex = headers.indexOf(header);
                 if (colIndex !== -1 && row[colIndex] !== undefined) {
-                    rowData[key] = String(row[colIndex]).trim();
+                    const rawValue = row[colIndex];
+                    rowData[key] = key === 'birthDate' ? rawValue : String(rawValue).trim();
                 } else {
                     rowData[key] = "";
                 }
@@ -143,11 +203,15 @@ export default function ImportStudentPage() {
 
             // Student ID Padding Logic
             if (rowData.studentId) {
-                let sid = rowData.studentId.toString();
+                let sid = rowData.studentId.toString().trim();
                 if (sid.length === 4) {
                     sid = '0' + sid;
                 }
                 rowData.studentId = sid;
+            }
+
+            if (rowData.idCardNumber) {
+                rowData.idCardNumber = normalizeDigitValue(rowData.idCardNumber, 13);
             }
 
             let status: 'ready' | 'warning' | 'error' = 'ready';
@@ -159,14 +223,22 @@ export default function ImportStudentPage() {
                 errorMessage = 'ข้อมูลจำเป็นไม่ครบ';
             }
 
+            const normalizedBirthDate = normalizeBirthDateInput(rowData.birthDate);
+            const savedBirthDate = rowData.birthDate ? toBuddhistBirthDateForSave(normalizedBirthDate) : "";
+            if (rowData.birthDate && !isValidBirthDate(normalizedBirthDate)) {
+                status = status === 'error' ? status : 'warning';
+                errorMessage = errorMessage || 'รูปแบบวันเกิดไม่ถูกต้อง';
+            }
+
             return {
                 studentId: rowData.studentId || "",
+                idCardNumber: rowData.idCardNumber || "",
                 title: rowData.title || "",
                 firstName: rowData.firstName || "",
                 lastName: rowData.lastName || "",
                 classLevel: rowData.classLevel || "",
                 room: rowData.room || "",
-                birthDate: toBuddhistBirthDateForSave(rowData.birthDate),
+                birthDate: savedBirthDate,
                 status,
                 errorMessage
             };
@@ -196,6 +268,11 @@ export default function ImportStudentPage() {
             if (systemField !== '') newMapping[systemField] = excelColumn;
             return newMapping;
         });
+    };
+
+    const openManualMapping = () => {
+        setTempColumnMapping(columnMapping);
+        setManualMappingMode(true);
     };
 
     const confirmMapping = () => {
@@ -248,37 +325,62 @@ export default function ImportStudentPage() {
                 const qId = query(studentsRef, where("studentId", "==", student.studentId));
                 const snapshotId = await getDocs(qId);
                 
-                const studentData = {
+                const studentData: Record<string, any> = {
                     studentId: student.studentId,
                     title: student.title,
                     firstName: student.firstName,
                     lastName: student.lastName,
                     classLevel: student.classLevel,
                     room: student.room,
-                    birthDate: toBuddhistBirthDateForSave(student.birthDate),
                     schoolId: schoolId,
                     updatedAt: serverTimestamp(),
                 };
+                if (student.birthDate) {
+                    studentData.birthDate = toBuddhistBirthDateForSave(student.birthDate);
+                }
+                if (student.idCardNumber) {
+                    studentData.idCardNumber = student.idCardNumber;
+                }
 
-                if (!snapshotId.empty) {
+                let existingDoc = !snapshotId.empty ? snapshotId.docs[0] : null;
+                if (!existingDoc && student.idCardNumber) {
+                    const qCard = query(studentsRef, where("idCardNumber", "==", student.idCardNumber));
+                    const snapshotCard = await getDocs(qCard);
+                    if (!snapshotCard.empty) {
+                        existingDoc = snapshotCard.docs[0];
+                    }
+                }
+
+                if (existingDoc) {
                     // Update existing
-                    const existingDoc = snapshotId.docs[0];
                     const docId = existingDoc.id;
                     const beforeData = { id: docId, ...existingDoc.data() };
                     const afterData = { ...beforeData, ...studentData };
                     await setDoc(doc(studentsRef, docId), studentData, { merge: true });
                     studentSummaryChanges.push({ before: beforeData, after: afterData });
+                    try {
+                        const { updateStudentLookup } = await import("@/utils/studentLookupUtils");
+                        await updateStudentLookup(studentData.idCardNumber, studentData.studentId, schoolId, docId);
+                    } catch (lookupErr) {
+                        console.warn("Failed to update student lookup table:", lookupErr);
+                    }
                     updateCount++;
                 } else {
                     // Create new
                     const createdStudent = {
                         ...studentData,
-                        studentStatus: 'กำลังศึกษา',
+                        studentStatus: 'กำลังศึกษาอยู่',
                         behaviorScore: 100,
                         createdAt: serverTimestamp(),
                         role: ["student"]
                     };
-                    await addDoc(studentsRef, createdStudent);
+                    const docRef = await addDoc(studentsRef, createdStudent);
+                    try {
+                        const { updateStudentLookup } = await import("@/utils/studentLookupUtils");
+                        await updateStudentLookup(studentData.idCardNumber, studentData.studentId, schoolId, docRef.id);
+                    } catch (lookupErr) {
+                        console.warn("Failed to update student lookup table:", lookupErr);
+                    }
                     studentSummaryChanges.push({ before: null, after: createdStudent });
                     successCount++;
                 }
@@ -333,7 +435,7 @@ export default function ImportStudentPage() {
                             </h1>
                             <p className="text-slate-500 dark:text-slate-400 mt-1.5 text-sm">อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลนักเรียนจำนวนมาก</p>
                         </div>
-                        <div className="flex gap-2.5">
+                        <div className="flex flex-wrap gap-2.5">
                             <button onClick={() => handleDownloadTemplate('xlsx')} className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 px-4 py-2 text-sm rounded-xl text-white transition-all shadow-sm font-medium">
                                 <FaDownload /> แม่แบบ Excel
                             </button>
@@ -352,8 +454,8 @@ export default function ImportStudentPage() {
                                 <FaCloudUploadAlt className="text-3xl text-indigo-600 dark:text-indigo-400" />
                             </div>
                             <h3 className="text-base font-semibold mb-1 text-slate-800 dark:text-slate-200">อัปโหลดไฟล์ข้อมูลนักเรียน</h3>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm mx-auto">คลิกหรือลากไฟล์ .xlsx หรือ .xls มาวางเพื่อเริ่มต้น</p>
-                            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" />
+                            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm mx-auto">คลิกหรือลากไฟล์ .xlsx, .xls หรือ .csv มาวางเพื่อเริ่มต้น</p>
+                            <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} className="hidden" />
                         </div>
                     )}
 
@@ -379,7 +481,7 @@ export default function ImportStudentPage() {
                                         >
                                             {isProcessing ? 'กำลังบันทึก...' : <><FaUserPlus /> นำเข้าข้อมูล {previewData.filter(t => t.status === 'ready' || t.status === 'warning').length} รายการ</>}
                                         </button>
-                                        <button onClick={() => setManualMappingMode(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                                        <button onClick={openManualMapping} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                                             <FaEdit /> ตั้งค่าคอลัมน์
                                         </button>
                                         <button onClick={() => { setFile(null); setPreviewData([]); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
@@ -405,9 +507,11 @@ export default function ImportStudentPage() {
                                         <thead className="bg-slate-50 dark:bg-slate-800/40 text-slate-500 sticky top-0 z-10">
                                             <tr>
                                                 <th className="px-4 py-3 font-semibold">รหัสนักเรียน</th>
+                                                <th className="px-4 py-3 font-semibold">เลขบัตรประชาชน</th>
                                                 <th className="px-4 py-3 font-semibold">ชื่อ-นามสกุล</th>
                                                 <th className="px-4 py-3 font-semibold">ระดับชั้น</th>
                                                 <th className="px-4 py-3 font-semibold">ห้อง</th>
+                                                <th className="px-4 py-3 font-semibold">วันเกิด</th>
                                                 <th className="px-4 py-3 font-semibold">สถานะ</th>
                                             </tr>
                                         </thead>
@@ -415,11 +519,13 @@ export default function ImportStudentPage() {
                                             {previewData.map((student, idx) => (
                                                 <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
                                                     <td className="px-4 py-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">{student.studentId}</td>
+                                                    <td className="px-4 py-3 font-mono text-slate-500">{student.idCardNumber || '-'}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="font-medium text-slate-900 dark:text-slate-200">{student.title}{student.firstName} {student.lastName}</div>
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-500">{student.classLevel}</td>
                                                     <td className="px-4 py-3 text-slate-500">{student.room}</td>
+                                                    <td className="px-4 py-3 text-slate-500">{formatStudentBirthDateThai(student.birthDate)}</td>
                                                     <td className="px-4 py-3">
                                                         {student.status === 'ready' ? <span className="text-green-500">พร้อม</span> : 
                                                          student.status === 'warning' ? <span className="text-amber-500">คำเตือน</span> : 
@@ -455,7 +561,7 @@ export default function ImportStudentPage() {
                                     </div>
                                     <div className="w-full sm:w-1/2">
                                         <select
-                                            value={Object.keys(columnMapping).find(k => k === field.key) ? columnMapping[field.key] : ''}
+                                            value={tempColumnMapping[field.key] || ''}
                                             onChange={(e) => handleManualMapping(e.target.value, field.key)}
                                             className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-[#2a2b2f] text-slate-800 dark:text-slate-200"
                                         >

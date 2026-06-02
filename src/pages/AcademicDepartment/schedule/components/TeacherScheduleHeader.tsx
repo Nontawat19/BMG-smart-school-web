@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ChevronDown, Loader2, Save } from 'lucide-react';
+import { Calendar, ChevronDown, Cpu, Loader2, Save } from 'lucide-react';
 import BackButton from '@/components/Shared/BackButton';
 
 interface TeacherScheduleHeaderProps {
@@ -7,8 +7,10 @@ interface TeacherScheduleHeaderProps {
     availableYears: string[];
     selectedSemester: string;
     isSaving: boolean;
+    isAutoScheduling: boolean;
     setSelectedYear: (value: string) => void;
     setSelectedSemester: (value: string) => void;
+    handleGenerateSchoolTimetable: () => void;
     handleSaveSchedule: () => void;
 }
 
@@ -17,28 +19,30 @@ export const TeacherScheduleHeader: React.FC<TeacherScheduleHeaderProps> = ({
     availableYears,
     selectedSemester,
     isSaving,
+    isAutoScheduling,
     setSelectedYear,
     setSelectedSemester,
+    handleGenerateSchoolTimetable,
     handleSaveSchedule
 }) => {
     return (
-        <header className="sticky top-[60px] z-40 bg-white/80 dark:bg-[#2a2b2f]/80 backdrop-blur-2xl border-b border-gray-100 dark:border-white/5 shadow-sm px-3 sm:px-4 lg:px-6 py-2 transition-all">
-            <div className="max-w-[1600px] mx-auto flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pl-16 sm:pl-20 lg:pl-16">
-                <div className="min-w-0 flex items-center gap-4">
-                    <div className="min-w-0 flex items-center gap-3 sm:gap-4">
-                        <BackButton to="/academic/hub/scheduling" />
-                        <div className="min-w-0 flex items-center gap-3 group cursor-pointer">
-                            <div className="shrink-0 w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)] border border-white/10 group-hover:rotate-6 transition-transform">
-                                <Calendar size={22} className="text-white" />
+        <header className="relative z-40 bg-white/80 dark:bg-[#2a2b2f]/80 backdrop-blur-2xl border-b border-gray-100 dark:border-white/5 shadow-sm px-3 lg:px-4 py-1.5 transition-all">
+            <div className="w-full max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-[minmax(260px,1fr)_330px_minmax(390px,438px)] xl:items-center gap-2 xl:gap-3">
+                <div className="min-w-0 flex items-center">
+                    <div className="min-w-0 flex items-center gap-2.5">
+                        <BackButton to="/academic/hub/scheduling" className="shrink-0 w-9 h-9" />
+                        <div className="min-w-0 flex items-center gap-2.5 group cursor-pointer">
+                            <div className="shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center shadow-[0_0_16px_rgba(79,70,229,0.35)] border border-white/10 group-hover:rotate-6 transition-transform">
+                                <Calendar size={20} className="text-white" />
                             </div>
                             <div className="min-w-0 flex flex-col">
-                                <h1 className="truncate text-base sm:text-lg lg:text-xl font-black tracking-tight text-gray-900 dark:text-white uppercase leading-tight">ระบบจัดตารางสอนอัจฉริยะ</h1>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
-                                    <span className="text-[9px] sm:text-[10px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-[0.18em] sm:tracking-[0.25em]">Academic Management Console</span>
-                                    <span className="hidden sm:block w-1 h-1 rounded-full bg-gray-700"></span>
-                                    <div className="flex items-center gap-1.5">
+                                <h1 className="truncate text-base lg:text-lg font-black tracking-tight text-gray-900 dark:text-white uppercase leading-tight">ระบบจัดตารางสอนอัจฉริยะ</h1>
+                                <div className="mt-0.5 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden">
+                                    <span className="hidden min-[1500px]:inline shrink truncate text-[9px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-[0.2em]">Academic Management Console</span>
+                                    <span className="hidden sm:block shrink-0 w-1 h-1 rounded-full bg-gray-700"></span>
+                                    <div className="shrink-0 flex items-center gap-1.5">
                                         <div className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                                        <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none">System Operational</span>
+                                        <span className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.16em] leading-none">System Operational</span>
                                     </div>
                                 </div>
                             </div>
@@ -46,52 +50,55 @@ export const TeacherScheduleHeader: React.FC<TeacherScheduleHeaderProps> = ({
                     </div>
                 </div>
 
-                <div className="flex w-full lg:w-auto items-center gap-2 sm:gap-3 overflow-x-auto pb-1 lg:pb-0">
-                    <div className="shrink-0 flex items-center gap-3 sm:gap-4 bg-gray-50/80 dark:bg-white/[0.03] backdrop-blur-xl border border-gray-100 dark:border-white/5 rounded-[16px] px-3 sm:px-4 py-1 shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] leading-none mb-0.5">ปีการศึกษา</span>
-                                <div className="relative group min-w-[80px]">
-                                    <select
-                                        value={selectedYear}
-                                        onChange={(e) => setSelectedYear(e.target.value)}
-                                        className="bg-transparent text-xs font-black text-gray-900 dark:text-white focus:outline-none cursor-pointer appearance-none pr-6 w-full"
-                                    >
-                                        {availableYears.map(year => (
-                                            <option key={year} value={year} className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white py-2">
-                                                ปี {year}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="w-[1px] h-7 bg-gray-100 dark:bg-white/5 mx-1"></div>
-                        <div className="flex items-center gap-3">
-                            <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] leading-none mb-0.5">ภาคเรียน</span>
-                                <div className="relative group min-w-[90px]">
-                                    <select
-                                        value={selectedSemester}
-                                        onChange={(e) => setSelectedSemester(e.target.value)}
-                                        className="bg-transparent text-xs font-black text-gray-900 dark:text-white focus:outline-none cursor-pointer appearance-none pr-6 w-full"
-                                    >
-                                        <option value="1" className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white">เทอม 1</option>
-                                        <option value="2" className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white">เทอม 2</option>
-                                    </select>
-                                    <ChevronDown size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                </div>
-                            </div>
-                        </div>
+                <div className="min-w-0 w-full xl:justify-self-end">
+                    <div className="flex w-full max-w-[330px] items-center gap-2">
+                        <label className="group relative flex h-10 w-[172px] items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/80 px-3 shadow-sm backdrop-blur-xl transition-colors hover:border-indigo-400/40 dark:border-white/5 dark:bg-white/[0.03]">
+                            <span className="shrink-0 text-[9px] font-black uppercase tracking-normal text-gray-400 dark:text-gray-500">ปีการศึกษา</span>
+                            <select
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                                className="w-[58px] shrink-0 appearance-none bg-transparent pr-5 text-[14px] font-black leading-none text-gray-900 outline-none cursor-pointer dark:text-white"
+                            >
+                                {availableYears.map(year => (
+                                    <option key={year} value={year} className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white py-2">
+                                        {year}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-hover:text-indigo-400" />
+                        </label>
+
+                        <label className="group relative flex h-10 w-[150px] items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/80 px-3 shadow-sm backdrop-blur-xl transition-colors hover:border-indigo-400/40 dark:border-white/5 dark:bg-white/[0.03]">
+                            <span className="shrink-0 text-[9px] font-black uppercase tracking-normal text-gray-400 dark:text-gray-500">ภาคเรียนที่</span>
+                            <select
+                                value={selectedSemester}
+                                onChange={(e) => setSelectedSemester(e.target.value)}
+                                className="w-[36px] shrink-0 appearance-none bg-transparent pr-5 text-[14px] font-black leading-none text-gray-900 outline-none cursor-pointer dark:text-white"
+                            >
+                                <option value="1" className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white">1</option>
+                                <option value="2" className="bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white">2</option>
+                            </select>
+                            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-hover:text-indigo-400" />
+                        </label>
                     </div>
+                </div>
+
+                <div className="flex min-w-0 w-full items-center justify-start gap-2 overflow-hidden xl:justify-end">
+                    <button
+                        onClick={handleGenerateSchoolTimetable}
+                        disabled={isAutoScheduling}
+                        className="min-w-0 flex flex-[1_1_220px] xl:flex-none xl:w-[242px] items-center justify-center gap-2 px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 transition-all duration-300 text-white shadow-[0_8px_20px_-5px_rgba(79,70,229,0.45)] hover:shadow-[0_12px_28px_-5px_rgba(79,70,229,0.55)] text-[11px] font-black uppercase tracking-normal group h-10 border border-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                        {isAutoScheduling ? <Loader2 size={17} className="shrink-0 animate-spin" /> : <Cpu size={17} className="shrink-0" />}
+                        <span className="relative z-10 min-w-0 truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">จัดตารางสอนทั้งโรงเรียน</span>
+                    </button>
                     <button
                         onClick={handleSaveSchedule}
                         disabled={isSaving}
-                        className="shrink-0 flex items-center gap-2 sm:gap-3 px-5 sm:px-8 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-[length:200%_auto] hover:bg-right transition-all duration-500 text-white shadow-[0_10px_25px_-5px_rgba(79,70,229,0.5)] hover:shadow-[0_15px_35px_-5px_rgba(79,70,229,0.6)] text-[11px] font-black uppercase tracking-[0.15em] group h-[44px] border border-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        className="min-w-0 flex flex-[1_1_180px] xl:flex-none xl:w-[188px] items-center justify-center gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-[length:200%_auto] hover:bg-right transition-all duration-500 text-white shadow-[0_8px_20px_-5px_rgba(79,70,229,0.5)] hover:shadow-[0_12px_28px_-5px_rgba(79,70,229,0.6)] text-[11px] font-black uppercase tracking-normal group h-10 border border-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                     >
-                        {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                        <span className="relative z-10 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">บันทึกตารางสอน</span>
+                        {isSaving ? <Loader2 size={17} className="shrink-0 animate-spin" /> : <Save size={17} className="shrink-0" />}
+                        <span className="relative z-10 min-w-0 truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">บันทึกตารางสอน</span>
                     </button>
                 </div>
             </div>

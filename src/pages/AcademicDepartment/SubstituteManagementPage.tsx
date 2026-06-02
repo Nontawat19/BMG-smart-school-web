@@ -235,6 +235,12 @@ const SubstituteTeacherSelect = ({ value, options, onChange, placeholder = "--- 
   const isDarkMode = document.documentElement.classList.contains('dark');
   const [isFocused, setIsFocused] = useState(false);
   const selectedOption = options.find((option: any) => option.value === value);
+  const getTeacherDisplayName = (option: any) => (
+    option.displayName ||
+    option.name ||
+    option.label?.replace(/^\[.*?\]\s*/, '') ||
+    ''
+  );
 
   return (
     <div className="relative group w-full">
@@ -255,44 +261,92 @@ const SubstituteTeacherSelect = ({ value, options, onChange, placeholder = "--- 
           ...selectStyles(isDarkMode),
           control: (base: any, state: any) => ({
             ...selectStyles(isDarkMode).control(base, state),
+            minHeight: '36px',
+            height: '36px',
+            borderRadius: '12px',
             paddingLeft: '28px',
+            paddingRight: '2px',
+            backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.72)' : '#ffffff',
+            borderColor: state.isFocused ? '#4f46e5' : (isDarkMode ? 'rgba(148, 163, 184, 0.22)' : '#d8dee8'),
+            boxShadow: 'none',
+            '&:hover': {
+              borderColor: state.isFocused ? '#4f46e5' : (isDarkMode ? 'rgba(148, 163, 184, 0.36)' : '#b7c0ce'),
+            }
+          }),
+          valueContainer: (base: any) => ({
+            ...base,
+            height: '34px',
+            padding: '0 4px',
+            overflow: 'hidden',
+            alignItems: 'center',
+            flexWrap: 'nowrap',
+          }),
+          indicatorsContainer: (base: any) => ({
+            ...base,
+            height: '34px',
+          }),
+          singleValue: (base: any) => ({
+            ...base,
+            width: '100%',
+            maxWidth: '100%',
+            margin: 0,
+            overflow: 'visible',
+          }),
+          input: (base: any) => ({
+            ...base,
+            color: isDarkMode ? 'white' : '#1e293b',
+            fontSize: '11px',
+            fontWeight: 700,
+          }),
+          placeholder: (base: any) => ({
+            ...base,
+            color: isDarkMode ? 'rgba(203, 213, 225, 0.58)' : '#64748b',
+            fontSize: '11px',
+            fontWeight: 800,
+          }),
+          option: (base: any, state: any) => ({
+            ...selectStyles(isDarkMode).option(base, state),
+            padding: '4px 12px',
+            margin: '1px 8px',
+            borderRadius: '8px',
+          }),
+          menu: (base: any) => ({
+            ...selectStyles(isDarkMode).menu(base),
+            borderRadius: '14px',
           })
         }}
         className="react-select-container"
         classNamePrefix="react-select"
-        formatOptionLabel={(option: any) => (
-          <div className="flex items-center gap-3 py-1">
-            <div className="relative flex-shrink-0">
-              <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-black text-slate-500 dark:text-slate-400 overflow-hidden ring-1 ring-white/20 shadow-sm">
-                {option.profileImageUrl ? (
-                  <img src={option.profileImageUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="uppercase">
-                    {option.firstName && option.lastName 
-                      ? `${option.firstName.charAt(0)}${option.lastName.charAt(0)}`
-                      : option.label.replace(/^\[.*?\]\s*/, '').replace(/^(นาย|นางสาว|นาง|ครู|ผอ\.|ดร\.|ว่าที่\s*ร\.ต\.)\s*/, '').substring(0, 1)}
-                  </span>
-                )}
+        formatOptionLabel={(option: any, { context }: any) => {
+          const displayName = getTeacherDisplayName(option);
+          const initials = option.firstName && option.lastName
+            ? `${option.firstName.charAt(0)}${option.lastName.charAt(0)}`
+            : displayName.replace(/^(นาย|นางสาว|นาง|ครู|ผอ\.|ดร\.|ว่าที่\s*ร\.ต\.)\s*/, '').substring(0, 1);
+
+          return (
+            <div className="flex w-full min-w-0 items-center gap-3 py-1">
+              <div className="relative flex-shrink-0">
+                <div className="h-6 w-6 overflow-hidden rounded-full bg-slate-100 text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 flex items-center justify-center text-[8px] font-black shadow-sm">
+                  {option.profileImageUrl ? (
+                    <img src={option.profileImageUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="uppercase">{initials}</span>
+                  )}
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-white bg-emerald-500 dark:border-slate-900"></div>
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-800"></div>
-            </div>
-            <div className="flex flex-col min-w-0 overflow-hidden text-left">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-md border border-indigo-500/20 tracking-tighter whitespace-nowrap">
+
+              <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <span className="shrink-0 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black leading-none text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
                   {option.teacherId || 'N/A'}
                 </span>
-                <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis">
-                  {option.label.replace(/^\[.*?\]\s*/, '')}
+                <span className={`min-w-0 truncate font-extrabold text-slate-800 dark:text-slate-100 ${context === 'value' ? 'text-[11px]' : 'text-[11px]'}`}>
+                  {displayName}
                 </span>
               </div>
-              {option.metaLabel && (
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">
-                  {option.metaLabel}
-                </span>
-              )}
             </div>
-          </div>
-        )}
+          );
+        }}
       />
     </div>
   );
