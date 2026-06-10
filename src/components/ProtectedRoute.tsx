@@ -48,7 +48,25 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
         }
 
       } else {
-        setIsAuthenticated(false);
+        // ตรวจสอบ session นักเรียน/ผู้ปกครอง จาก localStorage
+        const userType = localStorage.getItem('currentUserType');
+        const studentSessionRaw = localStorage.getItem('studentSession');
+        if (userType === 'student' && studentSessionRaw) {
+          try {
+            const { schoolId, studentId } = JSON.parse(studentSessionRaw);
+            if (schoolId && studentId) {
+              setIsAuthenticated(true);
+            } else {
+              setIsAuthenticated(false);
+            }
+          } catch {
+            localStorage.removeItem('studentSession');
+            localStorage.removeItem('currentUserType');
+            setIsAuthenticated(false);
+          }
+        } else {
+          setIsAuthenticated(false);
+        }
       }
       if (isMounted) setLoading(false);
     });

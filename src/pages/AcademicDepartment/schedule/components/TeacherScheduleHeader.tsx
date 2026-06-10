@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ChevronDown, Cpu, Loader2, Save } from 'lucide-react';
+import { Calendar, ChevronDown, Cpu, Loader2, Save, X } from 'lucide-react';
 import BackButton from '@/components/Shared/BackButton';
 
 interface TeacherScheduleHeaderProps {
@@ -11,6 +11,7 @@ interface TeacherScheduleHeaderProps {
     setSelectedYear: (value: string) => void;
     setSelectedSemester: (value: string) => void;
     handleGenerateSchoolTimetable: () => void;
+    handleClearAllSchedules: () => void;
     handleSaveSchedule: () => void;
 }
 
@@ -23,11 +24,12 @@ export const TeacherScheduleHeader: React.FC<TeacherScheduleHeaderProps> = ({
     setSelectedYear,
     setSelectedSemester,
     handleGenerateSchoolTimetable,
+    handleClearAllSchedules,
     handleSaveSchedule
 }) => {
     return (
         <header className="relative z-40 bg-white/80 dark:bg-[#2a2b2f]/80 backdrop-blur-2xl border-b border-gray-100 dark:border-white/5 shadow-sm px-3 lg:px-4 py-1.5 transition-all">
-            <div className="w-full max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-[minmax(260px,1fr)_330px_minmax(390px,438px)] xl:items-center gap-2 xl:gap-3">
+            <div className="w-full max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-[minmax(220px,1fr)_330px_580px] xl:items-center gap-2 xl:gap-3">
                 <div className="min-w-0 flex items-center">
                     <div className="min-w-0 flex items-center gap-2.5">
                         <BackButton to="/academic/hub/scheduling" className="shrink-0 w-9 h-9" />
@@ -83,7 +85,7 @@ export const TeacherScheduleHeader: React.FC<TeacherScheduleHeaderProps> = ({
                     </div>
                 </div>
 
-                <div className="flex min-w-0 w-full items-center justify-start gap-2 overflow-hidden xl:justify-end">
+                <div className="flex min-w-0 w-full items-center justify-start gap-2 xl:justify-end">
                     <button
                         onClick={handleGenerateSchoolTimetable}
                         disabled={isAutoScheduling}
@@ -91,6 +93,13 @@ export const TeacherScheduleHeader: React.FC<TeacherScheduleHeaderProps> = ({
                     >
                         {isAutoScheduling ? <Loader2 size={17} className="shrink-0 animate-spin" /> : <Cpu size={17} className="shrink-0" />}
                         <span className="relative z-10 min-w-0 truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">จัดตารางสอนทั้งโรงเรียน</span>
+                    </button>
+                    <button
+                        onClick={handleClearAllSchedules}
+                        className="min-w-0 flex flex-[1_1_128px] xl:flex-none xl:w-[118px] items-center justify-center gap-2 px-3 py-2 rounded-2xl border border-rose-600/20 bg-rose-600/5 text-rose-500 hover:bg-rose-600/10 hover:border-rose-500/35 transition-all duration-300 text-[11px] font-black uppercase tracking-normal group h-10 active:scale-95 whitespace-nowrap"
+                    >
+                        <X size={17} className="shrink-0" />
+                        <span className="relative z-10 min-w-0 truncate">ลบทั้งหมด</span>
                     </button>
                     <button
                         onClick={handleSaveSchedule}

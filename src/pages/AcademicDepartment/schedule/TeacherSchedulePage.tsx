@@ -335,7 +335,11 @@ const TeacherSchedulePage: React.FC = () => {
 
         const consolidatedSchedule: Schedule = {};
         Object.entries(schoolMasterSchedule).forEach(([slotId, occupancies]: [string, any[]]) => {
-            const teacherOccupancies = occupancies.filter((occ: any) => occ.teacherId === selectedTeacher);
+            const teacherOccupancies = occupancies.filter((occ: any) => {
+                if (occ.teacherId === selectedTeacher) return true;
+                if (Array.isArray(occ.teacherIds) && occ.teacherIds.includes(selectedTeacher)) return true;
+                return false;
+            });
             teacherOccupancies.forEach((teacherOcc: any) => {
                 if (teacherOcc.course) {
                     const courseDoc = allCourses.find(c => c.id === teacherOcc.course?.id);
@@ -666,7 +670,10 @@ const TeacherSchedulePage: React.FC = () => {
                 if (!isCourseAllowedInScheduleViews(item.course?.id, item.teacherId, item.groupNumber)) return;
                 // If filtering by specific class, room, or group, show even if it's the selected teacher
                 const isExplicitFilter = filterClass !== 'all' || filterRoom !== 'all' || filterGroup !== 'all';
-                if (!isExplicitFilter && item.teacherId === selectedTeacher) return;
+                if (!isExplicitFilter) {
+                    const isTeacherAssigned = item.teacherId === selectedTeacher || (Array.isArray(item.teacherIds) && item.teacherIds.includes(selectedTeacher));
+                    if (isTeacherAssigned) return;
+                }
 
                 const matchesRoom = filterRoom === 'all' || (() => {
                     const displayName = clean(getClassDisplayName(item.classId));
@@ -845,7 +852,7 @@ const TeacherSchedulePage: React.FC = () => {
 
     const physicalRoomPreviewControls = (
         <div className="flex flex-row items-center gap-1.5 justify-end">
-            <div className="relative group w-[120px] sm:w-[145px] md:w-[165px]">
+            <div className="relative group w-[200px] sm:w-[220px] md:w-[260px]">
                 <TeacherSelect
                     teachers={teachers}
                     selectedTeacher={filterPhysicalRoomTeacher === 'all' ? '' : filterPhysicalRoomTeacher}
@@ -911,6 +918,7 @@ const TeacherSchedulePage: React.FC = () => {
                         setSelectedYear={setSelectedYear}
                         setSelectedSemester={setSelectedSemester}
                         handleGenerateSchoolTimetable={handleGenerateSchoolTimetable}
+                        handleClearAllSchedules={handleClearAllSchedules}
                         handleSaveSchedule={handleSaveSchedule}
                     />
 
@@ -943,7 +951,6 @@ const TeacherSchedulePage: React.FC = () => {
                                         setFilterGroup={setFilterGroup}
                                         setFilterPhysicalRoom={setFilterPhysicalRoom}
                                         handleClearSchedule={handleClearSchedule}
-                                        handleClearAllSchedules={handleClearAllSchedules}
                                         handleAutoScheduleForTeacherAndClasses={handleAutoScheduleForTeacherAndClasses}
                                     />
                                 }
@@ -1021,6 +1028,7 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedTeacherData={selectedTeacherData}
                                     onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
                                     selectedCourseCode={searchTerm}
+                                    hideScrollbar={true}
                                 />
                             </div>
                             <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
@@ -1053,6 +1061,7 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedTeacherData={selectedTeacherData}
                                     onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
                                     selectedCourseCode={searchTerm}
+                                    hideScrollbar={true}
                                 />
                             </div>
                         </div>

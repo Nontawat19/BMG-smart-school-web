@@ -63,11 +63,13 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                             </div>
                             <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-800"></div>
                         </div>
-                        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                            <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-md border border-amber-500/20 tracking-tighter whitespace-nowrap">
-                                {data.teacher?.teacherId || 'ID:N/A'}
-                            </span>
-                            <span className={`text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap ${context === 'value' ? '' : 'overflow-hidden text-ellipsis'}`}>
+                        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                            {context !== 'value' && (
+                                <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-md border border-amber-500/20 tracking-tighter whitespace-nowrap flex-shrink-0">
+                                    {data.teacher?.teacherId || 'ID:N/A'}
+                                </span>
+                            )}
+                            <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap overflow-hidden text-ellipsis">
                                 {data.label}
                             </span>
                         </div>

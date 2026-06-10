@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import Select from 'react-select';
-import { Trash2, X, Zap } from 'lucide-react';
+import { Trash2, Zap } from 'lucide-react';
 import { CLASSES, thaiFormatClass } from '../utils';
 import { Course, CourseInstance, Schedule, SchoolSettings, Teacher, getAssignmentTeacherIds } from '../types';
 import { TeacherSelect } from './TeacherSelect';
@@ -28,7 +28,6 @@ interface CompactScheduleToolbarProps {
     setFilterGroup: (value: string) => void;
     setFilterPhysicalRoom: (value: string) => void;
     handleClearSchedule: () => void;
-    handleClearAllSchedules: () => void;
     handleAutoScheduleForTeacherAndClasses: () => void;
 }
 
@@ -75,7 +74,6 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
     setFilterGroup,
     setFilterPhysicalRoom,
     handleClearSchedule,
-    handleClearAllSchedules,
     handleAutoScheduleForTeacherAndClasses
 }) => {
     const courseMatchesRoom = (course: Course) => {
@@ -320,15 +318,6 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                             <span>ลบตารางท่านนี้</span>
                         </button>
                     )}
-
-                    {/* Clear all schedules */}
-                    <button 
-                        onClick={handleClearAllSchedules} 
-                        className="flex items-center gap-1 h-[32px] px-2.5 rounded-xl border border-rose-600/10 bg-rose-600/5 text-rose-600 hover:bg-rose-600/10 active:scale-95 transition-all text-[11px] font-black"
-                    >
-                        <X size={13} className="shrink-0" /> 
-                        <span>ลบทั้งหมด</span>
-                    </button>
                 </div>
             </div>
         </div>

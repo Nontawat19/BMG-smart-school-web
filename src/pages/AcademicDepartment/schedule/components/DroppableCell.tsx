@@ -135,9 +135,9 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     } else if (courses.length > 0) {
         cellClass = 'bg-white dark:bg-white/[0.02] border-gray-100 dark:border-white/5 shadow-sm';
         content = (
-            <div className={`h-full w-full flex flex-col gap-0.5 p-0.5`}>
+            <div className={`h-full w-full flex ${courses.length > 1 ? 'flex-row' : 'flex-col'} gap-0.5 p-0.5`}>
                 {courses.map(c => (
-                    <div key={c.instanceId} className="flex-1 min-h-0 w-full relative">
+                    <div key={c.instanceId} className={`flex-1 relative ${courses.length > 1 ? 'min-w-0 h-full' : 'w-full h-full'}`}>
                         <DraggableCourse 
                             course={c} 
                             showRemove={true} 

@@ -18,7 +18,8 @@ export const sendLineAttendanceNotification = async (
     status: string,
     time: string,
     teacherConfig: any,
-    parentUserIds: string[]
+    parentUserIds: string[],
+    actionType: string = "checkin"
 ) => {
     console.log("🚀 เริ่มต้นกระบวนการส่ง LINE Notify (Dashboard Redesign)");
 
@@ -81,11 +82,13 @@ export const sendLineAttendanceNotification = async (
 
         // Conditional colors ตามสถานะ (เหมือน Gateway)
         const isLate = status === "สาย";
+        const isCheckout = actionType === "checkout" || actionType === "checkin_and_checkout";
         const bubbleBgColor = isLate ? "#fffbeb" : "#f0fdf4";
         const bubbleIconBg = isLate ? "#fbbf24" : "#1db446";
         const bubbleIcon = isLate ? "!" : "✓";
         const bubbleTextColor = isLate ? "#92400e" : "#166534";
-        const bubbleMessage = isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ";
+        const bubbleMessage = isCheckout ? "เดินทางกลับปลอดภัยครับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
+        const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
         const faceScanImageUrl = user.scanMethod === "สแกนใบหน้า" &&
             user.faceScanImageUrl &&
             user.faceScanImageUrl.startsWith("https://")
@@ -293,7 +296,7 @@ export const sendLineAttendanceNotification = async (
                                     layout: "vertical",
                                     margin: "md",
                                     contents: [
-                                        { type: "text", text: `${user.name} ${status}แล้วเวลา ${time} น.`, size: "sm", color: bubbleTextColor, weight: "bold", wrap: true },
+                                        { type: "text", text: `${user.name} ${displayStatusText}แล้วเวลา ${time} น.`, size: "sm", color: bubbleTextColor, weight: "bold", wrap: true },
                                         { type: "text", text: bubbleMessage, size: "xs", color: bubbleTextColor, margin: "xs" }
                                     ]
                                 }

@@ -22,18 +22,11 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
     
     // Determine primary label based on view type
     const courseTeacherIds = Array.isArray(course.teacherIds) && course.teacherIds.length > 0 ? course.teacherIds : [course.teacherId];
-    const teacher = teachers.find(t => t.id === course.teacherId || (t.teacherId && t.teacherId === course.teacherId));
+    const primaryTeacherId = courseTeacherIds.find(Boolean) || course.teacherId;
+    const teacher = teachers.find(t => t.id === primaryTeacherId || (t.teacherId && t.teacherId === primaryTeacherId));
     const teacherDisplay = (() => {
-        if (courseTeacherIds.length > 1) {
-            return courseTeacherIds.map(id => {
-                const item = teachers.find(t => t.id === id || (t.teacherId && t.teacherId === id));
-                if (!item) return id;
-                const raw = item.firstName || (item.name ? item.name.split(' ')[0] : '');
-                return raw.replace(/^(นาย|นาง|นางสาว|น\.ส\.|อาจารย์|อ\.|ครู)\s?/, '').trim();
-            }).join(', ');
-        }
         if (!teacher) {
-            return (course.teacherId === 'pending' || !course.teacherId || course.teacherId.startsWith('GHOST') ? 'รอระบุครู' : course.teacherId);
+            return (primaryTeacherId === 'pending' || !primaryTeacherId || primaryTeacherId.startsWith('GHOST') ? 'รอระบุครู' : primaryTeacherId);
         }
         
         const cleanName = (name: string) => {
@@ -139,7 +132,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
             {/* Info Indicator - Bottom Right */}
             <div 
-                className="absolute bottom-1 right-1 opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
+                className="absolute bottom-1 right-1 opacity-80 hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
                 onMouseEnter={(e) => {
                     e.stopPropagation();
                     onHover?.(e.currentTarget.getBoundingClientRect());
@@ -149,7 +142,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                     onHover?.(null);
                 }}
             >
-                <AlertCircle size={7} className={isOverlay ? 'text-white/40' : 'text-indigo-500/60'} />
+                <AlertCircle size={12} className={isOverlay ? 'text-white drop-shadow-sm' : 'text-indigo-600 dark:text-indigo-400 drop-shadow-sm'} />
             </div>
         </div>
     );

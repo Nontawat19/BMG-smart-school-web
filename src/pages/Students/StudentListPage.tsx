@@ -21,6 +21,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
+import { ACTIVE_STUDENT_STATUS } from "@/utils/studentStatusUtils";
 import { compressImage } from "@/utils/imageUtils";
 
 // กำหนด Type สำหรับข้อมูลนักเรียน
@@ -126,7 +127,7 @@ export default function StudentListPage() {
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [selectedClassLevel, setSelectedClassLevel] = useState<string>('');
   const [selectedRoom, setSelectedRoom] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>(ACTIVE_STUDENT_STATUS);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const { isDarkMode } = useTheme();
@@ -435,19 +436,22 @@ export default function StudentListPage() {
     let targetStudents: Student[] = [];
     let titleText = "";
 
+    // นับเลขที่เฉพาะนักเรียนที่กำลังศึกษาอยู่เท่านั้น เพื่อป้องกันเลขที่กระโดดเมื่อกรองสถานะ
+    const isStudying = (s: Student) => getStudentStatus(s) === ACTIVE_STUDENT_STATUS;
+
     if (selectedClassLevel) {
       if (selectedRoom) {
         // เฉพาะห้องเรียนที่เลือก (เช่น ม.1/1)
-        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room === selectedRoom);
+        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room === selectedRoom && isStudying(s));
         titleText = `จัดเลขที่ห้อง ${selectedClassLevel}/${selectedRoom}`;
       } else {
         // ทั้งระดับชั้น ทุกห้องเรียน (เช่น ม.1 ทุกห้อง)
-        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room);
+        targetStudents = students.filter(s => s.classLevel === selectedClassLevel && s.room && isStudying(s));
         titleText = `จัดเลขที่ชั้น ${selectedClassLevel} ทุกห้องเรียน`;
       }
     } else {
       // ทั้งโรงเรียน ทุกชั้นและทุกห้องเรียน
-      targetStudents = students.filter(s => s.classLevel && s.room);
+      targetStudents = students.filter(s => s.classLevel && s.room && isStudying(s));
       titleText = "จัดเลขที่ทั้งโรงเรียน";
     }
 
@@ -667,8 +671,7 @@ export default function StudentListPage() {
       .filter(student => selectedRoom === '' || student.room === selectedRoom)
       .filter(student => {
         if (selectedStatus === '') return true;
-        const sStatus = student.status || student.studentStatus || "ปกติ";
-        return sStatus === selectedStatus;
+        return getStudentStatus(student) === selectedStatus;
       });
 
     // Sorting Logic
@@ -1070,7 +1073,20 @@ export default function StudentListPage() {
                 className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
               >
                 <option value="">ทุกห้อง</option>
-                {Array.from({ length: 20 }, (_, i) => i + 1).map(r => <option key={r} value={r}>{r}</option>)}
+                {Array.from(
+                  new Set(
+                    students
+                      .filter(s => !selectedClassLevel || s.classLevel === selectedClassLevel)
+                      .map(s => s.room)
+                      .filter(Boolean)
+                  )
+                )
+                  .sort((a, b) => Number(a) - Number(b))
+                  .map(r => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
               </select>
               <select
                 value={selectedStatus}

@@ -11,6 +11,20 @@ const getScheduleDocId = (teacherId: string, academicYear: string, semester: str
     return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
 };
 
+const resolveScheduleTeacherId = (
+    scheduleKey: string,
+    storedTeacherId: string | undefined,
+    knownTeacherIds: string[]
+) => {
+    if (storedTeacherId && knownTeacherIds.includes(storedTeacherId)) return storedTeacherId;
+    const byPattern = knownTeacherIds.find(tId =>
+        scheduleKey === tId ||
+        scheduleKey.startsWith(`${tId}__`) ||
+        scheduleKey.startsWith(`${tId}_`)
+    );
+    return byPattern || storedTeacherId || scheduleKey.split('__')[0] || scheduleKey.split('_')[0];
+};
+
 const hasScheduleEntries = (scheduleData: any) => {
     const entries = scheduleData?.schedule || scheduleData;
     return Object.values(entries || {}).some((courses: any) => Array.isArray(courses) && courses.length > 0);
@@ -114,7 +128,7 @@ export const useScheduleActions = ({
             existingSchedules.docs.forEach(scheduleDoc => {
                 if (scheduleDoc.id === scheduleDocId) return;
                 const data = scheduleDoc.data();
-                const docTeacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+                const docTeacherId = resolveScheduleTeacherId(scheduleDoc.id, data.teacherId, teachers.map(t => t.id));
                 if (docTeacherId !== selectedTeacher) return;
 
                 const dataYear = String(data.academicYear || "");
@@ -241,7 +255,7 @@ export const useScheduleActions = ({
 
         return snapshot.docs.some(scheduleDoc => {
             const data = scheduleDoc.data();
-            const docTeacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+            const docTeacherId = resolveScheduleTeacherId(scheduleDoc.id, data.teacherId, teachers.map(t => t.id));
             if (teacherId && docTeacherId !== teacherId) return false;
 
             const dataYear = String(data.academicYear || "");

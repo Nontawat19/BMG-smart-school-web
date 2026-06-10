@@ -37,6 +37,8 @@ interface CameraConfig {
   sourceType: 'webcam' | 'ipcamera';
   ipCameraUrl?: string;
   mirrorFeed?: boolean;
+  enableFaceScan?: boolean; // เปิด/ปิด face scan สำหรับกล้องตัวนี้
+  attendanceMethod?: 'rfid' | 'manual_code' | 'both'; // วิธีลงเวลาเมื่อปิด face scan
   pairedUserId?: string; // ไอดีของผู้ใช้ลงเวลาที่จับคู่กับกล้องตัวนี้
   userType?: 'all' | 'teachers' | 'students' | 'specific';
   assignedUserIds?: string[];
@@ -1069,6 +1071,7 @@ const SchoolInfoPage: React.FC = () => {
                                     sourceType: 'ipcamera',
                                     ipCameraUrl: '',
                                     mirrorFeed: false,
+                                    enableFaceScan: true,
                                     userType: 'all',
                                     assignedUserIds: []
                                   };
@@ -1094,49 +1097,81 @@ const SchoolInfoPage: React.FC = () => {
                               </div>
                             ) : (
                               <div className="space-y-3">
-                                {info.faceScanConfig.cameras.map((cam, idx) => (
-                                  <div key={cam.id} className="p-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-neutral-900/50 hover:bg-gray-50 dark:hover:bg-neutral-900 transition-all flex flex-col gap-3 relative group">
-                                    
-                                    {/* Top bar with Camera Index & Delete */}
-                                    <div className="flex items-center justify-between border-b border-gray-150 dark:border-neutral-800 pb-2">
-                                      <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                                {info.faceScanConfig.cameras.map((cam, idx) => {
+                                  const faceScanOn = cam.enableFaceScan ?? true;
+                                  return (
+                                  <div key={cam.id} className={`p-3 rounded-xl border transition-all flex flex-col gap-3 relative group ${
+                                    faceScanOn
+                                      ? 'border-indigo-300 dark:border-indigo-700/60 bg-indigo-50/30 dark:bg-indigo-900/10'
+                                      : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-neutral-900/50 opacity-70'
+                                  }`}>
+
+                                    {/* Top bar: Camera Index | Face Scan Toggle | Delete */}
+                                    <div className="flex items-center justify-between border-b border-gray-200 dark:border-neutral-800 pb-2">
+                                      <span className={`text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${faceScanOn ? 'text-indigo-500' : 'text-gray-400'}`}>
                                         <FaCamera size={10} />
                                         อุปกรณ์ที่ #{idx + 1} - {cam.name || 'ไม่มีชื่อ'}
                                       </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          Swal.fire({
-                                            title: 'ยืนยันการลบกล้อง?',
-                                            text: `คุณต้องการลบกล้อง "${cam.name}" หรือไม่?`,
-                                            icon: 'warning',
-                                            showCancelButton: true,
-                                            confirmButtonText: 'ลบออก',
-                                            cancelButtonText: 'ยกเลิก',
-                                            confirmButtonColor: '#d33',
-                                            background: '#2a2b2f',
-                                            color: '#ffffff',
-                                          }).then((result) => {
-                                            if (result.isConfirmed) {
-                                              setInfo(prev => {
-                                                const currentCameras = prev.faceScanConfig?.cameras || [];
-                                                const updated = currentCameras.filter(c => c.id !== cam.id);
-                                                return {
-                                                  ...prev,
-                                                  faceScanConfig: {
-                                                    ...(prev.faceScanConfig || {}),
-                                                    cameras: updated
-                                                  }
-                                                };
-                                              });
-                                            }
-                                          });
-                                        }}
-                                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50/10 transition-colors"
-                                        title="ลบกล้องนี้"
-                                      >
-                                        <FaTrash size={12} />
-                                      </button>
+
+                                      <div className="flex items-center gap-2">
+                                        {/* Face scan toggle per camera */}
+                                        <label className="flex items-center gap-1.5 cursor-pointer select-none" title="เปิด/ปิด Face Scan สำหรับกล้องนี้">
+                                          <span className={`text-[10px] font-bold ${faceScanOn ? 'text-indigo-500' : 'text-gray-400'}`}>
+                                            {faceScanOn ? 'สแกนหน้า: เปิด' : 'สแกนหน้า: ปิด'}
+                                          </span>
+                                          <div className="relative inline-flex items-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={faceScanOn}
+                                              onChange={(e) => {
+                                                const val = e.target.checked;
+                                                setInfo(prev => {
+                                                  const current = prev.faceScanConfig?.cameras || [];
+                                                  const updated = current.map(c => c.id === cam.id ? { ...c, enableFaceScan: val } : c);
+                                                  return { ...prev, faceScanConfig: { ...(prev.faceScanConfig || {}), cameras: updated } };
+                                                });
+                                              }}
+                                              className="sr-only peer"
+                                            />
+                                            <div className="w-8 h-4 bg-gray-300 dark:bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                                          </div>
+                                        </label>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            Swal.fire({
+                                              title: 'ยืนยันการลบกล้อง?',
+                                              text: `คุณต้องการลบกล้อง "${cam.name}" หรือไม่?`,
+                                              icon: 'warning',
+                                              showCancelButton: true,
+                                              confirmButtonText: 'ลบออก',
+                                              cancelButtonText: 'ยกเลิก',
+                                              confirmButtonColor: '#d33',
+                                              background: '#2a2b2f',
+                                              color: '#ffffff',
+                                            }).then((result) => {
+                                              if (result.isConfirmed) {
+                                                setInfo(prev => {
+                                                  const currentCameras = prev.faceScanConfig?.cameras || [];
+                                                  const updated = currentCameras.filter(c => c.id !== cam.id);
+                                                  return {
+                                                    ...prev,
+                                                    faceScanConfig: {
+                                                      ...(prev.faceScanConfig || {}),
+                                                      cameras: updated
+                                                    }
+                                                  };
+                                                });
+                                              }
+                                            });
+                                          }}
+                                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50/10 transition-colors"
+                                          title="ลบกล้องนี้"
+                                        >
+                                          <FaTrash size={12} />
+                                        </button>
+                                      </div>
                                     </div>
 
                                     {/* Input fields in responsive 3-column layout */}
@@ -1242,80 +1277,106 @@ const SchoolInfoPage: React.FC = () => {
                                       </div>
                                     </div>
 
-                                    {/* IP Camera stream address (only if sourceType is ipcamera) */}
-                                    {cam.sourceType === 'ipcamera' && (
-                                      <div className="mt-2.5">
-                                        <label className="block text-[10px] font-bold text-gray-500 mb-1">ที่อยู่สตรีมกล้อง IP (HTTP Snapshot หรือ RTSP URL)</label>
-                                        <input
-                                          type="text"
-                                          value={cam.ipCameraUrl || ''}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setInfo(prev => {
-                                              const current = prev.faceScanConfig?.cameras || [];
-                                              const updated = current.map(c => c.id === cam.id ? { ...c, ipCameraUrl: val } : c);
-                                              return {
-                                                ...prev,
-                                                faceScanConfig: {
-                                                  ...(prev.faceScanConfig || {}),
-                                                  cameras: updated
-                                                }
-                                              };
-                                            });
-                                          }}
-                                          onBlur={(e) => {
-                                            const val = e.target.value.trim();
-                                            if (val !== '') {
-                                              const duplicate = (info.faceScanConfig?.cameras || []).find(
-                                                c => c.id !== cam.id && c.sourceType === 'ipcamera' && c.ipCameraUrl?.trim() === val
-                                              );
-                                              if (duplicate) {
-                                                Swal.fire({
-                                                  icon: 'warning',
-                                                  title: 'ที่อยู่กล้องซ้ำกัน',
-                                                  text: `ที่อยู่สตรีม IP Camera นี้ตรงกับกล้อง "${duplicate.name}" กรุณาใช้กล้องตัวอื่นเพื่อไม่ให้ระบบสตรีมชนกันครับ`,
-                                                  background: '#2a2b2f',
-                                                  color: '#ffffff',
-                                                  confirmButtonColor: '#f97316'
+                                    {faceScanOn ? (
+                                      <>
+                                        {/* IP Camera stream address (only if sourceType is ipcamera) */}
+                                        {cam.sourceType === 'ipcamera' && (
+                                          <div className="mt-2.5">
+                                            <label className="block text-[10px] font-bold text-gray-500 mb-1">ที่อยู่สตรีมกล้อง IP (HTTP Snapshot หรือ RTSP URL)</label>
+                                            <input
+                                              type="text"
+                                              value={cam.ipCameraUrl || ''}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                setInfo(prev => {
+                                                  const current = prev.faceScanConfig?.cameras || [];
+                                                  const updated = current.map(c => c.id === cam.id ? { ...c, ipCameraUrl: val } : c);
+                                                  return { ...prev, faceScanConfig: { ...(prev.faceScanConfig || {}), cameras: updated } };
                                                 });
-                                              }
-                                            }
-                                          }}
-                                          placeholder="เช่น rtsp://user:pass@192.168.1.64:554/stream1 หรือ http://admin:password@192.168.1.64/.../picture"
-                                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white font-mono"
-                                        />
+                                              }}
+                                              onBlur={(e) => {
+                                                const val = e.target.value.trim();
+                                                if (val !== '') {
+                                                  const duplicate = (info.faceScanConfig?.cameras || []).find(
+                                                    c => c.id !== cam.id && c.sourceType === 'ipcamera' && c.ipCameraUrl?.trim() === val
+                                                  );
+                                                  if (duplicate) {
+                                                    Swal.fire({
+                                                      icon: 'warning',
+                                                      title: 'ที่อยู่กล้องซ้ำกัน',
+                                                      text: `ที่อยู่สตรีม IP Camera นี้ตรงกับกล้อง "${duplicate.name}" กรุณาใช้กล้องตัวอื่นเพื่อไม่ให้ระบบสตรีมชนกันครับ`,
+                                                      background: '#2a2b2f',
+                                                      color: '#ffffff',
+                                                      confirmButtonColor: '#f97316'
+                                                    });
+                                                  }
+                                                }
+                                              }}
+                                              placeholder="เช่น rtsp://user:pass@192.168.1.64:554/stream1 หรือ http://admin:password@192.168.1.64/.../picture"
+                                              className="w-full px-2.5 py-1.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-transparent outline-none text-xs text-gray-900 dark:text-white font-mono"
+                                            />
+                                          </div>
+                                        )}
+                                        {/* Mirror Feed */}
+                                        <div className="flex items-center gap-2 px-1">
+                                          <input
+                                            type="checkbox"
+                                            id={`mirror-${cam.id}`}
+                                            checked={cam.mirrorFeed ?? false}
+                                            onChange={(e) => {
+                                              const val = e.target.checked;
+                                              setInfo(prev => {
+                                                const current = prev.faceScanConfig?.cameras || [];
+                                                const updated = current.map(c => c.id === cam.id ? { ...c, mirrorFeed: val } : c);
+                                                return { ...prev, faceScanConfig: { ...(prev.faceScanConfig || {}), cameras: updated } };
+                                              });
+                                            }}
+                                            className="rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                                          />
+                                          <label htmlFor={`mirror-${cam.id}`} className="text-[10px] font-bold text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+                                            กลับด้านภาพ (Mirror Video)
+                                          </label>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      /* วิธีลงเวลาเมื่อปิด face scan */
+                                      <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1e1f21] p-3">
+                                        <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-2">วิธีลงเวลาที่จุดนี้ (แทนการสแกนหน้า)</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                          {([
+                                            { value: 'rfid', label: 'RFID / บัตร', icon: '💳', desc: 'แตะบัตรลงเวลา' },
+                                            { value: 'manual_code', label: 'กรอกรหัส', icon: '⌨️', desc: 'รหัสครู/นักเรียน' },
+                                            { value: 'both', label: 'ทั้งสองแบบ', icon: '🔀', desc: 'RFID + กรอกรหัส' },
+                                          ] as const).map(opt => {
+                                            const selected = (cam.attendanceMethod ?? 'manual_code') === opt.value;
+                                            return (
+                                              <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => setInfo(prev => {
+                                                  const current = prev.faceScanConfig?.cameras || [];
+                                                  const updated = current.map(c => c.id === cam.id ? { ...c, attendanceMethod: opt.value } : c);
+                                                  return { ...prev, faceScanConfig: { ...(prev.faceScanConfig || {}), cameras: updated } };
+                                                })}
+                                                className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-center transition-all ${
+                                                  selected
+                                                    ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-600'
+                                                    : 'border-gray-200 dark:border-gray-700 hover:border-orange-300 dark:hover:border-orange-700'
+                                                }`}
+                                              >
+                                                <span className="text-base">{opt.icon}</span>
+                                                <span className={`text-[10px] font-bold ${selected ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{opt.label}</span>
+                                                <span className="text-[9px] text-gray-400">{opt.desc}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
                                       </div>
                                     )}
 
-                                    {/* Options Row (Mirror Feed) */}
-                                    <div className="flex items-center gap-2 px-1">
-                                      <input
-                                        type="checkbox"
-                                        id={`mirror-${cam.id}`}
-                                        checked={cam.mirrorFeed ?? false}
-                                        onChange={(e) => {
-                                          const val = e.target.checked;
-                                          setInfo(prev => {
-                                            const current = prev.faceScanConfig?.cameras || [];
-                                            const updated = current.map(c => c.id === cam.id ? { ...c, mirrorFeed: val } : c);
-                                            return {
-                                              ...prev,
-                                              faceScanConfig: {
-                                                ...(prev.faceScanConfig || {}),
-                                                cameras: updated
-                                              }
-                                            };
-                                          });
-                                        }}
-                                        className="rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-indigo-500 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
-                                      />
-                                      <label htmlFor={`mirror-${cam.id}`} className="text-[10px] font-bold text-gray-600 dark:text-gray-400 cursor-pointer select-none">
-                                        กลับด้านภาพ (Mirror Video)
-                                      </label>
-                                    </div>
-
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

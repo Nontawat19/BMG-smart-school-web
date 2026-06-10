@@ -194,11 +194,11 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
     const handleNext = () => {
         // Validation logic per step
         if (currentStep === 1) {
-            if (!formData.title || !formData.code || !formData.teacherId) {
+            if (!formData.title || !formData.code) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'ข้อมูลไม่ครบถ้วน',
-                    text: 'กรุณากรอกชื่อวิชา, รหัสวิชา และเลือกครูผู้สอน',
+                    text: 'กรุณากรอกชื่อวิชา และรหัสวิชา',
                     confirmButtonColor: '#4f46e5'
                 });
                 return;
@@ -400,172 +400,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="md:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ครูผู้สอน</label>
 
-                                            {/* 1. Add Teacher (Standard React-Select) */}
-                                            <div className="mb-4">
-                                                <Select
-                                                    placeholder="ค้นหาและเลือกครูผู้สอน..."
-                                                    options={getActiveSortedTeachers(teachers)
-                                                        .filter(t => !(formData.teacherIds || []).includes(t.id))
-                                                        .map(t => ({
-                                                            value: t.id,
-                                                            label: `${t.teacherId || t.id} ${t.name}${t.subjectGroup ? ` (${t.subjectGroup})` : ''}`,
-                                                            teacher: t
-                                                        }))
-                                                    }
-                                                    onChange={(option: any) => {
-                                                        if (option && option.teacher) {
-                                                            const teacher = option.teacher;
-                                                            const currentIds = formData.teacherIds || [];
-                                                            const currentAssignments = formData.teacherAssignments || [];
-                                                            const newIds = [...currentIds, teacher.id];
-                                                            const courseClasses = Array.isArray(formData.classId) ? formData.classId : (formData.classId ? [formData.classId] : []);
-                                                            const newAssignments = [...currentAssignments, { teacherId: teacher.id, roomIds: formData.room || [], classLevels: courseClasses }];
-
-                                                            handleChange('teacherIds', newIds);
-                                                            if (newIds.length === 1) handleChange('teacherId', teacher.id);
-                                                            handleChange('teacherAssignments', newAssignments);
-                                                        }
-                                                    }}
-                                                    value={null} // Always clear after selection acting as a trigger
-                                                    styles={{
-                                                        ...premiumStyles,
-                                                        control: (base: any, state: any) => ({
-                                                            ...premiumStyles.control(base, state),
-                                                            backgroundColor: isDark ? '#18181b' : '#ffffff',
-                                                            border: isDark ? '1px solid #374151' : '1px solid #e5e7eb',
-                                                        })
-                                                    }}
-                                                    menuPortalTarget={document.body}
-                                                    menuPosition="fixed"
-                                                    noOptionsMessage={() => "ไม่พบข้อมูล หรือเลือกครบแล้ว"}
-                                                />
-                                            </div>
-
-                                            {/* 2. Selected Teachers Table (Standard) */}
-                                            {(formData.teacherIds || []).length > 0 && (
-                                                <details className="group mb-6 bg-white dark:bg-[#18181b] border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden" open>
-                                                    <summary className="flex items-center justify-between px-4 py-3 bg-gray-50/50 dark:bg-white/5 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-white/10 transition-colors list-none">
-                                                        <div className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">
-                                                            <Users size={18} className="text-indigo-600 dark:text-indigo-400" />
-                                                            รายชื่อครูที่เลือก ({formData.teacherIds?.length || 0})
-                                                        </div>
-                                                        <ChevronDown size={18} className="text-gray-400 transform group-open:rotate-180 transition-transform duration-200" />
-                                                    </summary>
-
-                                                    <div className="table-responsive border-t border-gray-200 dark:border-gray-700">
-                                                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                                            <thead className="bg-gray-50 dark:bg-[#2a2b2f]">
-                                                                <tr>
-                                                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[25%]">ครู</th>
-                                                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[35%]">ระดับชั้น</th>
-                                                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[35%]">ห้อง</th>
-                                                                    <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[5%]">ลบ</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="bg-white dark:bg-[#18181b] divide-y divide-gray-200 dark:divide-gray-700">
-                                                                {getActiveSortedTeachers(teachers).filter(t => (formData.teacherIds || []).includes(t.id)).map((teacher, index) => {
-                                                                    const assignment = (formData.teacherAssignments || []).find(a => a.teacherId === teacher.id);
-
-                                                                    const courseClasses = Array.isArray(formData.classId) ? formData.classId : (formData.classId ? [formData.classId] : []);
-
-                                                                    // Filter options: Show if it matches course grade OR if it's already selected by this teacher
-                                                                    // If course has no specific grade set yet, show all options
-                                                                    const classLevelOptions = availableClassOptions
-                                                                        .filter(([val]) => {
-                                                                            if (courseClasses.length === 0) return true;
-                                                                            return courseClasses.includes(val) || (assignment?.classLevels || []).includes(val);
-                                                                        })
-                                                                        .map(([val, label]) => ({ value: val, label }));
-                                                                    const roomOptions = Array.from({ length: 24 }, (_, i) => ({ value: String(i + 1), label: `ห้อง ${i + 1}` }));
-
-                                                                    return (
-                                                                        <tr key={teacher.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                                                                            <td className="px-4 py-3 whitespace-nowrap">
-                                                                                <div className="flex items-center">
-                                                                                    <div>
-                                                                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                                                            <span className="font-mono text-indigo-600 dark:text-indigo-400 mr-2">{teacher.teacherId || teacher.id}</span>
-                                                                                            {teacher.name}
-                                                                                        </div>
-                                                                                        {teacher.subjectGroup && (
-                                                                                            <div className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
-                                                                                                {teacher.subjectGroup}
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-3">
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {courseClasses.length > 0 ? (
-                                                                                        courseClasses.map((c: string) => (
-                                                                                            <span key={c} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
-                                                                                                {availableClassOptions.find(opt => opt[0] === c)?.[1] || c}
-                                                                                            </span>
-                                                                                        ))
-                                                                                    ) : (
-                                                                                        <span className="text-gray-400 text-xs italic">- ไม่ระบุ -</span>
-                                                                                    )}
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-3">
-                                                                                <Select
-                                                                                    isMulti
-                                                                                    placeholder="เลือกห้อง..."
-                                                                                    options={roomOptions}
-                                                                                    value={roomOptions.filter(opt => assignment?.roomIds.includes(opt.value))}
-                                                                                    onChange={(opts: any) => {
-                                                                                        const newRooms = opts.map((o: any) => o.value);
-                                                                                        const newAssignments = (formData.teacherAssignments || []).map(a =>
-                                                                                            a.teacherId === teacher.id ? { ...a, roomIds: newRooms } : a
-                                                                                        );
-                                                                                        handleChange('teacherAssignments', newAssignments);
-                                                                                    }}
-                                                                                    styles={{
-                                                                                        ...premiumStyles,
-                                                                                        control: (base: any, state: any) => ({
-                                                                                            ...premiumStyles.control(base, state),
-                                                                                            minHeight: '30px',
-                                                                                            fontSize: '0.75rem',
-                                                                                            backgroundColor: 'transparent',
-                                                                                            border: '1px solid ' + (isDark ? '#374151' : '#e5e7eb'),
-                                                                                        }),
-                                                                                        menu: (base: any) => ({ ...premiumStyles.menu(base), minWidth: '120px' })
-                                                                                    }}
-                                                                                    menuPortalTarget={document.body}
-                                                                                    menuPosition="fixed"
-                                                                                />
-                                                                            </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                                                                                <button
-                                                                                    onClick={() => {
-                                                                                        const newIds = (formData.teacherIds || []).filter(id => id !== teacher.id);
-                                                                                        const newAssignments = (formData.teacherAssignments || []).filter(a => a.teacherId !== teacher.id);
-                                                                                        handleChange('teacherIds', newIds);
-                                                                                        if (newIds.length > 0 && !newIds.includes(formData.teacherId || '')) {
-                                                                                            handleChange('teacherId', newIds[0]);
-                                                                                        } else if (newIds.length === 0) {
-                                                                                            handleChange('teacherId', '');
-                                                                                        }
-                                                                                        handleChange('teacherAssignments', newAssignments);
-                                                                                    }}
-                                                                                    className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20"
-                                                                                >
-                                                                                    <X size={16} />
-                                                                                </button>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </details>
-                                            )}
-                                        </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ภาคเรียน</label>
                                             <div className="flex gap-4">

@@ -11,8 +11,32 @@ import { getLevelsByRange } from '@/utils/schoolUtils';
 import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { isActiveTeacher } from '@/utils/teacherSortUtils';
 
+type MasterScheduleEntry = {
+    teacherId: string;
+    teacherIds?: string[];
+    classId: string | string[];
+    room?: string[];
+    courseId?: string;
+    course: Course | null;
+    groupNumber: number;
+};
+
 const getScheduleDocId = (teacherId: string, academicYear: string, semester: string) => {
     return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
+};
+
+const resolveScheduleTeacherId = (
+    scheduleKey: string,
+    storedTeacherId: string | undefined,
+    knownTeacherIds: string[]
+) => {
+    if (storedTeacherId && knownTeacherIds.includes(storedTeacherId)) return storedTeacherId;
+    const byPattern = knownTeacherIds.find(tId =>
+        scheduleKey === tId ||
+        scheduleKey.startsWith(`${tId}__`) ||
+        scheduleKey.startsWith(`${tId}_`)
+    );
+    return byPattern || storedTeacherId || scheduleKey.split('__')[0] || scheduleKey.split('_')[0];
 };
 
 export const useScheduleData = (
@@ -29,7 +53,7 @@ export const useScheduleData = (
         opportunityExpansionLevel: '',
         availableClasses: []
     });
-    const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]>>({});
+    const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, MasterScheduleEntry[]>>({});
     const [teacherMasterSchedule, setTeacherMasterSchedule] = useState<Record<string, { classId: string | string[]; course: Course | null }>>({});
     const [schedule, setSchedule] = useState<Schedule>({});
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
@@ -50,14 +74,15 @@ export const useScheduleData = (
             return yearMatches && semesterMatches;
         };
 
-        const masterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]> = {};
+        const masterSchedule: Record<string, MasterScheduleEntry[]> = {};
+        const knownTeacherIds = Object.keys(teacherMap || {});
         const schedulesCollectionRef = collection(db, 'school-settings', currentSchoolId, 'schedules');
         const querySnapshot = await getDocs(schedulesCollectionRef);
         const matchingScheduleDocs = querySnapshot.docs
             .map(scheduleDoc => {
                 const data = scheduleDoc.data();
                 if (!matchesYearSemester(data)) return null;
-                const teacherId = data.teacherId || scheduleDoc.id.split('__')[0];
+                const teacherId = resolveScheduleTeacherId(scheduleDoc.id, data.teacherId, knownTeacherIds);
                 const dataYear = String(data.academicYear || targetYear || "");
                 const dataSemester = String(data.semester || targetSemester || "1");
                 const canonicalDocId = getScheduleDocId(teacherId, dataYear, dataSemester);
@@ -105,6 +130,9 @@ export const useScheduleData = (
                         masterSchedule[slot].push({ 
                             teacherId, 
                             classId: resolvedClassId, 
+                            room: resolvedRoom,
+                            courseId: course.id,
+                            teacherIds: course.teacherIds,
                             groupNumber: course.groupNumber || 1,
                             course: {
                                 ...course,

@@ -33,6 +33,7 @@ export type EngineTask = {
     teacherIds?: string[];
     targetClasses: string[];
     targetRooms: string[];
+    previousSlots?: string[];
     instanceCount: number;
     duration: number;
     originalCourseId: string;
@@ -43,7 +44,7 @@ export type EngineTask = {
 
 type RuntimeConflictIndex = {
     teacherSlots: Map<string, Set<string>>;
-    classSlots: Map<string, Map<string, Set<number>>>; // classId -> slotId -> Set of groupNumbers (0 = all groups)
+    classSlots: Map<string, Map<string, Set<string>>>; // classId -> slotId -> Set of placement keys
     roomSlots: Map<string, Set<string>>;
     teacherDayLoad: Map<string, number>;
     classDayLoad: Map<string, number>;
@@ -129,9 +130,14 @@ const normalizeClassIds = (classId: string | string[] | undefined) => {
     return (Array.isArray(classId) ? classId : [classId]).filter(Boolean) as string[];
 };
 
-const normalizeSpecificRooms = (rooms: string[] | undefined) => {
-    return (rooms || []).filter(room => room && room.toLowerCase() !== 'all');
+const normalizeSpecificRooms = (rooms: string | string[] | undefined) => {
+    const list = Array.isArray(rooms) ? rooms : (rooms ? [rooms] : []);
+    return list.filter(room => room && room.toLowerCase() !== 'all');
 };
+
+const getClassPlacementKey = (occupancy: Pick<TimetableOccupancy, 'courseId' | 'groupNumber'>) => (
+    `${occupancy.courseId}|${occupancy.groupNumber || 0}`
+);
 
 const getTaskTeacherIds = (task: Pick<EngineTask, 'teacherId' | 'teacherIds'>) => (
     Array.from(new Set((task.teacherIds && task.teacherIds.length > 0 ? task.teacherIds : [task.teacherId]).filter(Boolean)))
@@ -178,8 +184,7 @@ const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupa
             if (!index.classSlots.has(classId)) index.classSlots.set(classId, new Map());
             const slotMap = index.classSlots.get(classId)!;
             if (!slotMap.has(slotId)) slotMap.set(slotId, new Set());
-            const gNum = (occupancy as any).groupNumber || 0;
-            slotMap.get(slotId)!.add(gNum);
+            slotMap.get(slotId)!.add(getClassPlacementKey(occupancy));
 
             const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
             index.classCourseDayCount.set(courseDayKey, (index.classCourseDayCount.get(courseDayKey) || 0) + 1);
@@ -263,8 +268,7 @@ const removeOccupancyFromIndex = (index: RuntimeConflictIndex, slotId: string, o
             if (slotMap) {
                 const groupSet = slotMap.get(slotId);
                 if (groupSet) {
-                    const gNum = (occupancy as any).groupNumber || 0;
-                    groupSet.delete(gNum);
+                    groupSet.delete(getClassPlacementKey(occupancy));
                     if (groupSet.size === 0) slotMap.delete(slotId);
                 }
                 if (slotMap.size === 0) index.classSlots.delete(classId);
@@ -312,18 +316,12 @@ const hasSlot = (map: Map<string, Set<string>>, key: string, slotId: string) => 
     return map.get(key)?.has(slotId) || false;
 };
 
-const hasClassConflict = (index: RuntimeConflictIndex, classId: string, slotId: string, groupNumber: number) => {
+const hasClassConflict = (index: RuntimeConflictIndex, classId: string, slotId: string) => {
     const slotMap = index.classSlots.get(classId);
     if (!slotMap) return false;
     const occupiedGroups = slotMap.get(slotId);
     if (!occupiedGroups) return false;
-
-    // If already occupied by 'all groups' (0), any new group conflicts
-    if (occupiedGroups.has(0)) return true;
-    // If new task is 'all groups' (0), and slot is occupied by ANY group, conflict
-    if (groupNumber === 0 && occupiedGroups.size > 0) return true;
-    // Otherwise, only conflict if the SAME group number is already there
-    return occupiedGroups.has(groupNumber);
+    return occupiedGroups.size > 0;
 };
 
 const countGaps = (periods: number[]) => {
@@ -370,10 +368,50 @@ const getPeriodLoad = (map: Map<string, number>, ownerIds: string[], periodIndex
     return maxLoad;
 };
 
-const getTaskPriority = (task: EngineTask) => {
-    if (task.requiredSlot) return 0;
+const getSessionSlotsForStart = (
+    startSlotId: string,
+    duration: number,
+    slots: EngineTeachingSlot[]
+) => {
+    if (duration <= 1) {
+        return slots.some(slot => slot.slotId === startSlotId) ? [startSlotId] : [];
+    }
+
+    const [dayKey, pStr] = startSlotId.split('-');
+    const startIndex = parseInt(pStr);
+    const daySlots = slots
+        .filter(slot => slot.dayKey === dayKey && slot.periodSetting.isTeachingPeriod)
+        .map(slot => ({
+            slotId: slot.slotId,
+            index: parseInt(slot.slotId.split('-')[1])
+        }))
+        .sort((a, b) => a.index - b.index);
+
+    const position = daySlots.findIndex(slot => slot.index === startIndex);
+    if (position === -1) return [];
+    if (position % duration !== 0) return [];
+
+    const session = daySlots.slice(position, position + duration);
+    if (session.length !== duration) return [];
+    for (let i = 1; i < session.length; i++) {
+        if (session[i].index !== session[i - 1].index + 1) return [];
+    }
+
+    return session.map(slot => slot.slotId);
+};
+
+const hasPlacementPreference = (task: EngineTask, assignmentConstraints: AssignmentConstraintMap) => {
+    const constraint = assignmentConstraints[task.compositeId];
+    const preference = task.duration > 1 ? constraint?.doublePreference : constraint?.singlePreference;
+    return Boolean(preference && preference !== 'any');
+};
+
+const getTaskPriority = (task: EngineTask, assignmentConstraints: AssignmentConstraintMap) => {
+    if (task.duration > 1 && task.requiredSlot) return 0;
     if (task.duration > 1) return 1;
-    return 2;
+    if (task.requiredSlot) return 2;
+    if (hasPlacementPreference(task, assignmentConstraints)) return 3;
+    return 4;
 };
 
 const getTaskPressureKey = (task: EngineTask) => `${getTaskTeacherIds(task).join('+')}|${task.compositeId}|${task.targetClasses.join(',')}`;
@@ -391,13 +429,14 @@ const orderTasksForRun = (
     tasks: EngineTask[],
     validSlotsByTaskIndex: string[][],
     run: number,
-    pressureByTaskKey: Map<string, number>
+    pressureByTaskKey: Map<string, number>,
+    assignmentConstraints: AssignmentConstraintMap
 ) => {
     const taskIndexByRef = new Map<EngineTask, number>();
     tasks.forEach((task, index) => taskIndexByRef.set(task, index));
 
     return [...tasks].sort((a, b) => {
-        const priorityDelta = getTaskPriority(a) - getTaskPriority(b);
+        const priorityDelta = getTaskPriority(a, assignmentConstraints) - getTaskPriority(b, assignmentConstraints);
         if (priorityDelta !== 0) return priorityDelta;
 
         const aIndex = taskIndexByRef.get(a) ?? 0;
@@ -427,7 +466,7 @@ const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: Runt
 
     for (const slotId of sessionSlots) {
         if (teacherIds.some(teacherId => hasSlot(index.teacherSlots, teacherId, slotId))) return false;
-        if (task.targetClasses.some(classId => hasClassConflict(index, classId, slotId, task.groupNumber))) return false;
+        if (task.targetClasses.some(classId => hasClassConflict(index, classId, slotId))) return false;
         if (requestedRooms.some(roomId => hasSlot(index.roomSlots, roomId, slotId))) return false;
     }
 
@@ -515,13 +554,23 @@ const getWeightedSlots = (
 
     const scoredSlots = availableSlots.filter(slot => {
         if (task.duration <= 1) return true;
-        const { dayKey } = slot;
-        const slotIndex = parseInt(slot.slotId.split('-')[1]);
-        const nextSlotId = `${dayKey}-${slotIndex + 1}`;
-        const nextSlotInfo = slots.find(s => s.slotId === nextSlotId);
-        return Boolean(nextSlotInfo?.periodSetting.isTeachingPeriod);
+        return getSessionSlotsForStart(slot.slotId, task.duration, slots).length === task.duration;
     }).filter(slot => {
         if (task.requiredSlot) return true;
+        
+        // HARD CONSTRAINT: Teacher Overload
+        const teacherIds = getTaskTeacherIds(task);
+        const currentLoad = Math.max(...teacherIds.map(teacherId => conflictIndex.teacherDayLoad.get(`${teacherId}|${slot.dayKey}`) || 0));
+        
+        const taskTeacherKey = teacherIds.join('+');
+        const sameTeacherTasks = allTasks.filter(t => getTaskTeacherIds(t).join('+') === taskTeacherKey);
+        const totalWeeklyTeacherLoad = sameTeacherTasks.reduce((sum, t) => sum + t.duration, 0);
+        const maxExpectedDailyLoad = Math.max(6, Math.ceil(totalWeeklyTeacherLoad / 5) + 1);
+        
+        if (currentLoad + task.duration > maxExpectedDailyLoad) {
+            return false; // Hard Invalid
+        }
+
         if (ignorePrefs) return true;
         const currentSubjectCount = getMaxSubjectCountForDay(slot.dayKey);
         return currentSubjectCount + task.duration <= maxPeriodsPerDayForAssignment;
@@ -534,24 +583,31 @@ const getWeightedSlots = (
         const lunchIdx = slots.findIndex(s => s.periodSetting.id === 'lunch');
         const isMorning = lunchIdx !== -1 ? pIdx < lunchIdx : periodNumber <= 4;
         const asgnCst = assignmentConstraints[task.compositeId];
+        const halfBoundary = lunchIdx !== -1 ? lunchIdx : Math.max(1, Math.floor(slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod).length / 2));
+        const countHalfLoad = (periods: number[], preferMorning: boolean) => (
+            periods.filter(period => preferMorning ? period < halfBoundary : period >= halfBoundary).length
+        );
 
         // 1. Mandatory / Preferences Logic
-        if (!ignorePrefs) {
-            if (asgnCst) {
-                const pref = task.duration >= 2 ? asgnCst.doublePreference : asgnCst.singlePreference;
-                if (pref === 'morning' && isMorning) score += 2000;
-                else if (pref === 'afternoon' && !isMorning) score += 2000;
-                else if (pref && pref !== 'any') score -= 500; 
-            } else {
-                if (category === 'ACADEMIC' && isMorning) score += 300;
-                else if (category === 'ACTIVITY' && !isMorning) score += 300;
-            }
+        const prefMultiplier = ignorePrefs ? 0.2 : 1; // Reduce weight in rescue mode instead of completely ignoring
+        
+        if (asgnCst) {
+            const pref = task.duration >= 2 ? asgnCst.doublePreference : asgnCst.singlePreference;
+            if (pref === 'morning' && isMorning) score += (2000 * prefMultiplier);
+            else if (pref === 'afternoon' && !isMorning) score += (2000 * prefMultiplier);
+            else if (pref && pref !== 'any') score -= (500 * prefMultiplier); 
+        } else {
+            // ลดน้ำหนักลงจาก 300 เป็น 50 เพื่อไม่ให้ทุกวิชาแย่งกันลงแต่ช่วงเช้าจนบ่ายโล่ง
+            if (category === 'ACADEMIC' && isMorning) score += (50 * prefMultiplier);
+            else if (category === 'ACTIVITY' && !isMorning) score += (50 * prefMultiplier);
         }
 
         // 2. Teacher Load & Balancing (Spread workload across the week)
         const teacherIds = getTaskTeacherIds(task);
         const primaryTeacherDayKey = `${task.teacherId}|${dayKey}`;
         const currentLoad = Math.max(...teacherIds.map(teacherId => conflictIndex.teacherDayLoad.get(`${teacherId}|${dayKey}`) || 0));
+        const teacherMorningLoad = Math.max(...teacherIds.map(teacherId => countHalfLoad(conflictIndex.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [], true)));
+        const teacherAfternoonLoad = Math.max(...teacherIds.map(teacherId => countHalfLoad(conflictIndex.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [], false)));
         
         // Dynamic penalty for load imbalance
         if (currentLoad >= 6) score -= 800; // Increased penalty for heavy days
@@ -559,14 +615,38 @@ const getWeightedSlots = (
         else if (currentLoad <= 2) score += 300; // Bonus for light days
 
         let maxClassLoadForDay = 0;
+        let maxClassMorningLoad = 0;
+        let maxClassAfternoonLoad = 0;
         task.targetClasses.forEach(classId => {
             const classDayLoad = conflictIndex.classDayLoad.get(`${classId}|${dayKey}`) || 0;
             if (classDayLoad > maxClassLoadForDay) maxClassLoadForDay = classDayLoad;
+            const classPeriods = conflictIndex.classDailySchedule.get(`${classId}|${dayKey}`) || [];
+            maxClassMorningLoad = Math.max(maxClassMorningLoad, countHalfLoad(classPeriods, true));
+            maxClassAfternoonLoad = Math.max(maxClassAfternoonLoad, countHalfLoad(classPeriods, false));
         });
         if (maxClassLoadForDay >= 7) score -= 1200;
         else if (maxClassLoadForDay >= 6) score -= 700;
         else if (maxClassLoadForDay >= 5) score -= 300;
         else if (maxClassLoadForDay <= 3) score += 250;
+
+        const currentHalfLoad = isMorning
+            ? Math.max(teacherMorningLoad, maxClassMorningLoad)
+            : Math.max(teacherAfternoonLoad, maxClassAfternoonLoad);
+        const oppositeHalfLoad = isMorning
+            ? Math.max(teacherAfternoonLoad, maxClassAfternoonLoad)
+            : Math.max(teacherMorningLoad, maxClassMorningLoad);
+        score += (oppositeHalfLoad - currentHalfLoad) * 180;
+
+        if (task.previousSlots?.includes(slot.slotId)) {
+            score -= task.duration > 1 ? 2200 : 1400;
+        }
+
+        if (isMorning && teacherMorningLoad >= teacherAfternoonLoad + 2) {
+            score -= 220;
+        }
+        if (!isMorning && teacherAfternoonLoad >= teacherMorningLoad + 2) {
+            score -= 220;
+        }
 
         const daySched = conflictIndex.teacherDailySchedule.get(primaryTeacherDayKey) || [];
         let maxClassGapsAfterPlacement = 0;
@@ -574,9 +654,13 @@ const getWeightedSlots = (
         task.targetClasses.forEach(classId => {
             const classDayKey = `${classId}|${dayKey}`;
             const classPeriods = conflictIndex.classDailySchedule.get(classDayKey) || [];
+            const sessionSlots = getSessionSlotsForStart(slot.slotId, task.duration, slots);
+            const sessionPeriods = sessionSlots.length === task.duration
+                ? sessionSlots.map(sessionSlot => parseInt(sessionSlot.split('-')[1]))
+                : Array.from({ length: task.duration }, (_, offset) => pIdx + offset);
             const nextClassPeriods = [
                 ...classPeriods,
-                ...Array.from({ length: task.duration }, (_, offset) => pIdx + offset)
+                ...sessionPeriods
             ];
             maxClassGapsAfterPlacement = Math.max(maxClassGapsAfterPlacement, countGaps(nextClassPeriods));
             maxClassConsecutiveAfterPlacement = Math.max(maxClassConsecutiveAfterPlacement, getMaxConsecutive(nextClassPeriods));
@@ -607,7 +691,7 @@ const getWeightedSlots = (
             .sort((a, b) => parseInt(b.slotId.split('-')[1]) - parseInt(a.slotId.split('-')[1]))[0];
         const isLastMorningPeriod = lastMorningTeachingSlot?.slotId === slot.slotId;
         if (isLastMorningPeriod && classPeriodLoad <= 1) {
-            score += 260;
+            score += 80;
         }
 
         let consecutiveCount = 0;
@@ -627,14 +711,28 @@ const getWeightedSlots = (
         if (totalConsecutive > 3) score -= 1500; 
         else if (totalConsecutive > 2) score -= 300;
 
-        // 3. Gap Penalty
+        // 3. Gap Penalty & Continuous Reward (Look-ahead logic)
         const prevP = pIdx - 1;
         const nextP = pIdx + task.duration;
-        const hasBefore = daySched.includes(prevP - 1); 
-        const hasAfter = daySched.includes(nextP + 1);  
+        const hasPrev = daySched.includes(prevP);
+        const hasNext = daySched.includes(nextP);
         
-        if (hasBefore && !daySched.includes(prevP)) score -= 200; 
-        if (hasAfter && !daySched.includes(nextP)) score -= 200;  
+        // Reward for being continuous (touching an existing period)
+        if (hasPrev || hasNext) {
+            score += 800; // Strong reward for grouping periods together
+        }
+        
+        // Look-ahead for gaps: if placing this leaves exactly 1 empty slot before or after another block
+        const hasBeforeGap = daySched.includes(prevP - 1) && !hasPrev; 
+        const hasAfterGap = daySched.includes(nextP + 1) && !hasNext;  
+        
+        if (hasBeforeGap) score -= 1500; // Strong penalty for leaving a 1-period gap
+        if (hasAfterGap) score -= 1500;
+        
+        // Fragmentation penalty: if placing this creates a standalone island in a day that already has periods
+        if (!hasPrev && !hasNext && daySched.length > 0) {
+            score -= 1000;
+        }
 
         // 4. Class Subject Spreading (Crucial for User Request)
         let maxSubjectInDay = 0;
@@ -665,17 +763,21 @@ const getWeightedSlots = (
             
             // Simple logic: if repeating, give a small nudge to the "other" half
             // (Morning courses prefer afternoon for 2nd period, and vice-versa)
-            if (isMorning) score -= 200; 
-            else score += 200;
+            if (isMorning) score -= 120; 
+            else score += 120;
         } else {
             // Bonus for spreading to a new day
             score += 1000;
         }
 
         // 5. Time Slot Specific
-        if (category === 'ACADEMIC' && periodNumber <= 2) score += 100;
+        if (category === 'ACADEMIC' && !isMorning) score += 25;
+        else if (category === 'ACADEMIC' && isMorning) score += 5;
+        if (category === 'ACTIVITY' && !isMorning) score += 25;
+        else if (category === 'ACTIVITY' && isMorning) score += 5;
 
-        score += Math.random() * 50; 
+        // สุ่มคะแนนเล็กน้อยเพื่อให้เกิดการกระจายตัว (ถ้าคะแนนเท่ากันหมด)
+        score += Math.random() * 80; 
         return { slot, score };
     });
 
@@ -700,6 +802,13 @@ const evaluateScheduleQuality = (
     teacherIds.forEach(teacherId => {
         const loads = dayKeys.map(dayKey => index.teacherDayLoad.get(`${teacherId}|${dayKey}`) || 0);
         score -= getBalancePenalty(loads) * 220;
+
+        dayKeys.forEach(dayKey => {
+            const periods = index.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [];
+            const morning = periods.filter(period => period < 5).length;
+            const afternoon = periods.length - morning;
+            score -= Math.abs(morning - afternoon) * 140;
+        });
     });
 
     classIds.forEach(classId => {
@@ -711,6 +820,9 @@ const evaluateScheduleQuality = (
             score -= countGaps(periods) * 260;
             const maxConsecutive = getMaxConsecutive(periods);
             if (maxConsecutive > 6) score -= (maxConsecutive - 6) * 900;
+            const morning = periods.filter(period => period < 5).length;
+            const afternoon = periods.length - morning;
+            score -= Math.abs(morning - afternoon) * 220;
         });
     });
 
@@ -792,7 +904,7 @@ export const runSchedulingEngine = (
             message: `กำลังประมวลผลรอบที่ ${run}/${maxRuns}... (ดีที่สุด: เหลือ ${minUnplacedCount === Infinity ? '?' : minUnplacedCount})`
         });
 
-        const orderedTasks = orderTasksForRun(tasks, validSlotsByTaskIndex, run, pressureByTaskKey);
+        const orderedTasks = orderTasksForRun(tasks, validSlotsByTaskIndex, run, pressureByTaskKey, assignmentConstraints);
 
         const tryPlaceInRun = (
             task: EngineTask,
@@ -830,9 +942,8 @@ export const runSchedulingEngine = (
             }
 
             for (const startSlotId of potentialSlots) {
-                const [dayKey, pStr] = startSlotId.split('-');
-                const startPeriodNumber = parseInt(pStr);
-                const sessionSlots = Array.from({ length: task.duration }, (_, i) => `${dayKey}-${startPeriodNumber + i}`);
+                const sessionSlots = getSessionSlotsForStart(startSlotId, task.duration, allTeachingSlots);
+                if (sessionSlots.length !== task.duration) continue;
 
                 if (canPlaceWithIndex(task, sessionSlots, conflictIndex)) {
                     const teacherIds = getTaskTeacherIds(task);
@@ -935,9 +1046,8 @@ export const runSchedulingEngine = (
                 let minBlockerCost = Infinity;
 
                 for (const slotId of potentialSlots.slice(0, repairSearchLimit)) {
-                    const [dayKey, pStr] = slotId.split('-');
-                    const startP = parseInt(pStr);
-                    const sessionSlots = Array.from({ length: task.duration }, (_, i) => `${dayKey}-${startP + i}`);
+                    const sessionSlots = getSessionSlotsForStart(slotId, task.duration, allTeachingSlots);
+                    if (sessionSlots.length !== task.duration) continue;
 
                     const blockers: TimetableOccupancy[] = [];
                     let fatalConflict = false;
@@ -948,16 +1058,12 @@ export const runSchedulingEngine = (
                         const localBlockers = occs.filter(o => {
                             const occClasses = normalizeClassIds(o.classId);
                             const occRooms = normalizeSpecificRooms(o.room);
-                            const occGNum = (o as any).groupNumber || 0;
+                            const occGroup = Number((o as any).groupNumber || 0);
+                            const sameAssignment = o.courseId === task.course.id && occGroup === Number(task.groupNumber || 0);
                             
                             const taskTeacherIds = getTaskTeacherIds(task);
                             return taskTeacherIds.includes(o.teacherId) ||
-                                task.targetClasses.some(c => {
-                                    if (!occClasses.includes(c)) return false;
-                                    // Split class logic for blockers
-                                    if (occGNum === 0 || task.groupNumber === 0) return true;
-                                    return occGNum === task.groupNumber;
-                                }) ||
+                                (task.targetClasses.some(c => occClasses.includes(c)) && !sameAssignment) ||
                                 requestedRooms.some(roomId => occRooms.includes(roomId));
                         });
                         if (localBlockers.some(o => {
@@ -985,6 +1091,10 @@ export const runSchedulingEngine = (
                             }
                             const bTask = tasks[b.taskId];
                             if (!bTask || bTask.requiredSlot) {
+                                blockerCost = Infinity;
+                                break;
+                            }
+                            if (bTask.duration > task.duration) {
                                 blockerCost = Infinity;
                                 break;
                             }

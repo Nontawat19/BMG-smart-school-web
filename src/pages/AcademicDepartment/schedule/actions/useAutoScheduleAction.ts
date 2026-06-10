@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { collection, doc, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { Course, CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, SchedulingMetrics, SchoolSettings, AssignmentConstraintMap, getAssignmentTeacherIds } from '../types';
-import { checkConstraints, getClassDisplayName, IndexedTimetable, DAYS, isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods } from '../utils';
+import { buildPreferredSessionDurations, checkConstraints, getClassDisplayName, getMatchingSpecialPeriod, IndexedTimetable, DAYS, isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isDoubleCapableConstraint, isProtectedSpecialPeriodSetting } from '../utils';
 import { runSchedulingEngine, SchedulingEngineInput, SchedulingEngineResult } from '../engine/schedulerEngine';
 import { isActiveTeacher } from '@/utils/teacherSortUtils';
 
@@ -21,6 +21,20 @@ const normalizeGroupNumber = (groupNumber?: number | string) => {
 
 const getAssignmentCompositeId = (courseId: string, groupNumber?: number | string) => {
     return `${courseId}_${normalizeGroupNumber(groupNumber)}`;
+};
+
+const resolveScheduleTeacherId = (
+    scheduleKey: string,
+    storedTeacherId: string | undefined,
+    knownTeacherIds: string[]
+) => {
+    if (storedTeacherId && knownTeacherIds.includes(storedTeacherId)) return storedTeacherId;
+    const byPattern = knownTeacherIds.find(tId =>
+        scheduleKey === tId ||
+        scheduleKey.startsWith(`${tId}__`) ||
+        scheduleKey.startsWith(`${tId}_`)
+    );
+    return byPattern || storedTeacherId || scheduleKey.split('__')[0] || scheduleKey.split('_')[0];
 };
 
 interface UseAutoScheduleActionProps {
@@ -264,18 +278,17 @@ export const useAutoScheduleAction = ({
                 };
             });
 
-            const getMutableCoTeachingKey = (teacherId: string, courseId: string, groupNumber?: number | string) => (
-                `${teacherId}|${courseId}|${normalizeGroupNumber(groupNumber)}`
+            const getCoTeachingKey = (courseId: string, groupNumber?: number | string) => (
+                `${courseId}|${normalizeGroupNumber(groupNumber)}`
             );
-            const mutableCoTeachingKeys = new Set<string>();
+            const protectedCoTeachingKeys = new Set<string>();
+            const coTeachingWriteTeacherIds = new Set<string>();
             if (normalizedTargetTeacherId) {
                 allCoursesData.forEach(course => {
                     (course.teacherAssignments || []).forEach((assignment: any) => {
                         const teacherIds = getAssignmentTeacherIds(assignment);
                         if (!teacherIds.includes(normalizedTargetTeacherId) || teacherIds.length < 2) return;
-                        teacherIds.forEach(teacherId => {
-                            mutableCoTeachingKeys.add(getMutableCoTeachingKey(teacherId, course.id, assignment.groupNumber));
-                        });
+                        protectedCoTeachingKeys.add(getCoTeachingKey(course.id, assignment.groupNumber));
                     });
                 });
             }
@@ -337,7 +350,7 @@ export const useAutoScheduleAction = ({
                 const scheduleData = data.schedule as Schedule;
                 existingSchedulesMap[docId] = scheduleData;
                 scheduleDocMeta[docId] = {
-                    teacherId: data.teacherId || docId.split('__')[0],
+                    teacherId: resolveScheduleTeacherId(docId, data.teacherId, allTeachersData.map(t => t.id)),
                     classId: data.classId
                 };
 
@@ -345,7 +358,7 @@ export const useAutoScheduleAction = ({
                 for (const slotId in scheduleData) {
                     const slotCourses = scheduleData[slotId];
                     const coursesArr = Array.isArray(slotCourses) ? slotCourses : (slotCourses ? [slotCourses] : []);
-                    const docTeacherId = scheduleDocMeta[docId]?.teacherId || docId.split('__')[0];
+                    const docTeacherId = scheduleDocMeta[docId]?.teacherId || resolveScheduleTeacherId(docId, data.teacherId, allTeachersData.map(t => t.id));
 
                     const targetSem = String(selectedSemester || "1");
 
@@ -356,10 +369,10 @@ export const useAutoScheduleAction = ({
                         if (!isCorrectSemester) return true;
 
                         const isOtherTeacher = normalizedTargetTeacherId && docTeacherId !== normalizedTargetTeacherId;
-                        const isMutableCoTeachingCourse = normalizedTargetTeacherId && mutableCoTeachingKeys.has(
-                            getMutableCoTeachingKey(docTeacherId, c.id || (c as any).courseId, c.groupNumber)
+                        const isProtectedCoTeachingCourse = normalizedTargetTeacherId && protectedCoTeachingKeys.has(
+                            getCoTeachingKey(c.id || (c as any).courseId, c.groupNumber)
                         );
-                        return (isOtherTeacher && !isMutableCoTeachingCourse) || c.locked;
+                        return isOtherTeacher || isProtectedCoTeachingCourse || c.locked;
                     });
 
                     if (lockedCoursesThisSlot.length > 0) {
@@ -370,6 +383,65 @@ export const useAutoScheduleAction = ({
                     lockedCoursesMap[docId] = lockedSchedule;
                 }
             });
+
+            const mergeScheduleMaps = (base: Schedule, extra: Schedule): Schedule => {
+                const next: Schedule = { ...base };
+                const courseKey = (course: any) => {
+                    const courseId = course?.id || course?.courseId || '';
+                    const groupNumber = normalizeGroupNumber(course?.groupNumber);
+                    const teacherIds = Array.isArray(course?.teacherIds) && course.teacherIds.length > 0
+                        ? course.teacherIds.map(String).sort().join('|')
+                        : String(course?.teacherId || '');
+                    const classIds = Array.isArray(course?.classId)
+                        ? course.classId.map(String).sort().join('|')
+                        : String(course?.classId || '');
+                    return `${courseId}__${groupNumber}__${teacherIds}__${classIds}`;
+                };
+
+                Object.entries(extra).forEach(([slotId, courses]) => {
+                    const existingCourses = Array.isArray(next[slotId])
+                        ? [...next[slotId]]
+                        : (next[slotId] ? [next[slotId]] : []);
+                    const seen = new Set(existingCourses.map(courseKey));
+                    const extraCourses = Array.isArray(courses) ? courses : (courses ? [courses] : []);
+
+                    extraCourses.forEach((course: any) => {
+                        const key = courseKey(course);
+                        if (seen.has(key)) return;
+                        seen.add(key);
+                        existingCourses.push(course);
+                    });
+
+                    if (existingCourses.length > 0) {
+                        next[slotId] = existingCourses as any;
+                    }
+                });
+
+                return next;
+            };
+
+            const currentTeacherLockedSchedule: Schedule = {};
+            if (selectedTeacher && Object.keys(schedule || {}).length > 0) {
+                Object.entries(schedule).forEach(([slotId, courses]) => {
+                    const lockedCourses = (Array.isArray(courses) ? courses : (courses ? [courses] : []))
+                        .filter((course: any) => course?.locked);
+                    if (lockedCourses.length > 0) {
+                        currentTeacherLockedSchedule[slotId] = lockedCourses.map(course => ({ ...course })) as any;
+                    }
+                });
+            }
+
+            if (selectedTeacher && Object.keys(currentTeacherLockedSchedule).length > 0) {
+                const selectedTeacherScheduleDocId = getScheduleDocId(selectedTeacher, selectedYear, selectedSemester);
+                lockedCoursesMap[selectedTeacherScheduleDocId] = mergeScheduleMaps(
+                    lockedCoursesMap[selectedTeacherScheduleDocId] || {},
+                    currentTeacherLockedSchedule
+                );
+                scheduleDocMeta[selectedTeacherScheduleDocId] = {
+                    teacherId: selectedTeacher,
+                    classId: scheduleDocMeta[selectedTeacherScheduleDocId]?.classId
+                };
+            }
 
             updateProgress(5, 'กำลังเตรียมโครงสร้างข้อมูล...');
             console.log(`Auto-schedule: found ${allCoursesData.length} total courses from DB`);
@@ -414,7 +486,7 @@ export const useAutoScheduleAction = ({
             for (const docId in lockedCoursesMap) {
                 batchUpdates[docId] = {};
                 const meta = scheduleDocMeta[docId] || {};
-                const teacherId = meta.teacherId || docId.split('__')[0];
+                const teacherId = resolveScheduleTeacherId(docId, meta.teacherId, allTeachersData.map(t => t.id));
 
                 for (const slotId in lockedCoursesMap[docId]) {
                     const slotData = lockedCoursesMap[docId][slotId];
@@ -459,8 +531,9 @@ export const useAutoScheduleAction = ({
             // 2. Prepare all possible teaching slots (using INDEX to match grid)
             const allTeachingSlots: { dayKey: string; periodSetting: PeriodSetting; slotId: string }[] = [];
             periodSettings.forEach((ps, idx) => {
-                if (!ps.isTeachingPeriod) return;
+                if (!ps.isTeachingPeriod || isProtectedSpecialPeriodSetting(ps)) return;
                 Object.keys(DAYS).forEach((day: string) => {
+                    if (getMatchingSpecialPeriod(specialPeriods, ps, day)) return;
                     allTeachingSlots.push({
                         dayKey: day,
                         periodSetting: ps,
@@ -501,6 +574,7 @@ export const useAutoScheduleAction = ({
                 teacherIds?: string[];
                 targetClasses: string[];
                 targetRooms: string[];
+                previousSlots?: string[];
                 instanceCount: number;
                 duration: number;
                 originalCourseId: string;
@@ -534,23 +608,193 @@ export const useAutoScheduleAction = ({
                 ...(requiredSlot ? { requiredSlot } : {})
             });
 
-            const pushBalancedWeeklyTasks = (
+            const addCarryOverCourseToSchedule = (
+                slotId: string,
                 course: Course,
                 teacherId: string,
                 teacherIds: string[],
+                classId: string,
                 targetClasses: string[],
                 targetRooms: string[],
                 groupNumber: number,
-                remainingPeriods: number,
-                totalWeeklyPeriods: number
+                compositeId: string
             ) => {
-                if (totalWeeklyPeriods >= 5 && remainingPeriods >= 2) {
-                    tasks.push(createSchedulingTask(course, teacherId, teacherIds, targetClasses, targetRooms, groupNumber, 2));
-                    remainingPeriods -= 2;
+                const docId = `${teacherId}_${classId}`;
+                if (!batchUpdates[docId]) batchUpdates[docId] = {};
+                const existingItems = Array.isArray(batchUpdates[docId][slotId])
+                    ? batchUpdates[docId][slotId]
+                    : (batchUpdates[docId][slotId] ? [batchUpdates[docId][slotId]] : []);
+                const alreadyInDoc = existingItems.some((item: any) =>
+                    (item.id === course.id || item.courseId === course.id) &&
+                    normalizeGroupNumber(item.groupNumber) === groupNumber
+                );
+
+                if (!alreadyInDoc) {
+                    batchUpdates[docId][slotId] = [
+                        ...existingItems,
+                        {
+                            ...course,
+                            teacherId,
+                            teacherIds,
+                            classId,
+                            room: targetRooms,
+                            groupNumber,
+                            compositeId,
+                            instanceId: `${course.id}-${groupNumber}-${slotId}-${classId}-${teacherId}`
+                        }
+                    ] as any;
                 }
 
-                for (let i = 0; i < remainingPeriods; i++) {
-                    tasks.push(createSchedulingTask(course, teacherId, teacherIds, targetClasses, targetRooms, groupNumber, 1));
+                if (!schoolTimetable[slotId]) schoolTimetable[slotId] = [];
+                const existingOccupancy = schoolTimetable[slotId].find(o =>
+                    o.teacherId === teacherId &&
+                    o.courseId === course.id &&
+                    Number(o.groupNumber || 0) === groupNumber
+                );
+                if (existingOccupancy) {
+                    targetClasses.forEach(targetClass => {
+                        if (!existingOccupancy.classId.includes(targetClass)) {
+                            existingOccupancy.classId.push(targetClass);
+                        }
+                    });
+                    return;
+                }
+
+                schoolTimetable[slotId].push({
+                    teacherId,
+                    classId: [...targetClasses],
+                    room: targetRooms,
+                    courseId: course.id,
+                    course: {
+                        ...course,
+                        teacherId,
+                        teacherIds,
+                        classId: targetClasses,
+                        room: targetRooms,
+                        groupNumber
+                    },
+                    groupNumber
+                });
+            };
+
+            const getExistingLockedSlotsForAssignment = (
+                courseId: string,
+                teacherIds: string[],
+                targetClasses: string[],
+                groupNumber: number
+            ) => {
+                const existingSlots = new Set<string>();
+                const teacherSet = new Set(teacherIds);
+                const normalizeClassForMatch = (value: string) => String(value || '').trim();
+                const getBaseClass = (value: string) => normalizeClassForMatch(value).split('/')[0];
+                const targetClassSet = new Set(targetClasses.map(normalizeClassForMatch));
+                const targetBaseClassSet = new Set(targetClasses.map(getBaseClass));
+
+                Object.entries(lockedCoursesMap).forEach(([docId, scheduleData]) => {
+                    const docTeacherId = scheduleDocMeta[docId]?.teacherId || resolveScheduleTeacherId(docId, undefined, allTeachersData.map(t => t.id));
+                    if (!teacherSet.has(docTeacherId)) return;
+
+                    Object.entries(scheduleData).forEach(([slotId, courses]) => {
+                        const coursesArr = Array.isArray(courses) ? courses : (courses ? [courses] : []);
+                        const hasMatchingCourse = coursesArr.some((c: any) => {
+                            const cId = c.id || c.courseId;
+                            if (cId !== courseId) return false;
+                            if (normalizeGroupNumber(c.groupNumber) !== groupNumber) return false;
+
+                            const cClasses = Array.isArray(c.classId)
+                                ? c.classId
+                                : [c.classId || scheduleDocMeta[docId]?.classId].flat().filter(Boolean);
+                            if (targetClassSet.size === 0 || cClasses.length === 0) return true;
+                            return cClasses.some((classId: string) => {
+                                const normalizedClassId = normalizeClassForMatch(classId);
+                                return targetClassSet.has(normalizedClassId) ||
+                                    targetBaseClassSet.has(getBaseClass(normalizedClassId));
+                            });
+                        });
+
+                        if (hasMatchingCourse) existingSlots.add(slotId);
+                    });
+                });
+
+                return existingSlots;
+            };
+
+            const getExistingSlotsForAssignment = (
+                scheduleSource: Record<string, Schedule>,
+                courseId: string,
+                teacherIds: string[],
+                targetClasses: string[],
+                groupNumber: number
+            ) => {
+                const existingSlots = new Set<string>();
+                const teacherSet = new Set(teacherIds);
+                const normalizeClassForMatch = (value: string) => String(value || '').trim();
+                const getBaseClass = (value: string) => normalizeClassForMatch(value).split('/')[0];
+                const targetClassSet = new Set(targetClasses.map(normalizeClassForMatch));
+                const targetBaseClassSet = new Set(targetClasses.map(getBaseClass));
+
+                Object.entries(scheduleSource).forEach(([slotId, courses]) => {
+                    const coursesArr = Array.isArray(courses) ? courses : (courses ? [courses] : []);
+                    const hasMatchingCourse = coursesArr.some((c: any) => {
+                        const cId = c.id || c.courseId;
+                        if (cId !== courseId) return false;
+                        if (normalizeGroupNumber(c.groupNumber) !== groupNumber) return false;
+
+                        const cTeacherIds = Array.isArray(c.teacherIds) && c.teacherIds.length > 0
+                            ? c.teacherIds
+                            : (c.teacherId ? [c.teacherId] : []);
+                        if (cTeacherIds.length > 0 && !cTeacherIds.some((teacherId: string) => teacherSet.has(teacherId))) {
+                            return false;
+                        }
+
+                        const cClasses = Array.isArray(c.classId)
+                            ? c.classId
+                            : [c.classId].flat().filter(Boolean);
+                        if (targetClassSet.size === 0 || cClasses.length === 0) return true;
+                        return cClasses.some((classId: string) => {
+                            const normalizedClassId = normalizeClassForMatch(classId);
+                            return targetClassSet.has(normalizedClassId) ||
+                                targetBaseClassSet.has(getBaseClass(normalizedClassId));
+                        });
+                    });
+
+                    if (hasMatchingCourse) existingSlots.add(slotId);
+                });
+
+                return existingSlots;
+            };
+
+            const removeExistingAssignmentSlot = (
+                courseId: string,
+                teacherIds: string[],
+                groupNumber: number,
+                slotId: string
+            ) => {
+                const teacherSet = new Set(teacherIds);
+
+                Object.keys(batchUpdates).forEach(docId => {
+                    const docTeacherId = scheduleDocMeta[docId]?.teacherId || resolveScheduleTeacherId(docId, undefined, allTeachersData.map(t => t.id));
+                    if (!teacherSet.has(docTeacherId)) return;
+                    const slotItems = batchUpdates[docId]?.[slotId];
+                    if (!slotItems) return;
+
+                    const items = Array.isArray(slotItems) ? slotItems : [slotItems];
+                    const filtered = items.filter((item: any) =>
+                        !((item.id === courseId || item.courseId === courseId) &&
+                            normalizeGroupNumber(item.groupNumber) === groupNumber)
+                    );
+
+                    if (filtered.length === 0) delete batchUpdates[docId][slotId];
+                    else batchUpdates[docId][slotId] = filtered as any;
+                });
+
+                if (schoolTimetable[slotId]) {
+                    schoolTimetable[slotId] = schoolTimetable[slotId].filter(occupancy =>
+                        !(teacherSet.has(occupancy.teacherId) &&
+                            occupancy.courseId === courseId &&
+                            normalizeGroupNumber(occupancy.groupNumber) === groupNumber)
+                    );
+                    if (schoolTimetable[slotId].length === 0) delete schoolTimetable[slotId];
                 }
             };
 
@@ -573,7 +817,7 @@ export const useAutoScheduleAction = ({
                 validAssignments.forEach((assign: any) => {
                     const teacherIds = getAssignmentTeacherIds(assign);
                     if (teacherIds.length === 0 || (normalizedTargetTeacherId && !teacherIds.includes(normalizedTargetTeacherId))) return;
-                    const tId = teacherIds[0];
+                    const tId = normalizedTargetTeacherId || teacherIds[0];
                     const groupNumber = normalizeGroupNumber(assign.groupNumber);
                     const compositeId = getAssignmentCompositeId(course.id, groupNumber);
 
@@ -599,22 +843,59 @@ export const useAutoScheduleAction = ({
 
                     const hoursPerWeek = getRequiredWeeklyPeriods(course);
 
-                    const lockedSlotsForThisAssignment = new Set<string>();
-                    teacherIds.forEach(teacherId => {
-                        classIds.forEach((cId: string) => {
-                            const docId = `${teacherId}_${cId}`;
-                            const existing = lockedCoursesMap[docId] || {};
-                            Object.entries(existing).forEach(([slotId, courses]) => {
-                                const coursesArr = Array.isArray(courses) ? courses : [courses];
-                                const occ = coursesArr.find((c: any) => (c.id === course.id || c.courseId === course.id) && normalizeGroupNumber(c.groupNumber) === groupNumber);
-                                if (occ) lockedSlotsForThisAssignment.add(slotId);
-                            });
+                    const lockedSlotsForThisAssignment = getExistingLockedSlotsForAssignment(
+                        course.id,
+                        teacherIds,
+                        classIds,
+                        groupNumber
+                    );
+                    const previousSlotsForThisAssignment = getExistingSlotsForAssignment(
+                        existingSchedulesMap,
+                        course.id,
+                        teacherIds,
+                        classIds,
+                        groupNumber
+                    );
+                    if (normalizedTargetTeacherId && lockedSlotsForThisAssignment.size > hoursPerWeek) {
+                        const sortedExistingSlots = Array.from(lockedSlotsForThisAssignment).sort((a, b) => {
+                            const [dayA, periodA] = a.split('-');
+                            const [dayB, periodB] = b.split('-');
+                            if (dayA !== dayB) return dayA.localeCompare(dayB);
+                            return Number(periodA) - Number(periodB);
                         });
-                    });
+                        const slotsToRemove = sortedExistingSlots.slice(hoursPerWeek);
+                        slotsToRemove.forEach(slotId => {
+                            lockedSlotsForThisAssignment.delete(slotId);
+                            removeExistingAssignmentSlot(course.id, teacherIds, groupNumber, slotId);
+                        });
+                        dataReadinessWarnings.push(
+                            `${course.code || '-'} ${course.title}: พบคาบเดิมเกิน ${sortedExistingSlots.length}/${hoursPerWeek} ระบบตัดคาบส่วนเกินออก ${slotsToRemove.length} คาบก่อนจัดใหม่`
+                        );
+                    }
 
                     let needed = hoursPerWeek - lockedSlotsForThisAssignment.size;
                     if (needed <= 0) {
                         console.log(`Skipping ${course.title} (Teacher: ${tId}): Already scheduled (${lockedSlotsForThisAssignment.size}/${hoursPerWeek} periods)`);
+                    }
+                    if (normalizedTargetTeacherId && teacherIds.length > 1) {
+                        teacherIds.forEach(teacherId => coTeachingWriteTeacherIds.add(teacherId));
+                        lockedSlotsForThisAssignment.forEach(slotId => {
+                            teacherIds.forEach(teacherId => {
+                                classIds.forEach((classId: string) => {
+                                    addCarryOverCourseToSchedule(
+                                        slotId,
+                                        course,
+                                        teacherId,
+                                        teacherIds,
+                                        classId,
+                                        classIds,
+                                        Array.isArray(rooms) ? rooms : [rooms],
+                                        groupNumber,
+                                        compositeId
+                                    );
+                                });
+                            });
+                        });
                     }
                     const asgnCst = effectiveAssignmentConstraints[compositeId] || { type: 'any' };
                     const normalizeLockedSlotId = (slot: string | { day: string; periodId: string }) => {
@@ -644,7 +925,7 @@ export const useAutoScheduleAction = ({
                             const slotIndex = Number(indexStr);
                             const partnerIndex = getPartnerIndexForPeriods(slotIndex, periodSettings);
                             const partnerSlotId = partnerIndex !== -1 ? `${dayKey}-${partnerIndex}` : '';
-                            const canUseLockedDouble = (asgnCst.type === 'double' || asgnCst.type === 'mixed') &&
+                            const canUseLockedDouble = isDoubleCapableConstraint(asgnCst) &&
                                 partnerIndex > slotIndex &&
                                 lockedSlotIds.includes(partnerSlotId) &&
                                 !lockedSlotsForThisAssignment.has(partnerSlotId);
@@ -671,37 +952,28 @@ export const useAutoScheduleAction = ({
 
                     const remainingNeeded = Math.max(0, needed);
                     if (remainingNeeded <= 0) return;
-                    
-                    if (asgnCst.type === 'double' && remainingNeeded >= 2) {
-                        const doubleCount = Math.floor(remainingNeeded / 2);
-                        const remainder = remainingNeeded % 2;
-                        for (let i = 0; i < doubleCount; i++) {
-                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 2));
-                        }
-                        if (remainder > 0) {
-                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 1));
-                        }
-                    } else if (asgnCst.type === 'mixed') {
-                        let remainingMixed = remainingNeeded;
-                        if (remainingMixed >= 2) {
-                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 2));
-                            remainingMixed -= 2;
-                        }
 
-                        for (let i = 0; i < remainingMixed; i++) {
-                            tasks.push(createSchedulingTask(course, tId, teacherIds, classIds, Array.isArray(rooms) ? rooms : [rooms], groupNumber, 1));
-                        }
-                    } else {
-                        pushBalancedWeeklyTasks(
+                    const taskStartIndex = tasks.length;
+                    buildPreferredSessionDurations(course, remainingNeeded, asgnCst, hoursPerWeek).forEach(duration => {
+                        tasks.push(createSchedulingTask(
                             course,
                             tId,
                             teacherIds,
                             classIds,
                             Array.isArray(rooms) ? rooms : [rooms],
                             groupNumber,
-                            remainingNeeded,
-                            hoursPerWeek
-                        );
+                            duration
+                        ));
+                    });
+
+                    if (previousSlotsForThisAssignment.size > 0) {
+                        const previousSlots = Array.from(previousSlotsForThisAssignment);
+                        for (let i = taskStartIndex; i < tasks.length; i++) {
+                            tasks[i] = {
+                                ...tasks[i],
+                                previousSlots
+                            };
+                        }
                     }
                 });
             });
@@ -723,6 +995,22 @@ export const useAutoScheduleAction = ({
                 const classes = task.targetClasses.map(getClassDisplayName).join(', ');
                 const teacherNames = getTaskTeacherIds(task).map(teacherLabel).join(', ');
                 return `${task.course.code || '-'} ${task.course.title} (${teacherNames} / ${classes || '-'})`;
+            };
+
+            const getTaskSessionSlots = (task: SchedulingTask) => {
+                if (!task.requiredSlot) return [];
+                if (task.duration <= 1) return [task.requiredSlot];
+
+                const [dayKey, indexStr] = task.requiredSlot.split('-');
+                const startIndex = Number(indexStr);
+                const partnerIndex = getPartnerIndexForPeriods(startIndex, periodSettings);
+                if (partnerIndex === -1 || partnerIndex <= startIndex) return [task.requiredSlot];
+
+                const partnerSlotId = `${dayKey}-${partnerIndex}`;
+                const partnerSlot = allTeachingSlots.find(slot => slot.slotId === partnerSlotId);
+                return partnerSlot?.periodSetting.isTeachingPeriod
+                    ? [task.requiredSlot, partnerSlotId]
+                    : [task.requiredSlot];
             };
 
             const escapePrecheckHtml = (value: string) => value
@@ -975,23 +1263,29 @@ export const useAutoScheduleAction = ({
             const requiredRoomSlot = new Map<string, SchedulingTask[]>();
 
             tasks.filter(task => task.requiredSlot).forEach(task => {
-                const slotId = task.requiredSlot!;
-                getTaskTeacherIds(task).forEach(teacherId => {
-                    const teacherKey = `${teacherId}|${slotId}`;
-                    requiredTeacherSlot.set(teacherKey, [...(requiredTeacherSlot.get(teacherKey) || []), task]);
-                });
+                const sessionSlots = getTaskSessionSlots(task);
+                if (task.duration > 1 && sessionSlots.length !== task.duration) {
+                    fatalPrecheckIssues.push(`${taskLabel(task)} ถูกกำหนดเป็นคาบคู่ แต่คาบล็อค ${task.requiredSlot} ไม่สามารถจับคู่เป็นบล็อกคาบคู่ได้`);
+                }
 
-                task.targetClasses.forEach(classId => {
-                    const classKey = `${classId}|${slotId}`;
-                    requiredClassSlot.set(classKey, [...(requiredClassSlot.get(classKey) || []), task]);
-                });
-
-                task.targetRooms
-                    .filter(roomId => roomId && roomId.toLowerCase() !== 'all')
-                    .forEach(roomId => {
-                        const roomKey = `${roomId}|${slotId}`;
-                        requiredRoomSlot.set(roomKey, [...(requiredRoomSlot.get(roomKey) || []), task]);
+                sessionSlots.forEach(slotId => {
+                    getTaskTeacherIds(task).forEach(teacherId => {
+                        const teacherKey = `${teacherId}|${slotId}`;
+                        requiredTeacherSlot.set(teacherKey, [...(requiredTeacherSlot.get(teacherKey) || []), task]);
                     });
+
+                    task.targetClasses.forEach(classId => {
+                        const classKey = `${classId}|${slotId}`;
+                        requiredClassSlot.set(classKey, [...(requiredClassSlot.get(classKey) || []), task]);
+                    });
+
+                    task.targetRooms
+                        .filter(roomId => roomId && roomId.toLowerCase() !== 'all')
+                        .forEach(roomId => {
+                            const roomKey = `${roomId}|${slotId}`;
+                            requiredRoomSlot.set(roomKey, [...(requiredRoomSlot.get(roomKey) || []), task]);
+                        });
+                });
             });
 
             requiredTeacherSlot.forEach((slotTasks, key) => {
@@ -1046,7 +1340,9 @@ export const useAutoScheduleAction = ({
 
             const validSlotsByTaskIndex = tasks.map(task => Array.from(validSlotsCache.get(task) || []));
             const relaxedValidSlotsByTaskIndex = tasks.map(task => Array.from(relaxedValidSlotsCache.get(task) || []));
-            const maxRuns = normalizedTargetTeacherId ? 8 : Math.min(35, Math.max(20, Math.ceil(tasks.length / 18)));
+            const maxRuns = normalizedTargetTeacherId
+                ? Math.min(30, Math.max(18, Math.ceil(tasks.length / 3)))
+                : Math.min(35, Math.max(20, Math.ceil(tasks.length / 18)));
             const engineInput: SchedulingEngineInput = {
                 tasks,
                 initialTimetable: schoolTimetable,
@@ -1056,7 +1352,9 @@ export const useAutoScheduleAction = ({
                 relaxedValidSlotsByTaskIndex,
                 assignmentConstraints: effectiveAssignmentConstraints,
                 maxRuns,
-                maxRepairAttempts: Math.max(1200, tasks.length * 8)
+                maxRepairAttempts: normalizedTargetTeacherId
+                    ? Math.max(1800, tasks.length * 18)
+                    : Math.max(1200, tasks.length * 8)
             };
 
             const runEngineWithWorker = async (): Promise<SchedulingEngineResult> => {
@@ -1105,17 +1403,18 @@ export const useAutoScheduleAction = ({
             const unplacedTasks = engineResult.unplacedTasks as SchedulingTask[];
             const placedPeriods = engineResult.placedPeriods;
 
-            const getSpecificRooms = (rooms?: string[]) => (
-                (rooms || []).filter(roomId => roomId && roomId.toLowerCase() !== 'all')
-            );
+            const getSpecificRooms = (rooms?: string | string[]) => {
+                const list = Array.isArray(rooms) ? rooms : (rooms ? [rooms] : []);
+                return list.filter(roomId => roomId && roomId.toLowerCase() !== 'all');
+            };
 
-            const hasTemporaryPlacementConflict = (task: SchedulingTask, slotId: string) => {
+            const getTemporaryPlacementConflicts = (task: SchedulingTask, slotId: string) => {
                 const teacherIds = getTaskTeacherIds(task);
                 const taskRooms = getSpecificRooms(task.targetRooms);
                 const taskGroup = Number(task.groupNumber || 0);
                 const occupancies = schoolTimetableRecord[slotId] || [];
 
-                return occupancies.some((occupancy: any) => {
+                return occupancies.filter((occupancy: any) => {
                     if (teacherIds.includes(occupancy.teacherId)) return true;
 
                     const occupancyClasses = Array.isArray(occupancy.classId)
@@ -1132,6 +1431,10 @@ export const useAutoScheduleAction = ({
                 });
             };
 
+            const hasTemporaryPlacementConflict = (task: SchedulingTask, slotId: string) => (
+                getTemporaryPlacementConflicts(task, slotId).length > 0
+            );
+
             const getTemporarySessionSlots = (task: SchedulingTask, startSlotId: string) => {
                 if (task.duration <= 1) return [startSlotId];
 
@@ -1145,8 +1448,21 @@ export const useAutoScheduleAction = ({
                 return partner?.periodSetting.isTeachingPeriod ? [startSlotId, partnerSlotId] : [];
             };
 
+            const formatSlotLabel = (slotId: string) => {
+                const [dayKey, indexStr] = slotId.split('-');
+                const periodIndex = Number(indexStr);
+                const dayLabel = DAYS[dayKey as keyof typeof DAYS] || dayKey;
+                const periodLabel = periodSettings[periodIndex]?.label || `คาบ ${periodIndex}`;
+                return `${dayLabel} ${periodLabel}`;
+            };
+
+            const formatSlotList = (slotIds: string[]) => slotIds.map(formatSlotLabel).join(' + ');
+
             const findTemporarySlots = (task: SchedulingTask) => {
-                if (task.requiredSlot) return [];
+                if (task.requiredSlot) {
+                    const sessionSlots = getTemporarySessionSlots(task, task.requiredSlot);
+                    return sessionSlots.length === task.duration ? sessionSlots : [];
+                }
                 for (const slot of allTeachingSlots) {
                     const sessionSlots = getTemporarySessionSlots(task, slot.slotId);
                     if (sessionSlots.length === 0) continue;
@@ -1155,17 +1471,52 @@ export const useAutoScheduleAction = ({
                 return [];
             };
 
+            const findForcedTemporarySlots = (task: SchedulingTask) => {
+                const candidateStarts = task.requiredSlot
+                    ? allTeachingSlots.filter(slot => slot.slotId === task.requiredSlot)
+                    : allTeachingSlots;
+                let best: { slots: string[]; conflictCount: number } | null = null;
+
+                for (const slot of candidateStarts) {
+                    const sessionSlots = getTemporarySessionSlots(task, slot.slotId);
+                    if (sessionSlots.length !== task.duration) continue;
+                    const conflictCount = sessionSlots.reduce(
+                        (sum, slotId) => sum + getTemporaryPlacementConflicts(task, slotId).length,
+                        0
+                    );
+
+                    if (!best || conflictCount < best.conflictCount) {
+                        best = { slots: sessionSlots, conflictCount };
+                    }
+                }
+
+                return best?.slots || [];
+            };
+
+            let temporaryPlacedPeriods = 0;
             const temporaryTaskSummaries = unplacedTasks.map(task => {
-                const slotIds = findTemporarySlots(task);
+                const cleanSlotIds = findTemporarySlots(task);
+                const slotIds = cleanSlotIds.length === task.duration
+                    ? cleanSlotIds
+                    : findForcedTemporarySlots(task);
                 const teacherIds = getTaskTeacherIds(task);
                 const classes = task.targetClasses.map(getClassDisplayName).join(', ');
+                const hasTemporarySlots = slotIds.length === task.duration;
+                const isForcedTemporary = hasTemporarySlots && cleanSlotIds.length !== task.duration;
+                const conflictCount = hasTemporarySlots
+                    ? slotIds.reduce((sum, slotId) => sum + getTemporaryPlacementConflicts(task, slotId).length, 0)
+                    : 0;
                 const warning = task.requiredSlot
                     ? `คาบที่ล็อกไว้ลงไม่ได้: ${task.course.code || '-'} ${task.course.title || '-'} / ${classes || '-'} / คาบล็อก ${task.requiredSlot} กรุณาตรวจสอบครู ห้องเรียน หรือคาบที่ชนกัน`
-                    : slotIds.length > 0
+                    : isForcedTemporary
+                    ? `บังคับวางชั่วคราวในคาบที่ชนน้อยที่สุด: ${task.course.code || '-'} ${task.course.title || '-'} / ${classes || '-'} มีรายการชน ${conflictCount} จุด กรุณาตรวจสอบและย้าย/สลับคาบ`
+                    : hasTemporarySlots
                     ? `จัดลงตารางจริงไม่ได้: ${task.course.code || '-'} ${task.course.title || '-'} / ${classes || '-'} กรุณาตรวจสอบเงื่อนไขครู ห้องเรียน หรือคาบว่าง`
                     : `จัดลงตารางจริงไม่ได้ และไม่มีคาบชั่วคราวที่ไม่ชนกัน: ${task.course.code || '-'} ${task.course.title || '-'} / ${classes || '-'} กรุณาตรวจสอบเงื่อนไขครู ห้องเรียน หรือคาบว่าง`;
 
-                slotIds.forEach(slotId => {
+                if (hasTemporarySlots) temporaryPlacedPeriods += task.duration;
+
+                (hasTemporarySlots ? slotIds : []).forEach(slotId => {
                     if (!slotId) return;
                     teacherIds.forEach(teacherId => {
                         task.targetClasses.forEach(cId => {
@@ -1183,6 +1534,7 @@ export const useAutoScheduleAction = ({
                                     groupNumber: task.groupNumber,
                                     compositeId: task.compositeId,
                                     isTemporarySchedule: true,
+                                    isForcedTemporarySchedule: isForcedTemporary,
                                     scheduleWarning: warning,
                                     instanceId: `temporary-${task.course.id}-${task.groupNumber}-${slotId}-${cId}-${teacherId}`
                                 }
@@ -1200,10 +1552,12 @@ export const useAutoScheduleAction = ({
                                 ...task.course,
                                 groupNumber: task.groupNumber,
                                 isTemporarySchedule: true,
+                                isForcedTemporarySchedule: isForcedTemporary,
                                 scheduleWarning: warning
                             },
                             groupNumber: task.groupNumber,
-                            isTemporarySchedule: true
+                            isTemporarySchedule: true,
+                            isForcedTemporarySchedule: isForcedTemporary
                         });
                     });
                 });
@@ -1213,7 +1567,13 @@ export const useAutoScheduleAction = ({
                     title: task.course.title || '-',
                     classes: classes || '-',
                     teachers: teacherIds.map(teacherLabel).join(', ') || '-',
-                    slots: task.requiredSlot ? `ล็อกไว้ ${task.requiredSlot} แต่ลงไม่ได้` : (slotIds.join(', ') || 'ไม่มีคาบชั่วคราวที่ไม่ชนกัน')
+                    hasTemporarySlots,
+                    isForcedTemporary,
+                    slots: hasTemporarySlots
+                        ? `${formatSlotList(slotIds)}${isForcedTemporary ? ` (มีชน ${conflictCount} จุด)` : ''}`
+                        : (task.requiredSlot
+                            ? `ล็อกไว้ ${formatSlotLabel(task.requiredSlot)} แต่ลงไม่ได้`
+                            : 'ไม่มีคาบชั่วคราวที่ไม่ชนกัน')
                 };
             });
 
@@ -1229,10 +1589,7 @@ export const useAutoScheduleAction = ({
 
             const teacherUpdates: Record<string, Schedule> = {};
             const allowedTeacherWriteIds = normalizedTargetTeacherId
-                ? new Set([
-                    normalizedTargetTeacherId,
-                    ...tasks.flatMap(task => getTaskTeacherIds(task))
-                ])
+                ? new Set([normalizedTargetTeacherId, ...coTeachingWriteTeacherIds])
                 : null;
             Object.entries(batchUpdates).forEach(([scheduleKey, slotMap]) => {
                 const tId = resolveTeacherId(scheduleKey);
@@ -1251,6 +1608,28 @@ export const useAutoScheduleAction = ({
                     ] as any;
                 });
             });
+
+            const shouldHardResetSchoolWide = !normalizedTargetTeacherId;
+            if (shouldHardResetSchoolWide) {
+                const matchingDocsToDelete = existingSchedulesSnapshot.docs.filter(scheduleDoc => {
+                    const data = scheduleDoc.data();
+                    const dataYear = String(data.academicYear || "");
+                    const dataSemester = String(data.semester || "");
+                    const targetSem = String(selectedSemester || "1");
+                    const targetYear = String(selectedYear || "");
+                    const yearMatches = !targetYear || !dataYear || dataYear === targetYear;
+                    const semesterMatches = !dataSemester || dataSemester === targetSem || dataSemester.startsWith(targetSem + '/') || targetSem.startsWith(dataSemester + '/');
+                    return yearMatches && semesterMatches;
+                });
+
+                for (let i = 0; i < matchingDocsToDelete.length; i += 450) {
+                    const cleanupBatch = writeBatch(db);
+                    matchingDocsToDelete.slice(i, i + 450).forEach(scheduleDoc => {
+                        cleanupBatch.delete(scheduleDoc.ref);
+                    });
+                    await cleanupBatch.commit();
+                }
+            }
 
             // Deduplicate teacher schedules per slot to avoid double counting and duplicate cards
             Object.keys(teacherUpdates).forEach(tId => {
@@ -1350,46 +1729,56 @@ export const useAutoScheduleAction = ({
             // Collect all writes (sets and deletes)
             const writes: Array<{ type: 'set' | 'delete'; id: string; teacherId: string }> = [];
 
-            // 1. Process all affected teachers
-            affectedTeacherIds.forEach(teacherId => {
-                const expectedDocId = getScheduleDocId(teacherId, selectedYear, selectedSemester);
-                const hasNewSchedule = teacherIdsToWrite.includes(teacherId);
-
-                if (hasNewSchedule) {
+            if (shouldHardResetSchoolWide) {
+                teacherIdsToWrite.forEach(teacherId => {
                     writes.push({
                         type: 'set',
-                        id: expectedDocId,
+                        id: getScheduleDocId(teacherId, selectedYear, selectedSemester),
                         teacherId
                     });
-                } else {
-                    // Force delete/clear the canonical document if it exists in Firestore
-                    writes.push({
-                        type: 'delete',
-                        id: expectedDocId,
-                        teacherId
-                    });
-                }
-            });
+                });
+            } else {
+                // 1. Process all affected teachers
+                affectedTeacherIds.forEach(teacherId => {
+                    const expectedDocId = getScheduleDocId(teacherId, selectedYear, selectedSemester);
+                    const hasNewSchedule = teacherIdsToWrite.includes(teacherId);
 
-            // 2. Identify and delete all other matching legacy/duplicate documents for these teachers
-            existingSchedulesSnapshot.docs.forEach(doc => {
-                const docId = doc.id;
-                const meta = scheduleDocMeta[docId];
-                if (!meta) return; // Not matching the target year/semester
+                    if (hasNewSchedule) {
+                        writes.push({
+                            type: 'set',
+                            id: expectedDocId,
+                            teacherId
+                        });
+                    } else {
+                        // Force delete/clear the canonical document if it exists in Firestore
+                        writes.push({
+                            type: 'delete',
+                            id: expectedDocId,
+                            teacherId
+                        });
+                    }
+                });
 
-                const storedTeacherId = meta.teacherId;
-                if (!storedTeacherId || !affectedTeacherSet.has(storedTeacherId)) return;
+                // 2. Identify and delete all other matching legacy/duplicate documents for these teachers
+                existingSchedulesSnapshot.docs.forEach(doc => {
+                    const docId = doc.id;
+                    const meta = scheduleDocMeta[docId];
+                    if (!meta) return; // Not matching the target year/semester
 
-                const expectedDocId = getScheduleDocId(storedTeacherId, selectedYear, selectedSemester);
-                // If it's a legacy or duplicate document (different from canonical ID), delete it!
-                if (docId !== expectedDocId) {
-                    writes.push({
-                        type: 'delete',
-                        id: docId,
-                        teacherId: storedTeacherId
-                    });
-                }
-            });
+                    const storedTeacherId = meta.teacherId;
+                    if (!storedTeacherId || !affectedTeacherSet.has(storedTeacherId)) return;
+
+                    const expectedDocId = getScheduleDocId(storedTeacherId, selectedYear, selectedSemester);
+                    // If it's a legacy or duplicate document (different from canonical ID), delete it!
+                    if (docId !== expectedDocId) {
+                        writes.push({
+                            type: 'delete',
+                            id: docId,
+                            teacherId: storedTeacherId
+                        });
+                    }
+                });
+            }
 
             const batchSize = 450;
             const numBatches = Math.max(1, Math.ceil(writes.length / batchSize));
@@ -1436,7 +1825,15 @@ export const useAutoScheduleAction = ({
 
             const endTime = Date.now();
             const processingTimeMs = endTime - startTime;
-            const successRate = totalPeriodsRequired > 0 ? Math.round((placedPeriods / totalPeriodsRequired) * 100) : 0;
+            const resolvedPeriods = placedPeriods + temporaryPlacedPeriods;
+            const resolvedRate = totalPeriodsRequired > 0 ? Math.round((resolvedPeriods / totalPeriodsRequired) * 100) : 0;
+            const temporaryTaskCount = temporaryTaskSummaries.filter(item => item.hasTemporarySlots).length;
+            const forcedTemporaryTaskCount = temporaryTaskSummaries.filter(item => item.isForcedTemporary).length;
+            const unresolvedTaskCount = temporaryTaskSummaries.length - temporaryTaskCount;
+            const schedulingScopeLabel = normalizedTargetTeacherId ? 'ครูที่เลือก' : 'ทั้งโรงเรียน';
+            const completionTitle = resolvedPeriods >= totalPeriodsRequired
+                ? 'จัดตารางเสร็จสิ้น'
+                : 'จัดตารางเสร็จสิ้น (ไม่สมบูรณ์)';
 
             const metrics: SchedulingMetrics = {
                 totalTasks: tasks.length,
@@ -1476,23 +1873,27 @@ export const useAutoScheduleAction = ({
                   <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                 </svg>
               </div>
-              <h2 class="text-2xl font-extrabold text-gray-900 dark:text-white mb-1">${successRate === 100 ? 'สร้างตารางสอนสำเร็จ!' : 'จัดตารางเสร็จสิ้น (ไม่สมบูรณ์)'}</h2>
-              <p class="text-sm text-gray-500 dark:text-gray-400">ระบบได้ทำการประมวลผลและจัดตารางสอนทั้งโรงเรียนเรียบร้อยแล้ว</p>
+              <h2 class="text-2xl font-extrabold text-gray-900 dark:text-white mb-1">${completionTitle}</h2>
+              <p class="text-sm text-gray-500 dark:text-gray-400">ระบบได้ทำการประมวลผลและจัดตารางสอน${schedulingScopeLabel}เรียบร้อยแล้ว</p>
             </div>
 
             <!-- Stats Grid -->
-            <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="grid grid-cols-4 gap-3 mb-6">
               <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/30">
-                <p class="text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold mb-1">จัดได้แล้ว</p>
+                <p class="text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 font-bold mb-1">ลงจริง</p>
                 <p class="text-2xl font-black text-blue-700 dark:text-blue-300 pointer-events-none">${placedPeriods}</p>
+              </div>
+              <div class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/30">
+                <p class="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold mb-1">ชั่วคราว</p>
+                <p class="text-2xl font-black text-amber-700 dark:text-amber-300 pointer-events-none">${temporaryPlacedPeriods}</p>
               </div>
                <div class="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
                 <p class="text-[10px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold mb-1">จากทั้งหมด</p>
                 <p class="text-2xl font-black text-indigo-700 dark:text-indigo-300 pointer-events-none">${totalPeriodsRequired}</p>
               </div>
               <div class="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800/30">
-                <p class="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold mb-1">ความสำเร็จ</p>
-                <p class="text-2xl font-black text-emerald-700 dark:text-emerald-300 pointer-events-none">${successRate}%</p>
+                <p class="text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold mb-1">รวมแก้ไขได้</p>
+                <p class="text-2xl font-black text-emerald-700 dark:text-emerald-300 pointer-events-none">${resolvedRate}%</p>
               </div>
             </div>
 
@@ -1501,13 +1902,17 @@ export const useAutoScheduleAction = ({
               <div class="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl border border-amber-200 dark:border-amber-700/50 flex items-start gap-3 text-left mb-4">
                  <div class="mt-0.5 text-amber-500 shrink-0">⚠️</div>
                  <div>
-                    <p class="text-sm font-bold text-amber-800 dark:text-amber-200">ยังเหลืออีก ${unplacedTasks.length} รายวิชา</p>
-                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 leading-relaxed">ระบบลงเป็นรายการชั่วคราวสีเหลืองไว้แล้ว กรุณาตรวจสอบและย้ายด้วยตนเอง</p>
+                    <p class="text-sm font-bold text-amber-800 dark:text-amber-200">ยังจัดลงจริงไม่ได้ ${unplacedTasks.length} รายการ</p>
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 leading-relaxed">
+                      ${temporaryTaskCount > 0 ? `วางชั่วคราวได้ ${temporaryTaskCount} รายการ` : 'ไม่มีรายการที่วางชั่วคราวได้'}
+                      ${forcedTemporaryTaskCount > 0 ? ` โดยเป็นคาบที่มีชน ${forcedTemporaryTaskCount} รายการ` : ''}
+                      ${unresolvedTaskCount > 0 ? ` และยังไม่มีคาบที่ไม่ชนกัน ${unresolvedTaskCount} รายการ` : ''}
+                    </p>
                     <div class="mt-2 max-h-40 overflow-auto rounded-lg bg-white/70 dark:bg-black/10 border border-amber-200/70 dark:border-amber-700/40">
                       ${temporaryTaskSummaries.slice(0, 12).map(item => `
                         <div class="px-2 py-1.5 border-b last:border-b-0 border-amber-100 dark:border-amber-800/40">
                           <p class="text-[11px] font-black text-amber-900 dark:text-amber-100">${escapePrecheckHtml(item.code)} ${escapePrecheckHtml(item.title)}</p>
-                          <p class="text-[10px] text-amber-700 dark:text-amber-300">ชั้น/ห้อง: ${escapePrecheckHtml(item.classes)} | ครู: ${escapePrecheckHtml(item.teachers)} | ชั่วคราว: ${escapePrecheckHtml(item.slots)}</p>
+                          <p class="text-[10px] text-amber-700 dark:text-amber-300">ชั้น/ห้อง: ${escapePrecheckHtml(item.classes)} | ครู: ${escapePrecheckHtml(item.teachers)} | ${item.hasTemporarySlots ? 'ชั่วคราว' : 'สถานะ'}: ${escapePrecheckHtml(item.slots)}</p>
                         </div>
                       `).join('')}
                       ${temporaryTaskSummaries.length > 12 ? `<div class="px-2 py-1 text-[10px] text-amber-700 dark:text-amber-300">และอีก ${temporaryTaskSummaries.length - 12} รายการ</div>` : ''}
@@ -1546,6 +1951,10 @@ export const useAutoScheduleAction = ({
             });
 
             if (schoolId) {
+                if (!normalizedTargetTeacherId) {
+                    setSchedule({});
+                    setAvailableCourseInstances([]);
+                }
                 await fetchData(schoolId);
                 if (selectedTeacher || normalizedTargetTeacherId) {
                     await loadTeacherMasterSchedule();
@@ -1555,7 +1964,7 @@ export const useAutoScheduleAction = ({
         } catch (error) {
             console.error("School-wide auto-scheduling failed: ", error);
 
-            let errorMessage = 'เกิดข้อผิดพลาดระหว่างการสร้างตารางสอนทั้งโรงเรียน';
+            let errorMessage = `เกิดข้อผิดพลาดระหว่างการสร้างตารางสอน${normalizedTargetTeacherId ? 'ครูที่เลือก' : 'ทั้งโรงเรียน'}`;
             let errorDetails = '';
 
             if (error instanceof Error) {

@@ -1550,7 +1550,7 @@ const HomePage = () => {
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
                                         ) : (
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minHeight={80}>
                                                 <PieChart>
                                                     <Pie
                                                         data={getPieData(studentAttendanceStats)}
@@ -1611,7 +1611,7 @@ const HomePage = () => {
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
                                         ) : (
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minHeight={80}>
                                                 <PieChart>
                                                     <Pie
                                                         data={getPieData(teacherAttendanceStats, true)}

@@ -58,6 +58,7 @@ export interface SpecialPeriod {
     endTime: string;
     day?: string;
     linkedPeriodId?: string;
+    isTeachingLoad?: boolean;
 }
 
 export interface PeriodSetting {

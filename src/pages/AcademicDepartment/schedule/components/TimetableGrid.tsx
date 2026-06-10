@@ -1,5 +1,5 @@
 import React from 'react';
-import { DAYS, checkConstraints, getClassDisplayName, getPartnerIndexForPeriods, getRequiredWeeklyPeriods } from '../utils';
+import { DAYS, checkConstraints, getClassDisplayName, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isProtectedSpecialPeriodSetting } from '../utils';
 import { DroppableCell } from './DroppableCell';
 import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, AssignmentConstraintMap } from '../types';
 import { getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
@@ -34,6 +34,7 @@ export interface TimetableGridProps {
     onCellClick?: (slotId: string) => void;
     selectedCourseCode?: string;
     onCourseClick?: (course: CourseInstance) => void;
+    hideScrollbar?: boolean;
 }
 
 export const TimetableGrid: React.FC<TimetableGridProps> = ({
@@ -65,7 +66,8 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
     assignmentConstraints,
     onCellClick,
     selectedCourseCode,
-    onCourseClick
+    onCourseClick,
+    hideScrollbar = false
 }) => {
     const normalizedPeriodSettings = normalizePeriodSettings(periodSettings);
     const normalizedPeriods = getTimetableDisplayPeriods(normalizedPeriodSettings);
@@ -205,7 +207,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                     </div>
                 </div>
             ) : (
-            <div className="flex-grow px-1.5 py-1.5 flex flex-col bg-transparent min-h-0">
+            <div className={`flex-grow px-1.5 py-1.5 flex flex-col bg-transparent min-h-0 overflow-y-auto ${hideScrollbar ? 'scrollbar-hide' : 'custom-scrollbar'}`}>
                 <div className="min-w-0 flex-grow flex flex-col gap-0.5 pb-1">
                         
                         {/* Days / Times Header Row - High Precision Alignment */}
@@ -231,39 +233,33 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                 const coursesInSlot = mergeCourseInstancesForDisplay(schedule[rawSlotId] || []);
                                 
                                 const periodSetting = normalizedPeriodSettings[period.index];
-                                const specialPeriod = specialPeriods.find(sp => 
-                                    (sp.linkedPeriodId === periodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
-                                    (sp.startTime === periodSetting?.startTime && sp.endTime === periodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
-                                );
+                                const specialPeriod = getMatchingSpecialPeriod(specialPeriods, periodSetting, dayKey);
 
+                                const isProtectedSpecial = isProtectedSpecialPeriodSetting(periodSetting);
                                 const specialTitle = specialPeriod?.title || 
                                                     (periodSetting?.id === 'homeroom' || periodSetting?.label === 'โฮมรูม' ? 'โฮมรูม' : 
                                                     (periodSetting?.id === 'lunch' || periodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));
 
                                 let span = 1;
                                 // Look ahead for consecutive identical slots
-                                if (specialTitle !== 'พักเที่ยง' && (coursesInSlot.length === 1 || specialTitle)) {
+                                if (!isProtectedSpecial && !specialPeriod && coursesInSlot.length === 1) {
                                     while (i + span < periods.length) {
                                         const nextPeriod = periods[i + span];
                                         const nextRawSlotId = `${dayKey}-${nextPeriod.index}`;
                                         const nextCourses = mergeCourseInstancesForDisplay(schedule[nextRawSlotId] || []);
                                         
                                         const nextPeriodSetting = normalizedPeriodSettings[nextPeriod.index];
-                                        const nextSpecialPeriod = specialPeriods.find(sp => 
-                                            (sp.linkedPeriodId === nextPeriodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
-                                            (sp.startTime === nextPeriodSetting?.startTime && sp.endTime === nextPeriodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
-                                        );
+                                        const nextSpecialPeriod = getMatchingSpecialPeriod(specialPeriods, nextPeriodSetting, dayKey);
+                                        const nextIsProtectedSpecial = isProtectedSpecialPeriodSetting(nextPeriodSetting);
                                         const nextSpecialTitle = nextSpecialPeriod?.title || 
                                                             (nextPeriodSetting?.id === 'homeroom' || nextPeriodSetting?.label === 'โฮมรูม' ? 'โฮมรูม' : 
                                                             (nextPeriodSetting?.id === 'lunch' || nextPeriodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));
 
-                                        if (nextSpecialTitle === 'พักเที่ยง') break;
+                                        if (nextIsProtectedSpecial || nextSpecialPeriod || nextSpecialTitle === 'พักเที่ยง') break;
 
                                         let isMatch = false;
                                         if (coursesInSlot.length === 1 && nextCourses.length === 1) {
                                             isMatch = areConsecutiveCoursesMergeable(coursesInSlot[0], nextCourses[0]);
-                                        } else if (!coursesInSlot.length && !nextCourses.length && specialTitle && nextSpecialTitle) {
-                                            isMatch = specialTitle === nextSpecialTitle;
                                         }
 
                                         if (isMatch) {
@@ -296,12 +292,9 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                         const coursesInSlot = mergeCourseInstancesForDisplay(schedule[rawSlotId] || []);
                                     
                                     const periodSetting = normalizedPeriodSettings[period.index];
-                                    const specialPeriod = specialPeriods.find(sp => 
-                                        (sp.linkedPeriodId === periodSetting?.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
-                                        (sp.startTime === periodSetting?.startTime && sp.endTime === periodSetting?.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
-                                    );
+                                    const specialPeriod = getMatchingSpecialPeriod(specialPeriods, periodSetting, dayKey);
 
-                                    const isSpecial = !periodSetting?.isTeachingPeriod || !!specialPeriod;
+                                    const isSpecial = !periodSetting?.isTeachingPeriod || isProtectedSpecialPeriodSetting(periodSetting) || !!specialPeriod;
                                     const specialTitle = specialPeriod?.title || 
                                                         (periodSetting?.id === 'homeroom' || periodSetting?.label === 'โฮมรูม' ? 'โฮมรูม' : 
                                                         (periodSetting?.id === 'lunch' || periodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));

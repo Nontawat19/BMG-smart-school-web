@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Select from 'react-select';
 import { firestore as db } from '../../firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
@@ -395,21 +395,58 @@ const ViewCoursesPage: React.FC = () => {
   };
 
   const handleDelete = async (courseId: string) => {
-    const result = await Swal.fire({
-      title: 'ต้องการลบหลักสูตรนี้?', text: "การกระทำนี้ไม่สามารถย้อนกลับได้!", icon: 'warning', showCancelButton: true,
-      confirmButtonColor: '#d33', cancelButtonColor: '#3085d6', confirmButtonText: 'ใช่, ลบเลย!', cancelButtonText: 'ยกเลิก',
-      background: '#2a2b2f', color: '#ffffff'
-    });
+    if (!schoolId) return;
 
-    if (result.isConfirmed) {
-      try {
-        await deleteDoc(doc(db, 'school-settings', schoolId!, 'courses', courseId));
-        setCourses(courses.filter(c => c.id !== courseId));
-        Swal.fire('ลบสำเร็จ!', 'หลักสูตรถูกลบออกจากระบบแล้ว', 'success');
-      } catch (error) {
-        console.error("Error deleting course: ", error);
-        Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้', 'error');
+    try {
+      // 1. ตรวจสอบว่ามีการอ้างอิงไปใช้ใน course_assignments แล้วหรือยัง
+      const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+      const q = query(assignmentsRef, where('courseId', '==', courseId));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        Swal.fire({
+          icon: 'error',
+          title: 'ไม่สามารถลบได้',
+          text: 'รายวิชานี้มีการลงทะเบียนมอบหมายให้ครูผู้สอนแล้วและอาจถูกใช้จัดตารางสอน กรุณายกเลิกการมอบหมายรายวิชาก่อนลบ',
+          background: isDark ? '#1a1b1e' : '#ffffff',
+          color: isDark ? '#ffffff' : '#000000',
+        });
+        return;
       }
+
+      const result = await Swal.fire({
+        title: 'ต้องการลบหลักสูตรนี้?', 
+        text: "การกระทำนี้ไม่สามารถย้อนกลับได้!", 
+        icon: 'warning', 
+        showCancelButton: true,
+        confirmButtonColor: '#d33', 
+        cancelButtonColor: '#3085d6', 
+        confirmButtonText: 'ใช่, ลบเลย!', 
+        cancelButtonText: 'ยกเลิก',
+        background: isDark ? '#1a1b1e' : '#ffffff', 
+        color: isDark ? '#ffffff' : '#000000'
+      });
+
+      if (result.isConfirmed) {
+        await deleteDoc(doc(db, 'school-settings', schoolId, 'courses', courseId));
+        setCourses(courses.filter(c => c.id !== courseId));
+        Swal.fire({
+          title: 'ลบสำเร็จ!', 
+          text: 'หลักสูตรถูกลบออกจากระบบแล้ว', 
+          icon: 'success',
+          background: isDark ? '#1a1b1e' : '#ffffff', 
+          color: isDark ? '#ffffff' : '#000000'
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting course: ", error);
+      Swal.fire({
+        title: 'เกิดข้อผิดพลาด', 
+        text: 'ไม่สามารถลบข้อมูลได้', 
+        icon: 'error',
+        background: isDark ? '#1a1b1e' : '#ffffff', 
+        color: isDark ? '#ffffff' : '#000000'
+      });
     }
   };
 

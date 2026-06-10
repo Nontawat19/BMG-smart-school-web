@@ -2395,7 +2395,9 @@ const CourseAssignmentPage: React.FC = () => {
                                                                             { bg: 'bg-pink-600', shadow: 'shadow-pink-600/40' },
                                                                             { bg: 'bg-rose-600', shadow: 'shadow-rose-600/40' },
                                                                         ];
-                                                                        const gColor = groupColors[(item.groupNumber - 1) % groupColors.length];
+                                                                        const rawNum = Number(item.groupNumber) || 1;
+                                                                        const index = Math.max(0, rawNum - 1) % groupColors.length;
+                                                                        const gColor = groupColors[index] || groupColors[0];
                                                                         return (
                                                                             <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0 border shadow-sm transition-all ${gColor.bg} text-white shadow-lg ${gColor.shadow}`}>
                                                                                 <span className="text-[6px] uppercase font-black tracking-tighter mb-0.5 opacity-80">กลุ่ม</span>
@@ -2605,7 +2607,9 @@ const CourseAssignmentPage: React.FC = () => {
                                                                     { bg: 'bg-pink-600', shadow: 'shadow-pink-600/40' },
                                                                     { bg: 'bg-rose-600', shadow: 'shadow-rose-600/40' },
                                                                 ];
-                                                                const gColor = groupColors[(assign.groupNumber - 1) % groupColors.length];
+                                                                const rawNum = Number(assign.groupNumber) || 1;
+                                                                const index = Math.max(0, rawNum - 1) % groupColors.length;
+                                                                const gColor = groupColors[index] || groupColors[0];
                                                                 return (
                                                                     <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0 border shadow-sm transition-all ${isSelected ? `${gColor.bg} text-white shadow-lg ${gColor.shadow} scale-105 border-white/20` : 'bg-slate-100 dark:bg-white/[0.03] border-slate-200 dark:border-white/10 text-slate-900 dark:text-white/80'}`}>
                                                                         <span className="text-[6px] uppercase font-black tracking-tighter mb-0.5 opacity-60">กลุ่ม</span>

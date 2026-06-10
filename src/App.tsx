@@ -143,6 +143,7 @@ import TeacherAttendanceSummaryPage from "./pages/HumanResources/TeacherAttendan
 import TeacherAttendanceIndividualPage from "./pages/HumanResources/TeacherAttendanceIndividualPage";
 import TeacherAttendanceDateSelectionPage from "./pages/HumanResources/TeacherAttendanceDateSelectionPage";
 import LeaveApprovalPage from "./pages/HumanResources/LeaveApprovalPage";
+import HRTimeRegistrationPage from "./pages/HumanResources/HRTimeRegistrationPage";
 import StudentsAttendanceSummaryPage from "./pages/Students/StudentsAttendanceSummaryPage";
 import LineOAManagementPage from "./pages/Administrator/LineOAManagementPage";
 import TelegramManagementPage from "./pages/Administrator/TelegramManagementPage";
@@ -304,6 +305,7 @@ function App() {
           <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
           <Route path="/academic/settings/line-oa" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LineOAManagementPage /></ProtectedRoute>} />
           <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/personnel-time-registration" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><HRTimeRegistrationPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={TEACHER_ATTENDANCE_TODAY_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-date-selection" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN]}><TeacherAttendanceDateSelectionPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />

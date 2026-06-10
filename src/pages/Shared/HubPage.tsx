@@ -431,6 +431,14 @@ const HubPage: React.FC = () => {
       description: "จัดการข้อมูลประวัติครูและบุคลากรในโรงเรียน",
       items: [
         {
+          title: "ลงเวลาเข้า-ออก",
+          description: "บันทึกเวลาเข้า-ออก และขออนุญาตเข้าสายของบุคลากร",
+          icon: <Clock size={24} />,
+          path: "/academic/personnel-time-registration",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: [ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]
+        },
+        {
           title: "ข้อมูลบุคลากร",
           description: "จัดการข้อมูลประวัติครูและบุคลากร",
           icon: <Users size={24} />,

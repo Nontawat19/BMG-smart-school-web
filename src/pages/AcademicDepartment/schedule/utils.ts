@@ -1,4 +1,4 @@
-import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, Course, AssignmentConstraintMap } from './types';
+import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, Course, AssignmentConstraint, AssignmentConstraintMap } from './types';
 import { CLASSES } from '@/utils/schoolUtils';
 
 export { CLASSES };
@@ -213,6 +213,106 @@ export const getRequiredWeeklyPeriods = (
     return requiredPeriods > 0 ? requiredPeriods : fallback;
 };
 
+export const isProtectedSpecialPeriodSetting = (period?: Pick<PeriodSetting, 'id' | 'label'>) => {
+    if (!period) return true;
+    const value = `${period.id || ''} ${period.label || ''}`.toLowerCase();
+    return [
+        'homeroom',
+        'โฮมรูม',
+        'lunch',
+        'พัก',
+        'แนะแนว',
+        'กิจกรรม',
+        'ชุมนุม',
+        'ลูกเสือ',
+        'เนตรนารี',
+        'ยุวกาชาด',
+        'บูรณาการ'
+    ].some(keyword => value.includes(keyword));
+};
+
+const normalizeScheduleTime = (value?: string) => String(value || '').trim().replace('.', ':');
+
+export const getMatchingSpecialPeriod = (
+    specialPeriods: SpecialPeriod[] = [],
+    periodSetting: Pick<PeriodSetting, 'id' | 'startTime' | 'endTime'> | undefined,
+    dayKey: string
+) => {
+    if (!periodSetting) return undefined;
+    const periodStart = normalizeScheduleTime(periodSetting.startTime);
+    const periodEnd = normalizeScheduleTime(periodSetting.endTime);
+
+    return specialPeriods.find(sp => {
+        const dayMatches = !sp.day || sp.day === 'all' || sp.day === dayKey;
+        if (!dayMatches) return false;
+        if (sp.linkedPeriodId && sp.linkedPeriodId !== 'custom') {
+            return sp.linkedPeriodId === periodSetting.id;
+        }
+        return normalizeScheduleTime(sp.startTime) === periodStart &&
+            normalizeScheduleTime(sp.endTime) === periodEnd;
+    });
+};
+
+const getConstraintLayout = (constraint?: AssignmentConstraint) => {
+    const layout = constraint?.layoutPreference;
+    if (layout && layout !== 'any') return layout;
+    if (constraint?.type === 'double') return 'double_only';
+    if (constraint?.type === 'single') return 'single_only';
+    if (constraint?.type === 'mixed') return 'mixed';
+    return 'any';
+};
+
+export const buildPreferredSessionDurations = (
+    course: Pick<Course, 'credits' | 'hoursPerWeek'>,
+    remainingPeriods: number,
+    constraint?: AssignmentConstraint,
+    totalWeeklyPeriods = getRequiredWeeklyPeriods(course)
+) => {
+    let remaining = Math.max(0, Math.round(remainingPeriods));
+    const durations: number[] = [];
+    const layout = getConstraintLayout(constraint);
+
+    if (layout === 'single_only') {
+        return Array.from({ length: remaining }, () => 1);
+    }
+
+    if (layout === 'double_only' || layout === 'mixed') {
+        while (remaining >= 2) {
+            durations.push(2);
+            remaining -= 2;
+        }
+        if (remaining > 0) durations.push(1);
+        return durations;
+    }
+
+    if (totalWeeklyPeriods >= 5 && remaining >= 2) {
+        durations.push(2);
+        remaining -= 2;
+    }
+
+    while (remaining > 0) {
+        durations.push(1);
+        remaining--;
+    }
+
+    return durations;
+};
+
+export const shouldUseDoubleSessionForNextPlacement = (
+    course: Pick<Course, 'credits' | 'hoursPerWeek'>,
+    alreadyPlacedPeriods: number,
+    constraint?: AssignmentConstraint
+) => {
+    const totalWeeklyPeriods = getRequiredWeeklyPeriods(course);
+    const remainingPeriods = Math.max(0, totalWeeklyPeriods - alreadyPlacedPeriods);
+    return buildPreferredSessionDurations(course, remainingPeriods, constraint, totalWeeklyPeriods)[0] === 2;
+};
+
+export const isDoubleCapableConstraint = (constraint?: AssignmentConstraint) => {
+    const layout = getConstraintLayout(constraint);
+    return layout === 'double_only' || layout === 'mixed';
+};
+
 export const getPartnerIndex = (idx: number): number => {
     // Standard Thai school block pairs: (1,2), (3,4), (6,7), (8,9)
     // index 0=Homeroom, 5=Lunch
@@ -288,7 +388,7 @@ export const checkConstraints = (
     const asgnCst = assignmentConstraints[course.compositeId];
 
     // Constraint 1: Non-teaching periods (Lunch, Homeroom, etc.)
-    if (!periodSetting || !periodSetting.isTeachingPeriod) {
+    if (!periodSetting || !periodSetting.isTeachingPeriod || isProtectedSpecialPeriodSetting(periodSetting)) {
         return { forbidden: true, message: `ไม่สามารถวางรายวิชาในคาบ '${periodSetting?.label || 'พิเศษ'}' ได้` };
     }
 
@@ -312,16 +412,8 @@ export const checkConstraints = (
             const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
             
             if (sharedClass) {
-                const occGroup = Number(occ.groupNumber || occ.course?.groupNumber || 0);
                 const currentGroup = Number(course.groupNumber || 0);
-                
-                // Conflict if:
-                // 1. Same group is already occupied by a DIFFERENT teacher
-                // 2. Either occupancy is for 'all groups' (0) and teacher is DIFFERENT
-                const isSameGroup = occGroup === currentGroup;
-                const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
-                
-                if ((isSameGroup || isEitherAllGroups) && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+                if (occ.teacherId !== currentTeacherId && !isSameAssignment) {
                     const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
                     return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
                 }
@@ -370,34 +462,30 @@ export const checkConstraints = (
         const isMorning = currentPeriod.startTime < lunchStartTime;
 
         // Double Period Preference
-        if (asgnCst.type === 'double' || asgnCst.type === 'mixed') {
-            const isDoubleStart = duration === 2; // In our scheduler, doubles are usually duration 2
-            if (isDoubleStart && asgnCst.doublePreference && asgnCst.doublePreference !== 'any') {
-                if (asgnCst.doublePreference === 'morning' && !isMorning) {
-                    return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบคู่ในช่วงเช้าเท่านั้น' };
-                }
-                if (asgnCst.doublePreference === 'afternoon' && isMorning) {
-                    return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบคู่ในช่วงบ่ายเท่านั้น' };
-                }
+        const isDoubleStart = duration === 2; // In our scheduler, doubles are usually duration 2
+        if (isDoubleStart && asgnCst.doublePreference && asgnCst.doublePreference !== 'any') {
+            if (asgnCst.doublePreference === 'morning' && !isMorning) {
+                return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบคู่ในช่วงเช้าเท่านั้น' };
+            }
+            if (asgnCst.doublePreference === 'afternoon' && isMorning) {
+                return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบคู่ในช่วงบ่ายเท่านั้น' };
             }
         }
 
         // Single Period Preference
-        if (asgnCst.type === 'single' || asgnCst.type === 'mixed') {
-            const isSingle = duration === 1;
-            if (isSingle && asgnCst.singlePreference && asgnCst.singlePreference !== 'any') {
-                if (asgnCst.singlePreference === 'morning' && !isMorning) {
-                    return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบเดี่ยวในช่วงเช้าเท่านั้น' };
-                }
-                if (asgnCst.singlePreference === 'afternoon' && isMorning) {
-                    return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบเดี่ยวในช่วงบ่ายเท่านั้น' };
-                }
+        const isSingle = duration === 1;
+        if (isSingle && asgnCst.singlePreference && asgnCst.singlePreference !== 'any') {
+            if (asgnCst.singlePreference === 'morning' && !isMorning) {
+                return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบเดี่ยวในช่วงเช้าเท่านั้น' };
+            }
+            if (asgnCst.singlePreference === 'afternoon' && isMorning) {
+                return { forbidden: true, message: 'วิชานี้ถูกกำหนดให้สอนคาบเดี่ยวในช่วงบ่ายเท่านั้น' };
             }
         }
     }
 
     // Constraint 5: Double Period Type Check
-    if (asgnCst?.type === 'double' && duration === 2) {
+    if (duration === 2) {
         const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
         const orderedDoubleSlots = [periodIndex, partnerIdx].sort((a, b) => a - b);
         if (partnerIdx === -1 || orderedDoubleSlots[0] !== periodIndex) {
@@ -426,10 +514,7 @@ export const checkConstraints = (
 
     // Constraint 9: Special Period (Activity)
     if (periodSetting) {
-        const specialPeriod = specialPeriods.find(sp =>
-            (sp.linkedPeriodId === periodSetting.id && (!sp.day || sp.day === 'all' || sp.day === dayKey)) ||
-            (sp.startTime === periodSetting.startTime && sp.endTime === periodSetting.endTime && (!sp.day || sp.day === 'all' || sp.day === dayKey))
-        );
+        const specialPeriod = getMatchingSpecialPeriod(specialPeriods, periodSetting, dayKey);
         if (specialPeriod) {
             return { forbidden: true, message: `ไม่สามารถวางในคาบ '${specialPeriod.title}' ได้` };
         }
@@ -453,16 +538,8 @@ export const checkConstraints = (
         const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
         
         if (sharedClass) {
-            const occGroup = Number(occ.groupNumber || occ.course?.groupNumber || 0);
             const currentGroup = Number(course.groupNumber || 0);
-            
-            // Conflict if:
-            // 1. Same group is already occupied by a DIFFERENT teacher
-            // 2. Either occupancy is for 'all groups' (0) and teacher is DIFFERENT
-            const isSameGroup = occGroup === currentGroup;
-            const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
-            
-            if ((isSameGroup || isEitherAllGroups) && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+            if (occ.teacherId !== currentTeacherId && !isSameAssignment) {
                 const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
                 return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
             }
@@ -556,7 +633,7 @@ export const findValidSlots = (
 
     days.forEach(day => {
         periodSettings.forEach((period, periodIndex) => {
-            if (!period.isTeachingPeriod) return;
+            if (!period.isTeachingPeriod || isProtectedSpecialPeriodSetting(period)) return;
             const slot = `${day}-${periodIndex}`;
 
             // 1. Basic Constraints
@@ -578,7 +655,7 @@ export const findValidSlots = (
             if (currentSchedule[slot]) return; 
 
             // 3. Double Period validation
-            if (asgnCst?.type === 'double' || asgnCst?.type === 'mixed') {
+            if (isDoubleCapableConstraint(asgnCst)) {
                 const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
                 if (partnerIdx !== -1) {
                     const partnerSlot = `${day}-${partnerIdx}`;
@@ -586,9 +663,9 @@ export const findValidSlots = (
                         // If it's a double, both must be free. 
                         // For mixed, we might still allow it as a single if no double partner is found, 
                         // but usually findValidSlots for doubles should prioritize double-able slots.
-                        if (asgnCst.type === 'double') return;
+                        if (getConstraintLayout(asgnCst) === 'double_only') return;
                     }
-                } else if (asgnCst.type === 'double') {
+                } else if (getConstraintLayout(asgnCst) === 'double_only') {
                     return; // Double must be in a double-able slot
                 }
             }
@@ -600,7 +677,7 @@ export const findValidSlots = (
 
             if (asgnCst) {
                 const isMorning = period.startTime < (periodSettings.find(p => p.id === 'lunch')?.startTime || '12:00');
-                const pref = asgnCst.type === 'double' ? asgnCst.doublePreference : asgnCst.singlePreference;
+                const pref = isDoubleCapableConstraint(asgnCst) ? asgnCst.doublePreference : asgnCst.singlePreference;
 
                 if (pref === 'morning' && isMorning) score += 50;
                 if (pref === 'afternoon' && !isMorning) score += 50;
@@ -608,7 +685,7 @@ export const findValidSlots = (
                 if (pref === 'afternoon' && isMorning) score -= 30;
 
                 // Extra points for double if the partner slot is also free
-                if (asgnCst.type === 'double' || asgnCst.type === 'mixed') {
+                if (isDoubleCapableConstraint(asgnCst)) {
                     const partnerIdx = getPartnerIndexForPeriods(periodIndex, periodSettings);
                     if (partnerIdx !== -1 && !currentSchedule[`${day}-${partnerIdx}`]) {
                         score += 40;

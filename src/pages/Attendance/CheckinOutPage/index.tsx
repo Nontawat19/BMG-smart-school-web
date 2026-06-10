@@ -1188,7 +1188,8 @@ const CheckinOutPage: React.FC = () => {
   const sendLineNotification = useCallback(async (
     user: FoundUser,
     status: string,
-    time: string
+    time: string,
+    actionType: string
   ) => {
     if (user.type !== "student") return;
     try {
@@ -1322,7 +1323,8 @@ const CheckinOutPage: React.FC = () => {
           status,
           time,
           finalConfig,
-          recipientUserIds
+          recipientUserIds,
+          actionType
         );
       } else {
         console.warn("[LINE] No active LINE config found for attendance notification:", {
@@ -1607,7 +1609,7 @@ const CheckinOutPage: React.FC = () => {
     });
 
     if (user.type === "student") {
-      await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr);
+      await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr, type);
     }
   }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification]);
 

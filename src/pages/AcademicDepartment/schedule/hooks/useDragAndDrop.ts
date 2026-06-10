@@ -2,7 +2,7 @@ import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
-import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods } from '../utils';
+import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
 
 const MySwal = withReactContent(Swal);
 
@@ -43,8 +43,9 @@ export const useDragAndDrop = ({
 }: UseDragAndDropProps) => {
     const isSameAssignment = (a?: CourseInstance | null, b?: CourseInstance | null) => {
         if (!a || !b) return false;
-        return a.compositeId === b.compositeId &&
-            Number(a.groupNumber || 1) === Number(b.groupNumber || 1);
+        const idA = a.compositeId || a.id;
+        const idB = b.compositeId || b.id;
+        return idA === idB && Number(a.groupNumber || 1) === Number(b.groupNumber || 1);
     };
 
     const getCourseMoveKey = (teacherId: string | undefined, item?: CourseInstance | null, ignoreInstanceId = false) => {
@@ -64,7 +65,41 @@ export const useDragAndDrop = ({
 
     const shouldMoveAsDouble = (item: CourseInstance) => {
         const asgnCst = assignmentConstraints[item.compositeId];
-        return asgnCst?.type === 'double';
+        return isDoubleCapableConstraint(asgnCst);
+    };
+
+    const isSlotInPreference = (slotId: string, preference?: 'any' | 'morning' | 'afternoon') => {
+        if (!preference || preference === 'any') return false;
+        const [, pNumStr] = slotId.split('-');
+        const periodIndex = parseInt(pNumStr);
+        const period = periodSettings[periodIndex];
+        if (!period) return false;
+        const lunchIdx = periodSettings.findIndex(p => p.id === 'lunch');
+        const lunchStartTime = lunchIdx !== -1 ? periodSettings[lunchIdx].startTime : '12:00';
+        const isMorning = period.startTime < lunchStartTime;
+        return preference === 'morning' ? isMorning : !isMorning;
+    };
+
+    const shouldPlaceNextAsDouble = (
+        item: CourseInstance,
+        targetSlotId: string,
+        alreadyPlacedPeriods: number,
+        forceExistingPair: boolean
+    ) => {
+        if (forceExistingPair) return true;
+        const constraint = assignmentConstraints[item.compositeId];
+        const totalPeriods = getRequiredWeeklyPeriods(item);
+        const remainingPeriods = Math.max(0, totalPeriods - alreadyPlacedPeriods);
+        if (remainingPeriods < 2) return false;
+        if (!isDoubleCapableConstraint(constraint)) {
+            return shouldUseDoubleSessionForNextPlacement(item, alreadyPlacedPeriods, constraint);
+        }
+        if (remainingPeriods === 2) return true;
+
+        const targetLooksLikeSingle = isSlotInPreference(targetSlotId, constraint?.singlePreference);
+        const targetLooksLikeDouble = isSlotInPreference(targetSlotId, constraint?.doublePreference);
+        if (targetLooksLikeSingle && !targetLooksLikeDouble) return false;
+        return true;
     };
 
     const getTeachingRuns = () => {
@@ -196,11 +231,6 @@ export const useDragAndDrop = ({
         const startIndex = Math.min(periodIndex, partnerIndex);
         const endIndex = Math.max(periodIndex, partnerIndex);
         return [`${day}-${startIndex}`, `${day}-${endIndex}`];
-    };
-
-    const getDoubleStartSlot = (slotId: string) => {
-        const doubleSlots = getDoubleTargetSlots(slotId);
-        return doubleSlots?.[0] || slotId;
     };
 
     const getConstraintMapForDoublePartner = (item: CourseInstance) => {
@@ -339,21 +369,14 @@ export const useDragAndDrop = ({
         }
 
         // --- DOUBLE PERIOD PARTNER CALCULATION & RESCUE LOGIC ---
-        const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
         let forcedDoubleStartSlotId: string | null = null;
-        let wasRescued = false;
         
-        const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
-
         const alreadyPlacedCount = Object.values(schedule).flat().filter(c => c.compositeId === activeItem!.compositeId).length;
         const effectivePlacedCount = isFromBank ? alreadyPlacedCount : alreadyPlacedCount - movingItems.length;
-        const hoursRemaining = hoursPerWeek - effectivePlacedCount;
+        const shouldUseDoubleTarget = shouldPlaceNextAsDouble(activeItem, overId, effectivePlacedCount, movingItems.length > 1);
 
-        const shouldUseDoubleTarget = movingItems.length > 1 ||
-            (asgnCst?.type === 'double' && hoursRemaining >= 2);
-
-        const checkSlotValidity = (slot: string, itemToCheck: CourseInstance, isPartner: boolean) => {
+        const checkSlotValidity = (slot: string, itemToCheck: CourseInstance, isPartner: boolean, duration = 1) => {
             const check = checkConstraints(
                 itemToCheck,
                 slot,
@@ -363,7 +386,7 @@ export const useDragAndDrop = ({
                 isPartner ? getConstraintMapForDoublePartner(itemToCheck) : assignmentConstraints,
                 dynamicUnavailableSlots,
                 schoolMasterSchedule,
-                1,
+                duration,
                 Array.from(movingInstanceIds)
             );
             
@@ -391,7 +414,7 @@ export const useDragAndDrop = ({
                 const item1 = movingItems[0]?.item || activeItem;
                 const item2 = movingItems[1]?.item || activeItem;
 
-                if (checkSlotValidity(trialStart, item1, false) && checkSlotValidity(trialPartner, item2, true)) {
+                if (checkSlotValidity(trialStart, item1, false, 2) && checkSlotValidity(trialPartner, item2, true)) {
                     forcedDoubleStartSlotId = trialStart;
                     overId = trialStart;
                     partnerSlotId = trialPartner;
@@ -401,65 +424,12 @@ export const useDragAndDrop = ({
             }
 
             if (!standardDoubleSuccessful) {
-                // Rescue orphan period!
-                let rescueSlot: string | null = null;
-                const [targetDay] = overId.split('-');
-                const item2 = movingItems[1]?.item || activeItem;
-
-                // 1. Search on the same day, sorting by proximity to overId, prefer earlier periods if distance is equal
-                const [_, overPeriodIdxStr] = overId.split('-');
-                const overPeriodIdx = parseInt(overPeriodIdxStr);
-
-                const sameDayTeachingSlots: { slot: string; index: number }[] = [];
-                periodSettings.forEach((p, pIdx) => {
-                    if (p.isTeachingPeriod) {
-                        sameDayTeachingSlots.push({ slot: `${targetDay}-${pIdx}`, index: pIdx });
-                    }
+                MySwal.fire({
+                    icon: 'warning',
+                    title: 'ไม่สามารถวางคาบคู่ได้',
+                    text: 'วิชานี้เหลือเป็นชุดคาบคู่ กรุณาเลือกบล็อกคาบคู่ที่ว่างและตรงตามช่วงเวลาที่กำหนด'
                 });
-
-                sameDayTeachingSlots.sort((a, b) => {
-                    const distA = Math.abs(a.index - overPeriodIdx);
-                    const distB = Math.abs(b.index - overPeriodIdx);
-                    if (distA !== distB) return distA - distB;
-                    return a.index - b.index; // Prefer earlier period
-                });
-
-                for (const entry of sameDayTeachingSlots) {
-                    if (checkSlotValidity(entry.slot, item2, true)) {
-                        rescueSlot = entry.slot;
-                        break;
-                    }
-                }
-
-                // 2. Search other days if not found on the same day
-                if (!rescueSlot) {
-                    const otherDays = Object.keys(DAYS).filter(d => d !== targetDay);
-                    for (const day of otherDays) {
-                        const teachingSlots: { slot: string; index: number }[] = [];
-                        periodSettings.forEach((p, pIdx) => {
-                            if (p.isTeachingPeriod) {
-                                teachingSlots.push({ slot: `${day}-${pIdx}`, index: pIdx });
-                            }
-                        });
-                        for (const entry of teachingSlots) {
-                            if (checkSlotValidity(entry.slot, item2, true)) {
-                                rescueSlot = entry.slot;
-                                break;
-                            }
-                        }
-                        if (rescueSlot) break;
-                    }
-                }
-
-                if (rescueSlot) {
-                    partnerSlotId = rescueSlot;
-                    targetSlots = [overId, rescueSlot];
-                    wasRescued = true;
-                } else {
-                    // Could not rescue! Placed count will be 1/2 instead of 2/2
-                    partnerSlotId = null;
-                    targetSlots = [overId];
-                }
+                return;
             }
         }
 
@@ -646,7 +616,10 @@ export const useDragAndDrop = ({
                 if (!newSchoolMaster[toSlot]) newSchoolMaster[toSlot] = [];
                 newSchoolMaster[toSlot].push({
                     teacherId,
+                    teacherIds: item.teacherIds,
                     classId: item.classId,
+                    room: item.room || ['all'],
+                    courseId: item.id,
                     groupNumber: item.groupNumber || 1,
                     course: item
                 });
@@ -734,12 +707,8 @@ export const useDragAndDrop = ({
         }
 
         let successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย';
-        if (shouldUseDoubleTarget) {
-            if (wasRescued) {
-                successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย (แยกคาบคู่อัตโนมัติเพื่อไม่ให้คาบหาย)';
-            } else if (targetSlots.length === 1) {
-                successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย (คาบเหลือถูกเก็บเข้าคลัง คาบวาง 1/2)';
-            }
+        if (shouldUseDoubleTarget && targetSlots.length === 1) {
+            successMessage = 'ปรับเปลี่ยนตำแหน่งเรียบร้อย (คาบที่สองคงอยู่ในคลัง คาบวาง 1/2)';
         }
 
         MySwal.fire({
@@ -812,18 +781,13 @@ export const useDragAndDrop = ({
         }
 
         // --- DOUBLE PERIOD AUTO-PLACEMENT & RESCUE LOGIC ---
-        const asgnCst = assignmentConstraints[activeItem.compositeId];
         let partnerSlotId: string | null = null;
         let primarySlotId = slotId;
-        let wasRescued = false;
-        
-        const hoursPerWeek = getRequiredWeeklyPeriods(activeItem);
 
         const alreadyPlacedCount = Object.values(schedule).flat().filter(c => c.compositeId === activeItem.compositeId).length;
-        const hoursRemaining = hoursPerWeek - alreadyPlacedCount;
-        const shouldTryDoublePlacement = asgnCst?.type === 'double' && hoursRemaining >= 2;
+        const shouldTryDoublePlacement = shouldPlaceNextAsDouble(activeItem, slotId, alreadyPlacedCount, false);
 
-        const checkSlotValidityManual = (slot: string, isPartner: boolean) => {
+        const checkSlotValidityManual = (slot: string, isPartner: boolean, duration = 1) => {
             const check = checkConstraints(
                 activeItem,
                 slot,
@@ -833,7 +797,7 @@ export const useDragAndDrop = ({
                 isPartner ? getConstraintMapForDoublePartner(activeItem) : assignmentConstraints,
                 dynamicUnavailableSlots,
                 schoolMasterSchedule,
-                1,
+                duration,
                 [activeItem.instanceId]
             );
             if (check.forbidden) return false;
@@ -850,7 +814,7 @@ export const useDragAndDrop = ({
                 const trialStart = doubleSlots[0];
                 const trialPartner = doubleSlots[1];
 
-                if (checkSlotValidityManual(trialStart, false) && checkSlotValidityManual(trialPartner, true)) {
+                if (checkSlotValidityManual(trialStart, false, 2) && checkSlotValidityManual(trialPartner, true)) {
                     primarySlotId = trialStart;
                     partnerSlotId = trialPartner;
                     standardDoubleSuccessful = true;
@@ -858,62 +822,12 @@ export const useDragAndDrop = ({
             }
 
             if (!standardDoubleSuccessful) {
-                const isPrimaryValid = checkSlotValidityManual(primarySlotId, false);
-                if (isPrimaryValid) {
-                    let rescueSlot: string | null = null;
-                    const [targetDay] = primarySlotId.split('-');
-
-                    const [_, primaryPeriodIdxStr] = primarySlotId.split('-');
-                    const primaryPeriodIdx = parseInt(primaryPeriodIdxStr);
-
-                    const sameDayTeachingSlots: { slot: string; index: number }[] = [];
-                    periodSettings.forEach((p, pIdx) => {
-                        if (p.isTeachingPeriod) {
-                            sameDayTeachingSlots.push({ slot: `${targetDay}-${pIdx}`, index: pIdx });
-                        }
-                    });
-
-                    sameDayTeachingSlots.sort((a, b) => {
-                        const distA = Math.abs(a.index - primaryPeriodIdx);
-                        const distB = Math.abs(b.index - primaryPeriodIdx);
-                        if (distA !== distB) return distA - distB;
-                        return a.index - b.index;
-                    });
-
-                    for (const entry of sameDayTeachingSlots) {
-                        if (checkSlotValidityManual(entry.slot, true)) {
-                            rescueSlot = entry.slot;
-                            break;
-                        }
-                    }
-
-                    if (!rescueSlot) {
-                        const otherDays = Object.keys(DAYS).filter(d => d !== targetDay);
-                        for (const day of otherDays) {
-                            const teachingSlots: { slot: string; index: number }[] = [];
-                            periodSettings.forEach((p, pIdx) => {
-                                if (p.isTeachingPeriod) {
-                                    teachingSlots.push({ slot: `${day}-${pIdx}`, index: pIdx });
-                                }
-                            });
-                            for (const entry of teachingSlots) {
-                                if (checkSlotValidityManual(entry.slot, true)) {
-                                    rescueSlot = entry.slot;
-                                    break;
-                                }
-                            }
-                            if (rescueSlot) break;
-                        }
-                    }
-
-                    if (rescueSlot) {
-                        partnerSlotId = rescueSlot;
-                        wasRescued = true;
-                    }
-                } else {
-                    MySwal.fire({ icon: 'warning', title: 'ไม่สามารถเพิ่มได้', text: 'คาบเรียนหลักที่เลือกไม่สามารถจัดได้เนื่องจากติดเงื่อนไข' });
-                    return;
-                }
+                MySwal.fire({
+                    icon: 'warning',
+                    title: 'ไม่สามารถวางคาบคู่ได้',
+                    text: 'วิชานี้เหลือเป็นชุดคาบคู่ กรุณาเลือกบล็อกคาบคู่ที่ว่างและตรงตามช่วงเวลาที่กำหนด'
+                });
+                return;
             }
         }
 
@@ -1012,8 +926,11 @@ export const useDragAndDrop = ({
             
             if (!next[primarySlotId]) next[primarySlotId] = [];
             next[primarySlotId].push({
-                teacherId: selectedTeacher,
+                teacherId: primaryItem.teacherId || selectedTeacher,
+                teacherIds: primaryItem.teacherIds,
                 classId: primaryItem.classId,
+                room: primaryItem.room || ['all'],
+                courseId: primaryItem.id,
                 groupNumber: primaryItem.groupNumber || 1,
                 course: primaryItem
             });
@@ -1021,8 +938,11 @@ export const useDragAndDrop = ({
             if (partnerSlotId && partnerItem) {
                 if (!next[partnerSlotId]) next[partnerSlotId] = [];
                 next[partnerSlotId].push({
-                    teacherId: selectedTeacher,
+                    teacherId: partnerItem.teacherId || selectedTeacher,
+                    teacherIds: partnerItem.teacherIds,
                     classId: partnerItem.classId,
+                    room: partnerItem.room || ['all'],
+                    courseId: partnerItem.id,
                     groupNumber: partnerItem.groupNumber || 1,
                     course: partnerItem
                 });
@@ -1032,12 +952,8 @@ export const useDragAndDrop = ({
         });
 
         let successMessage = 'เพิ่มวิชาเรียบร้อย';
-        if (shouldTryDoublePlacement) {
-            if (wasRescued) {
-                successMessage = 'เพิ่มวิชาเรียบร้อย (แยกคาบคู่อัตโนมัติเพื่อไม่ให้คาบหาย)';
-            } else if (!partnerSlotId) {
-                successMessage = 'เพิ่มวิชาเรียบร้อย (คาบที่สองคงอยู่ในคลัง คาบวาง 1/2)';
-            }
+        if (shouldTryDoublePlacement && !partnerSlotId) {
+            successMessage = 'เพิ่มวิชาเรียบร้อย (คาบที่สองคงอยู่ในคลัง คาบวาง 1/2)';
         }
 
         MySwal.fire({

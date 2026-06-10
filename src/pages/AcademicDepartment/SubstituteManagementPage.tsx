@@ -849,7 +849,20 @@ const SubstituteManagementPage: React.FC = () => {
                 // สร้าง ID ที่ไม่ซ้ำกันสำหรับแต่ละคาบที่ต้องสอนแทน
                 const courseKey = typeof course === 'string' ? courseIndex : (course?.instanceId || course?.id || courseIndex);
                 const uniqueScheduleId = `${scheduleData.id}-${dateString}-${slot}-${courseKey}`;
-                const classId = course?.classId || scheduleData.classId;
+                // Use course-level classId (specific to this slot).
+              // Only fall back to scheduleData.classId when it's a single-class array or string —
+              // never fall back to a multi-class array (that would incorrectly span all rooms
+              // the teacher teaches, causing attendance to pull multiple rooms).
+              const _rawCourseClassId = course?.classId;
+              const _hasValidCourseClassId = _rawCourseClassId !== undefined && _rawCourseClassId !== null &&
+                !(Array.isArray(_rawCourseClassId) && _rawCourseClassId.length === 0);
+              const classId = _hasValidCourseClassId
+                ? _rawCourseClassId
+                : (Array.isArray(scheduleData.classId) && scheduleData.classId.length === 1
+                    ? scheduleData.classId
+                    : (typeof scheduleData.classId === 'string' && scheduleData.classId
+                        ? scheduleData.classId
+                        : []));
 
                 allSchedules.push({
                   id: uniqueScheduleId,

@@ -82,6 +82,32 @@ const matchesClassValue = (recordClass: unknown, selectedClass: unknown): boolea
         normalizedVariants.some(v => normalized.includes(v) || v.includes(normalized));
 };
 
+// Strict class matching used specifically for substitute classes.
+// Unlike matchesClassValue, this does NOT allow a grade-only variant (e.g. "m1") to match
+// room-specific students (e.g. "m1/1", "m1/2"), preventing multi-room pull when the
+// substitution classId has no room number or was set to the teacher's full class list.
+const matchesClassValueStrict = (recordClass: unknown, classId: unknown): boolean => {
+    if (!classId) return true;
+    const ids = (Array.isArray(classId) ? classId : [classId]).filter(Boolean).map(String);
+    if (ids.length === 0) return true;
+
+    if (Array.isArray(recordClass)) {
+        return (recordClass as unknown[]).some(item => matchesClassValueStrict(item, classId));
+    }
+
+    const allVariants = Array.from(new Set(ids.flatMap(id => getClassVariants(id))))
+        .map(v => v.toLowerCase().replace(/\s/g, ''));
+    const normalized = String(recordClass || '').toLowerCase().replace(/\s/g, '');
+
+    return allVariants.some(v =>
+        v === normalized ||
+        normalized.startsWith(`${v}_`) ||
+        // Only allow prefix matching when the variant itself has a room number (e.g. "m1/1")
+        // — this prevents grade-only "m1" from matching "m1/1" or "m1/2"
+        (v.includes('/') && normalized.startsWith(`${v}/`))
+    );
+};
+
 const matchesEnrollmentGroup = (data: any, groupNumber?: number | string): boolean => {
     if (!groupNumber) return true;
     const normalizedSelected = normalizeRoom(groupNumber);
@@ -904,25 +930,31 @@ const ClassroomAttendancePage: React.FC = () => {
                 const enrollmentDocs = Array.from(enrollmentDocMap.values());
 
                 if (enrollmentDocs.length > 0) {
+                    // Substitute classes use strict matching to avoid pulling students from
+                    // multiple rooms when classId is a broad grade-level or multi-room array.
+                    const classFilter = (data: any) =>
+                        !data.classLevel || (
+                            selectedClass.isSubstitute
+                                ? matchesClassValueStrict(data.classLevel, selectedClass.classId)
+                                : (matchesClassValue(data.classLevel, selectedClass.classId) || matchesClassValue(data.classLevel, selectedClass.className))
+                        );
+
                     let filteredDocs = enrollmentDocs.filter(d => {
                         const data = d.data();
-                        const matchesGroup = matchesEnrollmentGroup(data, groupNumber);
-                        const matchesClass = !data.classLevel || matchesClassValue(data.classLevel, selectedClass.classId) || matchesClassValue(data.classLevel, selectedClass.className);
-                        return matchesGroup && matchesClass;
+                        return matchesEnrollmentGroup(data, groupNumber) && classFilter(data);
                     });
 
                     if (filteredDocs.length === 0) {
-                        filteredDocs = enrollmentDocs.filter(d => {
-                            const data = d.data();
-                            return !data.classLevel || matchesClassValue(data.classLevel, selectedClass.classId) || matchesClassValue(data.classLevel, selectedClass.className);
-                        });
+                        // Retry without group filter (class filter only)
+                        filteredDocs = enrollmentDocs.filter(d => classFilter(d.data()));
                     }
 
-                    if (filteredDocs.length === 0) {
+                    // For non-substitute: additional fallbacks to avoid empty list
+                    if (filteredDocs.length === 0 && !selectedClass.isSubstitute) {
                         filteredDocs = enrollmentDocs.filter(d => matchesEnrollmentGroup(d.data(), groupNumber));
                     }
 
-                    if (filteredDocs.length === 0) {
+                    if (filteredDocs.length === 0 && !selectedClass.isSubstitute) {
                         filteredDocs = enrollmentDocs;
                     }
 

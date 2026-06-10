@@ -511,22 +511,20 @@ const HomeroomStudentListPage: React.FC = () => {
   }, [schoolSettings.availableClassOptions, students]);
 
   useEffect(() => {
-    if (!selectedClassLevel && classOptions.length > 0) {
-      setSelectedClassLevel(classOptions[0]);
-    }
+    // allow empty
   }, [classOptions, selectedClassLevel]);
 
   const roomOptions = useMemo(() => {
     return Array.from(new Set(students
-      .filter(student => classLabel(student.classLevel) === selectedClassLevel)
+      .filter(student => !selectedClassLevel || classLabel(student.classLevel) === selectedClassLevel)
       .map(student => String(student.room || "").trim())
       .filter(Boolean)))
       .sort((a, b) => a.localeCompare(b, "th", { numeric: true }));
   }, [selectedClassLevel, students]);
 
   useEffect(() => {
-    if (roomOptions.length > 0 && (!selectedRoom || !roomOptions.includes(selectedRoom))) {
-      setSelectedRoom(roomOptions[0]);
+    if (selectedRoom && !roomOptions.includes(selectedRoom)) {
+      setSelectedRoom("");
     }
   }, [roomOptions, selectedRoom]);
 
@@ -632,8 +630,9 @@ const HomeroomStudentListPage: React.FC = () => {
     return students
       .filter(student => {
         if (subjectStudentIds) return subjectStudentIds.includes(student.id);
-        return classLabel(student.classLevel) === selectedClassLevel
-          && (!selectedRoom || String(student.room || "") === selectedRoom);
+        const matchClass = !selectedClassLevel || classLabel(student.classLevel) === selectedClassLevel;
+        const matchRoom = !selectedRoom || String(student.room || "") === selectedRoom;
+        return matchClass && matchRoom;
       })
       .filter(student => {
         if (!text) return true;
@@ -736,12 +735,14 @@ const HomeroomStudentListPage: React.FC = () => {
             <label className="space-y-1">
               <span className="text-xs font-black text-gray-500">ชั้น</span>
               <select value={selectedClassLevel} onChange={event => setSelectedClassLevel(event.target.value)} className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]">
+                <option value="">ทุกชั้น</option>
                 {classOptions.map(level => <option key={level} value={level}>{level}</option>)}
               </select>
             </label>
             <label className="space-y-1">
               <span className="text-xs font-black text-gray-500">ห้อง</span>
               <select value={selectedRoom} onChange={event => setSelectedRoom(event.target.value)} className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]">
+                <option value="">ทุกห้อง</option>
                 {roomOptions.map(room => <option key={room} value={room}>{room}</option>)}
               </select>
             </label>
