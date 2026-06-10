@@ -1,5 +1,57 @@
 import { StyleSheet } from '@react-pdf/renderer';
 
+export const HOME_VISIT_A4 = {
+    width: 595.28,
+    height: 841.89,
+};
+
+const CM_TO_PT = 28.3464567;
+
+export const HOME_VISIT_SARABUN_MARGIN = {
+    top: 2.5 * CM_TO_PT,
+    right: 2 * CM_TO_PT,
+    bottom: 2 * CM_TO_PT,
+    left: 3 * CM_TO_PT,
+};
+
+export const HOME_VISIT_PAGE_FRAME = {
+    paddingTop: HOME_VISIT_SARABUN_MARGIN.top,
+    paddingRight: HOME_VISIT_SARABUN_MARGIN.right,
+    paddingBottom: HOME_VISIT_SARABUN_MARGIN.bottom,
+    paddingLeft: HOME_VISIT_SARABUN_MARGIN.left,
+};
+
+export const homeVisitStandardPage = {
+    position: 'relative' as const,
+    width: HOME_VISIT_A4.width,
+    height: HOME_VISIT_A4.height,
+    overflow: 'hidden' as const,
+    ...HOME_VISIT_PAGE_FRAME,
+    fontFamily: 'TH Sarabun PSK',
+    color: '#000',
+};
+
+export const homeVisitStandardPageNo = {
+    position: 'absolute' as const,
+    top: HOME_VISIT_SARABUN_MARGIN.top - 23,
+    right: HOME_VISIT_SARABUN_MARGIN.right,
+    fontSize: 10.8,
+};
+
+export const homeVisitStandardTitle = {
+    textAlign: 'center' as const,
+    fontSize: 20.5,
+    fontWeight: 'bold' as const,
+    marginBottom: 8,
+};
+
+export const homeVisitStandardTopRule = {
+    marginLeft: 0,
+    marginRight: 0,
+    borderBottomWidth: 0.6,
+    borderBottomColor: '#000',
+};
+
 export const styles = StyleSheet.create({
     page: {
         fontFamily: 'TH Sarabun PSK',
@@ -184,4 +236,3 @@ export const styles = StyleSheet.create({
         objectFit: 'contain',
     }
 });
-

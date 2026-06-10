@@ -50,27 +50,6 @@ interface ReportGroup {
     uniqueStudentCount: number;
 }
 
-interface StudentProfile {
-    id: string;
-    studentCode: string;
-    studentName: string;
-    studentNumber: string;
-    classLabel: string;
-}
-
-interface PdfSubjectGroup {
-    key: string;
-    subjectText: string;
-    records: EscapeRecord[];
-}
-
-interface PdfClassSection {
-    classLabel: string;
-    fullClassLabel: string;
-    escapedCount: number;
-    subjectGroups: PdfSubjectGroup[];
-}
-
 const thaiShortMonths = [
     'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
     'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
@@ -134,26 +113,6 @@ const getFullClassLabel = (classLabel: string) => {
     return room ? `${fullLevel}/${room}` : fullLevel;
 };
 
-const getStudentClassLabel = (studentData: any) => {
-    const level = String(
-        studentData?.classLevel ||
-        studentData?.level ||
-        studentData?.grade ||
-        studentData?.className ||
-        ''
-    ).trim();
-    const room = String(
-        studentData?.roomNumber ||
-        studentData?.room ||
-        studentData?.classRoom ||
-        ''
-    ).trim();
-
-    if (!level) return 'ไม่ระบุห้อง';
-    if (!room || level.includes('/')) return level;
-    return `${level}/${room}`;
-};
-
 const getDisplayStudentCode = (studentData: any, attendanceData: EscapeRecord, studentDocId: string) => {
     const code = String(
         studentData?.studentCode ||
@@ -199,32 +158,33 @@ const uniqueRecordsByStudent = (records: EscapeRecord[]) => {
     return Array.from(map.values()).sort((a, b) => String(a.studentId || '').localeCompare(String(b.studentId || ''), 'th', { numeric: true }));
 };
 
-const getSubjectGroupKey = (record: EscapeRecord) => {
+const getTeacherLabel = (records: EscapeRecord[]) => {
+    const names = Array.from(new Set(
+        records
+            .map((record) => record.teacherName || record.checkedByName || record.checkedBy || '')
+            .map((name) => String(name).trim())
+            .filter(Boolean)
+    ));
+    return names.join(', ') || '-';
+};
+
+const getStudentListText = (records: EscapeRecord[]) => {
+    const uniqueRecords = uniqueRecordsByStudent(records);
+    const names = uniqueRecords.map((record, index) => {
+        const number = record.studentNumber ? `เลขที่ ${record.studentNumber} ` : '';
+        const code = record.studentId ? ` (${record.studentId})` : '';
+        return `${index + 1}. ${number}${record.studentName || '-'}${code}`;
+    });
+
     return [
-        record.subjectCode || '',
-        record.subjectName || '',
-        record.teacherName || record.checkedByName || '',
-        record.period ?? ''
-    ].join('__');
+        `จำนวนนักเรียนที่หนีเรียน: ${uniqueRecords.length} คน`,
+        ...names
+    ].join('\n');
 };
 
-const getPdfSubjectText = (records: EscapeRecord[]) => {
-    const first = records[0] || {};
-    const subjectName = first.subjectName || first.subjectCode || '-';
-    const teacherName = first.teacherName || first.checkedByName || first.checkedBy || '-';
-    const periods = Array.from(new Set(records.map((record) => record.period).filter((period) => period !== undefined && period !== null)))
-        .sort((a, b) => Number(a) - Number(b))
-        .join(', ');
-    const studentCount = uniqueRecordsByStudent(records).length;
-    return `${subjectName} / ครูผู้สอน: ${teacherName} (คาบที่ ${periods || '-'}) - จำนวนนักเรียนที่หนีเรียน: ${studentCount} คน`;
-};
-
-const classSortRank = (classLabel: string) => {
-    const [level, room] = String(classLabel || '').split('/');
-    const levelOrder = ['อ.1', 'อ.2', 'อ.3', 'ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6', 'ม.1', 'ม.2', 'ม.3', 'ม.4', 'ม.5', 'ม.6'];
-    const levelRank = levelOrder.indexOf(level);
-    const roomRank = Number(room || 0);
-    return `${String(levelRank >= 0 ? levelRank : 999).padStart(3, '0')}-${String(Number.isFinite(roomRank) ? roomRank : 999).padStart(3, '0')}-${classLabel}`;
+const getGroupNote = (records: EscapeRecord[]) => {
+    const dates = Array.from(new Set(records.map((record) => formatDateThai(record.date)).filter((date) => date !== '-')));
+    return dates.length > 0 ? dates.join(', ') : '-';
 };
 
 const getClassicSelectStyles = (isDarkMode: boolean) => ({
@@ -271,288 +231,200 @@ const getClassicSelectStyles = (isDarkMode: boolean) => ({
 
 const pdfStyles = StyleSheet.create({
     page: {
-        paddingTop: 42,
-        paddingRight: 56,
+        paddingTop: 46,
+        paddingRight: 48,
         paddingBottom: 44,
-        paddingLeft: 56,
+        paddingLeft: 48,
         fontFamily: 'TH Sarabun PSK',
-        fontSize: 13,
+        fontSize: 12,
         color: '#000'
     },
-    topLine: {
-        position: 'absolute',
-        top: 34,
-        left: 56,
-        right: 56,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        borderBottomWidth: 0.7,
-        borderBottomColor: '#777',
-        paddingBottom: 3,
-        fontSize: 12
-    },
-    firstHeader: {
-        marginTop: 16,
-        minHeight: 82,
-        marginBottom: 10,
+    header: {
+        minHeight: 116,
+        position: 'relative',
         alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative'
+        marginBottom: 6
     },
     logo: {
         position: 'absolute',
-        left: 8,
+        left: 26,
         top: 4,
-        width: 54,
-        height: 54,
+        width: 62,
+        height: 62,
         objectFit: 'contain'
     },
-    title: {
-        fontSize: 17,
+    schoolTitle: {
+        marginTop: 8,
+        fontSize: 16,
         fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 2
+        textAlign: 'center'
     },
-    subTitle: {
+    reportTitle: {
+        marginTop: 4,
         fontSize: 14,
-        textAlign: 'center',
-        marginBottom: 1
+        fontWeight: 'bold',
+        textAlign: 'center'
     },
-    reportTable: {
-        width: '100%',
-        borderLeftWidth: 0.8,
-        borderTopWidth: 0.8,
-        borderColor: '#000'
-    },
-    classHeader: {
-        minHeight: 20,
-        justifyContent: 'center',
-        paddingHorizontal: 8,
-        borderRightWidth: 0.8,
-        borderBottomWidth: 0.8,
-        borderColor: '#000',
-        backgroundColor: '#f2f2f2'
-    },
-    classHeaderText: {
+    reportMeta: {
+        marginTop: 3,
         fontSize: 13,
-        fontWeight: 'bold'
+        textAlign: 'center'
     },
-    noDataRow: {
-        minHeight: 21,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRightWidth: 0.8,
-        borderBottomWidth: 0.8,
-        borderColor: '#000'
+    subjectLine: {
+        marginTop: 6,
+        fontSize: 13,
+        textAlign: 'center'
     },
-    noDataText: {
-        fontSize: 13
+    teacherLine: {
+        marginTop: 6,
+        fontSize: 13,
+        width: '100%',
+        paddingLeft: 116
     },
-    subjectRow: {
-        minHeight: 21,
-        justifyContent: 'center',
-        paddingHorizontal: 18,
-        borderRightWidth: 0.8,
-        borderBottomWidth: 0.8,
-        borderColor: '#000'
-    },
-    subjectText: {
-        fontSize: 13
-    },
-    studentTable: {
-        marginHorizontal: 6,
-        marginVertical: 8,
+    table: {
+        width: '100%',
         borderTopWidth: 0.8,
         borderLeftWidth: 0.8,
         borderColor: '#000'
     },
-    studentRow: {
+    row: {
         flexDirection: 'row',
-        minHeight: 20
+        minHeight: 24
     },
-    studentHeaderRow: {
-        flexDirection: 'row',
-        minHeight: 22
+    headerRow: {
+        minHeight: 26
     },
     cell: {
         borderRightWidth: 0.8,
         borderBottomWidth: 0.8,
         borderColor: '#000',
-        paddingHorizontal: 6,
+        paddingHorizontal: 5,
+        paddingVertical: 3,
         justifyContent: 'center'
     },
-    cellCenter: {
-        textAlign: 'center'
-    },
-    headerCellText: {
-        fontSize: 13,
+    headerText: {
+        fontSize: 12,
         fontWeight: 'bold',
         textAlign: 'center'
     },
-    bodyCellText: {
-        fontSize: 13
+    bodyText: {
+        fontSize: 11.5,
+        lineHeight: 1.25
     },
-    colCode: { width: '11%' },
-    colName: { width: '58%' },
-    colDate: { width: '16%' },
-    colStatus: { width: '15%' },
-    totalRow: {
+    bodyTextCenter: {
+        fontSize: 11.5,
+        textAlign: 'center'
+    },
+    subjectText: {
+        fontSize: 11.5,
+        lineHeight: 1.2
+    },
+    studentInfoText: {
+        fontSize: 11,
+        lineHeight: 1.18
+    },
+    colIndex: { width: '5%' },
+    colSubject: { width: '25%' },
+    colPeriod: { width: '8%' },
+    colStudents: { width: '34%' },
+    colTeacher: { width: '15%' },
+    colNote: { width: '13%' },
+    summaryRow: {
         flexDirection: 'row',
-        minHeight: 21,
-        backgroundColor: '#e7f4ff'
+        minHeight: 24
     },
-    totalLabelCell: {
-        width: '13%',
+    summaryCell: {
         borderRightWidth: 0.8,
         borderBottomWidth: 0.8,
         borderColor: '#000',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
         justifyContent: 'center',
-        paddingHorizontal: 8
+        fontWeight: 'bold'
     },
-    totalValueCell: {
-        flex: 1,
-        borderRightWidth: 0.8,
-        borderBottomWidth: 0.8,
-        borderColor: '#000',
-        justifyContent: 'center',
-        paddingHorizontal: 8
-    },
-    footerBlock: {
-        marginTop: 28
-    },
-    proposeLine: {
-        borderTopWidth: 0.7,
-        borderTopColor: '#777',
-        paddingTop: 6,
-        textAlign: 'center',
-        fontSize: 13,
-        marginBottom: 48
-    },
-    signatureRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between'
-    },
-    signatureBox: {
-        width: '31%',
-        alignItems: 'center'
-    },
-    dotLine: {
-        fontSize: 13,
-        marginBottom: 5
-    },
-    signatureTitle: {
-        fontSize: 13,
-        marginTop: 2
+    pageNumber: {
+        position: 'absolute',
+        right: 48,
+        bottom: 26,
+        fontSize: 11
     }
 });
 
 const EscapeSummaryPdfDocument = ({
-    sections,
+    groups,
     schoolName,
     logoUrl,
     academicYear,
     semester,
     selectedDate,
-    directorName,
-    deputyName
 }: {
-    sections: PdfClassSection[];
+    groups: ReportGroup[];
     schoolName: string;
     logoUrl?: string;
     academicYear: string;
     semester: string;
     selectedDate: string;
-    directorName?: string;
-    deputyName?: string;
 }) => {
-    const logoSrc = logoUrl || '/school-logo.png';
-    const total = new Set(
-        sections.flatMap((section) =>
-            section.subjectGroups.flatMap((subjectGroup) =>
-                subjectGroup.records.map(getStudentKey).filter(Boolean)
-            )
-        )
-    ).size;
+    const logoSrc = logoUrl || '/pwa-512x512.png';
+    const total = new Set(groups.flatMap((group) => group.records.map(getStudentKey).filter(Boolean))).size;
 
     return (
         <Document>
             <Page size="A4" style={pdfStyles.page}>
-                <View fixed style={pdfStyles.topLine}>
-                    <Text>{schoolName}</Text>
-                    <Text>รายงานสรุปยอดรวมนักเรียนที่หนีเรียนตามรายวิชา</Text>
-                </View>
-
-                <View style={pdfStyles.firstHeader}>
+                <View style={pdfStyles.header}>
                     <Image src={logoSrc} style={pdfStyles.logo} />
-                    <Text style={pdfStyles.title}>รายงานสรุปยอดรวมนักเรียนที่หนีเรียนตามรายวิชา</Text>
-                    <Text style={pdfStyles.subTitle}>{schoolName} ปีการศึกษา {semester}/{academicYear}</Text>
-                    <Text style={pdfStyles.subTitle}>ประจำวันที่ {formatDateThai(selectedDate)}</Text>
+                    <Text style={pdfStyles.schoolTitle}>{schoolName}</Text>
+                    <Text style={pdfStyles.reportTitle}>รายงานสรุปยอดรวมนักเรียนที่หนีเรียนตามรายวิชา</Text>
+                    <Text style={pdfStyles.reportMeta}>ปีการศึกษา {academicYear} ภาคเรียนที่ {semester} วันที่ {formatDateThai(selectedDate)}</Text>
+                    <Text style={pdfStyles.subjectLine}>วิชา ....................................................................................</Text>
+                    <Text style={pdfStyles.teacherLine}>ครูผู้สอน / ผู้ตรวจสอบ : ........................................................</Text>
                 </View>
 
-                <View style={pdfStyles.reportTable}>
-                    {sections.map((section) => (
-                        <View key={section.classLabel}>
-                            <View style={pdfStyles.classHeader}>
-                                <Text style={pdfStyles.classHeaderText}>{section.fullClassLabel} (จำนวนนักเรียนที่หนีเรียน: {section.escapedCount} คน)</Text>
+                <View style={pdfStyles.table}>
+                    <View style={[pdfStyles.row, pdfStyles.headerRow]} fixed>
+                        <View style={[pdfStyles.cell, pdfStyles.colIndex]}><Text style={pdfStyles.headerText}>#</Text></View>
+                        <View style={[pdfStyles.cell, pdfStyles.colSubject]}><Text style={pdfStyles.headerText}>ห้องเรียน/รายวิชา</Text></View>
+                        <View style={[pdfStyles.cell, pdfStyles.colPeriod]}><Text style={pdfStyles.headerText}>คาบที่</Text></View>
+                        <View style={[pdfStyles.cell, pdfStyles.colStudents]}><Text style={pdfStyles.headerText}>ข้อมูลนักเรียน</Text></View>
+                        <View style={[pdfStyles.cell, pdfStyles.colTeacher]}><Text style={pdfStyles.headerText}>ครูผู้สอน</Text></View>
+                        <View style={[pdfStyles.cell, pdfStyles.colNote]}><Text style={pdfStyles.headerText}>หมายเหตุ</Text></View>
+                    </View>
+
+                    {groups.length === 0 ? (
+                        <View style={pdfStyles.row}>
+                            <View style={[pdfStyles.cell, { width: '100%' }]}>
+                                <Text style={pdfStyles.bodyTextCenter}>ไม่พบข้อมูลการหนีเรียน</Text>
                             </View>
-
-                            {section.subjectGroups.length === 0 ? (
-                                <View style={pdfStyles.noDataRow}>
-                                    <Text style={pdfStyles.noDataText}>ไม่พบข้อมูลการหนีเรียน</Text>
+                        </View>
+                    ) : (
+                        groups.map((group, index) => (
+                            <View key={group.key} style={pdfStyles.row} wrap={false}>
+                                <View style={[pdfStyles.cell, pdfStyles.colIndex]}><Text style={pdfStyles.bodyTextCenter}>{index + 1}</Text></View>
+                                <View style={[pdfStyles.cell, pdfStyles.colSubject]}>
+                                    <Text style={pdfStyles.subjectText}>{getFullClassLabel(group.className)}</Text>
+                                    <Text style={pdfStyles.subjectText}>{group.subjectLabel || '-'}</Text>
                                 </View>
-                            ) : (
-                                section.subjectGroups.map((subjectGroup) => (
-                                    <View key={subjectGroup.key}>
-                                        <View style={pdfStyles.subjectRow}>
-                                            <Text style={pdfStyles.subjectText}>{subjectGroup.subjectText}</Text>
-                                        </View>
-                                        <View style={pdfStyles.studentTable}>
-                                            <View style={pdfStyles.studentHeaderRow}>
-                                                <View style={[pdfStyles.cell, pdfStyles.colCode]}><Text style={pdfStyles.headerCellText}>รหัสนักเรียน</Text></View>
-                                                <View style={[pdfStyles.cell, pdfStyles.colName]}><Text style={pdfStyles.headerCellText}>ชื่อ-นามสกุล</Text></View>
-                                                <View style={[pdfStyles.cell, pdfStyles.colDate]}><Text style={pdfStyles.headerCellText}>วันที่</Text></View>
-                                                <View style={[pdfStyles.cell, pdfStyles.colStatus]}><Text style={pdfStyles.headerCellText}>สถานะ</Text></View>
-                                            </View>
-                                            {subjectGroup.records.map((record) => (
-                                                <View key={`${subjectGroup.key}-${record.studentId}-${record.studentName}`} style={pdfStyles.studentRow}>
-                                                    <View style={[pdfStyles.cell, pdfStyles.colCode]}><Text style={pdfStyles.bodyCellText}>{record.studentId || '-'}</Text></View>
-                                                    <View style={[pdfStyles.cell, pdfStyles.colName]}><Text style={pdfStyles.bodyCellText}>{record.studentName || '-'}</Text></View>
-                                                    <View style={[pdfStyles.cell, pdfStyles.colDate]}><Text style={[pdfStyles.bodyCellText, pdfStyles.cellCenter]}>{formatDateThai(record.date)}</Text></View>
-                                                    <View style={[pdfStyles.cell, pdfStyles.colStatus]}><Text style={[pdfStyles.bodyCellText, pdfStyles.cellCenter]}>หนีเรียน</Text></View>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-                                ))
-                            )}
+                                <View style={[pdfStyles.cell, pdfStyles.colPeriod]}><Text style={pdfStyles.bodyTextCenter}>{group.periods}</Text></View>
+                                <View style={[pdfStyles.cell, pdfStyles.colStudents]}><Text style={pdfStyles.studentInfoText}>{getStudentListText(group.records)}</Text></View>
+                                <View style={[pdfStyles.cell, pdfStyles.colTeacher]}><Text style={pdfStyles.bodyText}>{getTeacherLabel(group.records)}</Text></View>
+                                <View style={[pdfStyles.cell, pdfStyles.colNote]}><Text style={pdfStyles.bodyTextCenter}>{getGroupNote(group.records)}</Text></View>
+                            </View>
+                        ))
+                    )}
+
+                    <View style={pdfStyles.summaryRow} wrap={false}>
+                        <View style={[pdfStyles.summaryCell, { width: '38%' }]}><Text>รวม</Text></View>
+                        <View style={[pdfStyles.summaryCell, { width: '62%' }]}>
+                            <Text>จำนวนนักเรียนที่หนีเรียนรวม {total} คน จาก {groups.length} ห้องเรียน/รายวิชา</Text>
                         </View>
-                    ))}
-                    <View style={pdfStyles.totalRow} wrap={false}>
-                        <View style={pdfStyles.totalLabelCell}><Text>รวมทั้งหมด:</Text></View>
-                        <View style={pdfStyles.totalValueCell}><Text>{total} คน</Text></View>
                     </View>
                 </View>
 
-                <View style={pdfStyles.footerBlock} wrap={false}>
-                    <Text style={pdfStyles.proposeLine}>เสนอ ผู้อำนวยการ{schoolName} เพื่อทราบ</Text>
-                    <View style={pdfStyles.signatureRow}>
-                        <View style={pdfStyles.signatureBox}>
-                            <Text style={pdfStyles.dotLine}>........................................................</Text>
-                            <Text>(........................................................)</Text>
-                            <Text style={pdfStyles.signatureTitle}>ผู้รวบรวมข้อมูล</Text>
-                        </View>
-                        <View style={pdfStyles.signatureBox}>
-                            <Text style={pdfStyles.dotLine}>........................................................</Text>
-                            <Text>({deputyName || '........................................................'})</Text>
-                            <Text style={pdfStyles.signatureTitle}>รองผู้อำนวยการกลุ่มบริหารงานบุคคลฯ</Text>
-                        </View>
-                        <View style={pdfStyles.signatureBox}>
-                            <Text style={pdfStyles.dotLine}>........................................................</Text>
-                            <Text>({directorName || '........................................................'})</Text>
-                            <Text style={pdfStyles.signatureTitle}>ผู้อำนวยการโรงเรียน</Text>
-                        </View>
-                    </View>
-                </View>
+                <Text
+                    fixed
+                    style={pdfStyles.pageNumber}
+                    render={({ pageNumber, totalPages }) => `หน้าที่ ${pageNumber} จาก ${totalPages} หน้า`}
+                />
             </Page>
         </Document>
     );
@@ -573,19 +445,16 @@ const EscapeSummaryPage: React.FC = () => {
     const [pdfGenerating, setPdfGenerating] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
     const [escapeRecords, setEscapeRecords] = useState<EscapeRecord[]>([]);
-    const [allStudents, setAllStudents] = useState<StudentProfile[]>([]);
     const [academicYear, setAcademicYear] = useState(() => reduxAcademicYear);
     const [semester, setSemester] = useState('1');
     const [selectedDate, setSelectedDate] = useState(() => sessionStorage.getItem('escape_report_date') || toInputDate(new Date()));
     const [selectedSchool, setSelectedSchool] = useState<any>(null);
-    const [selectedGroupBy, setSelectedGroupBy] = useState<'class' | 'subject'>(() => (sessionStorage.getItem('escape_report_group_by') as 'class' | 'subject') || 'class');
     const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
     const selectStyles = useMemo(() => getClassicSelectStyles(isDarkMode), [isDarkMode]);
 
     useEffect(() => {
         sessionStorage.setItem('escape_report_date', selectedDate);
-        sessionStorage.setItem('escape_report_group_by', selectedGroupBy);
-    }, [selectedDate, selectedGroupBy]);
+    }, [selectedDate]);
 
     useEffect(() => {
         const observer = new MutationObserver(() => {
@@ -640,13 +509,6 @@ const EscapeSummaryPage: React.FC = () => {
                 id: studentDoc.id,
                 data: studentDoc.data() as any
             }));
-            setAllStudents(students.map((student) => ({
-                id: student.id,
-                studentCode: getDisplayStudentCode(student.data, {} as EscapeRecord, student.id),
-                studentName: `${student.data?.title || student.data?.prefix || ''}${student.data?.firstName || ''} ${student.data?.lastName || ''}`.trim(),
-                studentNumber: String(student.data?.studentNumber || student.data?.number || student.data?.no || student.data?.['เลขที่'] || '').trim(),
-                classLabel: getStudentClassLabel(student.data)
-            })));
 
             const records: EscapeRecord[] = [];
             for (const studentChunk of chunkArray(students, 20)) {
@@ -702,9 +564,7 @@ const EscapeSummaryPage: React.FC = () => {
         filteredRecords.forEach((record) => {
             const classLabel = getClassLabel(record);
             const subjectLabel = `${record.subjectCode || '-'} ${record.subjectName || ''}`.trim();
-            const key = selectedGroupBy === 'class'
-                ? `${classLabel}__${subjectLabel}`
-                : `${subjectLabel}__${classLabel}`;
+            const key = `${classLabel}__${subjectLabel}`;
             map.set(key, [...(map.get(key) || []), record]);
         });
 
@@ -725,50 +585,13 @@ const EscapeSummaryPage: React.FC = () => {
                 };
             })
             .sort((a, b) => {
-                const primaryA = selectedGroupBy === 'class' ? a.className : a.subjectLabel;
-                const primaryB = selectedGroupBy === 'class' ? b.className : b.subjectLabel;
-                return primaryA.localeCompare(primaryB, 'th', { numeric: true });
+                const classCompare = a.className.localeCompare(b.className, 'th', { numeric: true });
+                if (classCompare !== 0) return classCompare;
+                return a.subjectLabel.localeCompare(b.subjectLabel, 'th', { numeric: true });
             });
-    }, [filteredRecords, selectedGroupBy]);
+    }, [filteredRecords]);
 
     const totalStudents = useMemo(() => new Set(filteredRecords.map(getStudentKey).filter(Boolean)).size, [filteredRecords]);
-
-    const pdfSections = useMemo<PdfClassSection[]>(() => {
-        const classLabels = new Set<string>();
-        allStudents.forEach((student) => {
-            if (student.classLabel) classLabels.add(student.classLabel);
-        });
-        filteredRecords.forEach((record) => classLabels.add(getClassLabel(record)));
-
-        return Array.from(classLabels)
-            .sort((a, b) => classSortRank(a).localeCompare(classSortRank(b), 'th', { numeric: true }))
-            .map((classLabel) => {
-                const classRecords = filteredRecords.filter((record) => getClassLabel(record) === classLabel);
-                const subjectMap = new Map<string, EscapeRecord[]>();
-                classRecords.forEach((record) => {
-                    const key = getSubjectGroupKey(record);
-                    subjectMap.set(key, [...(subjectMap.get(key) || []), record]);
-                });
-
-                const subjectGroups = Array.from(subjectMap.entries())
-                    .map(([key, records]) => {
-                        const uniqueRecords = uniqueRecordsByStudent(records);
-                        return {
-                            key,
-                            subjectText: getPdfSubjectText(records),
-                            records: uniqueRecords
-                        };
-                    })
-                    .sort((a, b) => a.subjectText.localeCompare(b.subjectText, 'th', { numeric: true }));
-
-                return {
-                    classLabel,
-                    fullClassLabel: getFullClassLabel(classLabel),
-                    escapedCount: new Set(classRecords.map(getStudentKey).filter(Boolean)).size,
-                    subjectGroups
-                };
-            });
-    }, [allStudents, filteredRecords]);
 
     const toggleRow = (key: string) => {
         setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -779,14 +602,12 @@ const EscapeSummaryPage: React.FC = () => {
         try {
             const document = (
                 <EscapeSummaryPdfDocument
-                    sections={pdfSections}
+                    groups={reportGroups}
                     schoolName={schoolDisplayName}
                     logoUrl={schoolSettings.logoUrl}
                     academicYear={academicYear}
                     semester={semester}
                     selectedDate={selectedDate}
-                    directorName={`${schoolSettings.directorPrefix || ''}${schoolSettings.directorName || ''}`.trim()}
-                    deputyName={`${schoolSettings.deputyPrefix || ''}${schoolSettings.deputyName || ''}`.trim()}
                 />
             );
             const blob = await pdf(document).toBlob();
@@ -828,7 +649,7 @@ const EscapeSummaryPage: React.FC = () => {
                                 className="inline-flex h-[30px] items-center gap-1.5 rounded bg-sky-500 px-3 text-[12px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
                             >
                                 {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                                PDF
+                                สร้างรายงาน
                             </button>
                         </div>
                     </div>
@@ -884,24 +705,6 @@ const EscapeSummaryPage: React.FC = () => {
                             <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">วันที่เลือก: {formatDateThai(selectedDate)}</div>
                         </label>
 
-                        <div className="md:col-span-2">
-                            <div className="inline-flex overflow-hidden rounded border border-[#d9dee3] text-[12px] dark:border-slate-600">
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedGroupBy('class')}
-                                    className={`px-3 py-1.5 ${selectedGroupBy === 'class' ? 'bg-sky-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'}`}
-                                >
-                                    จัดกลุ่มตามห้องเรียน
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedGroupBy('subject')}
-                                    className={`border-l border-[#d9dee3] px-3 py-1.5 dark:border-slate-600 ${selectedGroupBy === 'subject' ? 'bg-sky-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'}`}
-                                >
-                                    จัดกลุ่มตามรายวิชา
-                                </button>
-                            </div>
-                        </div>
                     </div>
 
                     <div className="px-3 pb-5">
@@ -916,19 +719,21 @@ const EscapeSummaryPage: React.FC = () => {
                         </div>
 
                         <div className="overflow-x-auto border border-[#d6dbe0] dark:border-slate-700">
-                            <table className="w-full min-w-[820px] border-collapse text-[12px]">
+                            <table className="w-full min-w-[1080px] border-collapse text-[12px]">
                                 <thead>
                                     <tr className="bg-[#e9eef2] text-left text-slate-800 dark:bg-slate-800 dark:text-slate-100">
-                                        <th className="w-[72px] border-r border-[#d6dbe0] px-3 py-3 text-center font-semibold dark:border-slate-700">#</th>
-                                        <th className="border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">ห้องเรียน/รายวิชา</th>
-                                        <th className="w-[160px] border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">คาบที่</th>
-                                        <th className="w-[48%] px-3 py-3 font-semibold">ข้อมูลนักเรียน</th>
+                                        <th className="w-[70px] border-r border-[#d6dbe0] px-3 py-3 text-center font-semibold dark:border-slate-700">#</th>
+                                        <th className="w-[30%] border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">ห้องเรียน/รายวิชา</th>
+                                        <th className="w-[110px] border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">คาบที่</th>
+                                        <th className="w-[31%] border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">ข้อมูลนักเรียน</th>
+                                        <th className="w-[16%] border-r border-[#d6dbe0] px-3 py-3 font-semibold dark:border-slate-700">ครูผู้สอน</th>
+                                        <th className="w-[13%] px-3 py-3 font-semibold">หมายเหตุ</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {reportGroups.length === 0 ? (
                                         <tr>
-                                            <td colSpan={4} className="px-3 py-12 text-center text-[13px] text-slate-600 dark:text-slate-400">
+                                            <td colSpan={6} className="px-3 py-12 text-center text-[13px] text-slate-600 dark:text-slate-400">
                                                 {loading ? 'กำลังโหลดข้อมูล...' : 'ไม่พบข้อมูลการหนีเรียน'}
                                             </td>
                                         </tr>
@@ -952,18 +757,23 @@ const EscapeSummaryPage: React.FC = () => {
                                                             </div>
                                                         </td>
                                                         <td className="border-r border-[#d6dbe0] px-3 py-3 font-medium dark:border-slate-700">
-                                                            <div>{selectedGroupBy === 'class' ? group.className : group.subjectLabel}</div>
+                                                            <div>{getFullClassLabel(group.className)}</div>
                                                             <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                                                                {selectedGroupBy === 'class' ? group.subjectLabel : group.className}
+                                                                {group.subjectLabel || '-'}
                                                             </div>
                                                         </td>
-                                                        <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700">{group.periods}</td>
-                                                        <td className="px-3 py-3 font-medium">จำนวนนักเรียนที่หนีเรียน: {group.uniqueStudentCount} คน</td>
+                                                        <td className="border-r border-[#d6dbe0] px-3 py-3 text-center dark:border-slate-700">{group.periods}</td>
+                                                        <td className="border-r border-[#d6dbe0] px-3 py-3 font-medium dark:border-slate-700">
+                                                            <div>จำนวนนักเรียนที่หนีเรียน: {group.uniqueStudentCount} คน</div>
+                                                            <div className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-400">กด + เพื่อดูรายชื่อนักเรียน</div>
+                                                        </td>
+                                                        <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700">{getTeacherLabel(group.records)}</td>
+                                                        <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{getGroupNote(group.records)}</td>
                                                     </tr>
                                                     {isOpen && (
                                                         <tr className="border-t border-[#d6dbe0] bg-white dark:border-slate-700 dark:bg-[#171922]">
                                                             <td className="border-r border-[#d6dbe0] dark:border-slate-700" />
-                                                            <td colSpan={3} className="px-3 py-0">
+                                                            <td colSpan={5} className="px-3 py-0">
                                                                 {group.records.length === 0 ? (
                                                                     <div className="py-3 text-center text-slate-600 dark:text-slate-400">ไม่พบข้อมูลการหนีเรียน</div>
                                                                 ) : (

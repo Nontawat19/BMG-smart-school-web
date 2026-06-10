@@ -20,6 +20,7 @@ import Swal from 'sweetalert2';
 import { useDropzone } from 'react-dropzone';
 import { compressImage } from "@/utils/imageUtils";
 import { getLevelsByRange } from "@/utils/schoolUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 
 
 const BulkUploadStudentImagesPage: React.FC = () => {
@@ -203,7 +204,14 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                     throw new Error(`ไม่พบข้อมูลนักเรียนรหัส ${studentId}`);
                 }
 
-                const studentDoc = querySnapshot.docs[0];
+                // ค้นหานักเรียนที่มีสถานะกำลังศึกษาอยู่
+                const activeStudentDoc = querySnapshot.docs.find(doc => isStudyingStudent(doc.data() as any));
+                
+                if (!activeStudentDoc) {
+                    throw new Error(`นักเรียนรหัส ${studentId} ไม่ได้มีสถานะกำลังศึกษาอยู่ (อาจจบการศึกษาหรือย้ายแล้ว)`);
+                }
+
+                const studentDoc = activeStudentDoc;
                 const studentData = studentDoc.data();
                 const studentDocId = studentDoc.id;
                 const wasUpdate = Boolean(studentData.profileImageUrl);

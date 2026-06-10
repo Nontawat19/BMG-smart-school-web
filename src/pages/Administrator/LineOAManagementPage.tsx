@@ -434,10 +434,10 @@ const LineOAManagementPage: React.FC = () => {
 
         {/* Configuration Modal */}
         {isModalOpen && selectedTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fadeIn">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-green-50 dark:bg-green-900/10">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-xl w-full max-w-3xl max-h-[calc(100dvh-1.5rem)] overflow-hidden animate-fadeIn flex flex-col">
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-green-50 dark:bg-green-900/10">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-green-600" />
                   ตั้งค่า LINE OA {selectedTarget.type === 'teacher' ? `(${selectedTarget.data.homeroomGrade})` : `(${selectedTarget.name})`}
                 </h3>
@@ -446,9 +446,9 @@ const LineOAManagementPage: React.FC = () => {
                 </button>
               </div>
 
-              <form onSubmit={handleSave} className="p-6 space-y-4">
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-800 dark:text-blue-300 mb-4">
-                  <p className="mb-2">กรุณาระบุข้อมูลจาก LINE Developers Console สำหรับบัญชี LINE OA ของห้องเรียนนี้</p>
+              <form onSubmit={handleSave} className="p-5 space-y-3 overflow-y-auto min-h-0">
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-800 dark:text-blue-300">
+                  <p className="mb-1">กรุณาระบุข้อมูลจาก LINE Developers Console สำหรับบัญชี LINE OA ของห้องเรียนนี้</p>
                   <a
                     href="https://developers.line.biz/console/"
                     target="_blank"
@@ -459,11 +459,11 @@ const LineOAManagementPage: React.FC = () => {
                   </a>
                 </div>
 
-                <div className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className={`p-2 rounded-full ${formData.enableNotification ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}`}>
+                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className={`p-2 rounded-full flex-shrink-0 ${formData.enableNotification ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}`}>
                     <Bell className="w-5 h-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <label htmlFor="enableNotification" className="block text-sm font-medium text-gray-900 dark:text-white cursor-pointer">
                       เปิดใช้งานการแจ้งเตือนการลงเวลา
                     </label>
@@ -481,34 +481,36 @@ const LineOAManagementPage: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Basic ID (เช่น @123xyz) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="lineOABasicId"
-                    value={formData.lineOABasicId}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="@xxxxxxx"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500"
-                  />
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Basic ID (เช่น @123xyz) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="lineOABasicId"
+                      value={formData.lineOABasicId}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="@xxxxxxx"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Channel ID <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="lineChannelId"
-                    value={formData.lineChannelId}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="ระบุ Channel ID (ตัวเลข)"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500"
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Channel ID <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="lineChannelId"
+                      value={formData.lineChannelId}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="ระบุ Channel ID (ตัวเลข)"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -526,36 +528,38 @@ const LineOAManagementPage: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Channel Secret <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    name="lineChannelSecret"
-                    value={formData.lineChannelSecret}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="ระบุ Channel Secret"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Channel Secret <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      name="lineChannelSecret"
+                      value={formData.lineChannelSecret}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="ระบุ Channel Secret"
+                      className="w-full h-11 px-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      LIFF ID (สำหรับลงทะเบียนผู้ปกครอง/ครู)
+                    </label>
+                    <input
+                      type="text"
+                      name="liffId"
+                      value={formData.liffId}
+                      onChange={handleInputChange}
+                      placeholder="ระบุ LIFF ID (เช่น 2000123456-abcdefgh)"
+                      className="w-full h-11 px-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    LIFF ID (สำหรับลงทะเบียนผู้ปกครอง/ครู)
-                  </label>
-                  <input
-                    type="text"
-                    name="liffId"
-                    value={formData.liffId}
-                    onChange={handleInputChange}
-                    placeholder="ระบุ LIFF ID (เช่น 2000123456-abcdefgh)"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-mono text-xs"
-                  />
-                </div>
-
-                <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700 mt-4">
+                <div className="pt-3 flex justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
                   <button
                     type="button"
                     onClick={handleCloseModal}

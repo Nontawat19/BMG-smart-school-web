@@ -11,6 +11,14 @@ export interface FoundUser {
   position?: string;
   nickname?: string;
   parentLineUserIds?: string[];
+  parentLineRegistrationContexts?: Record<string, {
+    liffId?: string;
+    teacherId?: string;
+    classLevel?: string;
+    room?: string;
+    registeredAt?: string;
+  }>;
+  lineRegistrationReviewRequired?: boolean;
   behaviorScore?: number;
   attendanceStats?: {
     present: number;

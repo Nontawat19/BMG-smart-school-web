@@ -89,6 +89,7 @@ const HomeVisitDashboard: React.FC = () => {
     const [availableLevels, setAvailableLevels] = useState<string[]>([]);
     const [visitStatuses, setVisitStatuses] = useState<Record<string, { visited: boolean, date?: string }>>({});
     const [teacherName, setTeacherName] = useState("");
+    const [teacherPosition, setTeacherPosition] = useState("");
     const [sortBy, setSortBy] = useState<'studentId' | 'number' | 'name'>('studentId');
     const [isPowerUser, setIsPowerUser] = useState(true);
     const [hasHomeroom, setHasHomeroom] = useState(true);
@@ -161,6 +162,7 @@ const HomeVisitDashboard: React.FC = () => {
                         // ดึงข้อมูลครูของผู้ใช้ปัจจุบัน เพื่อเอาคำนำหน้า และข้อมูลประจำชั้น
                         const teacherRef = doc(firestore, "school-settings", sid, "teachers", user.uid);
                         const teacherSnap = await getDoc(teacherRef);
+                        let currentPos = "";
                         if (teacherSnap.exists()) {
                             const tData = teacherSnap.data();
                             // ขยายคำนำหน้าให้เต็ม (เช่น ด.ช. -> เด็กชาย)
@@ -173,6 +175,7 @@ const HomeVisitDashboard: React.FC = () => {
                             };
                             const fullTitle = map[tData.title] || tData.title || "";
                             setTeacherName(`${fullTitle}${tData.firstName} ${tData.lastName}`);
+                            currentPos = tData.position || "";
 
                             // ถ้าเป็นครูผู้สอนทั่วไป (ไม่มีสิทธิ์ Power User) ให้ล็อกชั้นและห้องเรียนประจำชั้นของตนเอง
                             if (!isPower) {
@@ -188,10 +191,22 @@ const HomeVisitDashboard: React.FC = () => {
                             }
                         } else {
                             setTeacherName(userData.fullName || userData.displayName || user.displayName || "");
+                            currentPos = userData.position || "";
                             if (!isPower) {
                                 setHasHomeroom(false);
                             }
                         }
+
+                        if (!currentPos) {
+                            if (roles.includes("director") || roles.includes("director_school") || roles.includes("school_director")) {
+                                currentPos = "ผู้อำนวยการโรงเรียน";
+                            } else if (roles.includes("admin") || roles.includes("school_admin") || roles.includes("super_admin")) {
+                                currentPos = "ผู้ดูแลระบบ";
+                            } else {
+                                currentPos = "ครู";
+                            }
+                        }
+                        setTeacherPosition(currentPos);
 
                         fetchStudents(sid);
 
@@ -473,6 +488,7 @@ const HomeVisitDashboard: React.FC = () => {
                                                             student={student}
                                                             schoolId={schoolId}
                                                             teacherName={teacherName}
+                                                            teacherPosition={teacherPosition}
                                                             className="p-3 bg-slate-50 hover:bg-blue-50/70 dark:bg-[#272930] dark:hover:bg-blue-950/20 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-full border border-slate-200 hover:border-blue-200/60 dark:border-slate-700 dark:hover:border-blue-900/40 transition-all duration-300 flex items-center justify-center shadow-sm hover:shadow-md hover:shadow-blue-500/5 shrink-0 active:scale-90"
                                                         />
                                                     </div>

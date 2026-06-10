@@ -10,6 +10,41 @@ interface AttendanceSpeechProps {
     status?: 'success' | 'error';
 }
 
+const SUCCESS_SPEECH_DELAY_MS = 700;
+const BRIGHT_FEMALE_VOICE_RATE = 1.08;
+const BRIGHT_FEMALE_VOICE_PITCH = 1.26;
+
+export const getPreferredThaiVoice = (voices: SpeechSynthesisVoice[]) => {
+    const thaiVoices = voices.filter(v => v.lang.toLowerCase().startsWith('th'));
+    const rankedKeywords = [
+        'google',
+        'narisa',
+        'kanya',
+        'pattara',
+        'kanru',
+        'premium',
+        'enhanced',
+        'natural',
+        'นริศา',
+        'กัญญา',
+        'ภัทรา',
+        'เคนรุ',
+    ];
+
+    return [...thaiVoices].sort((a, b) => {
+        const score = (voice: SpeechSynthesisVoice) => {
+            const name = voice.name.toLowerCase();
+            const keywordScore = rankedKeywords.reduce((sum, keyword, index) => (
+                name.includes(keyword) ? sum + (rankedKeywords.length - index) : sum
+            ), 0);
+            const malePenalty = name.includes('male') || name.includes('ชาย') ? 20 : 0;
+            return keywordScore - malePenalty;
+        };
+
+        return score(b) - score(a);
+    })[0] || null;
+};
+
 const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
     user,
     actionType,
@@ -21,9 +56,14 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
     const lastProcessedTimestamp = useRef<number>(0);
     const speechQueue = useRef<{ message: string; timestamp: number }[]>([]);
     const isSpeaking = useRef<boolean>(false);
+    const speechDelayTimer = useRef<number | null>(null);
 
     const processQueue = () => {
         if (!enabled) {
+            if (speechDelayTimer.current !== null) {
+                window.clearTimeout(speechDelayTimer.current);
+                speechDelayTimer.current = null;
+            }
             speechQueue.current = [];
             isSpeaking.current = false;
             return;
@@ -40,33 +80,19 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
 
         const utterance = new SpeechSynthesisUtterance(nextSpeech.message);
         utterance.lang = 'th-TH';
-        utterance.rate = 0.95; // Slightly slower for clear name pronunciation
-        utterance.pitch = 1.0;
+        utterance.rate = BRIGHT_FEMALE_VOICE_RATE;
+        utterance.pitch = BRIGHT_FEMALE_VOICE_PITCH;
 
         // Get voices
         const voices = window.speechSynthesis.getVoices();
-        const thaiVoices = voices.filter(v => v.lang.startsWith('th'));
 
         let selectedVoice = null;
         if (selectedVoiceURI) {
             selectedVoice = voices.find(v => v.voiceURI === selectedVoiceURI);
         }
 
-        const femaleKeywords = ['kanru', 'pattara', 'kanya', 'narisa', 'female', 'เคนรุ', 'ภัทรา', 'กัญญา', 'นริศา'];
-
         if (!selectedVoice) {
-            selectedVoice = thaiVoices.find(v => {
-                const name = v.name.toLowerCase();
-                return femaleKeywords.some(kw => name.includes(kw)) && !name.includes('male');
-            });
-        }
-
-        if (!selectedVoice) {
-            selectedVoice = thaiVoices.find(v => v.name.toLowerCase().includes('google'));
-        }
-
-        if (!selectedVoice) {
-            selectedVoice = thaiVoices[0];
+            selectedVoice = getPreferredThaiVoice(voices);
         }
 
         if (selectedVoice) {
@@ -99,14 +125,26 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
         if (status === 'error') {
             message = "ไม่ผ่านค่ะ";
         } else {
-            const nameToSpeak = user ? user.name : '';
-            message = nameToSpeak ? `${nameToSpeak} ผ่านค่ะ` : "ผ่านค่ะ";
+            message = "ผ่านค่ะ";
         }
 
-        // Add to queue
+        if (speechDelayTimer.current !== null) {
+            window.clearTimeout(speechDelayTimer.current);
+            speechDelayTimer.current = null;
+        }
+        window.speechSynthesis.cancel();
+        isSpeaking.current = false;
+        speechQueue.current = [];
         speechQueue.current.push({ message, timestamp });
-        
-        // Try processing queue
+
+        if (status === 'success') {
+            speechDelayTimer.current = window.setTimeout(() => {
+                speechDelayTimer.current = null;
+                processQueue();
+            }, SUCCESS_SPEECH_DELAY_MS);
+            return;
+        }
+
         processQueue();
     }, [user, actionType, timestamp, enabled, status]);
 
@@ -130,6 +168,9 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
     // Cleanup speech on unmount
     useEffect(() => {
         return () => {
+            if (speechDelayTimer.current !== null) {
+                window.clearTimeout(speechDelayTimer.current);
+            }
             window.speechSynthesis.cancel();
         };
     }, []);

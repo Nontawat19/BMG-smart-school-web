@@ -19,7 +19,8 @@ import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getThaiYear } from "@/utils/dateUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
-import { fetchStudentReportSummary, syncStudentReportSummary } from "@/utils/studentReportSummaryUtils";
+import { fetchStudentReportSummary, syncStudentReportSummary, normalizeStudentReportLevel } from "@/utils/studentReportSummaryUtils";
+import { isArchivedStudentStatus, normalizeStudentStatus } from "@/utils/studentStatusUtils";
 import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
@@ -556,8 +557,45 @@ const HomePage = () => {
         const fetchReportData = async () => {
             setReportLoading(true);
             try {
-                const studentSummary = await syncStudentReportSummary(db, schoolId);
-                setStudentReport(studentSummary);
+                const activeAcademicYear = calendarState.academicYear || String(getThaiYear(new Date()));
+                
+                // Fetch directly to match the exact "กำลังศึกษาอยู่" criteria for the current academic year
+                const studentsCollectionRef = collection(db, "school-settings", schoolId, "students");
+                const studentsSnapshot = await getDocs(studentsCollectionRef);
+                
+                let activeCount = 0;
+                const byLevel: Record<string, number> = {};
+                
+                studentsSnapshot.docs.forEach(studentDoc => {
+                    const studentData = studentDoc.data();
+                    
+                    if (isArchivedStudentStatus(studentData.status || studentData.studentStatus)) return;
+                    
+                    const status = normalizeStudentStatus(studentData.status || studentData.studentStatus);
+                    if (status !== 'กำลังศึกษาอยู่') return;
+                    
+                    const studentYear = String(
+                        studentData.academicYear || 
+                        studentData.currentAcademicYear || 
+                        studentData.schoolYear || 
+                        studentData.enrollmentAcademicYear || 
+                        studentData.admissionAcademicYear || 
+                        studentData.academic?.year || 
+                        ""
+                    ).trim();
+                    
+                    if (studentYear && studentYear !== activeAcademicYear) return;
+                    
+                    activeCount++;
+                    const level = normalizeStudentReportLevel(studentData.classLevel || studentData.level);
+                    byLevel[level] = (byLevel[level] || 0) + 1;
+                });
+                
+                setStudentReport({
+                    total: activeCount,
+                    active: activeCount,
+                    byLevel: byLevel
+                });
                 
                 const schoolSummary = await fetchSchoolDashboardSummary(db, schoolId);
                 setTeacherReport({ total: schoolSummary.teacherCount || 0, byDepartment: {} });

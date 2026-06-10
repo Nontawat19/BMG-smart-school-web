@@ -16,6 +16,8 @@ import {
   writeBatch,
   increment,
   serverTimestamp,
+  runTransaction,
+  limit,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import Swal from "sweetalert2";
@@ -29,7 +31,7 @@ import UserInfoPanel from "./UserInfoPanel";
 import SearchPanel from "./SearchPanel";
 import FaceScanPanel from "./FaceScanPanel";
 import LatestUsers from "./LatestUsers";
-import AttendanceSpeech from "./AttendanceSpeech";
+import AttendanceSpeech, { getPreferredThaiVoice } from "./AttendanceSpeech";
 import {
   calculateAttendanceStatus,
   GateRecord,
@@ -39,6 +41,8 @@ import {
 import { ROLES } from "../../../constants/roles";
 import { applyAttendanceBehaviorScore } from "../../../utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
+import { isStudyingStudent } from "../../../utils/studentStatusUtils";
+import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
 
 // Imports for collapsible right settings panel
 import { createPortal } from "react-dom";
@@ -48,6 +52,7 @@ import { useTheme } from "@/ThemeContext";
 
 const LOCAL_FACE_BRIDGE_URL = "http://127.0.0.1:18188/findface";
 const FACE_SCAN_DEBUG = import.meta.env.VITE_FACE_SCAN_DEBUG === "true";
+const USER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 const isLoopbackHost = (hostname: string) =>
   hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
@@ -142,6 +147,25 @@ const splitHomeroom = (grade?: string | number | null, room?: string | number | 
 
 const uniq = <T,>(values: T[]) => Array.from(new Set(values.filter(Boolean)));
 
+const parseUserCache = (raw: string | null) => {
+  if (!raw) return { records: [], cachedAt: 0 };
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return { records: parsed, cachedAt: 0 };
+    if (Array.isArray(parsed?.records)) {
+      return {
+        records: parsed.records,
+        cachedAt: Number(parsed.cachedAt || 0),
+      };
+    }
+  } catch (e) {
+    console.error("Error parsing cached users:", e);
+  }
+
+  return { records: [], cachedAt: 0 };
+};
+
 const expandStudentIdCandidates = (value?: string | number | null) => {
   const raw = String(value ?? "").trim();
   if (!raw) return [];
@@ -149,9 +173,22 @@ const expandStudentIdCandidates = (value?: string | number | null) => {
   const candidates = [raw];
   if (/^\d{1,5}$/.test(raw)) {
     candidates.push(raw.padStart(5, "0"));
+    candidates.push(String(Number(raw)));
   }
 
   return uniq(candidates);
+};
+
+const normalizeRoleList = (role: unknown) => {
+  const roles = Array.isArray(role) ? role : role ? [role] : [];
+  return roles
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => {
+      const lowerRole = item.toLowerCase();
+      if (lowerRole === "admin") return ROLES.SCHOOL_ADMIN;
+      if (lowerRole === "academic") return ROLES.ACADEMIC_ADMIN;
+      return lowerRole;
+    });
 };
 
 const isSameHomeroom = (teacherData: any, studentGrade?: string, studentRoom?: string) => {
@@ -162,6 +199,26 @@ const isSameHomeroom = (teacherData: any, studentGrade?: string, studentRoom?: s
   if (student.room && teacher.room && student.room !== teacher.room) return false;
   if (student.room && !teacher.room && teacher.gradeWithRoom !== student.gradeWithRoom) return false;
   return true;
+};
+
+const isSameLineRegistrationContext = (context: any, studentGrade?: string, studentRoom?: string, lineConfig?: any) => {
+  if (!context) return false;
+  const student = splitHomeroom(studentGrade, studentRoom);
+  const registered = splitHomeroom(context.classLevel, context.room);
+
+  if (!student.grade || !registered.grade || student.grade !== registered.grade) return false;
+  if (student.room && registered.room && student.room !== registered.room) return false;
+  if (lineConfig?.liffId && context.liffId && String(lineConfig.liffId).trim() !== String(context.liffId).trim()) return false;
+  return true;
+};
+
+const getEligibleParentLineRecipients = (user: FoundUser, lineConfig?: any) => {
+  const parentIds = uniq(user.parentLineUserIds || []);
+  const contexts = user.parentLineRegistrationContexts || {};
+
+  return parentIds.filter((lineUserId) =>
+    isSameLineRegistrationContext(contexts[lineUserId], user.grade, user.room, lineConfig)
+  );
 };
 
 const CheckinOutPage: React.FC = () => {
@@ -233,6 +290,9 @@ const CheckinOutPage: React.FC = () => {
   } | null>(null);
   const locationWatchId = useRef<number | null>(null);
   const faceScanCooldownRef = useRef<Map<string, number>>(new Map());
+  const activeSearchKeysRef = useRef<Set<string>>(new Set());
+  const activeAttendanceKeysRef = useRef<Set<string>>(new Set());
+  const faceScanFailSpeechAtRef = useRef<number>(0);
 
   // Use the imported getTodayString from dateUtils
 
@@ -254,29 +314,25 @@ const CheckinOutPage: React.FC = () => {
       try {
         const cacheKey = `teachers_cache_${schoolId}`;
         const cachedData = localStorage.getItem(cacheKey);
-        if (cachedData) {
-          try {
-            const parsed = JSON.parse(cachedData);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((teacherDoc: any) => {
-                const user = buildFoundUser("teacher", teacherDoc.id, teacherDoc.data, "สแกนใบหน้า");
-                sessionUserCache.current.set(user.id, user);
-                if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-                if (user.rfid) sessionUserCache.current.set(user.rfid, user);
-                if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-                if (user.name) {
-                  sessionUserCache.current.set(user.name, user);
-                  sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-                }
-              });
-              if (FACE_SCAN_DEBUG) console.log(`Loaded ${parsed.length} teachers from localStorage cache.`);
+        const cached = parseUserCache(cachedData);
+        if (cached.records.length > 0) {
+          cached.records.forEach((teacherDoc: any) => {
+            const user = buildFoundUser("teacher", teacherDoc.id, teacherDoc.data, "สแกนใบหน้า");
+            sessionUserCache.current.set(user.id, user);
+            if (user.displayId) sessionUserCache.current.set(user.displayId, user);
+            if (user.rfid) sessionUserCache.current.set(user.rfid, user);
+            if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
+            if (user.name) {
+              sessionUserCache.current.set(user.name, user);
+              sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
             }
-          } catch (e) {
-            console.error("Error parsing cached teachers:", e);
-          }
+          });
+          if (FACE_SCAN_DEBUG) console.log(`Loaded ${cached.records.length} teachers from localStorage cache.`);
         }
 
-        // Fetch fresh list from Firestore in the background
+        if (cached.cachedAt && Date.now() - cached.cachedAt < USER_CACHE_TTL_MS) return;
+
+        // Refresh stale or legacy cache so newly imported/updated users can scan.
         const teachersSnap = await getDocs(
           collection(firestore, "school-settings", schoolId, "teachers")
         );
@@ -298,7 +354,7 @@ const CheckinOutPage: React.FC = () => {
           }
         });
 
-        localStorage.setItem(cacheKey, JSON.stringify(toCache));
+        localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now(), records: toCache }));
         if (FACE_SCAN_DEBUG) console.log(`Cached ${toCache.length} teachers successfully!`);
       } catch (err) {
         console.error("Error caching teachers:", err);
@@ -316,29 +372,25 @@ const CheckinOutPage: React.FC = () => {
       try {
         const cacheKey = `students_cache_${schoolId}`;
         const cachedData = localStorage.getItem(cacheKey);
-        if (cachedData) {
-          try {
-            const parsed = JSON.parse(cachedData);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((studentDoc: any) => {
-                const user = buildFoundUser("student", studentDoc.id, studentDoc.data, "สแกนใบหน้า");
-                sessionUserCache.current.set(user.id, user);
-                if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-                if (user.rfid) sessionUserCache.current.set(user.rfid, user);
-                if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-                if (user.name) {
-                  sessionUserCache.current.set(user.name, user);
-                  sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-                }
-              });
-              if (FACE_SCAN_DEBUG) console.log(`Loaded ${parsed.length} students from localStorage cache.`);
+        const cached = parseUserCache(cachedData);
+        if (cached.records.length > 0) {
+          cached.records.forEach((studentDoc: any) => {
+            const user = buildFoundUser("student", studentDoc.id, studentDoc.data, "สแกนใบหน้า");
+            sessionUserCache.current.set(user.id, user);
+            if (user.displayId) sessionUserCache.current.set(user.displayId, user);
+            if (user.rfid) sessionUserCache.current.set(user.rfid, user);
+            if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
+            if (user.name) {
+              sessionUserCache.current.set(user.name, user);
+              sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
             }
-          } catch (e) {
-            console.error("Error parsing cached students:", e);
-          }
+          });
+          if (FACE_SCAN_DEBUG) console.log(`Loaded ${cached.records.length} students from localStorage cache.`);
         }
 
-        // Fetch fresh list from Firestore in the background
+        if (cached.cachedAt && Date.now() - cached.cachedAt < USER_CACHE_TTL_MS) return;
+
+        // Refresh stale or legacy cache so newly imported/updated students can scan.
         const studentsSnap = await getDocs(
           collection(firestore, "school-settings", schoolId, "students")
         );
@@ -360,7 +412,7 @@ const CheckinOutPage: React.FC = () => {
           }
         });
 
-        localStorage.setItem(cacheKey, JSON.stringify(toCache));
+        localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now(), records: toCache }));
         if (FACE_SCAN_DEBUG) console.log(`Cached ${toCache.length} students successfully!`);
       } catch (err) {
         console.error("Error caching students:", err);
@@ -420,18 +472,21 @@ const CheckinOutPage: React.FC = () => {
 
   useEffect(() => {
     const checkUserRole = async () => {
+      setIsAttendanceAdmin(false);
+      setCanScanStudents(false);
+      setCanScanTeachers(false);
+
       if (currentUser) {
-        const reduxRole = (currentUser as any).role;
-        const roles = Array.isArray(reduxRole) ? reduxRole : [reduxRole];
+        const roles = normalizeRoleList((currentUser as any).role);
         
         const isFullAdmin = roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN);
-        const isStudentAdmin = roles.includes(ROLES.STUDENT_ATTENDANCE);
-        const isTeacherAdmin = roles.includes(ROLES.TEACHER_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE);
+        const isStudentAdmin = roles.includes(ROLES.STUDENT_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE);
+        const isTeacherAdmin = roles.includes(ROLES.TEACHER_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE) || roles.includes(ROLES.STUDENT_ATTENDANCE);
 
         if (isFullAdmin || isStudentAdmin || isTeacherAdmin) {
           setIsAttendanceAdmin(true);
           setCanScanStudents(isFullAdmin || isStudentAdmin);
-          setCanScanTeachers(isFullAdmin || isTeacherAdmin || isStudentAdmin);
+          setCanScanTeachers(isFullAdmin || isTeacherAdmin);
           return;
         }
 
@@ -444,17 +499,16 @@ const CheckinOutPage: React.FC = () => {
             const teacherSnap = await getDoc(teacherRef);
             if (teacherSnap.exists()) {
               const data = teacherSnap.data();
-              const teacherRole = data.role;
-              const teacherRoles = Array.isArray(teacherRole) ? teacherRole : [teacherRole];
+              const teacherRoles = normalizeRoleList(data.role);
               
               const isFullAdminT = teacherRoles.includes(ROLES.SCHOOL_ADMIN) || teacherRoles.includes(ROLES.SUPER_ADMIN);
-              const isStudentAdminT = teacherRoles.includes(ROLES.STUDENT_ATTENDANCE);
-              const isTeacherAdminT = teacherRoles.includes(ROLES.TEACHER_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE);
+              const isStudentAdminT = teacherRoles.includes(ROLES.STUDENT_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE);
+              const isTeacherAdminT = teacherRoles.includes(ROLES.TEACHER_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE) || teacherRoles.includes(ROLES.STUDENT_ATTENDANCE);
 
               if (isFullAdminT || isStudentAdminT || isTeacherAdminT) {
                 setIsAttendanceAdmin(true);
                 setCanScanStudents(isFullAdminT || isStudentAdminT);
-                setCanScanTeachers(isFullAdminT || isTeacherAdminT || isStudentAdminT);
+                setCanScanTeachers(isFullAdminT || isTeacherAdminT);
               }
             }
           } catch (error) {
@@ -608,29 +662,11 @@ const CheckinOutPage: React.FC = () => {
       const thaiVoices = voices.filter((v) => v.lang.startsWith("th"));
       setAvailableVoices(thaiVoices);
 
-      // If no voice selected yet, and there's a thai voice, and we haven't checked before
       if (!selectedVoiceURI && thaiVoices.length > 0) {
-        // Try to find a female one as default
-        const femaleKeywords = [
-          "kanru",
-          "pattara",
-          "kanya",
-          "narisa",
-          "female",
-          "เคนรุ",
-          "ภัทรา",
-          "กัญญา",
-          "นริศา",
-        ];
-        const defaultFemale = thaiVoices.find((v) => {
-          const name = v.name.toLowerCase();
-          return (
-            femaleKeywords.some((kw) => name.includes(kw)) && !name.includes("male")
-          );
-        });
-        if (defaultFemale) {
-          setSelectedVoiceURI(defaultFemale.voiceURI);
-          localStorage.setItem("selectedVoiceURI", defaultFemale.voiceURI);
+        const preferredVoice = getPreferredThaiVoice(voices);
+        if (preferredVoice) {
+          setSelectedVoiceURI(preferredVoice.voiceURI);
+          localStorage.setItem("selectedVoiceURI", preferredVoice.voiceURI);
         } else {
           setSelectedVoiceURI(thaiVoices[0].voiceURI);
           localStorage.setItem("selectedVoiceURI", thaiVoices[0].voiceURI);
@@ -860,9 +896,9 @@ const CheckinOutPage: React.FC = () => {
     currentUserId: string,
     currentIp: string | undefined
   ): Promise<{ valid: boolean; reason?: string; ip?: string }> => {
-    const reduxRole = (currentUser as any)?.role;
+    const roles = normalizeRoleList((currentUser as any)?.role);
     // Speed Optimization: Bypass for Attendance / Admin
-    if (isAttendanceAdmin || reduxRole === "attendance" || reduxRole === "admin") {
+    if (isAttendanceAdmin || roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN)) {
       return { valid: true, ip: currentIp };
     }
 
@@ -890,9 +926,9 @@ const CheckinOutPage: React.FC = () => {
   const validateLocationAndIp = async (
     currentIp: string | undefined
   ): Promise<{ valid: boolean; reason?: string }> => {
-    const reduxRole = (currentUser as any)?.role;
+    const roles = normalizeRoleList((currentUser as any)?.role);
     // Speed Optimization: Bypass for Attendance / Admin
-    if (isAttendanceAdmin || reduxRole === "attendance" || reduxRole === "admin")
+    if (isAttendanceAdmin || roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN))
       return { valid: true };
 
     if (!schoolSettings) return { valid: true };
@@ -1004,7 +1040,9 @@ const CheckinOutPage: React.FC = () => {
         grade: String(d.classLevel || d.grade || d.classroom || ""),
         room: String(d.room || ""),
         parentLineUserIds: d.parentLineUserIds || [],
-        behaviorScore: d.behaviorScore || 100,
+        parentLineRegistrationContexts: d.parentLineRegistrationContexts || {},
+        lineRegistrationReviewRequired: Boolean(d.lineRegistrationReviewRequired),
+        behaviorScore: d.behaviorScore ?? 100,
         attendanceStats: {
           present: d.attendanceStats?.present || 0,
           late: d.attendanceStats?.late || 0,
@@ -1119,6 +1157,7 @@ const CheckinOutPage: React.FC = () => {
     user: FoundUser,
     confidence?: number
   ): Promise<string | null> => {
+    if (schoolSettings?.faceScanConfig?.saveSnapshots !== true) return null;
     if (!schoolId || !image || image.size === 0) return null;
 
     try {
@@ -1144,7 +1183,7 @@ const CheckinOutPage: React.FC = () => {
       console.error("Face scan snapshot upload failed:", error);
       return null;
     }
-  }, [schoolId]);
+  }, [schoolId, schoolSettings]);
 
   const sendLineNotification = useCallback(async (
     user: FoundUser,
@@ -1189,7 +1228,7 @@ const CheckinOutPage: React.FC = () => {
       };
 
       let finalConfig: any = null;
-      let recipientUserIds: string[] = [...(user.parentLineUserIds || [])];
+      const teacherRecipientUserIds: string[] = [];
 
       if (user.grade) {
         const homeroom = splitHomeroom(user.grade, user.room);
@@ -1222,7 +1261,7 @@ const CheckinOutPage: React.FC = () => {
         homeroomTeachers.forEach((teacherData) => {
           // ดึง lineUserId ของครูประจำชั้นทุกคนในห้องมาใส่ร่วมกับกลุ่มรับข้อความแจ้งเตือน
           if (teacherData.lineUserId) {
-            recipientUserIds.push(teacherData.lineUserId);
+            teacherRecipientUserIds.push(teacherData.lineUserId);
           }
 
           if (
@@ -1239,7 +1278,8 @@ const CheckinOutPage: React.FC = () => {
             student: `${homeroom.grade}${homeroom.room ? `/${homeroom.room}` : ""}`,
             gradeCandidates,
             teacherCount: homeroomTeachers.size,
-            recipientCount: recipientUserIds.length,
+            parentRecipientCount: (user.parentLineUserIds || []).length,
+            teacherRecipientCount: teacherRecipientUserIds.length,
           });
         }
       }
@@ -1255,6 +1295,20 @@ const CheckinOutPage: React.FC = () => {
       }
 
       if (finalConfig) {
+        const parentRecipientUserIds = getEligibleParentLineRecipients(user, finalConfig);
+        const recipientUserIds = uniq([...parentRecipientUserIds, ...teacherRecipientUserIds]);
+
+        if (parentRecipientUserIds.length < (user.parentLineUserIds || []).filter(Boolean).length) {
+          console.warn("[LINE] Parent LINE recipients skipped because classroom registration needs refresh:", {
+            studentId: user.displayId,
+            classLevel: user.grade,
+            room: user.room,
+            originalParentRecipientCount: (user.parentLineUserIds || []).length,
+            eligibleParentRecipientCount: parentRecipientUserIds.length,
+            reviewRequired: Boolean(user.lineRegistrationReviewRequired),
+          });
+        }
+
         console.log("[LINE] Sending attendance notification:", {
           studentId: user.displayId,
           name: user.name,
@@ -1275,7 +1329,8 @@ const CheckinOutPage: React.FC = () => {
           studentId: user.displayId,
           name: user.name,
           scanMethod: user.scanMethod,
-          recipientCount: recipientUserIds.filter(Boolean).length,
+          parentRecipientCount: (user.parentLineUserIds || []).filter(Boolean).length,
+          teacherRecipientCount: teacherRecipientUserIds.filter(Boolean).length,
         });
       }
     } catch (error) {
@@ -1323,7 +1378,7 @@ const CheckinOutPage: React.FC = () => {
     const checkoutTimeConfig =
       user.type === "student" ? studentCheckoutTime : teacherCheckoutTime;
 
-    const oldStatus = existingAttendance?.status || null;
+    let oldStatus = existingAttendance?.status || null;
 
     if (type === "checkin" || type === "checkin_and_checkout") {
       let finalStatus = "มา";
@@ -1403,8 +1458,57 @@ const CheckinOutPage: React.FC = () => {
       setCheckoutTime(timeStr);
     }
 
+    const transactionResult = await runTransaction(firestore, async (transaction) => {
+      const freshSnap = await transaction.get(attendanceRef);
+      const freshData = freshSnap.exists() ? freshSnap.data() : null;
+      const hasFreshCheckin = Boolean(freshData?.checkinTime);
+      const hasFreshCheckout = Boolean(freshData?.checkoutTime);
+
+      if ((type === "checkin" && hasFreshCheckin) || (type === "checkout" && hasFreshCheckout)) {
+        return {
+          saved: false,
+          reason: type === "checkin" ? "already_checked_in" : "already_checked_out",
+          data: freshData,
+        };
+      }
+
+      if (type === "checkin_and_checkout") {
+        if (hasFreshCheckout) {
+          return { saved: false, reason: "already_checked_out", data: freshData };
+        }
+
+        if (hasFreshCheckin) {
+          delete attendanceData.checkinTime;
+          delete attendanceData.checkinIp;
+          delete attendanceData.checkinDevice;
+          status = timeForCompare < checkoutTimeConfig ? "กลับก่อน" : freshData?.status || status;
+          attendanceData.status = status;
+        }
+      }
+
+      oldStatus = freshData?.status || null;
+      transaction.set(attendanceRef, attendanceData, { merge: true });
+      return { saved: true, reason: null, data: freshData };
+    });
+
+    if (!transactionResult.saved) {
+      console.info("[Attendance] Skipped by transaction guard:", {
+        userId: user.id,
+        displayId: user.displayId,
+        name: user.name,
+        action: type,
+        reason: transactionResult.reason,
+      });
+      if (transactionResult.reason === "already_checked_in" && transactionResult.data?.checkinTime) {
+        setCheckinTime(transactionResult.data.checkinTime.toDate().toLocaleTimeString("th-TH"));
+      }
+      if (transactionResult.reason === "already_checked_out" && transactionResult.data?.checkoutTime) {
+        setCheckoutTime(transactionResult.data.checkoutTime.toDate().toLocaleTimeString("th-TH"));
+      }
+      return;
+    }
+
     const batch = writeBatch(firestore);
-    batch.set(attendanceRef, attendanceData, { merge: true });
     console.log("[Attendance] Saving attendance:", {
       userId: user.id,
       displayId: user.displayId,
@@ -1466,6 +1570,7 @@ const CheckinOutPage: React.FC = () => {
       }
     }
 
+    await batch.commit();
     setLatestUsers((prev) => {
       const newUserAction: FoundUser = {
         ...user,
@@ -1480,8 +1585,6 @@ const CheckinOutPage: React.FC = () => {
       localStorage.setItem("latestUsers", JSON.stringify(updatedList));
       return updatedList;
     });
-
-    await batch.commit();
     console.log("[Attendance] Saved attendance successfully:", {
       userId: user.id,
       displayId: user.displayId,
@@ -1489,6 +1592,7 @@ const CheckinOutPage: React.FC = () => {
       status,
       scanType: attendanceData.scanType,
     });
+    setSpeechTrigger({ user, type, timestamp: Date.now(), status: 'success' });
 
     Swal.fire({
       icon: "success",
@@ -1505,7 +1609,6 @@ const CheckinOutPage: React.FC = () => {
     if (user.type === "student") {
       await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr);
     }
-    setSpeechTrigger({ user, type, timestamp: Date.now(), status: 'success' });
   }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification]);
 
   const resolveFaceMatchedUser = useCallback(async (payload: any): Promise<FoundUser | null> => {
@@ -1553,6 +1656,61 @@ const CheckinOutPage: React.FC = () => {
       return clean;
     };
 
+    const cacheResolvedUser = (user: FoundUser | null) => {
+      if (!user) return user;
+      sessionUserCache.current.set(user.id, user);
+      if (user.displayId) sessionUserCache.current.set(user.displayId, user);
+      if (user.rfid) sessionUserCache.current.set(user.rfid, user);
+      if (cardId) sessionUserCache.current.set(String(cardId), user);
+      if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
+      if (user.name) {
+        sessionUserCache.current.set(user.name, user);
+        sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
+        sessionUserCache.current.set(cleanName(user.name), user);
+        sessionUserCache.current.set(cleanName(user.name).replace(/\s+/g, ""), user);
+      }
+      return user;
+    };
+
+    const tryDoc = async (collectionName: "students" | "teachers", docId: string) => {
+      const snap = await getDoc(doc(firestore, "school-settings", schoolId, collectionName, docId));
+      if (!snap.exists()) return null;
+      return cacheResolvedUser(
+        buildFoundUser(collectionName === "students" ? "student" : "teacher", snap.id, snap.data(), "สแกนใบหน้า", confidence, cardId)
+      );
+    };
+
+    const findFirstByField = async (
+      collectionName: "students" | "teachers",
+      field: string,
+      values: string[]
+    ) => {
+      for (const value of values) {
+        const snap = await getDocs(
+          query(
+            collection(firestore, "school-settings", schoolId, collectionName),
+            where(field, "==", value)
+          )
+        );
+        if (!snap.empty) {
+          const validDoc = snap.docs.find(doc => {
+            const data = doc.data();
+            if (collectionName === "students") {
+              return isStudyingStudent(data);
+            } else {
+              return isActiveTeacherSummaryStatus(data.status || "อยู่");
+            }
+          });
+          if (validDoc) {
+            return cacheResolvedUser(
+              buildFoundUser(collectionName === "students" ? "student" : "teacher", validDoc.id, validDoc.data(), "สแกนใบหน้า", confidence, cardId)
+            );
+          }
+        }
+      }
+      return null;
+    };
+
     // 1. ตรวจสอบใน Local In-Memory Cache ก่อนเพื่อประหยัดการอ่าน Firebase
     for (const lookupKey of uniqueKeys(userId, ...displayCandidates, ...cardCandidates)) {
       if (sessionUserCache.current.has(lookupKey)) {
@@ -1580,108 +1738,107 @@ const CheckinOutPage: React.FC = () => {
       }
     }
 
-    const tryDoc = async (collectionName: "students" | "teachers", docId: string) => {
-      // ตรวจสอบใน Cache อีกครั้ง
-      if (sessionUserCache.current.has(docId)) {
-        const cached = sessionUserCache.current.get(docId)!;
-        return { ...cached, faceConfidence: confidence, findfaceCardId: cardId ? String(cardId) : cached.findfaceCardId };
-      }
-
-      const snap = await getDoc(doc(firestore, "school-settings", schoolId, collectionName, docId));
-      if (!snap.exists()) return null;
-
-      const user = buildFoundUser(collectionName === "students" ? "student" : "teacher", snap.id, snap.data(), "สแกนใบหน้า", confidence, cardId);
-      if (user) {
-        // บันทึกใส่ Cache เพื่อใช้ในการสแกนครั้งถัดไปทันที
-        sessionUserCache.current.set(user.id, user);
-        if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-        if (cardId) sessionUserCache.current.set(String(cardId), user);
-        if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-        if (user.name) {
-          sessionUserCache.current.set(user.name, user);
-          sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-        }
-      }
-      return user;
-    };
-
-    if (userId && (type === "student" || type === "students")) {
+    if (userId && (type === "student" || type === "students") && canScanStudents) {
       const user = await tryDoc("students", userId);
       if (user) return user;
     }
-    if (userId && (type === "teacher" || type === "teachers")) {
+    if (userId && (type === "teacher" || type === "teachers") && canScanTeachers) {
       const user = await tryDoc("teachers", userId);
       if (user) return user;
     }
+    if (userId && !type) {
+      if (canScanStudents) {
+        const user = await tryDoc("students", userId);
+        if (user) return user;
+      }
+      if (canScanTeachers) {
+        const user = await tryDoc("teachers", userId);
+        if (user) return user;
+      }
+    }
 
-    const searches = [];
+    const studentSearches: Array<Promise<FoundUser | null>> = [];
+    const teacherSearches: Array<Promise<FoundUser | null>> = [];
+
     if (canScanStudents) {
-      for (const candidate of displayCandidates) {
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("studentId", "==", candidate))));
-      }
-      for (const candidate of cardCandidates) {
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("findfaceCardId", "==", candidate))));
-      }
-      
-      // การค้นหาจากชื่อ-นามสกุล ใน Firestore ของนักเรียน
-      if (nameToMatch) {
-        const normalized = cleanName(nameToMatch);
-        const parts = normalized.split(/\s+/);
-        if (parts.length >= 2) {
-          const fName = parts[0];
-          const lName = parts.slice(1).join(" ");
-          searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("firstName", "==", fName), where("lastName", "==", lName))));
-        }
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("name", "==", nameToMatch))));
-      }
+      studentSearches.push(
+        findFirstByField("students", "studentId", displayCandidates.flatMap(expandStudentIdCandidates)),
+        findFirstByField("students", "findfaceCardId", cardCandidates),
+        findFirstByField("students", "faceExternalId", cardCandidates)
+      );
     }
+
     if (canScanTeachers) {
-      for (const candidate of displayCandidates) {
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("teacherId", "==", candidate))));
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("idCardNumber", "==", candidate))));
-      }
-      for (const candidate of cardCandidates) {
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("findfaceCardId", "==", candidate))));
-      }
-
-      // การค้นหาจากชื่อ-นามสกุล ใน Firestore ของครู
-      if (nameToMatch) {
-        const normalized = cleanName(nameToMatch);
-        const parts = normalized.split(/\s+/);
-        if (parts.length >= 2) {
-          const fName = parts[0];
-          const lName = parts.slice(1).join(" ");
-          searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("firstName", "==", fName), where("lastName", "==", lName))));
-        }
-        searches.push(getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("name", "==", nameToMatch))));
-      }
+      teacherSearches.push(
+        findFirstByField("teachers", "teacherId", displayCandidates.flatMap(expandStudentIdCandidates)),
+        findFirstByField("teachers", "idCardNumber", displayCandidates),
+        findFirstByField("teachers", "findfaceCardId", cardCandidates),
+        findFirstByField("teachers", "faceExternalId", cardCandidates)
+      );
     }
 
-    const results = await Promise.all(searches);
-    for (const snap of results) {
-      if (!snap.empty) {
-        const docSnap = snap.docs[0];
-        const pathSegments = docSnap.ref.path.split("/");
-        const collectionName = pathSegments[pathSegments.length - 2];
-        const user = buildFoundUser(collectionName === "students" ? "student" : "teacher", docSnap.id, docSnap.data(), "สแกนใบหน้า", confidence, cardId);
-        if (user) {
-          // บันทึกใส่ Cache เพื่อใช้ในการสแกนครั้งถัดไปทันที
-          sessionUserCache.current.set(user.id, user);
-          if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-          if (cardId) sessionUserCache.current.set(String(cardId), user);
-          if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-          if (user.name) {
-            sessionUserCache.current.set(user.name, user);
-            sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-          }
+    const fieldMatches = await Promise.all([...studentSearches, ...teacherSearches]);
+    const fieldMatch = fieldMatches.find(Boolean);
+    if (fieldMatch) return fieldMatch;
+
+    if (nameToMatch) {
+      const cleanPayloadName = cleanName(nameToMatch);
+      const parts = cleanPayloadName.split(/\s+/).filter(Boolean);
+      const nameSearches: Array<Promise<FoundUser | null>> = [];
+
+      if (parts.length >= 2) {
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(" ");
+        if (canScanStudents) {
+          nameSearches.push(
+            findFirstByField("students", "name", [nameToMatch, cleanPayloadName]),
+            (async () => {
+              const snap = await getDocs(
+                query(
+                  collection(firestore, "school-settings", schoolId, "students"),
+                  where("firstName", "==", firstName),
+                  where("lastName", "==", lastName),
+                  limit(1)
+                )
+              );
+              if (snap.empty) return null;
+              const docSnap = snap.docs[0];
+              return cacheResolvedUser(buildFoundUser("student", docSnap.id, docSnap.data(), "สแกนใบหน้า", confidence, cardId));
+            })()
+          );
         }
-        return user;
+        if (canScanTeachers) {
+          nameSearches.push(
+            findFirstByField("teachers", "name", [nameToMatch, cleanPayloadName]),
+            (async () => {
+              const snap = await getDocs(
+                query(
+                  collection(firestore, "school-settings", schoolId, "teachers"),
+                  where("firstName", "==", firstName),
+                  where("lastName", "==", lastName),
+                  limit(1)
+                )
+              );
+              if (snap.empty) return null;
+              const docSnap = snap.docs[0];
+              return cacheResolvedUser(buildFoundUser("teacher", docSnap.id, docSnap.data(), "สแกนใบหน้า", confidence, cardId));
+            })()
+          );
+        }
+      } else {
+        if (canScanStudents) nameSearches.push(findFirstByField("students", "name", [nameToMatch, cleanPayloadName]));
+        if (canScanTeachers) nameSearches.push(findFirstByField("teachers", "name", [nameToMatch, cleanPayloadName]));
       }
+
+      const nameMatches = await Promise.all(nameSearches);
+      const nameMatch = nameMatches.find(Boolean);
+      if (nameMatch) return nameMatch;
     }
 
     if (FACE_SCAN_DEBUG) {
-      console.warn("[FaceScan] FindFace returned a face, but no matching Firestore user was found:", {
+      console.warn("[FaceScan] FindFace returned a face, but no matching local cached user was found:", {
         userId,
+        type,
         displayCandidates,
         cardCandidates,
         name: payload.name || payload.cardName || payload.comment || payload.description,
@@ -1704,8 +1861,20 @@ const CheckinOutPage: React.FC = () => {
     setSearchedUser(user);
     setDisplayUser(user);
 
-    const currentIp = currentCachedIp;
-    const [ipSecurity, validation, attData] = await Promise.all([
+    const attendanceKey = `${user.type}:${user.id}:${getTodayString()}`;
+    if (activeAttendanceKeysRef.current.has(attendanceKey)) {
+      console.info("[Attendance] Skipped: attendance request already in progress:", {
+        displayId: user.displayId,
+        name: user.name,
+        scanMethod: user.scanMethod,
+      });
+      return;
+    }
+    activeAttendanceKeysRef.current.add(attendanceKey);
+
+    try {
+      const currentIp = currentCachedIp;
+      const [ipSecurity, validation, attData] = await Promise.all([
       isIpCameraScan
         ? Promise.resolve<{ valid: boolean; reason?: string; ip?: string }>({ valid: true, ip: currentIp })
         : checkIpSecurity(user.id, currentIp),
@@ -1713,7 +1882,7 @@ const CheckinOutPage: React.FC = () => {
         ? Promise.resolve<{ valid: boolean; reason?: string }>({ valid: true })
         : validateLocationAndIp(currentIp),
       fetchAttendance(user),
-    ]);
+      ]);
 
     if (!ipSecurity.valid || !validation.valid) {
       console.warn("[Attendance] Blocked by IP/location validation:", {
@@ -1905,6 +2074,9 @@ const CheckinOutPage: React.FC = () => {
         await updateAttendance("checkout", user, ipSecurity.ip, attData);
       }
     }
+    } finally {
+      activeAttendanceKeysRef.current.delete(attendanceKey);
+    }
   }, [
     currentCachedIp,
     checkIpSecurity,
@@ -1926,6 +2098,8 @@ const CheckinOutPage: React.FC = () => {
   const performSearch = async (idToSearchRaw: string) => {
     const idToSearch = idToSearchRaw.trim();
     if (!idToSearch || !schoolId || isLoading) return;
+    const idCandidates = expandStudentIdCandidates(idToSearch);
+    const rfidCandidates = uniq([idToSearch]);
 
     setSearchId(""); // Clear immediately for next scan
 
@@ -1958,6 +2132,8 @@ const CheckinOutPage: React.FC = () => {
       return;
     }
 
+    if (activeSearchKeysRef.current.has(idToSearch)) return;
+    activeSearchKeysRef.current.add(idToSearch);
     setIsLoading(true);
     setError(null);
     setSearchedUser(null);
@@ -1966,39 +2142,73 @@ const CheckinOutPage: React.FC = () => {
       let user: FoundUser | null = null;
 
       // ⚡ STEP 1: Memory Cache lookup
-      if (sessionUserCache.current.has(idToSearch)) {
-        user = sessionUserCache.current.get(idToSearch) || null;
+      const cacheKey = uniq([...idCandidates, ...rfidCandidates]).find((candidate) =>
+        sessionUserCache.current.has(candidate)
+      );
+      if (cacheKey) {
+        user = sessionUserCache.current.get(cacheKey) || null;
         if (user) {
           user = {
             ...user,
-            scanMethod: (user.rfid && idToSearch === user.rfid) ? "สแกนบัตร" : "พิมพ์รหัสเอง"
+            scanMethod: (user.rfid && rfidCandidates.includes(cacheKey)) ? "สแกนบัตร" : "พิมพ์รหัสเอง"
           };
         }
       } else {
         // 🔍 STEP 2: Parallel Search with Permission check
+        const findFirstByField = async (
+          collectionName: "students" | "teachers",
+          field: string,
+          values: string[]
+        ) => {
+          for (const value of values) {
+            const snap = await getDocs(
+              query(
+                collection(firestore, "school-settings", schoolId, collectionName),
+                where(field, "==", value)
+              )
+            );
+            
+            if (!snap.empty) {
+              const validDoc = snap.docs.find(doc => {
+                const data = doc.data();
+                if (collectionName === "students") {
+                  return isStudyingStudent(data);
+                } else {
+                  return isActiveTeacherSummaryStatus(data.status || "อยู่");
+                }
+              });
+              
+              if (validDoc) {
+                return { docs: [validDoc], empty: false };
+              }
+            }
+          }
+          return null;
+        };
+
         const searchPromises = [];
         if (canScanStudents) {
           searchPromises.push(
-            getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("studentId", "==", idToSearch))),
-            getDocs(query(collection(firestore, "school-settings", schoolId, "students"), where("rfid", "==", idToSearch)))
+            findFirstByField("students", "studentId", idCandidates),
+            findFirstByField("students", "rfid", rfidCandidates)
           );
         } else {
           // Push empty results if no permission
-          searchPromises.push(Promise.resolve({ empty: true }), Promise.resolve({ empty: true }));
+          searchPromises.push(Promise.resolve(null), Promise.resolve(null));
         }
 
         if (canScanTeachers) {
           searchPromises.push(
-            getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("teacherId", "==", idToSearch))),
-            getDocs(query(collection(firestore, "school-settings", schoolId, "teachers"), where("rfid", "==", idToSearch)))
+            findFirstByField("teachers", "teacherId", idCandidates),
+            findFirstByField("teachers", "rfid", rfidCandidates)
           );
         } else {
-          searchPromises.push(Promise.resolve({ empty: true }), Promise.resolve({ empty: true }));
+          searchPromises.push(Promise.resolve(null), Promise.resolve(null));
         }
 
         const [studentSnap, rfidSnap, teacherSnap, teacherRfidSnap] = await Promise.all(searchPromises) as any[];
 
-        if (canScanStudents && !studentSnap.empty) {
+        if (canScanStudents && studentSnap && !studentSnap.empty) {
           const d = studentSnap.docs[0].data();
           user = {
             id: studentSnap.docs[0].id,
@@ -2010,7 +2220,9 @@ const CheckinOutPage: React.FC = () => {
             grade: String(d.classLevel || d.grade || d.classroom || ""),
             room: String(d.room || ""),
             parentLineUserIds: d.parentLineUserIds || [],
-            behaviorScore: d.behaviorScore || 100,
+            parentLineRegistrationContexts: d.parentLineRegistrationContexts || {},
+            lineRegistrationReviewRequired: Boolean(d.lineRegistrationReviewRequired),
+            behaviorScore: d.behaviorScore ?? 100,
             attendanceStats: {
               present: d.attendanceStats?.present || 0,
               late: d.attendanceStats?.late || 0,
@@ -2022,7 +2234,7 @@ const CheckinOutPage: React.FC = () => {
             rfid: d.rfid || "",
             scanMethod: "พิมพ์รหัสเอง",
           };
-        } else if (canScanTeachers && !teacherSnap.empty) {
+        } else if (canScanTeachers && teacherSnap && !teacherSnap.empty) {
           const d = teacherSnap.docs[0].data();
           user = {
             id: teacherSnap.docs[0].id,
@@ -2038,7 +2250,7 @@ const CheckinOutPage: React.FC = () => {
             rfid: d.rfid || "",
             scanMethod: "พิมพ์รหัสเอง",
           };
-        } else if (canScanStudents && !rfidSnap.empty) {
+        } else if (canScanStudents && rfidSnap && !rfidSnap.empty) {
           const d = rfidSnap.docs[0].data();
           user = {
             id: rfidSnap.docs[0].id,
@@ -2050,7 +2262,9 @@ const CheckinOutPage: React.FC = () => {
             grade: String(d.classLevel || d.grade || d.classroom || ""),
             room: String(d.room || ""),
             parentLineUserIds: d.parentLineUserIds || [],
-            behaviorScore: d.behaviorScore || 100,
+            parentLineRegistrationContexts: d.parentLineRegistrationContexts || {},
+            lineRegistrationReviewRequired: Boolean(d.lineRegistrationReviewRequired),
+            behaviorScore: d.behaviorScore ?? 100,
             attendanceStats: {
               present: d.attendanceStats?.present || 0,
               late: d.attendanceStats?.late || 0,
@@ -2083,6 +2297,7 @@ const CheckinOutPage: React.FC = () => {
         if (user) {
           sessionUserCache.current.set(idToSearch, user);
           if (user.displayId) sessionUserCache.current.set(user.displayId, user);
+          if (user.rfid) sessionUserCache.current.set(user.rfid, user);
         }
       }
 
@@ -2097,6 +2312,7 @@ const CheckinOutPage: React.FC = () => {
       setError("เกิดข้อผิดพลาด");
       setSpeechTrigger(prev => ({ ...prev, timestamp: Date.now(), status: 'error' }));
     } finally {
+      activeSearchKeysRef.current.delete(idToSearch);
       setIsLoading(false);
     }
   };
@@ -2202,6 +2418,7 @@ const CheckinOutPage: React.FC = () => {
 
   const userName = (currentUser as any)?.displayName || "ผู้ดูแลระบบ";
   const isFaceScanModeEnabled = schoolSettings?.useFaceScanMode === true;
+  const recommendedVoiceURI = getPreferredThaiVoice(availableVoices)?.voiceURI || null;
   let faceScanEndpoint =
     schoolSettings?.faceScanConfig?.endpoint ||
     schoolSettings?.findFaceEndpoint ||
@@ -2227,12 +2444,21 @@ const CheckinOutPage: React.FC = () => {
   ) => {
     const isIpCamera = !!liveness?.isIpCamera;
     const effectiveFaceScanThreshold = faceScanThreshold;
+    const withFailSpeech = <T extends { matched: false }>(result: T) => {
+      const now = Date.now();
+      if (now - faceScanFailSpeechAtRef.current > 5_000) {
+        faceScanFailSpeechAtRef.current = now;
+        setSpeechTrigger({ user: null, type: null, timestamp: now, status: 'error' });
+      }
+      return result;
+    };
+
     if (liveness?.isFake) {
       console.warn("🚨 [FaceScan] Client-side liveness check blocked identification:", liveness.message);
-      return { 
+      return withFailSpeech({
         matched: false, 
         message: liveness.message || "ตรวจพบการใช้อุปกรณ์จำลอง/ภาพถ่าย (Anti-Spoofing)" 
-      };
+      });
     }
 
     if (!schoolId || !faceScanEndpoint) {
@@ -2299,7 +2525,7 @@ const CheckinOutPage: React.FC = () => {
 
         if (!detectResponse.ok) {
           console.error("FindFace detection failed:", detectResponse.statusText);
-          return { matched: false, message: "ไม่สามารถส่งภาพไปประมวลผลได้" };
+          return withFailSpeech({ matched: false, message: "ไม่สามารถส่งภาพไปประมวลผลได้" });
         }
 
         const detectResult = await detectResponse.json();
@@ -2482,7 +2708,7 @@ const CheckinOutPage: React.FC = () => {
           const errMsg = detectedSpoof 
             ? "ตรวจพบการใช้อุปกรณ์จำลอง/ภาพถ่าย (Anti-Spoofing)" 
             : "พบใบหน้าแต่ยังไม่ผูกกับข้อมูลโรงเรียนหรือความมั่นใจต่ำ";
-          return { matched: false, message: errMsg, faceBoxes };
+          return withFailSpeech({ matched: false, message: errMsg, faceBoxes });
         }
 
         // Process attendance for each detected user
@@ -2547,12 +2773,12 @@ const CheckinOutPage: React.FC = () => {
           const errMsg = detectedSpoof 
             ? "ตรวจพบการใช้อุปกรณ์จำลอง/ภาพถ่าย (Anti-Spoofing)" 
             : "พบใบหน้าแต่ยังไม่ผูกกับข้อมูลโรงเรียนหรือความมั่นใจต่ำ";
-          return { matched: false, message: errMsg, faceBoxes: finalBoxes };
+          return withFailSpeech({ matched: false, message: errMsg, faceBoxes: finalBoxes });
         }
 
       } catch (err: any) {
         console.error("FindFace API error:", err);
-        return { matched: false, message: "เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์สแกนใบหน้า" };
+        return withFailSpeech({ matched: false, message: "เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์สแกนใบหน้า" });
       }
     } else {
       // สำหรับ Webhook / API ทั่วไป
@@ -2570,13 +2796,13 @@ const CheckinOutPage: React.FC = () => {
         });
 
         if (!response.ok) {
-          return { matched: false, message: "ระบบประมวลผลใบหน้าไม่ตอบสนอง" };
+          return withFailSpeech({ matched: false, message: "ระบบประมวลผลใบหน้าไม่ตอบสนอง" });
         }
 
         payload = await response.json();
       } catch (err: any) {
         console.error("Webhook scan error:", err);
-        return { matched: false, message: "เกิดข้อผิดพลาดในการส่งข้อมูลใบหน้า" };
+        return withFailSpeech({ matched: false, message: "เกิดข้อผิดพลาดในการส่งข้อมูลใบหน้า" });
       }
     }
 
@@ -2587,16 +2813,16 @@ const CheckinOutPage: React.FC = () => {
 
     const confidence = Number(payload.confidence ?? payload.similarity ?? payload.score ?? payload.looks_like_confidence ?? 0);
     if (confidence && confidence < effectiveFaceScanThreshold) {
-      return {
+      return withFailSpeech({
         matched: false,
         confidence,
         message: `ความมั่นใจต่ำ ${Math.round(confidence * 100)}%`,
-      };
+      });
     }
 
     const user = await resolveFaceMatchedUser(payload);
     if (!user) {
-      return { matched: false, confidence, message: "พบใบหน้าแต่ยังไม่ผูกกับข้อมูลโรงเรียน" };
+      return withFailSpeech({ matched: false, confidence, message: "พบใบหน้าแต่ยังไม่ผูกกับข้อมูลโรงเรียน" });
     }
     console.log("[FaceScan] Matched Firestore user:", {
       userId: user.id,
@@ -2797,12 +3023,12 @@ const CheckinOutPage: React.FC = () => {
                       localStorage.setItem("selectedVoiceURI", voice.voiceURI);
                       setShowVoiceSelect(false);
                       const utterance = new SpeechSynthesisUtterance(
-                        "ทดสอบเสียงพูดครับ"
+                        "ผ่านค่ะ ไม่ผ่านค่ะ"
                       );
                       utterance.voice = voice;
                       utterance.lang = "th-TH";
-                      utterance.rate = 0.95;
-                      utterance.pitch = 1.05;
+                      utterance.rate = 1.08;
+                      utterance.pitch = 1.26;
                       window.speechSynthesis.speak(utterance);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${selectedVoiceURI === voice.voiceURI
@@ -2810,7 +3036,14 @@ const CheckinOutPage: React.FC = () => {
                       : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
                       } `}
                   >
-                    <div className="font-semibold truncate">{voice.name}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold truncate">{voice.name}</span>
+                      {voice.voiceURI === recommendedVoiceURI && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-300">
+                          แนะนำ
+                        </span>
+                      )}
+                    </div>
                     <div className="opacity-70">{voice.lang}</div>
                   </button>
                 ))

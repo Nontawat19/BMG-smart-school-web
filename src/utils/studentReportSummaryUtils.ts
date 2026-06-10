@@ -8,7 +8,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
-import { CLASSES } from "@/utils/schoolUtils";
+import { CLASSES, CLASS_FULL_NAMES } from "@/utils/schoolUtils";
 import { ACTIVE_STUDENT_STATUS, normalizeStudentStatus } from "@/utils/studentStatusUtils";
 
 export interface StudentReportSummary {
@@ -43,12 +43,36 @@ const toNumber = (value: unknown) => {
 };
 
 export const getStudentReportStatus = (student: any) => (
-  normalizeStudentStatus(student?.studentStatus || student?.status || ACTIVE_STUDENT_STATUS)
+  normalizeStudentStatus(student?.studentStatus || student?.status || "")
 );
 
 export const isStudyingStudentForReport = (student: any) => {
   const status = getStudentReportStatus(student);
   return status === ACTIVE_STUDENT_STATUS;
+};
+
+const getStudentAcademicYear = (student: any) => {
+  const value =
+    student?.academicYear ||
+    student?.currentAcademicYear ||
+    student?.schoolYear ||
+    student?.enrollmentAcademicYear ||
+    student?.admissionAcademicYear ||
+    student?.reEnrollmentDetails?.academicYear ||
+    student?.enrollmentDetails?.academicYear ||
+    student?.academic?.year ||
+    "";
+  return String(value || "").trim();
+};
+
+const isStudentInAcademicYear = (student: any, academicYear?: string) => {
+  const targetYear = String(academicYear || "").trim();
+  if (!targetYear) return true;
+
+  const studentYear = getStudentAcademicYear(student);
+  if (!studentYear) return true;
+
+  return studentYear === targetYear;
 };
 
 const getStatusBucket = (student: any): keyof Omit<StudentReportSummary, "total" | "byLevel"> | null => {
@@ -62,16 +86,51 @@ const getStatusBucket = (student: any): keyof Omit<StudentReportSummary, "total"
   return null;
 };
 
+export const normalizeStudentReportLevel = (level?: string) => {
+  const raw = String(level || "").trim();
+  if (!raw) return "ไม่ระบุ";
+
+  const compact = raw.replace(/\s+/g, "").toLowerCase();
+
+  const directKey = Object.keys(CLASSES).find(key => key.toLowerCase() === compact);
+  if (directKey) return (CLASSES as Record<string, string>)[directKey];
+
+  const directLabel = Object.values(CLASSES).find(label => label.replace(/\s+/g, "").toLowerCase() === compact);
+  if (directLabel) return directLabel;
+
+  const fullNameKey = Object.entries(CLASS_FULL_NAMES).find(([, label]) =>
+    label.replace(/\s+/g, "").toLowerCase() === compact
+  )?.[0];
+  if (fullNameKey) return (CLASSES as Record<string, string>)[fullNameKey] || raw;
+
+  const shorthandMatch = compact.match(/^([kpm])\.?([1-6])$/i);
+  if (shorthandMatch) {
+    const [, prefix, number] = shorthandMatch;
+    const mapped = (CLASSES as Record<string, string>)[`${prefix.toLowerCase()}${number}`];
+    if (mapped) return mapped;
+  }
+
+  const thaiLevelMatch = compact.match(/^(อ|ป|ม|อนุบาล|ประถมศึกษาปีที่|มัธยมศึกษาปีที่)\.?([1-6])$/);
+  if (thaiLevelMatch) {
+    const [, prefix, number] = thaiLevelMatch;
+    if (prefix === "อ" || prefix === "อนุบาล") return `อ.${number}`;
+    if (prefix === "ป" || prefix === "ประถมศึกษาปีที่") return `ป.${number}`;
+    if (prefix === "ม" || prefix === "มัธยมศึกษาปีที่") return `ม.${number}`;
+  }
+
+  return raw;
+};
+
 const getLevelLabel = (student: any) => {
-  const classLevel = String(student?.classLevel || student?.level || "").trim();
-  return (CLASSES as Record<string, string>)[classLevel] || classLevel || "ไม่ระบุ";
+  return normalizeStudentReportLevel(student?.classLevel || student?.level);
 };
 
 export const mapStudentReportSummary = (source: any = {}): StudentReportSummary => {
   const byLevelSource = source.byLevel || source.levels || {};
   const byLevel = Object.entries(byLevelSource).reduce((acc, [level, count]) => {
     const value = toNumber(count);
-    if (value > 0) acc[level] = value;
+    const normalizedLevel = normalizeStudentReportLevel(level);
+    if (value > 0) acc[normalizedLevel] = (acc[normalizedLevel] || 0) + value;
     return acc;
   }, {} as Record<string, number>);
   const active = toNumber(source.active ?? source.studentCount ?? source.total);
@@ -88,10 +147,12 @@ export const mapStudentReportSummary = (source: any = {}): StudentReportSummary 
   };
 };
 
-const buildStudentReportSummary = (students: any[]): StudentReportSummary => {
+const buildStudentReportSummary = (students: any[], academicYear?: string): StudentReportSummary => {
   const summary: StudentReportSummary = { ...DEFAULT_STUDENT_REPORT_SUMMARY, byLevel: {} };
 
   students.forEach(student => {
+    if (!isStudentInAcademicYear(student, academicYear)) return;
+
     const bucket = getStatusBucket(student);
     if (!bucket) return;
     summary[bucket] += 1;
@@ -106,15 +167,16 @@ const buildStudentReportSummary = (students: any[]): StudentReportSummary => {
   return summary;
 };
 
-export const syncStudentReportSummary = async (db: Firestore, schoolId: string) => {
+export const syncStudentReportSummary = async (db: Firestore, schoolId: string, academicYear?: string) => {
   const studentsSnap = await getDocs(collection(db, "school-settings", schoolId, "students"));
   const summary = buildStudentReportSummary(studentsSnap.docs.map(studentDoc => ({
     id: studentDoc.id,
     ...studentDoc.data(),
-  })));
+  })), academicYear);
 
   await setDoc(getStudentReportSummaryRef(db, schoolId), {
     ...summary,
+    academicYear: academicYear || "",
     isComplete: true,
     source: "students",
     updatedAt: serverTimestamp(),
@@ -123,14 +185,16 @@ export const syncStudentReportSummary = async (db: Firestore, schoolId: string) 
   return summary;
 };
 
-export const fetchStudentReportSummary = async (db: Firestore, schoolId: string) => {
+export const fetchStudentReportSummary = async (db: Firestore, schoolId: string, academicYear?: string) => {
   const summaryRef = getStudentReportSummaryRef(db, schoolId);
   const summarySnap = await getDoc(summaryRef);
-  if (summarySnap.exists() && summarySnap.data()?.isComplete !== false) {
+  const summaryYear = String(summarySnap.data()?.academicYear || "").trim();
+  const targetYear = String(academicYear || "").trim();
+  if (summarySnap.exists() && summarySnap.data()?.isComplete !== false && (!targetYear || summaryYear === targetYear)) {
     return mapStudentReportSummary(summarySnap.data());
   }
 
-  return syncStudentReportSummary(db, schoolId);
+  return syncStudentReportSummary(db, schoolId, academicYear);
 };
 
 const applyStudentDelta = (summary: StudentReportSummary, student: any, direction: 1 | -1) => {

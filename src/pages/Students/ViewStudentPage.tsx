@@ -10,7 +10,7 @@ import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash } from "react-icons/fa";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
@@ -165,6 +165,41 @@ const DetailField: React.FC<{ label: string; value?: string | null }> = ({ label
     <p className="mt-1 text-md text-gray-900 dark:text-gray-200">{value || "-"}</p>
   </div>
 );
+
+const SensitiveDetailField: React.FC<{ label: string; rawValue?: string | null }> = ({ label, rawValue }) => {
+  const [show, setShow] = useState(false);
+  if (!rawValue) {
+    return <DetailField label={label} value="-" />;
+  }
+
+  const formatIdCard = (id: string) => {
+    const cleanId = id.replace(/[^0-9]/g, "");
+    if (cleanId.length === 13) {
+      return `${cleanId[0]}-${cleanId.substring(1, 5)}-${cleanId.substring(5, 10)}-${cleanId.substring(10, 12)}-${cleanId[12]}`;
+    }
+    return id;
+  };
+
+  const masked = maskIdCardNumber(rawValue);
+  const displayValue = show ? formatIdCard(rawValue) : masked;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">{label}</label>
+      <div className="mt-1 flex items-center gap-2">
+        <span className="text-md text-gray-900 dark:text-gray-200 font-mono">{displayValue}</span>
+        <button
+          type="button"
+          onClick={() => setShow(!show)}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition p-1"
+          title={show ? "ซ่อนข้อมูล" : "แสดงข้อมูล"}
+        >
+          {show ? <FaEyeSlash size={16} /> : <FaEye size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 /**
  * ฟังก์ชันสำหรับปิดบังเลขบัตรประชาชน
@@ -1278,7 +1313,7 @@ export default function ViewStudentPage() {
                           <DetailField label="ชื่อจริง" value={student.firstName} />
                           <DetailField label="นามสกุล" value={student.lastName} />
                           <DetailField label="ชื่อเล่น" value={student.nickname} />
-                          <DetailField label="เลขบัตรประจำตัวประชาชน" value={maskIdCardNumber(student.idCardNumber)} />
+                          <SensitiveDetailField label="เลขบัตรประจำตัวประชาชน" rawValue={student.idCardNumber} />
                         </div>
                         <div className="space-y-4">
                           <DetailField label="ชื่อจริง (อังกฤษ)" value={student.firstNameEn} />
@@ -1350,7 +1385,7 @@ export default function ViewStudentPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoCard title="ข้อมูลบิดา">
                         <DetailField label="ชื่อ-สกุล" value={formatFullName(student.fatherTitle, student.fatherFirstName, student.fatherLastName)} />
-                        <DetailField label="เลขบัตรประชาชน" value={maskIdCardNumber(student.fatherIdNumber || student.fatherIdCard)} />
+                        <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.fatherIdNumber || student.fatherIdCard} />
                         <div className="grid grid-cols-2 gap-4">
                           <DetailField label="อาชีพ" value={student.fatherOccupation} />
                           <DetailField label="รายได้ (เดือน)" value={student.fatherMonthlyIncome || student.fatherIncome} />
@@ -1360,7 +1395,7 @@ export default function ViewStudentPage() {
 
                       <InfoCard title="ข้อมูลมารดา">
                         <DetailField label="ชื่อ-สกุล" value={formatFullName(student.motherTitle, student.motherFirstName, student.motherLastName)} />
-                        <DetailField label="เลขบัตรประชาชน" value={maskIdCardNumber(student.motherIdNumber || student.motherIdCard)} />
+                        <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.motherIdNumber || student.motherIdCard} />
                         <div className="grid grid-cols-2 gap-4">
                           <DetailField label="อาชีพ" value={student.motherOccupation} />
                           <DetailField label="รายได้ (เดือน)" value={student.motherMonthlyIncome || student.motherIncome} />
@@ -1374,7 +1409,7 @@ export default function ViewStudentPage() {
                         <div className="space-y-4">
                           <DetailField label="ความสัมพันธ์" value={student.guardianRelationship || student.guardianRelation} />
                           <DetailField label="ชื่อ-สกุล" value={formatFullName(student.guardianTitle, student.guardianFirstName, student.guardianLastName, student.guardian)} />
-                          <DetailField label="เลขบัตรประชาชน" value={maskIdCardNumber(student.guardianIdNumber || student.guardianIdCard)} />
+                          <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.guardianIdNumber || student.guardianIdCard} />
                         </div>
                         <div className="space-y-4">
                           <div className="grid grid-cols-2 gap-4">

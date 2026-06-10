@@ -9,11 +9,12 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import MainLayout from "@/layouts/MainLayout";
 import LogoutButton from "@/components/LogoutButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList } from "react-icons/fa";
+import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList, FaQrcode, FaLine, FaCopy, FaExternalLinkAlt, FaEye, FaEyeSlash } from "react-icons/fa";
 import { useTheme } from "../../ThemeContext";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 import { Chart } from "react-google-charts";
+import QRCode from "react-qr-code";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { ViewCourseDetailModal } from "./components/ViewCourseDetailModal";
 import { EditCourseModal } from "./components/EditCourseModal";
@@ -325,6 +326,7 @@ const ProfilePage: React.FC = () => {
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("general");
+  const [isLiffIdVisible, setIsLiffIdVisible] = useState(false);
   const [coursesFetched, setCoursesFetched] = useState(false);
   const dispatch = useDispatch();
   const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
@@ -1067,6 +1069,7 @@ const ProfilePage: React.FC = () => {
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
     { id: "schedule", label: "ตารางสอน", icon: <FaChalkboard /> },
     { id: "teaching", label: "การสอน", icon: <FaBook /> },
+    { id: "line", label: "LINE", icon: <FaLine /> },
     { id: "attendance", label: "สถิติการมาทำงาน", icon: <FaClock /> },
     { id: "substitution", label: "สถิติการสอนแทน", icon: <FaExchangeAlt /> },
     { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
@@ -1247,6 +1250,53 @@ const ProfilePage: React.FC = () => {
     }
     const index = Math.abs(hash) % colors.length;
     return colors[index];
+  };
+
+  const homeroomGradeValue = String(profile?.homeroomGrade || "").trim();
+  const homeroomGradeParts = homeroomGradeValue.split("/").map((part) => part.trim()).filter(Boolean);
+  const homeroomClassLevel = homeroomGradeParts[0] || homeroomGradeValue;
+  const homeroomRoomValue = [
+    homeroomGradeParts[1],
+    profile?.room,
+    (profile as any)?.roomNumber,
+    (profile as any)?.classroom,
+    (profile as any)?.homeroomRoom,
+    (profile as any)?.section,
+  ].find((value) => value !== undefined && value !== null && String(value).trim() !== "");
+  const homeroomRoom = homeroomRoomValue ? String(homeroomRoomValue).trim() : "";
+  const homeroomLabel = homeroomClassLevel
+    ? `${homeroomClassLevel}${homeroomRoom ? `/${homeroomRoom}` : ""}`
+    : "-";
+  const lineOABasicId = String(profile?.lineOABasicId || "").trim();
+  const lineLiffId = String(profile?.liffId || "").trim();
+  const lineAddFriendUrl = lineOABasicId
+    ? `https://line.me/R/ti/p/${encodeURIComponent(lineOABasicId)}`
+    : "";
+  const parentRegisterUrl = profile?.schoolId
+    ? `${window.location.origin}/line/register-parent?${new URLSearchParams({
+        schoolId: String(profile.schoolId),
+        ...(lineLiffId ? { liffId: lineLiffId } : {}),
+        ...(profile.docId ? { teacherId: String(profile.docId) } : {}),
+        ...(homeroomClassLevel ? { classLevel: homeroomClassLevel } : {}),
+        ...(homeroomRoom ? { room: homeroomRoom } : {}),
+      }).toString()}`
+    : "";
+  const hasLineClassConfig = Boolean(lineLiffId || lineOABasicId);
+  const maskSensitiveValue = (value: string) => {
+    if (!value) return "-";
+    if (value.length <= 8) return `${value.slice(0, 2)}***${value.slice(-2)}`;
+    return `${value.slice(0, 6)}***${value.slice(-4)}`;
+  };
+  const displayedLiffId = isLiffIdVisible ? lineLiffId : maskSensitiveValue(lineLiffId);
+
+  const copyToClipboard = async (value: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(successMessage);
+    } catch (error) {
+      console.error("Copy to clipboard failed:", error);
+      toast.error("คัดลอกลิงก์ไม่สำเร็จ");
+    }
   };
 
   return (
@@ -1444,6 +1494,115 @@ const ProfilePage: React.FC = () => {
                     </div>
                     <DetailField label="ที่อยู่" value={profile.address} />
                   </div>
+                </div>
+              )}
+
+              {activeTab === "line" && userRole === 'teacher' && (
+                <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
+                  <div className="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 dark:text-gray-200">
+                        <FaLine className="text-green-500" /> LINE สำหรับห้องประจำชั้น
+                      </h2>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        QR สำหรับให้ผู้ปกครองสแกนลงทะเบียนรับแจ้งเตือนของห้อง {homeroomLabel}
+                      </p>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm font-bold text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300">
+                      <FaQrcode /> {homeroomLabel}
+                    </div>
+                  </div>
+
+                  {!profile.isHomeroomTeacher ? (
+                    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                      บัญชีนี้ยังไม่ได้ถูกกำหนดเป็นครูประจำชั้น จึงยังไม่มี QR สำหรับห้องเรียน
+                    </div>
+                  ) : !hasLineClassConfig ? (
+                    <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-300">
+                      ยังไม่ได้ตั้งค่า LINE OA/LIFF สำหรับห้อง {homeroomLabel} กรุณาให้ผู้ดูแลตั้งค่าที่หน้า “จัดการ LINE OA”
+                    </div>
+                  ) : (
+                    <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_240px]">
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <DetailField label="ชั้น/ห้อง" value={homeroomLabel} />
+                          <DetailField label="LINE OA Basic ID" value={lineOABasicId || "-"} />
+                          <div>
+                            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">LIFF ID</label>
+                            <div className="mt-1 flex min-w-0 items-center gap-2">
+                              <p className="min-w-0 flex-1 break-all font-mono text-md font-semibold text-gray-900 dark:text-gray-200">
+                                {displayedLiffId}
+                              </p>
+                              {lineLiffId && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsLiffIdVisible((value) => !value)}
+                                  className="inline-flex shrink-0 items-center justify-center p-1 text-gray-500 transition hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300"
+                                  title={isLiffIdVisible ? "ซ่อน LIFF ID" : "แสดง LIFF ID"}
+                                >
+                                  {isLiffIdVisible ? <FaEyeSlash /> : <FaEye />}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <DetailField label="ครูประจำชั้น" value={`${profile.title || ""}${profile.firstName || ""} ${profile.lastName || ""}`} />
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-[#1e1f21]">
+                          <label className="mb-2 block text-xs font-bold uppercase text-gray-400 dark:text-gray-500">
+                            ลิงก์ลงทะเบียนผู้ปกครอง
+                          </label>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <input
+                              readOnly
+                              value={parentRegisterUrl}
+                              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 outline-none dark:border-gray-700 dark:bg-[#2a2b2f] dark:text-gray-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(parentRegisterUrl, "คัดลอกลิงก์ลงทะเบียนแล้ว")}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                            >
+                              <FaCopy /> คัดลอก
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <a
+                            href={parentRegisterUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-green-700"
+                          >
+                            <FaExternalLinkAlt /> เปิดหน้าลงทะเบียน
+                          </a>
+                          {lineAddFriendUrl && (
+                            <a
+                              href={lineAddFriendUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2.5 text-sm font-bold text-green-700 transition hover:bg-green-50 dark:border-green-900/50 dark:bg-[#1e1f21] dark:text-green-300 dark:hover:bg-green-950/20"
+                            >
+                              <FaLine /> เพิ่มเพื่อน LINE OA
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-5 text-center shadow-sm dark:border-gray-700 dark:bg-[#1e1f21]">
+                        <div className="rounded-xl bg-white p-3">
+                          <QRCode value={parentRegisterUrl} size={184} level="M" />
+                        </div>
+                        <p className="mt-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+                          QR ห้อง {homeroomLabel}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                          ให้ผู้ปกครองสแกนเพื่อผูกบัญชี LINE กับนักเรียนในระบบ
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -16,6 +16,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertCircle } f
 import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
+import { buildLineRegistrationResolvedUpdate, buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
 
 // Premium Dark mode styles for react-select
 const compactSelectStyles = {
@@ -293,12 +294,43 @@ const GraduationPendingPage: React.FC = () => {
             switch (action) {
                 case 'approve':
                 case 'approve_exit':
-                case 'exit_other':
                     updateData = { 
                         ...updateData, 
                         status: 'สำเร็จการศึกษา', 
                         studentStatus: 'สำเร็จการศึกษา',
-                        graduationDetails: currentDetails
+                        graduationDetails: currentDetails,
+                        ...buildLineRegistrationResolvedUpdate()
+                    };
+                    break;
+                case 'exit_other':
+                    updateData = {
+                        ...updateData,
+                        status: 'จำหน่ายชื่อออก',
+                        studentStatus: 'จำหน่ายชื่อออก',
+                        graduationDetails: currentDetails,
+                        ...buildLineRegistrationResolvedUpdate()
+                    };
+                    break;
+                case 'promote_next_m1':
+                    updateData = {
+                        ...updateData,
+                        status: 'กำลังศึกษาอยู่',
+                        studentStatus: 'กำลังศึกษาอยู่',
+                        classLevel: 'm1',
+                        room: '1',
+                        roomNumber: '1',
+                        ...buildLineRegistrationReviewUpdate({ fromClassLevel: student.classLevel, fromRoom: student.roomNumber, toClassLevel: 'm1', toRoom: '1', reason: 'graduation_promotion' })
+                    };
+                    break;
+                case 'promote_next_m4':
+                    updateData = {
+                        ...updateData,
+                        status: 'กำลังศึกษาอยู่',
+                        studentStatus: 'กำลังศึกษาอยู่',
+                        classLevel: 'm4',
+                        room: '1',
+                        roomNumber: '1',
+                        ...buildLineRegistrationReviewUpdate({ fromClassLevel: student.classLevel, fromRoom: student.roomNumber, toClassLevel: 'm4', toRoom: '1', reason: 'graduation_promotion' })
                     };
                     break;
                 case 'promote':
@@ -433,18 +465,24 @@ const GraduationPendingPage: React.FC = () => {
                         updateData.studentStatus = 'กำลังศึกษาอยู่';
                         updateData.classLevel = 'm1';
                         updateData.room = '1'; // Default to room 1
+                        updateData.roomNumber = '1';
+                        Object.assign(updateData, buildLineRegistrationReviewUpdate({ fromClassLevel: student?.classLevel, fromRoom: student?.roomNumber, toClassLevel: 'm1', toRoom: '1', reason: 'graduation_promotion' }));
                     } else if (action === 'promote_next_m4') {
                         updateData.status = 'กำลังศึกษาอยู่';
                         updateData.studentStatus = 'กำลังศึกษาอยู่';
                         updateData.classLevel = 'm4';
                         updateData.room = '1'; // Default to room 1
+                        updateData.roomNumber = '1';
+                        Object.assign(updateData, buildLineRegistrationReviewUpdate({ fromClassLevel: student?.classLevel, fromRoom: student?.roomNumber, toClassLevel: 'm4', toRoom: '1', reason: 'graduation_promotion' }));
                     } else if (action === 'exit_other') {
                         updateData.status = 'จำหน่ายชื่อออก';
                         updateData.studentStatus = 'จำหน่ายชื่อออก';
+                        Object.assign(updateData, buildLineRegistrationResolvedUpdate());
                     } else {
                         // approve_exit or fallback
                         updateData.status = 'สำเร็จการศึกษา';
                         updateData.studentStatus = 'สำเร็จการศึกษา';
+                        Object.assign(updateData, buildLineRegistrationResolvedUpdate());
                     }
 
                     return updateDoc(studentRef, updateData);

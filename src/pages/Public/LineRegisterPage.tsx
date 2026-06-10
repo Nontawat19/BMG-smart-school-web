@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import liff from '@line/liff';
 import Swal from 'sweetalert2';
+import { buildLineRegistrationResolvedUpdate, normalizeLineRegistrationValue } from '@/utils/lineRegistrationUtils';
 import {
   ShieldCheck,
   AlertCircle,
@@ -77,6 +78,7 @@ const LineRegisterPage: React.FC = () => {
     const fetchSchools = async () => {
       try {
         const urlSchoolId = searchParams.get('schoolId') || searchParams.get('s');
+        const urlLiffId = searchParams.get('liffId') || searchParams.get('liff');
         
         // Load school settings only to resolve the LIFF ID; the form itself does not show a school selector.
         const schoolColl = collection(firestore, 'school-settings');
@@ -93,6 +95,10 @@ const LineRegisterPage: React.FC = () => {
             liffId = teacherSnap.docs
               .map((teacherDoc) => teacherDoc.data()?.liffId)
               .find((value) => typeof value === 'string' && value.trim()) || '';
+          }
+
+          if (urlSchoolId === docSnap.id && urlLiffId) {
+            liffId = urlLiffId;
           }
 
           return {
@@ -194,6 +200,10 @@ const LineRegisterPage: React.FC = () => {
   }, [selectedSchoolId, schools]);
 
   const activeUserId = (isManualMode ? manualLineUserId : lineUser?.userId)?.trim();
+  const qrLiffId = searchParams.get('liffId') || searchParams.get('liff') || '';
+  const qrTeacherId = searchParams.get('teacherId') || searchParams.get('teacher') || '';
+  const qrClassLevel = searchParams.get('classLevel') || searchParams.get('grade') || '';
+  const qrRoom = searchParams.get('room') || '';
 
   const digitsOnly = (value: string) => value.replace(/\D/g, '');
 
@@ -287,10 +297,50 @@ const LineRegisterPage: React.FC = () => {
       const studentName = `${studentData.title || ''}${studentData.firstName} ${studentData.lastName}`;
       const resolvedSchoolId = getSchoolIdFromSnapshot(studentDoc.ref.path);
       const resolvedSchool = await getResolvedSchool(resolvedSchoolId);
+      const studentClassLevel = String(studentData.classLevel || studentData.grade || '').trim();
+      const studentRoom = String(studentData.room || studentData.roomNumber || '').trim();
+
+      if (
+        (qrClassLevel || qrRoom) &&
+        (
+          (qrClassLevel && normalizeLineRegistrationValue(qrClassLevel) !== normalizeLineRegistrationValue(studentClassLevel)) ||
+          (qrRoom && normalizeLineRegistrationValue(qrRoom) !== normalizeLineRegistrationValue(studentRoom))
+        )
+      ) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'QR ไม่ตรงกับห้องปัจจุบัน',
+          html: `<p class="text-gray-300">QR นี้เป็นของห้อง <b>${qrClassLevel || '-'}/${qrRoom || '-'}</b><br/>แต่นักเรียนอยู่ห้อง <b>${studentClassLevel || '-'}/${studentRoom || '-'}</b><br/>กรุณาขอ QR ของห้องปัจจุบันจากครูประจำชั้น</p>`,
+          background: '#2a2b2f',
+          color: '#ffffff',
+          confirmButtonColor: '#4f46e5',
+        });
+        setSubmitting(false);
+        return;
+      }
 
       // Update student document
       const updateData: any = {
         parentLineUserIds: arrayUnion(activeUserId),
+        parentLineRegistrations: arrayUnion({
+          lineUserId: activeUserId,
+          displayName: lineUser?.displayName || '',
+          liffId: qrLiffId,
+          teacherId: qrTeacherId,
+          classLevel: studentClassLevel,
+          room: studentRoom,
+          registeredAt: new Date().toISOString(),
+        }),
+        [`parentLineRegistrationContexts.${activeUserId}`]: {
+          lineUserId: activeUserId,
+          displayName: lineUser?.displayName || '',
+          liffId: qrLiffId,
+          teacherId: qrTeacherId,
+          classLevel: studentClassLevel,
+          room: studentRoom,
+          registeredAt: new Date().toISOString(),
+        },
+        ...buildLineRegistrationResolvedUpdate(),
       };
 
       // Add parent info if entered
@@ -461,83 +511,47 @@ const LineRegisterPage: React.FC = () => {
           </div>
         </section>
 
-        <div className="grid flex-1 gap-5 lg:grid-cols-[360px_1fr]">
-          <aside className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Link2 size={16} className="text-emerald-700" />
-                สถานะการเชื่อมต่อ LINE
-              </p>
-
+        <div className="flex-1 flex justify-center items-start py-4">
+          <section className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:p-8">
+            {/* LINE Connection Status Badge */}
+            <div className="mb-6">
               {loading ? (
-                <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                <div className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                   <Loader2 className="animate-spin text-emerald-700" size={18} />
-                  กำลังเชื่อมต่อบริการ LINE LIFF...
+                  <span>กำลังดึงข้อมูล LINE...</span>
                 </div>
               ) : lineUser ? (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
                   <div className="flex items-center gap-3">
                     {lineUser.pictureUrl ? (
                       <img
                         src={lineUser.pictureUrl}
                         alt={lineUser.displayName}
-                        className="h-12 w-12 rounded-full border border-emerald-200 bg-white"
+                        className="h-12 w-12 rounded-full border-2 border-emerald-500 shadow-sm"
                       />
                     ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-200 bg-white font-bold text-emerald-700">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 font-bold text-white shadow-sm text-lg">
                         {lineUser.displayName[0]}
                       </div>
                     )}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-slate-950">{lineUser.displayName}</p>
-                        <CheckCircle2 size={15} className="shrink-0 text-emerald-700" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-emerald-700">เชื่อมต่อบัญชี LINE สำเร็จ</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="truncate text-sm font-bold text-slate-900">{lineUser.displayName}</p>
+                        <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
                       </div>
-                      <p className="mt-1 truncate font-mono text-[11px] text-slate-500">UID: {lineUser.userId}</p>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {liffError && (
-                    <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                      <span>{liffError}</span>
-                    </div>
-                  )}
-
-                  {isManualMode && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold text-slate-600">
-                        LINE User ID สำหรับทดสอบระบบ
-                      </label>
-                      <input
-                        type="text"
-                        value={manualLineUserId}
-                        onChange={(e) => setManualLineUserId(e.target.value)}
-                        placeholder="Uxxxxxxxxxxxxxxxx"
-                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                      />
-                    </div>
-                  )}
+                <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-5 text-amber-800">
+                  <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+                  <span>{liffError || 'กรุณาเปิดลิงก์ลงทะเบียนจากแอป LINE เพื่อยืนยันตัวตนอัตโนมัติ'}</span>
                 </div>
               )}
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Building2 size={16} className="text-slate-600" />
-                วิธีตรวจสอบข้อมูล
-              </p>
-              <div className="space-y-3 text-sm leading-6 text-slate-600">
-                <p>กรอกข้อมูลประจำตัวให้ตรงกับทะเบียนของโรงเรียน ระบบจะค้นหาโรงเรียนและผูกบัญชี LINE ให้อัตโนมัติ</p>
-                <p>หากเปิดจากลิงก์ LINE OA ของโรงเรียน ระบบจะยืนยัน LINE ให้ทันทีโดยไม่ต้องกรอกข้อมูลเพิ่มเติม</p>
-              </div>
-            </div>
-          </aside>
-
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-            <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="mb-6 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
               <button
                 type="button"
                 onClick={() => setActiveTab('parent')}
@@ -566,10 +580,10 @@ const LineRegisterPage: React.FC = () => {
               <form onSubmit={handleParentSubmit} className="space-y-5">
                 <div>
                   <h2 className="text-lg font-bold text-slate-950">ข้อมูลนักเรียน</h2>
-                  <p className="mt-1 text-sm text-slate-500">ใช้สำหรับค้นหาข้อมูลนักเรียนจากทุกโรงเรียนในระบบ</p>
+                  <p className="mt-1 text-sm text-slate-500">กรอกข้อมูลนักเรียนเพื่อจับคู่กับบัญชี LINE สำหรับการแจ้งเตือน</p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="block text-sm font-semibold text-slate-700">
                       รหัสนักเรียน <span className="text-red-600">*</span>
@@ -604,55 +618,10 @@ const LineRegisterPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="border-t border-slate-200 pt-5">
-                  <h3 className="text-base font-bold text-slate-950">ข้อมูลผู้ปกครอง</h3>
-                  <p className="mt-1 text-sm text-slate-500">ข้อมูลส่วนนี้ใช้ปรับปรุงทะเบียนผู้ปกครองของนักเรียน</p>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-semibold text-slate-700">ความสัมพันธ์</label>
-                    <select
-                      value={parentRelationship}
-                      onChange={(e) => setParentRelationship(e.target.value)}
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                    >
-                      <option value="พ่อ">พ่อ</option>
-                      <option value="แม่">แม่</option>
-                      <option value="ผู้ปกครอง">ผู้ปกครอง</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                      <Phone size={14} /> เบอร์โทรศัพท์
-                    </label>
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      value={parentPhone}
-                      onChange={(e) => setParentPhone(e.target.value)}
-                      placeholder="08xxxxxxxx"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-slate-700">ชื่อ-นามสกุลผู้ปกครอง</label>
-                  <input
-                    type="text"
-                    value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
-                    placeholder="เช่น สมชาย ใจดี"
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-
                 <button
                   type="submit"
                   disabled={submitting || !activeUserId}
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                 >
                   {submitting ? (
                     <>
@@ -670,10 +639,10 @@ const LineRegisterPage: React.FC = () => {
               <form onSubmit={handleTeacherSubmit} className="space-y-5">
                 <div>
                   <h2 className="text-lg font-bold text-slate-950">ข้อมูลคุณครู</h2>
-                  <p className="mt-1 text-sm text-slate-500">ใช้รหัสประจำตัวและเลขบัตรประชาชนเพื่อค้นหาข้อมูลในระบบ</p>
+                  <p className="mt-1 text-sm text-slate-500">กรอกรหัสประจำตัวและเลขบัตรประชาชนของคุณครูเพื่อลงทะเบียน</p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="block text-sm font-semibold text-slate-700">
                       รหัสประจำตัวคุณครู <span className="text-red-600">*</span>
@@ -708,7 +677,7 @@ const LineRegisterPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting || !activeUserId}
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                 >
                   {submitting ? (
                     <>

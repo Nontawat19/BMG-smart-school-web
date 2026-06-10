@@ -79,8 +79,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     location.pathname.includes("/students/behavior") ||
     location.pathname.includes("student-behavior-class-report") ||
     location.pathname.includes("attendance-summary") ||
-    location.pathname.includes("escape-summary") ||
-    location.pathname.startsWith("/academic/hub/");
+    location.pathname.includes("escape-summary");
 
   if (
     user &&

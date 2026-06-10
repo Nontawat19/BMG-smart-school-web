@@ -23,9 +23,6 @@ export const STUDENT_AFFAIRS_ACCESS = [
 export const STUDENT_AFFAIRS_MANAGEMENT = [
     ROLES.SCHOOL_ADMIN,
     ROLES.STUDENT_AFFAIRS,
-    ROLES.STUDENT_ATTENDANCE,
-    ROLES.TEACHER_ATTENDANCE,
-    ROLES.SCHOOL_ATTENDANCE,
 ];
 
 // สิทธิ์ปฏิบัติการระบบดูแลช่วยเหลือนักเรียน: ทุกสิทธิ์เจ้าหน้าที่เข้าเมนูได้

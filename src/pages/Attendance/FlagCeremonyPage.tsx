@@ -34,6 +34,7 @@ import SkeletonLoader from "@/components/SkeletonLoader";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getStudentStatus } from "@/utils/studentStatusUtils";
 import { isActiveStudentSummaryStatus } from "@/utils/ownerStatsUtils";
+import { normalizeLineRegistrationValue } from "@/utils/lineRegistrationUtils";
 import { usePwaMode } from "@/hooks/usePwaMode";
 
 interface Student {
@@ -45,6 +46,8 @@ interface Student {
   attendanceStatus?: "มา" | "สาย" | "ลา" | "ขาด";
   isLeave: boolean; // 📌 เพิ่ม: property สำหรับตรวจสอบว่านักเรียนลาหรือไม่
   parentLineUserIds?: string[]; // 📌 เพิ่ม: เก็บ ID ผู้ปกครองเพื่อลดการ Query ซ้ำ
+  parentLineRegistrationContexts?: Record<string, { liffId?: string; classLevel?: string; room?: string }>;
+  lineRegistrationReviewRequired?: boolean;
   behaviorScore?: number;
   flagAction?: FlagAction;
   existingDailyStatus?: string | null;
@@ -578,6 +581,8 @@ const FlagCeremonyPage: React.FC = () => {
             attendanceStatus: ATTENDANCE_STATUS.PRESENT,
             isLeave: false,
             parentLineUserIds: studentData.parentLineUserIds || [],
+            parentLineRegistrationContexts: studentData.parentLineRegistrationContexts || {},
+            lineRegistrationReviewRequired: Boolean(studentData.lineRegistrationReviewRequired),
             behaviorScore: studentData.behaviorScore ?? 100,
             flagAction: "normal",
             existingDailyStatus: null,
@@ -755,6 +760,33 @@ const FlagCeremonyPage: React.FC = () => {
 
   // 📌 เพิ่ม: ฟังก์ชันสำหรับส่งแจ้งเตือน LINE OA (คัดลอกจาก CheckinOutPage.tsx)
   // 📌 ปรับปรุง: รับ teacherConfig และ parentUserIds เข้ามาโดยตรง เพื่อไม่ต้อง Query Firestore ซ้ำ
+  const getEligibleFlagParentRecipients = (student: Student, teacherConfig: any) => {
+    const parentIds = Array.from(new Set((student.parentLineUserIds || []).filter(Boolean)));
+    const [classLevel = "", room = ""] = String(student.class || "").split("/");
+    const contexts = student.parentLineRegistrationContexts || {};
+
+    const eligibleIds = parentIds.filter((lineUserId) => {
+      const context = contexts[lineUserId];
+      if (!context) return false;
+      if (teacherConfig?.liffId && context.liffId && String(teacherConfig.liffId).trim() !== String(context.liffId).trim()) return false;
+      return normalizeLineRegistrationValue(context.classLevel) === normalizeLineRegistrationValue(classLevel) &&
+        normalizeLineRegistrationValue(context.room) === normalizeLineRegistrationValue(room);
+    });
+
+    if (eligibleIds.length < parentIds.length) {
+      console.warn("[LINE] Flag ceremony parent recipients skipped because classroom registration needs refresh:", {
+        studentId: student.studentId,
+        classLevel,
+        room,
+        originalParentRecipientCount: parentIds.length,
+        eligibleParentRecipientCount: eligibleIds.length,
+        reviewRequired: Boolean(student.lineRegistrationReviewRequired),
+      });
+    }
+
+    return eligibleIds;
+  };
+
   const sendLineNotification = async (
     user: FoundUser,
     status: string,
@@ -857,20 +889,17 @@ const FlagCeremonyPage: React.FC = () => {
 
       const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
-      // 📌 ปรับปรุง: เลือกส่งแบบ Multicast (เฉพาะเจาะจง) หรือ Broadcast (ทุกคน)
-      let targetUrl = "https://api.line.me/v2/bot/message/broadcast";
-      let bodyPayload: any = { messages: [flexMessage] };
-
-      if (parentUserIds.length > 0) {
-        targetUrl = "https://api.line.me/v2/bot/message/multicast";
-        bodyPayload = {
-          to: parentUserIds,
-          messages: [flexMessage]
-        };
-        console.log(`🎯 ส่งข้อความแบบ Multicast ไปยังผู้ปกครอง ${parentUserIds.length} ท่าน`);
-      } else {
-        console.log("⚠️ ไม่พบข้อมูลผู้ปกครอง (ส่งแบบ Broadcast ไปยังทุกคนที่ติดตาม LINE OA)");
+      if (parentUserIds.length === 0) {
+        console.warn("⚠️ ไม่มีรายชื่อผู้รับ LINE User ID สำหรับนักเรียนคนนี้ - ยกเลิกการส่งเพื่อป้องกัน broadcast ข้อมูลรายบุคคล");
+        return;
       }
+
+      const targetUrl = "https://api.line.me/v2/bot/message/multicast";
+      const bodyPayload: any = {
+        to: parentUserIds,
+        messages: [flexMessage]
+      };
+      console.log(`🎯 ส่งข้อความแบบ Multicast ไปยังผู้ปกครอง ${parentUserIds.length} ท่าน`);
 
       const url = isLocalhost ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : targetUrl;
 
@@ -1561,7 +1590,7 @@ const FlagCeremonyPage: React.FC = () => {
           notificationStatus,
           timeStr,
           teacherConfig,
-          item.student.parentLineUserIds || []
+          getEligibleFlagParentRecipients(item.student, teacherConfig)
         );
       });
 

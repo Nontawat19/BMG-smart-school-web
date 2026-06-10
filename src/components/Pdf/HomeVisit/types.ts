@@ -1,13 +1,23 @@
 export interface FamilyMember {
     id: string;
     name: string;
+    relationship?: string;
     age: string;
     education: string;
     occupation: string;
     income: string;
+    disability?: string;
+    wageIncome?: string;
+    agricultureIncome?: string;
+    businessIncome?: string;
+    welfareIncome?: string;
+    otherIncome?: string;
+    totalIncome?: string;
 }
 
 export interface HomeVisitData {
+    schoolName?: string;
+    educationArea?: string;
     visitNo: string;
     semester: string;
     academicYear: string;
@@ -18,6 +28,26 @@ export interface HomeVisitData {
     endTime: string;
     visitorNameBySide: string;
     relationshipWithStudent: string;
+    parentFirstName?: string;
+    parentLastName?: string;
+    parentPhone?: string;
+    parentOccupation?: string;
+    parentEducation?: string;
+    parentCitizenId?: string;
+    parentNoGuardian?: boolean;
+    parentNoCitizenId?: boolean;
+    parentWelfareRegistered?: boolean;
+    householdDependency?: string[];
+    vehiclePrivateCar?: string;
+    vehiclePickup?: string;
+    vehicleFarmMachine?: string;
+    farmlandStatus?: string[];
+    caregiverWhenParentsAwayOther?: string;
+    householdIncomeAverage?: string;
+    assistanceReceived?: string[];
+    assistanceReceivedOther?: string;
+    informantRelationship?: string;
+    teacherPosition?: string;
     studentNickname: string;
     studentPhone: string;
     studentLineId: string;
@@ -79,7 +109,7 @@ export interface HomeVisitData {
     sexualRisk: string[];
     gameRisk: string[];
     computerAccess: string;
-    electronicUsage: string;
+    electronicUsage: string | string[];
     parentConcerns: string;
     schoolAssistanceNeeded: string[];
     schoolAssistanceNeededDetail: string;
@@ -99,6 +129,7 @@ export interface HomeVisitData {
         schoolSign: string;
         sketchMap: string;
     };
+    parentHousePhotoPermission?: string;
     gps: { lat: number, lng: number } | null;
     housingTypeOther?: string;
     travelMethodDetail?: string;
@@ -108,6 +139,9 @@ export interface HomeVisitData {
 export interface Student {
     id: string;
     studentId: string;
+    idCardNumber?: string;
+    citizenId?: string;
+    nationalId?: string;
     title: string;
     firstName: string;
     lastName: string;
@@ -116,6 +150,28 @@ export interface Student {
     schoolId: string;
     profileImageUrl?: string;
     studentNumber?: string;
+    fatherIdNumber?: string;
+    fatherTitle?: string;
+    fatherFirstName?: string;
+    fatherLastName?: string;
+    fatherOccupation?: string;
+    fatherMonthlyIncome?: string;
+    fatherPhone?: string;
+    motherIdNumber?: string;
+    motherTitle?: string;
+    motherFirstName?: string;
+    motherLastName?: string;
+    motherOccupation?: string;
+    motherMonthlyIncome?: string;
+    motherPhone?: string;
+    guardianRelationship?: string;
+    guardianIdNumber?: string;
+    guardianTitle?: string;
+    guardianFirstName?: string;
+    guardianLastName?: string;
+    guardianOccupation?: string;
+    guardianMonthlyIncome?: string;
+    guardianPhone?: string;
 }
 
 export interface Teacher {
@@ -132,6 +188,7 @@ export interface HomeVisitPdfProps {
     visit: HomeVisitData;
     familyMembers: FamilyMember[];
     teacherName: string;
+    teacherPosition?: string;
     teachers?: Teacher[];
 }
 

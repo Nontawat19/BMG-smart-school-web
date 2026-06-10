@@ -17,6 +17,7 @@ import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
+import { buildLineRegistrationResolvedUpdate, buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
 
 const compactSelectStyles = {
     control: (base: any, state: any) => ({
@@ -315,11 +316,11 @@ const GraduationManagementPage: React.FC = () => {
 
             let updateData: any = { updatedAt: new Date().toISOString() };
             switch (action) {
-                case 'promote': updateData = { ...updateData, classLevel: nextClass, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่' }; break;
+                case 'promote': updateData = { ...updateData, classLevel: nextClass, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่', ...buildLineRegistrationReviewUpdate({ fromClassLevel: student.classLevel, fromRoom: student.roomNumber, toClassLevel: nextClass, toRoom: student.roomNumber, reason: 'promotion' }) }; break;
                 case 'repeat': updateData = { ...updateData, status: 'ซ้ำชั้น', studentStatus: 'ซ้ำชั้น' }; break;
-                case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'สำเร็จการศึกษา (รอดำเนินการ)', date: new Date().toISOString().split('T')[0] } }; break;
-                case 'pending_grad': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'ติด 0, ร, มส' } }; break;
-                case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก', studentStatus: 'จำหน่ายชื่อออก' }; break;
+                case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'สำเร็จการศึกษา (รอดำเนินการ)', date: new Date().toISOString().split('T')[0] }, ...buildLineRegistrationResolvedUpdate() }; break;
+                case 'pending_grad': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { remark: 'ติด 0, ร, มส' }, ...buildLineRegistrationResolvedUpdate() }; break;
+                case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก', studentStatus: 'จำหน่ายชื่อออก', ...buildLineRegistrationResolvedUpdate() }; break;
             }
 
             await updateDoc(studentRef, updateData);
@@ -356,9 +357,9 @@ const GraduationManagementPage: React.FC = () => {
 
                 let updateData: any = { updatedAt: new Date().toISOString() };
                 switch (batchActionType) {
-                    case 'promote': updateData = { ...updateData, classLevel: nextClass, room: batchDetails.nextRoom || s.roomNumber, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่' }; break;
-                    case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', graduationDetails: { date: batchDetails.gradDate } }; break;
-                    case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก' }; break;
+                    case 'promote': updateData = { ...updateData, classLevel: nextClass, room: batchDetails.nextRoom || s.roomNumber, roomNumber: batchDetails.nextRoom || s.roomNumber, status: 'กำลังศึกษาอยู่', studentStatus: 'กำลังศึกษาอยู่', ...buildLineRegistrationReviewUpdate({ fromClassLevel: s.classLevel, fromRoom: s.roomNumber, toClassLevel: nextClass, toRoom: batchDetails.nextRoom || s.roomNumber, reason: 'promotion' }) }; break;
+                    case 'graduate': updateData = { ...updateData, status: 'รออนุมัติจบ', studentStatus: 'รออนุมัติจบ', graduationDetails: { date: batchDetails.gradDate }, ...buildLineRegistrationResolvedUpdate() }; break;
+                    case 'exit': updateData = { ...updateData, status: 'จำหน่ายชื่อออก', studentStatus: 'จำหน่ายชื่อออก', ...buildLineRegistrationResolvedUpdate() }; break;
                 }
                 return updateDoc(studentRef, updateData);
             });

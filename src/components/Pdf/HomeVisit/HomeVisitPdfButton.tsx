@@ -1,24 +1,26 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { firestore } from '@/firebase';
-import { collection, query, orderBy, getDocs, limit, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, limit, where, doc, getDoc } from 'firebase/firestore';
 import { Printer, Loader2 } from 'lucide-react';
-import HomeVisitDocument from './HomeVisitDocument';
 import { HomeVisitData, Student, FamilyMember } from './types';
 import Swal from 'sweetalert2';
-
+import HomeVisitDocument from './HomeVisitDocument';
 interface Props {
     student: Student;
     schoolId: string;
     teacherName?: string;
+    teacherPosition?: string;
     className?: string;
 }
 
-const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, className }) => {
+const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, teacherPosition, className }) => {
     const [loading, setLoading] = useState(false);
     const [visitData, setVisitData] = useState<HomeVisitData | null>(null);
     const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
     const [teachers, setTeachers] = useState<any[]>([]);
+    const [schoolName, setSchoolName] = useState("");
+    const [educationArea, setEducationArea] = useState("");
 
     const fetchData = async () => {
         setLoading(true);
@@ -44,6 +46,13 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, c
                 });
                 setLoading(false);
                 return;
+            }
+
+            const schoolSnap = await getDoc(doc(firestore, "school-settings", schoolId));
+            if (schoolSnap.exists()) {
+                const schoolData = schoolSnap.data();
+                setSchoolName(schoolData.schoolName || schoolData.name || "");
+                setEducationArea(schoolData.affiliation || schoolData.educationArea || schoolData.serviceArea || schoolData.areaOffice || "");
             }
 
             // 2.ดึงข้อมูลครูประจำชั้น (Query กว้างขึ้นเพื่อความชัวร์)
@@ -136,11 +145,15 @@ const HomeVisitPdfButton: React.FC<Props> = ({ student, schoolId, teacherName, c
                     visit={visitData}
                     familyMembers={familyMembers}
                     teacherName={teacherName || ''}
+                    teacherPosition={teacherPosition}
                     teachers={teachers}
+                    schoolName={schoolName}
+                    educationArea={educationArea}
                 />
             }
-            fileName={`รายงานการเยี่ยมบ้าน_${student.firstName}_${student.lastName}.pdf`}
+            fileName={`แบบฟอร์มบันทึกการเยี่ยมบ้าน_${student.firstName}_${student.lastName}.pdf`}
             className={getDynamicClass('success')}
+            title="ดาวน์โหลด PDF แบบฟอร์มมาตรฐาน 4 หน้า"
         >
             {({ loading: pdfLoading }) => (
                 pdfLoading ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />

@@ -6,6 +6,7 @@ import { firestore, auth, storage } from "@/firebase";
 import { compressImage } from "@/utils/imageUtils";
 import { doc, getDoc, collection, addDoc, serverTimestamp, GeoPoint, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
 import {
     ArrowLeft,
     Save,
@@ -42,6 +43,7 @@ import Swal from "sweetalert2";
 interface Student {
     id: string;
     studentId: string;
+    idCardNumber?: string;
     title: string;
     firstName: string;
     lastName: string;
@@ -50,16 +52,155 @@ interface Student {
     schoolId: string;
     profileImageUrl?: string;
     nickname?: string;
+    parentsMaritalStatus?: string;
+    fatherIdNumber?: string;
+    fatherTitle?: string;
+    fatherFirstName?: string;
+    fatherLastName?: string;
+    fatherOccupation?: string;
+    fatherMonthlyIncome?: string;
+    fatherPhone?: string;
+    motherIdNumber?: string;
+    motherTitle?: string;
+    motherFirstName?: string;
+    motherLastName?: string;
+    motherOccupation?: string;
+    motherMonthlyIncome?: string;
+    motherPhone?: string;
+    guardianRelationship?: string;
+    guardianIdNumber?: string;
+    guardianTitle?: string;
+    guardianFirstName?: string;
+    guardianLastName?: string;
+    guardianOccupation?: string;
+    guardianMonthlyIncome?: string;
+    guardianPhone?: string;
 }
 
 interface FamilyMember {
     id: string;
     name: string;
+    relationship?: string;
     age: string;
     education: string;
     occupation: string;
     income: string;
+    disability?: string;
+    wageIncome?: string;
+    agricultureIncome?: string;
+    businessIncome?: string;
+    welfareIncome?: string;
+    otherIncome?: string;
+    totalIncome?: string;
 }
+
+const compactName = (...parts: Array<string | undefined>) => parts.filter(Boolean).join(" ").trim();
+
+const getCurrentAcademicFallback = () => {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const beYear = now.getFullYear() + 543;
+    if (month >= 5 && month <= 10) return { academicYear: String(beYear), semester: "1" };
+    if (month >= 11) return { academicYear: String(beYear), semester: "2" };
+    return { academicYear: String(beYear - 1), semester: "2" };
+};
+
+const currentAcademic = getCurrentAcademicFallback();
+
+const getStudentGuardianInfo = (student: Student) => {
+    const guardianName = compactName(student.guardianTitle, student.guardianFirstName, student.guardianLastName);
+    if (guardianName || student.guardianPhone || student.guardianIdNumber || student.guardianOccupation) {
+        return {
+            firstName: compactName(student.guardianTitle, student.guardianFirstName),
+            lastName: student.guardianLastName || "",
+            phone: student.guardianPhone || "",
+            idNumber: student.guardianIdNumber || "",
+            occupation: student.guardianOccupation || "",
+            relationship: student.guardianRelationship || "ผู้ปกครอง",
+        };
+    }
+
+    const fatherName = compactName(student.fatherTitle, student.fatherFirstName, student.fatherLastName);
+    if (fatherName || student.fatherPhone || student.fatherIdNumber || student.fatherOccupation) {
+        return {
+            firstName: compactName(student.fatherTitle, student.fatherFirstName),
+            lastName: student.fatherLastName || "",
+            phone: student.fatherPhone || "",
+            idNumber: student.fatherIdNumber || "",
+            occupation: student.fatherOccupation || "",
+            relationship: "บิดา",
+        };
+    }
+
+    return {
+        firstName: compactName(student.motherTitle, student.motherFirstName),
+        lastName: student.motherLastName || "",
+        phone: student.motherPhone || "",
+        idNumber: student.motherIdNumber || "",
+        occupation: student.motherOccupation || "",
+        relationship: student.motherFirstName || student.motherLastName ? "มารดา" : "",
+    };
+};
+
+const buildFamilyMembersFromStudent = (student: Student): FamilyMember[] => {
+    const members: FamilyMember[] = [];
+    if (student.fatherFirstName || student.fatherLastName || student.fatherMonthlyIncome) {
+        members.push({
+            id: "father",
+            relationship: "บิดา",
+            name: compactName(student.fatherTitle, student.fatherFirstName, student.fatherLastName),
+            age: "",
+            education: "",
+            occupation: student.fatherOccupation || "",
+            income: student.fatherMonthlyIncome || "",
+            disability: "-",
+            wageIncome: student.fatherMonthlyIncome || "",
+            agricultureIncome: "",
+            businessIncome: "",
+            welfareIncome: "",
+            otherIncome: "",
+            totalIncome: student.fatherMonthlyIncome || "",
+        });
+    }
+    if (student.motherFirstName || student.motherLastName || student.motherMonthlyIncome) {
+        members.push({
+            id: "mother",
+            relationship: "มารดา",
+            name: compactName(student.motherTitle, student.motherFirstName, student.motherLastName),
+            age: "",
+            education: "",
+            occupation: student.motherOccupation || "",
+            income: student.motherMonthlyIncome || "",
+            disability: "-",
+            wageIncome: student.motherMonthlyIncome || "",
+            agricultureIncome: "",
+            businessIncome: "",
+            welfareIncome: "",
+            otherIncome: "",
+            totalIncome: student.motherMonthlyIncome || "",
+        });
+    }
+    const guardianName = compactName(student.guardianTitle, student.guardianFirstName, student.guardianLastName);
+    if (guardianName && !["บิดา", "มารดา"].includes(student.guardianRelationship || "")) {
+        members.push({
+            id: "guardian",
+            relationship: student.guardianRelationship || "ผู้ปกครอง",
+            name: guardianName,
+            age: "",
+            education: "",
+            occupation: student.guardianOccupation || "",
+            income: student.guardianMonthlyIncome || "",
+            disability: "-",
+            wageIncome: student.guardianMonthlyIncome || "",
+            agricultureIncome: "",
+            businessIncome: "",
+            welfareIncome: "",
+            otherIncome: "",
+            totalIncome: student.guardianMonthlyIncome || "",
+        });
+    }
+    return members;
+};
 
 const NewHomeVisit: React.FC = () => {
     const { studentId } = useParams<{ studentId: string }>();
@@ -70,7 +211,7 @@ const NewHomeVisit: React.FC = () => {
     const [previousVisit, setPreviousVisit] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [currentStep, setCurrentStep] = useState(1);
+    const [currentStep, setCurrentStep] = useState(0);
     const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
     const [gettingGps, setGettingGps] = useState(false);
 
@@ -92,14 +233,16 @@ const NewHomeVisit: React.FC = () => {
 
     // Family Members list
     const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([
-        { id: '1', name: '', age: '', education: '', occupation: '', income: '' }
+        { id: '1', name: '', relationship: '', age: '', education: '', occupation: '', income: '', disability: '', wageIncome: '', agricultureIncome: '', businessIncome: '', welfareIncome: '', otherIncome: '', totalIncome: '' }
     ]);
 
     const [formData, setFormData] = useState({
+        schoolName: "",
+        educationArea: "",
         // Page 1: ข้อมูลเบื้องต้น (อ้างอิงภาพที่ 1)
         visitNo: "1",
-        semester: "1",
-        academicYear: "2568",
+        semester: currentAcademic.semester,
+        academicYear: currentAcademic.academicYear,
         visitStatus: "เยี่ยมแล้ว", // เยี่ยมแล้ว, ยังไม่ได้เยี่ยม
         visitType: "เดินทางไปที่พักอาศัยของนักเรียน", // เดินทางไปที่พักอาศัยของนักเรียน, Online
         visitDate: new Date().toISOString().split('T')[0],
@@ -107,6 +250,15 @@ const NewHomeVisit: React.FC = () => {
         endTime: "10:00",
         visitorNameBySide: "",
         relationshipWithStudent: "บิดามารดา",
+        parentFirstName: "",
+        parentLastName: "",
+        parentPhone: "",
+        parentOccupation: "",
+        parentEducation: "",
+        parentCitizenId: "",
+        parentNoGuardian: false,
+        parentNoCitizenId: false,
+        parentWelfareRegistered: false,
         bothParentsDeceased: false,
         oneParentDeceased: false,
         parentsSeparated: false,
@@ -123,12 +275,12 @@ const NewHomeVisit: React.FC = () => {
         travelDistance: "", // กิโลเมตร
         travelTimeHours: "",
         travelTimeMinutes: "",
-        travelMethod: "ผู้ปกครองมาส่ง", // ผู้ปกครองมาส่ง, เดินทางด้วยตนเอง โดย...
+        travelMethod: "ผู้ปกครองมาส่ง",
 
         // 1. สภาพที่อยู่อาศัย (อ้างอิงภาพที่ 1)
-        housingType: "บ้านตนเอง", // บ้านของตนเอง, บ้านเช่า/หอพัก, อาศัยอยู่กับผู้อื่น, บ้านพักของหน่วยงาน, บ้านญาติ, อื่นๆ
-        housingCondition: "ดี", // ดี, พอใช้, เก่าทรุดโทรม, พื้นที่คับแคบ, ไม่มีความเป็นสัดส่วน
-        housingCleanliness: "สะอาดมีระเบียบ", // สะอาดมีระเบียบ, ไม่ค่อยสะอาด, สกปรกไม่มีระเบียบ, อื่นๆ
+        housingType: "บ้านของตนเอง",
+        housingCondition: "",
+        housingCleanliness: "",
         utilitiesElectricity: "มี",
         utilitiesWater: "มี",
         utilitiesToilet: "มี",
@@ -143,6 +295,11 @@ const NewHomeVisit: React.FC = () => {
         siblingDifferentParentsMale: "",
         siblingDifferentParentsFemale: "",
         specialNeedHelpCount: "",
+        householdDependency: [] as string[],
+        vehiclePrivateCar: "",
+        vehiclePickup: "",
+        vehicleFarmMachine: "",
+        farmlandStatus: [] as string[],
 
         // 4.5 ความสัมพันธ์ในครอบครัว (อ้างอิงภาพที่ 2)
         familyAtmosphere: "รักใคร่กันดี", // รักใคร่กันดี, ขัดแย้งทะเลาะกันบางครั้ง/บ่อยครั้ง, ห่างเหิน, ขัดแย้งและทำร้ายร่างกาย...
@@ -159,9 +316,11 @@ const NewHomeVisit: React.FC = () => {
         studentResponsibility: "",
         studentHobby: "",
         caregiverWhenParentsAway: "",
+        caregiverWhenParentsAwayOther: "",
 
         // 5. รายได้ (อ้างอิงภาพที่ 2)
         familyMonthlyIncome: "",
+        householdIncomeAverage: "",
         expensePayer: "บิดามารดา",
         studentWorkingExtra: "ไม่ได้ทำงาน",
         extraJobDetail: "",
@@ -175,12 +334,14 @@ const NewHomeVisit: React.FC = () => {
         violenceRisk: [] as string[],
         sexualRisk: [] as string[],
         gameRisk: [] as string[],
-        internetUsage: "ปกติ",
+        internetUsage: "",
 
-        // Page 5: สรุปผลและข้อเสนอแนะ (อ้างอิงภาพที่ 3-4)
+        // ข้อมูลหน้า 2-4 ตามแบบมาตรฐาน 4 หน้า
         parentConcerns: "",
         schoolAssistanceNeeded: [] as string[],
         schoolAssistanceNeededDetail: "",
+        assistanceReceived: [] as string[],
+        assistanceReceivedOther: "",
         assistanceHistory: "ปานกลาง",
         visitSummary: "ปกติ", // ปกติ, ควรส่งเสริมด้าน, ช่วยเหลือด่วน
         visitSummaryPromoteDetail: "",
@@ -194,10 +355,12 @@ const NewHomeVisit: React.FC = () => {
         studentResponsibilities: [] as string[],
         studentHobbies: [] as string[],
         computerAccess: "",
-        electronicUsage: "",
+        electronicUsage: [] as string[],
 
         // Photo permissions
         parentHousePhotoPermission: "อนุญาต", // อนุญาต, ไม่อนุญาต
+        informantRelationship: "",
+        teacherPosition: "ครู",
 
         // Specific details for "Other" options
         housingTypeOther: "",
@@ -217,6 +380,23 @@ const NewHomeVisit: React.FC = () => {
                 const schoolId = userData?.schoolId;
 
                 if (schoolId) {
+                    const academicInfo = await getCurrentAcademicYear(firestore, schoolId);
+                    setFormData(prev => ({
+                        ...prev,
+                        academicYear: academicInfo.academicYear || currentAcademic.academicYear,
+                        semester: academicInfo.currentTerm || currentAcademic.semester
+                    }));
+
+                    const schoolSnap = await getDoc(doc(firestore, "school-settings", schoolId));
+                    if (schoolSnap.exists()) {
+                        const schoolData = schoolSnap.data();
+                        setFormData(prev => ({
+                            ...prev,
+                            schoolName: prev.schoolName || schoolData.schoolName || schoolData.name || "",
+                            educationArea: prev.educationArea || schoolData.affiliation || schoolData.educationArea || schoolData.serviceArea || schoolData.areaOffice || ""
+                        }));
+                    }
+
                     const studentDoc = await getDoc(doc(firestore, "school-settings", schoolId, "students", studentId));
                     if (studentDoc.exists()) {
                         const studentData = studentDoc.data() as Student;
@@ -272,6 +452,40 @@ const NewHomeVisit: React.FC = () => {
                             setFormData(prev => ({ ...prev, studentNickname: studentData.nickname || "" }));
                         }
 
+                        const guardian = getStudentGuardianInfo({ id: studentDoc.id, ...dataWithoutId } as Student);
+                        setFormData(prev => ({
+                            ...prev,
+                            parentFirstName: prev.parentFirstName || guardian.firstName,
+                            parentLastName: prev.parentLastName || guardian.lastName,
+                            parentPhone: prev.parentPhone || guardian.phone,
+                            parentOccupation: prev.parentOccupation || guardian.occupation,
+                            parentCitizenId: prev.parentCitizenId || guardian.idNumber,
+                            relationshipWithStudent: prev.relationshipWithStudent === "บิดามารดา" ? (guardian.relationship || prev.relationshipWithStudent) : prev.relationshipWithStudent,
+                            visitorNameBySide: prev.visitorNameBySide || compactName(guardian.firstName, guardian.lastName),
+                            informantRelationship: prev.informantRelationship || guardian.relationship,
+                            studentPhone: prev.studentPhone || guardian.phone,
+                            parentsSeparated: prev.parentsSeparated || studentData.parentsMaritalStatus === "แยกกันอยู่" || studentData.parentsMaritalStatus === "หย่าร้าง",
+                        }));
+
+                        const studentFamilyMembers = buildFamilyMembersFromStudent({ id: studentDoc.id, ...dataWithoutId } as Student);
+                        if (studentFamilyMembers.length > 0) {
+                            setFamilyMembers(current => {
+                                const hasUserInput = current.some(member =>
+                                    member.name ||
+                                    member.relationship ||
+                                    member.age ||
+                                    member.income ||
+                                    member.totalIncome ||
+                                    member.wageIncome ||
+                                    member.agricultureIncome ||
+                                    member.businessIncome ||
+                                    member.welfareIncome ||
+                                    member.otherIncome
+                                );
+                                return hasUserInput ? current : studentFamilyMembers;
+                            });
+                        }
+
                         // Fetch previous home visit to enable copy feature
                         const visitsCol = collection(firestore, "school-settings", schoolId, "students", studentId, "home-visits");
                         const q = query(visitsCol, orderBy("createdAt", "desc"), limit(1));
@@ -298,8 +512,19 @@ const NewHomeVisit: React.FC = () => {
                 const nextData = { ...prev };
                 
                 const fieldsToCopy = [
+                    'schoolName',
+                    'educationArea',
                     'visitorNameBySide',
                     'relationshipWithStudent',
+                    'parentFirstName',
+                    'parentLastName',
+                    'parentPhone',
+                    'parentOccupation',
+                    'parentEducation',
+                    'parentCitizenId',
+                    'parentNoGuardian',
+                    'parentNoCitizenId',
+                    'parentWelfareRegistered',
                     'bothParentsDeceased',
                     'oneParentDeceased',
                     'parentsSeparated',
@@ -327,12 +552,17 @@ const NewHomeVisit: React.FC = () => {
                     'siblingDifferentParentsMale',
                     'siblingDifferentParentsFemale',
                     'specialNeedHelpCount',
+                    'vehiclePrivateCar',
+                    'vehiclePickup',
+                    'vehicleFarmMachine',
                     'familyAtmosphere',
                     'hoursTogetherPerDay',
                     'studentResponsibility',
                     'studentHobby',
                     'caregiverWhenParentsAway',
+                    'caregiverWhenParentsAwayOther',
                     'familyMonthlyIncome',
+                    'householdIncomeAverage',
                     'expensePayer',
                     'studentWorkingExtra',
                     'extraJobDetail',
@@ -341,6 +571,7 @@ const NewHomeVisit: React.FC = () => {
                     'internetUsage',
                     'parentConcerns',
                     'schoolAssistanceNeededDetail',
+                    'assistanceReceivedOther',
                     'assistanceHistory',
                     'visitSummaryPromoteDetail',
                     'visitSummaryUrgentDetail',
@@ -352,6 +583,8 @@ const NewHomeVisit: React.FC = () => {
                     'computerAccess',
                     'electronicUsage',
                     'parentHousePhotoPermission',
+                    'informantRelationship',
+                    'teacherPosition',
                     'housingTypeOther',
                     'travelMethodDetail',
                     'housingCleanlinessOther',
@@ -378,6 +611,11 @@ const NewHomeVisit: React.FC = () => {
                 if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
                 if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
                 if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
+                if (Array.isArray(previousVisit.householdDependency)) nextData.householdDependency = [...previousVisit.householdDependency];
+                if (Array.isArray(previousVisit.farmlandStatus)) nextData.farmlandStatus = [...previousVisit.farmlandStatus];
+                if (Array.isArray(previousVisit.assistanceReceived)) nextData.assistanceReceived = [...previousVisit.assistanceReceived];
+                if (Array.isArray(previousVisit.electronicUsage)) nextData.electronicUsage = [...previousVisit.electronicUsage];
+                else if (typeof previousVisit.electronicUsage === 'string' && previousVisit.electronicUsage) nextData.electronicUsage = [previousVisit.electronicUsage];
 
                 return nextData;
             });
@@ -386,10 +624,18 @@ const NewHomeVisit: React.FC = () => {
                 setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
                     id: m.id || Date.now().toString() + Math.random().toString(),
                     name: m.name || '',
+                    relationship: m.relationship || '',
                     age: m.age || '',
                     education: m.education || '',
                     occupation: m.occupation || '',
-                    income: m.income || ''
+                    income: m.income || '',
+                    disability: m.disability || '',
+                    wageIncome: m.wageIncome || '',
+                    agricultureIncome: m.agricultureIncome || '',
+                    businessIncome: m.businessIncome || '',
+                    welfareIncome: m.welfareIncome || '',
+                    otherIncome: m.otherIncome || '',
+                    totalIncome: m.totalIncome || ''
                 })));
             }
 
@@ -468,8 +714,19 @@ const NewHomeVisit: React.FC = () => {
                     const nextData = { ...prev };
                     
                     const fieldsToCopy = [
+                        'schoolName',
+                        'educationArea',
                         'visitorNameBySide',
                         'relationshipWithStudent',
+                        'parentFirstName',
+                        'parentLastName',
+                        'parentPhone',
+                        'parentOccupation',
+                        'parentEducation',
+                        'parentCitizenId',
+                        'parentNoGuardian',
+                        'parentNoCitizenId',
+                        'parentWelfareRegistered',
                         'bothParentsDeceased',
                         'oneParentDeceased',
                         'parentsSeparated',
@@ -497,12 +754,17 @@ const NewHomeVisit: React.FC = () => {
                         'siblingDifferentParentsMale',
                         'siblingDifferentParentsFemale',
                         'specialNeedHelpCount',
+                        'vehiclePrivateCar',
+                        'vehiclePickup',
+                        'vehicleFarmMachine',
                         'familyAtmosphere',
                         'hoursTogetherPerDay',
                         'studentResponsibility',
                         'studentHobby',
                         'caregiverWhenParentsAway',
+                        'caregiverWhenParentsAwayOther',
                         'familyMonthlyIncome',
+                        'householdIncomeAverage',
                         'expensePayer',
                         'studentWorkingExtra',
                         'extraJobDetail',
@@ -511,6 +773,7 @@ const NewHomeVisit: React.FC = () => {
                         'internetUsage',
                         'parentConcerns',
                         'schoolAssistanceNeededDetail',
+                        'assistanceReceivedOther',
                         'assistanceHistory',
                         'visitSummaryPromoteDetail',
                         'visitSummaryUrgentDetail',
@@ -522,6 +785,8 @@ const NewHomeVisit: React.FC = () => {
                         'computerAccess',
                         'electronicUsage',
                         'parentHousePhotoPermission',
+                        'informantRelationship',
+                        'teacherPosition',
                         'housingTypeOther',
                         'travelMethodDetail',
                         'housingCleanlinessOther',
@@ -550,6 +815,11 @@ const NewHomeVisit: React.FC = () => {
                     if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
                     if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
                     if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
+                    if (Array.isArray(previousVisit.householdDependency)) nextData.householdDependency = [...previousVisit.householdDependency];
+                    if (Array.isArray(previousVisit.farmlandStatus)) nextData.farmlandStatus = [...previousVisit.farmlandStatus];
+                    if (Array.isArray(previousVisit.assistanceReceived)) nextData.assistanceReceived = [...previousVisit.assistanceReceived];
+                    if (Array.isArray(previousVisit.electronicUsage)) nextData.electronicUsage = [...previousVisit.electronicUsage];
+                    else if (typeof previousVisit.electronicUsage === 'string' && previousVisit.electronicUsage) nextData.electronicUsage = [previousVisit.electronicUsage];
 
                     return nextData;
                 });
@@ -559,10 +829,18 @@ const NewHomeVisit: React.FC = () => {
                     setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
                         id: m.id || Date.now().toString() + Math.random().toString(),
                         name: m.name || '',
+                        relationship: m.relationship || '',
                         age: m.age || '',
                         education: m.education || '',
                         occupation: m.occupation || '',
-                        income: m.income || ''
+                        income: m.income || '',
+                        disability: m.disability || '',
+                        wageIncome: m.wageIncome || '',
+                        agricultureIncome: m.agricultureIncome || '',
+                        businessIncome: m.businessIncome || '',
+                        welfareIncome: m.welfareIncome || '',
+                        otherIncome: m.otherIncome || '',
+                        totalIncome: m.totalIncome || ''
                     })));
                 }
 
@@ -637,7 +915,7 @@ const NewHomeVisit: React.FC = () => {
     };
 
     const addFamilyMember = () => {
-        setFamilyMembers([...familyMembers, { id: Date.now().toString(), name: '', age: '', education: '', occupation: '', income: '' }]);
+        setFamilyMembers([...familyMembers, { id: Date.now().toString(), name: '', relationship: '', age: '', education: '', occupation: '', income: '', disability: '', wageIncome: '', agricultureIncome: '', businessIncome: '', welfareIncome: '', otherIncome: '', totalIncome: '' }]);
     };
 
     const removeFamilyMember = (id: string) => {
@@ -753,11 +1031,11 @@ const NewHomeVisit: React.FC = () => {
     };
 
     const steps = [
-        { title: "ข้อมูลบ้าน", desc: "ที่อยู่อาศัยและทำเล", icon: Home },
-        { title: "สภาพแวดล้อม", desc: "ความเป็นอยู่รอบบ้าน", icon: Eye },
-        { title: "ความเสี่ยง", desc: "การประเมินรอบด้าน", icon: ShieldAlert },
-        { title: "พิกัดและรูปภาพ", desc: "ตำแหน่งและหลักฐาน", icon: Camera },
-        { title: "สรุปผลการเยี่ยม", desc: "บันทึกและข้อเสนอแนะ", icon: FileText }
+        { title: "หน้า 1", desc: "ข้อมูลนักเรียน ครัวเรือน และที่อยู่อาศัย", icon: FileText },
+        { title: "หน้า 2", desc: "ความสัมพันธ์ รายได้ ความช่วยเหลือ และความเสี่ยงเบื้องต้น", icon: Users },
+        { title: "หน้า 3", desc: "พฤติกรรม ความเสี่ยง และผู้ให้ข้อมูลนักเรียน", icon: ShieldAlert },
+        { title: "หน้า 4", desc: "รูปถ่ายบ้านและผู้รับรองข้อมูล", icon: Camera },
+        { title: "สรุปท้าย", desc: "ข้อห่วงใย ความช่วยเหลือ และผู้รับรองภาพถ่าย", icon: Info }
     ];
 
     if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-blue-600" /></div>;
@@ -787,11 +1065,172 @@ const NewHomeVisit: React.FC = () => {
         </div>
     );
 
+    const progressPercent = Math.round(((currentStep + 1) / steps.length) * 100);
+    const CurrentStepIcon = steps[currentStep]?.icon || FileText;
+    const academicYearNumber = Number(formData.academicYear || currentAcademic.academicYear);
+    const academicYearOptions = Array.from(
+        new Set([
+            academicYearNumber + 1,
+            academicYearNumber,
+            academicYearNumber - 1,
+            academicYearNumber - 2
+        ].filter(Boolean).map(String))
+    );
+
+    const PhotoActionButton = ({
+        label,
+        mode,
+        multiple = false,
+        onChange
+    }: {
+        label: string;
+        mode: "camera" | "upload";
+        multiple?: boolean;
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    }) => (
+        <label
+            className={`min-h-11 flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-black transition-all cursor-pointer border active:scale-[0.98] ${
+                mode === "camera"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 hover:bg-blue-700"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+            }`}
+        >
+            {mode === "camera" ? <Camera size={16} /> : <Plus size={16} />}
+            {label}
+            <input
+                type="file"
+                multiple={multiple}
+                accept="image/jpeg,image/png,image/*"
+                capture={mode === "camera" ? "environment" : undefined}
+                className="hidden"
+                onChange={onChange}
+            />
+        </label>
+    );
+
+    const SinglePhotoField = ({
+        title,
+        hint,
+        preview,
+        type,
+        icon: Icon,
+        onClear,
+        accent = "blue"
+    }: {
+        title: string;
+        hint?: string;
+        preview: string | null;
+        type: 'exterior' | 'interior' | 'schoolSign' | 'sketchMap';
+        icon: React.ElementType;
+        onClear: () => void;
+        accent?: "blue" | "indigo";
+    }) => (
+        <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                    <Label>{title}</Label>
+                    {hint && <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500 leading-relaxed">{hint}</p>}
+                </div>
+                {preview && (
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        className="shrink-0 rounded-lg bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-[11px] font-black text-rose-600 dark:text-rose-300"
+                    >
+                        ลบ
+                    </button>
+                )}
+            </div>
+            <div className={`relative h-52 sm:h-60 rounded-2xl border-2 border-dashed overflow-hidden flex flex-col items-center justify-center gap-3 ${
+                preview
+                    ? accent === "indigo" ? "border-indigo-500" : "border-blue-500"
+                    : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40"
+            }`}>
+                {preview ? (
+                    <img src={preview} className="w-full h-full object-cover" alt={title} />
+                ) : (
+                    <>
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
+                            accent === "indigo" ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500" : "bg-blue-50 dark:bg-blue-950/30 text-blue-500"
+                        }`}>
+                            <Icon size={28} />
+                        </div>
+                        <p className="px-4 text-center text-xs font-black text-slate-500 dark:text-slate-400">{title}</p>
+                    </>
+                )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <PhotoActionButton label="ถ่ายภาพ" mode="camera" onChange={(e) => handleSinglePhotoChange(e, type)} />
+                <PhotoActionButton label="อัปโหลดจากเครื่อง" mode="upload" onChange={(e) => handleSinglePhotoChange(e, type)} />
+            </div>
+        </div>
+    );
+
     const renderStepContent = () => {
         switch (currentStep) {
             case 0: // Step 1: Basic & Location
                 return (
                     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                        <section className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6">
+                            <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                <FileText size={16} /> ข้อมูลหน้า 1 ตามแบบบันทึกการเยี่ยมบ้าน
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="space-y-1.5">
+                                    <Label>โรงเรียน</Label>
+                                    <input type="text" name="schoolName" value={formData.schoolName} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" placeholder="ชื่อโรงเรียน" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>สพป./สพม.</Label>
+                                    <input type="text" name="educationArea" value={formData.educationArea} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" placeholder="เขตพื้นที่การศึกษา" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                <div className="space-y-1.5">
+                                    <Label>ชื่อผู้ปกครอง</Label>
+                                    <input type="text" name="parentFirstName" value={formData.parentFirstName} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" placeholder="ชื่อ" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>นามสกุลผู้ปกครอง</Label>
+                                    <input type="text" name="parentLastName" value={formData.parentLastName} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" placeholder="นามสกุล" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>เบอร์โทรศัพท์ผู้ปกครอง</Label>
+                                    <input type="text" name="parentPhone" value={formData.parentPhone} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" placeholder="08x-xxx-xxxx" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>ความสัมพันธ์กับนักเรียน</Label>
+                                    <input type="text" name="relationshipWithStudent" value={formData.relationshipWithStudent} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>อาชีพผู้ปกครอง</Label>
+                                    <input type="text" name="parentOccupation" value={formData.parentOccupation} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>การศึกษาสูงสุด</Label>
+                                    <input type="text" name="parentEducation" value={formData.parentEducation} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="space-y-1.5">
+                                    <Label>เลขที่บัตรประชาชนผู้ปกครอง</Label>
+                                    <input type="text" name="parentCitizenId" value={formData.parentCitizenId} onChange={handleInputChange} maxLength={13} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold tracking-widest dark:text-white" placeholder="13 หลัก" />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {[
+                                        { id: 'parentNoGuardian', label: 'ไม่มีผู้ปกครอง' },
+                                        { id: 'parentNoCitizenId', label: 'ไม่มีบัตรประชาชน' },
+                                        { id: 'parentWelfareRegistered', label: 'ลงทะเบียนสวัสดิการแห่งรัฐ' },
+                                    ].map(item => (
+                                        <label key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${(formData as any)[item.id] ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                            <input type="checkbox" checked={(formData as any)[item.id]} onChange={() => setFormData(prev => ({ ...prev, [item.id]: !(prev as any)[item.id] }))} className="w-4 h-4 accent-blue-600" />
+                                            <span className="text-xs font-bold">{item.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </section>
+
                         {/* 1.1 สภาพที่อยู่อาศัยและการเดินทาง */}
                         <section className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-8">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -847,14 +1286,14 @@ const NewHomeVisit: React.FC = () => {
                                         </h3>
                                         <div className="space-y-3">
                                             <Label required>ลักษณะที่อยู่อาศัย</Label>
-                                            <RadioGroup name="housingType" options={["บ้านของตนเอง", "บ้านเช่า/หอพัก", "อาศัยอยู่กับผู้อื่น", "บ้านพักหน่วยงาน", "บ้านญาติ", "อื่นๆ"]} value={formData.housingType} onChange={handleInputChange} />
+                                            <RadioGroup name="housingType" options={["บ้านของตนเอง", "บ้านเช่า", "อาศัยอยู่กับผู้อื่น", "บ้านของญาติ", "บ้านหรือที่พักประเภท วัด มูลนิธิ หอพัก โรงงาน อยู่กับนายจ้าง", "อื่นๆ"]} value={formData.housingType} onChange={handleInputChange} />
                                             {formData.housingType === "อื่นๆ" && (
                                                 <input type="text" name="housingTypeOther" value={formData.housingTypeOther} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 text-sm font-bold outline-none mt-2 dark:text-white" placeholder="ระบุประเภทที่อยู่อาศัย..." />
                                             )}
                                         </div>
                                         <div className="space-y-3">
                                             <Label required>สภาพที่อยู่อาศัย</Label>
-                                            <RadioGroup name="housingCondition" options={["ดี มั่นคง", "พอใช้", "เก่าทรุดโทรม", "พื้นที่คับแคบ", "ไม่เป็นสัดส่วน"]} value={formData.housingCondition} onChange={handleInputChange} />
+                                            <RadioGroup name="housingCondition" options={["สภาพบ้านชำรุดทรุดโทรม หรือ บ้านทำจากวัสดุพื้นบ้าน เช่น ไม้ไผ่ ใบจากหรือวัสดุเหลือใช้", "ไม่มีห้องส้วมในที่อยู่อาศัยและบริเวณ", "ไม่มีปัญหา"]} value={formData.housingCondition} onChange={handleInputChange} />
                                         </div>
                                     </div>
                                 </div>
@@ -894,7 +1333,7 @@ const NewHomeVisit: React.FC = () => {
                             <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
-                                        <Label required>ความสะอาด/ความเป็นระเบียบ</Label>
+                                        <Label required>ความสะอาด/ความเป็นระเบียบ (ใช้เป็นบันทึกเพิ่มเติม ไม่แสดงในแม่แบบ 4 หน้า)</Label>
                                         <RadioGroup name="housingCleanliness" options={["สะอาดมีระเบียบ", "ไม่ค่อยสะอาด", "สกปรกไม่มีระเบียบ", "อื่นๆ"]} value={formData.housingCleanliness} onChange={handleInputChange} />
                                         {formData.housingCleanliness === "อื่นๆ" && (
                                             <input type="text" name="housingCleanlinessOther" value={formData.housingCleanlinessOther} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 text-sm font-bold outline-none mt-2 dark:text-white" placeholder="ระบุความสะอาด..." />
@@ -928,46 +1367,96 @@ const NewHomeVisit: React.FC = () => {
                         </section>
 
                         {/* 1.2 ข้อมูลการเยี่ยมบ้านเบื้องต้น */}
-                        <section className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6">
-                            <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                                <FileText size={16} /> ข้อมูลการเยี่ยมบ้านเบื้องต้น
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                                <div className="space-y-1.5">
-                                    <Label required>เยี่ยมครั้งที่</Label>
-                                    <input type="text" name="visitNo" value={formData.visitNo} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>ภาคเรียนที่</Label>
-                                    <input type="text" name="semester" value={formData.semester} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>ปีการศึกษา</Label>
-                                    <input type="text" name="academicYear" value={formData.academicYear} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>สถานะการเยี่ยม</Label>
-                                    <select name="visitStatus" value={formData.visitStatus} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white">
-                                        <option value="เยี่ยมแล้ว">เยี่ยมแล้ว</option>
-                                        <option value="ยังไม่ได้เยี่ยม">ยังไม่ได้เยี่ยม</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>วันที่ออกเยี่ยม</Label>
-                                    <input type="date" name="visitDate" value={formData.visitDate} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>เวลาที่เริ่ม</Label>
-                                    <input type="time" name="startTime" value={formData.startTime} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label required>เวลาที่สิ้นสุด</Label>
-                                    <input type="time" name="endTime" value={formData.endTime} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none font-bold dark:text-white" />
+                        <section className="bg-white dark:bg-slate-900 p-4 sm:p-5 lg:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-sm">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <h3 className="text-sm font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                    <FileText size={16} /> ข้อมูลการเยี่ยมบ้านเบื้องต้น
+                                </h3>
+                                <div className="inline-flex items-center gap-2 rounded-xl bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs font-black text-blue-700 dark:text-blue-300">
+                                    <Clock size={14} />
+                                    {formData.academicYear} / ภาคเรียนที่ {formData.semester}
                                 </div>
                             </div>
-                            <div className="space-y-3 pt-2">
+
+                            <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr] gap-4">
+                                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 p-4 space-y-4">
+                                    <div className="flex items-center gap-2 text-xs font-black text-slate-500 dark:text-slate-400">
+                                        <FileText size={14} className="text-blue-500" /> รอบการเยี่ยม
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Label required>เยี่ยมครั้งที่</Label>
+                                            <input type="text" name="visitNo" value={formData.visitNo} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label required>ภาคเรียนที่</Label>
+                                            <select name="semester" value={formData.semester} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white">
+                                                <option value="1">1</option>
+                                                <option value="2">2</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label required>ปีการศึกษา</Label>
+                                            <select name="academicYear" value={formData.academicYear} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold dark:text-white">
+                                                {academicYearOptions.map(year => (
+                                                    <option key={year} value={year}>{year}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label required>สถานะการเยี่ยม</Label>
+                                            <select name="visitStatus" value={formData.visitStatus} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm outline-none font-bold dark:text-white">
+                                                <option value="เยี่ยมแล้ว">เยี่ยมแล้ว</option>
+                                                <option value="ยังไม่ได้เยี่ยม">ยังไม่ได้เยี่ยม</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 p-4 space-y-4">
+                                    <div className="flex items-center gap-2 text-xs font-black text-slate-500 dark:text-slate-400">
+                                        <Clock size={14} className="text-blue-500" /> วันและเวลา
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div className="space-y-1.5 sm:col-span-3 lg:col-span-1 xl:col-span-3 2xl:col-span-1">
+                                            <Label required>วันที่ออกเยี่ยม</Label>
+                                            <input type="date" name="visitDate" value={formData.visitDate} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm outline-none font-bold dark:text-white" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label required>เวลาที่เริ่ม</Label>
+                                            <input type="time" name="startTime" value={formData.startTime} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm outline-none font-bold dark:text-white" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label required>เวลาที่สิ้นสุด</Label>
+                                            <input type="time" name="endTime" value={formData.endTime} onChange={handleInputChange} className="w-full h-11 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 text-sm outline-none font-bold dark:text-white" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
                                 <Label required>รูปแบบการเยี่ยมบ้าน</Label>
-                                <RadioGroup name="visitType" options={["เดินทางไปที่พักอาศัยของนักเรียน", "เยี่ยมผ่านออนไลน์/โทรศัพท์"]} value={formData.visitType} onChange={handleInputChange} />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {["เดินทางไปที่พักอาศัยของนักเรียน", "เยี่ยมผ่านออนไลน์/โทรศัพท์"].map((type) => (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({ ...prev, visitType: type }))}
+                                            className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
+                                                formData.visitType === type
+                                                    ? "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300 shadow-sm"
+                                                    : "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-blue-200 dark:hover:border-blue-900"
+                                            }`}
+                                        >
+                                            <span className="text-sm font-black">{type}</span>
+                                            <span className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                                                formData.visitType === type ? "bg-blue-600 border-blue-600 text-white" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                                            }`}>
+                                                {formData.visitType === type && <Check size={12} strokeWidth={4} />}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
@@ -1101,6 +1590,46 @@ const NewHomeVisit: React.FC = () => {
                             </div>
                         </section>
 
+                        <section className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6">
+                            <h3 className="text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                <Home size={16} /> สถานะของครัวเรือนตามแบบคัดกรอง
+                            </h3>
+                            <div className="space-y-3">
+                                <Label>4.1 ครัวเรือนมีภาระพึ่งพิง</Label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {['มีคนพิการ', 'มีผู้สูงอายุเกิน 60 ปี', 'เป็นพ่อ/แม่เลี้ยงเดี่ยว', 'มีคนอายุ 15-65 ปีว่างงาน'].map(item => (
+                                        <label key={item} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.householdDependency.includes(item) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                            <input type="checkbox" checked={formData.householdDependency.includes(item)} onChange={() => toggleCheckbox('householdDependency', item)} className="w-4 h-4 accent-blue-600" />
+                                            <span className="text-xs font-bold">{item}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                {[
+                                    { name: 'vehiclePrivateCar', label: 'รถยนต์ส่วนบุคคล' },
+                                    { name: 'vehiclePickup', label: 'รถปิกอัพ/รถบรรทุกเล็ก/รถตู้' },
+                                    { name: 'vehicleFarmMachine', label: 'รถไถ/เกี่ยวข้าว/รถอีแต๋น/รถอื่นๆ' },
+                                ].map(item => (
+                                    <div key={item.name} className="space-y-2">
+                                        <Label>{item.label}</Label>
+                                        <RadioGroup name={item.name} options={["มี", "ไม่มี"]} value={(formData as any)[item.name]} onChange={handleInputChange} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="space-y-3">
+                                <Label>4.5 เป็นเกษตรกร มีที่ดินทำกิน (รวมเช่า)</Label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {['ไม่เกิน 1 ไร่', 'ไม่มีที่ดินเป็นของตนเอง'].map(item => (
+                                        <label key={item} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.farmlandStatus.includes(item) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                            <input type="checkbox" checked={formData.farmlandStatus.includes(item)} onChange={() => toggleCheckbox('farmlandStatus', item)} className="w-4 h-4 accent-blue-600" />
+                                            <span className="text-xs font-bold">{item}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </section>
+
                         {/* 2.2 รายละเอียดรายบุคคล */}
                         <section className="space-y-6">
                             <div className="flex justify-between items-center">
@@ -1121,19 +1650,45 @@ const NewHomeVisit: React.FC = () => {
                                             </button>
                                         </div>
                                         <div className="space-y-4 pt-4">
-                                            <div className="space-y-1.5">
-                                                <Label>ชื่อ-นามสกุล / ความสัมพันธ์</Label>
-                                                <input type="text" value={member.name} onChange={(e) => handleFamilyMemberChange(member.id, 'name', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold outline-none" placeholder="..." />
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <Label>ความสัมพันธ์กับนักเรียน</Label>
+                                                    <input type="text" value={member.relationship || ''} onChange={(e) => handleFamilyMemberChange(member.id, 'relationship', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold outline-none" placeholder="เช่น บิดา, มารดา, ตา" />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label>ชื่อ-นามสกุล (อ้างอิงภายในระบบ)</Label>
+                                                    <input type="text" value={member.name} onChange={(e) => handleFamilyMemberChange(member.id, 'name', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold outline-none" placeholder="..." />
+                                                </div>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                                                 <div className="space-y-1.5">
                                                     <Label>อายุ (ปี)</Label>
                                                     <input type="number" value={member.age} onChange={(e) => handleFamilyMemberChange(member.id, 'age', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-center outline-none" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label>รายรับ (บาท/เดือน)</Label>
-                                                    <input type="number" value={member.income} onChange={(e) => handleFamilyMemberChange(member.id, 'income', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-black text-blue-600 outline-none" />
+                                                    <Label>ความพิการ (✓ หรือ -)</Label>
+                                                    <input type="text" value={member.disability || ''} onChange={(e) => handleFamilyMemberChange(member.id, 'disability', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-center outline-none" placeholder="-" />
                                                 </div>
+                                                <div className="space-y-1.5">
+                                                    <Label>รายได้รวมเฉลี่ยต่อเดือน</Label>
+                                                    <input type="number" value={member.totalIncome || member.income} onChange={(e) => handleFamilyMemberChange(member.id, 'totalIncome', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-black text-blue-600 outline-none" />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 items-end">
+                                                {[
+                                                    { field: 'wageIncome', label: 'ค่าจ้าง/เงินเดือน' },
+                                                    { field: 'agricultureIncome', label: 'เกษตร หลังหักค่าใช้จ่าย' },
+                                                    { field: 'businessIncome', label: 'ธุรกิจส่วนตัว หลังหักค่าใช้จ่าย' },
+                                                    { field: 'welfareIncome', label: 'สวัสดิการรัฐ/เอกชน' },
+                                                    { field: 'otherIncome', label: 'รายได้จากแหล่งอื่น' },
+                                                ].map(item => (
+                                                    <div key={item.field} className="flex min-h-[76px] flex-col justify-end gap-1.5">
+                                                        <label className="min-h-[34px] flex items-end text-[11px] font-black leading-tight text-slate-500 dark:text-slate-400">
+                                                            {item.label}
+                                                        </label>
+                                                        <input type="number" value={(member as any)[item.field] || ''} onChange={(e) => handleFamilyMemberChange(member.id, item.field as keyof FamilyMember, e.target.value)} className="w-full h-10 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 text-sm font-bold outline-none dark:text-white" placeholder="0" />
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>
@@ -1203,6 +1758,98 @@ const NewHomeVisit: React.FC = () => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    <div className="space-y-1.5">
+                                        <Label>5.1 สมาชิกในครอบครัวมีเวลาอยู่ร่วมกัน</Label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="number" name="hoursTogetherPerDay" value={formData.hoursTogetherPerDay} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="0" />
+                                            <span className="text-xs font-bold text-slate-400">ชม./วัน</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>5.4 รายได้ครัวเรือนเฉลี่ยต่อคน</Label>
+                                        <input type="number" name="householdIncomeAverage" value={formData.householdIncomeAverage} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="บาท" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>นักเรียนได้เงินมาโรงเรียนวันละ</Label>
+                                        <input type="number" name="studentAllowancePerDay" value={formData.studentAllowancePerDay} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="บาท" />
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <Label>5.3 กรณีที่ผู้ปกครองไม่อยู่บ้าน ฝากเด็กนักเรียนอยู่บ้านกับใคร</Label>
+                                    <RadioGroup name="caregiverWhenParentsAway" options={["ญาติ", "เพื่อนบ้าน", "นักเรียนอยู่บ้านด้วยตนเอง", "อื่นๆ"]} value={formData.caregiverWhenParentsAway} onChange={handleInputChange} />
+                                    {formData.caregiverWhenParentsAway === "อื่นๆ" && (
+                                        <input type="text" name="caregiverWhenParentsAwayOther" value={formData.caregiverWhenParentsAwayOther} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="ระบุผู้ดูแล" />
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    <div className="space-y-1.5">
+                                        <Label>5.5 นักเรียนได้รับค่าใช้จ่ายจาก</Label>
+                                        <input type="text" name="expensePayer" value={formData.expensePayer} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>นักเรียนทำงานหารายได้ อาชีพ</Label>
+                                        <input type="text" name="extraJobDetail" value={formData.extraJobDetail} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="ถ้าไม่มี เว้นว่างได้" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>รายได้วันละ</Label>
+                                        <input type="number" name="extraIncome" value={formData.extraIncome} onChange={handleInputChange} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold outline-none dark:text-white" placeholder="บาท" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-6 border-t border-slate-100 dark:border-slate-800">
+                                    <div className="space-y-4">
+                                        <Label>5.6 สิ่งที่ผู้ปกครองต้องการให้โรงเรียนช่วยเหลือนักเรียน</Label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {['ด้านการเรียน', 'ด้านพฤติกรรม', 'ด้านเศรษฐกิจ (เช่น ขอรับทุน)', 'อื่นๆ'].map(item => (
+                                                <label key={item} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
+                                                    ${formData.schoolAssistanceNeeded.includes(item)
+                                                        ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                                                        : 'bg-slate-50 dark:bg-slate-900 border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                                    <input type="checkbox" checked={formData.schoolAssistanceNeeded.includes(item)} onChange={() => toggleCheckbox('schoolAssistanceNeeded', item)} className="w-4 h-4 accent-blue-600" />
+                                                    <span className="text-xs font-bold">{item}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {formData.schoolAssistanceNeeded.includes('อื่นๆ') && (
+                                            <input
+                                                type="text"
+                                                name="schoolAssistanceNeededDetail"
+                                                value={formData.schoolAssistanceNeededDetail}
+                                                onChange={handleInputChange}
+                                                placeholder="โปรดระบุรายละเอียดเพิ่มเติม..."
+                                                className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm"
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="space-y-4">
+                                        <Label>5.7 ความช่วยเหลือที่ครอบครัวเคยได้รับจากหน่วยงานหรือต้องการได้รับ</Label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                            {['เบี้ยผู้สูงอายุ', 'เบี้ยพิการ', 'อื่นๆ'].map(item => (
+                                                <label key={item} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.assistanceReceived.includes(item) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-900 border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                                    <input type="checkbox" checked={formData.assistanceReceived.includes(item)} onChange={() => toggleCheckbox('assistanceReceived', item)} className="w-4 h-4 accent-blue-600" />
+                                                    <span className="text-xs font-bold">{item}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {formData.assistanceReceived.includes('อื่นๆ') && (
+                                            <input
+                                                type="text"
+                                                name="assistanceReceivedOther"
+                                                value={formData.assistanceReceivedOther}
+                                                onChange={handleInputChange}
+                                                placeholder="โปรดระบุความช่วยเหลืออื่นๆ..."
+                                                className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm"
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="lg:col-span-2 space-y-2">
+                                        <Label>5.8 ข้อห่วงใยของผู้ปกครองที่มีต่อนักเรียน</Label>
+                                        <textarea name="parentConcerns" value={formData.parentConcerns} onChange={handleInputChange} className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold min-h-[100px] text-sm" placeholder="ระบุรายละเอียด หากไม่มีให้เว้นว่าง" />
+                                    </div>
+                                </div>
+                            </div>
                         </section>
                     </div>
                 );
@@ -1210,12 +1857,12 @@ const NewHomeVisit: React.FC = () => {
                 const riskGroups = [
                     { id: 'healthRisk', label: '6.1 สุขภาพ', color: 'blue', options: ['ร่างกายไม่แข็งแรง', 'มีโรคประจำตัวหรือเจ็บป่วยบ่อย', 'มีภาวะทุพโภชนาการ', 'ป่วยเป็นโรคร้ายแรง/เรื้อรัง', 'สมรรถภาพร่างกายต่ำ'] },
                     { id: 'welfareRisk', label: '6.2 สวัสดิการหรือความปลอดภัย', color: 'blue', options: ['พ่อแม่แยกทางกันหรือแต่งงานใหม่', 'เล่นการพนัน', 'มีบุคคลในครอบครัวเจ็บป่วยด้วยโรคร้ายแรง/เรื้อรัง/ติดต่อ', 'บุคคลในครอบครัวติดสารเสพติด', 'บุคคลในครอบครัวเล่นการพนัน', 'มีความขัดแย้ง/ทะเลาะกันในครอบครัว', 'ความขัดแย้งและมีการใช้ความรุนแรงในครอบครัว', 'ไม่มีผู้ดูแล', 'ถูกทารุณ/ทำร้ายจากบุคคลในครอบครัว/เพื่อนบ้าน', 'ถูกล่วงละเมิดทางเพศ'] },
-                    { id: 'studentResponsibilities', label: '6.5 ภาระงานความรับผิดชอบ', color: 'blue', options: ['ช่วยงานบ้าน', 'ช่วยดูแลคนเจ็บป่วย/พิการ', 'ช่วยค้าขายเล็กๆ น้อยๆ', 'ทำงานพิเศษแถวบ้าน', 'ช่วยงานในนาไร่', 'อื่นๆ'] },
-                    { id: 'studentHobbies', label: '6.6 กิจกรรมยามว่างหรืออดีเรก', color: 'blue', options: ['ดูโทรทัศน์/ฟังเพลง', 'ไปเที่ยวห้าง/ดูหนัง', 'อ่านหนังสือ', 'ไปบ้านเพื่อน/เพื่อน', 'แว้น/สก๊อย', 'เล่นเกม คอมพิวเตอร์/มือถือ', 'ไปสวนสาธารณะ', 'เล่นดนตรี', 'เรียนพิเศษ', 'อื่นๆ'] },
-                    { id: 'drugRisk', label: '6.7 พฤติกรรมการใช้สารเสพติด', color: 'blue', options: ['คบเพื่อนในกลุ่มที่ใช้สารเสพติด', 'สมาชิกในครอบครัวข้องเกี่ยวกับยาเสพติด', 'อยู่ในสภาพแวดล้อมที่ใช้สารเสพติด', 'ปัจจุบันเกี่ยวข้องกับสารเสพติด', 'เป็นผู้จำหน่าย สุรา หรือการใช้สารเสพติดอื่นๆ'] },
-                    { id: 'violenceRisk', label: '6.8 พฤติกรรมการใช้ความรุนแรง', color: 'blue', options: ['มีการทะเลาะวิวาท', 'ก้าวร้าว เกเร', 'ทะเลาะวิวาทเป็นประจำ', 'ทำร้ายร่างกายผู้อื่น', 'ทำร้ายร่างกายตนเอง', 'อื่นๆ'] },
-                    { id: 'sexualRisk', label: '6.9 พฤติกรรมทางเพศ', color: 'blue', options: ['อยู่ในกลุ่มขายบริการ', 'ใช้เครื่องมือสื่อสารที่เกี่ยวข้องกับด้านเพศเป็นเวลานานและบ่อยครั้ง', 'ขายบริการทางเพศ', 'หมกมุ่นในการใช้เครื่องมือสื่อสารที่เกี่ยวข้องทางเพศ', 'มีการมั่วสุมทางเพศ', 'ตั้งครรภ์'] },
-                    { id: 'gameRisk', label: '6.10 การติดเกม', color: 'blue', options: ['เล่นเกมเกินวันละ 1 ชั่วโมง', 'ขาดจินตนาการและความคิดสร้างสรรค์', 'เก็บตัว แยกตัวจากกลุ่มเพื่อน', 'ใช้จ่ายเงินผิดปกติ', 'อยู่ในกลุ่มเพื่อนติดเกม', 'ร้านเกมอยู่ใกล้บ้านหรือโรงเรียน', 'เล่นเกมเกินวันละ 2 ชั่วโมง', 'หมกมุ่น จริงจังในการเล่นเกม', 'ใช้เงินสิ้นเปลือง โกหก ลักขโมยเพื่อเล่นเกม', 'อื่นๆ'] },
+                    { id: 'studentResponsibilities', label: '6.4 ภาระงานความรับผิดชอบของนักเรียนที่มีต่อครอบครัว', color: 'blue', options: ['ช่วยงานบ้าน', 'ช่วยดูแลคนเจ็บป่วย/พิการ', 'ช่วยค้าขายเล็กๆน้อยๆ', 'ทำงานแถวบ้าน', 'ช่วยงานในนาไร่', 'อื่นๆ'] },
+                    { id: 'studentHobbies', label: '6.5 กิจกรรมยามว่างหรืองานอดิเรก', color: 'blue', options: ['ดูทีวี / ฟังเพลง', 'ไปเที่ยวห้าง / ดูหนัง', 'อ่านหนังสือ', 'ไปหาเพื่อน / เพื่อน', 'แว้น / สก๊อย', 'เล่นเกม คอม / มือถือ', 'ไปสวนสาธารณะ', 'ไปร้านสนุกเกอร์', 'อื่นๆ'] },
+                    { id: 'drugRisk', label: '6.6 พฤติกรรมการใช้สารเสพติด', color: 'blue', options: ['คบเพื่อนในกลุ่มที่ใช้สารเสพติด', 'สมาชิกในครอบครัวข้องเกี่ยวกับยาเสพติด', 'อยู่ในสภาพแวดล้อมที่ใช้สารเสพติด', 'ปัจจุบันเกี่ยวข้องกับสารเสพติด', 'เป็นผู้ติดบุหรี่ สุรา หรือการใช้สารเสพติดอื่นๆ'] },
+                    { id: 'violenceRisk', label: '6.7 พฤติกรรมการใช้ความรุนแรง', color: 'blue', options: ['มีการทะเลาะวิวาท', 'ก้าวร้าว เกเร', 'ทะเลาะวิวาทเป็นประจำ', 'ทำร้ายร่างกายผู้อื่น', 'ทำร้ายร่างกายตนเอง'] },
+                    { id: 'sexualRisk', label: '6.8 พฤติกรรมทางเพศ', color: 'blue', options: ['อยู่ในกลุ่มขายบริการ', 'ใช้เครื่องมือสื่อสารที่เกี่ยวข้องกับด้านเพศเป็นเวลานานและบ่อยครั้ง', 'ตั้งครรภ์', 'ขายบริการทางเพศ', 'หมกมุ่นในการใช้เครื่องมือสื่อสารที่เกี่ยวข้องทางเพศ', 'มีการมั่วสุมทางเพศ'] },
+                    { id: 'gameRisk', label: '6.9 การติดเกม', color: 'blue', options: ['เล่นเกมเกินวันละ 1 ชั่วโมง', 'ขาดจินตนาการและความคิดสร้างสรรค์', 'เก็บตัว แยกตัวจากกลุ่มเพื่อน', 'ใช้จ่ายเงินผิดปกติ', 'อยู่ในกลุ่มเพื่อนเล่นเกม', 'ร้านเกมอยู่ใกล้บ้านหรือโรงเรียน', 'ใช้เวลาเล่นเกมเกิน 2 ชั่วโมง', 'หมกมุ่น จริงจังในการเล่นเกม', 'ใช้เงินสิ้นเปลือง โกหก ลักขโมยเงินเพื่อเล่นเกม', 'อื่นๆ'] },
                 ];
 
                 return (
@@ -1262,16 +1909,16 @@ const NewHomeVisit: React.FC = () => {
                                 </div>
                             ))}
 
-                            {/* Special Radio Sections for 6.11 and 6.12 */}
+                            {/* Special Radio Sections for 6.10 and 6.11 */}
                             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
                                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-5">
                                     <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                        <Activity size={16} className="text-blue-600" /> 6.11 การเข้าถึงคอมพิวเตอร์และอินเทอร์เน็ต
+                                        <Activity size={16} className="text-blue-600" /> 6.10 การเข้าถึงสื่อคอมพิวเตอร์และอินเทอร์เน็ตที่บ้าน
                                     </h4>
                                     <div className="space-y-2">
                                         {[
-                                            'สามารถเข้าถึงอินเทอร์เน็ตได้จากที่อยู่อาศัย',
-                                            'ไม่สามารถเข้าถึงอินเทอร์เน็ตได้จากที่อยู่อาศัย'
+                                            'สามารถเข้าถึง Internet ได้จากที่บ้าน',
+                                            'ไม่สามารถเข้าถึง Internet ได้จากที่บ้าน'
                                         ].map(opt => (
                                             <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
                                                 ${formData.computerAccess === opt
@@ -1286,22 +1933,47 @@ const NewHomeVisit: React.FC = () => {
 
                                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-5">
                                     <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                        <Activity size={16} className="text-blue-600" /> 6.12 การใช้เครื่องมือสื่อสารอิเล็กทรอนิกส์
+                                        <Activity size={16} className="text-blue-600" /> 6.11 การใช้เครื่องมือสื่อสารอิเล็กทรอนิกส์
                                     </h4>
                                     <div className="space-y-2">
                                         {[
-                                            'ใช้โซเชียลมีเดีย/เกม (ไม่เกินวันละ 3 ชั่วโมง)',
-                                            'ใช้โซเชียลมีเดีย/เกม (วันละ 3 ชั่วโมงขึ้นไป)'
+                                            'เคยใช้โทรศัพท์มือถือในระหว่างการเรียน',
+                                            'เข้าใช้ line, Facebook, twitter หรือ chat (เกินวันละ 1 ชั่วโมง)',
+                                            'ใช้โทรศัพท์มือถือในระหว่างเรียน 2 - 3/วัน',
+                                            'เข้าใช้ line, Facebook, twitter หรือ chat (เกินวันละ 2 ชั่วโมง)'
                                         ].map(opt => (
                                             <label key={opt} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
-                                                ${formData.electronicUsage === opt
+                                                ${formData.electronicUsage.includes(opt)
                                                     ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
                                                     : 'bg-slate-50 dark:bg-slate-900/50 border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                                                <input type="radio" checked={formData.electronicUsage === opt} onChange={() => setFormData(p => ({ ...p, electronicUsage: opt }))} className="w-4 h-4 accent-blue-600" />
+                                                <input type="checkbox" checked={formData.electronicUsage.includes(opt)} onChange={() => toggleCheckbox('electronicUsage', opt)} className="w-4 h-4 rounded accent-blue-600" />
                                                 <span className="text-xs font-bold">{opt}</span>
                                             </label>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="md:col-span-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-4">
+                                <h4 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                    <User size={16} className="text-blue-600" /> ผู้ให้ข้อมูลนักเรียน
+                                </h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                                    {['บิดา', 'มารดา', 'พี่ชาย', 'พี่สาว', 'น้า', 'อา', 'ป้า', 'ลุง', 'ปู่', 'ย่า', 'ตา', 'ยาย', 'ทวด', 'พ่อเลี้ยง', 'แม่เลี้ยง'].map(item => (
+                                        <label key={item} className={`flex items-center gap-2 rounded-lg border p-3 cursor-pointer transition-all ${
+                                            formData.informantRelationship === item
+                                                ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                                                : 'bg-slate-50 dark:bg-slate-900/50 border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-600 dark:text-slate-400'
+                                        }`}>
+                                            <input
+                                                type="radio"
+                                                checked={formData.informantRelationship === item}
+                                                onChange={() => setFormData(prev => ({ ...prev, informantRelationship: item }))}
+                                                className="w-4 h-4 accent-blue-600"
+                                            />
+                                            <span className="text-xs font-bold">{item}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -1310,50 +1982,75 @@ const NewHomeVisit: React.FC = () => {
             }
             case 3: // Step 4: GPS & Photos
                 return (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* GPS Card - Professional */}
-                            <div className="bg-slate-900 rounded-2xl p-8 text-white shadow-xl flex flex-col justify-between min-h-[300px] relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-8 opacity-10">
-                                    <MapPin size={120} />
-                                </div>
-                                <div className="relative z-10 space-y-4">
-                                    <div className="flex items-center gap-2 text-blue-400">
-                                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                                        <span className="text-[10px] font-bold uppercase tracking-widest">Geolocation System</span>
+                    <div className="space-y-5 sm:space-y-6 lg:space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-8">
+                            {/* GPS Card */}
+                            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 lg:p-6 shadow-sm space-y-5">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-3 min-w-0">
+                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 flex items-center justify-center shrink-0">
+                                            <MapPin size={24} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">ตำแหน่งบ้านนักเรียน</p>
+                                            <h4 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">พิกัดสำหรับการเยี่ยมบ้าน</h4>
+                                            <p className="text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed mt-1">ใช้พิกัดจากอุปกรณ์ขณะอยู่บริเวณบ้านนักเรียน</p>
+                                        </div>
                                     </div>
-                                    <h4 className="text-2xl font-black">พิกัดตำแหน่งบ้าน</h4>
-                                    <p className="text-slate-400 text-sm font-bold leading-relaxed max-w-xs">ระบุตำแหน่งที่ตั้งบ้านของนักเรียนเพื่อใช้ในการวางแผนการดูแลและช่วยเหลือ</p>
+                                    <div className={`hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-black ${
+                                        gps
+                                            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
+                                            : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                                    }`}>
+                                        <span className={`w-2 h-2 rounded-full ${gps ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                        {gps ? "มีพิกัดแล้ว" : "ยังไม่มีพิกัด"}
+                                    </div>
                                 </div>
 
-                                <div className="relative z-10 space-y-6">
-                                    <div className="text-4xl font-mono font-black text-blue-500 tracking-tighter">
-                                        {gps ? `${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)}` : "---.------, ---.------"}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 p-4">
+                                        <p className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500">ละติจูด</p>
+                                        <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white break-all">{gps ? gps.lat.toFixed(6) : "--.------"}</p>
                                     </div>
+                                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 p-4">
+                                        <p className="text-[10px] font-black tracking-widest text-slate-400 dark:text-slate-500">ลองจิจูด</p>
+                                        <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white break-all">{gps ? gps.lng.toFixed(6) : "--.------"}</p>
+                                    </div>
+                                </div>
+
+                                <div>
                                     <button
                                         onClick={getCurrentLocation}
                                         disabled={gettingGps}
-                                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-blue-500/20"
+                                        className="w-full h-12 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm shadow-blue-500/20 transition-all hover:bg-blue-700 disabled:opacity-50 active:scale-[0.99] flex items-center justify-center gap-2.5"
                                     >
-                                        {gettingGps ? <Loader2 className="animate-spin" size={20} /> : <MapPin size={20} />}
-                                        {gps ? "อัปเดตตำแหน่งปัจจุบัน" : "ดึงพิกัดตำแหน่งปัจจุบัน"}
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
+                                            {gettingGps ? <Loader2 className="animate-spin" size={16} /> : <Navigation size={16} />}
+                                        </span>
+                                        <span>{gps ? "อัปเดตพิกัด" : "ดึงพิกัดปัจจุบัน"}</span>
                                     </button>
+                                </div>
+
+                                <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 px-4 py-3">
+                                    <p className="text-xs font-bold leading-relaxed text-amber-800 dark:text-amber-200">
+                                        ควรกดดึงพิกัดเมื่ออยู่หน้าบ้านหรือบริเวณที่พักจริง เพื่อให้ข้อมูลในรายงานแม่นยำที่สุด
+                                    </p>
                                 </div>
                             </div>
 
                             {/* Photo Upload Section */}
-                            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-8 space-y-6 flex flex-col">
-                                <div className="flex justify-between items-center">
+                            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 lg:p-8 space-y-5 sm:space-y-6 flex flex-col">
+                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                                     <div className="space-y-1">
                                         <h4 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
                                             <Camera size={20} className="text-blue-600" /> ภาพถ่ายขณะเยี่ยมบ้าน
                                         </h4>
                                         <p className="text-xs text-slate-500 dark:text-slate-400 font-bold italic">* ถ่ายภาพนักเรียนร่วมกับครูและผู้ดูแล</p>
                                     </div>
-                                    <label className="cursor-pointer bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
-                                        <Plus size={14} /> เลือกรูปภาพ
-                                        <input type="file" multiple accept="image/jpeg,image/png" className="hidden" onChange={(e) => handlePhotoChange(e, 'external')} />
-                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full sm:w-auto sm:min-w-[280px]">
+                                        <PhotoActionButton label="ถ่ายภาพ" mode="camera" onChange={(e) => handlePhotoChange(e, 'external')} />
+                                        <PhotoActionButton label="อัปโหลด" mode="upload" multiple onChange={(e) => handlePhotoChange(e, 'external')} />
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 flex-grow min-h-[200px]">
@@ -1361,11 +2058,12 @@ const NewHomeVisit: React.FC = () => {
                                         <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-100 dark:border-slate-700 group">
                                             <img src={p} className="w-full h-full object-cover" alt="Home Visit" />
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     setPhotosExternal(prev => prev.filter((_, i) => i !== idx));
                                                     setPreviewsExternal(prev => prev.filter((_, i) => i !== idx));
                                                 }}
-                                                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 shadow-lg"
+                                                className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shadow-lg"
                                             >
                                                 <X size={12} />
                                             </button>
@@ -1382,7 +2080,7 @@ const NewHomeVisit: React.FC = () => {
                         </div>
 
                         {/* New Advanced Photo Sections */}
-                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-8">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 lg:p-6 space-y-5 sm:space-y-8">
                             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">การขออนุญาตถ่ายภาพบริเวณที่พักอาศัย</h4>
@@ -1406,59 +2104,22 @@ const NewHomeVisit: React.FC = () => {
 
                             {formData.parentHousePhotoPermission === 'อนุญาต' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Exterior Photo */}
-                                    <div className="space-y-4">
-                                        <div className="flex justify-between items-end">
-                                            <div className="space-y-1">
-                                                <Label>ภาพถ่ายเห็นหลังคาบ้าน (ลักษณะภายนอก)</Label>
-                                                <span className="text-[10px] text-slate-400 font-bold italic">(เลือกหรือไม่เลือกก็ได้)</span>
-                                            </div>
-                                            {exteriorPreview && (
-                                                <button onClick={() => { setExteriorPhoto(null); setExteriorPreview(null); }} className="text-[10px] font-bold text-rose-500 hover:text-rose-600">ลบรูปภาพ</button>
-                                            )}
-                                        </div>
-                                        <label className={`relative h-48 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all overflow-hidden bg-white dark:bg-slate-900
-                                            ${exteriorPreview ? 'border-blue-500' : 'border-slate-200 dark:border-slate-800 hover:border-blue-400'}`}>
-                                            {exteriorPreview ? (
-                                                <img src={exteriorPreview} className="w-full h-full object-cover" alt="Exterior" />
-                                            ) : (
-                                                <>
-                                                    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                                                        <Home size={24} />
-                                                    </div>
-                                                    <span className="text-xs font-black text-slate-400 tracking-widest uppercase">ถ่ายรูปหลังคาบ้าน</span>
-                                                </>
-                                            )}
-                                            <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'exterior')} />
-                                        </label>
-                                    </div>
-
-                                    {/* Interior Photo */}
-                                    <div className="space-y-4">
-                                        <div className="flex justify-between items-end">
-                                            <div className="space-y-1">
-                                                <Label>ภาพถ่ายเห็นข้างในบ้าน (สภาพความเป็นอยู่)</Label>
-                                                <span className="text-[10px] text-slate-400 font-bold italic">(เลือกหรือไม่เลือกก็ได้)</span>
-                                            </div>
-                                            {interiorPreview && (
-                                                <button onClick={() => { setInteriorPhoto(null); setInteriorPreview(null); }} className="text-[10px] font-bold text-rose-500 hover:text-rose-600">ลบรูปภาพ</button>
-                                            )}
-                                        </div>
-                                        <label className={`relative h-48 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all overflow-hidden bg-white dark:bg-slate-900
-                                            ${interiorPreview ? 'border-blue-500' : 'border-slate-200 dark:border-slate-800 hover:border-blue-400'}`}>
-                                            {interiorPreview ? (
-                                                <img src={interiorPreview} className="w-full h-full object-cover" alt="Interior" />
-                                            ) : (
-                                                <>
-                                                    <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                                                        <Eye size={24} />
-                                                    </div>
-                                                    <span className="text-xs font-black text-slate-400 tracking-widest uppercase">ถ่ายรูปในบ้าน</span>
-                                                </>
-                                            )}
-                                            <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'interior')} />
-                                        </label>
-                                    </div>
+                                    <SinglePhotoField
+                                        title="ภาพถ่ายเห็นหลังคาบ้าน"
+                                        hint="ลักษณะภายนอกของบ้าน เลือกถ่ายจากกล้องหรืออัปโหลดจากเครื่องได้"
+                                        preview={exteriorPreview}
+                                        type="exterior"
+                                        icon={Home}
+                                        onClear={() => { setExteriorPhoto(null); setExteriorPreview(null); }}
+                                    />
+                                    <SinglePhotoField
+                                        title="ภาพถ่ายเห็นข้างในบ้าน"
+                                        hint="สภาพความเป็นอยู่ภายในบ้าน เลือกถ่ายจากกล้องหรืออัปโหลดจากเครื่องได้"
+                                        preview={interiorPreview}
+                                        type="interior"
+                                        icon={Eye}
+                                        onClear={() => { setInteriorPhoto(null); setInteriorPreview(null); }}
+                                    />
                                 </div>
                             ) : (
                                 <div className="p-8 border-2 border-dashed border-blue-200 dark:border-blue-900/30 rounded-3xl bg-blue-50/50 dark:bg-blue-950/20 text-center space-y-6">
@@ -1471,51 +2132,47 @@ const NewHomeVisit: React.FC = () => {
                                             เมื่อผู้ปกครองไม่ประสงค์ให้บันทึกภาพในบ้าน ให้ครูถ่ายภาพนักเรียนคู่กับป้ายหน้าโรงเรียน หรือสถานที่ราชการในชุมชนทดแทนได้
                                         </p>
                                     </div>
-                                    <label className={`relative h-56 max-w-md mx-auto border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all overflow-hidden bg-white dark:bg-slate-800
-                                        ${schoolSignPreview ? 'border-blue-500' : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'}`}>
-                                        {schoolSignPreview ? (
-                                            <img src={schoolSignPreview} className="w-full h-full object-cover" alt="School Sign" />
-                                        ) : (
-                                            <>
-                                                <div className="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500">
-                                                    <Save size={32} />
-                                                </div>
-                                                <span className="text-xs font-black text-blue-600 tracking-widest uppercase">อัปโหลดรูปป้ายโรงเรียน</span>
-                                            </>
-                                        )}
-                                        <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'schoolSign')} />
-                                    </label>
+                                    <div className="max-w-md mx-auto text-left">
+                                        <SinglePhotoField
+                                            title="ภาพนักเรียนกับป้ายโรงเรียน"
+                                            hint="ใช้แทนภาพบ้านเมื่อไม่ได้รับอนุญาตให้ถ่ายภาพบริเวณบ้าน"
+                                            preview={schoolSignPreview}
+                                            type="schoolSign"
+                                            icon={Save}
+                                            onClear={() => { setSchoolSignPhoto(null); setSchoolSignPreview(null); }}
+                                        />
+                                    </div>
                                 </div>
                             )}
                         </div>
 
                         <div className="pt-8 border-t border-slate-100 dark:border-white/5">
-                            <div className="flex items-center justify-between mb-4">
-                                <Label>แผนที่สังเขป (Sketch Map)</Label>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">(ไม่บังคับ)</span>
-                                    {sketchMapPreview && (
-                                        <button onClick={() => { setSketchMapPhoto(null); setSketchMapPreview(null); }} className="text-[10px] font-bold text-rose-500 hover:text-rose-600">ลบแผนที่</button>
-                                    )}
+                            <SinglePhotoField
+                                title="แผนที่สังเขป"
+                                hint="ไม่บังคับ สามารถถ่ายภาพแผนที่ที่วาดไว้หรืออัปโหลดภาพจากเครื่อง"
+                                preview={sketchMapPreview}
+                                type="sketchMap"
+                                icon={Map}
+                                onClear={() => { setSketchMapPhoto(null); setSketchMapPreview(null); }}
+                                accent="indigo"
+                            />
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 sm:p-6 space-y-5">
+                            <div className="space-y-1">
+                                <h4 className="text-sm font-black text-slate-800 dark:text-white">คำรับรองข้อมูลและภาพถ่ายบ้านของนักเรียน</h4>
+                                <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500">ส่วนนี้จะลงในกรอบคำรับรองท้ายหน้า 4 ของ PDF</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>ตำแหน่งผู้รับรอง</Label>
+                                    <input type="text" name="teacherPosition" value={formData.teacherPosition} onChange={handleInputChange} className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm" placeholder="ครู / ผู้อำนวยการโรงเรียน" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>หมายเหตุเพิ่มเติมจากครูผู้เยี่ยม</Label>
+                                    <input type="text" name="teacherComments" value={formData.teacherComments} onChange={handleInputChange} className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm" placeholder="หากไม่มีให้เว้นว่าง" />
                                 </div>
                             </div>
-                            <label className={`w-full h-48 rounded-[2rem] border-2 border-dashed flex flex-col items-center justify-center gap-4 cursor-pointer transition-all overflow-hidden bg-white dark:bg-slate-900/50 group/map
-                                ${sketchMapPreview ? 'border-indigo-500' : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400'}`}>
-                                {sketchMapPreview ? (
-                                    <img src={sketchMapPreview} className="w-full h-full object-cover shadow-inner" alt="Sketch Map" />
-                                ) : (
-                                    <>
-                                        <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover/map:text-indigo-500 transition-colors">
-                                            <Map size={32} />
-                                        </div>
-                                        <div className="text-center">
-                                            <span className="text-xs font-black text-slate-500 dark:text-slate-400 tracking-widest uppercase block">อัปโหลดแผนที่ทางอากาศ/สังเขป</span>
-                                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 italic">รองรับไฟล์ภาพ JPG, PNG</p>
-                                        </div>
-                                    </>
-                                )}
-                                <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => handleSinglePhotoChange(e, 'sketchMap')} />
-                            </label>
                         </div>
                     </div>
                 );
@@ -1556,10 +2213,41 @@ const NewHomeVisit: React.FC = () => {
 
                             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 space-y-6">
                                 <div className="space-y-3">
-                                    <Label>9. ความช่วยเหลือที่ครอบครัวเคยได้รับจากหน่วยงานหรือต้องการได้รับความช่วยเหลือ</Label>
+                                    <Label>5.7 ความช่วยเหลือที่ครอบครัวเคยได้รับจากหน่วยงานหรือต้องการได้รับการช่วยเหลือ</Label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        {['เบี้ยผู้สูงอายุ', 'เบี้ยพิการ', 'อื่นๆ'].map(item => (
+                                            <label key={item} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.assistanceReceived.includes(item) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-900 border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
+                                                <input type="checkbox" checked={formData.assistanceReceived.includes(item)} onChange={() => toggleCheckbox('assistanceReceived', item)} className="w-4 h-4 accent-blue-600" />
+                                                <span className="text-xs font-bold">{item}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {formData.assistanceReceived.includes('อื่นๆ') && (
+                                        <input
+                                            type="text"
+                                            name="assistanceReceivedOther"
+                                            value={formData.assistanceReceivedOther}
+                                            onChange={handleInputChange}
+                                            placeholder="โปรดระบุความช่วยเหลืออื่นๆ..."
+                                            className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm"
+                                        />
+                                    )}
+                                </div>
+                                <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <Label>ระดับความจำเป็นในการช่วยเหลือ (ใช้ในรายงานสรุป)</Label>
                                     <RadioGroup name="assistanceHistory" options={["มากที่สุด", "มาก", "ปานกลาง", "น้อย", "ไม่จำเป็น"]} value={formData.assistanceHistory} onChange={handleInputChange} />
                                 </div>
                                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>ผู้ให้ข้อมูลนักเรียน</Label>
+                                            <input type="text" name="informantRelationship" value={formData.informantRelationship} onChange={handleInputChange} className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm" placeholder="เช่น บิดา, มารดา, ยาย" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>ตำแหน่งผู้รับรองภาพถ่ายบ้าน</Label>
+                                            <input type="text" name="teacherPosition" value={formData.teacherPosition} onChange={handleInputChange} className="w-full px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold text-sm" placeholder="ครู / ผู้อำนวยการโรงเรียน" />
+                                        </div>
+                                    </div>
                                     <div className="space-y-2">
                                         <Label>หมายเหตุ/ข้อเสนอแนะเพิ่มเติมจากครูผู้เยี่ยม <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">(หากไม่มีไม่ต้องกรอก)</span></Label>
                                         <textarea name="teacherComments" value={formData.teacherComments} onChange={handleInputChange} className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 outline-none font-bold min-h-[100px] text-sm" placeholder="..." />
@@ -1646,27 +2334,6 @@ const NewHomeVisit: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Save Actions */}
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <button onClick={handleSubmit} disabled={submitting} className="flex-1 py-5 px-8 rounded-2xl bg-blue-600 text-white font-black text-lg border-b-4 border-blue-800 shadow-lg hover:brightness-110 active:scale-[0.98] active:border-b-0 transition-all flex items-center justify-center gap-4">
-                                {submitting ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
-                                บันทึกข้อมูลการเยี่ยมบ้าน
-                            </button>
-                            {previousVisit && (
-                                <button
-                                    type="button"
-                                    onClick={handleCopyPreviousVisit}
-                                    className="flex-1 py-5 px-8 rounded-2xl bg-emerald-600 text-white font-black text-lg border-b-4 border-emerald-800 shadow-lg hover:brightness-110 active:scale-[0.98] active:border-b-0 transition-all flex items-center justify-center gap-4"
-                                >
-                                    <RefreshCw size={24} />
-                                    ดึงข้อมูลจากการเยี่ยมบ้านครั้งก่อน
-                                </button>
-                            )}
-                            <button onClick={() => navigate(-1)} className="px-8 py-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 hover:text-rose-500 transition-all text-sm">
-                                ยกเลิก
-                            </button>
-                        </div>
                     </div>
                 );
             default:
@@ -1677,18 +2344,18 @@ const NewHomeVisit: React.FC = () => {
     return (
         <MainLayout>
             <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-500">
-                <div className="max-w-6xl mx-auto px-4 py-8">
+                <div className="max-w-[1500px] mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
                     {/* Header Banner - Professional & Clean */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-6">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                            <div className="flex items-center gap-5">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl lg:rounded-[1.75rem] shadow-sm border border-slate-200 dark:border-slate-800 p-4 sm:p-5 lg:p-6 mb-4 sm:mb-6">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 lg:gap-6">
+                            <div className="flex items-center gap-3 sm:gap-5 min-w-0">
                                 <ProfileAvatar
                                     src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName}+${student?.lastName}&background=1e40af&color=fff`}
-                                    className="w-16 h-16 border border-slate-100 dark:border-slate-800 shadow-sm bg-slate-50"
+                                    className="w-12 h-12 sm:w-16 sm:h-16 border border-slate-100 dark:border-slate-800 shadow-sm bg-slate-50 shrink-0"
                                     alt="profile"
                                 />
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2 mb-1">
                                         <button
                                             onClick={() => navigate("/student-support/home-visit")}
                                             className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 transition-colors"
@@ -1699,23 +2366,18 @@ const NewHomeVisit: React.FC = () => {
                                             สพฐ. เยี่ยมบ้าน-3
                                         </span>
                                     </div>
-                                    <h1 className="text-2xl font-black text-slate-800 dark:text-white">
+                                    <h1 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white truncate">
                                         {student ? `${student.title}${student.firstName} ${student.lastName}` : "กำลังโหลดข้อมูล..."}
                                     </h1>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold">
+                                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-bold truncate">
                                         เลขประจำตัว: {student?.studentId} • ชั้น {student?.classLevel}/{student?.room}
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex gap-3">
-                                <div className="text-right hidden sm:block">
+                            <div className="flex flex-wrap md:flex-nowrap gap-3 w-full md:w-auto">
+                                <div className="text-left md:text-right hidden sm:block flex-1 md:flex-none">
                                     <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">ปีการศึกษา</p>
-                                    <p className="text-lg font-black text-slate-700 dark:text-slate-200">2568 / ภาคเรียนที่ 1</p>
-                                </div>
-                                <div className="h-10 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2 hidden sm:block"></div>
-                                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
-                                    <CheckCircle2 size={16} />
-                                    <span className="text-xs font-bold font-['Sarabun']">แบบฟอร์มมาตรฐาน</span>
+                                    <p className="text-lg font-black text-slate-700 dark:text-slate-200">{formData.academicYear} / ภาคเรียนที่ {formData.semester}</p>
                                 </div>
                             </div>
                         </div>
@@ -1749,73 +2411,131 @@ const NewHomeVisit: React.FC = () => {
                     )}
 
                     {/* Main Form Container */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
-                        {/* Professional Stepper */}
-                        <div className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-6 py-4">
-                            <div className="flex items-center justify-between max-w-4xl mx-auto table-responsive gap-4 custom-scrollbar pb-2 md:pb-0">
-                                {steps.map((s, idx) => (
-                                    <div key={idx} className="flex items-center shrink-0">
+                    <div className="space-y-4 lg:space-y-5">
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-3 sm:p-4">
+                            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                                <div className="flex items-center gap-3 lg:w-52 shrink-0">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 flex items-center justify-center">
+                                        <CurrentStepIcon size={20} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">ความคืบหน้า</p>
+                                            <p className="text-sm font-black text-slate-900 dark:text-white">{progressPercent}%</p>
+                                        </div>
+                                        <div className="mt-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                            <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <nav className="flex-1 min-w-0 flex gap-2 overflow-x-auto custom-scrollbar snap-x pb-1 lg:pb-0">
+                                {steps.map((s, idx) => {
+                                    const Icon = s.icon;
+                                    const active = idx === currentStep;
+                                    const done = idx < currentStep;
+                                    return (
                                         <button
+                                            key={s.title}
+                                            type="button"
                                             onClick={() => setCurrentStep(idx)}
-                                            className="flex items-center gap-3 group transition-all"
+                                            className={`min-w-[168px] sm:min-w-[190px] lg:min-w-[150px] xl:min-w-0 xl:flex-1 text-left flex items-start gap-2.5 p-3 rounded-xl transition-all snap-start ${
+                                                active
+                                                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                                                    : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                            }`}
                                         >
-                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs transition-all
-                                                ${idx === currentStep
-                                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                                                    : idx < currentStep
-                                                        ? 'bg-emerald-500 text-white'
-                                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
-                                            >
-                                                {idx < currentStep ? <Check size={14} /> : idx + 1}
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                                active
+                                                    ? "bg-white/15 text-white"
+                                                    : done
+                                                        ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300"
+                                                        : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                            }`}>
+                                                {done ? <Check size={15} /> : <Icon size={16} />}
                                             </div>
-                                            <div className="text-left">
-                                                <p className={`text-[11px] font-black uppercase tracking-wider transition-colors
-                                                    ${idx === currentStep ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-600'}`}>
-                                                    {s.title}
-                                                </p>
+                                            <div className="min-w-0">
+                                                <p className={`text-sm font-black ${active ? "text-white" : "text-slate-800 dark:text-slate-200"}`}>{idx + 1}. {s.title}</p>
+                                                <p className={`hidden sm:block text-[11px] font-bold leading-snug mt-0.5 ${active ? "text-blue-100" : "text-slate-400 dark:text-slate-500"}`}>{s.desc}</p>
                                             </div>
                                         </button>
-                                        {idx < steps.length - 1 && (
-                                            <div className="w-8 md:w-16 h-[1px] bg-slate-200 dark:bg-slate-800 mx-4 shrink-0" />
-                                        )}
+                                    );
+                                })}
+                                </nav>
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl lg:rounded-[1.75rem] shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col min-w-0">
+                            <div className="px-4 sm:px-5 md:px-8 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                                            <CurrentStepIcon size={22} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">ขั้นตอนที่ {currentStep + 1} จาก {steps.length}</p>
+                                            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">{steps[currentStep].title}</h2>
+                                            <p className="text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 mt-1">{steps[currentStep].desc}</p>
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Step content with standard padding */}
-                        <div className="p-6 md:p-10 min-h-[500px]">
-                            {renderStepContent()}
-                        </div>
-
-                        {/* Professional Footer Controls */}
-                        <div className="bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 px-8 py-5 flex justify-between items-center">
-                            <button
-                                onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
-                                disabled={currentStep === 0}
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all
-                                    ${currentStep === 0
-                                        ? 'opacity-0 pointer-events-none'
-                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}
-                            >
-                                <ChevronLeft size={16} /> ย้อนกลับ
-                            </button>
-
-                            <div className="flex gap-2">
-                                {steps.map((_, i) => (
-                                    <div key={i} className={`h-1.5 rounded-full transition-all duration-300
-                                        ${i === currentStep ? 'w-6 bg-blue-600' : 'w-1.5 bg-slate-300 dark:bg-slate-700'}`} />
-                                ))}
+                                    <div className="flex items-center gap-2">
+                                        {steps.map((_, i) => (
+                                            <button
+                                                key={i}
+                                                type="button"
+                                                onClick={() => setCurrentStep(i)}
+                                                className={`h-2 rounded-full transition-all ${i === currentStep ? "w-8 bg-blue-600" : i < currentStep ? "w-4 bg-emerald-500" : "w-2 bg-slate-300 dark:bg-slate-700"}`}
+                                                aria-label={`ไปขั้นตอนที่ ${i + 1}`}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
 
-                            {currentStep < steps.length - 1 ? (
+                            <div className="p-4 sm:p-5 md:p-8 min-h-[500px]">
+                                {renderStepContent()}
+                            </div>
+
+                            <div className="sticky bottom-0 z-20 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 px-4 sm:px-5 md:px-8 py-3 sm:py-5 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                                 <button
-                                    onClick={() => setCurrentStep(prev => Math.min(steps.length - 1, prev + 1))}
-                                    className="flex items-center gap-2 px-8 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-md shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
+                                    onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
+                                    disabled={currentStep === 0}
+                                    className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all ${
+                                        currentStep === 0
+                                            ? "opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm"
+                                    }`}
                                 >
-                                    ขั้นตอนถัดไป <ChevronRight size={16} />
+                                    <ChevronLeft size={16} /> ย้อนกลับ
                                 </button>
-                            ) : <div></div>}
+
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate(-1)}
+                                        className="flex items-center justify-center px-5 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 hover:text-rose-500 transition-all text-sm"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    {currentStep < steps.length - 1 ? (
+                                        <button
+                                            onClick={() => setCurrentStep(prev => Math.min(steps.length - 1, prev + 1))}
+                                            className="flex items-center justify-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-md shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95"
+                                        >
+                                            ขั้นตอนถัดไป <ChevronRight size={16} />
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={handleSubmit}
+                                            disabled={submitting}
+                                            className="flex items-center justify-center gap-3 px-8 py-3 bg-blue-600 text-white rounded-xl font-black text-sm shadow-md shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-60 transition-all active:scale-95"
+                                        >
+                                            {submitting ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                                            บันทึกข้อมูลการเยี่ยมบ้าน
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

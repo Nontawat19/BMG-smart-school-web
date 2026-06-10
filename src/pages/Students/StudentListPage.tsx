@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, storage, auth } from "@/firebase";
 import { collection, getDocs, query, orderBy, Timestamp, doc, deleteDoc, getDoc, where, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { ref, deleteObject } from "firebase/storage";
+import { ref, deleteObject, uploadBytes, getDownloadURL } from "firebase/storage";
 import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaFileExcel, FaFilter, FaSortNumericDown, FaIdCard } from "react-icons/fa";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown, Pencil } from "lucide-react";
 import { deleteStudentLookup } from "@/utils/studentLookupUtils";
 import Swal from 'sweetalert2';
 import { getLevelsByRange } from "@/utils/schoolUtils";
@@ -21,6 +21,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { isActiveStudentSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
 import { updateStudentReportSummaryForChange } from "@/utils/studentReportSummaryUtils";
+import { compressImage } from "@/utils/imageUtils";
 
 // กำหนด Type สำหรับข้อมูลนักเรียน
 interface Student {
@@ -125,6 +126,7 @@ export default function StudentListPage() {
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [selectedClassLevel, setSelectedClassLevel] = useState<string>('');
   const [selectedRoom, setSelectedRoom] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const { isDarkMode } = useTheme();
@@ -135,6 +137,8 @@ export default function StudentListPage() {
   const [sortBy, setSortBy] = useState<'studentNumber' | 'studentId' | 'latest'>('studentNumber');
   const [editingStudentNumberId, setEditingStudentNumberId] = useState<string | null>(null);
   const [editingBehaviorScoreId, setEditingBehaviorScoreId] = useState<string | null>(null);
+  const [selectedPhotoStudent, setSelectedPhotoStudent] = useState<Student | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const selectStyles: StylesConfig<any, false> = {
     control: (provided) => ({
@@ -293,6 +297,78 @@ export default function StudentListPage() {
       });
     } finally {
       setIsUpdating(null);
+    }
+  };
+
+  const handleStudentPhotoClick = (student: Student) => {
+    if (isUpdating) return;
+    setSelectedPhotoStudent(student);
+    photoInputRef.current?.click();
+  };
+
+  const handleStudentPhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file || !selectedPhotoStudent || !schoolId) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("กรุณาเลือกไฟล์รูปภาพเท่านั้น", {
+        position: "top-right",
+        theme: "dark",
+      });
+      return;
+    }
+
+    const student = selectedPhotoStudent;
+    setIsUpdating(student.id);
+
+    try {
+      const compressedFile = await compressImage(file, 600, 0.82, "image/jpeg");
+      const safeStudentId = (student.studentId || student.id).replace(/[^\w-]/g, "_");
+      const imageRef = ref(storage, `students/${schoolId}/${safeStudentId}_${Date.now()}.jpg`);
+      const snapshot = await uploadBytes(imageRef, compressedFile, { contentType: compressedFile.type });
+      const profileImageUrl = await getDownloadURL(snapshot.ref);
+
+      await updateDoc(doc(firestore, "school-settings", schoolId, "students", student.id), {
+        profileImageUrl,
+      });
+
+      await updateStudentReportSummaryForChange(
+        firestore,
+        schoolId,
+        student,
+        { ...student, profileImageUrl }
+      );
+
+      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, profileImageUrl } : s));
+
+      if (student.profileImageUrl) {
+        try {
+          await deleteObject(ref(storage, student.profileImageUrl));
+        } catch (deleteError) {
+          console.warn("Could not delete previous student image:", deleteError);
+        }
+      }
+
+      toast.success("อัปเดตรูปนักเรียนเรียบร้อยแล้ว", {
+        position: "top-right",
+        autoClose: 2000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        theme: "dark",
+      });
+    } catch (err) {
+      console.error("Error updating student photo: ", err);
+      toast.error("ไม่สามารถอัปเดตรูปนักเรียนได้", {
+        position: "top-right",
+        theme: "dark",
+      });
+    } finally {
+      setIsUpdating(null);
+      setSelectedPhotoStudent(null);
     }
   };
 
@@ -535,7 +611,7 @@ export default function StudentListPage() {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedClassLevel, selectedRoom]);
+  }, [searchTerm, selectedClassLevel, selectedRoom, selectedStatus]);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
@@ -588,7 +664,12 @@ export default function StudentListPage() {
       if (selectedClassLevel === 'ม.ปลาย') return ['ม.4', 'ม.5', 'ม.6'].includes(student.classLevel);
       return student.classLevel === selectedClassLevel;
     })
-      .filter(student => selectedRoom === '' || student.room === selectedRoom);
+      .filter(student => selectedRoom === '' || student.room === selectedRoom)
+      .filter(student => {
+        if (selectedStatus === '') return true;
+        const sStatus = student.status || student.studentStatus || "ปกติ";
+        return sStatus === selectedStatus;
+      });
 
     // Sorting Logic
     const isMaleStudent = (s: Student) => {
@@ -717,16 +798,44 @@ export default function StudentListPage() {
                   </CanAccess>
                 </td>
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
-                  <Link to={`/school/${student.schoolId}/students/view/${student.id}`} className="flex items-center group">
-                    <ProfileAvatar
-                      className="h-8 w-8"
-                      src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
-                      alt={`${student.firstName} ${student.lastName}`}
-                    />
-                    <div className="ml-3">
+                  <div className="flex items-center">
+                    <CanAccess roles={ACADEMIC_ACCESS} fallback={
+                      <Link to={`/school/${student.schoolId}/students/view/${student.id}`}>
+                        <ProfileAvatar
+                          className="h-8 w-8"
+                          src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
+                          alt={`${student.firstName} ${student.lastName}`}
+                        />
+                      </Link>
+                    }>
+                      <button
+                        type="button"
+                        onClick={() => handleStudentPhotoClick(student)}
+                        disabled={isUpdating === student.id}
+                        className={`group relative rounded-full outline-none transition-all hover:ring-2 hover:ring-indigo-500 hover:ring-offset-2 hover:ring-offset-white dark:hover:ring-offset-[#1e1f21] focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#1e1f21] ${isUpdating === student.id ? "cursor-wait opacity-60" : "cursor-pointer"}`}
+                        title="คลิกเพื่อเปลี่ยนรูปนักเรียน"
+                      >
+                        <ProfileAvatar
+                          className="h-8 w-8"
+                          src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
+                          alt={`${student.firstName} ${student.lastName}`}
+                          imageClassName="transition-transform group-hover:scale-105"
+                        />
+                        {isUpdating === student.id ? (
+                          <span className="absolute inset-0 rounded-full bg-black/30 flex items-center justify-center">
+                            <span className="h-3 w-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                          </span>
+                        ) : (
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            <Pencil size={13} strokeWidth={2.5} />
+                          </span>
+                        )}
+                      </button>
+                    </CanAccess>
+                    <Link to={`/school/${student.schoolId}/students/view/${student.id}`} className="ml-3 group">
                       <div className="font-medium text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{`${student.title}${student.firstName} ${student.lastName}`}</div>
-                    </div>
-                  </Link>
+                    </Link>
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">{student.studentId}</td>
                 <td className="whitespace-nowrap px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
@@ -963,7 +1072,14 @@ export default function StudentListPage() {
                 <option value="">ทุกห้อง</option>
                 {Array.from({ length: 20 }, (_, i) => i + 1).map(r => <option key={r} value={r}>{r}</option>)}
               </select>
-
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
+              >
+                <option value="">ทุกสถานะ</option>
+                {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
 
               <div className="flex flex-wrap items-center gap-2 ml-auto">
                 <CanAccess roles={ACADEMIC_ACCESS}>
@@ -1019,6 +1135,13 @@ export default function StudentListPage() {
           </header>
 
           <main>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleStudentPhotoChange}
+            />
             <div className="bg-white dark:bg-[#2a2b2f]/60 rounded-2xl shadow-lg ring-1 ring-black/5 dark:ring-white/5">
               {renderContent()}
             </div>

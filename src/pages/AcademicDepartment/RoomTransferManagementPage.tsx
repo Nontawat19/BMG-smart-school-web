@@ -12,6 +12,7 @@ import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASS_FULL_NAMES, CLASSES } from '@/utils/schoolUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
+import { buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
 
 // Premium Dark mode styles for react-select (Standardized)
 const selectStyles = {
@@ -354,6 +355,13 @@ const RoomTransferManagementPage: React.FC = () => {
                         updateData.classLevel = destClass;
                         updateData.room = destRoom;
                         updateData.roomNumber = destRoom;
+                        Object.assign(updateData, buildLineRegistrationReviewUpdate({
+                            fromClassLevel: students.find(s => s.docId === student.docId)?.classLevel || student.classLevel,
+                            fromRoom: students.find(s => s.docId === student.docId)?.roomNumber || student.roomNumber,
+                            toClassLevel: destClass,
+                            toRoom: destRoom,
+                            reason: 'room_transfer',
+                        }));
                     }
 
                     promises.push(updateDoc(ref, updateData));
