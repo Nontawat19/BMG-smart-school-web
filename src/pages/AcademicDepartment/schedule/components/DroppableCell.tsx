@@ -135,7 +135,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
     } else if (courses.length > 0) {
         cellClass = 'bg-white dark:bg-white/[0.02] border-gray-100 dark:border-white/5 shadow-sm';
         content = (
-            <div className={`h-full w-full flex ${courses.length > 1 ? 'flex-row' : 'flex-col'} gap-0.5 p-0.5`}>
+            <div className={`h-full w-full flex ${courses.length > 1 ? 'flex-row gap-0.5 p-0.5' : 'flex-col p-0'}`}>
                 {courses.map(c => (
                     <div key={c.instanceId} className={`flex-1 relative ${courses.length > 1 ? 'min-w-0 h-full' : 'w-full h-full'}`}>
                         <DraggableCourse 
@@ -187,7 +187,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
                 }
             }}
             className={`
-                group relative h-full rounded-lg border transition-all duration-500
+                group relative h-full rounded-xl border transition-all duration-500
                 ${cellClass} 
                 ${selectedCourseCode && courses.length === 0 ? 'cursor-pointer hover:border-indigo-500/50 hover:ring-2 hover:ring-indigo-500/20 active:scale-95' : ''}
             `}
@@ -201,7 +201,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
                         onToggleUnavailable?.();
                     }}
                     className={`
-                        absolute top-0 left-0 z-40 w-4 h-4 rounded-tl-lg rounded-br-md 
+                        absolute top-0 left-0 z-40 w-4 h-4 rounded-tl-xl rounded-br-md 
                         flex items-center justify-center transition-all shadow-sm 
                         hover:scale-110 active:scale-95 
                         ${isDynamicUnavailable 
@@ -215,7 +215,7 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
             )}
 
             {/* 3. MAIN CONTENT AREA */}
-            <div className="relative h-full w-full overflow-hidden rounded-lg">
+            <div className="relative h-full w-full overflow-hidden rounded-xl">
                 {content}
                 {overlayEffect}
                 

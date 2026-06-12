@@ -27,7 +27,9 @@ const resolveScheduleTeacherId = (
 
 const hasScheduleEntries = (scheduleData: any) => {
     const entries = scheduleData?.schedule || scheduleData;
-    return Object.values(entries || {}).some((courses: any) => Array.isArray(courses) && courses.length > 0);
+    return Object.values(entries || {}).some(
+        (courses: any) => Array.isArray(courses) && courses.some((c: any) => c != null)
+    );
 };
 
 interface UseScheduleActionsProps {

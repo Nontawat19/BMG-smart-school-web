@@ -18,60 +18,6 @@ import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import { buildLineRegistrationResolvedUpdate, buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
 
-// Premium Dark mode styles for react-select
-const compactSelectStyles = {
-    control: (base: any, state: any) => ({
-        ...base,
-        backgroundColor: 'var(--select-bg, #ffffff)',
-        borderColor: state.isFocused ? '#6366f1' : 'var(--select-border, #e5e7eb)',
-        boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
-        '&:hover': {
-            borderColor: state.isFocused ? '#6366f1' : 'var(--select-border-hover, #d1d5db)'
-        },
-        padding: '0 4px',
-        borderRadius: '0.75rem',
-        fontSize: '0.75rem',
-        minHeight: '32px',
-        height: '32px',
-        transition: 'all 0.2s ease'
-    }),
-    valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
-    indicatorsContainer: (base: any) => ({ ...base, height: '30px' }),
-    menu: (base: any) => ({
-        ...base,
-        backgroundColor: 'var(--select-menu-bg, #ffffff)',
-        border: '1px solid var(--select-border, #e5e7eb)',
-        borderRadius: '1rem',
-        fontSize: '0.75rem',
-        zIndex: 9999,
-        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-        overflow: 'hidden'
-    }),
-    option: (base: any, state: any) => ({
-        ...base,
-        backgroundColor: state.isSelected ? '#6366f1' : state.isFocused ? 'var(--select-option-hover, #f3f4f6)' : 'transparent',
-        color: state.isSelected ? 'white' : 'var(--select-text, #1f2937)',
-        padding: '8px 12px',
-        cursor: 'pointer',
-        fontWeight: '500',
-        '&:active': { backgroundColor: '#4f46e5' }
-    }),
-    singleValue: (base: any) => ({ 
-        ...base, 
-        color: 'var(--select-text, #1f2937)', 
-        fontWeight: '600',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-    }),
-    menuList: (base: any) => ({
-        ...base,
-        maxHeight: '600px', // เพิ่มความสูงให้เห็นครบทุกชั้นโดยไม่ต้องสกอร์
-        padding: '4px'
-    }),
-    placeholder: (base: any) => ({ ...base, color: '#9ca3af' })
-};
-
 interface Student {
     id: string;
     docId: string;
@@ -106,13 +52,93 @@ const GraduationPendingPage: React.FC = () => {
     const [individualActions, setIndividualActions] = useState<Record<string, string>>({});
     const [bulkAction, setBulkAction] = useState<string>('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [isDarkMode, setIsDarkMode] = useState(false);
     const itemsPerPage = 50;
+
+    const compactSelectStyles = useMemo(() => ({
+        control: (base: any, state: any) => ({
+            ...base,
+            backgroundColor: isDarkMode ? '#1c1c24' : '#ffffff',
+            borderColor: state.isFocused ? '#6366f1' : isDarkMode ? '#374151' : '#e5e7eb',
+            boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
+            '&:hover': {
+                borderColor: state.isFocused ? '#6366f1' : isDarkMode ? '#4b5563' : '#d1d5db'
+            },
+            padding: '0 4px',
+            borderRadius: '0.75rem',
+            fontSize: '0.75rem',
+            minHeight: '32px',
+            height: '32px',
+            transition: 'all 0.2s ease'
+        }),
+        valueContainer: (base: any) => ({ ...base, padding: '0 8px' }),
+        indicatorsContainer: (base: any) => ({ ...base, height: '30px' }),
+        indicatorSeparator: () => ({ display: 'none' }),
+        dropdownIndicator: (base: any) => ({
+            ...base,
+            color: isDarkMode ? '#9ca3af' : '#6b7280',
+            '&:hover': { color: isDarkMode ? '#d1d5db' : '#374151' }
+        }),
+        input: (base: any) => ({ ...base, color: isDarkMode ? '#f9fafb' : '#1f2937' }),
+        menu: (base: any) => ({
+            ...base,
+            backgroundColor: isDarkMode ? '#233046' : '#ffffff',
+            border: `1px solid ${isDarkMode ? '#334155' : '#e5e7eb'}`,
+            borderRadius: '1rem',
+            fontSize: '0.75rem',
+            zIndex: 9999,
+            boxShadow: isDarkMode
+                ? '0 18px 30px -12px rgba(0, 0, 0, 0.45)'
+                : '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            overflow: 'hidden'
+        }),
+        menuList: (base: any) => ({
+            ...base,
+            maxHeight: '600px',
+            padding: '4px'
+        }),
+        option: (base: any, state: any) => ({
+            ...base,
+            backgroundColor: state.isSelected
+                ? '#6366f1'
+                : state.isFocused
+                    ? (isDarkMode ? 'rgba(99, 102, 241, 0.18)' : '#eef2ff')
+                    : 'transparent',
+            color: state.isSelected ? '#ffffff' : (isDarkMode ? '#f8fafc' : '#1f2937'),
+            padding: '8px 12px',
+            cursor: 'pointer',
+            fontWeight: '500',
+            '&:active': { backgroundColor: '#4f46e5' }
+        }),
+        singleValue: (base: any) => ({
+            ...base,
+            color: isDarkMode ? '#f9fafb' : '#1f2937',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+        }),
+        placeholder: (base: any) => ({
+            ...base,
+            color: isDarkMode ? '#94a3b8' : '#9ca3af'
+        })
+    }), [isDarkMode]);
 
     useEffect(() => {
         if (schoolId && settingsStatus === 'idle') {
             dispatch(fetchSchoolSettings(schoolId) as any);
         }
     }, [schoolId, settingsStatus, dispatch]);
+
+    useEffect(() => {
+        const syncDarkMode = () => {
+            setIsDarkMode(document.documentElement.classList.contains('dark'));
+        };
+        syncDarkMode();
+        const observer = new MutationObserver(syncDarkMode);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     // Reset page when filters change
     useEffect(() => {

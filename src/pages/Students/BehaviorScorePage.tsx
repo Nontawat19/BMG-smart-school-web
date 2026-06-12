@@ -42,7 +42,7 @@ import Swal from 'sweetalert2';
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
-import { getStudentStatus, isCurrentStudent } from "@/utils/studentStatusUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { useTheme } from "@/ThemeContext";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -230,7 +230,7 @@ export default function BehaviorScorePage() {
       const studentsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-      } as Student)).filter(isCurrentStudent);
+      } as Student)).filter(isStudyingStudent);
       setStudents(studentsData);
     } catch (err) {
       console.error("Error fetching students: ", err);

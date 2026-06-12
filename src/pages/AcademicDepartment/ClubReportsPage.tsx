@@ -399,9 +399,11 @@ const ClubReportsPage: React.FC = () => {
 
   const teacherNameLines = (club: Club) => {
     const ids = club.responsibleTeacherIds || [];
+    const allTeachers = Object.values(teacherMap as any || {});
     return ids.map((id, index) => {
-      const teacher = (teacherMap as any)?.[id];
-      const name = teacher?.name || `${teacher?.title || ""}${teacher?.firstName || ""} ${teacher?.lastName || ""}`.trim();
+      const teacher = (teacherMap as any)?.[id]
+        ?? allTeachers.find((t: any) => t.teacherId === id || t.uid === id);
+      const name = (teacher?.name || `${teacher?.title || ""}${teacher?.firstName || ""} ${teacher?.lastName || ""}`.trim()) || "";
       return `คุณครูคนที่ ${index + 1} : ${name || "-"}`;
     });
   };

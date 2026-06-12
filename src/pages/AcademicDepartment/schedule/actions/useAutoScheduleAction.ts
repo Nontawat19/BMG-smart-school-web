@@ -278,9 +278,12 @@ export const useAutoScheduleAction = ({
                 };
             });
 
-            const getCoTeachingKey = (courseId: string, groupNumber?: number | string) => (
-                `${courseId}|${normalizeGroupNumber(groupNumber)}`
-            );
+            const getCoTeachingKey = (courseId: string, groupNumber?: number | string, teacherIds?: string[]) => {
+                const tidPart = teacherIds && teacherIds.length > 0
+                    ? teacherIds.slice().sort().join('|')
+                    : '';
+                return `${courseId}|${normalizeGroupNumber(groupNumber)}|${tidPart}`;
+            };
             const protectedCoTeachingKeys = new Set<string>();
             const coTeachingWriteTeacherIds = new Set<string>();
             if (normalizedTargetTeacherId) {
@@ -288,7 +291,10 @@ export const useAutoScheduleAction = ({
                     (course.teacherAssignments || []).forEach((assignment: any) => {
                         const teacherIds = getAssignmentTeacherIds(assignment);
                         if (!teacherIds.includes(normalizedTargetTeacherId) || teacherIds.length < 2) return;
-                        protectedCoTeachingKeys.add(getCoTeachingKey(course.id, assignment.groupNumber));
+                        protectedCoTeachingKeys.add(getCoTeachingKey(course.id, assignment.groupNumber, teacherIds));
+                        // Legacy fallback: schedule entries written before teacherIds was persisted
+                        // store only courseId|group (no teacher part) so old docs still get protected.
+                        protectedCoTeachingKeys.add(`${course.id}|${normalizeGroupNumber(assignment.groupNumber)}`);
                     });
                 });
             }
@@ -317,7 +323,8 @@ export const useAutoScheduleAction = ({
                 }
             }
 
-            const teachersMap: Record<string, Teacher> = allTeachersData.reduce((acc, t) => ({ ...acc, [t.id]: t }), {});
+            const teachersMap: Record<string, Teacher> = {};
+            for (const t of allTeachersData) teachersMap[t.id] = t;
 
             updateProgress(12, 'กำลังโหลดข้อกำหนดรายวิชา...');
             const constraintsDocRef = doc(db, 'school-settings', schoolId, 'configs', 'period_constraints');
@@ -369,8 +376,17 @@ export const useAutoScheduleAction = ({
                         if (!isCorrectSemester) return true;
 
                         const isOtherTeacher = normalizedTargetTeacherId && docTeacherId !== normalizedTargetTeacherId;
-                        const isProtectedCoTeachingCourse = normalizedTargetTeacherId && protectedCoTeachingKeys.has(
-                            getCoTeachingKey(c.id || (c as any).courseId, c.groupNumber)
+                        // Include teacherIds from the stored course so the key matches exactly
+                        // what was registered in protectedCoTeachingKeys (prevents false-positives
+                        // when two separate groups of the same course have different teacher sets).
+                        const courseTeacherIds: string[] = Array.isArray(c.teacherIds) && c.teacherIds.length > 0
+                            ? c.teacherIds
+                            : (c.teacherId ? [c.teacherId] : []);
+                        const cId = c.id || (c as any).courseId;
+                        const isProtectedCoTeachingCourse = normalizedTargetTeacherId && (
+                            protectedCoTeachingKeys.has(getCoTeachingKey(cId, c.groupNumber, courseTeacherIds)) ||
+                            // Legacy fallback: entry written before teacherIds field was added
+                            (courseTeacherIds.length === 0 && protectedCoTeachingKeys.has(`${cId}|${normalizeGroupNumber(c.groupNumber)}`))
                         );
                         return isOtherTeacher || isProtectedCoTeachingCourse || c.locked;
                     });
@@ -1120,6 +1136,22 @@ export const useAutoScheduleAction = ({
                 return softRelaxedConstraintCache.get(cacheKey)!;
             };
 
+            // Pre-build O(1) Sets for all unavailability lookups used in buildValidSlotsForTask
+            const dynamicUnavailableSlotsSet = new Set(dynamicUnavailableSlots);
+            const teacherPrefSets = new Map<string, { days: Set<string>; slots: Set<string> }>();
+            for (const tid of Object.keys(teachersMap)) {
+                const prefs = teachersMap[tid]?.preferences;
+                teacherPrefSets.set(tid, {
+                    days: new Set(prefs?.unavailableDays || []),
+                    slots: new Set(prefs?.unavailableSlots || []),
+                });
+            }
+            // Selected teacher's effective unavailability merges stored prefs with dynamic UI slots
+            teacherPrefSets.set(selectedTeacher, {
+                days: new Set(teachersMap[selectedTeacher]?.preferences?.unavailableDays || []),
+                slots: dynamicUnavailableSlotsSet,
+            });
+
             const buildValidSlotsForTask = (
                 task: SchedulingTask,
                 getMap: (targetTask: SchedulingTask) => AssignmentConstraintMap
@@ -1127,6 +1159,9 @@ export const useAutoScheduleAction = ({
                 const validSlots = new Set<string>();
                 const taskTeacherIds = getTaskTeacherIds(task);
                 const teacher = teachersMap[task.teacherId];
+                const teacherUnavSlots = task.teacherId === selectedTeacher
+                    ? dynamicUnavailableSlots
+                    : (teacher?.preferences?.unavailableSlots || []);
 
                 for (const slotInfo of allTeachingSlots) {
                     const { slotId, dayKey, periodSetting } = slotInfo;
@@ -1139,7 +1174,7 @@ export const useAutoScheduleAction = ({
                         periodSettings,
                         specialPeriods,
                         constraintMap,
-                        dynamicUnavailableSlots,
+                        teacherUnavSlots,
                         {},
                         task.duration,
                         [],
@@ -1148,10 +1183,9 @@ export const useAutoScheduleAction = ({
 
                     if (hardForbidden) continue;
                     const coTeacherUnavailable = !isExplicitlyLocked && taskTeacherIds.some(teacherId => {
-                        const coTeacher = teachersMap[teacherId];
-                        return coTeacher?.preferences?.unavailableDays?.includes(dayKey) ||
-                            coTeacher?.preferences?.unavailableSlots?.includes(slotId) ||
-                            (selectedTeacher === teacherId && dynamicUnavailableSlots.includes(slotId));
+                        const prefs = teacherPrefSets.get(teacherId);
+                        return prefs?.days.has(dayKey) ||
+                            prefs?.slots.has(slotId);
                     });
                     if (coTeacherUnavailable) continue;
                     if (task.requiredSlot && slotId !== task.requiredSlot) continue;
@@ -1166,8 +1200,7 @@ export const useAutoScheduleAction = ({
                         for (let d = 1; d < task.duration; d++) {
                             const nextIndex = d === 1 ? partnerIdx : pIdx + d;
                             const nextSlotId = `${dayKey}-${nextIndex}`;
-                            
-                            // Check all constraints for the next slot (including Special Periods, Lunch, Teacher Unavailability, Excluded Days, etc.)
+
                             const { forbidden: nextForbidden } = checkConstraints(
                                 { ...task.course, compositeId: task.compositeId, classId: task.targetClasses } as CourseInstance,
                                 nextSlotId,
@@ -1175,7 +1208,7 @@ export const useAutoScheduleAction = ({
                                 periodSettings,
                                 specialPeriods,
                                 constraintMap,
-                                dynamicUnavailableSlots,
+                                teacherUnavSlots,
                                 {},
                                 1,
                                 [],
@@ -1183,10 +1216,9 @@ export const useAutoScheduleAction = ({
                             );
 
                             const coTeacherUnavailableNext = !isExplicitlyLocked && taskTeacherIds.some(teacherId => {
-                                const coTeacher = teachersMap[teacherId];
-                                return coTeacher?.preferences?.unavailableDays?.includes(dayKey) ||
-                                    coTeacher?.preferences?.unavailableSlots?.includes(nextSlotId) ||
-                                    (selectedTeacher === teacherId && dynamicUnavailableSlots.includes(nextSlotId));
+                                const prefs = teacherPrefSets.get(teacherId);
+                                return prefs?.days.has(dayKey) ||
+                                    prefs?.slots.has(nextSlotId);
                             });
 
                             if (nextForbidden || coTeacherUnavailableNext) {

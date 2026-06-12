@@ -14,7 +14,7 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 import { Student, CourseSchedule } from './ClassroomAttendance/types';
 import { DAYS } from './ClassroomAttendance/constants';
@@ -59,6 +59,7 @@ const HomeroomAttendancePage: React.FC = () => {
     const [homeroomNote, setHomeroomNote] = useState('');
     const [homeroomPhotos, setHomeroomPhotos] = useState<HomeroomPhoto[]>([]);
     const [pendingPhotos, setPendingPhotos] = useState<PendingHomeroomPhoto[]>([]);
+    const [homeroomPeriodTime, setHomeroomPeriodTime] = useState<{ startTime: string; endTime: string }>({ startTime: '08:30', endTime: '08:40' });
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
     const [cameraError, setCameraError] = useState('');
@@ -110,6 +111,24 @@ const HomeroomAttendancePage: React.FC = () => {
             dispatch(fetchCalendar(schoolId) as any);
         }
     }, [schoolId, calendarState.status, dispatch]);
+
+    useEffect(() => {
+        if (!schoolId) return;
+        const fetchHomeroomPeriod = async () => {
+            try {
+                const snap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
+                const homeroomDoc = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() } as any))
+                    .find((p: any) => /โฮมรูม|homeroom/i.test(String(p.title || '')));
+                if (homeroomDoc?.startTime && homeroomDoc?.endTime) {
+                    setHomeroomPeriodTime({ startTime: homeroomDoc.startTime, endTime: homeroomDoc.endTime });
+                }
+            } catch (e) {
+                console.error('Error fetching homeroom period:', e);
+            }
+        };
+        fetchHomeroomPeriod();
+    }, [schoolId]);
 
     useEffect(() => {
         if (calendarState.status === 'succeeded') {
@@ -207,8 +226,8 @@ const HomeroomAttendancePage: React.FC = () => {
                 subjectCode: HOMEROOM_SUBJECT_CODE,
                 subjectName: 'เช็คชื่อโฮมรูม',
                 period: 0,
-                startTime: '08:30',
-                endTime: '08:40',
+                startTime: homeroomPeriodTime.startTime,
+                endTime: homeroomPeriodTime.endTime,
                 classId: classKey,
                 className,
                 room: homeroomRoom,
@@ -218,7 +237,7 @@ const HomeroomAttendancePage: React.FC = () => {
         }
 
         setLoading(false);
-    }, [currentTeacher, currentDate, scheduleDayOverride]);
+    }, [currentTeacher, currentDate, scheduleDayOverride, homeroomPeriodTime]);
 
     useEffect(() => {
         const fetchStudents = async () => {
@@ -244,7 +263,7 @@ const HomeroomAttendancePage: React.FC = () => {
                         prefix: data.title || data.prefix || '',
                         nickname: data.nickname || '',
                     } as Student;
-                }).filter(isCurrentStudent)
+                }).filter(isStudyingStudent)
                   .sort((a, b) => (parseInt(a.number || '0', 10) || 0) - (parseInt(b.number || '0', 10) || 0));
 
                 setStudents(studentList);

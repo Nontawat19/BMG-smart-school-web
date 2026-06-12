@@ -880,9 +880,10 @@ export const useDragAndDrop = ({
 
         // --- UPDATE STATE ---
         const isPrimaryRelaxed = checkIfPlacementIsRelaxed(activeItem, primarySlotId, partnerSlotId ? true : false, false);
+        const uid = () => Math.random().toString(36).slice(2, 9);
         const primaryItem = {
             ...activeItem,
-            instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}`,
+            instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}-${uid()}`,
             locked: false,
             ...(isPrimaryRelaxed ? {
                 isRelaxedSchedule: true,
@@ -895,7 +896,7 @@ export const useDragAndDrop = ({
             const isPartnerRelaxed = checkIfPlacementIsRelaxed(activeItem, partnerSlotId, false, true);
             partnerItem = {
                 ...activeItem,
-                instanceId: `${activeItem.id}-${partnerSlotId}-${Date.now() + 1}`,
+                instanceId: `${activeItem.id}-${partnerSlotId}-${Date.now()}-${uid()}`,
                 locked: false,
                 ...(isPartnerRelaxed ? {
                     isRelaxedSchedule: true,
@@ -904,11 +905,11 @@ export const useDragAndDrop = ({
             };
         }
 
+        removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
+
         setSchedule((prev: Schedule) => {
             const next = { ...prev };
-            
-            removeInstancesFromBank(activeItem.instanceId, activeItem, partnerSlotId ? 2 : 1);
-            
+
             // Primary Slot
             next[primarySlotId] = [...(next[primarySlotId] || []), primaryItem];
 
@@ -916,7 +917,7 @@ export const useDragAndDrop = ({
             if (partnerSlotId && partnerItem) {
                 next[partnerSlotId] = [...(next[partnerSlotId] || []), partnerItem];
             }
-            
+
             return next;
         });
 

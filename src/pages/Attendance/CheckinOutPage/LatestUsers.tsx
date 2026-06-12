@@ -85,9 +85,9 @@ const SmartProfileImage: React.FC<{
     <img
       src={src}
       className={`w-24 h-24 rounded-xl border-2 bg-[#f0f2f6] dark:bg-[#1e1f21] ${status === 'มา' ? 'border-green-500 shadow-lg shadow-green-500/20' :
-        status === 'สาย' ? 'border-yellow-500 shadow-lg shadow-yellow-500/20' :
-          status === 'ล' ? 'border-blue-500 shadow-lg shadow-blue-500/20' :
-            status === 'กลับก่อน' ? 'border-orange-500 shadow-lg shadow-orange-500/20' :
+        status === 'สาย' ? 'border-orange-500 shadow-lg shadow-orange-500/20' :
+          status === 'ลา' ? 'border-blue-500 shadow-lg shadow-blue-500/20' :
+            status === 'กลับก่อน' ? 'border-red-500 shadow-lg shadow-red-500/20' :
               'border-gray-300 dark:border-gray-600'
         }`}
       style={{ objectFit, objectPosition }}
@@ -96,6 +96,7 @@ const SmartProfileImage: React.FC<{
     />
   );
 };
+
 
 const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ latestUsers, vertical = false }) => {
   return (
@@ -108,9 +109,11 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
       {latestUsers.length > 0 ? (
         <div className={`${vertical ? 'flex flex-col space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar' : 'flex justify-center overflow-x-auto space-x-4 pb-4 -mx-6 px-6'}`}>
           <AnimatePresence initial={false}>
-            {latestUsers.slice(0, 5).map((user, index) => (
+            {latestUsers.slice(0, 5).map((user) => {
+              const isCheckout = user.lastAction === 'checkout' || user.lastAction === 'checkin_and_checkout';
+              return (
               <motion.div
-                key={`${user.id}-${user.latestActionTime}`}
+                key={`${user.id}-${user.lastAction}-${user.latestActionTime}`}
                 layout
                 initial={{ opacity: 0, y: -50, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -123,7 +126,13 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                 }}
                 className={`${vertical ? 'w-full transform transition-all duration-200 hover:bg-[#f0f2f6] dark:hover:bg-gray-800 rounded-xl' : 'flex-shrink-0 w-40 text-center transform transition-transform duration-200 hover:-translate-y-1'}`}
               >
-                <div className={`bg-[#f0f2f6] dark:bg-[#1e1f21] rounded-[1.5rem] p-4 shadow-sm border border-gray-200/50 dark:border-gray-700/50 flex ${vertical ? 'flex-row items-center gap-4 text-left' : 'flex-col items-center h-full'}`}>
+                <div className={`rounded-[1.5rem] p-4 shadow-sm border flex ${vertical ? 'flex-row items-center gap-4 text-left' : 'flex-col items-center h-full'} ${
+                  user.status === 'กลับก่อน'
+                    ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/40'
+                    : isCheckout
+                      ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-700/40'
+                      : 'bg-[#f0f2f6] dark:bg-[#1e1f21] border-gray-200/50 dark:border-gray-700/50'
+                }`}>
                   <div className="relative flex-shrink-0">
                     <SmartProfileImage
                       src={user.profileImageUrl || `https://ui-avatars.com/api/?name=${user.name}&background=random&color=fff`}
@@ -132,9 +141,9 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                     />
                     <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-lg border-[3px] border-white dark:border-[#1e1f21] flex items-center justify-center text-[8px] text-white
                     ${user.status === 'มา' ? 'bg-green-500' :
-                        user.status === 'สาย' ? 'bg-yellow-500' :
-                          user.status === 'ล' ? 'bg-blue-500' :
-                            user.status === 'กลับก่อน' ? 'bg-orange-500' : 'bg-gray-400'
+                        user.status === 'สาย' ? 'bg-orange-500' :
+                          user.status === 'ลา' ? 'bg-blue-500' :
+                            user.status === 'กลับก่อน' ? 'bg-red-500' : 'bg-gray-400'
                       }`}
                     >
                       {/* Status Dot */}
@@ -142,7 +151,7 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                   </div>
 
                   <div className={`${vertical ? 'flex-grow min-w-0' : 'w-full mt-4'}`}>
-                    <h3 className={`font-black tracking-tight truncate text-gray-900 dark:text-white ${vertical ? 'text-xl mb-1' : 'text-xl'}`} title={user.name}>{user.name}</h3>
+                    <h3 className={`font-black tracking-tight truncate text-gray-900 dark:text-white ${vertical ? 'text-xl' : 'text-xl'}`} title={user.name}>{user.name}</h3>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider border ${user.type === "student" ? "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-white border-slate-200 dark:border-slate-700" : "bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-white border-emerald-100 dark:border-emerald-800"}`}>
@@ -161,14 +170,14 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                               }
                               return user.position || "ครู";
                             }
-                            
+
                             let display = "นักเรียน";
                             if (user.grade) {
                               const g = user.grade.trim();
                               if (g.startsWith('ม.')) display += `ชั้นมัธยมศึกษาปีที่ ${g.substring(2).trim()}`;
                               else if (g.startsWith('ป.')) display += `ชั้นประถมศึกษาปีที่ ${g.substring(2).trim()}`;
                               else display += ` ${g}`;
-                              
+
                               if (user.room) {
                                 display += `/${user.room}`;
                               }
@@ -184,7 +193,8 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                   </div>
                 </div>
               </motion.div>
-            ))}
+            );
+            })}
           </AnimatePresence>
           <style>{`
             /* Hide scrollbar for Chrome, Safari and Opera */

@@ -22,7 +22,7 @@ import MainLayout from "@/layouts/MainLayout";
 import { firestore } from "@/firebase";
 import { RootState } from "@/store";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
-import { isCurrentStudent } from "@/utils/studentStatusUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { CLASSES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 
 Font.register({
@@ -622,7 +622,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
         const studentsSnap = await getDocs(collection(firestore, "school-settings", schoolId, "students"));
         const studentList = studentsSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Student))
-          .filter(isCurrentStudent)
+          .filter(isStudyingStudent)
           .sort((a, b) => {
             const classCompare = getClassLabel(a).localeCompare(getClassLabel(b), "th", { numeric: true });
             if (classCompare !== 0) return classCompare;

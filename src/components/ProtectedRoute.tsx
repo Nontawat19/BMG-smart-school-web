@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Navigate, useLocation } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
+import React, { useEffect, useState, useMemo } from 'react';
+import { Navigate, useLocation, matchPath } from "react-router-dom";
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { auth } from "../firebase";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -8,21 +8,44 @@ import { doc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '../firebase';
 import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
 import { isPwaStandalone, PWA_ATTENDANCE_HUB_PATH } from '@/utils/pwaMode';
+import { usePermissionContext } from '@/contexts/PermissionContext';
+import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: string[]; // Optional: List of allowed roles
-  featureFlag?: string; // Optional: Check if a specific feature is enabled
+  allowedRoles?: string[];
+  featureFlag?: string;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles, featureFlag }) => {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isFeatureEnabled, setIsFeatureEnabled] = useState(true); // Default to true until checked
+  const [isFeatureEnabled, setIsFeatureEnabled] = useState(true);
 
-  // Get user role from Redux (assuming it's loaded)
   const { user } = useSelector((state: RootState) => state.auth);
+  const { routePermissions, isLoaded: permissionsLoaded } = usePermissionContext();
+
+  const matchedRouteKey = useMemo(() => {
+    const found = ROUTE_REGISTRY.find(r => matchPath(r.path, location.pathname) !== null);
+    return found?.key;
+  }, [location.pathname]);
+
+  const matchedEntry = useMemo(() => {
+    if (permissionsLoaded && matchedRouteKey && routePermissions[matchedRouteKey] !== undefined) {
+      return routePermissions[matchedRouteKey];
+    }
+    return null;
+  }, [permissionsLoaded, matchedRouteKey, routePermissions]);
+
+  let effectiveRoles: string[] | undefined = allowedRoles;
+  let effectiveDepts: string[] = [];
+  let effectiveSpecialRoles: string[] = [];
+  if (matchedEntry) {
+    effectiveRoles = matchedEntry.allowedRoles;
+    effectiveDepts = matchedEntry.allowedDepartments;
+    effectiveSpecialRoles = matchedEntry.allowedSpecialRoles;
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -30,14 +53,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       if (firebaseUser) {
         setIsAuthenticated(true);
 
-        // Check Feature Flag if provided
         if (featureFlag && user?.schoolId) {
           try {
             const schoolRef = doc(db, 'school-settings', user.schoolId);
             const schoolSnap = await getDoc(schoolRef);
             if (schoolSnap.exists() && isMounted) {
               const features = schoolSnap.data().features || {};
-              // If feature is explicitly false, disable access. Default is true.
               if (features[featureFlag] === false) {
                 setIsFeatureEnabled(false);
               }
@@ -48,13 +69,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
         }
 
       } else {
-        // ตรวจสอบ session นักเรียน/ผู้ปกครอง จาก localStorage
         const userType = localStorage.getItem('currentUserType');
         const studentSessionRaw = localStorage.getItem('studentSession');
         if (userType === 'student' && studentSessionRaw) {
           try {
             const { schoolId, studentId } = JSON.parse(studentSessionRaw);
             if (schoolId && studentId) {
+              try { await signInAnonymously(auth); } catch (_) {}
               setIsAuthenticated(true);
             } else {
               setIsAuthenticated(false);
@@ -108,9 +129,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return <Navigate to="/attendance/checkin-out" replace />;
   }
 
-  // Role-based authorization check
-  if (allowedRoles && allowedRoles.length > 0 && user && !isPwaAttendanceHub) {
-    const normalizeRole = (role: unknown) => {
+  if (user && !isPwaAttendanceHub) {
+    const normalizeRole = (role: unknown): string => {
       if (typeof role !== 'string') return '';
       const lowerRole = role.toLowerCase();
       if (lowerRole === 'admin') return 'school_admin';
@@ -121,20 +141,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     const rawRoles = Array.isArray(user.role) ? user.role : [user.role];
     const userRoles = rawRoles.map(normalizeRole).filter(Boolean);
 
-    // Check if user has ANY of the allowed roles (case-insensitive check)
-    const hasPermission = allowedRoles.some(role => {
-      const lowerRole = normalizeRole(role);
-      return userRoles.includes(lowerRole);
-    });
+    const hasRoleAccess = !effectiveRoles || effectiveRoles.length === 0 ||
+      effectiveRoles.some(r => userRoles.includes(normalizeRole(r)));
 
-    if (!hasPermission) {
-      // User does not have permission
-      console.warn(`Access denied. Required roles: ${allowedRoles}. User roles: ${userRoles}`);
-      return <Navigate to="/home" replace />; // Redirect to home instead of root
+    const hasDeptAccess = effectiveDepts.length > 0 &&
+      !!user.department && effectiveDepts.includes(user.department);
+
+    const hasSpecialRoleAccess = effectiveSpecialRoles.length > 0 &&
+      effectiveSpecialRoles.some(sr => (user as unknown as Record<string, unknown>)[sr] === true);
+
+    if (!hasRoleAccess && !hasDeptAccess && !hasSpecialRoleAccess) {
+      console.warn(`Access denied. Required: roles=${effectiveRoles}, depts=${effectiveDepts}, specialRoles=${effectiveSpecialRoles}. User: roles=${userRoles}, dept=${user.department}`);
+      return <Navigate to="/home" replace />;
     }
   }
 
-  // Feature Flag Check
   if (!isFeatureEnabled) {
     console.warn(`Feature ${featureFlag} is disabled for school ${user?.schoolId}`);
     return <Navigate to="/home" replace />;

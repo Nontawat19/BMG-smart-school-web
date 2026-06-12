@@ -1,19 +1,11 @@
-import React from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 
 interface SearchPanelProps {
-  handleSearch: (e: React.FormEvent) => void;
+  handleSearch: (e: React.FormEvent<HTMLFormElement>) => void;
   searchId: string;
   setSearchId: (id: string) => void;
   error: string | null;
   currentTime: string;
-  calendarEvents: Record<string, any>;
-  getTodayString: () => string;
-  studentLateTime: string;
-  studentCheckoutTime: string;
-  teacherLateTime: string;
-  teacherCheckoutTime: string;
-  canScanStudents?: boolean;
-  canScanTeachers?: boolean;
   hideInput?: boolean;
   className?: string;
 }
@@ -24,31 +16,45 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
   setSearchId,
   error,
   currentTime,
-  calendarEvents,
-  getTodayString,
-  studentLateTime,
-  studentCheckoutTime,
-  teacherLateTime,
-  teacherCheckoutTime,
-  canScanStudents = true,
-  canScanTeachers = true,
   hideInput = false,
   className = "lg:col-span-3",
 }) => {
-  const todayStr = getTodayString();
-  const todayEvent = calendarEvents[todayStr];
-  const dayOfWeek = new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', weekday: 'short' });
-  const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
-  const isHoliday = (todayEvent?.type === 'specialHoliday') ||
-    (todayEvent?.type === 'holiday') ||
-    (isWeekend && todayEvent?.type !== 'schoolDay');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const refocus = useCallback(() => {
+    if (!hideInput) inputRef.current?.focus();
+  }, [hideInput]);
+
+  // Re-focus whenever the input loses focus (user clicks elsewhere, Swal closes, etc.)
+  useEffect(() => {
+    if (hideInput) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.addEventListener('blur', refocus);
+    return () => input.removeEventListener('blur', refocus);
+  }, [hideInput, refocus]);
+
+  // Also restore focus after any Swal dialog closes (Swal steals focus)
+  useEffect(() => {
+    if (hideInput) return;
+    const observer = new MutationObserver(() => {
+      const swalOpen = document.querySelector('.swal2-container');
+      if (!swalOpen) refocus();
+    });
+    observer.observe(document.body, { childList: true, subtree: false });
+    return () => observer.disconnect();
+  }, [hideInput, refocus]);
 
   return (
-    <div className={`${className} bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none`}>
+    <div
+      className={`${className} bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none`}
+      onClick={refocus}
+    >
       <div className="flex-grow flex flex-col justify-evenly gap-8">
         {!hideInput && (
           <form onSubmit={handleSearch}>
             <input
+              ref={inputRef}
               type="text"
               value={searchId}
               onChange={(e) => setSearchId(e.target.value)}
@@ -63,43 +69,6 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
         {!hideInput && (
           <div className="text-center">
             <p className="text-6xl 2xl:text-7xl font-black text-gray-900 dark:text-white tracking-tight">{currentTime}</p>
-          </div>
-        )}
-
-        {!hideInput && !isHoliday && (
-          <div className={`grid gap-10 pt-8 border-t border-gray-100 dark:border-gray-700 ${canScanStudents && canScanTeachers ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 text-center'}`}>
-            {canScanStudents && (
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-500 dark:text-gray-400 mb-3">นักเรียน</p>
-                <div className="flex justify-center gap-6 text-xl">
-                  <div>
-                    <span className="block text-xs text-gray-400 uppercase tracking-widest mb-1">เข้าสาย</span>
-                    <span className="font-bold text-3xl text-indigo-600 dark:text-indigo-400">{studentLateTime}</span>
-                  </div>
-                  <div className="w-0.5 bg-gray-200 dark:bg-gray-700 h-12 self-center"></div>
-                  <div>
-                    <span className="block text-xs text-gray-400 uppercase tracking-widest mb-1">เลิกเรียน</span>
-                    <span className="font-bold text-3xl text-indigo-600 dark:text-indigo-400">{studentCheckoutTime}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {canScanTeachers && (
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-500 dark:text-gray-400 mb-3">ครู/บุคลากร</p>
-                <div className="flex justify-center gap-6 text-xl">
-                  <div>
-                    <span className="block text-xs text-gray-400 uppercase tracking-widest mb-1">เข้าสาย</span>
-                    <span className="font-bold text-3xl text-emerald-600 dark:text-emerald-400">{teacherLateTime}</span>
-                  </div>
-                  <div className="w-0.5 bg-gray-200 dark:bg-gray-700 h-12 self-center"></div>
-                  <div>
-                    <span className="block text-xs text-gray-400 uppercase tracking-widest mb-1">เลิกงาน</span>
-                    <span className="font-bold text-3xl text-emerald-600 dark:text-emerald-400">{teacherCheckoutTime}</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

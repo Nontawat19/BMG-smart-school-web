@@ -3,6 +3,7 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
+    "site": "bmg-smartschool",
     "public": "dist",
     "ignore": [
       "firebase.json",

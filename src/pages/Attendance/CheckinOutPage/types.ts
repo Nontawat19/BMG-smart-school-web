@@ -36,4 +36,5 @@ export interface FoundUser {
   faceScanImageUrl?: string;
   checkinTime?: string | null;
   checkoutTime?: string | null;
+  lastAction?: "checkin" | "checkout" | "checkin_and_checkout";
 }

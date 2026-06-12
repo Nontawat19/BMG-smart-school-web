@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   signInWithEmailAndPassword,
   signOut,
+  signInAnonymously,
 } from "firebase/auth";
 import { auth, firestore } from "../../firebase";
 import { collection, collectionGroup, query, where, getDocs, orderBy, doc, getDoc, limit } from "firebase/firestore";
@@ -204,8 +205,8 @@ const LoginPage: React.FC = () => {
       }
 
       if (foundStudent) {
+        try { await signInAnonymously(auth); } catch (_) {}
         localStorage.setItem('currentUserType', 'student');
-        // 📌 บันทึกข้อมูล session ของนักเรียน
         localStorage.setItem('studentSession', JSON.stringify({
           schoolId: foundSchoolId,
           studentId: foundStudent.id

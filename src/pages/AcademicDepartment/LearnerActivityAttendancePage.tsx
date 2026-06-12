@@ -11,7 +11,7 @@ import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } fro
 import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, ClipboardCheck, Clock, LayoutGrid, RefreshCw, Save, Search, Users } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { usePwaMode } from '@/hooks/usePwaMode';
 
 interface LearnerActivity {
@@ -72,6 +72,8 @@ const ATTENDANCE_OPTIONS = [
 
 const LearnerActivityAttendancePage: React.FC = () => {
   const isPwaMode = usePwaMode();
+  const [searchParams] = useSearchParams();
+  const queryPeriodId = searchParams.get('periodId') || searchParams.get('specialPeriodId') || '';
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
@@ -164,23 +166,29 @@ const LearnerActivityAttendancePage: React.FC = () => {
   const availableSpecialPeriods = useMemo(() => {
     return specialPeriods.filter(period => {
       if (selectedActivity?.specialPeriodId && period.id !== selectedActivity.specialPeriodId) return false;
+      if (queryPeriodId && period.id === queryPeriodId) return true;
+      if (selectedActivity?.specialPeriodId && period.id === selectedActivity.specialPeriodId) return true;
       return isPeriodAvailableOnDay(period, effectiveDayKey);
     });
-  }, [specialPeriods, effectiveDayKey, selectedActivity?.specialPeriodId]);
+  }, [specialPeriods, effectiveDayKey, selectedActivity?.specialPeriodId, queryPeriodId]);
 
   const selectedSpecialPeriod = useMemo(() => {
     return availableSpecialPeriods.find(period => period.id === selectedSpecialPeriodId) || null;
   }, [availableSpecialPeriods, selectedSpecialPeriodId]);
 
+  // Keep selectedSpecialPeriodId in sync with queryPeriodId if it changes
   useEffect(() => {
-    setSelectedSpecialPeriodId(prev => {
-      if (prev && availableSpecialPeriods.some(period => period.id === prev)) return prev;
-      if (selectedActivity?.specialPeriodId && availableSpecialPeriods.some(period => period.id === selectedActivity.specialPeriodId)) {
-        return selectedActivity.specialPeriodId;
-      }
-      return availableSpecialPeriods[0]?.id || '';
-    });
-  }, [availableSpecialPeriods, selectedActivity?.specialPeriodId]);
+    if (queryPeriodId) {
+      setSelectedSpecialPeriodId(queryPeriodId);
+    }
+  }, [queryPeriodId]);
+
+  // Fallback to first available period if the current selection is invalid
+  useEffect(() => {
+    if (availableSpecialPeriods.length > 0 && !availableSpecialPeriods.some(p => p.id === selectedSpecialPeriodId)) {
+      setSelectedSpecialPeriodId(availableSpecialPeriods[0].id);
+    }
+  }, [availableSpecialPeriods, selectedSpecialPeriodId]);
 
   useEffect(() => {
     if (!schoolId || !selectedActivity) {
@@ -259,9 +267,16 @@ const LearnerActivityAttendancePage: React.FC = () => {
     fetchStudentsAndAttendance();
   }, [schoolId, selectedActivity, currentDate, activeAcademicYear, activeSemester, selectedSpecialPeriod]);
 
-  const availableActivities = useMemo(() => {
+  const termActivities = useMemo(() => {
     return activities.filter(activity => isSemesterAvailable(activity.semester, activeSemester));
   }, [activities, activeSemester]);
+
+  const availableActivities = useMemo(() => {
+    if (selectedSpecialPeriodId) {
+      return termActivities.filter(activity => activity.specialPeriodId === selectedSpecialPeriodId);
+    }
+    return termActivities;
+  }, [termActivities, selectedSpecialPeriodId]);
 
   useEffect(() => {
     setSelectedActivity(prev => {
@@ -390,7 +405,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
 
           {loading ? (
             <div className="rounded-3xl border border-gray-100 bg-white p-10 text-center text-gray-500 dark:border-gray-700 dark:bg-[#2a2b2f]">กำลังโหลดกิจกรรม...</div>
-          ) : availableActivities.length === 0 ? (
+          ) : termActivities.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
               <AlertCircle className="mx-auto mb-4 text-amber-500" size={46} />
               <h2 className="text-xl font-black">ยังไม่พบกิจกรรมที่เช็คชื่อได้ในภาคเรียนนี้</h2>
@@ -443,28 +458,34 @@ const LearnerActivityAttendancePage: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    {filteredActivities.map(activity => (
-                      <button
-                        key={activity.id}
-                        type="button"
-                        onClick={() => setSelectedActivity(activity)}
-                        className={`w-full rounded-2xl border p-4 text-left transition ${selectedActivity?.id === activity.id ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' : 'border-gray-100 hover:border-teal-200 dark:border-gray-700 dark:hover:border-teal-500/40'}`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <LayoutGrid size={20} className="mt-0.5 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black">{activity.courseCode ? `${activity.courseCode} ` : ''}{activity.name}</p>
-                            <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">ภาคเรียน {formatSemester(activity.semester)} • {formatClassIds(activity.classId)}</p>
-                            <p className="mt-1 truncate text-[11px] font-bold text-teal-600 dark:text-teal-300">
-                              {activity.specialPeriodTitle
-                                ? `คาบเช็คชื่อ: ${activity.specialPeriodTitle} (${formatSpecialPeriodDay(activity.specialPeriodDay)} ${activity.specialPeriodStartTime || '-'}-${activity.specialPeriodEndTime || '-'})`
-                                : 'ยังไม่ได้ผูกคาบเช็คชื่อ'}
-                            </p>
+                    {filteredActivities.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-xs font-bold border border-dashed border-gray-200 dark:border-gray-700 rounded-2xl p-4">
+                        ไม่พบกิจกรรมสำหรับคาบพิเศษนี้
+                      </div>
+                    ) : (
+                      filteredActivities.map(activity => (
+                        <button
+                          key={activity.id}
+                          type="button"
+                          onClick={() => setSelectedActivity(activity)}
+                          className={`w-full rounded-2xl border p-4 text-left transition ${selectedActivity?.id === activity.id ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' : 'border-gray-100 hover:border-teal-200 dark:border-gray-700 dark:hover:border-teal-500/40'}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <LayoutGrid size={20} className="mt-0.5 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-black">{activity.courseCode ? `${activity.courseCode} ` : ''}{activity.name}</p>
+                              <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">ภาคเรียน {formatSemester(activity.semester)} • {formatClassIds(activity.classId)}</p>
+                              <p className="mt-1 truncate text-[11px] font-bold text-teal-600 dark:text-teal-300">
+                                {activity.specialPeriodTitle
+                                  ? `คาบเช็คชื่อ: ${activity.specialPeriodTitle} (${formatSpecialPeriodDay(activity.specialPeriodDay)} ${activity.specialPeriodStartTime || '-'}-${activity.specialPeriodEndTime || '-'})`
+                                  : 'ยังไม่ได้ผูกคาบเช็คชื่อ'}
+                              </p>
+                            </div>
+                            {selectedActivity?.id === activity.id && <CheckCircle2 size={19} className="shrink-0" />}
                           </div>
-                          {selectedActivity?.id === activity.id && <CheckCircle2 size={19} className="shrink-0" />}
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               </aside>
@@ -473,7 +494,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
                 {!selectedActivity ? (
                   <div className="flex min-h-[360px] flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-gray-500 dark:border-gray-700 dark:bg-white/[0.03]">
                     <Users size={46} className="mb-4 opacity-40" />
-                    เลือกกิจกรรมเพื่อเริ่มเช็คชื่อ
+                    {queryPeriodId ? "ไม่พบกิจกรรมสำหรับคาบเรียนพิเศษนี้" : "เลือกกิจกรรมเพื่อเริ่มเช็คชื่อ"}
                   </div>
                 ) : (
                   <div className="space-y-5">

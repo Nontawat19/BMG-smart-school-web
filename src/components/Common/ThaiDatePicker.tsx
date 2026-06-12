@@ -12,7 +12,7 @@ interface ThaiDatePickerProps {
     onChange: (value: string) => void;
     placeholder?: string;
     events?: Record<string, any>;
-    className?: string; // Add className prop for flexibility
+    className?: string;
 }
 
 const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
@@ -24,6 +24,7 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
+    const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
     const containerRef = useRef<HTMLDivElement>(null);
     const { isDarkMode } = useTheme();
 
@@ -43,6 +44,38 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const handleToggle = () => {
+        if (!isOpen && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const calW = 288; // w-72
+            const calH = 340; // estimated max height
+
+            let left = rect.left;
+
+            // shift left if calendar would overflow right edge
+            if (left + calW > window.innerWidth - 8) {
+                left = rect.right - calW;
+            }
+            // clamp to left edge
+            if (left < 8) left = 8;
+
+            // open downward or upward based on available space
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const style: React.CSSProperties = { position: 'fixed', left, zIndex: 9999, width: calW };
+
+            if (spaceBelow >= calH || spaceBelow >= rect.top) {
+                // open downward — anchor top of calendar to bottom of trigger
+                style.top = rect.bottom + 2;
+            } else {
+                // open upward — anchor bottom of calendar to top of trigger
+                style.bottom = window.innerHeight - rect.top + 2;
+            }
+
+            setDropdownStyle(style);
+        }
+        setIsOpen(prev => !prev);
+    };
 
     const handleSelectDate = (day: number) => {
         const year = viewDate.getFullYear();
@@ -121,7 +154,7 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
     return (
         <div className={`relative w-full ${className || ''}`} ref={containerRef}>
             <div
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={handleToggle}
                 className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-gray-900 dark:text-white cursor-pointer flex justify-between items-center focus-within:ring-2 focus-within:ring-indigo-500 min-h-[42px]"
             >
                 <span className={!displayValue ? 'text-gray-400' : ''}>{displayValue || placeholder || 'เลือกวันที่'}</span>
@@ -129,7 +162,10 @@ const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
             </div>
 
             {isOpen && (
-                <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 left-0 sm:left-auto sm:right-0 md:left-0 text-gray-900 dark:text-white">
+                <div
+                    style={dropdownStyle}
+                    className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 p-4 text-gray-900 dark:text-white"
+                >
                     <div className="flex justify-between items-center mb-4">
                         <button type="button" onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300">&lt;</button>
                         <span className="font-bold text-gray-900 dark:text-white">

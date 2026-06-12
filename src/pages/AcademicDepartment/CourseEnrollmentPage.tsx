@@ -4,26 +4,28 @@ import Select from "react-select";
 import BackButton from "@/components/Shared/BackButton";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-    collection, 
-    query, 
-    doc, 
-    onSnapshot, 
-    updateDoc, 
-    where, 
-    orderBy, 
+import {
+    collection,
+    query,
+    doc,
+    onSnapshot,
+    updateDoc,
+    where,
+    orderBy,
     getDocs,
     getDoc,
     writeBatch,
     addDoc,
-    deleteDoc
+    deleteDoc,
+    arrayUnion,
+    arrayRemove
 } from "firebase/firestore";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
-import { isActiveStudentStatus } from "@/utils/studentStatusUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import {
     Users,
     BookOpen,
@@ -554,7 +556,7 @@ const CourseEnrollmentPage: React.FC = () => {
                 // Students
                 const studentsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
                 const studentsData = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
-                const activeStudents = studentsData.filter(s => isActiveStudentStatus(s.status || s.studentStatus));
+                const activeStudents = studentsData.filter(s => isStudyingStudent(s));
                 setAllStudents(activeStudents);
 
                 // Rooms
@@ -937,7 +939,7 @@ const CourseEnrollmentPage: React.FC = () => {
                 if (change.type === 'add') {
                     const student = allStudents.find(s => s.id === change.studentId);
                     const course = courses.find(c => c.id === change.courseId);
-                    
+
                     const enrollRef = doc(collection(db, 'school-settings', schoolId, 'enrollments'));
                     batch.set(enrollRef, {
                         courseId: change.courseId,
@@ -951,16 +953,23 @@ const CourseEnrollmentPage: React.FC = () => {
                         semester: change.semester,
                         createdAt: new Date().toISOString()
                     });
+                    // เก็บ courseId ไว้ใน student document เพื่อให้นักเรียนอ่านได้โดยตรง
+                    batch.update(doc(db, 'school-settings', schoolId, 'students', change.studentId), {
+                        enrolledCourseIds: arrayUnion(change.courseId)
+                    });
                 } else {
-                    const toDelete = enrollments.find(e => 
-                        String(e.courseId) === normCId && 
-                        e.studentId === change.studentId && 
+                    const toDelete = enrollments.find(e =>
+                        String(e.courseId) === normCId &&
+                        e.studentId === change.studentId &&
                         String(e.groupName).trim() === normG &&
                         String(e.academicYear || "").trim() === normY &&
                         String(e.semester || "").trim() === normS
                     );
                     if (toDelete) {
                         batch.delete(doc(db, 'school-settings', schoolId, 'enrollments', toDelete.id));
+                        batch.update(doc(db, 'school-settings', schoolId, 'students', change.studentId), {
+                            enrolledCourseIds: arrayRemove(change.courseId)
+                        });
                     }
                 }
             });

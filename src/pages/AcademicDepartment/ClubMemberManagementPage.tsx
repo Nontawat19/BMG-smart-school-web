@@ -25,6 +25,7 @@ import {
 import Select from 'react-select';
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { thaiFormatClass } from './schedule/utils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
 
 const Toast = Swal.mixin({
   toast: true,
@@ -54,6 +55,7 @@ interface Student {
   classLevel: string;
   room: string;
   profileImageUrl?: string;
+  studentStatus?: string;
   status?: 'pending' | 'confirmed';
 }
 
@@ -72,6 +74,7 @@ const ClubMemberManagementPage: React.FC = () => {
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [selectedClassLevel, setSelectedClassLevel] = useState('all');
   const [selectedRoom, setSelectedRoom] = useState('all');
+  const [isRegistrationEnabled, setIsRegistrationEnabled] = useState(false);
   const [globalStartDate, setGlobalStartDate] = useState('');
   const [globalEndDate, setGlobalEndDate] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
@@ -154,8 +157,11 @@ const ClubMemberManagementPage: React.FC = () => {
         const configSnap = await getDoc(configRef);
         if (configSnap.exists()) {
           const data = configSnap.data();
+          setIsRegistrationEnabled(data.registrationEnabled ?? false);
           setGlobalStartDate(data.registrationStartDate || '');
           setGlobalEndDate(data.registrationEndDate || '');
+        } else {
+          setIsRegistrationEnabled(false);
         }
       } catch (error) {
         console.error("Error fetching club settings:", error);
@@ -340,20 +346,27 @@ const ClubMemberManagementPage: React.FC = () => {
   }), [isDarkMode]);
 
   const getRegistrationStatus = (): { text: string; color: string } => {
+    if (!isRegistrationEnabled) return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const todayOnly = new Date(now); todayOnly.setHours(0, 0, 0, 0);
     if (globalStartDate && globalEndDate) {
-      const start = new Date(globalStartDate);
-      const end = new Date(globalEndDate);
-      end.setHours(23, 59, 59, 999);
-      if (now >= start && now <= end) return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
-      if (now < start) return { text: 'ยังไม่เปิด', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
-      return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+      const start = new Date(globalStartDate + 'T00:00:00');
+      const end = new Date(globalEndDate + 'T23:59:59');
+      if (todayOnly < start) return { text: 'ยังไม่เปิด', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+      if (now > end) return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
     }
-    return { text: '', color: '' };
+    return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
   };
+
+  const registrationStatus = useMemo(() => getRegistrationStatus(), [isRegistrationEnabled, globalStartDate, globalEndDate]);
+  const isRegistrationOpen = registrationStatus.text === 'เปิดรับสมัคร';
+
+  const studyingStudents = useMemo(() => {
+    return allStudents.filter(isStudyingStudent);
+  }, [allStudents]);
+
   const filteredAvailableStudents = useMemo(() => {
-    return allStudents.filter(s => {
+    return studyingStudents.filter(s => {
       if (members.some(m => m.id === s.id)) return false;
       const matchLevel = selectedClassLevel === 'all' || s.classLevel === selectedClassLevel;
       const matchRoom = selectedRoom === 'all' || s.room === selectedRoom;
@@ -372,10 +385,18 @@ const ClubMemberManagementPage: React.FC = () => {
       return a.studentId.localeCompare(b.studentId);
     })
     .slice(0, 100);
-  }, [allStudents, members, selectedClassLevel, selectedRoom, studentSearchTerm]);
+  }, [studyingStudents, members, selectedClassLevel, selectedRoom, studentSearchTerm]);
 
   const handleAddMember = async (student: Student) => {
     if (!selectedClub || !schoolId) return;
+    if (!isRegistrationOpen) {
+      Swal.fire('ปิดรับสมัคร', 'ไม่สามารถเพิ่มนักเรียนได้ในขณะที่ระบบปิดรับสมัครชุมนุม', 'warning');
+      return;
+    }
+    if (!isStudyingStudent(student)) {
+      Swal.fire('ไม่สามารถเพิ่มได้', 'สามารถเพิ่มได้เฉพาะนักเรียนที่มีสถานะกำลังศึกษาอยู่เท่านั้น', 'warning');
+      return;
+    }
     if (!isClassLevelInRange(student.classLevel, selectedClub.allowedClassLevelFrom, selectedClub.allowedClassLevelTo)) {
       Swal.fire('ผิดพลาด', `ระดับชั้นไม่ตรงกับช่วงที่กำหนด (${formatClassLevelRange(selectedClub.allowedClassLevelFrom, selectedClub.allowedClassLevelTo)})`, 'error');
       return;
@@ -435,6 +456,10 @@ const ClubMemberManagementPage: React.FC = () => {
 
   const handleBulkAdd = async () => {
     if (!selectedClub || !schoolId || selectedStudentIds.length === 0) return;
+    if (!isRegistrationOpen) {
+      Swal.fire('ปิดรับสมัคร', 'ไม่สามารถเพิ่มนักเรียนได้ในขณะที่ระบบปิดรับสมัครชุมนุม', 'warning');
+      return;
+    }
     const remainingCapacity = selectedClub.capacity - members.length;
     if (selectedStudentIds.length > remainingCapacity) {
       Swal.fire('ผิดพลาด', `ชุมนุมนี้เหลือที่ว่างเพียง ${remainingCapacity} ที่`, 'error');
@@ -625,9 +650,9 @@ const ClubMemberManagementPage: React.FC = () => {
                 />
               </div>
               
-              {getRegistrationStatus().text && (
-                <div className={`px-2.5 py-1 rounded-lg flex items-center gap-2 border border-current opacity-80 ${getRegistrationStatus().color}`}>
-                  <span className="text-[10px] font-black whitespace-nowrap">{getRegistrationStatus().text}</span>
+              {registrationStatus.text && (
+                <div className={`px-2.5 py-1 rounded-lg flex items-center gap-2 border border-current opacity-80 ${registrationStatus.color}`}>
+                  <span className="text-[10px] font-black whitespace-nowrap">{registrationStatus.text}</span>
                 </div>
               )}
             </div>
@@ -706,6 +731,7 @@ const ClubMemberManagementPage: React.FC = () => {
                     {selectedStudentIds.length > 0 && (
                       <button 
                         onClick={handleBulkAdd}
+                        disabled={!isRegistrationOpen}
                         className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all"
                       >
                         เพิ่มสมาชิกที่เลือก ({selectedStudentIds.length})
@@ -773,7 +799,9 @@ const ClubMemberManagementPage: React.FC = () => {
                     <input 
                       type="checkbox" 
                       checked={selectedStudentIds.length === filteredAvailableStudents.length && filteredAvailableStudents.length > 0}
+                      disabled={!isRegistrationOpen || filteredAvailableStudents.length === 0}
                       onChange={(e) => {
+                        if (!isRegistrationOpen) return;
                         if (e.target.checked) {
                           setSelectedStudentIds(filteredAvailableStudents.map(s => s.id));
                         } else {
@@ -806,6 +834,7 @@ const ClubMemberManagementPage: React.FC = () => {
                       <div 
                         key={student.id} 
                         onClick={() => {
+                          if (!isRegistrationOpen) return;
                           setSelectedStudentIds(prev => 
                             prev.includes(student.id) ? prev.filter(id => id !== student.id) : [...prev, student.id]
                           );
@@ -820,6 +849,7 @@ const ClubMemberManagementPage: React.FC = () => {
                           <input 
                             type="checkbox" 
                             checked={selectedStudentIds.includes(student.id)}
+                            disabled={!isRegistrationOpen}
                             onChange={(e) => {
                               setSelectedStudentIds(prev => 
                                 e.target.checked ? [...prev, student.id] : prev.filter(id => id !== student.id)
@@ -871,7 +901,7 @@ const ClubMemberManagementPage: React.FC = () => {
                               e.stopPropagation();
                               handleAddMember(student);
                             }} 
-                            disabled={members.length >= (selectedClub?.capacity || 0)} 
+                            disabled={!isRegistrationOpen || members.length >= (selectedClub?.capacity || 0)} 
                             className="p-2 text-emerald-500 hover:bg-emerald-500 hover:text-white disabled:opacity-30 rounded-xl transition-all"
                           >
                             <UserPlus size={16} />

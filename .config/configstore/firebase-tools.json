@@ -1,0 +1,84 @@
+{
+	"motd": {
+		"cloudBuildErrorAfter": 1594252800000,
+		"cloudBuildWarnAfter": 1590019200000,
+		"defaultNode10After": 1594252800000,
+		"minVersion": "3.0.5",
+		"node8DeploysDisabledAfter": 1613390400000,
+		"node8RuntimeDisabledAfter": 1615809600000,
+		"node8WarnAfter": 1600128000000,
+		"fetched": 1781006944498
+	},
+	"gemini": true,
+	"usage": true,
+	"analytics-uuid": "a978a5db-7c7e-4f6e-88e6-232a22ccbce2",
+	"user": {
+		"iss": "accounts.google.com",
+		"azp": "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com",
+		"aud": "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com",
+		"sub": "102759964819814788773",
+		"email": "easyschoolmanagement@gmail.com",
+		"email_verified": true,
+		"at_hash": "A-Ime7zagHKP4Kk3NemaWQ",
+		"iat": 1777863358,
+		"exp": 1777866958
+	},
+	"tokens": {
+		"expires_at": 1781105115442,
+		"refresh_token": "1//0gjCeyfWqRuI8CgYIARAAGBASNwF-L9IrIsHivGGSKox18e7qCQM-6HkjvMcV69hqRts2euTHu-AIKfkdFk3NzzNtrvohv_4logE",
+		"scopes": [],
+		"access_token": "ya29.a0AT3oNZ9AMSSm3b3AZ5C44fdThUftQKfmLysLmH5RP0Y39N5Etvrwu2GU3gbQc199Kba5kjpjPISiQhU6tpd5n-mpNh-3IHysFOfhtZCx7lIflgMln-2uJZwjQnopCus45uJtSU_1FeUxuWSMWxF4fUtguNYrIDZUfkEub7MzI6Oi6agLYl1BbS9vYSx7ZupzVrunSkXtMyg9ok8aCgYKAewSARUSFQHGX2MiN1bXARYkVyFEYJXZA0xc0Q0214",
+		"expires_in": 3599,
+		"scope": "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloudplatformprojects.readonly https://www.googleapis.com/auth/firebase openid",
+		"token_type": "Bearer",
+		"id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjdiMDIxNjcxZWRlOTBlZTVhMzc1YzAyMmE1MjNkNDkwMTgxYTJjOWQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJhY2NvdW50cy5nb29nbGUuY29tIiwiYXpwIjoiNTYzNTg0MzM1ODY5LWZncmhnbWQ0N2JxbmVraWo1aThiNXByMDNobzg0OWU2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwiYXVkIjoiNTYzNTg0MzM1ODY5LWZncmhnbWQ0N2JxbmVraWo1aThiNXByMDNobzg0OWU2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwic3ViIjoiMTAyNzU5OTY0ODE5ODE0Nzg4NzczIiwiZW1haWwiOiJlYXN5c2Nob29sbWFuYWdlbWVudEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IlJ6ZWVPOU44TXZEdDlPeGdFdWxhUUEiLCJpYXQiOjE3ODExMDE1MTYsImV4cCI6MTc4MTEwNTExNn0.NIdtqrkYAx9khA14z88ikCwRNw_WC_L5tinZBlbLNVgM6_uaGknuPbfoktztTcsNd1LjhUMTY7II5Y47ldH4WGxhpBcsglom9bGmFq6ERabo_6Lf3wvjBVvjkkZsF3qEQYQ1i-QZIfGE0XBbkSWSSDBK7Vuisloy0SdxEvaQnvKcrhsQ5akKHzuvCWtj-iaAqcK3v1OkNaa4AqNTugeiGFysXQCZZhC9U7mbmYgwiW_6Od7kxBH6Lcj6iqLkZOrPA-JZa-aU2uv82mz5TTdKNPcnZ8q18SgnEc1dk83Om5pR1CVatPGyPlar4FBRhDLQ4z0Ym-GieeAmtp95F8QKjw"
+	},
+	"apiEnablementCache": {
+		"epp5online": {
+			"cloudresourcemanager.googleapis.com": true,
+			"developerknowledge.googleapis.com": true,
+			"firebaseremoteconfig.googleapis.com": true,
+			"fcm.googleapis.com": true,
+			"storage.googleapis.com": true,
+			"cloudfunctions.googleapis.com": true,
+			"identitytoolkit.googleapis.com": true,
+			"firestore.googleapis.com": true,
+			"runtimeconfig.googleapis.com": true,
+			"cloudbuild.googleapis.com": true,
+			"artifactregistry.googleapis.com": true,
+			"firebaseextensions.googleapis.com": true
+		},
+		"bmg-smartschool": {
+			"cloudresourcemanager.googleapis.com": true,
+			"runtimeconfig.googleapis.com": true,
+			"artifactregistry.googleapis.com": true,
+			"cloudfunctions.googleapis.com": true,
+			"cloudbuild.googleapis.com": true,
+			"firebaseextensions.googleapis.com": true,
+			"firebaseremoteconfig.googleapis.com": true,
+			"fcm.googleapis.com": true,
+			"storage.googleapis.com": true,
+			"identitytoolkit.googleapis.com": true,
+			"firestore.googleapis.com": true
+		},
+		"366452413162": {
+			"cloudscheduler.googleapis.com": true
+		},
+		"1029072529549": {
+			"cloudscheduler.googleapis.com": true
+		}
+	},
+	"activeProjects": {
+		"/": "epp5online",
+		"/Users/nontawatsuwanabupha/Documents/PorBorSystem": "epp5online",
+		"/Users/nontawatsuwanabupha/PorBorSystem": "epp5online",
+		"/Users/nontawatsuwanabupha/BMS SmartSchool": "bmg-smartschool"
+	},
+	"mcp": {
+		"clientConfigs": {
+			"antigravity-client:/": {
+				"projectRoot": "/Users/nontawatsuwanabupha/BMS SmartSchool"
+			}
+		}
+	}
+}

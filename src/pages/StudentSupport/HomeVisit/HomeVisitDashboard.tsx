@@ -294,7 +294,7 @@ const HomeVisitDashboard: React.FC = () => {
                                 className="flex items-center gap-2 px-6 py-3 bg-pink-600 text-white rounded-2xl font-bold shadow-lg shadow-pink-500/20 hover:bg-pink-700 transition-all active:scale-95"
                             >
                                 <TrendingUp size={20} />
-                                <span>สรุปภาพรวมห้องเรียน</span>
+                                <span>รายงานสรุป</span>
                             </Link>
                         </div>
                     </div>

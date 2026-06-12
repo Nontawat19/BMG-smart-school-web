@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 
 // Premium Dark mode styles for react-select (Same as other pages)
 const compactSelectStyles = {
@@ -268,7 +269,8 @@ const EnrollmentListPage: React.FC = () => {
 
             const sMap: Record<string, any> = {};
             studentSnap.docs.forEach(doc => {
-                sMap[doc.id] = { id: doc.id, ...doc.data() };
+                const s = { id: doc.id, ...doc.data() };
+                if (isStudyingStudent(s)) sMap[doc.id] = s;
             });
 
             // Map teachers by id

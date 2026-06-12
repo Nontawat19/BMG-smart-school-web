@@ -13,7 +13,7 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 
 // Sub-components and Utilities from the same folder
@@ -54,6 +54,21 @@ const getClassVariants = (classValue: unknown): string[] => {
     const value = String(classValue || '').trim();
     if (!value) return [];
 
+    // Handle room-level codes like 'm1/1' or 'ม.1/2' — generate both Thai and English variants
+    if (value.includes('/')) {
+        const slashIdx = value.indexOf('/');
+        const levelPart = value.substring(0, slashIdx);
+        const roomPart = value.substring(slashIdx + 1);
+        const fromLabel = Object.entries(CLASSES).find(([, label]) => label === levelPart)?.[0];
+        const levelKey = fromLabel || levelPart;
+        const thaiLevel = CLASSES[levelKey] || levelPart;
+        return Array.from(new Set([
+            `${levelKey}/${roomPart}`,
+            `${thaiLevel}/${roomPart}`,
+            value,
+        ].filter(Boolean).map(String)));
+    }
+
     const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
     const classKey = fromLabel || value;
 
@@ -87,9 +102,11 @@ const matchesClassValue = (recordClass: unknown, selectedClass: unknown): boolea
 // room-specific students (e.g. "m1/1", "m1/2"), preventing multi-room pull when the
 // substitution classId has no room number or was set to the teacher's full class list.
 const matchesClassValueStrict = (recordClass: unknown, classId: unknown): boolean => {
-    if (!classId) return true;
+    if (classId === null || classId === undefined) return true;
     const ids = (Array.isArray(classId) ? classId : [classId]).filter(Boolean).map(String);
-    if (ids.length === 0) return true;
+    // Empty array means classId data is corrupt/missing — return false to show no students
+    // (safer than returning true which would incorrectly match all enrolled students)
+    if (ids.length === 0) return false;
 
     if (Array.isArray(recordClass)) {
         return (recordClass as unknown[]).some(item => matchesClassValueStrict(item, classId));
@@ -726,7 +743,6 @@ const ClassroomAttendancePage: React.FC = () => {
                     if (subDate && subDate >= startOfDay && subDate <= endOfDay) {
                         const periodNumber = normalizeTeachingPeriod(data.period);
                         const timeInfo = getPeriodInfo(periodNumber);
-                        const subLevelName = CLASSES[data.classId] || data.classId || "ไม่ระบุชั้น";
                         const rawSubRoom = data.roomName || data.room || data.roomIds || data.classroom || "";
                         let subRoom = "";
 
@@ -739,34 +755,49 @@ const ClassroomAttendancePage: React.FC = () => {
                             subRoom = roomMap[String(rawSubRoom)] || String(rawSubRoom);
                         }
 
+                        // Resolve groupNumber: use explicit value from Firestore only — never
+                        // fall back to subRoom (a display string) or default 1, because defaulting
+                        // to group 1 would incorrectly filter out students in other groups.
+                        const subGroupNumber = data.groupNumber != null
+                            ? (Number(data.groupNumber) || undefined)
+                            : undefined;
+
+                        // classId may be null (unknown), string, or string[] — all handled correctly
+                        // by matchesClassValueStrict (null→match all enrolled, []→no match via safety fix)
+                        const subClassId = data.classId ?? null;
+                        const subClassIdStr = Array.isArray(subClassId)
+                            ? subClassId[0] || ''
+                            : String(subClassId || '');
+
                         dailySchedules.push({
                             id: `sub-${doc.id}`,
                             substitutionId: doc.id,
-                            courseId: data.courseId || data.originalCourseId,
+                            courseId: data.courseId || data.originalCourseId || '',
                             subjectCode: data.subjectCode || "",
                             subjectName: data.subjectName || "สอนแทน",
                             period: periodNumber,
                             startTime: formatDisplayTime(data.startTime) || timeInfo.startTime,
                             endTime: formatDisplayTime(data.endTime) || timeInfo.endTime,
-                            classId: data.classId,
+                            classId: subClassId ?? '',
                             className: (() => {
-                                const classIdStr = String(data.classId);
-                                if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${data.groupNumber ? `/${data.groupNumber}` : ''}`;
-                                if (classIdStr.includes('/')) {
-                                    const parts = classIdStr.split('/');
+                                if (CLASSES[subClassIdStr]) return `${CLASSES[subClassIdStr]}${subGroupNumber ? `/${subGroupNumber}` : ''}`;
+                                if (subClassIdStr.includes('/')) {
+                                    const parts = subClassIdStr.split('/');
                                     const levelKey = parts[0];
                                     const roomNum = parts[parts.length - 1];
                                     if (CLASSES[levelKey]) return `${CLASSES[levelKey]}/${roomNum}`;
+                                    return subClassIdStr;
                                 }
-                                return `${subLevelName}${data.groupNumber ? `/${data.groupNumber}` : ''}`;
+                                const displayLevel = CLASSES[subClassIdStr] || subClassIdStr || "ไม่ระบุชั้น";
+                                return `${displayLevel}${subGroupNumber ? `/${subGroupNumber}` : ''}`;
                             })(),
                             room: subRoom,
-                            groupNumber: Number(data.groupNumber || data.group || subRoom || 1) || 1,
+                            groupNumber: subGroupNumber,
                             day: dayKey,
                             isChecked: false,
                             isSubstitute: true,
                             originalTeacherId: data.originalTeacherId || "",
-                            originalTeacherName: teacherMap[data.originalTeacherId]?.firstName 
+                            originalTeacherName: teacherMap[data.originalTeacherId]?.firstName
                                 ? `${teacherMap[data.originalTeacherId].title || ''}${teacherMap[data.originalTeacherId].firstName} ${teacherMap[data.originalTeacherId].lastName}`
                                 : (data.originalTeacherName || "ไม่ระบุ")
                         });
@@ -1005,7 +1036,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             } as Student);
                         }
                     });
-                    studentList = Array.from(studentMap.values()).filter(isCurrentStudent);
+                    studentList = Array.from(studentMap.values()).filter(isStudyingStudent);
                 } else if (shouldUseEnrollmentOnly) {
                     studentList = [];
                 } else {
@@ -1027,7 +1058,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             nickname: data.nickname || ""
                         } as Student;
                     }).filter(student => matchesClassValue((student as any).classLevel || selectedClass.className, selectedClass.classId))
-                      .filter(isCurrentStudent);
+                      .filter(isStudyingStudent);
                 }
 
                 studentList.sort((a, b) => {

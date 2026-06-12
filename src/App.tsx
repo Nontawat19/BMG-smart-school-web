@@ -50,6 +50,11 @@ import ScreeningParentPage from "./pages/StudentSupport/Screening/ScreeningParen
 import HomeVisitDashboard from "./pages/StudentSupport/HomeVisit/HomeVisitDashboard";
 import NewHomeVisit from "./pages/StudentSupport/HomeVisit/NewHomeVisit";
 import HomeVisitSummary from "./pages/StudentSupport/HomeVisit/HomeVisitSummary";
+import HomeVisitSummaryHub from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryHub";
+import HomeVisitSummaryClassroom from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryClassroom";
+import HomeVisitSummaryAll from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryAll";
+import HomeVisitSummaryOBEC from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryOBEC";
+import HomeVisitTracking from "./pages/StudentSupport/HomeVisit/HomeVisitTracking";
 // Import Teacher Pages
 import AddTeacherPage from "./pages/Teachers/AddTeacherPage";
 import TeacherListPage from "./pages/Teachers/TeacherListPage";
@@ -119,6 +124,8 @@ import SchoolDetailsPage from "./pages/owner/SchoolDetailsPage"; // New page
 import UserListPage from "./pages/owner/UserListPage";
 import EditUserPage from "./pages/owner/EditUserPage";
 import AddUserPage from "./pages/owner/AddUserPage";
+import PermissionManagementPage from "./pages/owner/PermissionManagementPage";
+import { PermissionProvider } from "@/contexts/PermissionContext";
 
 import ImportCoursePage from "./pages/AcademicDepartment/ImportCoursePage"; // 📌 เพิ่มการ import หน้านำเข้าหลักสูตรจาก Excel
 import EnrollmentListPage from "./pages/AcademicDepartment/EnrollmentListPage"; // 📌 เพิ่มการสรุปการลงทะเบียน
@@ -202,6 +209,7 @@ function App() {
   // Permission groups are imported from @/constants/permissions
 
   return (
+    <PermissionProvider>
     <PullToRefresh>
       <Router>
         <Routes>
@@ -248,7 +256,12 @@ function App() {
 
           <Route path="/student-support/home-visit" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><HomeVisitDashboard /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/new/:studentId" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><NewHomeVisit /></ProtectedRoute>} />
-          <Route path="/student-support/home-visit/summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryHub /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/classroom" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryClassroom /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/all" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryAll /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/obec" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryOBEC /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/tracking" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitTracking /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/legacy" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
 
           {/* Student Management */}
           <Route path="/school/:schoolId/students" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentListPage /></ProtectedRoute>} />
@@ -358,6 +371,7 @@ function App() {
           <Route path="/owner/users" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><UserListPage /></ProtectedRoute>} />
           <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><EditUserPage /></ProtectedRoute>} />
           <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><AddUserPage /></ProtectedRoute>} />
+          <Route path="/owner/permission-management" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><PermissionManagementPage /></ProtectedRoute>} />
 
           {/* Slug Resolver (Multi-tenancy) */}
           <Route path="/:slug" element={<SlugResolverPage />} />
@@ -367,6 +381,7 @@ function App() {
         </Routes>
       </Router>
     </PullToRefresh>
+    </PermissionProvider>
   );
 }
 

@@ -24,7 +24,7 @@ import Swal from "sweetalert2";
 import { RootState } from "../../../store";
 import { isNonOfficialHoliday } from "../../../utils/calendarUtils";
 import { FoundUser } from "./types";
-import { sendLineAttendanceNotification } from "./AttendanceLineNotify";
+import { sendLineAttendanceNotification, sendTeacherLineAttendanceNotification } from "./AttendanceLineNotify";
 import { deg2rad, getDistanceFromLatLonInM, isPointInPolygon, getStatusKey } from "./utils";
 import HolidayBanner from "./HolidayBanner";
 import UserInfoPanel from "./UserInfoPanel";
@@ -293,6 +293,7 @@ const CheckinOutPage: React.FC = () => {
   const activeSearchKeysRef = useRef<Set<string>>(new Set());
   const activeAttendanceKeysRef = useRef<Set<string>>(new Set());
   const faceScanFailSpeechAtRef = useRef<number>(0);
+  const adminTeacherLineIdsRef = useRef<string[]>([]);
 
   // Use the imported getTodayString from dateUtils
 
@@ -420,6 +421,31 @@ const CheckinOutPage: React.FC = () => {
     };
 
     loadAndCacheStudents();
+  }, [schoolId]);
+
+  // โหลด LINE user IDs ของผู้บริหาร/แอดมิน เพื่อส่งแจ้งเตือนการลงเวลาครู
+  useEffect(() => {
+    if (!schoolId) return;
+
+    const loadAdminTeacherLineIds = async () => {
+      try {
+        const teacherRef = collection(firestore, "school-settings", schoolId, "teachers");
+        const [arrayRoleSnap, stringRoleSnap] = await Promise.all([
+          getDocs(query(teacherRef, where("role", "array-contains-any", ["super_admin", "school_admin"]), limit(20))),
+          getDocs(query(teacherRef, where("role", "in", ["super_admin", "school_admin"]), limit(20))),
+        ]);
+        const lineIds = new Set<string>();
+        [...arrayRoleSnap.docs, ...stringRoleSnap.docs].forEach((d) => {
+          const id = d.data().lineUserId?.trim();
+          if (id) lineIds.add(id);
+        });
+        adminTeacherLineIdsRef.current = Array.from(lineIds);
+      } catch (err) {
+        console.error("Error loading admin teacher LINE IDs:", err);
+      }
+    };
+
+    loadAdminTeacherLineIds();
   }, [schoolId]);
 
   useEffect(() => {
@@ -1192,8 +1218,9 @@ const CheckinOutPage: React.FC = () => {
     actionType: string
   ) => {
     if (user.type !== "student") return;
+    console.log(`[LINE] sendLineNotification called — actionType: ${actionType}, student: ${user.displayId}, hasSchoolSettings: ${Boolean(schoolSettings?.lineOASettings?.school)}`);
     try {
-      // ดึงข้อมูลสรุปภาคเรียนล่าสุดสำหรับแจ้งเตือน
+      // ดึงข้อมูลสรุปภาคเรียนล่าสุดและ behaviorScore ปัจจุบันจาก Firestore พร้อมกัน
       const { semesterKey } = getPeriodKeys(getTodayString(), currentAcademicYear);
       const semesterRef = doc(
         firestore,
@@ -1204,7 +1231,11 @@ const CheckinOutPage: React.FC = () => {
         "Semestersummary",
         semesterKey
       );
-      const semesterSnap = await getDoc(semesterRef);
+      const studentDocRef = doc(firestore, "school-settings", schoolId!, "students", user.id);
+      const [semesterSnap, studentSnap] = await Promise.all([
+        getDoc(semesterRef),
+        getDoc(studentDocRef),
+      ]);
 
       let semesterStats = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
       if (semesterSnap.exists()) {
@@ -1222,10 +1253,16 @@ const CheckinOutPage: React.FC = () => {
         semesterStats = user.attendanceStats || semesterStats;
       }
 
-      // สร้าง User object ใหม่พร้อมข้อมูลสถิติภาคเรียน
+      // อ่าน behaviorScore ล่าสุดตรงจาก Firestore (เหมือนที่หน้า Profile แสดงผล)
+      const liveBehaviorScore = studentSnap.exists()
+        ? (studentSnap.data().behaviorScore ?? user.behaviorScore ?? 100)
+        : (user.behaviorScore ?? 100);
+
+      // สร้าง User object ใหม่พร้อมข้อมูลสถิติภาคเรียนและคะแนนพฤติกรรมล่าสุด
       const userWithSemesterStats: FoundUser = {
         ...user,
         attendanceStats: semesterStats,
+        behaviorScore: liveBehaviorScore,
       };
 
       let finalConfig: any = null;
@@ -1295,6 +1332,7 @@ const CheckinOutPage: React.FC = () => {
         }
       }
 
+      console.log(`[LINE] finalConfig resolved: ${finalConfig ? "YES (token:" + Boolean(finalConfig.lineChannelAccessToken) + ")" : "NULL — notification will be skipped"}`);
       if (finalConfig) {
         const parentRecipientUserIds = getEligibleParentLineRecipients(user, finalConfig);
         const recipientUserIds = uniq([...parentRecipientUserIds, ...teacherRecipientUserIds]);
@@ -1311,11 +1349,14 @@ const CheckinOutPage: React.FC = () => {
         }
 
         console.log("[LINE] Sending attendance notification:", {
+          actionType,
           studentId: user.displayId,
           name: user.name,
           scanMethod: user.scanMethod,
           status,
           recipientCount: recipientUserIds.filter(Boolean).length,
+          parentCount: parentRecipientUserIds.length,
+          teacherCount: teacherRecipientUserIds.length,
           hasToken: Boolean(finalConfig.lineChannelAccessToken),
         });
         await sendLineAttendanceNotification(
@@ -1339,6 +1380,24 @@ const CheckinOutPage: React.FC = () => {
       console.error("LINE Notify Error:", error);
     }
   }, [schoolId, currentAcademicYear, schoolSettings]);
+
+  const sendTeacherLineNotification = useCallback(async (
+    user: FoundUser,
+    status: string,
+    time: string,
+    actionType: string
+  ) => {
+    if (user.type !== "teacher") return;
+    try {
+      const config = schoolSettings?.lineOASettings?.school;
+      if (!config?.lineChannelAccessToken || config?.enableNotification === false) return;
+      const recipientUserIds = adminTeacherLineIdsRef.current;
+      if (recipientUserIds.length === 0) return;
+      await sendTeacherLineAttendanceNotification(user, status, time, config, recipientUserIds, actionType);
+    } catch (error) {
+      console.error("[LINE] Teacher notification error:", error);
+    }
+  }, [schoolSettings]);
 
   const updateAttendance = useCallback(async (
     type: "checkin" | "checkout" | "checkin_and_checkout",
@@ -1448,13 +1507,17 @@ const CheckinOutPage: React.FC = () => {
         checkoutDevice: navigator.userAgent,
         scanType: user.scanMethod || "สแกนบัตร",
         updatedAt: Timestamp.fromDate(now),
-        metadata: user.scanMethod === "สแกนใบหน้า"
+        ...(user.scanMethod === "สแกนใบหน้า"
           ? {
-              ...(attendanceData.metadata || {}),
-              faceConfidence: user.faceConfidence ?? null,
-              findfaceCardId: user.findfaceCardId || null,
+              metadata: {
+                ...(attendanceData.metadata || {}),
+                faceConfidence: user.faceConfidence ?? null,
+                findfaceCardId: user.findfaceCardId || null,
+              }
             }
-          : attendanceData.metadata,
+          : attendanceData.metadata !== undefined
+          ? { metadata: attendanceData.metadata }
+          : {}),
       };
 
       setCheckoutTime(timeStr);
@@ -1573,18 +1636,25 @@ const CheckinOutPage: React.FC = () => {
     }
 
     await batch.commit();
+
+    // Update latest users list — runs after commit regardless of subsequent errors
+    const newUserAction: FoundUser = {
+      ...user,
+      behaviorScore: behaviorScoreAfterUpdate,
+      latestActionTime: timeStr,
+      status: status,
+      lastAction: type,
+    };
     setLatestUsers((prev) => {
-      const newUserAction: FoundUser = {
-        ...user,
-        behaviorScore: behaviorScoreAfterUpdate,
-        latestActionTime: timeStr,
-        status: status,
-      };
       const updatedList = [
         newUserAction,
         ...prev.filter((u) => u.id !== user.id),
       ].slice(0, 8);
-      localStorage.setItem("latestUsers", JSON.stringify(updatedList));
+      try {
+        localStorage.setItem("latestUsers", JSON.stringify(updatedList));
+      } catch {
+        // localStorage quota exceeded — state still updates
+      }
       return updatedList;
     });
     console.log("[Attendance] Saved attendance successfully:", {
@@ -1609,9 +1679,13 @@ const CheckinOutPage: React.FC = () => {
     });
 
     if (user.type === "student") {
+      console.log(`[LINE] Triggering ${type} notification for`, user.displayId, user.name, "status:", status);
       await sendLineNotification({ ...user, behaviorScore: behaviorScoreAfterUpdate }, status, timeStr, type);
+    } else if (user.type === "teacher") {
+      console.log(`[LINE] Triggering ${type} notification for teacher`, user.displayId, user.name, "status:", status);
+      await sendTeacherLineNotification(user, status, timeStr, type);
     }
-  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification]);
+  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification]);
 
   const resolveFaceMatchedUser = useCallback(async (payload: any): Promise<FoundUser | null> => {
     if (!schoolId) return null;
@@ -2948,14 +3022,6 @@ const CheckinOutPage: React.FC = () => {
                           setSearchId={setSearchId}
                           error={error}
                           currentTime={currentTime}
-                          calendarEvents={calendarEvents}
-                          getTodayString={getTodayString}
-                          studentLateTime={studentLateTime}
-                          studentCheckoutTime={studentCheckoutTime}
-                          teacherLateTime={teacherLateTime}
-                          teacherCheckoutTime={teacherCheckoutTime}
-                          canScanStudents={canScanStudents}
-                          canScanTeachers={canScanStudents && canScanTeachers ? false : canScanTeachers}
                           hideInput={isFaceScanModeEnabled}
                           className="lg:col-span-3"
                         />

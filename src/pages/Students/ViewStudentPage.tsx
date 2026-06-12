@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
@@ -8,9 +8,11 @@ import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf } from "react-icons/fa";
+import { pdf } from '@react-pdf/renderer';
+import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
@@ -123,6 +125,7 @@ interface StudentData {
     absent: number;
   };
   role?: string[];
+  enrolledCourseIds?: string[];
 }
 
 interface GradeRecord {
@@ -361,18 +364,15 @@ export default function ViewStudentPage() {
   const tabs = [
     { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
     { id: "academic", label: "การศึกษา", icon: <FaGraduationCap /> },
-    { id: "family", label: "ครอบครัว", icon: <FaUsers /> },
-    { id: "address", label: "ที่อยู่", icon: <FaMapMarkerAlt /> },
-    { id: "welfare", label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
-    { id: "travel", label: "การเดินทาง", icon: <FaBus /> },
     { id: "attendance", label: "สถาติการมาเรียน", icon: <FaClock /> },
     { id: "courses", label: "รายวิชาที่เรียน", icon: <FaBook /> },
+    { id: "official_travel", label: "การลาของนักเรียน", icon: <FaHourglassHalf /> },
     { id: "club", label: "กิจกรรมชุมนุม", icon: <FaUsers /> },
-    { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
   ];
 
   const { schoolId, studentId } = useParams<{ schoolId: string, studentId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [student, setStudent] = useState<StudentData | null>(null);
   const [studentGrades, setStudentGrades] = useState<Record<string, GradeRecord>>({});
   const [courses, setCourses] = useState<CourseData[]>([]);
@@ -385,7 +385,23 @@ export default function ViewStudentPage() {
   const [showTransferList, setShowTransferList] = useState(false);
   const completedClubRequestIdsRef = useRef<Set<string>>(new Set());
   const [clubPage, setClubPage] = useState(1);
-  const [activeTab, setActiveTab] = useState("general");
+  const validTabs = ["general", "academic", "attendance", "courses", "official_travel", "club"];
+  const [activeTab, setActiveTab] = useState(() => {
+    const t = searchParams.get("tab");
+    return t && validTabs.includes(t) ? t : "general";
+  });
+  const [generalStep, setGeneralStep] = useState(() => {
+    const s = parseInt(searchParams.get("step") || "0", 10);
+    return isNaN(s) ? 0 : Math.min(Math.max(s, 0), 4);
+  });
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    setSearchParams(prev => { prev.set("tab", tabId); prev.delete("step"); return prev; }, { replace: true });
+  };
+  const handleStepChange = (step: number) => {
+    setGeneralStep(step);
+    setSearchParams(prev => { prev.set("step", String(step)); return prev; }, { replace: true });
+  };
   const [attendanceTrendData, setAttendanceTrendData] = useState<any[]>([]);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
   const dispatch = useDispatch();
@@ -400,10 +416,15 @@ export default function ViewStudentPage() {
   const [calculatedStats, setCalculatedStats] = useState<{
     present: number; late: number; leave: number; absent: number; early: number; noCheckout: number; official_travel_days?: number;
   } | null>(null);
+  const [isRegistrationEnabled, setIsRegistrationEnabled] = useState<boolean>(false);
   const [globalClubStartDate, setGlobalClubStartDate] = useState<string>('');
   const [globalClubEndDate, setGlobalClubEndDate] = useState<string>('');
+  const [regStartTime, setRegStartTime] = useState<string>('');
+  const [regEndTime, setRegEndTime] = useState<string>('');
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
+  const [studentLeaveRequests, setStudentLeaveRequests] = useState<any[]>([]);
+  const [exportingLeaveId, setExportingLeaveId] = useState<string | null>(null);
   const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
     schoolName: "",
     directorName: "",
@@ -449,25 +470,33 @@ export default function ViewStudentPage() {
     navigate('/login');
   };
 
-  const getClubStatus = (club: any): { text: string; color: string; isOpen: boolean; } => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    // Use global dates if available
-    if (globalClubStartDate && globalClubEndDate) {
-      const start = new Date(globalClubStartDate);
-      const end = new Date(globalClubEndDate);
-      end.setHours(23, 59, 59, 999);
-
-      if (now >= start && now <= end) return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', isOpen: true };
-      if (now < start) return { text: `เปิดวันที่ ${start.toLocaleDateString('th-TH')}`, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', isOpen: false };
-      return { text: 'ปิดรับสมัครแล้ว', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', isOpen: false };
+  const getClubStatus = (_club: any): { text: string; color: string; isOpen: boolean; } => {
+    if (!isRegistrationEnabled) {
+      return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', isOpen: false };
     }
 
-    // Fallback: If no global dates are set, assume it's NOT open (or open? let's follow the admin page logic which says "Unspecified time" but here we should probably be safe).
-    // Actually, looking at previous logic: "If no dates are set, assume it's always open" -> Let's keep it consistent with "Unspecified" but maybe allow?
-    // Let's matching Admin Page logic: "ไม่ระบุเวลา"
-    return { text: 'ไม่ระบุเวลา', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', isOpen: true }; // Allowing for now if not set, or we can close it. 
+    const now = new Date();
+    const todayOnly = new Date(now);
+    todayOnly.setHours(0, 0, 0, 0);
+
+    if (globalClubStartDate && globalClubEndDate) {
+      const start = new Date(globalClubStartDate + 'T00:00:00');
+      const end = new Date(globalClubEndDate + 'T23:59:59');
+
+      if (todayOnly < start) return { text: `เปิดวันที่ ${start.toLocaleDateString('th-TH')}`, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', isOpen: false };
+      if (now > end) return { text: 'ปิดรับสมัครแล้ว', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', isOpen: false };
+    }
+
+    if (regStartTime && regEndTime) {
+      const cur = now.getHours() * 60 + now.getMinutes();
+      const [sh, sm] = regStartTime.split(':').map(Number);
+      const [eh, em] = regEndTime.split(':').map(Number);
+      if (cur < sh * 60 + sm || cur > eh * 60 + em) {
+        return { text: `รับสมัคร ${regStartTime} - ${regEndTime} น.`, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', isOpen: false };
+      }
+    }
+
+    return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', isOpen: true };
   };
 
   const canStudentJoinClub = (club: any) => {
@@ -710,22 +739,7 @@ export default function ViewStudentPage() {
         }
         setMyClub(foundClub);
 
-        // ตรวจสอบการตั้งค่าการย้ายชุมนุมจากฝ่ายวิชาการ
-        try {
-          const configRef = doc(firestore, "school-settings", schoolId, "configs", "club_settings");
-          const configSnap = await getDoc(configRef);
-          if (configSnap.exists()) {
-            const data = configSnap.data();
-            setIsTransferEnabled(data.allowTransfer || false);
-            setGlobalClubStartDate(data.registrationStartDate || '');
-            setGlobalClubEndDate(data.registrationEndDate || '');
-          } else {
-            setIsTransferEnabled(false);
-          }
-        } catch (configError) {
-          console.warn("Could not fetch club settings:", configError);
-          setIsTransferEnabled(false);
-        }
+        // club settings จัดการโดย onSnapshot listener แยกต่างหาก
 
         try {
           const requestsRef = collection(firestore, "school-settings", schoolId, "club_requests");
@@ -751,6 +765,31 @@ export default function ViewStudentPage() {
     };
     fetchClubInfo();
   }, [activeTab, schoolId, studentId]);
+
+  // Realtime listener สำหรับการตั้งค่าระบบชุมนุม
+  useEffect(() => {
+    if (activeTab !== 'club' || !schoolId) return;
+    const configRef = doc(firestore, "school-settings", schoolId, "configs", "club_settings");
+    const unsub = onSnapshot(configRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setIsRegistrationEnabled(data.registrationEnabled ?? false);
+        setIsTransferEnabled(data.allowTransfer || false);
+        setGlobalClubStartDate(data.registrationStartDate || '');
+        setGlobalClubEndDate(data.registrationEndDate || '');
+        setRegStartTime(data.registrationStartTime || '');
+        setRegEndTime(data.registrationEndTime || '');
+      } else {
+        setIsRegistrationEnabled(false);
+        setIsTransferEnabled(false);
+      }
+    }, (err) => {
+      console.warn("Could not listen to club settings:", err);
+      setIsRegistrationEnabled(false);
+      setIsTransferEnabled(false);
+    });
+    return () => unsub();
+  }, [activeTab, schoolId]);
 
   useEffect(() => {
     if (activeTab !== 'club' || !schoolId || !studentId || !pendingRequest?.id || !pendingRequest?.targetClubId) return;
@@ -851,16 +890,11 @@ export default function ViewStudentPage() {
           const studentData = docSnap.data() as StudentData;
           setStudent(studentData);
 
-          // Fetch enrolled courses for the student in the current academic year
+          // Fetch enrolled courses from enrolledCourseIds field on the student document
           try {
-            const enrollmentsRef = collection(firestore, "school-settings", schoolId, "enrollments");
-            const q = query(
-              enrollmentsRef,
-              where("studentId", "==", studentId),
-              where("academicYear", "==", academicYear)
-            );
-            const querySnapshot = await getDocs(q);
-            const enrolledCourseIds = Array.from(new Set(querySnapshot.docs.map(doc => doc.data().courseId)));
+            const enrolledCourseIds: string[] = Array.isArray(studentData.enrolledCourseIds)
+              ? [...new Set(studentData.enrolledCourseIds as string[])]
+              : [];
 
             if (enrolledCourseIds.length > 0) {
               const courseDocsPromises = enrolledCourseIds.map(id =>
@@ -894,22 +928,104 @@ export default function ViewStudentPage() {
 
   useEffect(() => {
     if (activeTab === 'official_travel' && schoolId && studentId) {
-      const fetchTravelRequests = async () => {
+      const fetchLeaveRequests = async () => {
         try {
-          const reqRef = collection(firestore, "school-settings", schoolId, "students", studentId, "travel_summary");
-          const q = query(reqRef, orderBy("createdAt", "desc")); // orderBy requires index, if fails, order manually or ensure index
-          const snapshot = await getDocs(q);
-          const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setOfficialTravelRequests(requests);
+          const leaveRef = collection(firestore, "school-settings", schoolId, "students", studentId, "leave_summary");
+          const snapshot = await getDocs(leaveRef);
+          const requests = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a: any, b: any) => {
+              const getTime = (v: any) => v?.toDate ? v.toDate().getTime() : new Date(v || 0).getTime();
+              return getTime(b.startDate) - getTime(a.startDate);
+            });
+          setStudentLeaveRequests(requests);
         } catch (err) {
-          console.error("Error fetching travel requests:", err);
-          // Fallback manual sort if index missing
-          // ... 
+          console.error("Error fetching student leave requests:", err);
         }
       };
-      fetchTravelRequests();
+      fetchLeaveRequests();
     }
   }, [activeTab, schoolId, studentId]);
+
+  const thaiDateStr = (ts?: any) => {
+    if (!ts) return '-';
+    const date = ts?.toDate ? ts.toDate() : new Date(ts);
+    return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  const handleLeaveExportPdf = async (req: any) => {
+    if (!schoolId || !student) return;
+    setExportingLeaveId(req.id);
+    let guardianName = "........................................";
+    let teacherName = "........................................";
+    let schoolName = "........................................";
+    let logoUrl = "/school-logo.png";
+    try {
+      const schoolDoc = await getDoc(doc(firestore, "school-settings", schoolId));
+      if (schoolDoc.exists()) {
+        const sd = schoolDoc.data();
+        schoolName = sd.schoolName || schoolName;
+        logoUrl = sd.logoUrl || logoUrl;
+      }
+    } catch (_) {}
+    try {
+      const gTitle = (student.guardianTitle || "").trim();
+      const gFirst = (student.guardianFirstName || "").trim();
+      const gLast = (student.guardianLastName || "").trim();
+      if (gFirst) {
+        const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+        const hasTitle = commonTitles.some(t => gFirst.startsWith(t));
+        guardianName = hasTitle ? `${gFirst} ${gLast}`.trim() : `${gTitle} ${gFirst} ${gLast}`.trim();
+      } else if (student.guardian) {
+        guardianName = student.guardian;
+      }
+      const gradesToCheck = [student.classLevel, `${student.classLevel}/${student.room}`].filter(Boolean);
+      if (gradesToCheck.length > 0) {
+        const tSnap = await getDocs(query(
+          collection(firestore, "school-settings", schoolId, "teachers"),
+          where("isHomeroomTeacher", "==", true),
+          where("homeroomGrade", "in", gradesToCheck)
+        ));
+        if (!tSnap.empty) {
+          const t = tSnap.docs[0].data();
+          teacherName = `${t.title || ''}${t.firstName} ${t.lastName}`;
+        }
+      }
+    } catch (_) {}
+    try {
+      const today = (() => {
+        const d = new Date();
+        const thYear = d.getFullYear() + 543;
+        return { day: d.getDate(), month: d.toLocaleDateString('th-TH', { month: 'long' }), year: thYear };
+      })();
+      const dataForPdf = {
+        studentName: req.studentName || `${student.title || ''}${student.firstName} ${student.lastName}`,
+        studentId: student.studentId,
+        leaveType: req.leaveType,
+        reason: req.reason,
+        startDate: thaiDateStr(req.startDate),
+        endDate: thaiDateStr(req.endDate),
+        returnDate: thaiDateStr(req.returnDate),
+        guardianName,
+        teacherName,
+        schoolName,
+        logoUrl,
+      };
+      const blob = await pdf(<LeaveRequestPdfDocument data={dataForPdf} today={today} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ใบลา-${dataForPdf.studentName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to generate leave PDF:", err);
+    } finally {
+      setExportingLeaveId(null);
+    }
+  };
 
   const handleClubRequest = async (targetClub: any, type: 'apply' | 'transfer') => {
     if (!schoolId || !studentId || !student) return;
@@ -1003,14 +1119,20 @@ export default function ViewStudentPage() {
 
   const handleCancelRequest = async () => {
     if (!pendingRequest || !schoolId) return;
+    const reqRef = doc(firestore, "school-settings", schoolId, "club_requests", pendingRequest.id);
     try {
-      await deleteDoc(doc(firestore, "school-settings", schoolId, "club_requests", pendingRequest.id));
-      setPendingRequest(null);
-      savePendingClubRequest(null);
-      Swal.fire({ icon: 'success', title: 'ยกเลิกคำขอแล้ว', timer: 1500, showConfirmButton: false });
-    } catch (err) {
-      Swal.fire('ผิดพลาด', 'ไม่สามารถยกเลิกได้', 'error');
+      await deleteDoc(reqRef);
+    } catch {
+      // ถ้าลบไม่ได้ (permission) ลองอัปเดตสถานะเป็น cancelled แทน
+      try {
+        await updateDoc(reqRef, { status: 'cancelled', cancelledAt: serverTimestamp() });
+      } catch {
+        // ถ้ายังไม่ได้ ให้ยกเลิกเฉพาะ local state (document ยังอยู่ใน Firestore แต่ admin จะเห็นเป็น cancelled)
+      }
     }
+    setPendingRequest(null);
+    savePendingClubRequest(null);
+    Swal.fire({ icon: 'success', title: 'ยกเลิกคำขอแล้ว', timer: 1500, showConfirmButton: false });
   };
 
   if (isLoading) {
@@ -1134,7 +1256,7 @@ export default function ViewStudentPage() {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); setIsSidebarOpen(false); }}
+                  onClick={() => { handleTabChange(tab.id); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === tab.id
                     ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300 font-semibold"
                     : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -1263,7 +1385,7 @@ export default function ViewStudentPage() {
                   <button
                     key={tab.id}
                     onClick={() => {
-                      setActiveTab(tab.id);
+                      handleTabChange(tab.id);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === tab.id
@@ -1288,7 +1410,7 @@ export default function ViewStudentPage() {
                       key={tab.id}
                       type="button"
                       onClick={() => {
-                        setActiveTab(tab.id);
+                        handleTabChange(tab.id);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
@@ -1306,36 +1428,216 @@ export default function ViewStudentPage() {
               <div className="space-y-6">
                 {activeTab === "general" && (
                   <div className="space-y-6 animate-fade-in">
-                    <InfoCard title="ข้อมูลส่วนตัว">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <DetailField label="คำนำหน้า" value={student.title} />
-                          <DetailField label="ชื่อจริง" value={student.firstName} />
-                          <DetailField label="นามสกุล" value={student.lastName} />
-                          <DetailField label="ชื่อเล่น" value={student.nickname} />
-                          <SensitiveDetailField label="เลขบัตรประจำตัวประชาชน" rawValue={student.idCardNumber} />
-                        </div>
-                        <div className="space-y-4">
-                          <DetailField label="ชื่อจริง (อังกฤษ)" value={student.firstNameEn} />
-                          <DetailField label="นามสกุล (อังกฤษ)" value={student.lastNameEn} />
-                          <DetailField label="วันเกิด" value={formatStudentBirthDateThai(student.birthDate)} />
-                          <div className="grid grid-cols-2 gap-4">
-                            <DetailField label="เพศ" value={student.gender} />
-                            <DetailField label="หมู่เลือด" value={student.bloodType} />
+                    {(() => {
+                      const generalSteps = [
+                        { label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
+                        { label: "ครอบครัว", icon: <FaUsers /> },
+                        { label: "ที่อยู่", icon: <FaMapMarkerAlt /> },
+                        { label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
+                        { label: "การเดินทาง", icon: <FaBus /> },
+                      ];
+                      return (
+                        <>
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                            {generalSteps.map((s, i) => (
+                              <button
+                                key={i}
+                                onClick={() => handleStepChange(i)}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${generalStep === i ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                              >
+                                <span>{s.icon}</span>{s.label}
+                              </button>
+                            ))}
                           </div>
-                          <DetailField label="จังหวัดเกิด" value={student.birthProvince} />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
-                        <DetailField label="ศาสนา" value={student.religion} />
-                        <DetailField label="เชื้อชาติ" value={student.ethnicity} />
-                        <DetailField label="สัญชาติ" value={student.nationality} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
-                        <DetailField label="เบอร์โทรศัพท์นักเรียน" value={student.phoneNumber || "-"} />
-                        <DetailField label="Line ID" value={student.lineId || "-"} />
-                      </div>
-                    </InfoCard>
+
+                          {generalStep === 0 && (
+                            <InfoCard title="ข้อมูลส่วนตัว">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <div className="space-y-4">
+                                  <DetailField label="คำนำหน้า" value={student.title} />
+                                  <DetailField label="ชื่อจริง" value={student.firstName} />
+                                  <DetailField label="นามสกุล" value={student.lastName} />
+                                  <DetailField label="ชื่อเล่น" value={student.nickname} />
+                                  <SensitiveDetailField label="เลขบัตรประจำตัวประชาชน" rawValue={student.idCardNumber} />
+                                </div>
+                                <div className="space-y-4">
+                                  <DetailField label="ชื่อจริง (อังกฤษ)" value={student.firstNameEn} />
+                                  <DetailField label="นามสกุล (อังกฤษ)" value={student.lastNameEn} />
+                                  <DetailField label="วันเกิด" value={formatStudentBirthDateThai(student.birthDate)} />
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <DetailField label="เพศ" value={student.gender} />
+                                    <DetailField label="หมู่เลือด" value={student.bloodType} />
+                                  </div>
+                                  <DetailField label="จังหวัดเกิด" value={student.birthProvince} />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
+                                <DetailField label="ศาสนา" value={student.religion} />
+                                <DetailField label="เชื้อชาติ" value={student.ethnicity} />
+                                <DetailField label="สัญชาติ" value={student.nationality} />
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
+                                <DetailField label="เบอร์โทรศัพท์นักเรียน" value={student.phoneNumber || "-"} />
+                                <DetailField label="Line ID" value={student.lineId || "-"} />
+                              </div>
+                            </InfoCard>
+                          )}
+
+                          {generalStep === 1 && (
+                            <div className="space-y-6">
+                              <InfoCard title="ข้อมูลครอบครัว">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  <DetailField label="จำนวนพี่น้องทั้งหมด" value={student.totalSiblings} />
+                                  <DetailField label="กำลังศึกษาอยู่" value={student.studyingSiblingCount} />
+                                  <DetailField label="เป็นบุตรคนที่" value={student.childOrder} />
+                                  <DetailField label="เป็นคนเรียนคนที่" value={student.childOrderInCategory} />
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm text-gray-500">
+                                  <DetailField label="พี่ชาย (คน)" value={student.elderBrotherCount} />
+                                  <DetailField label="น้องชาย (คน)" value={student.youngerBrotherCount} />
+                                  <DetailField label="พี่สาว (คน)" value={student.elderSisterCount} />
+                                  <DetailField label="น้องสาว (คน)" value={student.youngerSisterCount} />
+                                </div>
+                                <div className="pt-4 border-t border-gray-100 dark:border-gray-700 mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <DetailField label="สถานภาพสมรสบิดามารดา" value={student.parentsMaritalStatus} />
+                                  <DetailField label="สถานภาพครอบครัว (นักเรียน)" value={student.familyStatus} />
+                                </div>
+                              </InfoCard>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <InfoCard title="ข้อมูลบิดา">
+                                  <DetailField label="ชื่อ-สกุล" value={formatFullName(student.fatherTitle, student.fatherFirstName, student.fatherLastName)} />
+                                  <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.fatherIdNumber || student.fatherIdCard} />
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <DetailField label="อาชีพ" value={student.fatherOccupation} />
+                                    <DetailField label="รายได้ (เดือน)" value={student.fatherMonthlyIncome || student.fatherIncome} />
+                                  </div>
+                                  <DetailField label="เบอร์โทรศัพท์" value={student.fatherPhone} />
+                                </InfoCard>
+                                <InfoCard title="ข้อมูลมารดา">
+                                  <DetailField label="ชื่อ-สกุล" value={formatFullName(student.motherTitle, student.motherFirstName, student.motherLastName)} />
+                                  <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.motherIdNumber || student.motherIdCard} />
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <DetailField label="อาชีพ" value={student.motherOccupation} />
+                                    <DetailField label="รายได้ (เดือน)" value={student.motherMonthlyIncome || student.motherIncome} />
+                                  </div>
+                                  <DetailField label="เบอร์โทรศัพท์" value={student.motherPhone} />
+                                </InfoCard>
+                              </div>
+                              <InfoCard title="ข้อมูลผู้ปกครอง">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <DetailField label="ความสัมพันธ์" value={student.guardianRelationship || student.guardianRelation} />
+                                    <DetailField label="ชื่อ-สกุล" value={formatFullName(student.guardianTitle, student.guardianFirstName, student.guardianLastName, student.guardian)} />
+                                    <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.guardianIdNumber || student.guardianIdCard} />
+                                  </div>
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <DetailField label="อาชีพ" value={student.guardianOccupation} />
+                                      <DetailField label="รายได้ (เดือน)" value={student.guardianMonthlyIncome || student.guardianIncome} />
+                                    </div>
+                                    <DetailField label="เบอร์โทรศัพท์" value={student.guardianPhone || student.contact} />
+                                  </div>
+                                </div>
+                              </InfoCard>
+                            </div>
+                          )}
+
+                          {generalStep === 2 && (
+                            <div className="space-y-6">
+                              <InfoCard title="ที่อยู่ตามทะเบียนบ้าน">
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                  <div className="col-span-2"><DetailField label="รหัสประจำบ้าน" value={student.regHouseId} /></div>
+                                  <DetailField label="บ้านเลขที่" value={student.regAddressNumber} />
+                                  <DetailField label="หมู่ที่" value={student.regMoo} />
+                                  <div className="col-span-2"><DetailField label="ถนน" value={student.regRoad} /></div>
+                                  <div className="col-span-2"><DetailField label="ซอย" value={student.regSoi} /></div>
+                                  <div className="col-span-2"><DetailField label="ตำบล/แขวง" value={student.regSubDistrict} /></div>
+                                  <div className="col-span-2"><DetailField label="อำเภอ/เขต" value={student.regDistrict} /></div>
+                                  <div className="col-span-2"><DetailField label="จังหวัด" value={student.regProvince} /></div>
+                                  <div className="col-span-2"><DetailField label="รหัสไปรษณีย์" value={student.regZipCode} /></div>
+                                  <div className="col-span-2"><DetailField label="โทรศัพท์บ้าน" value={student.regPhone} /></div>
+                                </div>
+                              </InfoCard>
+                              <InfoCard title="ที่อยู่ปัจจุบัน">
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                  <div className="col-span-2"><DetailField label="รหัสประจำบ้าน" value={student.curHouseId} /></div>
+                                  <DetailField label="บ้านเลขที่" value={student.curAddressNumber} />
+                                  <DetailField label="หมู่ที่" value={student.curMoo} />
+                                  <div className="col-span-2"><DetailField label="ถนน" value={student.curRoad} /></div>
+                                  <div className="col-span-2"><DetailField label="ซอย" value={student.curSoi} /></div>
+                                  <div className="col-span-2"><DetailField label="ตำบล/แขวง" value={student.curSubDistrict} /></div>
+                                  <div className="col-span-2"><DetailField label="อำเภอ/เขต" value={student.curDistrict} /></div>
+                                  <div className="col-span-2"><DetailField label="จังหวัด" value={student.curProvince} /></div>
+                                  <div className="col-span-2"><DetailField label="รหัสไปรษณีย์" value={student.curZipCode} /></div>
+                                  <div className="col-span-2"><DetailField label="โทรศัพท์" value={student.curPhone} /></div>
+                                </div>
+                              </InfoCard>
+                            </div>
+                          )}
+
+                          {generalStep === 3 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              <InfoCard title="ข้อมูลสุขภาพ">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <DetailField label="น้ำหนัก (กก.)" value={student.weight} />
+                                  <DetailField label="ส่วนสูง (ซม.)" value={student.height} />
+                                </div>
+                                <DetailField label="ประเภทความพิการ" value={student.disabilityType} />
+                              </InfoCard>
+                              <InfoCard title="ข้อมูลสวัสดิการ">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <DetailField label="ความด้อยโอกาส" value={student.disadvantageType} />
+                                  <DetailField label="การพักนอน" value={student.staysAtSchool} />
+                                </div>
+                                <div className="mt-4 space-y-2">
+                                  <p className="text-sm font-bold text-gray-700 dark:text-gray-300">สิ่งที่ขาดแคลน:</p>
+                                  <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
+                                    {student.lacksUniform && <li>ขาดแคลนเครื่องแบบ</li>}
+                                    {student.lacksStationery && <li>ขาดแคลนเครื่องเขียน</li>}
+                                    {student.lacksTextbook && <li>ขาดแคลนแบบเรียน</li>}
+                                    {student.lacksLunch && <li>ขาดแคลนอาหารกลางวัน</li>}
+                                    {!student.lacksUniform && !student.lacksStationery && !student.lacksTextbook && !student.lacksLunch && <li>- ไม่มี -</li>}
+                                  </ul>
+                                </div>
+                              </InfoCard>
+                            </div>
+                          )}
+
+                          {generalStep === 4 && (
+                            <InfoCard title="การเดินทาง">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <DetailField label="วิธีเดินทาง" value={student.travelMethod} />
+                                <DetailField label="เวลาที่ใช้ (นาที)" value={student.travelTime} />
+                                <DetailField label="ค่าใช้จ่าย (เดือน)" value={student.travelMonthlyCost} />
+                                <DetailField label="ระยะทางรวม (กม.)" value={student.travelDistance} />
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
+                                <DetailField label="ระยะทางถนนลูกรัง" value={student.distanceDirtRoad} />
+                                <DetailField label="ระยะทางถนนลาดยาง" value={student.distancePavedRoad} />
+                                <DetailField label="ระยะทางทางน้ำ" value={student.distanceWaterway} />
+                              </div>
+                            </InfoCard>
+                          )}
+
+                          <div className="flex justify-between pt-2">
+                            <button
+                              onClick={() => handleStepChange(Math.max(0, generalStep - 1))}
+                              disabled={generalStep === 0}
+                              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                              <FaChevronLeft /> ย้อนกลับ
+                            </button>
+                            <button
+                              onClick={() => handleStepChange(Math.min(generalSteps.length - 1, generalStep + 1))}
+                              disabled={generalStep === generalSteps.length - 1}
+                              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            >
+                              ถัดไป <FaChevronRight />
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -1356,151 +1658,6 @@ export default function ViewStudentPage() {
                         <DetailField label="เกรดเฉลี่ยสะสม (GPAX)" value={student.gpax} />
                         <DetailField label="วันที่เข้าเรียน" value={student.enrollmentDate ? new Date(student.enrollmentDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : "-"} />
                         <DetailField label="คะแนนความประพฤติ" value={`${student.behaviorScore ?? 100} คะแนน`} />
-                      </div>
-                    </InfoCard>
-                  </div>
-                )}
-
-                {activeTab === "family" && (
-                  <div className="space-y-6 animate-fade-in">
-                    <InfoCard title="ข้อมูลครอบครัว">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <DetailField label="จำนวนพี่น้องทั้งหมด" value={student.totalSiblings} />
-                        <DetailField label="กำลังศึกษาอยู่" value={student.studyingSiblingCount} />
-                        <DetailField label="เป็นบุตรคนที่" value={student.childOrder} />
-                        <DetailField label="เป็นคนเรียนคนที่" value={student.childOrderInCategory} />
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm text-gray-500">
-                        <DetailField label="พี่ชาย (คน)" value={student.elderBrotherCount} />
-                        <DetailField label="น้องชาย (คน)" value={student.youngerBrotherCount} />
-                        <DetailField label="พี่สาว (คน)" value={student.elderSisterCount} />
-                        <DetailField label="น้องสาว (คน)" value={student.youngerSisterCount} />
-                      </div>
-                      <div className="pt-4 border-t border-gray-100 dark:border-gray-700 mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <DetailField label="สถานภาพสมรสบิดามารดา" value={student.parentsMaritalStatus} />
-                        <DetailField label="สถานภาพครอบครัว (นักเรียน)" value={student.familyStatus} />
-                      </div>
-                    </InfoCard>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <InfoCard title="ข้อมูลบิดา">
-                        <DetailField label="ชื่อ-สกุล" value={formatFullName(student.fatherTitle, student.fatherFirstName, student.fatherLastName)} />
-                        <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.fatherIdNumber || student.fatherIdCard} />
-                        <div className="grid grid-cols-2 gap-4">
-                          <DetailField label="อาชีพ" value={student.fatherOccupation} />
-                          <DetailField label="รายได้ (เดือน)" value={student.fatherMonthlyIncome || student.fatherIncome} />
-                        </div>
-                        <DetailField label="เบอร์โทรศัพท์" value={student.fatherPhone} />
-                      </InfoCard>
-
-                      <InfoCard title="ข้อมูลมารดา">
-                        <DetailField label="ชื่อ-สกุล" value={formatFullName(student.motherTitle, student.motherFirstName, student.motherLastName)} />
-                        <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.motherIdNumber || student.motherIdCard} />
-                        <div className="grid grid-cols-2 gap-4">
-                          <DetailField label="อาชีพ" value={student.motherOccupation} />
-                          <DetailField label="รายได้ (เดือน)" value={student.motherMonthlyIncome || student.motherIncome} />
-                        </div>
-                        <DetailField label="เบอร์โทรศัพท์" value={student.motherPhone} />
-                      </InfoCard>
-                    </div>
-
-                    <InfoCard title="ข้อมูลผู้ปกครอง">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <DetailField label="ความสัมพันธ์" value={student.guardianRelationship || student.guardianRelation} />
-                          <DetailField label="ชื่อ-สกุล" value={formatFullName(student.guardianTitle, student.guardianFirstName, student.guardianLastName, student.guardian)} />
-                          <SensitiveDetailField label="เลขบัตรประชาชน" rawValue={student.guardianIdNumber || student.guardianIdCard} />
-                        </div>
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <DetailField label="อาชีพ" value={student.guardianOccupation} />
-                            <DetailField label="รายได้ (เดือน)" value={student.guardianMonthlyIncome || student.guardianIncome} />
-                          </div>
-                          <DetailField label="เบอร์โทรศัพท์" value={student.guardianPhone || student.contact} />
-                        </div>
-                      </div>
-                    </InfoCard>
-                  </div>
-                )}
-
-                {activeTab === "address" && (
-                  <div className="space-y-6 animate-fade-in">
-                    <InfoCard title="ที่อยู่ตามทะเบียนบ้าน">
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                        <div className="col-span-2"><DetailField label="รหัสประจำบ้าน" value={student.regHouseId} /></div>
-                        <DetailField label="บ้านเลขที่" value={student.regAddressNumber} />
-                        <DetailField label="หมู่ที่" value={student.regMoo} />
-                        <div className="col-span-2"><DetailField label="ถนน" value={student.regRoad} /></div>
-                        <div className="col-span-2"><DetailField label="ซอย" value={student.regSoi} /></div>
-                        <div className="col-span-2"><DetailField label="ตำบล/แขวง" value={student.regSubDistrict} /></div>
-                        <div className="col-span-2"><DetailField label="อำเภอ/เขต" value={student.regDistrict} /></div>
-                        <div className="col-span-2"><DetailField label="จังหวัด" value={student.regProvince} /></div>
-                        <div className="col-span-2"><DetailField label="รหัสไปรษณีย์" value={student.regZipCode} /></div>
-                        <div className="col-span-2"><DetailField label="โทรศัพท์บ้าน" value={student.regPhone} /></div>
-                      </div>
-                    </InfoCard>
-
-                    <InfoCard title="ที่อยู่ปัจจุบัน">
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                        <div className="col-span-2"><DetailField label="รหัสประจำบ้าน" value={student.curHouseId} /></div>
-                        <DetailField label="บ้านเลขที่" value={student.curAddressNumber} />
-                        <DetailField label="หมู่ที่" value={student.curMoo} />
-                        <div className="col-span-2"><DetailField label="ถนน" value={student.curRoad} /></div>
-                        <div className="col-span-2"><DetailField label="ซอย" value={student.curSoi} /></div>
-                        <div className="col-span-2"><DetailField label="ตำบล/แขวง" value={student.curSubDistrict} /></div>
-                        <div className="col-span-2"><DetailField label="อำเภอ/เขต" value={student.curDistrict} /></div>
-                        <div className="col-span-2"><DetailField label="จังหวัด" value={student.curProvince} /></div>
-                        <div className="col-span-2"><DetailField label="รหัสไปรษณีย์" value={student.curZipCode} /></div>
-                        <div className="col-span-2"><DetailField label="โทรศัพท์" value={student.curPhone} /></div>
-                      </div>
-                    </InfoCard>
-                  </div>
-                )}
-
-                {activeTab === "welfare" && (
-                  <div className="space-y-6 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <InfoCard title="ข้อมูลสุขภาพ">
-                        <div className="grid grid-cols-2 gap-4">
-                          <DetailField label="น้ำหนัก (กก.)" value={student.weight} />
-                          <DetailField label="ส่วนสูง (ซม.)" value={student.height} />
-                        </div>
-                        <DetailField label="ประเภทความพิการ" value={student.disabilityType} />
-                      </InfoCard>
-
-                      <InfoCard title="ข้อมูลสวัสดิการ">
-                        <div className="grid grid-cols-2 gap-4">
-                          <DetailField label="ความด้อยโอกาส" value={student.disadvantageType} />
-                          <DetailField label="การพักนอน" value={student.staysAtSchool} />
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          <p className="text-sm font-bold text-gray-700 dark:text-gray-300">สิ่งที่ขาดแคลน:</p>
-                          <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
-                            {student.lacksUniform && <li>ขาดแคลนเครื่องแบบ</li>}
-                            {student.lacksStationery && <li>ขาดแคลนเครื่องเขียน</li>}
-                            {student.lacksTextbook && <li>ขาดแคลนแบบเรียน</li>}
-                            {student.lacksLunch && <li>ขาดแคลนอาหารกลางวัน</li>}
-                            {!student.lacksUniform && !student.lacksStationery && !student.lacksTextbook && !student.lacksLunch && <li>- ไม่มี -</li>}
-                          </ul>
-                        </div>
-                      </InfoCard>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "travel" && (
-                  <div className="space-y-6 animate-fade-in">
-                    <InfoCard title="การเดินทาง">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <DetailField label="วิธีเดินทาง" value={student.travelMethod} />
-                        <DetailField label="เวลาที่ใช้ (นาที)" value={student.travelTime} />
-                        <DetailField label="ค่าใช้จ่าย (เดือน)" value={student.travelMonthlyCost} />
-                        <DetailField label="ระยะทางรวม (กม.)" value={student.travelDistance} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 border-t border-gray-100 dark:border-gray-700 mt-4">
-                        <DetailField label="ระยะทางถนนลูกรัง" value={student.distanceDirtRoad} />
-                        <DetailField label="ระยะทางถนนลาดยาง" value={student.distancePavedRoad} />
-                        <DetailField label="ระยะทางทางน้ำ" value={student.distanceWaterway} />
                       </div>
                     </InfoCard>
                   </div>
@@ -1633,7 +1790,7 @@ export default function ViewStudentPage() {
                       const availableClubs = allClubs
                         .filter(c => c.id !== myClub?.id && canStudentJoinClub(c))
                         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
-                      const clubsPerPage = 1;
+                      const clubsPerPage = 5;
                       const totalPages = Math.ceil(availableClubs.length / clubsPerPage);
                       const currentClubs = availableClubs.slice((clubPage - 1) * clubsPerPage, clubPage * clubsPerPage);
 
@@ -1651,32 +1808,30 @@ export default function ViewStudentPage() {
                               const isFull = (club.memberCount || 0) >= (club.capacity || 0);
                               const canRequest = status.isOpen && !isFull;
                               return (
-                                <div key={club.id} className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 flex flex-col gap-4 hover:shadow-lg transition-all animate-in fade-in zoom-in-95 duration-300">
-                                  <div className="flex items-start gap-4">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex justify-between items-start">
-                                        <h4 className="text-lg font-bold text-gray-900 dark:text-white truncate pr-2">{club.name}</h4>
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${status.color}`}>{status.text}</span>
-                                      </div>
-                                      <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{club.description || 'ไม่มีรายละเอียด'}</p>
-                                      <div className="mt-2 flex items-center gap-2">
-                                        <span className={`text-xs px-2 py-1 rounded-lg font-bold ${isFull ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
-                                          สมาชิก: {club.memberCount || 0}/{club.capacity || 0} คน
-                                        </span>
-                                        <span className="text-xs px-2 py-1 bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 rounded-lg font-bold">ระดับชั้น: {classRange}</span>
-                                      </div>
+                                <div key={club.id} className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 flex flex-col gap-3 hover:shadow-lg transition-all animate-in fade-in zoom-in-95 duration-300">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <h4 className="text-lg font-bold text-gray-900 dark:text-white truncate">{club.name}</h4>
+                                      <button
+                                        onClick={() => handleClubRequest(club, myClub ? 'transfer' : 'apply')}
+                                        disabled={!canRequest}
+                                        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${myClub
+                                          ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white border border-amber-200'
+                                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow shadow-indigo-200 dark:shadow-none'
+                                          }`}
+                                      >
+                                        {isFull ? 'เต็มแล้ว' : myClub ? <><FaExchangeAlt /> ขอย้าย</> : <><FaUserPlus /> สมัคร</>}
+                                      </button>
                                     </div>
+                                    <span className={`shrink-0 text-xs font-bold px-2 py-1 rounded-full ${status.color}`}>{status.text}</span>
                                   </div>
-                                  <button
-                                    onClick={() => handleClubRequest(club, myClub ? 'transfer' : 'apply')}
-                                    disabled={!canRequest}
-                                    className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${myClub
-                                      ? 'bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white border border-amber-200'
-                                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none'
-                                      }`}
-                                  >
-                                    {isFull ? 'ชุมนุมเต็มแล้ว' : myClub ? <><FaExchangeAlt /> ขอย้ายมาที่นี่</> : <><FaUserPlus /> สมัครเข้าชุมนุม</>}
-                                  </button>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{club.description || 'ไม่มีรายละเอียด'}</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs px-2 py-1 rounded-lg font-bold ${isFull ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
+                                      สมาชิก: {club.memberCount || 0}/{club.capacity || 0} คน
+                                    </span>
+                                    <span className="text-xs px-2 py-1 bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 rounded-lg font-bold">ระดับชั้น: {classRange}</span>
+                                  </div>
                                 </div>
                               )
                             })}
@@ -1901,76 +2056,58 @@ export default function ViewStudentPage() {
                 )}
                 {activeTab === "official_travel" && (
                   <div className="animate-fade-in space-y-6">
-                    <InfoCard title="ประวัติการขอไปราชการ">
-                      <div className="flex justify-end mb-4">
-                        <button
-                          onClick={() => navigate(`/school/${schoolId}/official-travel-request?type=student`)}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        >
-                          <FaPlane /> สร้างคำขอใหม่
-                        </button>
-                      </div>
-
-                      {officialTravelRequests.length > 0 ? (
-                        <div className="table-responsive -mx-6 px-6 pb-2">
-                          <table className="min-w-[850px] w-full text-left">
-                            <thead>
-                              <tr className="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider font-bold">
-                                <th className="px-4 py-4 rounded-l-xl w-[20%]">วันที่เดินทาง</th>
-                                <th className="px-4 py-4 w-[25%]">เรื่อง</th>
-                                <th className="px-4 py-4 w-[25%]">สถานที่</th>
-                                <th className="px-4 py-4 text-center w-[10%]">สถานะ</th>
-                                <th className="px-4 py-4 rounded-r-xl text-right w-[20%]">การจัดการ</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                              {officialTravelRequests.map((req) => (
-                                <tr key={req.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5 transition-all">
-                                  <td className="px-4 py-5 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                    <div className="flex flex-col">
-                                      <span className="font-medium text-gray-900 dark:text-gray-100">{formatDate(req.startDate)}</span>
-                                      <span className="text-xs opacity-60">ถึง {formatDate(req.endDate)}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-5">
-                                    <p className="text-sm text-gray-900 dark:text-gray-100 font-bold leading-relaxed line-clamp-2" title={req.subject}>
-                                      {req.subject}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-5">
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2" title={req.location}>
-                                      {req.location}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-5 text-center">
-                                    <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20' :
-                                      req.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-500/20' :
-                                        'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-500/20'
-                                      }`}>
-                                      {req.status === 'approved' ? 'อนุมัติ' : req.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-5 text-right">
-                                    <div className="flex justify-end opacity-80 group-hover:opacity-100 transition-opacity">
-                                      <OfficialTravelPdfButton
-                                        data={req}
-                                        schoolName={schoolInfo.schoolName}
-                                        schoolAffiliation={schoolInfo.affiliation}
-                                        directorName={schoolInfo.directorName}
-                                        deputyName={schoolInfo.deputyName}
-                                        personnelHeadName={schoolInfo.personnelHeadName}
-                                      />
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <InfoCard title="ประวัติการลาของนักเรียน">
+                      {studentLeaveRequests.length > 0 ? (
+                        <div className="space-y-3">
+                          {studentLeaveRequests.map((req) => {
+                            const getDateStr = (v: any) => {
+                              if (v?.toDate) return v.toDate().toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+                              if (typeof v === 'string') return new Date(v).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+                              return '-';
+                            };
+                            const statusColor = req.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20'
+                              : req.status === 'rejected'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-500/20'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-500/20';
+                            const statusText = req.status === 'approved' ? 'อนุมัติ' : req.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา';
+                            return (
+                              <div key={req.id} className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-col sm:flex-row sm:items-center gap-3">
+                                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                                  <FaHourglassHalf />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-bold text-gray-900 dark:text-white">{req.leaveType || 'ลา'}</span>
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusColor}`}>{statusText}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {getDateStr(req.startDate)} — {getDateStr(req.endDate)}
+                                  </p>
+                                  {req.reason && (
+                                    <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{req.reason}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleLeaveExportPdf(req)}
+                                  disabled={exportingLeaveId === req.id}
+                                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-600 hover:bg-red-600 hover:text-white dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white border border-red-200 dark:border-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                  {exportingLeaveId === req.id ? (
+                                    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <FaFilePdf />
+                                  )}
+                                  PDF
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                          <FaPlane className="mx-auto text-4xl mb-3 opacity-20" />
-                          <p>ยังไม่มีประวัติการขอไปราชการ</p>
+                          <FaHourglassHalf className="mx-auto text-4xl mb-3 opacity-20" />
+                          <p>ยังไม่มีประวัติการลา</p>
                         </div>
                       )}
                     </InfoCard>

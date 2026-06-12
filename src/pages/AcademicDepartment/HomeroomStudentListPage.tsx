@@ -19,7 +19,7 @@ import { firestore as db } from "@/firebase";
 import { RootState } from "@/store";
 import { usePermissions } from "@/hooks/usePermissions";
 import { CLASSES, getClassLevelRank, isClassLevelInRange } from "@/utils/schoolUtils";
-import { getStudentStatus, isCurrentStudent } from "@/utils/studentStatusUtils";
+import { getStudentStatus, isStudyingStudent } from "@/utils/studentStatusUtils";
 
 try {
   Font.register({
@@ -468,7 +468,7 @@ const HomeroomStudentListPage: React.FC = () => {
 
       const studentRows = studentsSnap.docs
         .map(studentDoc => ({ id: studentDoc.id, ...studentDoc.data() } as StudentRow))
-        .filter(student => isCurrentStudent(student))
+        .filter(student => isStudyingStudent(student))
         .sort((a, b) => {
           const classDiff = getClassLevelRank(classLabel(a.classLevel)) - getClassLevelRank(classLabel(b.classLevel));
           if (classDiff !== 0) return classDiff;

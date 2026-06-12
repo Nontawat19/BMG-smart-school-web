@@ -330,21 +330,16 @@ export const getPartnerIndex = (idx: number): number => {
 export const getPartnerIndexForPeriods = (idx: number, periodSettings: Array<PeriodSetting & { index?: number }> = []): number => {
     if (!periodSettings.length) return getPartnerIndex(idx);
 
-    const orderedPeriods = periodSettings
-        .map((period, arrayIndex) => ({
-            index: typeof period.index === 'number' ? period.index : arrayIndex,
-            isTeachingPeriod: period.isTeachingPeriod,
-        }))
-        .sort((a, b) => a.index - b.index);
-
+    // Always use the array index (which matches the slot key format: {dayKey}-{arrayIndex}).
+    // Ignoring custom period.index prevents mismatches when schools set non-sequential index values.
     let currentTeachingRun: number[] = [];
     const teachingRuns: number[][] = [];
-    orderedPeriods.forEach(period => {
+
+    periodSettings.forEach((period, arrayIndex) => {
         if (period.isTeachingPeriod) {
-            currentTeachingRun.push(period.index);
+            currentTeachingRun.push(arrayIndex);
             return;
         }
-
         if (currentTeachingRun.length) {
             teachingRuns.push(currentTeachingRun);
             currentTeachingRun = [];

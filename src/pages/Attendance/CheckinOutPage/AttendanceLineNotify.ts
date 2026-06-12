@@ -1,6 +1,145 @@
 import { FoundUser } from "./types";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
+export const sendTeacherLineAttendanceNotification = async (
+    user: FoundUser,
+    status: string,
+    time: string,
+    config: any,
+    recipientUserIds: string[],
+    actionType: string = "checkin"
+) => {
+    if (!config) return;
+    const { lineChannelAccessToken, enableNotification } = config;
+    const isEnabled = enableNotification === undefined ? true : enableNotification;
+    if (!isEnabled || !lineChannelAccessToken) return;
+
+    const uniqueRecipients = Array.from(new Set(
+        (recipientUserIds || []).map((id: string) => id?.trim()).filter(isLineUserId)
+    ));
+    if (uniqueRecipients.length === 0) return;
+
+    try {
+        const isCheckout = actionType === "checkout" || actionType === "checkin_and_checkout";
+        const isLate = status === "สาย";
+        const isLeave = status === "ลา" || (status || "").includes("ลา");
+        const isAbsent = status === "ขาด";
+        const isEarlyReturn = status === "กลับก่อน";
+
+        const actionText = isCheckout ? "ลงเวลากลับ" : "ลงเวลาเข้า";
+
+        let bubbleBg = "#f0fdf4", bubbleIconBg = "#1db446", bubbleIcon = "✓", bubbleTextColor = "#166534";
+        if (isLate)        { bubbleBg = "#fffbeb"; bubbleIconBg = "#fbbf24"; bubbleIcon = "!"; bubbleTextColor = "#92400e"; }
+        else if (isLeave)  { bubbleBg = "#eff6ff"; bubbleIconBg = "#3b82f6"; bubbleIcon = "i"; bubbleTextColor = "#1e40af"; }
+        else if (isAbsent) { bubbleBg = "#fef2f2"; bubbleIconBg = "#ef4444"; bubbleIcon = "x"; bubbleTextColor = "#7f1d1d"; }
+        else if (isEarlyReturn) { bubbleBg = "#fff7ed"; bubbleIconBg = "#f97316"; bubbleIcon = "<"; bubbleTextColor = "#7c2d12"; }
+
+        const profileUrl = (user.profileImageUrl && user.profileImageUrl.startsWith("https://"))
+            ? user.profileImageUrl
+            : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=4F46E5&color=fff&size=200`;
+
+        const makeStatusBox = (emoji: string, label: string, isActive: boolean, activeBg: string) => ({
+            type: "box",
+            layout: "vertical",
+            alignItems: "center",
+            paddingAll: "8px",
+            cornerRadius: "10px",
+            backgroundColor: isActive ? activeBg : "#f5f5f5",
+            flex: 1,
+            contents: [
+                { type: "text", text: emoji, size: "xl", align: "center" },
+                {
+                    type: "text", text: label, size: "xs", align: "center", margin: "sm",
+                    color: isActive ? "#333333" : "#999999",
+                    weight: isActive ? "bold" : "regular",
+                }
+            ]
+        });
+
+        const isNormal = !isLate && !isLeave && !isAbsent && !isEarlyReturn;
+
+        const flexMessage = {
+            type: "flex",
+            altText: `แจ้งเตือนการลงเวลาครู: ${user.name}`,
+            contents: {
+                type: "bubble",
+                size: "giga",
+                body: {
+                    type: "box",
+                    layout: "vertical",
+                    paddingAll: "20px",
+                    backgroundColor: "#ffffff",
+                    contents: [
+                        {
+                            type: "box", layout: "horizontal", alignItems: "center",
+                            contents: [
+                                {
+                                    type: "box", layout: "vertical",
+                                    width: "70px", height: "70px", cornerRadius: "100px",
+                                    contents: [{ type: "image", url: profileUrl, size: "full", aspectMode: "cover" }]
+                                },
+                                {
+                                    type: "box", layout: "vertical", margin: "lg",
+                                    contents: [
+                                        { type: "text", text: user.name, weight: "bold", size: "xl", color: "#111111" },
+                                        { type: "text", text: `${user.position || "ครู"}${user.displayId ? ` • ${user.displayId}` : ""}`, size: "sm", color: "#666666", margin: "xs" },
+                                        ...(user.grade ? [{ type: "text", text: `ครูประจำชั้น ${user.grade}${user.room ? `/${user.room}` : ""}`, size: "xs", color: "#888888", margin: "xs" }] : [])
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            type: "box", layout: "vertical", margin: "xl", paddingAll: "15px",
+                            backgroundColor: "#fcfcfc", cornerRadius: "15px",
+                            borderWidth: "1px", borderColor: "#eeeeee",
+                            contents: [
+                                { type: "text", text: "สถานะการมาโรงเรียน", weight: "bold", size: "sm", color: "#333333" },
+                                {
+                                    type: "box", layout: "horizontal", margin: "md", spacing: "sm",
+                                    contents: [
+                                        makeStatusBox("🟢", "ปกติ", isNormal || (!isCheckout && !isLate && !isLeave && !isAbsent), "#dcfce7"),
+                                        makeStatusBox("🟡", "สาย", isLate, "#fef3c7"),
+                                        makeStatusBox("🔵", "ลา", isLeave, "#dbeafe"),
+                                        makeStatusBox("🔴", "ขาด", isAbsent, "#fee2e2"),
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            type: "box", layout: "horizontal", margin: "xl",
+                            backgroundColor: bubbleBg, cornerRadius: "12px",
+                            paddingAll: "12px", alignItems: "center",
+                            contents: [
+                                {
+                                    type: "box", layout: "vertical",
+                                    width: "30px", height: "30px",
+                                    backgroundColor: bubbleIconBg, cornerRadius: "100px",
+                                    alignItems: "center", justifyContent: "center",
+                                    contents: [{ type: "text", text: bubbleIcon, color: "#ffffff", size: "sm", weight: "bold", align: "center" }]
+                                },
+                                {
+                                    type: "box", layout: "vertical", margin: "md",
+                                    contents: [
+                                        { type: "text", text: `${user.name} ${actionText}แล้วเวลา ${time} น.`, size: "sm", color: bubbleTextColor, weight: "bold", wrap: true },
+                                        { type: "text", text: `สถานะ: ${status}`, size: "xs", color: bubbleTextColor, margin: "xs" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        };
+
+        const functions = getFunctions(undefined, "us-central1");
+        const sendLineMulticast = httpsCallable(functions, "sendLineMulticast");
+        await sendLineMulticast({ lineChannelAccessToken, recipientUserIds: uniqueRecipients, messages: [flexMessage] });
+        console.log(`✅ Teacher LINE Notification sent for ${user.name}`);
+    } catch (error) {
+        console.error("❌ Error in sendTeacherLineAttendanceNotification:", error);
+    }
+};
+
 const isLineUserId = (value: string) => /^U[0-9a-f]{32}$/i.test(value.trim());
 const maskLineRecipient = (value: string) => {
     const text = value.trim();
@@ -87,7 +226,7 @@ export const sendLineAttendanceNotification = async (
         const bubbleIconBg = isLate ? "#fbbf24" : "#1db446";
         const bubbleIcon = isLate ? "!" : "✓";
         const bubbleTextColor = isLate ? "#92400e" : "#166534";
-        const bubbleMessage = isCheckout ? "เดินทางกลับปลอดภัยครับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
+        const bubbleMessage = isCheckout ? "บุตรหลานของท่านกำลังเดินทางกลับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
         const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
         const faceScanImageUrl = user.scanMethod === "สแกนใบหน้า" &&
             user.faceScanImageUrl &&

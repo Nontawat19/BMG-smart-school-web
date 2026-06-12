@@ -68,7 +68,7 @@ export const DraggableCourse: React.FC<DraggableCourseProps> = ({
                         onLockToggle(course.instanceId);
                     }}
                     className={`
-                        absolute top-0 left-0 z-50 w-4 h-4 rounded-tl-lg rounded-br-md 
+                        absolute top-0 left-0 z-50 w-4 h-4 rounded-tl-xl rounded-br-md 
                         flex items-center justify-center transition-all shadow-sm 
                         hover:scale-110 active:scale-95 
                         ${course.locked 
@@ -89,7 +89,7 @@ export const DraggableCourse: React.FC<DraggableCourseProps> = ({
                         e.preventDefault();
                         onRemove();
                     }}
-                    className="absolute top-0 right-0 z-50 w-4 h-4 rounded-tr-lg rounded-bl-md bg-rose-500/40 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-0 group-hover:opacity-100"
+                    className="absolute top-0 right-0 z-50 w-4 h-4 rounded-tr-xl rounded-bl-md bg-rose-500/40 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-0 group-hover:opacity-100"
                     title="ลบวิชา"
                 >
                     <Trash2 size={7} strokeWidth={4} />

@@ -1028,7 +1028,6 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedTeacherData={selectedTeacherData}
                                     onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
                                     selectedCourseCode={searchTerm}
-                                    hideScrollbar={true}
                                 />
                             </div>
                             <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
@@ -1061,7 +1060,6 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedTeacherData={selectedTeacherData}
                                     onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
                                     selectedCourseCode={searchTerm}
-                                    hideScrollbar={true}
                                 />
                             </div>
                         </div>

@@ -13,7 +13,6 @@ import {
   Timestamp,
   onSnapshot,
   increment,
-  limit,
   serverTimestamp,
 } from "firebase/firestore";
 import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
@@ -23,6 +22,7 @@ import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 
 // ... (Interface StudentOption และ CustomStyles ไม่มีการเปลี่ยนแปลง)
@@ -242,30 +242,21 @@ const LeaveRequestPage: React.FC = () => {
         );
         console.log("Attempting to fetch students from path:", studentsCollectionPath);
 
-        // ⚡ เพิ่มประสิทธิภาพ: จำกัดจำนวนการดึงข้อมูลนักเรียน (100 คนล่าสุด)
-        const q = query(studentsCollectionRef, limit(100));
-        const studentsSnapshot = await getDocs(q);
+        const studentsSnapshot = await getDocs(studentsCollectionRef);
 
-        if (studentsSnapshot.empty) {
-          console.warn("Firestore fetch returned 0 student documents from:", studentsCollectionPath);
-        }
+        const studentList: StudentOption[] = studentsSnapshot.docs
+          .filter((doc: any) => isStudyingStudent({ id: doc.id, ...doc.data() }))
+          .map((doc: any) => {
+            const data = doc.data();
+            return {
+              value: doc.id,
+              label: `${data.title || ""}${data.firstName || "???"} ${data.lastName || "???"} (${data.studentId || "N/A"})`,
+              name: `${data.title || ""}${data.firstName || "???"} ${data.lastName || "???"}`,
+              studentId: data.studentId || "N/A",
+              class: `${data.classLevel || ""}/${data.room || ""}`,
+            };
+          });
 
-        const studentList: StudentOption[] = studentsSnapshot.docs.map((doc: any) => {
-          const data = doc.data();
-
-          // สร้าง Label/Name 
-          const studentData = {
-            value: doc.id,
-            label: `${data.title || ""}${data.firstName || "???"} ${data.lastName || "???"} (${data.studentId || "N/A"})`,
-            name: `${data.title || ""}${data.firstName || "???"} ${data.lastName || "???"}`,
-            studentId: data.studentId || "N/A",
-            class: `${data.classLevel || ""}/${data.room || ""}`,
-          };
-
-          return studentData;
-        });
-
-        console.log("Successfully fetched and parsed", studentList.length, "students.");
         setStudents(studentList);
       } catch (error) {
         console.error("Error fetching students:", error);

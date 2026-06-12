@@ -97,7 +97,8 @@ export const normalizePeriodSettings = <T extends PeriodLike>(periods: T[] = [])
         isTeaching: isTeachingPeriod,
       } as NormalizedPeriod<T>;
     })
-    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    .map((period, i) => ({ ...period, index: i, order: typeof period.order !== 'undefined' ? period.order : i }));
 };
 
 export const getTimetableDisplayPeriods = <T extends PeriodLike>(periods: T[] = []) => {

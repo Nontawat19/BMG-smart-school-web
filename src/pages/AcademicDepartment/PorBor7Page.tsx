@@ -10,7 +10,7 @@ import { FaSearch, FaFilter, FaFileAlt, FaPrint } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText } from "lucide-react";
 import { getLevelsByRange } from "@/utils/schoolUtils";
 import { usePermissions } from "@/hooks/usePermissions";
-import { isCurrentStudent } from "@/utils/studentStatusUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { pdf } from "@react-pdf/renderer";
 import { PorBor7Document, PorBor7GradeDocument } from "@/components/Pdf/porbor7";
 import { getThaiYear } from "@/utils/dateUtils";
@@ -261,7 +261,7 @@ const PorBor7Page: React.FC = () => {
           classLevelKey: levelKey || data.classLevel
         } as Student;
       }).filter(s => {
-        const isCurrent = isCurrentStudent(s);
+        const isCurrent = isStudyingStudent(s);
         const isInRange = s.classLevelKey ? classKeys.includes(s.classLevelKey) : false;
         return isCurrent && isInRange;
       });

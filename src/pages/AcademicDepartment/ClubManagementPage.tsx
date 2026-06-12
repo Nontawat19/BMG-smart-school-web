@@ -25,7 +25,9 @@ import {
   Settings,
   Copy,
   Database,
-  Clock
+  Clock,
+  CalendarDays,
+  ArrowLeftRight
 } from 'lucide-react';
 import { compressImage } from "@/utils/imageUtils";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
@@ -120,10 +122,17 @@ const ClubManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [teacherSearchTerm, setTeacherSearchTerm] = useState('');
-  const [isTransferEnabled, setIsTransferEnabled] = useState(false);
-  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
+  const [isRegistrationEnabled, setIsRegistrationEnabled] = useState(false);
   const [globalStartDate, setGlobalStartDate] = useState('');
   const [globalEndDate, setGlobalEndDate] = useState('');
+  const [regStartTime, setRegStartTime] = useState('07:00');
+  const [regEndTime, setRegEndTime] = useState('16:30');
+  const [isTransferEnabled, setIsTransferEnabled] = useState(false);
+  const [transferStartDate, setTransferStartDate] = useState('');
+  const [transferEndDate, setTransferEndDate] = useState('');
+  const [transferStartTime, setTransferStartTime] = useState('07:00');
+  const [transferEndTime, setTransferEndTime] = useState('16:30');
+  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [editingClub, setEditingClub] = useState<Club | null>(null);
 
   // New States for Pull
@@ -169,9 +178,16 @@ const ClubManagementPage: React.FC = () => {
           const configSnap = await getDoc(configRef);
           if (configSnap.exists()) {
             const data = configSnap.data();
-            setIsTransferEnabled(data.allowTransfer || false);
+            setIsRegistrationEnabled(data.registrationEnabled ?? false);
             setGlobalStartDate(data.registrationStartDate || '');
             setGlobalEndDate(data.registrationEndDate || '');
+            setRegStartTime(data.registrationStartTime || '07:00');
+            setRegEndTime(data.registrationEndTime || '16:30');
+            setIsTransferEnabled(data.allowTransfer || false);
+            setTransferStartDate(data.transferStartDate || '');
+            setTransferEndDate(data.transferEndDate || '');
+            setTransferStartTime(data.transferStartTime || '07:00');
+            setTransferEndTime(data.transferEndTime || '16:30');
           }
         } catch (error) {
           console.error("Error fetching club settings:", error);
@@ -572,9 +588,16 @@ const ClubManagementPage: React.FC = () => {
     try {
       const configRef = doc(db, 'school-settings', schoolId, 'configs', 'club_settings');
       await setDoc(configRef, {
-        allowTransfer: isTransferEnabled,
+        registrationEnabled: isRegistrationEnabled,
         registrationStartDate: globalStartDate,
-        registrationEndDate: globalEndDate
+        registrationEndDate: globalEndDate,
+        registrationStartTime: regStartTime,
+        registrationEndTime: regEndTime,
+        allowTransfer: isTransferEnabled,
+        transferStartDate,
+        transferEndDate,
+        transferStartTime,
+        transferEndTime,
       }, { merge: true });
       showSuccessAlert('บันทึกการตั้งค่าสำเร็จ');
     } catch (error) {
@@ -585,19 +608,28 @@ const ClubManagementPage: React.FC = () => {
     }
   };
 
-  const getClubStatus = (club: Club): { text: string; color: string } => {
+  const checkTimeAllowed = (startTime: string, endTime: string): boolean => {
+    if (!startTime || !endTime) return true;
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const cur = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    return cur >= sh * 60 + sm && cur <= eh * 60 + em;
+  };
+
+  const getClubStatus = (_club: Club): { text: string; color: string } => {
+    if (!isRegistrationEnabled) return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+    const now = new Date();
+    const todayOnly = new Date(now); todayOnly.setHours(0, 0, 0, 0);
     if (globalStartDate && globalEndDate) {
       const start = new Date(globalStartDate);
       const end = new Date(globalEndDate);
       end.setHours(23, 59, 59, 999);
-
-      if (now >= start && now <= end) return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
-      if (now < start) return { text: 'ยังไม่เปิด', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
-      return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+      if (todayOnly < start) return { text: 'ยังไม่เปิด', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+      if (now > end) return { text: 'ปิดรับสมัคร', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
     }
-    return { text: '', color: '' };
+    if (!checkTimeAllowed(regStartTime, regEndTime)) return { text: 'นอกเวลารับสมัคร', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+    return { text: 'เปิดรับสมัคร', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' };
   };
 
   return (
@@ -630,10 +662,11 @@ const ClubManagementPage: React.FC = () => {
         </div>
 
         {/* ส่วนการตั้งค่าระบบชุมนุม */}
-        <div className="mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-500 dark:text-gray-400">
-              <Settings size={16} />
+        <div className="mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-top-2">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-800/40">
+            <h3 className="text-sm font-bold flex items-center gap-2 text-gray-600 dark:text-gray-300">
+              <Settings size={15} />
               ตั้งค่าระบบชุมนุม
             </h3>
             <button
@@ -641,44 +674,118 @@ const ClubManagementPage: React.FC = () => {
               disabled={isSettingsSaving}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-all disabled:opacity-50 shadow-sm"
             >
-              {isSettingsSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+              {isSettingsSaving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
               บันทึกการตั้งค่า
             </button>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center pt-3 border-t border-gray-50 dark:border-gray-800">
-            {/* Toggle Section */}
-            <div className="md:col-span-2 flex items-center justify-between gap-4 md:pr-6 md:border-r border-gray-100 dark:border-gray-800">
-              <div>
-                <h4 className="font-bold text-sm text-gray-700 dark:text-gray-200">อนุญาตให้นักเรียนย้ายชุมนุม</h4>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400">อนุญาตให้นักเรียนส่งคำขอย้ายชุมนุมด้วยตนเอง</p>
+
+          {/* Two setting cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-700/60">
+
+            {/* Card 1: Registration */}
+            <div className="p-5 space-y-4">
+              {/* Toggle row */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 p-2 rounded-xl flex-shrink-0 ${isRegistrationEnabled ? 'bg-emerald-100 dark:bg-emerald-500/20' : 'bg-gray-100 dark:bg-gray-700/50'}`}>
+                    <CalendarDays size={16} className={isRegistrationEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm text-gray-800 dark:text-gray-100">การรับสมัครชุมนุม</h4>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isRegistrationEnabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'}`}>
+                        {isRegistrationEnabled ? '● เปิดรับสมัคร' : '● ปิดรับสมัคร'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">เปิด/ปิดให้นักเรียนสมัครเข้าชุมนุม</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsRegistrationEnabled(!isRegistrationEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 ${isRegistrationEnabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${isRegistrationEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
               </div>
-              <button 
-                onClick={() => setIsTransferEnabled(!isTransferEnabled)} 
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 ${isTransferEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out ${isTransferEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
+
+              {/* Date + Time range — dimmed when off */}
+              <div className={`transition-opacity duration-200 ${isRegistrationEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันเปิด</label>
+                    <input type="date" value={globalStartDate} onChange={(e) => setGlobalStartDate(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันปิด</label>
+                    <input type="date" value={globalEndDate} onChange={(e) => setGlobalEndDate(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-red-400 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider flex items-center gap-1"><Clock size={9} /> เวลาเริ่ม</label>
+                    <input type="time" value={regStartTime} onChange={(e) => setRegStartTime(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider flex items-center gap-1"><Clock size={9} /> เวลาปิด</label>
+                    <input type="time" value={regEndTime} onChange={(e) => setRegEndTime(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-red-400 transition-all text-xs font-bold" />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Date Sections */}
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันที่เปิดรับสมัคร</label>
-              <input
-                type="date"
-                value={globalStartDate}
-                onChange={(e) => setGlobalStartDate(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันที่ปิดรับสมัคร</label>
-              <input
-                type="date"
-                value={globalEndDate}
-                onChange={(e) => setGlobalEndDate(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold"
-              />
+            {/* Card 2: Transfer */}
+            <div className="p-5 space-y-4">
+              {/* Toggle row */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 p-2 rounded-xl flex-shrink-0 ${isTransferEnabled ? 'bg-indigo-100 dark:bg-indigo-500/20' : 'bg-gray-100 dark:bg-gray-700/50'}`}>
+                    <ArrowLeftRight size={16} className={isTransferEnabled ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm text-gray-800 dark:text-gray-100">การย้ายชุมนุม</h4>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isTransferEnabled ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300' : 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'}`}>
+                        {isTransferEnabled ? '● อนุญาต' : '● ไม่อนุญาต'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">อนุญาตให้นักเรียนส่งคำขอย้ายชุมนุมด้วยตนเอง</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsTransferEnabled(!isTransferEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0 ${isTransferEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${isTransferEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Date + Time range — dimmed when off */}
+              <div className={`transition-opacity duration-200 ${isTransferEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันเปิด</label>
+                    <input type="date" value={transferStartDate} onChange={(e) => setTransferStartDate(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider">วันปิด</label>
+                    <input type="date" value={transferEndDate} onChange={(e) => setTransferEndDate(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-red-400 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider flex items-center gap-1"><Clock size={9} /> เวลาเริ่ม</label>
+                    <input type="time" value={transferStartTime} onChange={(e) => setTransferStartTime(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 mb-1 uppercase tracking-wider flex items-center gap-1"><Clock size={9} /> เวลาปิด</label>
+                    <input type="time" value={transferEndTime} onChange={(e) => setTransferEndTime(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-red-400 transition-all text-xs font-bold" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

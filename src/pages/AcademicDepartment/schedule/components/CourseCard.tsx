@@ -85,11 +85,11 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
             }
         `}>
             {/* Main Content Container - Ultra Compact */}
-            <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-0.5 text-center min-w-0 gap-0 overflow-hidden">
+            <div className={`relative z-10 w-full h-full flex flex-col items-center justify-center px-0.5 text-center min-w-0 gap-[1px] overflow-hidden ${viewType === 'teacher' ? 'pt-1 pb-1' : 'pt-0.5 pb-0.5'}`}>
                 
                 {/* Subject Code */}
                 <span className={`
-                    text-[9px] font-black uppercase tabular-nums leading-tight truncate w-full px-0.5
+                    text-[9px] font-black uppercase tabular-nums leading-tight truncate w-full px-0.5 shrink-0
                     ${isOverlay ? 'text-white' : isTemporary ? 'text-amber-800 dark:text-amber-200' : isRelaxed ? 'text-orange-800 dark:text-orange-300' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
                 `}>
                     {course.code}{isTemporary && <span className="text-[8px] font-black text-amber-600/90 ml-0.5">รอตรวจ</span>}{isRelaxed && <span className="text-[7.5px] font-black text-orange-600/90 ml-0.5">(เงื่อนไขไม่ตรง)</span>}{course.isElective && <span className="text-[8px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
@@ -97,7 +97,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
                 {/* Subject Name */}
                 <span className={`
-                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5
+                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-700 dark:text-slate-200'}
                 `}>
                     {course.title}
@@ -105,22 +105,24 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 
                 {/* Secondary Info Line (Teacher/Class) */}
                 <span className={`
-                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5
+                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'}
                 `}>
                     {mainLabel}
                 </span>
 
                 {/* Tertiary Info (Group/Class) */}
-                <span className={`
-                    text-[7px] font-black leading-none truncate w-full whitespace-nowrap px-0.5
-                    ${isOverlay ? 'text-indigo-100' : (periodSummary && periodSummary.total > 0 && periodSummary.scheduled > periodSummary.total) ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}
-                `}>
-                    {periodSummary
-                        ? `${periodSummary.scheduled}/${periodSummary.total || '-'} คาบ`
-                        : tertiaryLabel
-                    }
-                </span>
+                {viewType === 'teacher' && (
+                    <span className={`
+                        text-[7px] font-black leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
+                        ${isOverlay ? 'text-indigo-100' : (periodSummary && periodSummary.total > 0 && periodSummary.scheduled > periodSummary.total) ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}
+                    `}>
+                        {periodSummary
+                            ? `${periodSummary.scheduled}/${periodSummary.total || '-'} คาบ`
+                            : tertiaryLabel
+                        }
+                    </span>
+                )}
             </div>
 
             {/* Lock Indicator */}
@@ -131,8 +133,8 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
             )}
 
             {/* Info Indicator - Bottom Right */}
-            <div 
-                className="absolute bottom-1 right-1 opacity-80 hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
+            <div
+                className="absolute bottom-0.5 right-0.5 opacity-70 hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
                 onMouseEnter={(e) => {
                     e.stopPropagation();
                     onHover?.(e.currentTarget.getBoundingClientRect());
@@ -142,7 +144,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                     onHover?.(null);
                 }}
             >
-                <AlertCircle size={12} className={isOverlay ? 'text-white drop-shadow-sm' : 'text-indigo-600 dark:text-indigo-400 drop-shadow-sm'} />
+                <AlertCircle size={9} className={isOverlay ? 'text-white drop-shadow-sm' : 'text-indigo-600 dark:text-indigo-400 drop-shadow-sm'} />
             </div>
         </div>
     );

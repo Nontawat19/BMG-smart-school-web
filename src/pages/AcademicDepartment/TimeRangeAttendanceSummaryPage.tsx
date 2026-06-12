@@ -12,7 +12,7 @@ import { firestore as db } from '@/firebase';
 import { RootState } from '@/store';
 import { CLASS_FULL_NAMES, CLASSES } from '@/utils/schoolUtils';
 import { getCurrentAcademicYear } from '@/utils/academicYearUtils';
-import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
 
 const HOMEROOM_SUBJECT_CODE = 'HOMEROOM';
 
@@ -532,7 +532,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                         studentStatus: data.studentStatus,
                     } as StudentRow & { status?: string; studentStatus?: string };
                 })
-                .filter(isCurrentStudent)
+                .filter(isStudyingStudent)
                 .filter(student => !selectedRoom || normalizeRoom(student.room) === normalizeRoom(selectedRoom))
                 .sort((a, b) => {
                     const numberA = parseInt(a.number || '9999', 10) || 9999;

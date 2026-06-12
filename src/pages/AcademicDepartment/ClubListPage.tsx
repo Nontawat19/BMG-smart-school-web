@@ -73,6 +73,7 @@ const ClubListPage: React.FC = () => {
   const [selectedTeacherFilter, setSelectedTeacherFilter] = useState('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
 
+  const [isRegistrationEnabled, setIsRegistrationEnabled] = useState(false);
   const [globalStartDate, setGlobalStartDate] = useState('');
   const [globalEndDate, setGlobalEndDate] = useState('');
   const [allowTransfer, setAllowTransfer] = useState(false);
@@ -99,9 +100,12 @@ const ClubListPage: React.FC = () => {
         const configSnap = await getDoc(configRef);
         if (configSnap.exists()) {
           const data = configSnap.data();
+          setIsRegistrationEnabled(data.registrationEnabled ?? false);
           setGlobalStartDate(data.registrationStartDate || '');
           setGlobalEndDate(data.registrationEndDate || '');
           setAllowTransfer(data.allowTransfer || false);
+        } else {
+          setIsRegistrationEnabled(false);
         }
       } catch (error) {
         console.error("Error fetching club settings:", error);
@@ -140,52 +144,28 @@ const ClubListPage: React.FC = () => {
   const getClubStatus = (club: Club): { text: string; color: string; bg: string; dot: string } => {
     const isFull = (club.memberCount || 0) >= (club.capacity || 40);
     if (isFull) {
-      return { 
-        text: 'เต็มแล้ว', 
-        color: 'text-rose-600 dark:text-rose-400', 
-        bg: 'bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30',
-        dot: 'bg-rose-500'
-      };
+      return { text: 'เต็มแล้ว', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30', dot: 'bg-rose-500' };
+    }
+
+    if (!isRegistrationEnabled) {
+      return { text: 'ปิดรับสมัคร', color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800', dot: 'bg-slate-500' };
     }
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const todayOnly = new Date(now); todayOnly.setHours(0, 0, 0, 0);
 
     if (globalStartDate && globalEndDate) {
-      const start = new Date(globalStartDate);
-      const end = new Date(globalEndDate);
-      end.setHours(23, 59, 59, 999);
-
-      if (now >= start && now <= end) {
-        return { 
-          text: 'เปิดรับสมัคร', 
-          color: 'text-emerald-600 dark:text-emerald-400', 
-          bg: 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30',
-          dot: 'bg-emerald-500 animate-pulse'
-        };
+      const start = new Date(globalStartDate + 'T00:00:00');
+      const end = new Date(globalEndDate + 'T23:59:59');
+      if (todayOnly < start) {
+        return { text: 'ยังไม่เปิด', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30', dot: 'bg-amber-500' };
       }
-      if (now < start) {
-        return { 
-          text: 'ยังไม่เปิด', 
-          color: 'text-amber-600 dark:text-amber-400', 
-          bg: 'bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30',
-          dot: 'bg-amber-500'
-        };
+      if (now > end) {
+        return { text: 'ปิดรับสมัคร', color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800', dot: 'bg-slate-500' };
       }
-      return { 
-        text: 'ปิดรับสมัคร', 
-        color: 'text-slate-600 dark:text-slate-400', 
-        bg: 'bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800',
-        dot: 'bg-slate-500'
-      };
     }
 
-    return { 
-      text: 'ไม่มีข้อมูล', 
-      color: 'text-gray-500', 
-      bg: 'bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-800',
-      dot: 'bg-gray-400' 
-    };
+    return { text: 'เปิดรับสมัคร', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30', dot: 'bg-emerald-500 animate-pulse' };
   };
 
   const teachersList = useMemo(() => {

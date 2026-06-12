@@ -127,7 +127,7 @@ const deleteSetValue = (map: Map<string, Set<string>>, key: string, value: strin
 };
 
 const normalizeClassIds = (classId: string | string[] | undefined) => {
-    return (Array.isArray(classId) ? classId : [classId]).filter(Boolean) as string[];
+    return Array.from(new Set((Array.isArray(classId) ? classId : [classId]).filter(Boolean))) as string[];
 };
 
 const normalizeSpecificRooms = (rooms: string | string[] | undefined) => {
@@ -458,7 +458,7 @@ const orderTasksForRun = (
     });
 };
 
-const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: RuntimeConflictIndex) => {
+const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: RuntimeConflictIndex, assignmentConstraints?: AssignmentConstraintMap) => {
     const requestedRooms = normalizeSpecificRooms(task.targetRooms);
     const teacherIds = getTaskTeacherIds(task);
     const isDoubleSession = task.duration > 1;
@@ -474,6 +474,9 @@ const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: Runt
 
     if (sessionSlots.length > 0) {
         const [dayKey] = sessionSlots[0].split('-');
+
+        const asgnCst = assignmentConstraints?.[task.compositeId];
+        if (asgnCst?.excludedDays?.includes(dayKey)) return false;
         const newPeriods = sessionSlots.map(s => parseInt(s.split('-')[1]));
         const currentGroup = task.groupNumber || 0;
 
@@ -579,11 +582,15 @@ const getWeightedSlots = (
         const { dayKey, periodSetting } = slot;
         const pIdx = parseInt(slot.slotId.split('-')[1]);
         
-        const periodNumber = parseInt(periodSetting.id.replace('period-', '')) || 0;
-        const lunchIdx = slots.findIndex(s => s.periodSetting.id === 'lunch');
-        const isMorning = lunchIdx !== -1 ? pIdx < lunchIdx : periodNumber <= 4;
+        const NOON = '12:00';
+        const isMorning = periodSetting.startTime < NOON;
         const asgnCst = assignmentConstraints[task.compositeId];
-        const halfBoundary = lunchIdx !== -1 ? lunchIdx : Math.max(1, Math.floor(slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod).length / 2));
+        const morningPIdxs = slots
+            .filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod && s.periodSetting.startTime < NOON)
+            .map(s => parseInt(s.slotId.split('-')[1]));
+        const halfBoundary = morningPIdxs.length > 0
+            ? Math.max(...morningPIdxs) + 1
+            : Math.max(1, Math.floor(slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod).length / 2));
         const countHalfLoad = (periods: number[], preferMorning: boolean) => (
             periods.filter(period => preferMorning ? period < halfBoundary : period >= halfBoundary).length
         );
@@ -684,10 +691,7 @@ const getWeightedSlots = (
 
         const teachingPeriodSlots = slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod);
         const lastMorningTeachingSlot = [...teachingPeriodSlots]
-            .filter(s => {
-                const idx = parseInt(s.slotId.split('-')[1]);
-                return idx < lunchIdx;
-            })
+            .filter(s => s.periodSetting.startTime < NOON)
             .sort((a, b) => parseInt(b.slotId.split('-')[1]) - parseInt(a.slotId.split('-')[1]))[0];
         const isLastMorningPeriod = lastMorningTeachingSlot?.slotId === slot.slotId;
         if (isLastMorningPeriod && classPeriodLoad <= 1) {
@@ -891,6 +895,9 @@ export const runSchedulingEngine = (
             ? [task.requiredSlot]
             : (relaxedValidSlotsByTaskIndex?.[index]?.length ? relaxedValidSlotsByTaskIndex[index] : (validSlotsByTaskIndex[index] || []))
     );
+    // Pre-build Set versions for O(1) slot lookups throughout all runs
+    const validSlotsByTaskIndexSets = validSlotsByTaskIndex.map(slots => new Set(slots));
+    const emergencySlotPoolByTaskIndexSets = emergencySlotPoolByTaskIndex.map(slots => new Set(slots));
 
     for (let run = 1; run <= maxRuns; run++) {
         const currentTimetable: EngineSchedule = clone(initialTimetable);
@@ -915,10 +922,17 @@ export const runSchedulingEngine = (
             slotPoolByTaskIndex: string[][] = validSlotsByTaskIndex
         ) => {
             const taskIndex = taskIndexByRef.get(task) ?? tasks.indexOf(task);
+            // Reuse pre-built Sets for the two common pool cases; only allocate for custom pools
+            const slotPoolSet: Set<string> =
+                slotPoolByTaskIndex === validSlotsByTaskIndex
+                    ? (validSlotsByTaskIndexSets[taskIndex] ?? new Set())
+                    : slotPoolByTaskIndex === emergencySlotPoolByTaskIndex
+                        ? (emergencySlotPoolByTaskIndexSets[taskIndex] ?? new Set())
+                        : new Set(slotPoolByTaskIndex[taskIndex] || []);
             let potentialSlots = getWeightedSlots(
                 task,
                 allTeachingSlots,
-                new Set(slotPoolByTaskIndex[taskIndex] || []),
+                slotPoolSet,
                 slotPoolByTaskIndex,
                 taskIndex,
                 assignmentConstraints,
@@ -945,9 +959,9 @@ export const runSchedulingEngine = (
                 const sessionSlots = getSessionSlotsForStart(startSlotId, task.duration, allTeachingSlots);
                 if (sessionSlots.length !== task.duration) continue;
 
-                if (canPlaceWithIndex(task, sessionSlots, conflictIndex)) {
+                if (canPlaceWithIndex(task, sessionSlots, conflictIndex, assignmentConstraints)) {
                     const teacherIds = getTaskTeacherIds(task);
-                    const isRelaxedPlacement = !validSlotsByTaskIndex[taskIndex]?.includes(startSlotId);
+                    const isRelaxedPlacement = !(validSlotsByTaskIndexSets[taskIndex]?.has(startSlotId));
 
                     sessionSlots.forEach(slotId => {
                         teacherIds.forEach(teacherId => {
@@ -1045,26 +1059,29 @@ export const runSchedulingEngine = (
                 let bestBlockers: TimetableOccupancy[] = [];
                 let minBlockerCost = Infinity;
 
+                // Hoist per-task invariants outside the slot search loop
+                const repairTaskTeacherIdSet = new Set(getTaskTeacherIds(task));
+                const repairRequestedRooms = normalizeSpecificRooms(task.targetRooms);
+                const repairGroupNumber = Number(task.groupNumber || 0);
+
                 for (const slotId of potentialSlots.slice(0, repairSearchLimit)) {
                     const sessionSlots = getSessionSlotsForStart(slotId, task.duration, allTeachingSlots);
                     if (sessionSlots.length !== task.duration) continue;
 
                     const blockers: TimetableOccupancy[] = [];
                     let fatalConflict = false;
-                    const requestedRooms = normalizeSpecificRooms(task.targetRooms);
 
                     for (const sId of sessionSlots) {
                         const occs = currentTimetable[sId] || [];
                         const localBlockers = occs.filter(o => {
-                            const occClasses = normalizeClassIds(o.classId);
+                            // Inline flatten (no Set dedup needed — engine-written occupancies are already clean)
+                            const occClasses: string[] = Array.isArray(o.classId) ? o.classId : (o.classId ? [o.classId] : []);
                             const occRooms = normalizeSpecificRooms(o.room);
                             const occGroup = Number((o as any).groupNumber || 0);
-                            const sameAssignment = o.courseId === task.course.id && occGroup === Number(task.groupNumber || 0);
-                            
-                            const taskTeacherIds = getTaskTeacherIds(task);
-                            return taskTeacherIds.includes(o.teacherId) ||
+                            const sameAssignment = o.courseId === task.course.id && occGroup === repairGroupNumber;
+                            return repairTaskTeacherIdSet.has(o.teacherId) ||
                                 (task.targetClasses.some(c => occClasses.includes(c)) && !sameAssignment) ||
-                                requestedRooms.some(roomId => occRooms.includes(roomId));
+                                repairRequestedRooms.some(roomId => occRooms.includes(roomId));
                         });
                         if (localBlockers.some(o => {
                             if (o.taskId === undefined) return true;

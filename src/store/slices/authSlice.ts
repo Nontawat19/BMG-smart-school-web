@@ -9,7 +9,12 @@ interface UserProfile {
   fullName: string;
   profileUrl: string;
   schoolId?: string | null;
-  role: string[]; // 💡 เปลี่ยนจาก string เป็น string[]
+  role: string[];
+  department?: string;
+  isHeadOfLearningArea?: boolean;
+  isHeadOfAssessment?: boolean;
+  isGuidanceTeacher?: boolean;
+  isHomeroomTeacher?: boolean;
 }
 
 interface AuthState {
@@ -31,11 +36,10 @@ export const listenToAuthChanges = createAsyncThunk(
           if (user) {
             // 💡 ใช้ onSnapshot เพื่อให้สิทธิ์ (role) อัปเดตแบบ Real-time จาก Firestore
             const docRef = doc(firestore, 'users', user.uid);
-            onSnapshot(docRef, (docSnap) => {
+            onSnapshot(docRef, async (docSnap) => {
               if (docSnap.exists()) {
                 const userData = docSnap.data();
 
-                // 💡 จัดการ role ให้เป็น array เสมอ และแปลงเป็นตัวพิมพ์เล็กเพื่อความถูกต้อง
                 let roles: string[] = [];
                 if (Array.isArray(userData.role)) {
                   roles = userData.role.map(r => typeof r === 'string' ? r.toLowerCase() : '');
@@ -45,6 +49,25 @@ export const listenToAuthChanges = createAsyncThunk(
                   roles = ['user'];
                 }
 
+                // Fetch teacher-specific fields (department, special roles)
+                let teacherFields: Partial<UserProfile> = {};
+                if (userData.schoolId) {
+                  try {
+                    const teacherRef = doc(firestore, 'school-settings', userData.schoolId, 'teachers', user.uid);
+                    const teacherSnap = await getDoc(teacherRef);
+                    if (teacherSnap.exists()) {
+                      const td = teacherSnap.data();
+                      teacherFields = {
+                        ...(td.department ? { department: td.department } : {}),
+                        isHeadOfLearningArea: !!td.isHeadOfLearningArea,
+                        isHeadOfAssessment: !!td.isHeadOfAssessment,
+                        isGuidanceTeacher: !!td.isGuidanceTeacher,
+                        isHomeroomTeacher: !!td.isHomeroomTeacher,
+                      };
+                    }
+                  } catch (_) {}
+                }
+
                 const profile: UserProfile = {
                   uid: user.uid,
                   email: user.email,
@@ -52,9 +75,9 @@ export const listenToAuthChanges = createAsyncThunk(
                   profileUrl: userData.profileUrl,
                   schoolId: userData.schoolId,
                   role: roles,
+                  ...teacherFields,
                 };
-                
-                // อัปเดต State ผ่าน dispatch (เพราะอยู่ใน createAsyncThunk)
+
                 thunkAPI.dispatch(setUser(profile));
                 resolve(profile);
               } else {

@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { firestore, auth } from "@/firebase";
+import React, { useState, useEffect, useMemo } from "react";
+import { firestore } from "@/firebase";
 import {
   collection,
   query,
-  Query,
   where,
   getDocs,
   getDoc,
@@ -12,15 +11,12 @@ import {
   updateDoc,
   setDoc,
   addDoc,
-  onSnapshot,
-  collectionGroup,
-  orderBy,
 } from "firebase/firestore";
 import Swal from "sweetalert2";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
-import { Home, Users, Calendar, AlertTriangle, CheckCircle, ChevronDown, Check, Clock, Search, MapPin } from "lucide-react";
+import { Users, Calendar, AlertTriangle, CheckCircle, Clock, Search, MapPin } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import Select from "react-select";
@@ -43,6 +39,7 @@ interface LeaveRequest {
   leaveType: string;
   reason: string;
   substituteStatus?: "pending" | "completed"; // UI state, not from DB
+  collection?: string; // 'leave_summary' | 'travel_summary'
 }
 
 interface ScheduleEntry {
@@ -55,7 +52,9 @@ interface ScheduleEntry {
   endTime?: string;
   subjectName: string;
   className: string;
-  classId: string;
+  classId: string | string[] | null;
+  groupNumber?: number;
+  courseId?: string;
   originalDate: Date;
   substituteTeacherId?: string; // นี่คือ document ID
   substituteTeacherName?: string;
@@ -65,20 +64,6 @@ interface ScheduleEntry {
   roomName?: string; // สถานที่สอน
 }
 
-interface Teacher {
-  id: string;
-  name: string;
-  profileImageUrl?: string;
-  displayName?: string;
-  homeroomGrade?: string;
-  learningArea?: string;
-  subjectGroup?: string;
-  uid?: string;
-  preferences?: {
-    unavailableSlots?: string[];
-    unavailableDays?: string[];
-  };
-}
 
 interface PeriodSetting {
   id: string; // e.g., 'homeroom', 'period-1', 'lunch'
@@ -385,8 +370,9 @@ const SubstituteManagementPage: React.FC = () => {
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [filterLoadDay, setFilterLoadDay] = useState<string>('all');
   const [filterLoadWeek, setFilterLoadWeek] = useState<string>('all');
-  const [filterMissing, setFilterMissing] = useState<string>('all'); // New: Missing history
+  const [filterMissing, setFilterMissing] = useState<string>('all');
   const [sortCondition, setSortCondition] = useState<'recommended' | 'workload_day' | 'workload_week' | 'missing_stats'>('recommended');
+  const [teacherAbsenceCounts, setTeacherAbsenceCounts] = useState<Record<string, number>>({});
   const dispatch = useDispatch();
 
   const getScheduleYearTerm = (date?: Date) => {
@@ -395,9 +381,18 @@ const SubstituteManagementPage: React.FC = () => {
     const matchedTerm = calendarState.terms.find(term =>
       term.startDate && term.endDate && targetDateString >= term.startDate && targetDateString <= term.endDate
     );
-    const semester = matchedTerm
-      ? (matchedTerm.name.includes('2') || matchedTerm.id.includes('2') ? '2' : '1')
-      : String(calendarRawData?.currentTerm || '1');
+
+    let semester: string;
+    if (matchedTerm) {
+      // ตรวจสอบเฉพาะ "ที่ 2" เพื่อป้องกัน false-positive จากเลขปี เช่น "ปี 2568"
+      const isSemester2 =
+        /ที่\s*2(?!\d)/.test(matchedTerm.name) ||
+        matchedTerm.id === '2' ||
+        /[_\-]2$/.test(matchedTerm.id);
+      semester = isSemester2 ? '2' : '1';
+    } else {
+      semester = String(calendarRawData?.currentTerm || '1');
+    }
 
     return {
       academicYear: String(calendarState.academicYear || getCurrentThaiYear()),
@@ -431,6 +426,7 @@ const SubstituteManagementPage: React.FC = () => {
       fetchAllSchedules(schoolId);
       fetchPeriodSettings(schoolId);
       fetchPhysicalRooms(schoolId);
+      fetchTeacherAbsenceCounts(schoolId);
       dispatch(fetchCalendar(schoolId) as any);
     }
   }, [filter, schoolId, dispatch, teacherMapStatus, calendarState.academicYear, calendarRawData?.currentTerm]);
@@ -465,6 +461,26 @@ const SubstituteManagementPage: React.FC = () => {
       setRoomMap(map);
     } catch (error) {
       console.error("Error fetching physical rooms:", error);
+    }
+  };
+
+  const fetchTeacherAbsenceCounts = async (currentSchoolId: string) => {
+    const year = String(calendarState.academicYear || '');
+    try {
+      const subsRef = collection(firestore, 'school-settings', currentSchoolId, 'substitutions');
+      const snap = await getDocs(
+        year ? query(subsRef, where('academicYear', '==', year)) : subsRef
+      );
+      const counts: Record<string, number> = {};
+      snap.forEach(subDoc => {
+        const data = subDoc.data();
+        if (data.originalTeacherId) {
+          counts[data.originalTeacherId] = (counts[data.originalTeacherId] || 0) + 1;
+        }
+      });
+      setTeacherAbsenceCounts(counts);
+    } catch (error) {
+      console.error("Error fetching teacher absence counts:", error);
     }
   };
 
@@ -729,6 +745,59 @@ const SubstituteManagementPage: React.FC = () => {
         existingSubstitutions.set(key, { id: subDoc.id, ...subData });
       });
 
+      // Pre-compute teacher loads and busy-slot map จาก termScheduleDocs ครั้งเดียว
+      // เพื่อหลีกเลี่ยง O(ครู × schedules × slots) ต่อคาบ
+      const preComputedDayLoads: Record<string, Record<string, number>> = {};
+      const preComputedWeekLoad: Record<string, number> = {};
+      const slotBusyMap: Record<string, Set<string>> = {};
+      // ป้องกัน double-count เมื่อครูปรากฏใน docs หลายใบสำหรับ slot เดียวกัน
+      const seenTeacherSlots = new Set<string>();
+
+      termScheduleDocs.forEach((classScheduleDoc: any) => {
+        const schedule = classScheduleDoc.schedule || {};
+        Object.keys(schedule).forEach(slotKey => {
+          const rawCourse = schedule[slotKey];
+          if (!rawCourse) return;
+          const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
+          const dayKey = slotKey.split('-')[0];
+          const teacherIds = new Set<string>();
+          if (classScheduleDoc.teacherId) teacherIds.add(classScheduleDoc.teacherId);
+          coursesArr.forEach((c: any) => { if (c?.teacherId) teacherIds.add(c.teacherId); });
+          if (!slotBusyMap[slotKey]) slotBusyMap[slotKey] = new Set();
+          teacherIds.forEach(tid => {
+            slotBusyMap[slotKey].add(tid);
+            const dedupKey = `${tid}-${slotKey}`;
+            if (!seenTeacherSlots.has(dedupKey)) {
+              seenTeacherSlots.add(dedupKey);
+              preComputedWeekLoad[tid] = (preComputedWeekLoad[tid] || 0) + 1;
+              if (!preComputedDayLoads[dayKey]) preComputedDayLoads[dayKey] = {};
+              preComputedDayLoads[dayKey][tid] = (preComputedDayLoads[dayKey][tid] || 0) + 1;
+            }
+          });
+        });
+      });
+
+      const findAvailableTeachers = (date: Date, periodIndex: number) => {
+        const checkDayKey = getEffectiveScheduleDay(date).scheduleDayKey;
+        const checkSlotKey = `${checkDayKey}-${periodIndex}`;
+        const busyTeacherIds = slotBusyMap[checkSlotKey] || new Set<string>();
+
+        return teachers
+          .filter(t => {
+            if (busyTeacherIds.has(t.value)) return false;
+            if (t.value === leave.teacherDocId) return false;
+            const prefs = (t as any).preferences;
+            if (prefs?.unavailableDays?.includes(checkDayKey)) return false;
+            if (prefs?.unavailableSlots?.includes(checkSlotKey)) return false;
+            return true;
+          })
+          .map(t => ({
+            ...t,
+            loadDay: preComputedDayLoads[checkDayKey]?.[t.value] || 0,
+            loadWeek: preComputedWeekLoad[t.value] || 0,
+          }));
+      };
+
       let currentDate = new Date(leaveStartDate);
       while (currentDate <= leaveEndDate) {
         const dateString = formatDateKey(currentDate);
@@ -742,84 +811,6 @@ const SubstituteManagementPage: React.FC = () => {
 
         const effectiveDay = getEffectiveScheduleDay(currentDate);
         const dayKey = effectiveDay.scheduleDayKey;
-
-        // 📌 ฟังก์ชันสำหรับหาครูที่ว่างในคาบนั้นๆ และคำนวณข้อมูลประกอบ
-        const getTeacherLoad = (teacherId: string, date: Date, type: 'day' | 'week') => {
-          let count = 0;
-          const dayKeyPrefix = getEffectiveScheduleDay(date).scheduleDayKey;
-
-          if (type === 'day') {
-            termScheduleDocs.forEach((classScheduleDoc: any) => {
-              const schedule = classScheduleDoc.schedule || {};
-              Object.keys(schedule).forEach(slotKey => {
-                if (slotKey.startsWith(dayKeyPrefix)) {
-                  const rawCourse = schedule[slotKey];
-                  if (rawCourse) {
-                    const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-                    if (classScheduleDoc.teacherId === teacherId || coursesArr.some((c: any) => c.teacherId === teacherId)) {
-                      count++;
-                    }
-                  }
-                }
-              });
-            });
-          } else {
-            // คำนวณทั้งสัปดาห์ (สมมติว่าเป็นตารางสอนมาตรฐาน)
-            termScheduleDocs.forEach((classScheduleDoc: any) => {
-              const schedule = classScheduleDoc.schedule || {};
-              Object.keys(schedule).forEach(slotKey => {
-                const rawCourse = schedule[slotKey];
-                if (rawCourse) {
-                  const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-                  if (classScheduleDoc.teacherId === teacherId || coursesArr.some((c: any) => c.teacherId === teacherId)) {
-                    count++;
-                  }
-                }
-              });
-            });
-          }
-          return count;
-        };
-
-        const findAvailableTeachers = (date: Date, period: number, periodIndex: number) => {
-          const checkDayKey = getEffectiveScheduleDay(date).scheduleDayKey;
-          const checkSlotKey = `${checkDayKey}-${periodIndex}`;
-
-          const busyTeacherIds = new Set<string>();
-          termScheduleDocs.forEach((classScheduleDoc: any) => {
-            const rawCourse = classScheduleDoc.schedule?.[checkSlotKey];
-            if (rawCourse) {
-              if (classScheduleDoc.teacherId) {
-                busyTeacherIds.add(classScheduleDoc.teacherId);
-              }
-              const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-              coursesArr.forEach((c: any) => {
-                if (c && c.teacherId) {
-                  busyTeacherIds.add(c.teacherId);
-                }
-              });
-            }
-          });
-
-          return teachers
-            .filter(t => {
-              // 1. Check if teaching another class
-              if (busyTeacherIds.has(t.value)) return false;
-              // 2. Check if self (leave requester)
-              if (t.value === leave.teacherDocId) return false;
-              // 3. Check Preferences (Unavailable Days/Slots)
-              const prefs = (t as any).preferences;
-              if (prefs?.unavailableDays?.includes(checkDayKey)) return false; // Teacher set day as unavailable
-              if (prefs?.unavailableSlots?.includes(checkSlotKey)) return false; // Teacher set slot as unavailable
-
-              return true;
-            })
-            .map(t => ({
-              ...t,
-              loadDay: getTeacherLoad(t.value, date, 'day'),
-              loadWeek: getTeacherLoad(t.value, date, 'week'),
-            }));
-        };
 
         // 3. ตรวจสอบตารางสอนในแต่ละวัน
         teacherScheduleDocs.forEach((scheduleData: any) => {
@@ -849,20 +840,31 @@ const SubstituteManagementPage: React.FC = () => {
                 // สร้าง ID ที่ไม่ซ้ำกันสำหรับแต่ละคาบที่ต้องสอนแทน
                 const courseKey = typeof course === 'string' ? courseIndex : (course?.instanceId || course?.id || courseIndex);
                 const uniqueScheduleId = `${scheduleData.id}-${dateString}-${slot}-${courseKey}`;
-                // Use course-level classId (specific to this slot).
-              // Only fall back to scheduleData.classId when it's a single-class array or string —
-              // never fall back to a multi-class array (that would incorrectly span all rooms
-              // the teacher teaches, causing attendance to pull multiple rooms).
-              const _rawCourseClassId = course?.classId;
-              const _hasValidCourseClassId = _rawCourseClassId !== undefined && _rawCourseClassId !== null &&
-                !(Array.isArray(_rawCourseClassId) && _rawCourseClassId.length === 0);
-              const classId = _hasValidCourseClassId
-                ? _rawCourseClassId
-                : (Array.isArray(scheduleData.classId) && scheduleData.classId.length === 1
-                    ? scheduleData.classId
-                    : (typeof scheduleData.classId === 'string' && scheduleData.classId
-                        ? scheduleData.classId
-                        : []));
+
+                // Resolve classId: prefer course-level classId (most specific), then fall back
+                // to scheduleData.classId (string or multi-array). Never save [] — use null
+                // instead so matchesClassValueStrict returns true (shows all enrolled students)
+                // which is safer than [] which now returns false (shows no students).
+                const _rawCourseClassId = typeof course !== 'string' ? course?.classId : undefined;
+                const _hasValidCourseClassId = _rawCourseClassId !== undefined && _rawCourseClassId !== null &&
+                  !(Array.isArray(_rawCourseClassId) && _rawCourseClassId.length === 0);
+                const resolvedClassId: string | string[] | null = _hasValidCourseClassId
+                  ? _rawCourseClassId
+                  : (Array.isArray(scheduleData.classId)
+                      ? (scheduleData.classId.length > 0 ? scheduleData.classId : null)
+                      : (typeof scheduleData.classId === 'string' && scheduleData.classId
+                          ? scheduleData.classId
+                          : null));
+
+                // Resolve groupNumber: from course data (matches ClassroomAttendancePage logic)
+                const resolvedGroupNumber = typeof course !== 'string'
+                  ? (Number(course?.groupNumber || course?.group || 0) || undefined)
+                  : undefined;
+
+                // Resolve courseId for enrollment lookup
+                const resolvedCourseId = typeof course !== 'string'
+                  ? (course?.id || course?.courseId || scheduleData.courseId || '')
+                  : '';
 
                 allSchedules.push({
                   id: uniqueScheduleId,
@@ -875,15 +877,16 @@ const SubstituteManagementPage: React.FC = () => {
                   startTime: setting.startTime,
                   endTime: setting.endTime,
                   subjectName: subjectNameDisplay,
-                  subjectCode: subjectCodeDisplay, // เพิ่มรหัสวิชา
-                  className: formatClassName(classId),
-                  classId,
-                  originalDate: new Date(currentDate), // เก็บวันที่จริงของคาบเรียน
-                  // ดึงข้อมูลครูสอนแทนที่เคยบันทึกไว้
+                  subjectCode: subjectCodeDisplay,
+                  className: formatClassName(resolvedClassId),
+                  classId: resolvedClassId,
+                  groupNumber: resolvedGroupNumber,
+                  courseId: resolvedCourseId,
+                  originalDate: new Date(currentDate),
                   substituteTeacherId: existingSub?.substituteTeacherId,
                   substituteTeacherName: existingSub?.substituteTeacherName,
-                  substitutionDocId: existingSub?.id, // 📌 เก็บ ID ของ substitution document
-                  availableTeachers: findAvailableTeachers(currentDate, periodNumber, pIdx), // 📌 คำนวณและเก็บครูที่ว่าง
+                  substitutionDocId: existingSub?.id,
+                  availableTeachers: findAvailableTeachers(currentDate, pIdx),
                   roomName: (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])))
                     .map((id: string) => roomMap[id] || id)
                     .join(', ') || 'ไม่ระบุสถานที่',
@@ -941,14 +944,24 @@ const SubstituteManagementPage: React.FC = () => {
       processed = processed.filter(t => t.loadWeek <= maxLoad);
     }
 
-    // 4. Sort
+    // 4. Filter by absence history (จำนวนครั้งที่ครูคนนั้นเคยลาจนต้องหาคนสอนแทน)
+    if (filterMissing !== 'all') {
+      processed = processed.filter(t => {
+        const count = teacherAbsenceCounts[t.value] || 0;
+        if (filterMissing === 'high') return count > 10;
+        if (filterMissing === 'medium') return count >= 4 && count <= 10;
+        if (filterMissing === 'low') return count < 4;
+        return true;
+      });
+    }
+
+    // 5. Sort
     if (sortCondition === 'recommended') {
       processed.sort((a, b) => {
         // Priority 1: Same Learning Area
         const aGroup = a.learningArea === leaveLearningArea ? 1 : 0;
         const bGroup = b.learningArea === leaveLearningArea ? 1 : 0;
         if (aGroup !== bGroup) return bGroup - aGroup;
-
         // Priority 2: Workload Day (Lower is better)
         return a.loadDay - b.loadDay;
       });
@@ -957,8 +970,8 @@ const SubstituteManagementPage: React.FC = () => {
     } else if (sortCondition === 'workload_week') {
       processed.sort((a, b) => a.loadWeek - b.loadWeek);
     } else if (sortCondition === 'missing_stats') {
-      // Mock sorting for "Missing Stats"
-      processed.sort((a, b) => a.label.localeCompare(b.label));
+      // เรียงจากมาก → น้อย (ครูที่เคยลาบ่อยขึ้นก่อน เพื่อให้รู้ว่าควรเลี่ยง)
+      processed.sort((a, b) => (teacherAbsenceCounts[b.value] || 0) - (teacherAbsenceCounts[a.value] || 0));
     }
 
     return processed;
@@ -981,7 +994,7 @@ const SubstituteManagementPage: React.FC = () => {
         const substitutionRef = doc(substitutionsCollectionRef, scheduleEntry.substitutionDocId);
         await updateDoc(substitutionRef, {
           substituteTeacherId: substitute.value,
-          substituteTeacherName: substitute.label,
+          substituteTeacherName: substitute.label.replace(/^\[.*?\]\s*/, ''),
           roomName: scheduleEntry.roomName || "",
           startTime: scheduleEntry.startTime || "",
           endTime: scheduleEntry.endTime || "",
@@ -992,16 +1005,19 @@ const SubstituteManagementPage: React.FC = () => {
         const substitutionRef = doc(substitutionsCollectionRef);
         substitutionDocId = substitutionRef.id; // เก็บ ID ที่สร้างใหม่
         await setDoc(substitutionRef, {
-          id: substitutionRef.id, // เก็บ ID ของตัวเองไว้ใน document
+          id: substitutionRef.id,
           originalTeacherId: selectedLeave.teacherDocId,
           originalTeacherName: selectedLeave.teacherName,
           substituteTeacherId: substitute.value,
-          substituteTeacherName: substitute.label,
+          substituteTeacherName: substitute.label.replace(/^\[.*?\]\s*/, ''),
           date: Timestamp.fromDate(scheduleEntry.originalDate),
+          academicYear: getScheduleYearTerm(scheduleEntry.originalDate).academicYear,
           period: scheduleEntry.period,
-          classId: scheduleEntry.classId,
+          classId: scheduleEntry.classId ?? null,
+          groupNumber: scheduleEntry.groupNumber ?? null,
+          courseId: scheduleEntry.courseId || null,
           subjectName: scheduleEntry.subjectName,
-          subjectCode: scheduleEntry.subjectCode || "", // บันทึกรหัสวิชา
+          subjectCode: scheduleEntry.subjectCode || "",
           roomName: scheduleEntry.roomName || "",
           startTime: scheduleEntry.startTime || "",
           endTime: scheduleEntry.endTime || "",
@@ -1046,7 +1062,7 @@ const SubstituteManagementPage: React.FC = () => {
           ? {
             ...s,
             substituteTeacherId: substitute.value,
-            substituteTeacherName: substitute.label,
+            substituteTeacherName: substitute.label.replace(/^\[.*?\]\s*/, ''),
             substitutionDocId: substitutionDocId // 📌 อัปเดต ID ของ substitution doc ด้วย
           }
           : s
@@ -1055,7 +1071,7 @@ const SubstituteManagementPage: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'มอบหมายสำเร็จ',
-        text: `ได้มอบหมายให้ ${substitute.label} สอนแทนเรียบร้อยแล้ว`,
+        text: `ได้มอบหมายให้ ${substitute.label.replace(/^\[.*?\]\s*/, '')} สอนแทนเรียบร้อยแล้ว`,
         background: "#2a2b2f",
         color: "#ffffff",
         timer: 2000,
@@ -1294,7 +1310,7 @@ const SubstituteManagementPage: React.FC = () => {
                         </div>
                         {schedule.substituteTeacherName && (
                           <div className="mt-2 flex items-center text-xs font-bold text-green-500 bg-green-500/10 w-fit px-2 py-1 rounded-lg">
-                            <CheckCircle size={12} className="mr-1" /> สอนแทนโดย: {schedule.substituteTeacherName}
+                            <CheckCircle size={12} className="mr-1" /> สอนแทนโดย: {schedule.substituteTeacherName?.replace(/^\[.*?\]\s*/, '') || schedule.substituteTeacherName}
                           </div>
                         )}
                       </div>

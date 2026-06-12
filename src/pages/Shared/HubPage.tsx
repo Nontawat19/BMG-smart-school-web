@@ -2,7 +2,7 @@ import React from "react";
 import { useParams, Link, Navigate, useLocation } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 import MainLayout from "@/layouts/MainLayout";
-import { onSnapshot, doc } from "firebase/firestore";
+import { onSnapshot, doc, collection } from "firebase/firestore";
 import { firestore as db } from "@/firebase";
 import {
   ChevronRight,
@@ -109,6 +109,28 @@ const HubPage: React.FC = () => {
 
     return () => unsub();
   }, [schoolId]);
+
+  const [specialPeriods, setSpecialPeriods] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (!schoolId) return;
+
+    const unsub = onSnapshot(collection(db, 'school-settings', schoolId, 'special-periods'), (snap) => {
+      const periods = snap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSpecialPeriods(periods);
+    }, (err) => {
+      console.error("Error loading special periods:", err);
+    });
+
+    return () => unsub();
+  }, [schoolId]);
+
+  const teachingLoadPeriods = React.useMemo(() => {
+    return specialPeriods.filter((sp: any) => sp.isTeachingLoad === true);
+  }, [specialPeriods]);
 
   const checkAccess = (item: HubItem) => {
     // 1. Role Check
@@ -889,6 +911,14 @@ const HubPage: React.FC = () => {
           path: "/owner/users/add",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
           allowedRoles: OWNER_ONLY
+        },
+        {
+          title: "จัดการสิทธิ์การเข้าถึงหน้า",
+          description: "กำหนดว่าแต่ละสิทธิ์สามารถเข้าถึงหน้าใดได้บ้าง ใช้กับทุกโรงเรียนในระบบ",
+          icon: <ShieldCheck size={24} />,
+          path: "/owner/permission-management",
+          colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: OWNER_ONLY
         }
       ]
     }
@@ -978,7 +1008,90 @@ const HubPage: React.FC = () => {
     );
   };
 
-  const currentHub = hubType ? hubConfigs[hubType] : null;
+  const getSpecialPeriodMenuItem = (period: any): HubItem => {
+    const title = period.title || "";
+    const lowerTitle = title.toLowerCase();
+
+    let icon = <ClipboardList size={24} />;
+    let path = `/academic/learner-activity-attendance?periodId=${period.id}`;
+    let colorClass = "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400"; // default teal
+
+    if (lowerTitle.includes("โฮมรูม") || lowerTitle.includes("โฮมรู") || lowerTitle.includes("homeroom")) {
+      icon = <Home size={24} />;
+      path = `/academic/homeroom-attendance`;
+      colorClass = "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400";
+    } else if (lowerTitle.includes("แนะแนว") || lowerTitle.includes("guidance")) {
+      icon = <BookOpen size={24} />;
+      path = `/academic/guidance-attendance`;
+      colorClass = "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400";
+    } else if (lowerTitle.includes("ชุมนุม") || lowerTitle.includes("club")) {
+      icon = <ClipboardCheck size={24} />;
+      path = `/academic/club-attendance`;
+      colorClass = "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400";
+    } else if (lowerTitle.includes("เข้าแถว") || lowerTitle.includes("flag")) {
+      icon = <Flag size={24} />;
+      path = `/academic/flag-ceremony`;
+      colorClass = "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400";
+    } else {
+      // Generate a color class for other custom periods
+      const colors = [
+        "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
+        "bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/20 dark:text-fuchsia-400",
+        "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+        "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+        "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400"
+      ];
+      // Simple hash based on title
+      let hash = 0;
+      for (let i = 0; i < title.length; i++) {
+        hash = title.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      colorClass = colors[Math.abs(hash) % colors.length];
+    }
+
+    return {
+      title: `เช็คชื่อ${title}`,
+      description: `บันทึกการเข้าร่วมกิจกรรม ${title} ของนักเรียน`,
+      icon,
+      path,
+      colorClass,
+      allowedRoles: TEACHER_OPERATIONAL
+    };
+  };
+
+  const processedHubConfigs = React.useMemo(() => {
+    if (!hubConfigs.attendance) return hubConfigs;
+
+    const dynamicItems = teachingLoadPeriods.map(period => getSpecialPeriodMenuItem(period));
+    const baseItems = hubConfigs.attendance.items;
+    const finalItems: HubItem[] = [];
+
+    const hasDynamicHome = dynamicItems.some(item => item.path.includes('/academic/homeroom-attendance'));
+    const hasDynamicGuidance = dynamicItems.some(item => item.path.includes('/academic/guidance-attendance'));
+    const hasDynamicClub = dynamicItems.some(item => item.path.includes('/academic/club-attendance'));
+    const hasDynamicLearnerActivity = dynamicItems.some(item => item.path.includes('/academic/learner-activity-attendance'));
+
+    baseItems.forEach(item => {
+      if (item.path === '/academic/homeroom-attendance' && hasDynamicHome) return;
+      if (item.path === '/academic/guidance-attendance' && hasDynamicGuidance) return;
+      if (item.path === '/academic/club-attendance' && hasDynamicClub) return;
+      if (item.path === '/academic/learner-activity-attendance' && hasDynamicLearnerActivity) return;
+      finalItems.push(item);
+    });
+
+    const checkItems = finalItems.filter(item => !item.path.includes('summary') && !item.path.includes('audit'));
+    const reportItems = finalItems.filter(item => item.path.includes('summary') || item.path.includes('audit'));
+
+    return {
+      ...hubConfigs,
+      attendance: {
+        ...hubConfigs.attendance,
+        items: [...checkItems, ...dynamicItems, ...reportItems]
+      }
+    };
+  }, [teachingLoadPeriods, schoolId, TEACHER_OPERATIONAL, hubConfigs]);
+
+  const currentHub = hubType ? processedHubConfigs[hubType] : null;
 
   // Final access check
   if (hubType === 'owner' && !hasRole(OWNER_ONLY)) {
@@ -1063,7 +1176,7 @@ const HubPage: React.FC = () => {
           {/* Content */}
           {isMasterHub ? (
             // Show all hubs (excluding owner if not superadmin)
-            Object.values(hubConfigs)
+            Object.values(processedHubConfigs)
               .filter(hub => hub.id !== 'owner' || hasRole(OWNER_ONLY))
               .map(renderHubSection)
           ) : (
