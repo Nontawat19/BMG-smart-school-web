@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { doc, setDoc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { firestore as db } from '../../firebase';
 import Swal from 'sweetalert2';
@@ -36,7 +36,7 @@ const CalendarHeader: React.FC = () => {
   const daysOfWeek = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
   return (
     <>
-      {daysOfWeek.map(day => (<div key={day} className="text-center font-semibold text-gray-500 dark:text-gray-400 p-2 text-sm">{day}</div>))}
+      {daysOfWeek.map(day => (<div key={day} className="min-w-0 text-center font-semibold text-gray-500 dark:text-gray-400 px-1 py-2 text-xs sm:text-sm">{day}</div>))}
     </>
   );
 };
@@ -173,6 +173,8 @@ const ThaiDatePicker: React.FC<{
 };
 
 const SchoolCalendarPage: React.FC = () => {
+  const DESKTOP_FRAME_WIDTH = 1520;
+  const DESKTOP_FRAME_HEIGHT = 860;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<Record<string, CalendarEvent>>({});
   const [officialHolidays, setOfficialHolidays] = useState<Record<string, CalendarEvent>>({});
@@ -184,6 +186,8 @@ const SchoolCalendarPage: React.FC = () => {
   });
   const [academicYear, setAcademicYear] = useState<string>('');
   const [fetchedYears, setFetchedYears] = useState<Set<number>>(new Set());
+  const [desktopScale, setDesktopScale] = useState(1);
+  const desktopViewportRef = useRef<HTMLDivElement>(null);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
 
@@ -257,6 +261,41 @@ const SchoolCalendarPage: React.FC = () => {
       fetchData();
     }
   }, [fetchData, schoolId]);
+
+  useLayoutEffect(() => {
+    const updateDesktopScale = () => {
+      if (!desktopViewportRef.current) return;
+
+      const viewportWidth = desktopViewportRef.current.clientWidth;
+      const viewportHeight = desktopViewportRef.current.clientHeight;
+
+      if (window.innerWidth < 1024 || viewportWidth === 0 || viewportHeight === 0) {
+        setDesktopScale(1);
+        return;
+      }
+
+      const widthScale = viewportWidth / DESKTOP_FRAME_WIDTH;
+      const heightScale = viewportHeight / DESKTOP_FRAME_HEIGHT;
+      const nextScale = Math.min(widthScale, heightScale, 1);
+      setDesktopScale(nextScale);
+    };
+
+    updateDesktopScale();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateDesktopScale();
+    });
+
+    if (desktopViewportRef.current) {
+      resizeObserver.observe(desktopViewportRef.current);
+    }
+
+    window.addEventListener('resize', updateDesktopScale);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateDesktopScale);
+    };
+  }, []);
 
   const handleTermDateChange = useCallback((term: 'term1' | 'term2', type: 'startDate' | 'endDate', value: string) => {
     setTerms(prev => ({
@@ -680,15 +719,15 @@ const SchoolCalendarPage: React.FC = () => {
           key={day}
           onClick={() => handleDayClick(date)}
           title={event?.description}
-          className={`relative border border-gray-200 dark:border-gray-700/50 rounded-lg p-2 text-left cursor-pointer transition-all duration-200 ease-in-out h-28 flex flex-col ${cellClass}`}
+          className={`relative min-w-0 min-h-0 h-full overflow-hidden border border-gray-200 dark:border-gray-700/50 rounded-lg p-1.5 sm:p-2 text-left cursor-pointer transition-all duration-200 ease-in-out flex flex-col ${cellClass}`}
         >
           {termIndicator}
-          <div className={`font-semibold mb-1 ${isToday ? 'bg-indigo-600 text-white rounded-full w-7 h-7 flex items-center justify-center' : 'text-gray-700 dark:text-gray-200'}`}>{day}</div>
+          <div className={`shrink-0 font-semibold mb-1 text-sm sm:text-base ${isToday ? 'bg-indigo-600 text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center' : 'text-gray-700 dark:text-gray-200'}`}>{day}</div>
           {event && (event.type !== 'schoolDay' || event.description || event.scheduleDay) && (
-            <div className="text-xs mt-1 opacity-90 flex-grow overflow-hidden">
-              <p className="font-medium leading-tight break-words" style={{ whiteSpace: 'pre-wrap' }}>{event.description || (event.type === 'holiday' ? 'วันหยุด' : 'หยุดพิเศษ')}</p>
+            <div className="text-[10px] sm:text-xs opacity-90 flex-grow overflow-hidden min-h-0">
+              <p className="font-medium leading-tight break-words line-clamp-2" style={{ whiteSpace: 'pre-wrap' }}>{event.description || (event.type === 'holiday' ? 'วันหยุด' : 'หยุดพิเศษ')}</p>
               {event.scheduleDay && (
-                <p className="text-[10px] mt-0.5 text-indigo-700 dark:text-indigo-300 font-semibold">
+                <p className="text-[9px] sm:text-[10px] mt-0.5 text-indigo-700 dark:text-indigo-300 font-semibold truncate">
                   (ใช้ตาราง{DAY_MAP[event.scheduleDay]})
                 </p>
               )}
@@ -719,12 +758,12 @@ const SchoolCalendarPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="p-4 text-gray-900 dark:text-white transition-colors duration-300">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
+      <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-4 text-gray-900 dark:text-white transition-colors duration-300 overflow-x-hidden lg:h-[calc(100vh-60px)] lg:overflow-hidden">
+        <div className="max-w-[1600px] mx-auto lg:h-full flex flex-col min-h-0">
+          <div className="flex items-center gap-4 mb-3 sm:mb-4 shrink-0">
             <BackButton to="/academic/hub/settings" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <Calendar className="text-indigo-600 dark:text-indigo-400" size={28} />
                 ปฏิทินการศึกษา
               </h1>
@@ -732,100 +771,213 @@ const SchoolCalendarPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm dark:shadow-none">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <div />
-              <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
+          <div ref={desktopViewportRef} className="hidden lg:flex lg:flex-1 lg:min-h-0 lg:items-start lg:justify-center lg:overflow-hidden">
+            <div
+              className="shrink-0"
+              style={{
+                width: DESKTOP_FRAME_WIDTH * desktopScale,
+                height: DESKTOP_FRAME_HEIGHT * desktopScale,
+              }}
+            >
+              <div
+                className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm dark:shadow-none overflow-x-hidden h-full flex flex-col origin-top-left"
+                style={{
+                  width: DESKTOP_FRAME_WIDTH,
+                  height: DESKTOP_FRAME_HEIGHT,
+                  transform: `scale(${desktopScale})`,
+                }}
+              >
+                <div className="flex justify-end items-center mb-3 gap-3 shrink-0">
+                  <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    {isSaving ? 'กำลังบันทึก...' : 'บันทึกปฏิทิน'}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 grid-cols-[340px_minmax(0,1fr)] flex-1 min-h-0">
+                  <div className="space-y-4 min-w-0 min-h-0">
+                    <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex flex-col gap-2.5 mb-3">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">กำหนดปีและภาคเรียน</h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label htmlFor="academic-year-desktop" className="text-sm text-gray-600 dark:text-gray-400">ปีการศึกษา:</label>
+                          <input type="text" id="academic-year-desktop" value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="เช่น 2568" className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-gray-900 dark:text-white w-28" />
+                          <button onClick={handleLoadYear} className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md text-sm transition-colors" title="โหลดข้อมูลของปีที่ระบุ">
+                            โหลดข้อมูล
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-700/50">
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-cyan-400">ภาคเรียนที่ 1</h4>
+                          <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-2 items-center">
+                            <label htmlFor="term1-start-desktop" className="text-sm text-gray-600 dark:text-gray-400">เริ่มต้น</label>
+                            <ThaiDatePicker value={terms.term1.startDate} onChange={(val) => handleTermDateChange('term1', 'startDate', val)} events={events} />
+                          </div>
+                          <div className="grid grid-cols-[64px_minmax(0,1fr)_40px] gap-2 items-center">
+                            <label htmlFor="term1-end-desktop" className="text-sm text-gray-600 dark:text-gray-400">สิ้นสุด</label>
+                            <ThaiDatePicker value={terms.term1.endDate} onChange={(val) => handleTermDateChange('term1', 'endDate', val)} events={events} />
+                            <button onClick={() => handleAutoCalculateEndDate('term1')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="h-10 flex items-center justify-center text-xs bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-purple-400">ภาคเรียนที่ 2</h4>
+                          <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-2 items-center">
+                            <label htmlFor="term2-start-desktop" className="text-sm text-gray-600 dark:text-gray-400">เริ่มต้น</label>
+                            <ThaiDatePicker value={terms.term2.startDate} onChange={(val) => handleTermDateChange('term2', 'startDate', val)} events={events} />
+                          </div>
+                          <div className="grid grid-cols-[64px_minmax(0,1fr)_40px] gap-2 items-center">
+                            <label htmlFor="term2-end-desktop" className="text-sm text-gray-600 dark:text-gray-400">สิ้นสุด</label>
+                            <ThaiDatePicker value={terms.term2.endDate} onChange={(val) => handleTermDateChange('term2', 'endDate', val)} events={events} />
+                            <button onClick={() => handleAutoCalculateEndDate('term2')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="h-10 flex items-center justify-center text-xs bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">เครื่องมือ</h3>
+                      <div className="grid grid-cols-1 gap-2">
+                        {toolOptions.map(tool => (
+                          <button
+                            key={tool.id}
+                            onClick={() => setSelectedTool(tool.id as DayType)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all
+                            ${selectedTool === tool.id
+                                ? `${tool.color} text-white ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-[#1e1f21] ring-gray-500 dark:ring-white`
+                                : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500'
+                              }`}
+                          >
+                            <span className={`w-3 h-3 rounded-full ${tool.color}`}></span>
+                            {tool.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">เลือกเครื่องมือแล้วคลิกบนวันที่ในปฏิทินเพื่อกำหนดประเภทของวัน</p>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 bg-gray-50 dark:bg-[#1e1f21] p-3 rounded-lg border border-gray-200 dark:border-gray-700 min-h-0 flex flex-col">
+                    <div className="flex justify-between items-center gap-3 mb-3 shrink-0">
+                      <button onClick={() => changeMonth(-1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&lt;</button>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white text-center min-w-0">
+                        {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
+                      </h2>
+                      <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1 min-w-0 shrink-0">
+                      <CalendarHeader />
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1 min-w-0 flex-1 min-h-0 auto-rows-fr">
+                      {renderCalendar()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:hidden bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none overflow-x-hidden flex flex-col">
+            <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center mb-3 gap-3 shrink-0">
+              <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
                 {isSaving ? 'กำลังบันทึก...' : 'บันทึกปฏิทิน'}
               </button>
             </div>
 
-            {/* Term Definition */}
-            <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg mb-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">กำหนดปีและภาคเรียน</h3>
-                <div className="flex items-center gap-2 mt-2 md:mt-0">
-                  <label htmlFor="academic-year" className="text-sm text-gray-600 dark:text-gray-400">ปีการศึกษา:</label>
-                  <input type="text" id="academic-year" value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="เช่น 2568" className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-gray-900 dark:text-white w-28" />
-                  <button onClick={handleLoadYear} className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-sm transition-colors" title="โหลดข้อมูลของปีที่ระบุ">
-                    โหลดข้อมูล
-                  </button>
+            <div className="grid gap-4">
+              <div className="space-y-4 min-w-0">
+                <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="flex flex-col gap-2.5 mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">กำหนดปีและภาคเรียน</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label htmlFor="academic-year-mobile" className="text-sm text-gray-600 dark:text-gray-400">ปีการศึกษา:</label>
+                      <input type="text" id="academic-year-mobile" value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="เช่น 2568" className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-gray-900 dark:text-white w-28" />
+                      <button onClick={handleLoadYear} className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-md text-sm transition-colors" title="โหลดข้อมูลของปีที่ระบุ">
+                        โหลดข้อมูล
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-700/50">
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-cyan-400">ภาคเรียนที่ 1</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-[64px_minmax(0,1fr)] gap-2 items-center">
+                        <label htmlFor="term1-start-mobile" className="text-sm text-gray-600 dark:text-gray-400">เริ่มต้น</label>
+                        <ThaiDatePicker value={terms.term1.startDate} onChange={(val) => handleTermDateChange('term1', 'startDate', val)} events={events} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-[64px_minmax(0,1fr)_40px] gap-2 items-center">
+                        <label htmlFor="term1-end-mobile" className="text-sm text-gray-600 dark:text-gray-400">สิ้นสุด</label>
+                        <ThaiDatePicker value={terms.term1.endDate} onChange={(val) => handleTermDateChange('term1', 'endDate', val)} events={events} />
+                        <button onClick={() => handleAutoCalculateEndDate('term1')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="h-10 flex items-center justify-center text-xs bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-purple-400">ภาคเรียนที่ 2</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-[64px_minmax(0,1fr)] gap-2 items-center">
+                        <label htmlFor="term2-start-mobile" className="text-sm text-gray-600 dark:text-gray-400">เริ่มต้น</label>
+                        <ThaiDatePicker value={terms.term2.startDate} onChange={(val) => handleTermDateChange('term2', 'startDate', val)} events={events} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-[64px_minmax(0,1fr)_40px] gap-2 items-center">
+                        <label htmlFor="term2-end-mobile" className="text-sm text-gray-600 dark:text-gray-400">สิ้นสุด</label>
+                        <ThaiDatePicker value={terms.term2.endDate} onChange={(val) => handleTermDateChange('term2', 'endDate', val)} events={events} />
+                        <button onClick={() => handleAutoCalculateEndDate('term2')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="h-10 flex items-center justify-center text-xs bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">เครื่องมือ</h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    {toolOptions.map(tool => (
+                      <button
+                        key={tool.id}
+                        onClick={() => setSelectedTool(tool.id as DayType)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all
+                        ${selectedTool === tool.id
+                            ? `${tool.color} text-white ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-[#1e1f21] ring-gray-500 dark:ring-white`
+                            : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500'
+                          }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full ${tool.color}`}></span>
+                        {tool.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">เลือกเครื่องมือแล้วคลิกบนวันที่ในปฏิทินเพื่อกำหนดประเภทของวัน</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 pt-4 border-t border-gray-200 dark:border-gray-700/50">
-                {/* Term 1 */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-cyan-400">ภาคเรียนที่ 1</h4>
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="term1-start" className="text-sm text-gray-600 dark:text-gray-400 w-16">เริ่มต้น:</label>
-                    <ThaiDatePicker value={terms.term1.startDate} onChange={(val) => handleTermDateChange('term1', 'startDate', val)} events={events} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="term1-end" className="text-sm text-gray-600 dark:text-gray-400 w-16">สิ้นสุด:</label>
-                    <ThaiDatePicker value={terms.term1.endDate} onChange={(val) => handleTermDateChange('term1', 'endDate', val)} events={events} />
-                    <button onClick={() => handleAutoCalculateEndDate('term1')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="text-xs bg-gray-600 hover:bg-gray-500 text-white p-2 rounded-md transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
-                    </button>
-                  </div>
+              <div className="min-w-0 bg-gray-50 dark:bg-[#1e1f21] p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col">
+                <div className="flex justify-between items-center gap-3 mb-3 shrink-0">
+                  <button onClick={() => changeMonth(-1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&lt;</button>
+                  <h2 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white text-center min-w-0">
+                    {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
+                  </h2>
+                  <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
                 </div>
 
-                {/* Term 2 */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-purple-400">ภาคเรียนที่ 2</h4>
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="term2-start" className="text-sm text-gray-600 dark:text-gray-400 w-16">เริ่มต้น:</label>
-                    <ThaiDatePicker value={terms.term2.startDate} onChange={(val) => handleTermDateChange('term2', 'startDate', val)} events={events} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label htmlFor="term2-end" className="text-sm text-gray-600 dark:text-gray-400 w-16">สิ้นสุด:</label>
-                    <ThaiDatePicker value={terms.term2.endDate} onChange={(val) => handleTermDateChange('term2', 'endDate', val)} events={events} />
-                    <button onClick={() => handleAutoCalculateEndDate('term2')} title="คำนวณวันสิ้นสุด 100 วันเรียนอัตโนมัติ" className="text-xs bg-gray-600 hover:bg-gray-500 text-white p-2 rounded-md transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>
-                    </button>
-                  </div>
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5 min-w-0 shrink-0">
+                  <CalendarHeader />
+                </div>
+
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5 min-w-0">
+                  {renderCalendar()}
                 </div>
               </div>
             </div>
-
-            {/* Toolbar */}
-            <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg mb-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">เครื่องมือ</h3>
-              <div className="flex flex-wrap gap-3">
-                {toolOptions.map(tool => (
-                  <button
-                    key={tool.id}
-                    onClick={() => setSelectedTool(tool.id as DayType)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all
-                    ${selectedTool === tool.id
-                        ? `${tool.color} text-white ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-[#1e1f21] ring-gray-500 dark:ring-white`
-                        : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500'
-                      }`}
-                  >
-                    <span className={`w-3 h-3 rounded-full ${tool.color}`}></span>
-                    {tool.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">เลือกเครื่องมือแล้วคลิกบนวันที่ในปฏิทินเพื่อกำหนดประเภทของวัน (คลิกซ้ำเพื่อลบ)</p>
-            </div>
-
-            {/* Calendar */}
-            <div className="bg-gray-50 dark:bg-[#1e1f21] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex justify-between items-center mb-4">
-                <button onClick={() => changeMonth(-1)} className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500">&lt;</button>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
-                </h2>
-                <button onClick={() => changeMonth(1)} className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500">&gt;</button>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                <CalendarHeader />
-                {renderCalendar()}
-              </div>
-            </div>
-
           </div>
         </div>
       </div>

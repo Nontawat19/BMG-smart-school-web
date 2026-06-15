@@ -272,11 +272,11 @@ const LearnerActivityAttendancePage: React.FC = () => {
   }, [activities, activeSemester]);
 
   const availableActivities = useMemo(() => {
-    if (selectedSpecialPeriodId) {
-      return termActivities.filter(activity => activity.specialPeriodId === selectedSpecialPeriodId);
+    if (queryPeriodId) {
+      return termActivities.filter(activity => activity.specialPeriodId === queryPeriodId);
     }
     return termActivities;
-  }, [termActivities, selectedSpecialPeriodId]);
+  }, [termActivities, queryPeriodId]);
 
   useEffect(() => {
     setSelectedActivity(prev => {

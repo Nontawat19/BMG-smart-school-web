@@ -48,7 +48,11 @@ export const isArchivedStudent = (student: any) => isArchivedStudentStatus(getSt
 
 export const isCurrentStudent = (student: any) => !isArchivedStudent(student);
 
-export const isStudyingStudent = (student: any) => getStudentStatus(student) === ACTIVE_STUDENT_STATUS;
+export const isStudyingStudent = (student: any) => {
+  const rawStatus = student?.status || student?.studentStatus;
+  if (!rawStatus) return false;
+  return getStudentStatus(student) === ACTIVE_STUDENT_STATUS;
+};
 
 export const buildDuplicateStudentHtml = (student: any) => {
   const status = getStudentStatus(student);

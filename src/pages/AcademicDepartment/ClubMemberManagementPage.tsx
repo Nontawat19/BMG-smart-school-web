@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore as db } from '../../firebase';
-import { collection, getDocs, doc, query, where, writeBatch, deleteDoc, onSnapshot, orderBy, getDoc, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, query, where, writeBatch, deleteDoc, onSnapshot, orderBy, getDoc, increment } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
@@ -445,8 +445,10 @@ const ClubMemberManagementPage: React.FC = () => {
   const handleConfirmMember = async (studentId: string) => {
     if (!selectedClub || !schoolId) return;
     try {
-      const memberRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'members', studentId);
-      await updateDoc(memberRef, { status: 'confirmed' });
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'members', studentId), { status: 'confirmed' });
+      batch.update(doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id), { memberCount: increment(1) });
+      await batch.commit();
       Toast.fire({ icon: 'success', title: 'อนุมัติสมาชิกเรียบร้อยแล้ว' });
     } catch (error) {
       console.error("Error confirming member:", error);
@@ -590,16 +592,16 @@ const ClubMemberManagementPage: React.FC = () => {
         updates.status = 'approved';
         const batch = writeBatch(db);
         if (request.currentClubId) {
-          const oldMemberRef = doc(db, 'school-settings', schoolId, 'clubs', request.currentClubId, 'members', request.studentId);
-          batch.delete(oldMemberRef);
+          batch.delete(doc(db, 'school-settings', schoolId, 'clubs', request.currentClubId, 'members', request.studentId));
+          batch.update(doc(db, 'school-settings', schoolId, 'clubs', request.currentClubId), { memberCount: increment(-1) });
         }
-        const newMemberRef = doc(db, 'school-settings', schoolId, 'clubs', request.targetClubId, 'members', request.studentId);
-        batch.set(newMemberRef, {
+        batch.set(doc(db, 'school-settings', schoolId, 'clubs', request.targetClubId, 'members', request.studentId), {
           joinedAt: new Date().toISOString(),
           status: 'confirmed',
           addedBy: currentUser?.uid,
           requestRef: request.id
         });
+        batch.update(doc(db, 'school-settings', schoolId, 'clubs', request.targetClubId), { memberCount: increment(1) });
         batch.update(reqRef, updates);
         await batch.commit();
       } else {

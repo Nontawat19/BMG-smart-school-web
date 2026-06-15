@@ -71,6 +71,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       } else {
         const userType = localStorage.getItem('currentUserType');
         const studentSessionRaw = localStorage.getItem('studentSession');
+        const parentSessionRaw = localStorage.getItem('parentSession');
+
         if (userType === 'student' && studentSessionRaw) {
           try {
             const { schoolId, studentId } = JSON.parse(studentSessionRaw);
@@ -82,6 +84,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
             }
           } catch {
             localStorage.removeItem('studentSession');
+            localStorage.removeItem('currentUserType');
+            setIsAuthenticated(false);
+          }
+        } else if (userType === 'parent' && parentSessionRaw) {
+          try {
+            const { children } = JSON.parse(parentSessionRaw);
+            if (Array.isArray(children) && children.length > 0) {
+              setIsAuthenticated(true);
+            } else {
+              localStorage.removeItem('parentSession');
+              localStorage.removeItem('currentUserType');
+              setIsAuthenticated(false);
+            }
+          } catch {
+            localStorage.removeItem('parentSession');
             localStorage.removeItem('currentUserType');
             setIsAuthenticated(false);
           }

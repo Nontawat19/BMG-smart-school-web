@@ -21,6 +21,7 @@ import { firestore as db } from "@/firebase";
 import { RootState, AppDispatch } from "@/store";
 import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import { getClassLevelRank } from "@/utils/schoolUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 
 try {
   Font.register({
@@ -413,6 +414,7 @@ const ClubReportsPage: React.FC = () => {
     if (!reportType) return [];
     if (reportType === "students-without-club") {
       return students
+        .filter(isStudyingStudent)
         .filter((student) => !memberships[student.id])
         .filter((student) => matchesSearch([schoolName, getStudentCode(student), getStudentName(student), formatClassRoom(student)]));
     }

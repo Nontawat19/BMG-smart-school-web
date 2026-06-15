@@ -10,7 +10,7 @@ import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -384,6 +384,7 @@ export default function ViewStudentPage() {
   const [isClubLoading, setIsClubLoading] = useState(false);
   const [showTransferList, setShowTransferList] = useState(false);
   const completedClubRequestIdsRef = useRef<Set<string>>(new Set());
+  const isSubmittingClubRequestRef = useRef(false);
   const [clubPage, setClubPage] = useState(1);
   const validTabs = ["general", "academic", "attendance", "courses", "official_travel", "club"];
   const [activeTab, setActiveTab] = useState(() => {
@@ -460,13 +461,17 @@ export default function ViewStudentPage() {
 
   const { isDarkMode, toggleTheme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [parentChildren, setParentChildren] = useState<{ schoolId: string; studentDocId: string; name: string; classLevel: string; room: string; profileImageUrl: string }[]>([]);
+  const [showChildSwitcher, setShowChildSwitcher] = useState(false);
   const profile = useSelector((state: RootState) => state.profile);
-  const isStudentLogin = localStorage.getItem('currentUserType') === 'student';
+  const isParentLogin = localStorage.getItem('currentUserType') === 'parent';
+  const isStudentLogin = ['student', 'parent'].includes(localStorage.getItem('currentUserType') ?? '');
 
   const handleLogout = async () => {
     await signOut(auth);
     localStorage.removeItem('currentUserType');
-    localStorage.removeItem('studentSession'); // 📌 เพิ่มการลบ session ของนักเรียน
+    localStorage.removeItem('studentSession');
+    localStorage.removeItem('parentSession');
     navigate('/login');
   };
 
@@ -537,13 +542,23 @@ export default function ViewStudentPage() {
       return null;
     }
   };
-  // 📌 เพิ่มการตรวจสอบสิทธิ์การเข้าถึง (เนื่องจากถอด ProtectedRoute ออกจาก App.tsx)
+  // ตรวจสอบสิทธิ์การเข้าถึง
   useEffect(() => {
-    const isStudent = localStorage.getItem('currentUserType') === 'student';
-    if (!isStudent && !auth.currentUser) {
+    const userType = localStorage.getItem('currentUserType');
+    if (userType !== 'student' && userType !== 'parent' && !auth.currentUser) {
       navigate('/login');
     }
   }, [navigate]);
+
+  // โหลดรายการบุตรจาก parentSession
+  useEffect(() => {
+    if (isParentLogin) {
+      try {
+        const session = localStorage.getItem('parentSession');
+        if (session) setParentChildren(JSON.parse(session).children || []);
+      } catch { /* session เสีย ไม่แสดง switcher */ }
+    }
+  }, [isParentLogin]);
 
   useEffect(() => {
     if (schoolId) {
@@ -1087,6 +1102,8 @@ export default function ViewStudentPage() {
     });
 
     if (result.isConfirmed) {
+      if (isSubmittingClubRequestRef.current) return;
+      isSubmittingClubRequestRef.current = true;
       try {
         const requestData = {
           studentId,
@@ -1113,6 +1130,8 @@ export default function ViewStudentPage() {
       } catch (err) {
         console.error("Error creating club request:", err);
         Swal.fire('ผิดพลาด', 'ไม่สามารถส่งคำขอได้', 'error');
+      } finally {
+        isSubmittingClubRequestRef.current = false;
       }
     }
   };
@@ -1205,19 +1224,131 @@ export default function ViewStudentPage() {
           <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-yellow-400 transition-colors">
             {isDarkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
           </button>
-          <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
-            <FaSignOutAlt /> ออกจากระบบ
-          </button>
-          <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700 ml-2">
-            <span className="font-bold text-sm text-gray-800 dark:text-white truncate max-w-[200px]">
-              {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
-            </span>
-            <ProfileAvatar
-              src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
-              alt="Profile"
-              className="w-10 h-10 border border-gray-200 dark:border-gray-700"
-            />
-          </div>
+
+          {/* นักเรียนธรรมดา: แสดงปุ่ม logout + ชื่อ + badge + avatar */}
+          {!isParentLogin && (
+            <>
+              <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                <FaSignOutAlt /> ออกจากระบบ
+              </button>
+              <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700 ml-2">
+                <div className="text-right">
+                  <p className="font-bold text-sm text-gray-800 dark:text-white truncate max-w-[180px]">
+                    {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
+                  </p>
+                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-full tracking-wide">
+                    นักเรียน
+                  </span>
+                </div>
+                <ProfileAvatar
+                  src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
+                  alt="Profile"
+                  className="w-10 h-10 border-2 border-sky-300 dark:border-sky-600"
+                />
+              </div>
+            </>
+          )}
+
+          {/* ผู้ปกครอง: avatar คลิกได้ → dropdown แบบ Facebook */}
+          {isParentLogin && (
+            <div className="relative pl-4 border-l border-gray-200 dark:border-gray-700 ml-2">
+              <button
+                onClick={() => setShowChildSwitcher(!showChildSwitcher)}
+                className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+              >
+                <div className="text-right">
+                  <p className="font-bold text-sm text-gray-800 dark:text-white truncate max-w-[160px]">
+                    {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
+                  </p>
+                  <span className="inline-block mt-0.5 px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-full tracking-wide">
+                    ผู้ปกครอง
+                  </span>
+                </div>
+                <div className="relative">
+                  <ProfileAvatar
+                    src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
+                    alt="Profile"
+                    className="w-10 h-10 border-2 border-emerald-300 dark:border-emerald-600"
+                  />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] bg-white dark:bg-[#18191a] rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center shadow-sm">
+                    <FaChevronDown size={7} className="text-gray-600 dark:text-gray-400" />
+                  </div>
+                </div>
+              </button>
+
+              {/* Facebook-style dropdown */}
+              {showChildSwitcher && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowChildSwitcher(false)} />
+                  <div className="absolute top-full right-0 mt-3 w-72 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+                    {/* Header — แสดง role ชัดเจน */}
+                    <div className="px-4 pt-4 pb-3 border-b border-gray-100 dark:border-gray-700">
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">เข้าสู่ระบบในฐานะ</p>
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                          <FaUsers size={12} className="text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <span className="font-bold text-sm text-gray-800 dark:text-white">ผู้ปกครอง</span>
+                        <span className="ml-auto px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-full">
+                          ผู้ปกครอง
+                        </span>
+                      </div>
+                    </div>
+                    <div className="px-4 pt-3 pb-1">
+                      <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">บุตร/หลานทั้งหมด</p>
+                    </div>
+
+                    {/* Children list */}
+                    <div className="px-2 pb-2">
+                      {parentChildren.map((child, idx) => {
+                        const isCurrent = child.studentDocId === studentId;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              navigate(`/school/${child.schoolId}/students/view/${child.studentDocId}`);
+                              setShowChildSwitcher(false);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${isCurrent ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-gray-50 dark:hover:bg-[#3a3b3c]'}`}
+                          >
+                            <div className="relative flex-shrink-0">
+                              <ProfileAvatar
+                                src={child.profileImageUrl || `https://ui-avatars.com/api/?name=${child.name}&background=random`}
+                                alt={child.name}
+                                className="w-11 h-11"
+                              />
+                              {isCurrent && (
+                                <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-green-500 rounded-full border-2 border-white dark:border-[#242526] flex items-center justify-center">
+                                  <FaCheck size={8} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-semibold text-sm truncate ${isCurrent ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-900 dark:text-white'}`}>
+                                {child.name}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{child.classLevel} / ห้อง {child.room}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Divider + Logout */}
+                    <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gray-100 dark:bg-[#3a3b3c] rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#4a4b4c] transition-colors"
+                      >
+                        <FaSignOutAlt />
+                        ออกจากระบบ
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Mobile Hamburger */}
@@ -1239,17 +1370,72 @@ export default function ViewStudentPage() {
               <FaTimes size={24} />
             </button>
           </div>
-          <div className="flex flex-col items-center mb-8">
-            <ProfileAvatar
-              src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
-              alt="Profile"
-              className="w-20 h-20 border-4 border-indigo-100 dark:border-gray-700 mb-4"
-            />
+          <div className="flex flex-col items-center mb-6">
+            <div className="relative mb-4">
+              <ProfileAvatar
+                src={student?.profileImageUrl || `https://ui-avatars.com/api/?name=${student?.firstName || 'Student'}+${student?.lastName || ''}&background=random`}
+                alt="Profile"
+                className={`w-20 h-20 border-4 ${isParentLogin ? 'border-emerald-200 dark:border-emerald-700' : 'border-sky-200 dark:border-sky-700'}`}
+              />
+            </div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white text-center">
               {student ? `${student.title}${student.firstName} ${student.lastName}` : 'Guest'}
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{student?.studentId}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{student?.studentId}</p>
+            {/* Role badge */}
+            {isParentLogin ? (
+              <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold rounded-full">
+                <FaUsers size={10} /> เข้าสู่ระบบในฐานะผู้ปกครอง
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-1 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 text-xs font-bold rounded-full">
+                <FaUser size={10} /> เข้าสู่ระบบในฐานะนักเรียน
+              </span>
+            )}
           </div>
+
+          {/* Child Switcher สำหรับ Mobile — แสดงเสมอเมื่อเป็นผู้ปกครอง */}
+          {isParentLogin && parentChildren.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 mb-2">บุตร/หลานทั้งหมด</p>
+              <div className="space-y-1">
+                {parentChildren.map((child, idx) => {
+                  const isCurrent = child.studentDocId === studentId;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        navigate(`/school/${child.schoolId}/students/view/${child.studentDocId}`);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${isCurrent
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <div className="relative flex-shrink-0">
+                        <ProfileAvatar
+                          src={child.profileImageUrl || `https://ui-avatars.com/api/?name=${child.name}&background=random`}
+                          alt={child.name}
+                          className="w-10 h-10"
+                        />
+                        {isCurrent && (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-[#2a2b2f] flex items-center justify-center">
+                            <FaCheck size={7} className="text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-left min-w-0 flex-1">
+                        <p className={`text-sm font-semibold truncate ${isCurrent ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-800 dark:text-gray-200'}`}>{child.name}</p>
+                        <p className="text-xs text-gray-400">{child.classLevel} / ห้อง {child.room}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="h-px bg-gray-200 dark:bg-gray-700 mt-4 mx-4"></div>
+            </div>
+          )}
           <div className="space-y-3 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
             <div className="mb-4 space-y-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">เมนูหลัก</p>
@@ -1361,17 +1547,6 @@ export default function ViewStudentPage() {
                     คะแนนความประพฤติ: {student.behaviorScore ?? 100} คะแนน
                   </span>
                 </div>
-                <div className="mt-2 flex flex-wrap justify-center gap-1">
-                  {(student.role || ["student"]).map((r, i) => (
-                    <span key={i} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${r === 'student' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
-                      r === 'parent' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' :
-                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                      {r === 'student' ? 'นักเรียน' : r === 'parent' ? 'ผู้ปกครอง' : r}
-                    </span>
-                  ))}
-                </div>
-
                 <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500 space-y-1">
                   <p>สร้างเมื่อ: {student.createdAt ? new Date(student.createdAt.seconds * 1000).toLocaleString('th-TH') : '-'}</p>
                   <p>แก้ไขล่าสุด: {student.updatedAt ? new Date(student.updatedAt.seconds * 1000).toLocaleString('th-TH') : '-'}</p>

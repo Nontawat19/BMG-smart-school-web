@@ -317,6 +317,14 @@ const HubPage: React.FC = () => {
           path: "/academic/substitute-management",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "รายงานการสอนแทน",
+          description: "สรุปรายการสอนแทนพร้อมส่งออก PDF",
+          icon: <FileText size={24} />,
+          path: "/academic/substitute-report",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
         }
       ]
     },
@@ -549,13 +557,13 @@ const HubPage: React.FC = () => {
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
-          title: "รายงานการมาเรียน (นักเรียน)",
-          description: "สรุปรายงาน ขาด ลา มา สาย และร้อยละการเข้าเรียนของนักเรียน",
-          icon: <ListChecks size={24} />,
-          path: "/academic/students-attendance-summary",
-          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
-          allowedRoles: STUDENT_AFFAIRS_ACCESS
-        }
+          title: "รายงานการสอนแทน",
+          description: "สรุปรายการสอนแทนพร้อมส่งออก PDF",
+          icon: <FileText size={24} />,
+          path: "/academic/substitute-report",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
       ]
     },
 
@@ -635,6 +643,14 @@ const HubPage: React.FC = () => {
           path: "/academic/classroom-attendance-audit",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "รายงานการมาเรียน (นักเรียน)",
+          description: "สรุปรายงาน ขาด ลา มา สาย และร้อยละการเข้าเรียนของนักเรียน",
+          icon: <ListChecks size={24} />,
+          path: "/academic/students-attendance-summary",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },

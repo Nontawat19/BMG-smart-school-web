@@ -766,46 +766,89 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
         setActiveModalSlot(slot);
         setModalLoading(true);
         setModalStudents([]);
-        
+
+        const buildProfile = (sDoc: any) => {
+            const sData = sDoc.data();
+            const name = `${sData.title || sData.prefix || ''}${sData.firstName || ''} ${sData.lastName || ''}`.trim() || 'ไม่ระบุชื่อ';
+            const number = String(sData.studentNumber || sData.number || sData.no || sData['เลขที่'] || '-');
+            return { name, number, id: sDoc.id };
+        };
+
         try {
-            // Fetch students from all assigned class levels
             const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-            const classLevelsToFetch = slot.classLevels && slot.classLevels.length > 0 ? slot.classLevels : [slot.classId];
-            
-            const studentSnaps = await Promise.all(
-                classLevelsToFetch.map((lvlId: string) =>
-                    getDocs(query(studentsRef, where('classLevel', '==', lvlId)))
-                )
-            );
-            
             const studentProfilesMap = new Map<string, { name: string; number: string; id: string }>();
-            studentSnaps.forEach(snap => {
+
+            // PRIMARY: fetch directly by Firestore document ID (studentId in attendance records
+            // equals the student document ID — avoids classLevel format mismatch entirely)
+            const studentIds = Array.from(new Set(
+                slot.rawDocs.map((d: any) => String(d.studentId || '')).filter(Boolean)
+            ));
+
+            for (let i = 0; i < studentIds.length; i += 30) {
+                const batch = studentIds.slice(i, i + 30);
+                const snap = await getDocs(query(studentsRef, where('__name__', 'in', batch)));
                 snap.forEach(sDoc => {
-                    const sData = sDoc.data();
-                    const name = `${sData.title || sData.prefix || ''}${sData.firstName || ''} ${sData.lastName || ''}`.trim() || 'ไม่ระบุชื่อ';
-                    const number = String(sData.studentNumber || sData.number || sData.no || sData['เลขที่'] || '-');
-                    studentProfilesMap.set(sDoc.id, { name, number, id: sDoc.id });
-                    if (sData.studentId) {
-                        studentProfilesMap.set(sData.studentId, { name, number, id: sDoc.id });
+                    const profile = buildProfile(sDoc);
+                    studentProfilesMap.set(sDoc.id, profile);
+                    const sid = sDoc.data().studentId;
+                    if (sid) studentProfilesMap.set(String(sid), profile);
+                });
+            }
+
+            // FALLBACK: if no profiles matched, query by classLevel using all format variants
+            // (handles cases where studentId in attendance differs from the doc ID)
+            if (studentProfilesMap.size === 0) {
+                const classIds = slot.classLevels && slot.classLevels.length > 0
+                    ? slot.classLevels
+                    : [slot.classId];
+
+                const variantSet = new Set<string>();
+                classIds.forEach(cId => {
+                    const s = String(cId || '').trim();
+                    if (!s) return;
+                    variantSet.add(s);
+                    // English key → Thai label (e.g. "m4" → "ม.4")
+                    if (CLASSES[s]) variantSet.add(CLASSES[s]);
+                    // Thai label → English key (e.g. "ม.4" → "m4")
+                    const engKey = Object.entries(CLASSES).find(([, v]) => v === s)?.[0];
+                    if (engKey) variantSet.add(engKey);
+                    // Dash format → slash format (e.g. "m4-1" → "m4/1" and "ม.4/1")
+                    if (s.includes('-')) {
+                        const [level, room] = s.split('-');
+                        variantSet.add(`${level}/${room}`);
+                        if (CLASSES[level]) variantSet.add(`${CLASSES[level]}/${room}`);
+                        // Grade-level only variants
+                        variantSet.add(level);
+                        if (CLASSES[level]) variantSet.add(CLASSES[level]);
                     }
                 });
-            });
 
-            // Map check-in records to student list
-            const sortedStudents = slot.rawDocs.map(doc => {
-                const profile = studentProfilesMap.get(doc.studentId);
+                const variants = Array.from(variantSet).filter(Boolean);
+                const classSnaps = await Promise.all(
+                    variants.map(lvlId => getDocs(query(studentsRef, where('classLevel', '==', lvlId))))
+                );
+                classSnaps.forEach(snap => {
+                    snap.forEach(sDoc => {
+                        const profile = buildProfile(sDoc);
+                        studentProfilesMap.set(sDoc.id, profile);
+                        const sid = sDoc.data().studentId;
+                        if (sid) studentProfilesMap.set(String(sid), profile);
+                    });
+                });
+            }
+
+            const sortedStudents = slot.rawDocs.map((doc: any) => {
+                const profile = studentProfilesMap.get(String(doc.studentId));
                 return {
                     studentId: doc.studentId,
                     name: profile?.name || 'ไม่พบข้อมูลนักเรียนในระบบ',
                     number: profile?.number || '-',
                     status: doc.status || 'present'
                 };
-            }).sort((a, b) => {
+            }).sort((a: any, b: any) => {
                 const numA = parseInt(a.number);
                 const numB = parseInt(b.number);
-                if (!isNaN(numA) && !isNaN(numB)) {
-                    return numA - numB;
-                }
+                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
                 return String(a.number).localeCompare(String(b.number));
             });
 

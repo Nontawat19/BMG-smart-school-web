@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { collection, getDocs, setDoc, doc, writeBatch } from 'firebase/firestore';
-import { firestore as db } from '@/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { firestore as db, auth } from '@/firebase';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 
 export interface RoutePermissionEntry {
@@ -47,7 +48,16 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setIsLoaded(true);
       }
     };
-    load();
+
+    // โหลดเฉพาะ authenticated staff — ข้าม anonymous (นักเรียน/ผู้ปกครอง) และ unauthenticated
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && !user.isAnonymous) {
+        load();
+      } else {
+        setIsLoaded(true);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const updateRoutePermission = async (routeKey: string, entry: RoutePermissionEntry) => {

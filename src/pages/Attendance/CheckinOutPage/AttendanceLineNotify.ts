@@ -177,7 +177,7 @@ export const sendLineAttendanceNotification = async (
 
     try {
         const stats = user.attendanceStats || { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
-        const score = user.behaviorScore || 100;
+        const score = user.behaviorScore ?? 100;
 
         // คำนวณ totalDays รวม 6 สถานะ (เหมือน Gateway)
         const totalDays = (stats.present || 0) + (stats.late || 0) + (stats.absent || 0) + (stats.leave || 0) + (stats.noCheckout || 0) + (stats.officialTravel || 0);

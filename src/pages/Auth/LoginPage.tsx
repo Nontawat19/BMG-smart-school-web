@@ -10,16 +10,18 @@ import { collection, collectionGroup, query, where, getDocs, orderBy, doc, getDo
 import { ToastContainer, toast } from "react-toastify";
 import ToastContent from "../../components/ToastContent";
 import { showFirebaseError } from "../../utils/showFirebaseError";
-import { FaBookOpen, FaUserTie, FaUserGraduate, FaIdCard, FaLock, FaEnvelope, FaArrowRight, FaCheckCircle } from "react-icons/fa";
+import { FaBookOpen, FaUserTie, FaUserGraduate, FaIdCard, FaLock, FaEnvelope, FaArrowRight, FaCheckCircle, FaPhone, FaUsers } from "react-icons/fa";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loginType, setLoginType] = useState<'teacher' | 'student'>('teacher');
+  const [loginType, setLoginType] = useState<'teacher' | 'student' | 'parent'>('teacher');
   const [studentId, setStudentId] = useState("");
   const [nationalId, setNationalId] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [parentNationalId, setParentNationalId] = useState("");
   const [schools, setSchools] = useState<{ id: string; schoolName: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [tenantSchool, setTenantSchool] = useState<{ id: string; schoolName: string; logoUrl?: string } | null>(null);
@@ -229,6 +231,76 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  const handleParentLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = parentPhone.replace(/[^0-9]/g, '');
+    const cleanNationalId = parentNationalId.replace(/[^0-9]/g, '');
+
+    if (!cleanPhone || !cleanNationalId) {
+      toast.warn(<ToastContent title="ข้อมูลไม่ครบ" message="กรุณากรอกเบอร์โทรและเลขบัตรประชาชน" />);
+      return;
+    }
+    if (cleanNationalId.length !== 13) {
+      toast.warn(<ToastContent title="เลขบัตรไม่ถูกต้อง" message="กรุณากรอกเลขบัตรประชาชน 13 หลัก" />);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const foundChildren: any[] = [];
+      const seenDocIds = new Set<string>();
+
+      const addIfMatch = (docSnap: any, schoolId: string, idField: string) => {
+        const data = docSnap.data();
+        const storedId = (data[idField] || '').replace(/[^0-9]/g, '');
+        if (storedId === cleanNationalId && !seenDocIds.has(docSnap.id)) {
+          seenDocIds.add(docSnap.id);
+          foundChildren.push({
+            schoolId,
+            studentDocId: docSnap.id,
+            name: `${data.title || ''}${data.firstName} ${data.lastName}`,
+            classLevel: data.classLevel || '',
+            room: data.room || '',
+            profileImageUrl: data.profileImageUrl || '',
+          });
+        }
+      };
+
+      // ค้นหาแบบ school-by-school (เหมือน student login) เพื่อให้ผ่าน Firestore rules
+      const schoolsToSearch = tenantSchool ? [{ id: tenantSchool.id }] : schools;
+      for (const school of schoolsToSearch) {
+        const studentsRef = collection(firestore, 'school-settings', school.id, 'students');
+        const [snap1, snap2, snap3] = await Promise.all([
+          getDocs(query(studentsRef, where('fatherPhone', '==', cleanPhone))),
+          getDocs(query(studentsRef, where('motherPhone', '==', cleanPhone))),
+          getDocs(query(studentsRef, where('guardianPhone', '==', cleanPhone))),
+        ]);
+        snap1.docs.forEach(d => addIfMatch(d, school.id, 'fatherIdNumber'));
+        snap2.docs.forEach(d => addIfMatch(d, school.id, 'motherIdNumber'));
+        snap3.docs.forEach(d => addIfMatch(d, school.id, 'guardianIdNumber'));
+      }
+
+      if (foundChildren.length === 0) {
+        toast.error(<ToastContent title="ไม่พบข้อมูล" message="เบอร์โทรหรือเลขบัตรประชาชนไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง" />);
+        return;
+      }
+
+      localStorage.setItem('currentUserType', 'parent');
+      localStorage.setItem('parentSession', JSON.stringify({ children: foundChildren }));
+
+      const first = foundChildren[0];
+      toast.success(
+        <ToastContent title="เข้าสู่ระบบสำเร็จ" message={`ยินดีต้อนรับ พบบุตร/หลาน ${foundChildren.length} คน`} />,
+        { autoClose: 1500, onClose: () => navigate(`/school/${first.schoolId}/students/view/${first.studentDocId}`, { replace: true }) }
+      );
+    } catch (error: any) {
+      console.error(error);
+      showFirebaseError(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800 p-2 sm:p-4 transition-colors duration-300">
       <ToastContainer position="top-center" autoClose={3000} hideProgressBar />
@@ -319,7 +391,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           {/* Custom Tabs */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-2 mb-6">
             <button
               onClick={() => setLoginType('teacher')}
               className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${loginType === 'teacher'
@@ -328,7 +400,7 @@ const LoginPage: React.FC = () => {
                 }`}
             >
               <FaUserTie className="text-xl mb-1" />
-              <span className="font-semibold text-sm">สำหรับครู</span>
+              <span className="font-semibold text-xs">สำหรับครู</span>
             </button>
             <button
               onClick={() => setLoginType('student')}
@@ -338,13 +410,74 @@ const LoginPage: React.FC = () => {
                 }`}
             >
               <FaUserGraduate className="text-xl mb-1" />
-              <span className="font-semibold text-sm">นักเรียน/ผู้ปกครอง</span>
+              <span className="font-semibold text-xs">นักเรียน</span>
+            </button>
+            <button
+              onClick={() => setLoginType('parent')}
+              className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${loginType === 'parent'
+                ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-emerald-200 dark:hover:border-emerald-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+            >
+              <FaUsers className="text-xl mb-1" />
+              <span className="font-semibold text-xs">ผู้ปกครอง</span>
             </button>
           </div>
 
           {/* Forms */}
           <div className="transition-all duration-300">
-            {loginType === 'teacher' ? (
+            {loginType === 'parent' ? (
+              <form onSubmit={handleParentLogin} className="space-y-3 lg:space-y-4">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เบอร์โทรผู้ปกครอง</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <FaPhone className="text-gray-400" />
+                    </div>
+                    <input
+                      type="tel"
+                      value={parentPhone}
+                      onChange={(e) => setParentPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
+                      placeholder="เบอร์โทรที่ลงทะเบียนไว้กับโรงเรียน"
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชนผู้ปกครอง (รหัสผ่าน)</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <FaIdCard className="text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      value={parentNationalId}
+                      onChange={(e) => setParentNationalId(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
+                      placeholder="เลขบัตรประชาชน 13 หลัก"
+                      maxLength={13}
+                      required
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 dark:text-gray-500 ml-1">
+                  ใช้เบอร์โทรและเลขบัตรที่แจ้งไว้กับทางโรงเรียน
+                </p>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? 'กำลังตรวจสอบ...' : (
+                    <>
+                      เข้าสู่ระบบผู้ปกครอง <FaArrowRight className="text-sm" />
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : loginType === 'teacher' ? (
               <form onSubmit={handleLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">อีเมล</label>

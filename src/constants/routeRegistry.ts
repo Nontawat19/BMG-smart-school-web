@@ -117,6 +117,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'student_schedule',      path: '/academic/student-schedule',       label: 'ตารางเรียน (นักเรียน)',      category: 'วิชาการ - ตารางสอน', defaultRoles: [...TEACHER_OPERATIONAL, ROLES.STUDENT] },
   { key: 'academic_my_schedule',  path: '/academic/my-schedule',            label: 'ตารางของฉัน',                category: 'วิชาการ - ตารางสอน', defaultRoles: [...STAFF_ACCESS, ROLES.STUDENT] },
   { key: 'substitute_mgmt',       path: '/academic/substitute-management',  label: 'จัดการสอนแทน',              category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'substitute_report',     path: '/academic/substitute-report',       label: 'รายงานการสอนแทน',            category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
 
   // ──────────────────────────────── วิชาการ - เช็คชื่อ ────────────────────────────────
   { key: 'flag_ceremony',             path: '/academic/flag-ceremony',                label: 'เช็คชื่อเข้าแถว',             category: 'วิชาการ - เช็คชื่อ', defaultRoles: TEACHER_OPERATIONAL },

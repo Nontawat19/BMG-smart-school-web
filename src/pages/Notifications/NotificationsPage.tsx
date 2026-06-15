@@ -122,52 +122,83 @@ const NotificationsPage: React.FC = () => {
           return;
         }
 
-        const requestQuery = query(
-          collection(firestore, "school-settings", schoolId, "club_requests"),
-          where("status", "==", "pending")
-        );
+        const clubIdsList = [...clubMap.keys()].slice(0, 30);
+        let entryItems: NotificationItem[] = [];
+        let exitItems: NotificationItem[] = [];
+        let entryUnsub: (() => void) | undefined;
+        let exitUnsub: (() => void) | undefined;
 
-        unsubRequests = onSnapshot(requestQuery, (requestSnap) => {
-          const items: NotificationItem[] = [];
+        const mergeAndSet = () => {
+          const seen = new Set<string>();
+          const all: NotificationItem[] = [];
+          [...entryItems, ...exitItems].forEach((item) => {
+            if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
+          });
+          setClubNotifications(all);
+        };
 
-          requestSnap.docs.forEach((requestDoc) => {
-            const req = requestDoc.data() as any;
-            const isCurrentApproval = req.currentClubId && clubMap.has(req.currentClubId) && req.exitStatus === "pending";
-            const isTargetApproval = req.targetClubId && clubMap.has(req.targetClubId) && req.entryStatus === "pending";
+        const makeItem = (
+          requestDoc: any, req: any,
+          approvalSide: "exit" | "entry", approvalClubId: string, text: string
+        ): NotificationItem => ({
+          id: `club-request-${requestDoc.id}-${approvalSide}-${approvalClubId}`,
+          message: `${req.studentName || "นักเรียน"} ${text}`,
+          isRead: false,
+          createdAt: req.createdAt instanceof Timestamp ? req.createdAt : Timestamp.now(),
+          link: `/academic/club-members?clubId=${approvalClubId}&requestId=${requestDoc.id}`,
+          source: "club-request",
+          clubRequest: { requestId: requestDoc.id, approvalSide, approvalClubId },
+        });
 
-            const pushItem = (approvalSide: "exit" | "entry", approvalClubId: string, targetText: string) => {
-              items.push({
-                id: `club-request-${requestDoc.id}-${approvalSide}-${approvalClubId}`,
-                message: `${req.studentName || "นักเรียน"} ${targetText}`,
-                isRead: false,
-                createdAt: req.createdAt instanceof Timestamp ? req.createdAt : Timestamp.now(),
-                link: `/academic/club-members?clubId=${approvalClubId}&requestId=${requestDoc.id}`,
-                source: "club-request",
-                clubRequest: {
-                  requestId: requestDoc.id,
-                  approvalSide,
-                  approvalClubId,
-                },
-              });
-            };
-
-            if (isCurrentApproval) {
-              pushItem("exit", req.currentClubId, `ขอย้ายออกจาก ${req.currentClubName || clubMap.get(req.currentClubId) || "ชุมนุมเดิม"}`);
-            }
-
-            if (isTargetApproval) {
-              pushItem(
-                "entry",
-                req.targetClubId,
+        // Entry approvals: สมัครใหม่ + ปลายทางของการย้าย
+        entryUnsub = onSnapshot(
+          query(
+            collection(firestore, "school-settings", schoolId, "club_requests"),
+            where("targetClubId", "in", clubIdsList),
+            where("status", "==", "pending")
+          ),
+          (snap) => {
+            entryItems = [];
+            snap.docs.forEach((requestDoc) => {
+              const req = requestDoc.data() as any;
+              if (!clubMap.has(req.targetClubId) || req.entryStatus !== "pending") return;
+              entryItems.push(makeItem(
+                requestDoc, req, "entry", req.targetClubId,
                 req.type === "transfer"
                   ? `ขอย้ายเข้า ${req.targetClubName || clubMap.get(req.targetClubId) || "ชุมนุมปลายทาง"}`
                   : `ขอสมัครเข้า ${req.targetClubName || clubMap.get(req.targetClubId) || "ชุมนุม"}`
-              );
-            }
-          });
+              ));
+            });
+            mergeAndSet();
+          }
+        );
 
-          setClubNotifications(items);
-        });
+        // Exit approvals: ต้นทางของการย้าย
+        exitUnsub = onSnapshot(
+          query(
+            collection(firestore, "school-settings", schoolId, "club_requests"),
+            where("currentClubId", "in", clubIdsList),
+            where("status", "==", "pending"),
+            where("exitStatus", "==", "pending")
+          ),
+          (snap) => {
+            exitItems = [];
+            snap.docs.forEach((requestDoc) => {
+              const req = requestDoc.data() as any;
+              if (!clubMap.has(req.currentClubId)) return;
+              exitItems.push(makeItem(
+                requestDoc, req, "exit", req.currentClubId,
+                `ขอย้ายออกจาก ${req.currentClubName || clubMap.get(req.currentClubId) || "ชุมนุมเดิม"}`
+              ));
+            });
+            mergeAndSet();
+          }
+        );
+
+        unsubRequests = () => {
+          if (entryUnsub) entryUnsub();
+          if (exitUnsub) exitUnsub();
+        };
       });
     };
 

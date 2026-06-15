@@ -95,6 +95,7 @@ import StudentBehaviorClassReportPage from "./pages/AcademicDepartment/StudentBe
 import GradeBookPage from "./pages/AcademicDepartment/GradeBookPage";
 import SchoolCalendarPage from "./pages/AcademicDepartment/SchoolCalendarPage"; // 📌 เพิ่มการ import หน้าใหม่
 import SubstituteManagementPage from "./pages/AcademicDepartment/SubstituteManagementPage"; // 📌 เพิ่มการ import หน้าใหม่
+import SubstituteReportPage from "./pages/AcademicDepartment/SubstituteReportPage";
 import TeacherScheduleViewPage from "./pages/AcademicDepartment/TeacherScheduleViewPage"; // 📌 เพิ่มการ import หน้าใหม่
 import ViewCoursesPage from "./pages/AcademicDepartment/ViewCoursesPage"; // 📌 เพิ่มการ import หน้าดูหลักสูตร
 // import AddDesiredCharacteristicsPage from "./pages/AcademicDepartment/AddDesiredCharacteristicsPage"; // 📌 นำออกตามคำขอ
@@ -310,6 +311,7 @@ function App() {
           <Route path="/academic/subject-groups" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubjectGroupManagementPage /></ProtectedRoute>} />
           <Route path="/academic/school-calendar" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><SchoolCalendarPage /></ProtectedRoute>} />
           <Route path="/academic/substitute-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubstituteManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/substitute-report" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubstituteReportPage /></ProtectedRoute>} />
           <Route path="/academic/period-constraints" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodConstraintPage /></ProtectedRoute>} />
           <Route path="/academic/period-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodSettingsPage /></ProtectedRoute>} />
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />
