@@ -8,11 +8,12 @@ import Swal from 'sweetalert2';
 import {
   FaShieldAlt, FaArrowLeft, FaSearch, FaCheck, FaSave, FaUndo,
   FaChevronDown, FaChevronUp, FaLock, FaUser, FaUsers, FaGraduationCap,
-  FaClock, FaSchool, FaUserShield, FaCheckSquare, FaRegSquare, FaBriefcase, FaStar,
+  FaClock, FaSchool, FaUserShield, FaCheckSquare, FaRegSquare, FaBriefcase, FaStar, FaIdBadge,
+  FaCrown, FaUserTie,
 } from 'react-icons/fa';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type AccessMode = 'roles' | 'departments' | 'special_roles';
+type AccessMode = 'roles' | 'departments' | 'special_roles' | 'personnel_types';
 type RoleKey = typeof ROLES[keyof typeof ROLES];
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -31,30 +32,38 @@ const SPECIAL_ROLES = [
   { key: 'isGuidanceTeacher',  label: 'เป็นครูแนะแนว' },
 ];
 
+const PERSONNEL_TYPES = [
+  { key: 'teacher', label: 'ครูผู้สอน', desc: 'บุคลากรที่เป็นครูผู้สอน' },
+  { key: 'user',    label: 'ผู้ใช้ระบบ', desc: 'เจ้าหน้าที่ที่ไม่ใช่ครูผู้สอน' },
+];
+
 interface RoleConfig { value: RoleKey; label: string; bg: string; text: string; border: string; activeBg: string; icon: React.ReactNode; }
 const ROLE_CONFIGS: RoleConfig[] = [
-  { value: ROLES.SUPER_ADMIN,       label: ROLE_LABELS[ROLES.SUPER_ADMIN],       bg: 'bg-violet-50 dark:bg-violet-500/10',  text: 'text-violet-700 dark:text-violet-300',   border: 'border-violet-200 dark:border-violet-500/30',   activeBg: 'bg-violet-600',  icon: <FaUserShield /> },
-  { value: ROLES.SCHOOL_ADMIN,      label: ROLE_LABELS[ROLES.SCHOOL_ADMIN],      bg: 'bg-indigo-50 dark:bg-indigo-500/10',  text: 'text-indigo-700 dark:text-indigo-300',   border: 'border-indigo-200 dark:border-indigo-500/30',   activeBg: 'bg-indigo-600',  icon: <FaSchool /> },
-  { value: ROLES.ACADEMIC_ADMIN,    label: ROLE_LABELS[ROLES.ACADEMIC_ADMIN],    bg: 'bg-blue-50 dark:bg-blue-500/10',      text: 'text-blue-700 dark:text-blue-300',       border: 'border-blue-200 dark:border-blue-500/30',       activeBg: 'bg-blue-600',    icon: <FaGraduationCap /> },
-  { value: ROLES.STUDENT_AFFAIRS,   label: ROLE_LABELS[ROLES.STUDENT_AFFAIRS],   bg: 'bg-teal-50 dark:bg-teal-500/10',      text: 'text-teal-700 dark:text-teal-300',       border: 'border-teal-200 dark:border-teal-500/30',       activeBg: 'bg-teal-600',    icon: <FaUsers /> },
-  { value: ROLES.TEACHER,           label: ROLE_LABELS[ROLES.TEACHER],           bg: 'bg-emerald-50 dark:bg-emerald-500/10',text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-500/30', activeBg: 'bg-emerald-600', icon: <FaUser /> },
-  { value: ROLES.STUDENT_ATTENDANCE,label: ROLE_LABELS[ROLES.STUDENT_ATTENDANCE],bg: 'bg-amber-50 dark:bg-amber-500/10',    text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-500/30',     activeBg: 'bg-amber-500',   icon: <FaClock /> },
-  { value: ROLES.TEACHER_ATTENDANCE,label: ROLE_LABELS[ROLES.TEACHER_ATTENDANCE],bg: 'bg-orange-50 dark:bg-orange-500/10',  text: 'text-orange-700 dark:text-orange-300',   border: 'border-orange-200 dark:border-orange-500/30',   activeBg: 'bg-orange-500',  icon: <FaClock /> },
-  { value: ROLES.SCHOOL_ATTENDANCE, label: ROLE_LABELS[ROLES.SCHOOL_ATTENDANCE], bg: 'bg-rose-50 dark:bg-rose-500/10',      text: 'text-rose-700 dark:text-rose-300',       border: 'border-rose-200 dark:border-rose-500/30',       activeBg: 'bg-rose-500',    icon: <FaClock /> },
-  { value: ROLES.STUDENT,           label: ROLE_LABELS[ROLES.STUDENT],           bg: 'bg-sky-50 dark:bg-sky-500/10',        text: 'text-sky-700 dark:text-sky-300',         border: 'border-sky-200 dark:border-sky-500/30',         activeBg: 'bg-sky-500',     icon: <FaGraduationCap /> },
+  { value: ROLES.SUPER_ADMIN,       label: ROLE_LABELS[ROLES.SUPER_ADMIN],       bg: 'bg-violet-50 dark:bg-violet-500/10',   text: 'text-violet-700 dark:text-violet-300',   border: 'border-violet-200 dark:border-violet-500/30',   activeBg: 'bg-violet-600',  icon: <FaUserShield /> },
+  { value: ROLES.SCHOOL_ADMIN,      label: ROLE_LABELS[ROLES.SCHOOL_ADMIN],      bg: 'bg-indigo-50 dark:bg-indigo-500/10',   text: 'text-indigo-700 dark:text-indigo-300',   border: 'border-indigo-200 dark:border-indigo-500/30',   activeBg: 'bg-indigo-600',  icon: <FaSchool /> },
+  { value: ROLES.DIRECTOR,          label: ROLE_LABELS[ROLES.DIRECTOR],          bg: 'bg-purple-50 dark:bg-purple-500/10',   text: 'text-purple-700 dark:text-purple-300',   border: 'border-purple-200 dark:border-purple-500/30',   activeBg: 'bg-purple-600',  icon: <FaCrown /> },
+  { value: ROLES.DEPT_HEAD,         label: ROLE_LABELS[ROLES.DEPT_HEAD],         bg: 'bg-fuchsia-50 dark:bg-fuchsia-500/10', text: 'text-fuchsia-700 dark:text-fuchsia-300', border: 'border-fuchsia-200 dark:border-fuchsia-500/30', activeBg: 'bg-fuchsia-600', icon: <FaUserTie /> },
+  { value: ROLES.ACADEMIC_ADMIN,    label: ROLE_LABELS[ROLES.ACADEMIC_ADMIN],    bg: 'bg-blue-50 dark:bg-blue-500/10',       text: 'text-blue-700 dark:text-blue-300',       border: 'border-blue-200 dark:border-blue-500/30',       activeBg: 'bg-blue-600',    icon: <FaGraduationCap /> },
+  { value: ROLES.STUDENT_AFFAIRS,   label: ROLE_LABELS[ROLES.STUDENT_AFFAIRS],   bg: 'bg-teal-50 dark:bg-teal-500/10',       text: 'text-teal-700 dark:text-teal-300',       border: 'border-teal-200 dark:border-teal-500/30',       activeBg: 'bg-teal-600',    icon: <FaUsers /> },
+  { value: ROLES.TEACHER,           label: ROLE_LABELS[ROLES.TEACHER],           bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-500/30', activeBg: 'bg-emerald-600', icon: <FaUser /> },
+  { value: ROLES.STUDENT_ATTENDANCE,label: ROLE_LABELS[ROLES.STUDENT_ATTENDANCE],bg: 'bg-amber-50 dark:bg-amber-500/10',     text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-500/30',     activeBg: 'bg-amber-500',   icon: <FaClock /> },
+  { value: ROLES.TEACHER_ATTENDANCE,label: ROLE_LABELS[ROLES.TEACHER_ATTENDANCE],bg: 'bg-orange-50 dark:bg-orange-500/10',   text: 'text-orange-700 dark:text-orange-300',   border: 'border-orange-200 dark:border-orange-500/30',   activeBg: 'bg-orange-500',  icon: <FaClock /> },
+  { value: ROLES.SCHOOL_ATTENDANCE, label: ROLE_LABELS[ROLES.SCHOOL_ATTENDANCE], bg: 'bg-rose-50 dark:bg-rose-500/10',       text: 'text-rose-700 dark:text-rose-300',       border: 'border-rose-200 dark:border-rose-500/30',       activeBg: 'bg-rose-500',    icon: <FaClock /> },
+  { value: ROLES.STUDENT,           label: ROLE_LABELS[ROLES.STUDENT],           bg: 'bg-sky-50 dark:bg-sky-500/10',         text: 'text-sky-700 dark:text-sky-300',         border: 'border-sky-200 dark:border-sky-500/30',         activeBg: 'bg-sky-500',     icon: <FaGraduationCap /> },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const emptyEntry = (): RoutePermissionEntry => ({ allowedRoles: [], allowedDepartments: [], allowedSpecialRoles: [] });
+const emptyEntry = (): RoutePermissionEntry => ({ allowedRoles: [], allowedDepartments: [], allowedSpecialRoles: [], allowedPersonnelTypes: [] });
 
 const buildInitial = (routePermissions: Record<string, RoutePermissionEntry>): Record<string, RoutePermissionEntry> => {
   const result: Record<string, RoutePermissionEntry> = {};
   for (const route of ROUTE_REGISTRY) {
     const existing = routePermissions[route.key];
     result[route.key] = {
-      allowedRoles:        existing ? [...existing.allowedRoles]        : [...route.defaultRoles],
-      allowedDepartments:  existing ? [...existing.allowedDepartments]  : [],
-      allowedSpecialRoles: existing ? [...existing.allowedSpecialRoles] : [],
+      allowedRoles:         existing ? [...existing.allowedRoles]         : [...route.defaultRoles],
+      allowedDepartments:   existing ? [...existing.allowedDepartments]   : [],
+      allowedSpecialRoles:  existing ? [...existing.allowedSpecialRoles]  : [],
+      allowedPersonnelTypes: existing ? [...(existing.allowedPersonnelTypes ?? [])] : [],
     };
   }
   return result;
@@ -68,6 +77,7 @@ const PermissionManagementPage: React.FC = () => {
   const [selectedRole, setSelectedRole]   = useState<RoleKey>(ROLES.SCHOOL_ADMIN);
   const [selectedDept, setSelectedDept]   = useState<string>(DEPARTMENTS[0]);
   const [selectedSpecial, setSelectedSpecial] = useState<string>(SPECIAL_ROLES[0].key);
+  const [selectedPersonnelType, setSelectedPersonnelType] = useState<string>(PERSONNEL_TYPES[0].key);
   const [editedPerms, setEditedPerms] = useState<Record<string, RoutePermissionEntry>>({});
   const [searchQuery, setSearchQuery]     = useState('');
   const [collapsed, setCollapsed]         = useState<Set<string>>(new Set());
@@ -83,10 +93,16 @@ const PermissionManagementPage: React.FC = () => {
 
   // ── toggle helpers ──────────────────────────────────────────────────────────
   const getField = (): keyof RoutePermissionEntry =>
-    mode === 'roles' ? 'allowedRoles' : mode === 'departments' ? 'allowedDepartments' : 'allowedSpecialRoles';
+    mode === 'roles' ? 'allowedRoles'
+    : mode === 'departments' ? 'allowedDepartments'
+    : mode === 'special_roles' ? 'allowedSpecialRoles'
+    : 'allowedPersonnelTypes';
 
   const getSelected = (): string =>
-    mode === 'roles' ? selectedRole : mode === 'departments' ? selectedDept : selectedSpecial;
+    mode === 'roles' ? selectedRole
+    : mode === 'departments' ? selectedDept
+    : mode === 'special_roles' ? selectedSpecial
+    : selectedPersonnelType;
 
   const isRouteChecked = (routeKey: string): boolean => {
     const entry = editedPerms[routeKey] ?? emptyEntry();
@@ -169,7 +185,7 @@ const PermissionManagementPage: React.FC = () => {
     try {
       const reset: Record<string, RoutePermissionEntry> = {};
       for (const route of ROUTE_REGISTRY) {
-        reset[route.key] = { allowedRoles: [...route.defaultRoles], allowedDepartments: [], allowedSpecialRoles: [] };
+        reset[route.key] = { allowedRoles: [...route.defaultRoles], allowedDepartments: [], allowedSpecialRoles: [], allowedPersonnelTypes: [] };
       }
       await batchUpdatePermissions(reset);
       setEditedPerms(reset);
@@ -201,15 +217,20 @@ const PermissionManagementPage: React.FC = () => {
   // ── active role config ────────────────────────────────────────────────────
   const roleConfig = ROLE_CONFIGS.find(r => r.value === selectedRole)!;
   const activeBg = mode === 'roles' ? roleConfig.activeBg
-    : mode === 'departments' ? 'bg-indigo-600' : 'bg-violet-600';
+    : mode === 'departments' ? 'bg-blue-600'
+    : mode === 'special_roles' ? 'bg-violet-600'
+    : 'bg-emerald-600';
   const accessCount = mode === 'roles'
     ? countForSelector(selectedRole, 'allowedRoles')
     : mode === 'departments'
       ? countForSelector(selectedDept, 'allowedDepartments')
-      : countForSelector(selectedSpecial, 'allowedSpecialRoles');
+      : mode === 'special_roles'
+        ? countForSelector(selectedSpecial, 'allowedSpecialRoles')
+        : countForSelector(selectedPersonnelType, 'allowedPersonnelTypes');
   const activeLabel = mode === 'roles' ? ROLE_LABELS[selectedRole]
     : mode === 'departments' ? selectedDept
-    : SPECIAL_ROLES.find(s => s.key === selectedSpecial)?.label ?? selectedSpecial;
+    : mode === 'special_roles' ? (SPECIAL_ROLES.find(s => s.key === selectedSpecial)?.label ?? selectedSpecial)
+    : (PERSONNEL_TYPES.find(p => p.key === selectedPersonnelType)?.label ?? selectedPersonnelType);
 
   const labelClasses = "block text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 ml-1";
 
@@ -253,9 +274,10 @@ const PermissionManagementPage: React.FC = () => {
           {/* ── Mode Toggle ── */}
           <div className="flex items-center gap-2 mb-6 bg-white dark:bg-[#1c1c24] rounded-2xl p-2 border border-gray-100 dark:border-white/5 shadow-sm w-fit">
             {([
-              { id: 'roles',         label: 'สิทธิ์ (Role)',     icon: <FaShieldAlt size={12} />,  active: 'bg-indigo-600' },
-              { id: 'departments',   label: 'ฝ่ายงาน',           icon: <FaBriefcase size={12} />,  active: 'bg-blue-600' },
-              { id: 'special_roles', label: 'บทบาทพิเศษ',        icon: <FaStar size={12} />,       active: 'bg-violet-600' },
+              { id: 'roles',           label: 'สิทธิ์ (Role)',       icon: <FaShieldAlt size={12} />, active: 'bg-indigo-600' },
+              { id: 'departments',     label: 'ฝ่ายงาน',             icon: <FaBriefcase size={12} />, active: 'bg-blue-600' },
+              { id: 'special_roles',   label: 'บทบาทพิเศษ',          icon: <FaStar size={12} />,      active: 'bg-violet-600' },
+              { id: 'personnel_types', label: 'ประเภทบุคลากร',       icon: <FaIdBadge size={12} />,   active: 'bg-emerald-600' },
             ] as { id: AccessMode; label: string; icon: React.ReactNode; active: string }[]).map(tab => (
               <button
                 key={tab.id}
@@ -358,6 +380,40 @@ const PermissionManagementPage: React.FC = () => {
                     </div>
                   </>
                 )}
+
+                {/* Personnel Types mode */}
+                {mode === 'personnel_types' && (
+                  <>
+                    <label className={labelClasses}>เลือกประเภทบุคลากร</label>
+                    <div className="space-y-2">
+                      {PERSONNEL_TYPES.map(pt => {
+                        const cnt = countForSelector(pt.key, 'allowedPersonnelTypes');
+                        const isActive = selectedPersonnelType === pt.key;
+                        return (
+                          <button key={pt.key} onClick={() => setSelectedPersonnelType(pt.key)}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all text-left ${isActive ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 border-2 shadow-sm' : 'bg-gray-50 dark:bg-white/[0.03] border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]'}`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FaIdBadge className={`flex-shrink-0 ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                              <div className="min-w-0">
+                                <p className={`text-sm font-black truncate ${isActive ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{pt.label}</p>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate">{pt.desc}</p>
+                              </div>
+                            </div>
+                            <span className={`ml-2 flex-shrink-0 text-xs font-black px-2.5 py-1 rounded-xl ${isActive ? 'bg-emerald-600 text-white' : 'bg-gray-200 dark:bg-white/10 text-gray-500 dark:text-gray-400'}`}>
+                              {cnt}/{ROUTE_REGISTRY.length}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300 font-bold leading-relaxed">
+                        ประเภทบุคลากรถูกกำหนดจากฟิลด์ <code className="bg-white/50 dark:bg-white/10 px-1 rounded">personnelType</code> บนข้อมูลบุคลากร — ครูผู้สอน หรือ ผู้ใช้ระบบ
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Info box */}
@@ -366,7 +422,7 @@ const PermissionManagementPage: React.FC = () => {
                   <FaLock size={10} /> ตรรกะการเข้าถึง
                 </h4>
                 <p className="text-xs text-amber-800/70 dark:text-amber-200/50 leading-relaxed font-medium">
-                  ผู้ใช้เข้าหน้าได้ถ้าตรงกับ <strong>สิทธิ์ หรือ ฝ่ายงาน หรือ บทบาทพิเศษ</strong> อย่างน้อยหนึ่งข้อ (OR logic)
+                  ผู้ใช้เข้าหน้าได้ถ้าตรงกับ <strong>สิทธิ์ หรือ ฝ่ายงาน หรือ บทบาทพิเศษ หรือ ประเภทบุคลากร</strong> อย่างน้อยหนึ่งข้อ (OR logic)
                 </p>
               </div>
             </div>
@@ -380,15 +436,17 @@ const PermissionManagementPage: React.FC = () => {
                   ? `${roleConfig.bg} ${roleConfig.border}`
                   : mode === 'departments'
                     ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30'
-                    : 'bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/30'
+                    : mode === 'special_roles'
+                      ? 'bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/30'
+                      : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
               }`}>
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
-                    <span className={`text-2xl ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-600 dark:text-blue-400' : 'text-violet-600 dark:text-violet-400'}`}>
-                      {mode === 'roles' ? roleConfig.icon : mode === 'departments' ? <FaBriefcase /> : <FaStar />}
+                    <span className={`text-2xl ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-600 dark:text-blue-400' : mode === 'special_roles' ? 'text-violet-600 dark:text-violet-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      {mode === 'roles' ? roleConfig.icon : mode === 'departments' ? <FaBriefcase /> : mode === 'special_roles' ? <FaStar /> : <FaIdBadge />}
                     </span>
                     <div>
-                      <p className={`text-lg font-black ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-700 dark:text-blue-300' : 'text-violet-700 dark:text-violet-300'}`}>
+                      <p className={`text-lg font-black ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-700 dark:text-blue-300' : mode === 'special_roles' ? 'text-violet-700 dark:text-violet-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
                         {activeLabel}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
@@ -480,6 +538,11 @@ const PermissionManagementPage: React.FC = () => {
                                       <FaStar size={8} />
                                     </span>
                                   )}
+                                  {(editedPerms[route.key]?.allowedPersonnelTypes?.length ?? 0) > 0 && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" title="มีการกำหนดประเภทบุคลากร">
+                                      <FaIdBadge size={8} />
+                                    </span>
+                                  )}
                                 </div>
 
                                 {changed && (
@@ -508,7 +571,7 @@ const PermissionManagementPage: React.FC = () => {
               <div className="sticky bottom-4 bg-white/90 dark:bg-[#1c1c24]/90 backdrop-blur-md rounded-2xl px-6 py-4 border border-gray-200 dark:border-white/10 shadow-xl flex items-center justify-between gap-4">
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400 truncate">
                   <span className="font-black text-gray-900 dark:text-white">{activeLabel}</span> เข้าถึงได้{' '}
-                  <span className={`font-black ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-600 dark:text-blue-400' : 'text-violet-600 dark:text-violet-400'}`}>{accessCount}</span> / {ROUTE_REGISTRY.length} หน้า
+                  <span className={`font-black ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-600 dark:text-blue-400' : mode === 'special_roles' ? 'text-violet-600 dark:text-violet-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{accessCount}</span> / {ROUTE_REGISTRY.length} หน้า
                 </p>
                 <button onClick={handleSave} disabled={isSaving}
                   className={`inline-flex items-center gap-2 px-6 h-[44px] rounded-2xl text-white text-sm font-black shadow-lg transition-all active:scale-95 disabled:opacity-50 flex-shrink-0 ${activeBg}`}>

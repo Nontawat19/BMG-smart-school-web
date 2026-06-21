@@ -231,7 +231,7 @@ const formatFullName = (title?: string, firstName?: string, lastName?: string, f
   if (!trimmedFirstName && !trimmedTitle) return fallback || "-";
 
   // รายการคำนำหน้ามาตรฐาน
-  const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+  const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส.", "สามเณร", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์"];
 
   // ตรวจสอบว่าชื่อจริงเริ่มต้นด้วยคำนำหน้าอยู่แล้วหรือไม่ (เพื่อป้องกัน นายนาย)
   const startsWithTitle = commonTitles.some(t => trimmedFirstName.startsWith(t)) ||
@@ -988,7 +988,7 @@ export default function ViewStudentPage() {
       const gFirst = (student.guardianFirstName || "").trim();
       const gLast = (student.guardianLastName || "").trim();
       if (gFirst) {
-        const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+        const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส.", "สามเณร", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์"];
         const hasTitle = commonTitles.some(t => gFirst.startsWith(t));
         guardianName = hasTitle ? `${gFirst} ${gLast}`.trim() : `${gTitle} ${gFirst} ${gLast}`.trim();
       } else if (student.guardian) {

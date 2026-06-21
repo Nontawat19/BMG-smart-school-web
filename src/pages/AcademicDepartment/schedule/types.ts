@@ -49,6 +49,23 @@ export interface Course {
     teacherAssignments?: { teacherId: string; teacherIds?: string[]; roomIds: string[]; classLevels: string[]; groupNumber?: number; room?: string }[];
     isActive?: boolean;
     groupNumber?: number;
+    /** Set by the scheduling engine when a task had to be placed outside its
+     *  preferred/valid slots because no compliant slot was available. */
+    isRelaxedSchedule?: boolean;
+    scheduleWarning?: string;
+    /** Marks a placement made by the temporary-placer fallback (see temporaryPlacer.ts). */
+    isTemporarySchedule?: boolean;
+}
+
+export interface PhysicalRoom {
+    id: string;
+    roomName: string;
+    roomCode?: string;
+    roomType?: string;
+    building?: string;
+    floor?: string;
+    capacity?: number;
+    isActive?: boolean;
 }
 
 export interface SpecialPeriod {
@@ -75,14 +92,37 @@ export interface SchoolSettings {
     availableClasses: string[];
 }
 
+export type MasterScheduleEntry = {
+    teacherId: string;
+    teacherIds?: string[];
+    classId: string | string[];
+    room?: string[];
+    courseId?: string;
+    course: Course | null;
+    groupNumber: number;
+};
+
 export interface SchedulingMetrics {
     totalTasks: number;
+    /** Periods successfully placed by the engine (not a task count). */
     placedTasks: number;
+    /** Periods only surfaced as temporary suggestions, not persisted as final schedule entries. */
+    temporaryPlacedPeriods?: number;
+    /** Number of tasks the engine could not place (task count, not periods). */
     unplacedTasks: number;
     processingTimeMs: number;
     averageConsecutivePeriods: number;
     averageGapsPerDay: number;
     bblComplianceRate: number;
+    /** % of required periods actually written as final schedule entries, 0-100. */
+    actualPlacedRate?: number;
+    /** % of required periods covered by final entries plus temporary suggestions, 0-100. */
+    temporaryAssistedRate?: number;
+    /** Backward-compatible alias for actualPlacedRate. */
+    resolvedRate: number;
+    validationIssueCount?: number;
+    conflictCount?: number;
+    qualityScore?: number;
 }
 
 export interface CourseInstance extends Course {
@@ -98,7 +138,7 @@ export interface CourseInstance extends Course {
     roomDisplay?: string;
 }
 
-export const getAssignmentTeacherIds = (assignment: { teacherId?: string; teacherIds?: string[] } | any): string[] => {
+export const getAssignmentTeacherIds = (assignment?: { teacherId?: string; teacherIds?: string[] } | null): string[] => {
     const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
         ? assignment.teacherIds
         : (assignment?.teacherId ? [assignment.teacherId] : []);

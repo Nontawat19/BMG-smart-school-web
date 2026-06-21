@@ -1,5 +1,49 @@
 import React from 'react';
-import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods } from '@/utils/scheduleDisplayUtils';
+import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, NormalizedPeriod, PeriodLike } from '@/utils/scheduleDisplayUtils';
+
+interface ScheduleCourseEntry {
+  id?: string;
+  title?: string;
+  courseName?: string;
+  subjectName?: string;
+  code?: string;
+  courseCode?: string;
+  subjectCode?: string;
+  groupNumber?: number;
+  teacherPeriodLabel?: string;
+}
+
+interface ScheduleEntry {
+  course?: ScheduleCourseEntry;
+  classId?: string | string[];
+  teacherName?: string;
+  className?: string;
+  roomCode?: string;
+  roomDisplay?: string;
+}
+
+interface SpecialPeriodLike {
+  id?: string;
+  day?: string;
+  linkedPeriodId?: string;
+  startTime?: string;
+  endTime?: string;
+  title?: string;
+  description?: string;
+}
+
+interface ClubLike {
+  responsibleTeacherIds?: string[];
+  scheduleSlot?: string;
+  clubName?: string;
+}
+
+type DayCell =
+  | { type: 'lunch'; period: NormalizedPeriod; colSpan: number }
+  | { type: 'special'; special: SpecialPeriodLike; period: NormalizedPeriod; colSpan: number }
+  | { type: 'club'; club: ClubLike; period: NormalizedPeriod; colSpan: number }
+  | { type: 'empty'; period: NormalizedPeriod; colSpan: number }
+  | { type: 'course'; entry: ScheduleEntry; period: NormalizedPeriod; colSpan: number };
 
 const DAYS: Record<string, string> = {
   mon: 'จันทร์',
@@ -34,18 +78,18 @@ const DAY_LABEL_CLASSES: Record<string, string> = {
 };
 
 interface PersonalScheduleTableProps {
-  schedule: Record<string, any>;
-  periodSettings: any[];
-  specialPeriods?: any[];
-  clubs?: any[];
+  schedule: Record<string, ScheduleEntry>;
+  periodSettings: PeriodLike[];
+  specialPeriods?: SpecialPeriodLike[];
+  clubs?: ClubLike[];
   viewerId?: string;
   mode: 'teacher' | 'student';
 }
 
-const getCourseTitle = (course: any) => course?.title || course?.courseName || course?.subjectName || 'วิชาไม่ระบุชื่อ';
-const getCourseCode = (course: any) => course?.code || course?.courseCode || course?.subjectCode || '';
+const getCourseTitle = (course?: ScheduleCourseEntry) => course?.title || course?.courseName || course?.subjectName || 'วิชาไม่ระบุชื่อ';
+const getCourseCode = (course?: ScheduleCourseEntry) => course?.code || course?.courseCode || course?.subjectCode || '';
 const stripGroupLabel = (value: string = '') => value.replace(/\s*\(กลุ่ม\s*\d+\)/g, '').trim();
-const getCompactPeriodLabel = (period: any) => {
+const getCompactPeriodLabel = (period: NormalizedPeriod) => {
   if (period?.id === 'lunch') return 'พัก';
   const periodNumber = String(period?.id || '').match(/^period-(\d+)$/)?.[1];
   return periodNumber ? `ค.${periodNumber}` : period?.label;
@@ -69,7 +113,7 @@ const getCourseColors = (code: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-const getSpecialPeriod = (specialPeriods: any[], dayKey: string, period: any) => {
+const getSpecialPeriod = (specialPeriods: SpecialPeriodLike[], dayKey: string, period: NormalizedPeriod) => {
   return specialPeriods.find(sp => {
     const dayMatches = !sp.day || sp.day === dayKey || sp.day === 'all';
     const linkedMatches = sp.linkedPeriodId === period.id || (!String(period.id).startsWith('period') && sp.id === period.id);
@@ -78,23 +122,23 @@ const getSpecialPeriod = (specialPeriods: any[], dayKey: string, period: any) =>
   });
 };
 
-const getEntryMeta = (entry: any, mode: 'teacher' | 'student') => {
+const getEntryMeta = (entry: ScheduleEntry | undefined, mode: 'teacher' | 'student') => {
   if (!entry) return '';
   if (mode === 'student') return entry.teacherName || '';
   return stripGroupLabel(entry.className || '');
 };
 
-const getEntryRoom = (entry: any, mode: 'teacher' | 'student') => {
+const getEntryRoom = (entry: ScheduleEntry | undefined, mode: 'teacher' | 'student') => {
   if (!entry) return '';
   return mode === 'student' ? entry.roomCode : entry.roomDisplay;
 };
 
-const getTeacherPeriodLabel = (entry: any, mode: 'teacher' | 'student') => {
+const getTeacherPeriodLabel = (entry: ScheduleEntry | undefined, mode: 'teacher' | 'student') => {
   if (mode !== 'teacher') return '';
   return entry?.course?.teacherPeriodLabel || '';
 };
 
-const isSameCourseEntry = (a: any, b: any, mode: 'teacher' | 'student') => {
+const isSameCourseEntry = (a: ScheduleEntry | undefined, b: ScheduleEntry | undefined, mode: 'teacher' | 'student') => {
   if (!a || !b) return false;
   const aCourse = a.course || {};
   const bCourse = b.course || {};
@@ -116,7 +160,7 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
 }) => {
   const displayPeriods = React.useMemo(() => getTimetableDisplayPeriods(periodSettings), [periodSettings]);
 
-  const getScheduleEntryForPeriod = (dayKey: string, period: any, periodIndex: number) => {
+  const getScheduleEntryForPeriod = (dayKey: string, period: NormalizedPeriod, periodIndex: number) => {
     const candidates = getScheduleSlotCandidates(dayKey, period, periodIndex);
     const slotKey = candidates.find(key => schedule[key]);
     return {
@@ -126,7 +170,7 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
   };
 
   const getDayCells = (dayKey: string) => {
-    const cells: any[] = [];
+    const cells: DayCell[] = [];
     let i = 0;
 
     while (i < displayPeriods.length) {
@@ -141,7 +185,7 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
       const { slotKey, entry } = getScheduleEntryForPeriod(dayKey, period, i);
       const special = getSpecialPeriod(specialPeriods, dayKey, period);
       const club = mode === 'teacher'
-        ? clubs.find(c => c.responsibleTeacherIds?.includes(viewerId) && c.scheduleSlot === slotKey)
+        ? clubs.find(c => Boolean(viewerId) && c.responsibleTeacherIds?.includes(viewerId as string) && c.scheduleSlot === slotKey)
         : null;
 
       if (special) {
@@ -171,7 +215,7 @@ const PersonalScheduleTable: React.FC<PersonalScheduleTableProps> = ({
         const { slotKey: nextSlotKey, entry: nextEntry } = getScheduleEntryForPeriod(dayKey, nextPeriod, nextIndex);
         const nextSpecial = getSpecialPeriod(specialPeriods, dayKey, nextPeriod);
         const nextClub = mode === 'teacher'
-          ? clubs.find(c => c.responsibleTeacherIds?.includes(viewerId) && c.scheduleSlot === nextSlotKey)
+          ? clubs.find(c => Boolean(viewerId) && c.responsibleTeacherIds?.includes(viewerId as string) && c.scheduleSlot === nextSlotKey)
           : null;
 
         if (nextSpecial || nextClub || !isSameCourseEntry(entry, nextEntry, mode)) break;

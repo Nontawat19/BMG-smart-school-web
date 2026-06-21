@@ -255,7 +255,7 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
-          title: "ลงทะเบียนวิชา (ครู/สถานที่)",
+          title: "มอบหมายรายวิชา",
           description: "กำหนดครูผู้สอนและห้องเรียนสำหรับแต่ละวิชา",
           icon: <UserCheck size={24} />,
           path: "/academic/course-assignment",
@@ -263,8 +263,8 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
-          title: "มอบหมายรายวิชา 2",
-          description: "กำหนดครูผู้สอนและห้องเรียนสำหรับแต่ละวิชา (แบบตาราง)",
+          title: "เปิดสอนรายวิชา",
+          description: "กำหนดรายวิชาที่เปิดสอน พร้อมครูผู้สอนและห้องเรียน (แบบตาราง)",
           icon: <UserCheck size={24} />,
           path: "/academic/course-assignment-2",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
@@ -438,14 +438,6 @@ const HubPage: React.FC = () => {
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
-          title: "สรุปยอดการหนีเรียน",
-          description: "รายงานประวัติและสถิติการหนีเรียนของนักเรียนรายวิชาและห้องเรียน",
-          icon: <CircleAlert size={24} />,
-          path: "/academic/escape-summary",
-          colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
-          allowedRoles: STUDENT_AFFAIRS_ACCESS
-        },
-        {
           title: "สรุปมาเรียนตามช่วงเวลา",
           description: "รายงานการมาเรียนรายห้องตามช่วงวันที่ พร้อมสรุป มา สาย ลา ขาด",
           icon: <CalendarRange size={24} />,
@@ -581,14 +573,6 @@ const HubPage: React.FC = () => {
           allowedRoles: TEACHER_OPERATIONAL
         },
         {
-          title: "เช็คชื่อโฮมรูม",
-          description: "บันทึกการเข้าโฮมรูมของนักเรียนในชั้นประจำ",
-          icon: <Home size={24} />,
-          path: "/academic/homeroom-attendance",
-          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
-          allowedRoles: TEACHER_OPERATIONAL
-        },
-        {
           title: "เช็คชื่อรายวิชา",
           description: "บันทึกการเข้าเรียนของนักเรียนในแต่ละคาบ",
           icon: <UserCheck size={24} />,
@@ -637,6 +621,14 @@ const HubPage: React.FC = () => {
           allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
         },
         {
+          title: "รายงานกิจกรรมพิเศษ",
+          description: "สรุปการเข้าร่วมกิจกรรม แยกรายกิจกรรม รายห้อง และรายบุคคล พร้อมพิมพ์ PDF",
+          icon: <FileText size={24} />,
+          path: "/academic/special-period-reports",
+          colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
           title: "ตรวจเช็คการเข้าสอนของครู",
           description: "ตรวจสอบการบันทึกการเช็คชื่อรายวิชาและการเข้าสอนของครูในแต่ละคาบเรียน",
           icon: <ListChecks size={24} />,
@@ -650,6 +642,14 @@ const HubPage: React.FC = () => {
           icon: <ListChecks size={24} />,
           path: "/academic/students-attendance-summary",
           colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "สรุปยอดการหนีเรียน",
+          description: "รายงานประวัติและสถิติการหนีเรียนของนักเรียนรายวิชาและห้องเรียน",
+          icon: <CircleAlert size={24} />,
+          path: "/academic/escape-summary",
+          colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
@@ -896,6 +896,14 @@ const HubPage: React.FC = () => {
           path: "/academic/settings/telegram",
           colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "จัดการสิทธิ์การเข้าถึง",
+          description: "กำหนดสิทธิ์การเข้าถึงหน้าต่างๆ เฉพาะสำหรับโรงเรียนนี้ — มีผลเหนือค่าเริ่มต้นของระบบ",
+          icon: <ShieldCheck size={24} />,
+          path: "/academic/permission-management",
+          colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: ADMIN_ACCESS
         }
       ]
     },
@@ -1032,7 +1040,7 @@ const HubPage: React.FC = () => {
     let path = `/academic/learner-activity-attendance?periodId=${period.id}`;
     let colorClass = "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400"; // default teal
 
-    if (lowerTitle.includes("โฮมรูม") || lowerTitle.includes("โฮมรู") || lowerTitle.includes("homeroom")) {
+    if (lowerTitle.includes("โฮมรูม") || lowerTitle.includes("โฮมรู") || lowerTitle.includes("homeroom") || lowerTitle.includes("โอมรูม")) {
       icon = <Home size={24} />;
       path = `/academic/homeroom-attendance`;
       colorClass = "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400";
@@ -1049,7 +1057,9 @@ const HubPage: React.FC = () => {
       path = `/academic/flag-ceremony`;
       colorClass = "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400";
     } else {
-      // Generate a color class for other custom periods
+      // Custom special period — route to class-based attendance check-in
+      icon = <ClipboardCheck size={24} />;
+      path = `/academic/special-period-attendance?periodId=${period.id}`;
       const colors = [
         "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
         "bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/20 dark:text-fuchsia-400",
@@ -1057,7 +1067,6 @@ const HubPage: React.FC = () => {
         "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
         "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400"
       ];
-      // Simple hash based on title
       let hash = 0;
       for (let i = 0; i < title.length; i++) {
         hash = title.charCodeAt(i) + ((hash << 5) - hash);
@@ -1085,7 +1094,9 @@ const HubPage: React.FC = () => {
     const hasDynamicHome = dynamicItems.some(item => item.path.includes('/academic/homeroom-attendance'));
     const hasDynamicGuidance = dynamicItems.some(item => item.path.includes('/academic/guidance-attendance'));
     const hasDynamicClub = dynamicItems.some(item => item.path.includes('/academic/club-attendance'));
-    const hasDynamicLearnerActivity = dynamicItems.some(item => item.path.includes('/academic/learner-activity-attendance'));
+    const hasDynamicLearnerActivity = dynamicItems.some(item =>
+      item.path.includes('/academic/learner-activity-attendance') || item.path.includes('/academic/special-period-attendance')
+    );
 
     baseItems.forEach(item => {
       if (item.path === '/academic/homeroom-attendance' && hasDynamicHome) return;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { Clock, Flag, Plus, Save, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { CalendarClock, Clock, Flag, Plus, Save, Settings, ShieldCheck, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { firestore } from "@/firebase";
 import MainLayout from "@/layouts/MainLayout";
@@ -45,12 +45,24 @@ interface FlagCeremonyScoreRule {
   isActive: boolean;
 }
 
+type ClassroomAttendanceStatusKey = "present" | "late" | "absent" | "leave" | "escape";
+
+interface ClassroomAttendanceScoreRule {
+  statusKey: ClassroomAttendanceStatusKey;
+  statusLabel: string;
+  description: string;
+  points: number;
+  isActive: boolean;
+}
+
 interface BehaviorScoreConfig {
   startingScore: number;
   minScore: number;
   maxScore: number;
   attendanceRules: AttendanceScoreRule[];
   flagCeremonyRules: FlagCeremonyScoreRule[];
+  classroomAttendanceRules: ClassroomAttendanceScoreRule[];
+  specialPeriodRules: ClassroomAttendanceScoreRule[];
   rules: BehaviorScoreRule[];
 }
 
@@ -180,6 +192,80 @@ const DEFAULT_CONFIG: BehaviorScoreConfig = {
       isActive: false
     }
   ],
+  classroomAttendanceRules: [
+    {
+      statusKey: "present",
+      statusLabel: "มาเรียนปกติ",
+      description: "เช็คชื่อเข้าเรียนปกติ",
+      points: 0,
+      isActive: false
+    },
+    {
+      statusKey: "late",
+      statusLabel: "เข้าเรียนสาย",
+      description: "มาเรียนแต่เข้าห้องเรียนช้า",
+      points: 2,
+      isActive: true
+    },
+    {
+      statusKey: "absent",
+      statusLabel: "ขาดเรียน",
+      description: "ไม่ได้เข้าห้องเรียน",
+      points: 5,
+      isActive: true
+    },
+    {
+      statusKey: "escape",
+      statusLabel: "หนีเรียน",
+      description: "มาโรงเรียนแต่ไม่เข้าห้องเรียน",
+      points: 10,
+      isActive: true
+    },
+    {
+      statusKey: "leave",
+      statusLabel: "ลา",
+      description: "ลาป่วย/ลากิจ แจ้งล่วงหน้า",
+      points: 0,
+      isActive: false
+    }
+  ],
+  specialPeriodRules: [
+    {
+      statusKey: "present",
+      statusLabel: "เข้าร่วมปกติ",
+      description: "เช็คชื่อเข้าร่วมกิจกรรมปกติ",
+      points: 0,
+      isActive: false
+    },
+    {
+      statusKey: "late",
+      statusLabel: "เข้าร่วมสาย",
+      description: "เข้าร่วมกิจกรรมแต่มาช้า",
+      points: 2,
+      isActive: true
+    },
+    {
+      statusKey: "absent",
+      statusLabel: "ขาด/ไม่เข้าร่วม",
+      description: "ไม่เข้าร่วมกิจกรรมโดยไม่มีเหตุผล",
+      points: 5,
+      isActive: true
+    },
+    {
+      statusKey: "escape",
+      statusLabel: "หลีกเลี่ยงกิจกรรม",
+      description: "มีชื่อแต่หนีไม่เข้าร่วมกิจกรรม",
+      points: 10,
+      isActive: true
+    },
+    {
+      statusKey: "leave",
+      statusLabel: "ลา",
+      description: "ลาป่วย/ลากิจ มีใบลา",
+      points: 0,
+      isActive: false
+    }
+  ],
   rules: DEFAULT_RULES
 };
 
@@ -257,6 +343,26 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   };
                 })
               : DEFAULT_CONFIG.flagCeremonyRules,
+            classroomAttendanceRules: Array.isArray(savedConfig.classroomAttendanceRules) && savedConfig.classroomAttendanceRules.length > 0
+              ? DEFAULT_CONFIG.classroomAttendanceRules.map((defaultRule) => {
+                  const savedRule = savedConfig.classroomAttendanceRules.find((rule: Partial<ClassroomAttendanceScoreRule>) => rule.statusKey === defaultRule.statusKey);
+                  return {
+                    ...defaultRule,
+                    points: Number(savedRule?.points ?? defaultRule.points),
+                    isActive: savedRule?.isActive !== false
+                  };
+                })
+              : DEFAULT_CONFIG.classroomAttendanceRules,
+            specialPeriodRules: Array.isArray(savedConfig.specialPeriodRules) && savedConfig.specialPeriodRules.length > 0
+              ? DEFAULT_CONFIG.specialPeriodRules.map((defaultRule) => {
+                  const savedRule = savedConfig.specialPeriodRules.find((rule: Partial<ClassroomAttendanceScoreRule>) => rule.statusKey === defaultRule.statusKey);
+                  return {
+                    ...defaultRule,
+                    points: Number(savedRule?.points ?? defaultRule.points),
+                    isActive: savedRule?.isActive !== false
+                  };
+                })
+              : DEFAULT_CONFIG.specialPeriodRules,
             rules: Array.isArray(savedConfig.rules) && savedConfig.rules.length > 0
               ? savedConfig.rules.map((rule: Partial<BehaviorScoreRule>, index: number) => ({
                   id: rule.id || `rule-${index + 1}`,
@@ -283,8 +389,9 @@ const BehaviorScoreConfigPage: React.FC = () => {
   const activeRuleCount = useMemo(
     () => config.rules.filter((rule) => rule.isActive).length
       + config.attendanceRules.filter((rule) => rule.isActive).length
-      + config.flagCeremonyRules.filter((rule) => rule.isActive).length,
-    [config.attendanceRules, config.flagCeremonyRules, config.rules]
+      + config.flagCeremonyRules.filter((rule) => rule.isActive).length
+      + config.classroomAttendanceRules.filter((rule) => rule.isActive).length,
+    [config.attendanceRules, config.flagCeremonyRules, config.classroomAttendanceRules, config.rules]
   );
 
   const totalDecreasePoints = useMemo(
@@ -298,9 +405,12 @@ const BehaviorScoreConfigPage: React.FC = () => {
       const flagCeremonyDecrease = config.flagCeremonyRules
         .filter((rule) => rule.isActive)
         .reduce((sum, rule) => sum + (Number(rule.points) || 0), 0);
-      return manualDecrease + attendanceDecrease + flagCeremonyDecrease;
+      const classroomDecrease = config.classroomAttendanceRules
+        .filter((rule) => rule.isActive)
+        .reduce((sum, rule) => sum + (Number(rule.points) || 0), 0);
+      return manualDecrease + attendanceDecrease + flagCeremonyDecrease + classroomDecrease;
     },
-    [config.attendanceRules, config.flagCeremonyRules, config.rules]
+    [config.attendanceRules, config.flagCeremonyRules, config.classroomAttendanceRules, config.rules]
   );
 
   const totalIncreasePoints = useMemo(
@@ -332,6 +442,20 @@ const BehaviorScoreConfigPage: React.FC = () => {
     setConfig((prev) => ({
       ...prev,
       flagCeremonyRules: prev.flagCeremonyRules.map((rule) => rule.statusKey === statusKey ? { ...rule, [key]: value } : rule)
+    }));
+  };
+
+  const updateClassroomAttendanceRule = <K extends keyof ClassroomAttendanceScoreRule>(statusKey: ClassroomAttendanceStatusKey, key: K, value: ClassroomAttendanceScoreRule[K]) => {
+    setConfig((prev) => ({
+      ...prev,
+      classroomAttendanceRules: prev.classroomAttendanceRules.map((rule) => rule.statusKey === statusKey ? { ...rule, [key]: value } : rule)
+    }));
+  };
+
+  const updateSpecialPeriodRule = <K extends keyof ClassroomAttendanceScoreRule>(statusKey: ClassroomAttendanceStatusKey, key: K, value: ClassroomAttendanceScoreRule[K]) => {
+    setConfig((prev) => ({
+      ...prev,
+      specialPeriodRules: prev.specialPeriodRules.map((rule) => rule.statusKey === statusKey ? { ...rule, [key]: value } : rule)
     }));
   };
 
@@ -381,6 +505,16 @@ const BehaviorScoreConfigPage: React.FC = () => {
       points: Math.max(0, Number(rule.points) || 0)
     }));
 
+    const cleanedClassroomAttendanceRules = config.classroomAttendanceRules.map((rule) => ({
+      ...rule,
+      points: Math.max(0, Number(rule.points) || 0)
+    }));
+
+    const cleanedSpecialPeriodRules = config.specialPeriodRules.map((rule) => ({
+      ...rule,
+      points: Math.max(0, Number(rule.points) || 0)
+    }));
+
     setIsSaving(true);
     try {
       await setDoc(doc(firestore, "school-settings", schoolId), {
@@ -388,6 +522,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
           ...config,
           attendanceRules: cleanedAttendanceRules,
           flagCeremonyRules: cleanedFlagCeremonyRules,
+          classroomAttendanceRules: cleanedClassroomAttendanceRules,
+          specialPeriodRules: cleanedSpecialPeriodRules,
           rules: cleanedRules,
           updatedAt: serverTimestamp()
         }
@@ -397,6 +533,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
         ...prev,
         attendanceRules: cleanedAttendanceRules,
         flagCeremonyRules: cleanedFlagCeremonyRules,
+        classroomAttendanceRules: cleanedClassroomAttendanceRules,
+        specialPeriodRules: cleanedSpecialPeriodRules,
         rules: cleanedRules
       }));
       Swal.fire({
@@ -610,6 +748,98 @@ const BehaviorScoreConfigPage: React.FC = () => {
                         checked={rule.isActive}
                         onChange={(event) => updateFlagCeremonyRule(rule.statusKey, "isActive", event.target.checked)}
                         className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      ใช้
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg">
+                  <Clock className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">ตัดคะแนนจากการเข้าเรียนรายวิชา</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    ใช้กับคำสั่งในหน้าเช็คชื่อเข้าเรียนรายวิชา (เช็คชื่อรายคาบ)
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {config.classroomAttendanceRules.map((rule) => (
+                  <div key={rule.statusKey} className="grid grid-cols-1 md:grid-cols-[minmax(180px,260px)_minmax(220px,1fr)_130px_90px] gap-3 items-center bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white leading-snug">{rule.statusLabel}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">สถานะเช็คชื่อคาบเรียน</p>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">{rule.description}</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ตัดคะแนน</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={rule.points}
+                        onChange={(event) => updateClassroomAttendanceRule(rule.statusKey, "points", Number(event.target.value))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-teal-500 outline-none"
+                        required
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={rule.isActive}
+                        onChange={(event) => updateClassroomAttendanceRule(rule.statusKey, "isActive", event.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                      />
+                      ใช้
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Special Period Rules ── */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+                  <CalendarClock className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">ตัดคะแนนจากคาบเรียนพิเศษ / กิจกรรม</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    ใช้กับหน้าเช็คชื่อกิจกรรมพิเศษ เมื่อเปิดตัวเลือก "หักคะแนนอัตโนมัติ"
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {config.specialPeriodRules.map((rule) => (
+                  <div key={rule.statusKey} className="grid grid-cols-1 md:grid-cols-[minmax(180px,260px)_minmax(220px,1fr)_130px_90px] gap-3 items-center bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white leading-snug">{rule.statusLabel}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">สถานะเช็คชื่อกิจกรรมพิเศษ</p>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">{rule.description}</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ตัดคะแนน</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={rule.points}
+                        onChange={(event) => updateSpecialPeriodRule(rule.statusKey, "points", Number(event.target.value))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={rule.isActive}
+                        onChange={(event) => updateSpecialPeriodRule(rule.statusKey, "isActive", event.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
                       />
                       ใช้
                     </label>

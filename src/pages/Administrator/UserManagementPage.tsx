@@ -55,6 +55,7 @@ interface SchoolUser {
   homeroomGrade?: string;
   homeroomRoom?: string; // เพิ่มห้อง
   profileImageUrl?: string;
+  personnelType?: 'teacher' | 'user';
 }
 
 interface SchoolData {
@@ -72,6 +73,7 @@ const UserManagementPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<string>(""); // Filter by school
+  const [activeTab, setActiveTab] = useState<'all' | 'teacher' | 'user'>('all');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -299,15 +301,30 @@ const UserManagementPage: React.FC = () => {
       case 'director': return 'ผู้อำนวยการ (Director)';
       case ROLES.TEACHER: return 'ครู (Teacher)';
       case ROLES.ACADEMIC_ADMIN: return 'ฝ่ายวิชาการ (Academic)';
+      case 'student_attendance': return 'เจ้าหน้าที่ลงเวลานักเรียน';
+      case 'teacher_attendance': return 'เจ้าหน้าที่ลงเวลาครู';
+      case 'school_attendance': return 'เจ้าหน้าที่ลงเวลาทั้งโรงเรียน';
+      case 'student_affairs': return 'งานกิจการนักเรียน';
       default: return role;
     }
   };
 
-  const filteredUsers = users.filter((user) =>
-    `${user.firstName} ${user.lastName} ${user.teacherId} ${user.position} ${getSchoolName(user.schoolId)}`
+  const resolvePersonnelType = (user: SchoolUser): 'teacher' | 'user' => {
+    if (user.personnelType === 'teacher' || user.personnelType === 'user') return user.personnelType;
+    const roles = typeof user.role === 'string' ? [user.role] : [];
+    const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+    if (roles.length > 0 && roles.every(r => attendanceOnly.includes(r))) return 'user';
+    return 'teacher';
+  };
+
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch = `${user.firstName} ${user.lastName} ${user.teacherId} ${user.position} ${getSchoolName(user.schoolId)}`
       .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+      .includes(searchTerm.toLowerCase());
+    const pType = resolvePersonnelType(user);
+    const matchesTab = activeTab === 'all' ? true : activeTab === pType;
+    return matchesSearch && matchesTab;
+  });
 
 
   return (
@@ -330,6 +347,24 @@ const UserManagementPage: React.FC = () => {
                 {currentSchoolId ? 'บริหารจัดการข้อมูลครูและบุคลากรภายในโรงเรียน' : 'บริหารจัดการข้อมูลครูและบุคลากรจากโรงเรียนทั้งหมดในระบบ'}
               </p>
             </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex gap-1 p-1 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 w-fit mb-4">
+            {([
+              { key: 'all', label: 'บุคลากรทั้งหมด' },
+              { key: 'teacher', label: 'ครู' },
+              { key: 'user', label: 'ผู้ใช้' },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-1.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {/* Filters & Search */}
@@ -506,6 +541,13 @@ const UserManagementPage: React.FC = () => {
                       <option value="นางสาว">นางสาว</option>
                       <option value="ว่าที่ร.ต.">ว่าที่ร.ต.</option>
                       <option value="ดร.">ดร.</option>
+                      <option value="พระ">พระ</option>
+                      <option value="พระสามเณร">พระสามเณร</option>
+                      <option value="พระมหา">พระมหา</option>
+                      <option value="พระครู">พระครู</option>
+                      <option value="พระใบฎีกา">พระใบฎีกา</option>
+                      <option value="หลวงพ่อ">หลวงพ่อ</option>
+                      <option value="พระอาจารย์">พระอาจารย์</option>
                     </select>
                   </div>
                   <div>

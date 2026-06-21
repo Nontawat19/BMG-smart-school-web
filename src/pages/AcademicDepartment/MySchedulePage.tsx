@@ -83,7 +83,7 @@ const getStudentRoom = (student: any) => {
 const formatTeacherName = (teacher: any) => {
   if (!teacher) return '';
   if (teacher.firstName) return `ครู${teacher.firstName}`;
-  const name = String(teacher.name || '').replace(/^(นาย|นางสาว|นาง|น\.ส\.|ครู)\s*/, '');
+  const name = String(teacher.name || '').replace(/^(พระสามเณร|พระมหา|พระครู|พระใบฎีกา|หลวงพ่อ|พระอาจารย์|พระ|สามเณร|นาย|นางสาว|นาง|น\.ส\.|ครู)\s*/, '');
   return `ครู${name.trim().split(/\s+/)[0] || ''}`.trim();
 };
 

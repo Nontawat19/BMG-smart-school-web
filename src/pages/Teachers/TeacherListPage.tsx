@@ -35,9 +35,9 @@ interface Teacher {
   lastName: string;
   department?: string;
   contact?: string;
-  schoolId: string; // 📌 เพิ่ม schoolId
+  schoolId: string;
   createdAt: Timestamp;
-  subject?: string; // 📌 เพิ่มวิชาที่สอนหลัก
+  subject?: string;
   subjects?: string[];
   academicStanding?: string;
   status?: string;
@@ -45,6 +45,7 @@ interface Teacher {
   learningArea?: string;
   subjectGroup?: string;
   role?: string | string[];
+  personnelType?: 'teacher' | 'user';
 }
 
 const STAFF_ROLES = new Set([
@@ -54,6 +55,10 @@ const STAFF_ROLES = new Set([
   'super_admin',
   'admin',
   'academic',
+  'student_attendance',
+  'teacher_attendance',
+  'school_attendance',
+  'student_affairs',
 ]);
 
 const toRoleArray = (role: unknown): string[] => {
@@ -65,6 +70,15 @@ const toRoleArray = (role: unknown): string[] => {
 
 const hasStaffRole = (role: unknown) =>
   toRoleArray(role).some(roleName => STAFF_ROLES.has(roleName.toLowerCase()));
+
+const resolvePersonnelType = (data: any): 'teacher' | 'user' => {
+  if (data.personnelType === 'teacher' || data.personnelType === 'user') {
+    return data.personnelType;
+  }
+  const roles = toRoleArray(data.role);
+  if (isAttendanceEntryOnly(roles)) return 'user';
+  return 'teacher';
+};
 
 const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): Teacher => {
   const roles = toRoleArray(data.role);
@@ -149,6 +163,7 @@ export default function TeacherListPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
 
+  const [activeTab, setActiveTab] = useState<'all' | 'teacher' | 'user'>('all');
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
   const [tempTeacherId, setTempTeacherId] = useState("");
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
@@ -455,12 +470,12 @@ export default function TeacherListPage() {
       const teachersData = querySnapshot.docs.map(doc => {
         const data = doc.data();
         const userData = usersDataMap.get(doc.id) || {};
-        
+
         const firstName = data.firstName || userData.firstName || '';
         const lastName = data.lastName || userData.lastName || '';
         const title = data.title || userData.title || '';
-        
-        return {
+
+        const merged = {
           id: doc.id,
           schoolId: currentSchoolId,
           teacherId: data.teacherId || userData.teacherId || '',
@@ -482,7 +497,8 @@ export default function TeacherListPage() {
           createdAt: data.createdAt || userData.createdAt || Timestamp.fromMillis(0),
           role: data.role || userData.role || [],
           ...data,
-        } as Teacher;
+        };
+        return { ...merged, personnelType: resolvePersonnelType(merged) } as Teacher;
       });
 
       const teachersById = new Map(teachersData.map(teacher => [teacher.id, teacher]));
@@ -492,12 +508,12 @@ export default function TeacherListPage() {
         const userData = userDoc.data();
         if (!hasStaffRole(userData.role)) return;
 
-        teachersById.set(userDoc.id, buildFallbackTeacherFromUser(userDoc.id, userData, currentSchoolId));
+          const fallback = buildFallbackTeacherFromUser(userDoc.id, userData, currentSchoolId);
+        teachersById.set(userDoc.id, { ...fallback, personnelType: resolvePersonnelType(userData) });
       });
 
       // เรียงลำดับ: "อยู่" มาก่อนสถานะอื่น และเรียงตามวันที่สร้างล่าสุดในแต่ละกลุ่ม
       const sortedTeachers = Array.from(teachersById.values())
-        .filter(teacher => !isAttendanceEntryOnly(teacher.role))
         .sort((a, b) => {
           const statusA = a.status || 'อยู่';
           const statusB = b.status || 'อยู่';
@@ -561,11 +577,16 @@ export default function TeacherListPage() {
     }
 
     const filteredTeachers = teachers.filter(teacher => {
+      if (isAttendanceEntryOnly(teacher.role)) return false;
       const matchesSearch = `${teacher.title}${teacher.firstName} ${teacher.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.teacherId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.idCardNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.rfid || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
+      const matchesTab =
+        activeTab === 'all' ? true :
+        activeTab === 'teacher' ? (!teacher.personnelType || teacher.personnelType === 'teacher') :
+        teacher.personnelType === 'user';
+      return matchesSearch && matchesTab;
     });
 
     // Pagination Logic
@@ -839,6 +860,29 @@ export default function TeacherListPage() {
                   แสดง, จัดการ, และเพิ่มข้อมูลครูในระบบ
                 </p>
               </div>
+            </div>
+
+            {/* Tab bar แยกประเภทบุคลากร */}
+            <div className="flex gap-1 p-1 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 w-fit">
+              {([
+                { key: 'all', label: 'บุคลากรทั้งหมด' },
+                { key: 'teacher', label: 'ครู' },
+                { key: 'user', label: 'ผู้ใช้' },
+              ] as const).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => { setActiveTab(tab.key); setCurrentPage(1); }}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === tab.key
+                      ? tab.key === 'user'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">

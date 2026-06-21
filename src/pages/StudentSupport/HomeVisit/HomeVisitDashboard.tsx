@@ -51,7 +51,7 @@ const getStudentGender = (student: Student) => {
     if (student.gender?.toLowerCase() === "female") return "หญิง";
     
     const title = student.title || "";
-    if (title.includes("ด.ช.") || title.includes("นาย") || title.includes("เด็กชาย")) {
+    if (title.includes("ด.ช.") || title.includes("นาย") || title.includes("เด็กชาย") || title.includes("สามเณร") || title.includes("พระ")) {
         return "ชาย";
     }
     if (title.includes("ด.ญ.") || title.includes("น.ส.") || title.includes("นาง") || title.includes("เด็กหญิง") || title.includes("นางสาว")) {
@@ -460,7 +460,10 @@ const HomeVisitDashboard: React.FC = () => {
                                             {/* Right Section: Action Buttons */}
                                             <div className="flex items-center justify-end gap-2.5 shrink-0 mt-3 lg:mt-0 flex-wrap sm:flex-nowrap">
                                                 <Link
-                                                    to={`/student-support/home-visit/new/${student.id}`}
+                                                    to={visited
+                                                        ? `/student-support/home-visit/new/${student.id}?mode=edit-latest`
+                                                        : `/student-support/home-visit/new/${student.id}`
+                                                    }
                                                     className={`whitespace-nowrap flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-semibold transition-all active:scale-95 shrink-0 ${
                                                         visited
                                                             ? "border border-pink-200 dark:border-pink-900/40 text-pink-600 dark:text-pink-400 bg-pink-50/50 hover:bg-pink-100/70 hover:shadow-sm dark:bg-pink-950/20 dark:hover:bg-pink-950/40"
@@ -475,7 +478,7 @@ const HomeVisitDashboard: React.FC = () => {
                                                     <Link
                                                         to={`/student-support/home-visit/new/${student.id}?copy=true`}
                                                         className="whitespace-nowrap flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 text-white rounded-2xl text-xs sm:text-sm font-semibold transition-all active:scale-95 shadow-md shadow-emerald-500/20 shrink-0"
-                                                        title="สร้างบันทึกการเยี่ยมบ้านโดยคัดลอกข้อมูลครั้งล่าสุด"
+                                                        title="สร้างบันทึกครั้งใหม่โดยคัดลอกข้อมูลเดิมไปใช้ต่อ"
                                                     >
                                                         <Copy size={16} />
                                                         <span>ดึงข้อมูลเดิม</span>

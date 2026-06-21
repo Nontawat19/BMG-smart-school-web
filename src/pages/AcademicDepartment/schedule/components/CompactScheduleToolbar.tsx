@@ -1,9 +1,15 @@
-import React, { useMemo } from 'react';
-import Select from 'react-select';
+import React, { useCallback, useMemo } from 'react';
+import Select, { SingleValue, StylesConfig } from 'react-select';
 import { Trash2, Zap } from 'lucide-react';
 import { CLASSES, thaiFormatClass } from '../utils';
-import { Course, CourseInstance, Schedule, SchoolSettings, Teacher, getAssignmentTeacherIds } from '../types';
+import { Course, CourseInstance, PhysicalRoom, Schedule, SchoolSettings, Teacher, getAssignmentTeacherIds } from '../types';
 import { TeacherSelect } from './TeacherSelect';
+
+interface CourseOption {
+    value: string;
+    label: string;
+    course?: Course;
+}
 
 interface CompactScheduleToolbarProps {
     isDarkMode: boolean;
@@ -16,7 +22,7 @@ interface CompactScheduleToolbarProps {
     filterRoom: string;
     filterGroup: string;
     filterPhysicalRoom: string;
-    physicalRooms: any[];
+    physicalRooms: PhysicalRoom[];
     searchTerm: string;
     schoolSettings: SchoolSettings;
     isAutoScheduling: boolean;
@@ -29,6 +35,10 @@ interface CompactScheduleToolbarProps {
     setFilterPhysicalRoom: (value: string) => void;
     handleClearSchedule: () => void;
     handleAutoScheduleForTeacherAndClasses: () => void;
+    undo?: () => void;
+    redo?: () => void;
+    canUndo?: boolean;
+    canRedo?: boolean;
 }
 
 const getSubjectGroupOrder = (groupName?: string): number => {
@@ -74,9 +84,13 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
     setFilterGroup,
     setFilterPhysicalRoom,
     handleClearSchedule,
-    handleAutoScheduleForTeacherAndClasses
+    handleAutoScheduleForTeacherAndClasses,
+    undo,
+    redo,
+    canUndo,
+    canRedo
 }) => {
-    const courseMatchesRoom = (course: Course) => {
+    const courseMatchesRoom = useCallback((course: Course) => {
         if (filterRoom === 'all') return true;
 
         const courseClassIds = Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[];
@@ -92,25 +106,15 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
             if (filterRoom === 'แผน') return roomPart === 'แผน';
             return Number(roomPart) === Number(filterRoom);
         });
-    };
+    }, [filterRoom, selectedTeacher]);
 
-    const courseMatchesGroup = (course: Course) => {
+    const courseMatchesGroup = useCallback((course: Course) => {
         if (filterGroup === 'all') return true;
 
         return course.teacherAssignments
             ?.filter(a => !selectedTeacher || getAssignmentTeacherIds(a).includes(selectedTeacher))
             .some(a => String(a.groupNumber || 1) === filterGroup) || false;
-    };
-
-    const handleClassChange = (option: any) => {
-        const nextClass = option?.value || 'all';
-        setFilterClass(nextClass);
-
-        if (nextClass !== 'all') {
-            setFilterRoom('1');
-            setFilterGroup('1');
-        }
-    };
+    }, [filterGroup, selectedTeacher]);
 
     // Filtered courses for dropdown selection
     const courseOptions = useMemo(() => {
@@ -162,7 +166,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
             });
 
         return [{ value: '', label: 'ทุกรายวิชา...' }, ...filtered];
-    }, [allCourses, selectedSemester, selectedTeacher, filterClass, filterRoom, filterGroup, availableCourseInstances]);
+    }, [allCourses, selectedSemester, selectedTeacher, filterClass, availableCourseInstances, courseMatchesRoom, courseMatchesGroup]);
 
     const selectedCourseOption = useMemo(() => {
         if (!searchTerm) return null;
@@ -188,8 +192,8 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
         return Math.min(380, Math.max(260, labelLength * 5 + 80));
     }, [selectedCourseOption]);
 
-    const selectStyles = useMemo(() => ({
-        control: (base: any, state: any) => ({
+    const selectStyles: StylesConfig<CourseOption, false> = useMemo(() => ({
+        control: (base, state) => ({
             ...base,
             minHeight: '32px',
             height: '32px',
@@ -204,7 +208,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                 borderColor: state.isFocused ? '#6366f1' : isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'
             }
         }),
-        menu: (base: any) => ({
+        menu: (base) => ({
             ...base,
             backgroundColor: isDarkMode ? '#1e293b' : 'white',
             border: isDarkMode ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
@@ -215,7 +219,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
             boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
             zIndex: 9999
         }),
-        option: (base: any, { isFocused, isSelected }: any) => ({
+        option: (base, { isFocused, isSelected }) => ({
             ...base,
             backgroundColor: isSelected
                 ? '#4f46e5'
@@ -234,15 +238,15 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
             overflow: 'hidden',
             textOverflow: 'ellipsis'
         }),
-        valueContainer: (base: any) => ({
+        valueContainer: (base) => ({
             ...base,
             padding: '0 8px',
             display: 'flex',
             alignItems: 'center'
         }),
-        indicatorsContainer: (base: any) => ({ ...base, height: '30px' }),
-        menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
-        singleValue: (base: any) => ({ 
+        indicatorsContainer: (base) => ({ ...base, height: '30px' }),
+        menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+        singleValue: (base) => ({
             ...base, 
             color: isDarkMode ? '#f8fafc' : '#0f172a',
             whiteSpace: 'nowrap',
@@ -250,9 +254,9 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
             textOverflow: 'ellipsis',
             maxWidth: '100%'
         }),
-        input: (base: any) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
-        placeholder: (base: any) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
-        menuList: (base: any) => ({ ...base, maxHeight: '250px', padding: 0 }),
+        input: (base) => ({ ...base, color: isDarkMode ? 'white' : 'black', margin: 0, padding: 0 }),
+        placeholder: (base) => ({ ...base, color: isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }),
+        menuList: (base) => ({ ...base, maxHeight: '250px', padding: 0 }),
         indicatorSeparator: () => ({ display: 'none' })
     }), [isDarkMode]);
 
@@ -278,7 +282,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                         <Select
                             menuPortalTarget={document.body}
                             value={selectedCourseOption}
-                            onChange={(option: any) => setSearchTerm(option?.value || '')}
+                            onChange={(option: SingleValue<CourseOption>) => setSearchTerm(option?.value || '')}
                             options={courseOptions}
                             placeholder="ค้นหารายวิชา..."
                             isClearable
@@ -295,6 +299,27 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                 {/* 2. ACTIONS ROW */}
                 <div className="flex flex-wrap items-center gap-1.5 xl:shrink-0 justify-start xl:justify-end">
 
+                    {/* Undo/Redo */}
+                    {selectedTeacher && (
+                        <div className="flex items-center gap-1 mr-1">
+                            <button
+                                onClick={undo}
+                                disabled={!canUndo}
+                                className="flex items-center justify-center w-[32px] h-[32px] rounded-xl bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Undo (ย้อนกลับ)"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                            </button>
+                            <button
+                                onClick={redo}
+                                disabled={!canRedo}
+                                className="flex items-center justify-center w-[32px] h-[32px] rounded-xl bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Redo (ทำซ้ำ)"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+                            </button>
+                        </div>
+                    )}
 
                     {/* Auto schedule teacher (AI) */}
                     {selectedTeacher && (

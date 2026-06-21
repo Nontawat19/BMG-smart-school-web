@@ -232,7 +232,7 @@ const LeaveHistoryPage: React.FC = () => {
             const gLast = (sData.guardianLastName || "").trim();
 
             // ป้องกันคำนำหน้าซ้ำซ้อน
-            const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+            const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส.", "สามเณร", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์"];
             const startsWithTitle = commonTitles.some(t => gFirst.startsWith(t)) || (gTitle && gFirst.startsWith(gTitle));
 
             if (startsWithTitle) {

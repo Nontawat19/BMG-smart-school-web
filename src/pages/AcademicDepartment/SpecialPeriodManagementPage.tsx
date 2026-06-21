@@ -7,15 +7,24 @@ import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
 import BackButton from "@/components/Shared/BackButton";
+import { CalendarDays, CalendarClock, Clock, Shield, BarChart2, Plus, Pencil, Trash2 } from "lucide-react";
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+type PeriodType = 'recurring' | 'oneTime';
 
 interface SpecialPeriod {
   id: string;
   title: string;
   startTime: string;
   endTime: string;
-  day?: string;
-  linkedPeriodId?: string; // Reference to the global period ID (e.g., 'period-1')
-  isTeachingLoad?: boolean; // Does this count as a teaching period in the workload summary?
+  durationHours?: number;
+  periodType?: PeriodType;
+  day?: string;            // for recurring
+  eventDate?: string;      // for oneTime (YYYY-MM-DD)
+  linkedPeriodId?: string;
+  isTeachingLoad?: boolean;
+  deductBehaviorDefault?: boolean;
 }
 
 interface PeriodSetting {
@@ -27,6 +36,8 @@ interface PeriodSetting {
   isFixed?: boolean;
 }
 
+// ─── Constants ─────────────────────────────────────────────────────────────
+
 const DAY_OPTIONS = [
   { value: 'all', label: 'ทุกวัน' },
   { value: 'mon', label: 'วันจันทร์' },
@@ -36,113 +47,121 @@ const DAY_OPTIONS = [
   { value: 'fri', label: 'วันศุกร์' },
 ];
 
+const DAY_LABEL: Record<string, string> = {
+  all: 'ทุกวัน', mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ',
+  thu: 'พฤหัสบดี', fri: 'ศุกร์', sat: 'เสาร์', sun: 'อาทิตย์',
+};
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+const calcDurationHours = (start: string, end: string): number => {
+  const toMinutes = (t: string) => {
+    const clean = t.replace('.', ':');
+    const [h, m] = clean.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const diff = toMinutes(end) - toMinutes(start);
+  return diff > 0 ? Math.round((diff / 60) * 10) / 10 : 0;
+};
+
+const formatThaiDate = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+};
+
+// ─── Page ──────────────────────────────────────────────────────────────────
+
 const SpecialPeriodManagementPage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
 
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
-  const [newPeriodTitle, setNewPeriodTitle] = useState("");
-  const [newPeriodStartTime, setNewPeriodStartTime] = useState("");
-  const [newPeriodEndTime, setNewPeriodEndTime] = useState("");
-  const [newPeriodDay, setNewPeriodDay] = useState("all");
-  const [selectedPeriodOption, setSelectedPeriodOption] = useState("custom");
+  const [activeTab, setActiveTab] = useState<'all' | 'recurring' | 'oneTime'>('all');
+
+  // ── Form state ────────────────────────────────────────────────────────────
   const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
   const [isSubmittingPeriod, setIsSubmittingPeriod] = useState(false);
-  const [newPeriodIsTeachingLoad, setNewPeriodIsTeachingLoad] = useState(false);
 
-  const PERIOD_OPTIONS = useMemo(() => {
-    if (periodSettings.length === 0) {
-      return [];
-    }
-    return periodSettings.map(p => ({
+  const [newPeriodType, setNewPeriodType] = useState<PeriodType>('recurring');
+  const [newPeriodTitle, setNewPeriodTitle] = useState('');
+  const [newPeriodStartTime, setNewPeriodStartTime] = useState('');
+  const [newPeriodEndTime, setNewPeriodEndTime] = useState('');
+  const [newPeriodDurationHours, setNewPeriodDurationHours] = useState<string>('');
+  const [newPeriodDay, setNewPeriodDay] = useState('all');
+  const [newPeriodEventDate, setNewPeriodEventDate] = useState('');
+  const [selectedPeriodOption, setSelectedPeriodOption] = useState('custom');
+  const [newPeriodIsTeachingLoad, setNewPeriodIsTeachingLoad] = useState(false);
+  const [newPeriodDeductBehaviorDefault, setNewPeriodDeductBehaviorDefault] = useState(false);
+
+  // Auto-calculate duration when times change
+  const autoDuration = useMemo(() =>
+    newPeriodStartTime && newPeriodEndTime
+      ? calcDurationHours(newPeriodStartTime, newPeriodEndTime)
+      : 0,
+    [newPeriodStartTime, newPeriodEndTime]
+  );
+
+  const PERIOD_OPTIONS = useMemo(() =>
+    periodSettings.map(p => ({
       value: p.id,
-      label: `${p.label} (${p.startTime}-${p.endTime})`,
+      label: `${p.label} (${p.startTime}–${p.endTime})`,
       start: p.startTime,
-      end: p.endTime
-    }));
-  }, [periodSettings]);
+      end: p.endTime,
+    })),
+    [periodSettings]
+  );
 
   useEffect(() => {
     if (selectedPeriodOption && selectedPeriodOption !== 'custom') {
-      const option = PERIOD_OPTIONS.find(o => o.value === selectedPeriodOption);
-      if (option) {
-        setNewPeriodStartTime(option.start);
-        setNewPeriodEndTime(option.end);
-      }
+      const opt = PERIOD_OPTIONS.find(o => o.value === selectedPeriodOption);
+      if (opt) { setNewPeriodStartTime(opt.start); setNewPeriodEndTime(opt.end); }
     }
   }, [selectedPeriodOption, PERIOD_OPTIONS]);
 
+  // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (PERIOD_OPTIONS.length > 0 && !selectedPeriodOption) {
-      setSelectedPeriodOption(PERIOD_OPTIONS[0].value);
-    }
-  }, [PERIOD_OPTIONS]);
+    if (!schoolId) return;
 
-  useEffect(() => {
-    const fetchSpecialPeriods = async () => {
-      if (!schoolId) return;
-      try {
-        const periodsCollectionRef = collection(db, 'school-settings', schoolId, 'special-periods');
-        const querySnapshot = await getDocs(periodsCollectionRef);
-        const periodsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as SpecialPeriod));
-        setSpecialPeriods(periodsData);
-      } catch (error) {
-        console.error("Error fetching special periods: ", error);
-        Swal.fire({ icon: 'error', title: 'ข้อผิดพลาด', text: 'ไม่สามารถดึงข้อมูลคาบเรียนพิเศษได้', background: '#2a2b2f', color: '#ffffff' });
+    getDocs(collection(db, 'school-settings', schoolId, 'special-periods')).then(snap => {
+      setSpecialPeriods(snap.docs.map(d => ({ id: d.id, ...d.data() } as SpecialPeriod)));
+    });
+
+    getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')).then(snap => {
+      if (snap.exists() && snap.data().periods) {
+        setPeriodSettings(snap.data().periods);
       }
-    };
-
-    const fetchPeriodSettings = async () => {
-      if (!schoolId) return;
-      try {
-        const docRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().periods) {
-          setPeriodSettings(docSnap.data().periods);
-        } else {
-          // Fallback to a default structure if not set
-          const defaultPeriods: PeriodSetting[] = [
-            { id: 'homeroom', label: 'โฮมรูม', startTime: '08.30', endTime: '08.40', isTeachingPeriod: false, isFixed: true }, { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true }, { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true }, { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true }, { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true }, { id: 'lunch', label: 'พักกลางวัน', startTime: '12.00', endTime: '13.00', isTeachingPeriod: false, isFixed: true }, { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true }, { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true }, { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true }, { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
-          ];
-          setPeriodSettings(defaultPeriods);
-        }
-      } catch (error) {
-        console.error("Error fetching period settings: ", error);
-      }
-    };
-
-    fetchSpecialPeriods();
-    fetchPeriodSettings();
+    });
   }, [schoolId]);
 
-
+  // ── Form helpers ──────────────────────────────────────────────────────────
   const resetForm = () => {
-    setNewPeriodTitle("");
-    setNewPeriodStartTime("");
-    setNewPeriodEndTime("");
-    setNewPeriodDay("all");
-    setSelectedPeriodOption(PERIOD_OPTIONS.length > 0 ? PERIOD_OPTIONS[0].value : "");
     setEditingPeriodId(null);
+    setNewPeriodType('recurring');
+    setNewPeriodTitle('');
+    setNewPeriodStartTime('');
+    setNewPeriodEndTime('');
+    setNewPeriodDurationHours('');
+    setNewPeriodDay('all');
+    setNewPeriodEventDate('');
+    setSelectedPeriodOption(PERIOD_OPTIONS.length > 0 ? PERIOD_OPTIONS[0].value : 'custom');
     setNewPeriodIsTeachingLoad(false);
+    setNewPeriodDeductBehaviorDefault(false);
   };
 
   const handleEditClick = (period: SpecialPeriod) => {
     setEditingPeriodId(period.id);
+    setNewPeriodType(period.periodType || 'recurring');
     setNewPeriodTitle(period.title);
     setNewPeriodStartTime(period.startTime);
     setNewPeriodEndTime(period.endTime);
-    setNewPeriodDay(period.day || "all");
-
-    if (period.linkedPeriodId) {
-      setSelectedPeriodOption(period.linkedPeriodId);
-    }
+    setNewPeriodDurationHours(period.durationHours != null ? String(period.durationHours) : '');
+    setNewPeriodDay(period.day || 'all');
+    setNewPeriodEventDate(period.eventDate || '');
+    setSelectedPeriodOption(period.linkedPeriodId || 'custom');
     setNewPeriodIsTeachingLoad(period.isTeachingLoad || false);
-
-    // Scroll to top
+    setNewPeriodDeductBehaviorDefault(period.deductBehaviorDefault || false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -150,301 +169,336 @@ const SpecialPeriodManagementPage: React.FC = () => {
     e.preventDefault();
     if (isSubmittingPeriod) return;
     if (!newPeriodTitle || !newPeriodStartTime || !newPeriodEndTime) {
-      Swal.fire({ icon: 'warning', title: 'ข้อมูลไม่ครบถ้วน', text: 'กรุณากรอกข้อมูลกิจกรรมพิเศษให้ครบถ้วน', background: '#2a2b2f', color: '#ffffff' });
+      Swal.fire({ icon: 'warning', title: 'ข้อมูลไม่ครบถ้วน', text: 'กรุณากรอกชื่อและเวลาให้ครบถ้วน', background: '#2a2b2f', color: '#ffffff' });
+      return;
+    }
+    if (newPeriodType === 'oneTime' && !newPeriodEventDate) {
+      Swal.fire({ icon: 'warning', title: 'ข้อมูลไม่ครบถ้วน', text: 'กรุณาระบุวันที่จัดกิจกรรม', background: '#2a2b2f', color: '#ffffff' });
       return;
     }
     setIsSubmittingPeriod(true);
 
+    const durationHours = newPeriodDurationHours !== ''
+      ? Number(newPeriodDurationHours)
+      : autoDuration;
+
+    const periodData: Omit<SpecialPeriod, 'id'> = {
+      title: newPeriodTitle,
+      startTime: newPeriodStartTime,
+      endTime: newPeriodEndTime,
+      durationHours,
+      periodType: newPeriodType,
+      isTeachingLoad: newPeriodIsTeachingLoad,
+      deductBehaviorDefault: newPeriodDeductBehaviorDefault,
+      ...(newPeriodType === 'recurring'
+        ? { day: newPeriodDay, linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : undefined }
+        : { eventDate: newPeriodEventDate }),
+    };
+
     try {
-      const periodData = {
-        title: newPeriodTitle,
-        startTime: newPeriodStartTime,
-        endTime: newPeriodEndTime,
-        day: newPeriodDay,
-        linkedPeriodId: selectedPeriodOption,
-        isTeachingLoad: newPeriodIsTeachingLoad,
-      };
-
-
       if (editingPeriodId) {
-        // Update existing
-        const docRef = doc(db, 'school-settings', schoolId, 'special-periods', editingPeriodId);
-        await updateDoc(docRef, periodData);
-
-        setSpecialPeriods(prev => prev.map(p => p.id === editingPeriodId ? { ...p, ...periodData, linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : undefined } : p));
-        Swal.fire({ icon: 'success', title: 'สำเร็จ', text: 'บันทึกการแก้ไขเรียบร้อยแล้ว', background: '#2a2b2f', color: '#ffffff', timer: 1500, showConfirmButton: false });
+        await updateDoc(doc(db, 'school-settings', schoolId, 'special-periods', editingPeriodId), periodData);
+        setSpecialPeriods(prev => prev.map(p => p.id === editingPeriodId ? { id: editingPeriodId, ...periodData } : p));
+        Swal.fire({ icon: 'success', title: 'บันทึกการแก้ไขสำเร็จ', background: '#2a2b2f', color: '#ffffff', timer: 1500, showConfirmButton: false });
       } else {
-        // Add new
-        const periodsCollectionRef = collection(db, 'school-settings', schoolId, 'special-periods');
-        const docRef = await addDoc(periodsCollectionRef, { ...periodData, linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : undefined });
-        setSpecialPeriods([...specialPeriods, { id: docRef.id, ...periodData, linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : undefined }]);
-        Swal.fire({ icon: 'success', title: 'สำเร็จ', text: 'เพิ่มกิจกรรมพิเศษเรียบร้อยแล้ว', background: '#2a2b2f', color: '#ffffff', timer: 1500, showConfirmButton: false });
+        const ref = await addDoc(collection(db, 'school-settings', schoolId, 'special-periods'), periodData);
+        setSpecialPeriods(prev => [...prev, { id: ref.id, ...periodData }]);
+        Swal.fire({ icon: 'success', title: 'เพิ่มกิจกรรมสำเร็จ', background: '#2a2b2f', color: '#ffffff', timer: 1500, showConfirmButton: false });
       }
-
       resetForm();
-    } catch (error) {
-      console.error("Error saving special period: ", error);
+    } catch (err) {
+      console.error(err);
       Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถบันทึกข้อมูลได้', background: '#2a2b2f', color: '#ffffff' });
     } finally {
       setIsSubmittingPeriod(false);
     }
   };
 
-  const handleDeleteSpecialPeriod = async (periodId: string) => {
-    if (editingPeriodId === periodId) {
-      resetForm();
-    }
-
-    Swal.fire({
-      title: 'ต้องการลบกิจกรรมนี้ใช่หรือไม่?',
-      text: "การกระทำนี้ไม่สามารถย้อนกลับได้",
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'ใช่, ลบเลย!',
-      cancelButtonText: 'ยกเลิก',
-      background: '#2a2b2f',
-      color: '#ffffff'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          const periodDocRef = doc(db, 'school-settings', schoolId, 'special-periods', periodId);
-          await deleteDoc(periodDocRef);
-          setSpecialPeriods(specialPeriods.filter(p => p.id !== periodId));
-          Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', text: 'กิจกรรมพิเศษถูกลบแล้ว', background: '#2a2b2f', color: '#ffffff', timer: 1500, showConfirmButton: false });
-        } catch (error) {
-          console.error("Error deleting special period: ", error);
-          Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถลบกิจกรรมพิเศษได้', background: '#2a2b2f', color: '#ffffff' });
-        }
-      }
+  const handleDelete = async (periodId: string) => {
+    if (editingPeriodId === periodId) resetForm();
+    const result = await Swal.fire({
+      title: 'ต้องการลบกิจกรรมนี้?', text: 'การกระทำนี้ไม่สามารถย้อนกลับได้', icon: 'warning',
+      showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ใช่, ลบเลย!', cancelButtonText: 'ยกเลิก', background: '#2a2b2f', color: '#ffffff',
     });
+    if (!result.isConfirmed) return;
+    try {
+      await deleteDoc(doc(db, 'school-settings', schoolId, 'special-periods', periodId));
+      setSpecialPeriods(prev => prev.filter(p => p.id !== periodId));
+      Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', background: '#2a2b2f', color: '#ffffff', timer: 1200, showConfirmButton: false });
+    } catch {
+      Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', background: '#2a2b2f', color: '#ffffff' });
+    }
   };
 
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const filteredPeriods = useMemo(() => {
+    if (activeTab === 'all') return specialPeriods;
+    return specialPeriods.filter(p =>
+      activeTab === 'oneTime'
+        ? p.periodType === 'oneTime'
+        : (p.periodType || 'recurring') === 'recurring'
+    );
+  }, [specialPeriods, activeTab]);
+
+  const recurringCount = specialPeriods.filter(p => (p.periodType || 'recurring') === 'recurring').length;
+  const oneTimeCount = specialPeriods.filter(p => p.periodType === 'oneTime').length;
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <MainLayout>
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
-        <div className="max-w-6xl mx-auto">
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
+        <div className="max-w-6xl mx-auto space-y-4">
 
-          {/* Warning Banner for Synchronization */}
-          <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 mb-6 rounded-r-lg shadow-sm">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
+          {/* Header bar */}
+          <div className="flex items-center gap-3">
+            <BackButton to="/academic/hub/scheduling" />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-extrabold leading-tight truncate">จัดการคาบเรียนพิเศษ</h1>
+            </div>
+            <Link to="/academic/behavior-score-config"
+              className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline">
+              <Shield size={13} />
+              ตั้งค่าหักคะแนนพฤติกรรม
+            </Link>
+          </div>
+
+          {/* ─ Form ─ */}
+          <div className={`bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm border transition-all ${editingPeriodId ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-100 dark:border-gray-700'}`}>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-sm font-bold flex items-center gap-2">
+                {editingPeriodId ? <><Pencil size={15} className="text-amber-500" /> แก้ไขกิจกรรม</> : <><Plus size={15} className="text-indigo-500" /> เพิ่มกิจกรรมใหม่</>}
+              </h2>
+              {editingPeriodId && (
+                <button onClick={resetForm} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                  ยกเลิก
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmitSpecialPeriod} className="space-y-3">
+
+              {/* Type selector */}
+              <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setNewPeriodType('recurring')}
+                    className={`flex items-center gap-2 rounded-xl border-2 p-3 text-left transition-all ${newPeriodType === 'recurring' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/15' : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}>
+                    <CalendarDays size={18} className={newPeriodType === 'recurring' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'} />
+                    <div>
+                      <p className={`text-xs font-bold ${newPeriodType === 'recurring' ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'}`}>ตลอดเทอม (รายสัปดาห์)</p>
+                      <p className="text-[10px] text-gray-500">เช่น โฮมรูม แนะแนว</p>
+                    </div>
+                  </button>
+                  <button type="button" onClick={() => setNewPeriodType('oneTime')}
+                    className={`flex items-center gap-2 rounded-xl border-2 p-3 text-left transition-all ${newPeriodType === 'oneTime' ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/15' : 'border-gray-200 dark:border-gray-600 hover:border-violet-300'}`}>
+                    <CalendarClock size={18} className={newPeriodType === 'oneTime' ? 'text-violet-600 dark:text-violet-400' : 'text-gray-400'} />
+                    <div>
+                      <p className={`text-xs font-bold ${newPeriodType === 'oneTime' ? 'text-violet-700 dark:text-violet-300' : 'text-gray-700 dark:text-gray-300'}`}>กิจกรรมครั้งเดียว</p>
+                      <p className="text-[10px] text-gray-500">เช่น อบรม ทัศนศึกษา กีฬาสี</p>
+                    </div>
+                  </button>
+                </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">ชื่อกิจกรรม</label>
+                <input type="text" value={newPeriodTitle} onChange={e => setNewPeriodTitle(e.target.value)}
+                  placeholder={newPeriodType === 'recurring' ? 'เช่น โฮมรูม, แนะแนว, ชุมนุม' : 'เช่น อบรมคุณธรรม, ทัศนศึกษา, กีฬาสี'}
+                  className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  ข้อควรระวัง: การตั้งค่าคาบเรียน (Period Settings)
-                </h3>
-                <div className="mt-2 text-sm text-amber-700 dark:text-amber-300">
-                  <p>
-                    เวลารับ-เลิกของ "คาบเรียนพิเศษ" ที่เชื่อมโยงกับคาบหลัก จะถูกอัปเดตตามการตั้งค่าในหน้า
-                    <Link to="/academic/period-settings" className="font-bold underline ml-1 hover:text-amber-900 dark:hover:text-amber-100">
-                      ตั้งค่าคาบเรียน
-                    </Link>
-                  </p>
-                  <p className="mt-1">
-                    หากมีการปรับเปลี่ยน "ระยะเวลาการสอน" ในหน้านั้น กรุณาตรวจสอบความถูกต้องของเวลาในหน้านี้เสมอ เพื่อป้องกันตารางสอนคลาดเคลื่อน
-                    <Link to="/academic/teacher-schedule" className="font-bold underline ml-1 hover:text-amber-900 dark:hover:text-amber-100">
-                      ตั้งค่าคาบเรียน
-                    </Link>
-                  </p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {/* Date or Day */}
+                {newPeriodType === 'recurring' ? (
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">วันที่เกิดขึ้น</label>
+                    <select value={newPeriodDay} onChange={e => setNewPeriodDay(e.target.value)}
+                      className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      {DAY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">วันที่จัดกิจกรรม</label>
+                    <input type="date" value={newPeriodEventDate} onChange={e => setNewPeriodEventDate(e.target.value)}
+                      className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                  </div>
+                )}
+
+                {/* Period slot (recurring only) */}
+                {newPeriodType === 'recurring' && PERIOD_OPTIONS.length > 0 && (
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">ผูกคาบเรียน</label>
+                    <select value={selectedPeriodOption} onChange={e => setSelectedPeriodOption(e.target.value)}
+                      className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="custom">กำหนดเอง</option>
+                      {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Start time */}
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">เวลาเริ่ม</label>
+                  <input type="time" value={newPeriodStartTime.replace('.', ':')} onChange={e => setNewPeriodStartTime(e.target.value)}
+                    className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                {/* End time */}
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">เวลาสิ้นสุด</label>
+                  <input type="time" value={newPeriodEndTime.replace('.', ':')} onChange={e => setNewPeriodEndTime(e.target.value)}
+                    className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div className="mb-6">
-            <BackButton to="/academic/hub/scheduling" />
-          </div>
+              {/* Duration hours + Toggles in one row */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                {/* Duration */}
+                <div className="flex items-center gap-2 rounded-xl bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 px-3 py-2 flex-1">
+                  <Clock size={15} className="text-gray-400 shrink-0" />
+                  <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">ชม.</label>
+                  <input type="number" min="0" step="0.5" max="24"
+                    value={newPeriodDurationHours}
+                    onChange={e => setNewPeriodDurationHours(e.target.value)}
+                    placeholder={autoDuration > 0 ? `${autoDuration}` : '0'}
+                    className="w-20 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  {autoDuration > 0 && (
+                    <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold">อัตโนมัติ {autoDuration} ชม.</span>
+                  )}
+                </div>
 
-          {/* Special Period Management Section */}
-          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm dark:shadow-none border border-gray-100 dark:border-gray-700">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <span>📅</span> จัดการคาบเรียนพิเศษ
-                </h2>
-                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                  กำหนดกิจกรรมที่เกิดขึ้นประจำ เช่น โฮมรูม หรือ พักกลางวัน เพื่อกันเวลาในตารางสอน
-                </p>
+                {/* Toggle: isTeachingLoad */}
+                <label className="flex items-center gap-2 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] px-3 py-2 cursor-pointer hover:border-indigo-300 transition-colors">
+                  <input type="checkbox" checked={newPeriodIsTeachingLoad}
+                    onChange={e => setNewPeriodIsTeachingLoad(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <BarChart2 size={13} className="text-indigo-500 shrink-0" />
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">แสดงในเมนูเช็คชื่อ</span>
+                </label>
+
+                {/* Toggle: deductBehaviorDefault */}
+                <label className="flex items-center gap-2 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] px-3 py-2 cursor-pointer hover:border-violet-300 transition-colors">
+                  <input type="checkbox" checked={newPeriodDeductBehaviorDefault}
+                    onChange={e => setNewPeriodDeductBehaviorDefault(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500" />
+                  <Shield size={13} className="text-violet-500 shrink-0" />
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">หักคะแนนอัตโนมัติ</span>
+                </label>
               </div>
-            </div>
 
-            <div className={`bg-gray-50 dark:bg-[#202125] rounded-xl p-5 mb-8 border transition-all duration-300 ${editingPeriodId ? 'border-indigo-500 shadow-md ring-1 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                  {editingPeriodId ? '✏️ แก้ไขกิจกรรม' : 'เพิ่มกิจกรรมใหม่'}
-                </h3>
+              {/* Submit */}
+              <div className="flex justify-end gap-2">
                 {editingPeriodId && (
-                  <button onClick={resetForm} className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                    ยกเลิกการแก้ไข
+                  <button type="button" onClick={resetForm}
+                    className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    ยกเลิก
                   </button>
                 )}
+                <button type="submit" disabled={isSubmittingPeriod}
+                  className={`min-w-[120px] px-5 py-2 rounded-xl text-sm font-bold text-white shadow-sm transition-all disabled:opacity-70 flex items-center justify-center gap-2 ${editingPeriodId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                  {isSubmittingPeriod ? (
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : editingPeriodId ? <><Pencil size={14} /> บันทึกการแก้ไข</> : <><Plus size={14} /> เพิ่มกิจกรรม</>}
+                </button>
               </div>
-              <form onSubmit={handleSubmitSpecialPeriod} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
-                  {/* Title Input */}
-                  <div className="lg:col-span-6">
-                    <label htmlFor="newPeriodTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">ชื่อกิจกรรม</label>
-                    <input
-                      type="text"
-                      id="newPeriodTitle"
-                      value={newPeriodTitle}
-                      onChange={(e) => setNewPeriodTitle(e.target.value)}
-                      className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
-                      placeholder="เช่น โฮมรูม, ประชุมระดับ"
-                    />
-                  </div>
+            </form>
+          </div>
 
-                  {/* Day Select */}
-                  <div className="lg:col-span-3">
-                    <label htmlFor="newPeriodDay" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">วัน</label>
-                    <select
-                      id="newPeriodDay"
-                      value={newPeriodDay}
-                      onChange={(e) => setNewPeriodDay(e.target.value)}
-                      className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
-                    >
-                      {DAY_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Period Option Select */}
-                  <div className="lg:col-span-3">
-                    <label htmlFor="periodOption" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">ช่วงเวลา</label>
-                    <select
-                      id="periodOption"
-                      value={selectedPeriodOption}
-                      onChange={(e) => setSelectedPeriodOption(e.target.value)}
-                      className="w-full bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
-                    >
-                      {PERIOD_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 bg-white dark:bg-[#2a2b2f] p-3 rounded-lg border border-gray-200 dark:border-gray-700 w-fit">
-                  <input
-                    type="checkbox"
-                    id="isTeachingLoad"
-                    checked={newPeriodIsTeachingLoad}
-                    onChange={(e) => setNewPeriodIsTeachingLoad(e.target.checked)}
-                    className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="isTeachingLoad" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2 cursor-pointer">
-                    <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-1 rounded">📊</span>
-                    นับเป็นภาระงานสอน (ใช้คำนวณในสรุปหน้า 2)
-                  </label>
-                </div>
-
-                <div className="flex justify-end pt-2 gap-3">
-                  {editingPeriodId && (
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="px-6 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    >
-                      ยกเลิก
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    className={`min-w-[140px] md:w-auto font-bold py-2.5 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${editingPeriodId ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                    disabled={isSubmittingPeriod}
-                  >
-                    {isSubmittingPeriod ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>กำลังบันทึก...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{editingPeriodId ? 'บันทึกการแก้ไข' : '+ เพิ่มกิจกรรม'}</span>
-                      </>
-                    )}
+          {/* ─ List ─ */}
+          <div>
+            <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+                รายการกิจกรรมพิเศษ ({specialPeriods.length})
+              </h2>
+              {/* Tabs */}
+              <div className="flex w-full sm:w-auto overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] p-0.5 gap-0.5">
+                {([['all', 'ทั้งหมด', specialPeriods.length], ['recurring', 'รายสัปดาห์', recurringCount], ['oneTime', 'ครั้งเดียว', oneTimeCount]] as const).map(([tab, label, count]) => (
+                  <button key={tab} onClick={() => setActiveTab(tab)}
+                    className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${activeTab === tab ? 'bg-indigo-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                    {label} ({count})
                   </button>
-                </div>
-              </form>
+                ))}
+              </div>
             </div>
 
-            <div>
-              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-                <span>📋</span> รายการกิจกรรมพิเศษ ({specialPeriods.length})
-              </h3>
+            {filteredPeriods.length === 0 ? (
+              <div className="text-center py-12 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-[#2a2b2f]">
+                <CalendarClock size={40} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                <p className="text-gray-500 dark:text-gray-400 font-bold">
+                  {activeTab === 'all' ? 'ยังไม่มีกิจกรรม' : activeTab === 'oneTime' ? 'ยังไม่มีกิจกรรมครั้งเดียว' : 'ยังไม่มีกิจกรรมรายสัปดาห์'}
+                </p>
+                <p className="text-sm text-gray-400 mt-1">ใช้ฟอร์มด้านบนเพื่อเพิ่มกิจกรรม</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                {filteredPeriods.map(period => {
+                  const isOneTime = period.periodType === 'oneTime';
+                  const durationDisplay = period.durationHours
+                    ? `${period.durationHours} ชม.`
+                    : calcDurationHours(period.startTime, period.endTime) > 0
+                      ? `${calcDurationHours(period.startTime, period.endTime)} ชม.`
+                      : '';
 
-              {specialPeriods.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {specialPeriods.map(period => {
-                    const dayLabel = DAY_OPTIONS.find(d => d.value === (period.day || 'all'))?.label;
-                    const isAllDays = period.day === 'all' || !period.day;
+                  return (
+                    <div key={period.id}
+                      className={`relative bg-white dark:bg-[#1e1f21] border rounded-xl p-3.5 shadow-sm hover:shadow-md transition-all ${editingPeriodId === period.id ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}>
 
-                    // Dynamic time calculation
-                    let displayStartTime = period.startTime;
-                    let displayEndTime = period.endTime;
-
-                    if (period.linkedPeriodId) {
-                      const linkedPeriod = periodSettings.find(p => p.id === period.linkedPeriodId);
-                      if (linkedPeriod) {
-                        displayStartTime = linkedPeriod.startTime;
-                        displayEndTime = linkedPeriod.endTime;
-                      }
-                    }
-
-                    return (
-                      <div key={period.id} className={`bg-white dark:bg-[#1e1f21] border rounded-xl p-4 shadow-sm hover:shadow-md transition-all relative group ${editingPeriodId === period.id ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-bold text-lg text-gray-800 dark:text-white truncate pr-16">{period.title}</h4>
-                          <div className="absolute top-3 right-3 flex gap-1">
-                            <button
-                              onClick={() => handleEditClick(period)}
-                              className="text-gray-400 hover:text-indigo-500 transition-colors p-1.5 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
-                              title="แก้ไข"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSpecialPeriod(period.id)}
-                              className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
-                              title="ลบกิจกรรม"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isAllDays ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'}`}>
-                            {isAllDays ? '📅 ทุกวัน' : `📅 ${dayLabel}`}
+                      {/* Type badge */}
+                      <div className="flex items-start justify-between gap-3 mb-2.5">
+                        <div className="flex-1 min-w-0">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black mb-1 ${isOneTime ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'}`}>
+                            {isOneTime ? <><CalendarClock size={10} /> ครั้งเดียว</> : <><CalendarDays size={10} /> รายสัปดาห์</>}
                           </span>
-                          {period.isTeachingLoad && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                              📊 นับภาระงาน
-                            </span>
+                          <h3 className="font-bold text-[15px] leading-snug text-gray-800 dark:text-white line-clamp-2 pr-2">{period.title}</h3>
+                        </div>
+                        <div className="flex shrink-0 gap-0.5">
+                          <button onClick={() => handleEditClick(period)}
+                            className="text-gray-400 hover:text-indigo-500 p-1.5 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors" title="แก้ไข">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(period.id)}
+                            className="text-gray-400 hover:text-red-500 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="ลบ">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mb-2.5">
+                        <div className="flex items-center gap-1.5 min-w-0 text-sm text-gray-600 dark:text-gray-300">
+                          <Clock size={13} className="shrink-0" />
+                          <span className="font-bold truncate">{period.startTime}–{period.endTime} น.</span>
+                          {durationDisplay && <span className="text-[11px] text-gray-400">({durationDisplay})</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isOneTime ? (
+                            <><CalendarClock size={12} className="shrink-0" /><span className="truncate">{formatThaiDate(period.eventDate)}</span></>
+                          ) : (
+                            <><CalendarDays size={12} className="shrink-0" /><span>{DAY_LABEL[period.day || 'all'] || 'ทุกวัน'}</span></>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-10 bg-gray-50 dark:bg-[#202125] rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
-                  <p className="text-gray-500 dark:text-gray-400">ยังไม่มีกิจกรรมพิเศษที่ถูกเพิ่ม</p>
-                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">เริ่มเพิ่มกิจกรรมโดยใช้ฟอร์มด้านบน</p>
-                </div>
-              )}
-            </div>
+
+                      {/* Badges */}
+                      <div className="flex flex-wrap gap-1">
+                        {period.isTeachingLoad && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            <BarChart2 size={10} /> แสดงในเมนูเช็คชื่อ
+                          </span>
+                        )}
+                        {period.deductBehaviorDefault && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+                            <Shield size={10} /> หักคะแนนอัตโนมัติ
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

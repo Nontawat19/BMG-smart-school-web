@@ -1,7 +1,7 @@
 import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
+import { CourseInstance, MasterScheduleEntry, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
 import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
 
 const MySwal = withReactContent(Swal);
@@ -11,11 +11,13 @@ interface UseDragAndDropProps {
     setSchedule: React.Dispatch<React.SetStateAction<Schedule>>;
     availableCourseInstances: CourseInstance[];
     setAvailableCourseInstances: React.Dispatch<React.SetStateAction<CourseInstance[]>>;
-    schoolMasterSchedule: Record<string, any[]>;
-    setSchoolMasterSchedule: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
+    schoolMasterSchedule: Record<string, MasterScheduleEntry[]>;
+    setSchoolMasterSchedule: React.Dispatch<React.SetStateAction<Record<string, MasterScheduleEntry[]>>>;
+    takeSnapshot?: () => void;
     selectedTeacher: string;
     selectedTeacherData: Teacher | undefined;
     teacherMap: Record<string, Teacher>;
+    roomMap: Record<string, string>;
     selectedSemester: string;
     periodSettings: PeriodSetting[];
     specialPeriods: SpecialPeriod[];
@@ -34,12 +36,14 @@ export const useDragAndDrop = ({
     selectedTeacher,
     selectedTeacherData,
     teacherMap,
+    roomMap,
     selectedSemester,
     periodSettings,
     specialPeriods,
     dynamicUnavailableSlots,
     setActiveDragItem,
-    assignmentConstraints
+    assignmentConstraints,
+    takeSnapshot
 }: UseDragAndDropProps) => {
     const isSameAssignment = (a?: CourseInstance | null, b?: CourseInstance | null) => {
         if (!a || !b) return false;
@@ -61,6 +65,15 @@ export const useDragAndDrop = ({
         if (a.instanceId && b.instanceId && a.instanceId === b.instanceId) return true;
         // Fallback to data-based match (stable key) to ensure we find matches in the master schedule
         return getCourseMoveKey(teacherId, a, true) === getCourseMoveKey(teacherId, b, true);
+    };
+
+    const removeMatchingCourseFromSlot = (
+        slotCourses: CourseInstance[] | undefined,
+        teacherId: string | undefined,
+        targetItem: CourseInstance
+    ) => {
+        if (!slotCourses || slotCourses.length === 0) return [];
+        return slotCourses.filter(course => !isSameCourseInstance(teacherId, course, targetItem));
     };
 
     const shouldMoveAsDouble = (item: CourseInstance) => {
@@ -104,10 +117,13 @@ export const useDragAndDrop = ({
 
     const getTeachingRuns = () => {
         const orderedPeriods = periodSettings
-            .map((period, arrayIndex) => ({
-                index: typeof (period as any).index === 'number' ? (period as any).index : arrayIndex,
-                isTeachingPeriod: period.isTeachingPeriod
-            }))
+            .map((period, arrayIndex) => {
+                const indexedPeriod = period as PeriodSetting & { index?: number };
+                return {
+                    index: typeof indexedPeriod.index === 'number' ? indexedPeriod.index : arrayIndex,
+                    isTeachingPeriod: period.isTeachingPeriod
+                };
+            })
             .sort((a, b) => a.index - b.index);
 
         let currentRun: number[] = [];
@@ -179,7 +195,13 @@ export const useDragAndDrop = ({
             const classes = Array.isArray(conflict.item.classId)
                 ? conflict.item.classId.map(getClassDisplayName).join(', ')
                 : getClassDisplayName(conflict.item.classId as string);
-            const rooms = Array.isArray(conflict.item.room) ? conflict.item.room.filter(r => r && r !== 'all').join(', ') : '';
+            const roomIds = Array.isArray(conflict.item.room)
+                ? conflict.item.room
+                : [conflict.item.room].filter(Boolean);
+            const rooms = roomIds
+                .filter(roomId => roomId && roomId !== 'all')
+                .map(roomId => roomMap[String(roomId)] || String(roomId))
+                .join(', ');
             return escapeHtml(`${formatSlotToThai(conflict.slot)}: ${conflict.item.code || '-'} ${conflict.item.title || '-'} / ${classes || 'ไม่ระบุชั้น'} / ครู ${getTeacherName(conflict.teacherId)}${rooms ? ` / ห้อง ${rooms}` : ''}`);
         }).join('\n');
     };
@@ -266,20 +288,24 @@ export const useDragAndDrop = ({
     };
 
     const checkIfPlacementIsRelaxed = (item: CourseInstance, slot: string, isDoubleStart: boolean, isDoublePartner: boolean) => {
-        const itemTeacher = teacherMap[item.teacherId || selectedTeacher];
-        const check = checkConstraints(
-            item,
-            slot,
-            itemTeacher,
-            periodSettings,
-            specialPeriods,
-            isDoublePartner ? getConstraintMapForDoublePartner(item) : assignmentConstraints,
-            dynamicUnavailableSlots,
-            {},
-            isDoubleStart ? 2 : 1,
-            [item.instanceId]
-        );
-        return check.forbidden;
+        const allTeacherIds = item.teacherIds?.length ? item.teacherIds : [item.teacherId || selectedTeacher].filter(Boolean) as string[];
+        for (const tId of allTeacherIds) {
+            const itemTeacher = teacherMap[tId];
+            const check = checkConstraints(
+                item,
+                slot,
+                itemTeacher,
+                periodSettings,
+                specialPeriods,
+                isDoublePartner ? getConstraintMapForDoublePartner(item) : assignmentConstraints,
+                tId === selectedTeacher ? dynamicUnavailableSlots : (itemTeacher?.preferences?.unavailableSlots || []),
+                {},
+                isDoubleStart ? 2 : 1,
+                [item.instanceId]
+            );
+            if (check.forbidden) return true;
+        }
+        return false;
     };
 
     const handleDragStart = (event: DragStartEvent) => {
@@ -291,6 +317,7 @@ export const useDragAndDrop = ({
     };
 
     const handleDragEnd = async (event: DragEndEvent) => {
+        if (takeSnapshot) takeSnapshot();
         const { active, over } = event;
         setActiveDragItem(null);
 
@@ -298,8 +325,19 @@ export const useDragAndDrop = ({
 
         const activeId = String(active.id);
         let overId = over.data.current?.slotId || String(over.id);
+        const overIsForbidden = Boolean(over.data.current?.isDropForbidden);
+        const overForbiddenMessage = typeof over.data.current?.forbiddenMessage === 'string'
+            ? over.data.current.forbiddenMessage
+            : '';
 
-        console.log('[DragDrop] End:', { activeId, overId, actualOverId: over.id });
+        if (overIsForbidden) {
+            MySwal.fire({
+                icon: 'warning',
+                title: 'ไม่สามารถย้ายได้',
+                text: overForbiddenMessage || 'คาบนี้ไม่สามารถวางวิชาได้'
+            });
+            return;
+        }
 
         // Resolve card ID to slot ID
         if (!overId.includes('-') && !['course-bank', 'mon', 'tue', 'wed', 'thu', 'fri'].some(p => overId.startsWith(p))) {
@@ -323,7 +361,7 @@ export const useDragAndDrop = ({
                     const next = { ...prev };
                     pairedMove.forEach(move => {
                         if (!move.slot || !next[move.slot]) return;
-                        next[move.slot] = next[move.slot].filter(c => c.instanceId !== move.item.instanceId);
+                        next[move.slot] = removeMatchingCourseFromSlot(next[move.slot], selectedTeacher, move.item);
                         if (next[move.slot].length === 0) delete next[move.slot];
                     });
                     return next;
@@ -361,8 +399,13 @@ export const useDragAndDrop = ({
         const targetItemsInCurrentSchedule = schedule[overId] || [];
         const movingItems = isFromBank ? [{ slot: originalCellKey || '', item: activeItem }] : getPairedGridMove(activeItem, originalCellKey);
         const movingInstanceIds = new Set(movingItems.map(move => move.item.instanceId));
+        const isLockedUnavailableSlot = dynamicUnavailableSlots.includes(overId);
 
         // 1. Locked Checks
+        if (isLockedUnavailableSlot) {
+            MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางวิชาลงคาบว่างที่ล็อคไว้ได้' });
+            return;
+        }
         if (targetItemsInCurrentSchedule.some(c => c.locked && !movingInstanceIds.has(c.instanceId))) {
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
@@ -377,24 +420,33 @@ export const useDragAndDrop = ({
         const shouldUseDoubleTarget = shouldPlaceNextAsDouble(activeItem, overId, effectivePlacedCount, movingItems.length > 1);
 
         const checkSlotValidity = (slot: string, itemToCheck: CourseInstance, isPartner: boolean, duration = 1) => {
-            const check = checkConstraints(
-                itemToCheck,
-                slot,
-                selectedTeacherData,
-                periodSettings,
-                specialPeriods,
-                isPartner ? getConstraintMapForDoublePartner(itemToCheck) : assignmentConstraints,
-                dynamicUnavailableSlots,
-                schoolMasterSchedule,
-                duration,
-                Array.from(movingInstanceIds)
-            );
+            const allTeacherIds = itemToCheck.teacherIds?.length ? itemToCheck.teacherIds : [itemToCheck.teacherId || selectedTeacher].filter(Boolean) as string[];
             
-            if (check.forbidden) {
-                const globalConflicts = schoolMasterSchedule[slot] || [];
-                if (globalConflicts.length === 0) return false; // hard constraint
+            for (const tId of allTeacherIds) {
+                const tData = teacherMap[tId];
+                const check = checkConstraints(
+                    itemToCheck,
+                    slot,
+                    tData,
+                    periodSettings,
+                    specialPeriods,
+                    isPartner ? getConstraintMapForDoublePartner(itemToCheck) : assignmentConstraints,
+                    tId === selectedTeacher ? dynamicUnavailableSlots : (tData?.preferences?.unavailableSlots || []),
+                    schoolMasterSchedule,
+                    duration,
+                    Array.from(movingInstanceIds)
+                );
+                
+                if (check.forbidden) {
+                    const globalConflicts = schoolMasterSchedule[slot] || [];
+                    if (globalConflicts.length === 0) return false; // hard constraint
+                }
             }
             
+            if (dynamicUnavailableSlots.includes(slot)) {
+                return false;
+            }
+
             if ((schedule[slot] || []).some(c => c.locked && !movingInstanceIds.has(c.instanceId))) {
                 return false;
             }
@@ -434,6 +486,10 @@ export const useDragAndDrop = ({
         }
 
         // Lock checks for final targetSlots
+        if (targetSlots.some(slot => dynamicUnavailableSlots.includes(slot))) {
+            MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางวิชาลงคาบว่างที่ล็อคไว้ได้' });
+            return;
+        }
         if (targetSlots.some(slot => (schedule[slot] || []).some(c => c.locked && !movingInstanceIds.has(c.instanceId)))) {
             MySwal.fire({ icon: 'error', title: 'ไม่สามารถย้ายได้', text: 'ไม่สามารถวางทับคาบที่ถูกล็อคได้' });
             return;
@@ -445,26 +501,31 @@ export const useDragAndDrop = ({
             const itemToCheck = movingItems[i]?.item || activeItem;
             const isDoubleStartSlot = Boolean(partnerSlotId && slot === (forcedDoubleStartSlotId || overId));
             const isDoublePartnerSlot = Boolean(partnerSlotId && slot !== (forcedDoubleStartSlotId || overId));
-            const check = checkConstraints(
-                itemToCheck as CourseInstance,
-                slot, 
-                selectedTeacherData, 
-                periodSettings, 
-                specialPeriods, 
-                isDoublePartnerSlot ? getConstraintMapForDoublePartner(itemToCheck as CourseInstance) : assignmentConstraints, 
-                dynamicUnavailableSlots,
-                schoolMasterSchedule, // check against everyone
-                isDoubleStartSlot ? 2 : 1,
-                Array.from(movingInstanceIds)
-            );
             
-            if (check.forbidden) {
-                const globalConflicts = schoolMasterSchedule[slot] || [];
-                const hasHardConflict = globalConflicts.length === 0;
+            const allTeacherIds = itemToCheck.teacherIds?.length ? itemToCheck.teacherIds : [itemToCheck.teacherId || selectedTeacher].filter(Boolean) as string[];
+            for (const tId of allTeacherIds) {
+                const tData = teacherMap[tId];
+                const check = checkConstraints(
+                    itemToCheck as CourseInstance,
+                    slot, 
+                    tData, 
+                    periodSettings, 
+                    specialPeriods, 
+                    isDoublePartnerSlot ? getConstraintMapForDoublePartner(itemToCheck as CourseInstance) : assignmentConstraints, 
+                    tId === selectedTeacher ? dynamicUnavailableSlots : (tData?.preferences?.unavailableSlots || []),
+                    schoolMasterSchedule, // check against everyone
+                    isDoubleStartSlot ? 2 : 1,
+                    Array.from(movingInstanceIds)
+                );
                 
-                if (hasHardConflict) {
-                    MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: check.message });
-                    return;
+                if (check.forbidden) {
+                    const globalConflicts = schoolMasterSchedule[slot] || [];
+                    const hasHardConflict = globalConflicts.length === 0;
+                    
+                    if (hasHardConflict) {
+                        MySwal.fire({ icon: 'warning', title: 'ไม่สามารถย้ายได้', text: `[ครู ${getTeacherName(tId)}] ${check.message}` });
+                        return;
+                    }
                 }
             }
         }
@@ -514,12 +575,12 @@ export const useDragAndDrop = ({
                 if (!gItem.course) return;
 
                 const isSameTeacher = gItem.teacherId === activeItem.teacherId;
-                const draggedClasses = Array.isArray(activeItem.classId) ? activeItem.classId : [activeItem.classId];
+                const draggedClasses = (Array.isArray(activeItem.classId) ? activeItem.classId : [activeItem.classId]).filter(Boolean) as string[];
                 const itemClasses = Array.isArray(gItem.classId) ? gItem.classId : [gItem.classId];
                 const isSameClass = draggedClasses.some(c => itemClasses.includes(c));
-                
-                const draggedRooms = Array.isArray(activeItem.room) ? activeItem.room : [activeItem.room];
-                const itemRooms = Array.isArray(gItem.course?.room) ? gItem.course?.room : [gItem.course?.room];
+
+                const draggedRooms = (Array.isArray(activeItem.room) ? activeItem.room : [activeItem.room]).filter(Boolean) as string[];
+                const itemRooms = gItem.course?.room || [];
                 const isSameRoom = draggedRooms.some(r => itemRooms.includes(r)) && draggedRooms.length > 0;
 
                 const isSelf = gItem.teacherId === activeItem.teacherId &&
@@ -605,33 +666,40 @@ export const useDragAndDrop = ({
         const newSchoolMaster = { ...schoolMasterSchedule };
         const newLocalSchedule = { ...schedule };
 
-        const updateGlobal = (teacherId: string, fromSlot: string | null, toSlot: string | null, item: CourseInstance) => {
-            if (fromSlot && newSchoolMaster[fromSlot]) {
-                newSchoolMaster[fromSlot] = newSchoolMaster[fromSlot].filter(
-                    g => !(g.teacherId === teacherId && isSameCourseInstance(teacherId, g.course as CourseInstance, item))
-                );
-                if (newSchoolMaster[fromSlot].length === 0) delete newSchoolMaster[fromSlot];
-            }
-            if (toSlot) {
-                if (!newSchoolMaster[toSlot]) newSchoolMaster[toSlot] = [];
-                newSchoolMaster[toSlot].push({
-                    teacherId,
-                    teacherIds: item.teacherIds,
-                    classId: item.classId,
-                    room: item.room || ['all'],
-                    courseId: item.id,
-                    groupNumber: item.groupNumber || 1,
-                    course: item
-                });
-            }
+        const updateGlobalForAllTeachers = (fromSlot: string | null, toSlot: string | null, item: CourseInstance) => {
+            const allTeacherIds = item.teacherIds?.length ? item.teacherIds : [item.teacherId || selectedTeacher].filter(Boolean) as string[];
+            allTeacherIds.forEach(tId => {
+                if (fromSlot && newSchoolMaster[fromSlot]) {
+                    newSchoolMaster[fromSlot] = newSchoolMaster[fromSlot].filter(g => {
+                        if (g.teacherId !== tId) return true;
+                        const courseIdMatch = g.courseId === item.id || g.course?.id === item.id;
+                        const groupMatch = Number(g.groupNumber || 1) === Number(item.groupNumber || 1);
+                        return !(courseIdMatch && groupMatch);
+                    });
+                    if (newSchoolMaster[fromSlot].length === 0) delete newSchoolMaster[fromSlot];
+                }
+                if (toSlot) {
+                    if (!newSchoolMaster[toSlot]) newSchoolMaster[toSlot] = [];
+                    newSchoolMaster[toSlot].push({
+                        teacherId: tId,
+                        teacherIds: item.teacherIds,
+                        classId: item.classId ?? '',
+                        room: item.room || ['all'],
+                        courseId: item.id,
+                        groupNumber: item.groupNumber || 1,
+                        course: item
+                    });
+                }
+            });
         };
 
         // 1. Remove active item(s)
         if (originalCellKey) {
             movingItems.forEach(move => {
-                updateGlobal(move.item.teacherId!, move.slot, null, move.item);
-                if (move.item.teacherId === selectedTeacher && newLocalSchedule[move.slot]) {
-                    newLocalSchedule[move.slot] = newLocalSchedule[move.slot].filter(c => c.instanceId !== move.item.instanceId);
+                updateGlobalForAllTeachers(move.slot, null, move.item);
+                const allTeacherIds = move.item.teacherIds?.length ? move.item.teacherIds : [move.item.teacherId || selectedTeacher].filter(Boolean) as string[];
+                if (allTeacherIds.includes(selectedTeacher) && newLocalSchedule[move.slot]) {
+                    newLocalSchedule[move.slot] = removeMatchingCourseFromSlot(newLocalSchedule[move.slot], selectedTeacher, move.item);
                     if (newLocalSchedule[move.slot].length === 0) delete newLocalSchedule[move.slot];
                 }
             });
@@ -639,7 +707,9 @@ export const useDragAndDrop = ({
 
         targetSlots.forEach(slot => {
             if (newLocalSchedule[slot]) {
-                newLocalSchedule[slot] = newLocalSchedule[slot].filter(c => !movingInstanceIds.has(c.instanceId));
+                newLocalSchedule[slot] = newLocalSchedule[slot].filter(course =>
+                    !movingItems.some(move => isSameCourseInstance(selectedTeacher, course, move.item))
+                );
                 if (newLocalSchedule[slot].length === 0) delete newLocalSchedule[slot];
             }
         });
@@ -656,13 +726,15 @@ export const useDragAndDrop = ({
                 delete updatedItem.scheduleWarning;
             }
 
-            updateGlobal(move.teacherId, move.fromSlot, move.toSlot, updatedItem);
-            if (move.teacherId === selectedTeacher) {
+            updateGlobalForAllTeachers(move.fromSlot, move.toSlot, updatedItem);
+            const allTeacherIds = updatedItem.teacherIds?.length ? updatedItem.teacherIds : [updatedItem.teacherId || selectedTeacher].filter(Boolean) as string[];
+            if (allTeacherIds.includes(selectedTeacher)) {
                 if (newLocalSchedule[move.fromSlot]) {
-                    newLocalSchedule[move.fromSlot] = newLocalSchedule[move.fromSlot].filter(c => !isSameCourseInstance(move.teacherId, c, move.item));
+                    newLocalSchedule[move.fromSlot] = removeMatchingCourseFromSlot(newLocalSchedule[move.fromSlot], selectedTeacher, move.item);
                     if (newLocalSchedule[move.fromSlot].length === 0) delete newLocalSchedule[move.fromSlot];
                 }
                 if (!newLocalSchedule[move.toSlot]) newLocalSchedule[move.toSlot] = [];
+                newLocalSchedule[move.toSlot] = removeMatchingCourseFromSlot(newLocalSchedule[move.toSlot], selectedTeacher, updatedItem);
                 newLocalSchedule[move.toSlot].push({ ...updatedItem, locked: false });
             }
         });
@@ -683,9 +755,11 @@ export const useDragAndDrop = ({
                 delete updatedItem.scheduleWarning;
             }
 
-            updateGlobal(updatedItem.teacherId!, null, slot, updatedItem);
-            if (updatedItem.teacherId === selectedTeacher) {
+            updateGlobalForAllTeachers(null, slot, updatedItem);
+            const allTeacherIds = updatedItem.teacherIds?.length ? updatedItem.teacherIds : [updatedItem.teacherId || selectedTeacher].filter(Boolean) as string[];
+            if (allTeacherIds.includes(selectedTeacher)) {
                 if (!newLocalSchedule[slot]) newLocalSchedule[slot] = [];
+                newLocalSchedule[slot] = removeMatchingCourseFromSlot(newLocalSchedule[slot], selectedTeacher, updatedItem);
                 newLocalSchedule[slot].push({ ...updatedItem, locked: false });
             }
         });
@@ -723,6 +797,7 @@ export const useDragAndDrop = ({
 
 
     const toggleLock = (slotId: string, instanceId: string) => {
+        if (takeSnapshot) takeSnapshot();
         setSchedule((prev: Schedule) => {
             const courses = prev[slotId];
             if (!courses || courses.length === 0) return prev;
@@ -735,31 +810,51 @@ export const useDragAndDrop = ({
     };
 
     const handleRemoveCourse = (slotId: string, instanceId: string) => {
+        if (takeSnapshot) takeSnapshot();
+        const courses = schedule[slotId];
+        if (!courses || courses.length === 0) return;
+
+        const removedCourse = courses.find(c => c.instanceId === instanceId);
+        if (!removedCourse) return;
+
+        const pairedMove = getPairedGridMove(removedCourse, slotId);
+
         setSchedule((prev: Schedule) => {
-            const courses = prev[slotId];
-            if (!courses || courses.length === 0) return prev;
-
-            const removedCourse = courses.find(c => c.instanceId === instanceId);
-            if (removedCourse?.locked) {
-                MySwal.fire({ icon: 'error', title: 'ไม่สามารถลบได้', text: 'กรุณาปลดล็อควิชาก่อนลบ' });
-                return prev;
-            }
-
-            const updatedCourses = courses.filter(c => c.instanceId !== instanceId);
-
-            if (removedCourse) {
-                setAvailableCourseInstances((prevBank: CourseInstance[]) => [...prevBank, { ...removedCourse, locked: false }]);
-            }
-
             const next = { ...prev };
-            if (updatedCourses.length === 0) delete next[slotId];
-            else next[slotId] = updatedCourses;
+            pairedMove.forEach(move => {
+                if (!move.slot || !next[move.slot]) return;
+                next[move.slot] = removeMatchingCourseFromSlot(next[move.slot], selectedTeacher, move.item);
+                if (next[move.slot].length === 0) delete next[move.slot];
+            });
             return next;
+        });
+
+        setAvailableCourseInstances((prevBank: CourseInstance[]) => [
+            ...prevBank, 
+            ...pairedMove.map(move => ({ ...move.item, locked: false }))
+        ]);
+
+        setSchoolMasterSchedule((prevMaster: Record<string, MasterScheduleEntry[]>) => {
+            const nextMaster = { ...prevMaster };
+            pairedMove.forEach(move => {
+                if (move.slot && nextMaster[move.slot]) {
+                    const allTeacherIds = move.item.teacherIds?.length ? move.item.teacherIds : [move.item.teacherId || selectedTeacher].filter(Boolean);
+                    nextMaster[move.slot] = nextMaster[move.slot].filter((g: MasterScheduleEntry) => {
+                        if (!allTeacherIds.includes(g.teacherId)) return true;
+                        const isSameCourseId = g.course?.id === move.item.id || g.courseId === move.item.id;
+                        const isSameGroup = Number(g.groupNumber || 1) === Number(move.item.groupNumber || 1);
+                        return !(isSameCourseId && isSameGroup);
+                    });
+                    if (nextMaster[move.slot].length === 0) delete nextMaster[move.slot];
+                }
+            });
+            return nextMaster;
         });
     };
 
     const handleManualAdd = async (slotId: string, courseCode: string) => {
         if (!courseCode) return;
+        if (takeSnapshot) takeSnapshot();
 
         // Find an instance from the bank
         const activeItem = availableCourseInstances.find(c => c.code === courseCode);
@@ -929,7 +1024,7 @@ export const useDragAndDrop = ({
             next[primarySlotId].push({
                 teacherId: primaryItem.teacherId || selectedTeacher,
                 teacherIds: primaryItem.teacherIds,
-                classId: primaryItem.classId,
+                classId: primaryItem.classId ?? '',
                 room: primaryItem.room || ['all'],
                 courseId: primaryItem.id,
                 groupNumber: primaryItem.groupNumber || 1,
@@ -941,7 +1036,7 @@ export const useDragAndDrop = ({
                 next[partnerSlotId].push({
                     teacherId: partnerItem.teacherId || selectedTeacher,
                     teacherIds: partnerItem.teacherIds,
-                    classId: partnerItem.classId,
+                    classId: partnerItem.classId ?? '',
                     room: partnerItem.room || ['all'],
                     courseId: partnerItem.id,
                     groupNumber: partnerItem.groupNumber || 1,

@@ -1290,7 +1290,14 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
                           </td>
                           <td className="px-6 py-3 text-xs text-gray-500 dark:text-gray-400 font-semibold truncate max-w-xs">
                             {rec.lateMinutes ? (
-                              <span className="text-amber-600 dark:text-amber-400 font-bold">สาย {rec.lateMinutes} นาที</span>
+                              <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                {(() => {
+                                  const total = parseInt(rec.lateMinutes);
+                                  const h = Math.floor(total / 60);
+                                  const m = total % 60;
+                                  return h > 0 ? `สาย ${h} ชั่วโมง ${m} นาที` : `สาย ${m} นาที`;
+                                })()}
+                              </span>
                             ) : (
                               rec.note || (rec.status === "Normal" ? "ปฏิบัติราชการปกติ" : "-")
                             )}

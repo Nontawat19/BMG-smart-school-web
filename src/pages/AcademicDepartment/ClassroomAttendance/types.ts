@@ -13,6 +13,7 @@ export interface Student {
     nickname?: string;
     status?: string;
     studentStatus?: string;
+    behaviorScore?: number;
 }
 
 export interface AttendanceRecord {

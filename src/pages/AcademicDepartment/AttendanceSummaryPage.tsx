@@ -664,52 +664,47 @@ const AttendanceSummaryPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="min-h-screen bg-[#f8fafc] dark:bg-[#131417] transition-colors duration-500">
-                {/* Simplified & Premium Header */}
-                <div className="bg-white dark:bg-[#1a1b1e] border-b border-gray-200 dark:border-gray-800/50 py-8 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
-
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-baseline gap-4">
-                            <div className="space-y-2">
-                                <BackButton to="/academic/hub/attendance" className="mb-2" />
-                                <div className="flex items-center gap-4 mt-2">
-                                    <div className="w-12 h-12 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                                        <BarChart3 size={24} />
-                                    </div>
-                                    <div>
-                                        <h1 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white tracking-tight">
-                                            สรุปสถิติการมาเรียน
-                                        </h1>
-                                        <p className="text-gray-500 dark:text-gray-400 text-xs font-medium max-w-xl">
-                                            รายงานสถิติแยกตามรายวิชาแบบละเอียด พร้อมการวิเคราะห์ มส. อัตโนมัติ
-                                        </p>
-                                    </div>
+                {/* Header */}
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
+                        <div className="space-y-1 text-left">
+                            <div className="flex items-center gap-3">
+                                <BackButton to="/academic/hub/attendance" />
+                                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                                    <BarChart3 className="text-indigo-600 dark:text-indigo-400" size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                                        สรุปสถิติการมาเรียน
+                                    </h1>
+                                    <p className="text-gray-500 dark:text-gray-400 text-xs font-bold pt-0.5">
+                                        รายงานสถิติแยกตามรายวิชาแบบละเอียด พร้อมการวิเคราะห์ มส. อัตโนมัติ
+                                    </p>
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-3 w-full md:w-auto">
-                                <div className="flex flex-1 md:flex-none bg-gray-100/50 dark:bg-white/5 p-1 px-3 rounded-xl border border-gray-200 dark:border-gray-800 backdrop-blur-sm shadow-inner items-center">
-                                    <div className="flex items-baseline gap-1 py-1">
-                                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">ปี</span>
-                                        <span className="text-[12px] font-black text-gray-900 dark:text-white underline decoration-indigo-500/50 decoration-2 underline-offset-4">
-                                            {academicYear || 'กำลังโหลด...'}
-                                        </span>
-                                    </div>
-                                    <div className="w-[1.5px] h-3 bg-gray-200 dark:bg-gray-700 mx-4 my-auto"></div>
-                                    <select
-                                        className="bg-transparent border-none text-[12px] font-black focus:ring-0 dark:text-white px-1 py-0.5 cursor-pointer outline-none appearance-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                                        value={semester}
-                                        onChange={(e) => setSemester(e.target.value)}
-                                    >
-                                        <option value="1" className="dark:bg-[#1a1b1e]">เทอม 1</option>
-                                        <option value="2" className="dark:bg-[#1a1b1e]">เทอม 2</option>
-                                    </select>
+                        </div>
+                        <div className="flex items-center gap-3 w-full md:w-auto">
+                            <div className="flex flex-1 md:flex-none bg-gray-50 dark:bg-white/5 p-1 rounded-xl border border-gray-200 dark:border-gray-800 items-center px-4 shadow-inner">
+                                <div className="flex items-baseline gap-1 py-1">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">ปี</span>
+                                    <span className="text-[13px] font-black text-gray-900 dark:text-white">
+                                        {academicYear || '...'}
+                                    </span>
                                 </div>
-                                <button onClick={handleExport} disabled={!selectedCourse || studentSummary.length === 0} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-slate-900 dark:bg-indigo-500 dark:hover:bg-white dark:hover:text-black text-white px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-500/10 transition-all font-black text-xs group">
-                                    <Download size={14} className="group-hover:bounce" />
-                                    <span>EXCEL</span>
-                                </button>
+                                <div className="w-[1.5px] h-3 bg-gray-200 dark:bg-gray-700 mx-3"></div>
+                                <select
+                                    className="bg-transparent border-none text-[12px] font-black focus:ring-0 dark:text-white px-1 py-0.5 cursor-pointer outline-none appearance-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                    value={semester}
+                                    onChange={(e) => setSemester(e.target.value)}
+                                >
+                                    <option value="1" className="dark:bg-[#1a1b1e]">เทอม 1</option>
+                                    <option value="2" className="dark:bg-[#1a1b1e]">เทอม 2</option>
+                                </select>
                             </div>
+                            <button onClick={handleExport} disabled={!selectedCourse || studentSummary.length === 0} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-slate-900 dark:bg-indigo-500 dark:hover:bg-white dark:hover:text-black text-white px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-500/10 transition-all font-black text-xs group">
+                                <Download size={14} className="group-hover:bounce" />
+                                <span>EXCEL</span>
+                            </button>
                         </div>
                     </div>
                 </div>

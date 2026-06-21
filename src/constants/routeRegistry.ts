@@ -109,6 +109,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
 
   // ──────────────────────────────── วิชาการ - ตารางสอน ────────────────────────────────
   { key: 'special_periods',       path: '/academic/special-periods',        label: 'จัดการคาบเรียนพิเศษ',        category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'special_period_reports', path: '/academic/special-period-reports', label: 'รายงานกิจกรรมพิเศษ',          category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'course_assignment',     path: '/academic/course-assignment',      label: 'ลงทะเบียนวิชา (ครู/สถานที่)',category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'course_assignment_2',   path: '/academic/course-assignment-2',    label: 'มอบหมายรายวิชา 2',           category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'period_constraints',    path: '/academic/period-constraints',     label: 'ตั้งค่าคาบคู่/เดี่ยว',      category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
@@ -170,6 +171,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'physical_rooms',           path: '/academic/physical-rooms',        label: 'ข้อมูลอาคาร/สถานที่',     category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'line_oa_settings',         path: '/academic/settings/line-oa',      label: 'จัดการ LINE OA',          category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'telegram_settings',        path: '/academic/settings/telegram',     label: 'จัดการ Telegram',         category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'school_permission_mgmt',   path: '/academic/permission-management', label: 'จัดการสิทธิ์การเข้าถึง (โรงเรียน)', category: 'วิชาการ - ตั้งค่า', defaultRoles: ADMIN_ACCESS },
 
   // ──────────────────────────────── ผู้ดูแลระบบ ────────────────────────────────
   { key: 'owner_schools',             path: '/owner/schools',                    label: 'จัดการข้อมูลโรงเรียน',     category: 'ผู้ดูแลระบบ', defaultRoles: OWNER_ONLY },

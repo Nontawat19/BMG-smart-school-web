@@ -1,34 +1,20 @@
+import type { Dispatch, SetStateAction } from 'react';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { collection, doc, getDocs, writeBatch, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { Course, CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, SchedulingMetrics, SchoolSettings, AssignmentConstraintMap } from '../types';
 import { useAutoScheduleAction } from '../actions/useAutoScheduleAction';
+import { getScheduleDocId, matchesScheduleTeacher, matchesScheduleTerm } from '../scheduleSharedUtils';
+import { getActiveSchedulingLock } from '../scheduleRunLock';
 
 const MySwal = withReactContent(Swal);
 
-const getScheduleDocId = (teacherId: string, academicYear: string, semester: string) => {
-    return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
-};
-
-const resolveScheduleTeacherId = (
-    scheduleKey: string,
-    storedTeacherId: string | undefined,
-    knownTeacherIds: string[]
-) => {
-    if (storedTeacherId && knownTeacherIds.includes(storedTeacherId)) return storedTeacherId;
-    const byPattern = knownTeacherIds.find(tId =>
-        scheduleKey === tId ||
-        scheduleKey.startsWith(`${tId}__`) ||
-        scheduleKey.startsWith(`${tId}_`)
-    );
-    return byPattern || storedTeacherId || scheduleKey.split('__')[0] || scheduleKey.split('_')[0];
-};
-
-const hasScheduleEntries = (scheduleData: any) => {
-    const entries = scheduleData?.schedule || scheduleData;
+const hasScheduleEntries = (scheduleData: unknown) => {
+    const data = scheduleData as Record<string, unknown> | undefined;
+    const entries = (data?.schedule as Record<string, unknown> | undefined) || data;
     return Object.values(entries || {}).some(
-        (courses: any) => Array.isArray(courses) && courses.some((c: any) => c != null)
+        (courses: unknown) => Array.isArray(courses) && courses.some((c: unknown) => c != null)
     );
 };
 
@@ -48,6 +34,8 @@ interface UseScheduleActionsProps {
     periodSettings: PeriodSetting[];
     specialPeriods: SpecialPeriod[];
     dynamicUnavailableSlots: string[];
+    setDynamicUnavailableSlots?: Dispatch<SetStateAction<string[]>>;
+    setLocalUnavailableSlotsMap?: Dispatch<SetStateAction<Record<string, string[]>>>;
     fetchData: (schoolId: string) => Promise<void>;
     loadTeacherMasterSchedule: () => Promise<void>;
     schoolSettings: SchoolSettings;
@@ -71,6 +59,8 @@ export const useScheduleActions = ({
     periodSettings,
     specialPeriods,
     dynamicUnavailableSlots,
+    setDynamicUnavailableSlots,
+    setLocalUnavailableSlotsMap,
     fetchData,
     loadTeacherMasterSchedule,
     schoolSettings,
@@ -78,18 +68,40 @@ export const useScheduleActions = ({
     assignmentConstraints
 }: UseScheduleActionsProps) => {
 
+const getFirebaseErrorMessage = (error: unknown): string => {
+    const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    if (msg.includes('permission') || msg.includes('unauthorized')) return 'ไม่มีสิทธิ์เข้าถึงข้อมูล กรุณาตรวจสอบการเข้าสู่ระบบ';
+    if (msg.includes('network') || msg.includes('unavailable')) return 'เกิดปัญหาการเชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อ';
+    if (msg.includes('quota')) return 'เกินโควต้าการใช้งาน กรุณาลองใหม่ภายหลัง';
+    return error instanceof Error ? error.message : 'ข้อผิดพลาดที่ไม่รู้จัก';
+};
+
+    const ensureScheduleNotLocked = async () => {
+        if (!schoolId) return true;
+        const activeLock = await getActiveSchedulingLock(schoolId);
+        if (!activeLock) return true;
+
+        MySwal.fire({
+            icon: 'warning',
+            title: 'ระบบกำลังจัดตาราง',
+            text: 'มีการจัดตารางสอนอัตโนมัติอยู่ในขณะนี้ กรุณารอให้เสร็จก่อนแล้วค่อยบันทึกหรือแก้ไขอีกครั้ง'
+        });
+        return false;
+    };
+
     const handleSaveSchedule = async () => {
         if (!selectedTeacher || !schoolId) {
             MySwal.fire({ icon: 'warning', title: 'ข้อมูลไม่ครบถ้วน', text: 'กรุณาเลือกครูผู้สอนก่อนบันทึก' });
             return;
         }
+        if (!(await ensureScheduleNotLocked())) return;
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
 
             // 1. Prepare the consolidated schedule to save
             // We save the entire schedule in one document per teacher to ensure consistency and avoid duplication.
-            const scheduleToSave: Record<string, any> = {};
+            const scheduleToSave: Record<string, Omit<CourseInstance, 'instanceId' | 'className'>[]> = {};
             
             Object.entries(schedule).forEach(([slotId, courses]) => {
                 if (courses && courses.length > 0) {
@@ -127,17 +139,12 @@ export const useScheduleActions = ({
 
             const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
             const existingSchedules = await getDocs(schedulesRef);
+            const knownTeacherIds = teachers.map(t => t.id);
             existingSchedules.docs.forEach(scheduleDoc => {
                 if (scheduleDoc.id === scheduleDocId) return;
                 const data = scheduleDoc.data();
-                const docTeacherId = resolveScheduleTeacherId(scheduleDoc.id, data.teacherId, teachers.map(t => t.id));
-                if (docTeacherId !== selectedTeacher) return;
-
-                const dataYear = String(data.academicYear || "");
-                const dataSemester = String(data.semester || "");
-                const yearMatches = !selectedYear || !dataYear || dataYear === selectedYear;
-                const semesterMatches = !dataSemester || dataSemester === selectedSemester || dataSemester.startsWith(selectedSemester + '/') || selectedSemester.startsWith(dataSemester + '/');
-                if (!yearMatches || !semesterMatches) return;
+                if (!matchesScheduleTeacher(scheduleDoc.id, data.teacherId, knownTeacherIds, selectedTeacher)) return;
+                if (!matchesScheduleTerm(data, selectedYear, selectedSemester)) return;
 
                 batch.delete(scheduleDoc.ref);
             });
@@ -157,7 +164,7 @@ export const useScheduleActions = ({
             await fetchData(schoolId);
         } catch (error) {
             console.error("Error saving schedule: ", error);
-            MySwal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'เกิดข้อผิดพลาดในการบันทึกตารางสอน' });
+            MySwal.fire({ icon: 'error', title: 'บันทึกไม่สำเร็จ', text: getFirebaseErrorMessage(error) });
         } finally {
             setIsSaving(false);
         }
@@ -181,18 +188,20 @@ export const useScheduleActions = ({
         });
 
         if (result.isConfirmed) {
+            if (!(await ensureScheduleNotLocked())) return;
             setIsSaving(true);
             try {
                 const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
-                const q = query(schedulesRef, where('teacherId', '==', selectedTeacher));
-                const snapshot = await getDocs(q);
-                
+                const snapshot = await getDocs(schedulesRef);
+                const knownTeacherIds = teachers.map(t => t.id);
+
                 const deletePromises = snapshot.docs
-                    .filter(doc => {
-                        const data = doc.data();
-                        return String(data.academicYear) === selectedYear && String(data.semester) === selectedSemester;
+                    .filter(scheduleDoc => {
+                        const data = scheduleDoc.data();
+                        return matchesScheduleTeacher(scheduleDoc.id, data.teacherId, knownTeacherIds, selectedTeacher) &&
+                            matchesScheduleTerm(data, selectedYear, selectedSemester);
                     })
-                    .map(doc => deleteDoc(doc.ref));
+                    .map(scheduleDoc => deleteDoc(scheduleDoc.ref));
 
                 if (deletePromises.length > 0) {
                     await Promise.all(deletePromises);
@@ -201,6 +210,17 @@ export const useScheduleActions = ({
                     const scheduleRef = doc(db, "school-settings", schoolId, "schedules", scheduleDocId);
                     await deleteDoc(scheduleRef);
                 }
+
+                // Also clear any "locked free" (ว่าง) period markers for this teacher —
+                // otherwise those cells stay stuck/locked even after the schedule is wiped.
+                const teacherRef = doc(db, 'school-settings', schoolId, 'teachers', selectedTeacher);
+                await writeBatch(db).set(teacherRef, { preferences: { unavailableSlots: [] } }, { merge: true }).commit();
+                setDynamicUnavailableSlots?.([]);
+                setLocalUnavailableSlotsMap?.(prev => {
+                    const next = { ...prev };
+                    delete next[selectedTeacher];
+                    return next;
+                });
 
                 setSchedule({});
                 await fetchData(schoolId);
@@ -212,7 +232,7 @@ export const useScheduleActions = ({
                 );
             } catch (error) {
                 console.error("Error clearing teacher schedule:", error);
-                MySwal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถล้างตารางสอนได้' });
+                MySwal.fire({ icon: 'error', title: 'ล้างตารางไม่สำเร็จ', text: getFirebaseErrorMessage(error) });
             } finally {
                 setIsSaving(false);
             }
@@ -254,18 +274,12 @@ export const useScheduleActions = ({
 
         const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
         const snapshot = await getDocs(schedulesRef);
+        const knownTeacherIds = teachers.map(t => t.id);
 
         return snapshot.docs.some(scheduleDoc => {
             const data = scheduleDoc.data();
-            const docTeacherId = resolveScheduleTeacherId(scheduleDoc.id, data.teacherId, teachers.map(t => t.id));
-            if (teacherId && docTeacherId !== teacherId) return false;
-
-            const dataYear = String(data.academicYear || "");
-            const dataSemester = String(data.semester || "");
-            const yearMatches = !selectedYear || !dataYear || dataYear === selectedYear;
-            const semesterMatches = !dataSemester || dataSemester === selectedSemester || dataSemester.startsWith(selectedSemester + '/') || selectedSemester.startsWith(dataSemester + '/');
-
-            return yearMatches && semesterMatches && hasScheduleEntries(data);
+            if (teacherId && !matchesScheduleTeacher(scheduleDoc.id, data.teacherId, knownTeacherIds, teacherId)) return false;
+            return matchesScheduleTerm(data, selectedYear, selectedSemester) && hasScheduleEntries(data);
         });
     };
 
@@ -337,15 +351,25 @@ export const useScheduleActions = ({
                     }
                 });
 
+                // Also clear every teacher's "locked free" (ว่าง) period markers —
+                // otherwise those cells stay stuck/locked even after the schedule is wiped.
+                teachers.forEach(teacher => {
+                    if (!teacher.id) return;
+                    const teacherRef = doc(db, 'school-settings', schoolId, 'teachers', teacher.id);
+                    batch.set(teacherRef, { preferences: { unavailableSlots: [] } }, { merge: true });
+                });
+
                 await batch.commit();
 
                 MySwal.fire('สำเร็จ', 'ล้างข้อมูลเรียบร้อยแล้ว', 'success');
                 setSchedule({});
+                setDynamicUnavailableSlots?.([]);
+                setLocalUnavailableSlotsMap?.({});
                 await fetchData(schoolId);
 
             } catch (error) {
                 console.error(error);
-                MySwal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถล้างข้อมูลตารางสอนทั้งหมดได้', 'error');
+                MySwal.fire({ icon: 'error', title: 'ล้างตารางไม่สำเร็จ', text: getFirebaseErrorMessage(error) });
             } finally {
                 setIsSaving(false);
             }

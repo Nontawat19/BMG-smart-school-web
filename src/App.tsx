@@ -4,166 +4,159 @@ import { RootState } from "./store";
 import { useInitializeStore } from "@/hooks/useInitializeStore";
 import LoadingScreen from "@/components/LoadingScreen";
 import PullToRefresh from "@/components/PullToRefresh";
-import LoginPage from "./pages/Auth/LoginPage";
-import RegisterPage from "./pages/Auth/RegisterPage";
-import ForgotPasswordPage from "./pages/Auth/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/Auth/ResetPasswordPage";
-import HomePage from "./pages/Home/HomePage";
-import NotificationsPage from "./pages/Notifications/NotificationsPage";
-import ProfilePage from "./pages/Profile/ProfilePage";
-import LeaveRequestPage from "./pages/Attendance/LeaveRequestPage"; // 📌 เพิ่มการ import หน้าใบลากิจ/ลาป่วย
-import LeaveHistoryPage from "./pages/Attendance/LeaveHistoryPage"; // 📌 เพิ่มการ import หน้าประวัติการลา
-import CheckinOutPage from "./pages/Attendance/CheckinOutPage";
-import FlagCeremonyPage from "./pages/Attendance/FlagCeremonyPage"; // 📌 เพิ่มการ import หน้าเช็คชื่อกิจกรรมเข้าแถว
+
 import ProtectedRoute from "./components/ProtectedRoute";
 import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from "@/constants/permissions";
 
-
-import UserManagementPage from "./pages/Administrator/UserManagementPage";
-
 import PublicRoute from "./components/PublicRoute";
 
-
-
 // Import Student Pages
-import AddStudentPage from "./pages/Students/AddStudentPage";
-import QuickAddStudentPage from "./pages/Students/QuickAddStudentPage";
-import StudentListPage from "./pages/Students/StudentListPage"; 
-import EditStudentPage from "./pages/Students/EditStudentPage"; 
-import ViewStudentPage from "./pages/Students/ViewStudentPage"; 
-import MapRfidPage from "./pages/Students/MapRfidPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนบัตร RFID
-import BehaviorScorePage from "./pages/Students/BehaviorScorePage";
 
-
-import BulkUploadStudentImagesPage from "./pages/Administrator/BulkUploadStudentImagesPage"; // 📌 หน้าอัปโหลดรูปนักเรียนจำนวนมาก
-import ImportStudentDMCPage from "./pages/Administrator/ImportStudentDMCPage"; // 📌 หน้า Import DMC
-
-import StudentSupportPage from "./pages/StudentSupport/StudentSupportPage";
-import SDQPage from "./pages/StudentSupport/SDQPage"; // 📌 เพิ่มหน้า SDQ
-import SDQStudentPage from "./pages/StudentSupport/SDQStudentPage";
-import SDQTeacherPage from "./pages/StudentSupport/SDQTeacherPage";
-import SDQParentPage from "./pages/StudentSupport/SDQParentPage";
-import ScreeningHub from "./pages/StudentSupport/Screening/ScreeningHub";
-import ScreeningTeacherPage from "./pages/StudentSupport/Screening/ScreeningTeacherPage";
-import ScreeningStudentPage from "./pages/StudentSupport/Screening/ScreeningStudentPage";
-import ScreeningParentPage from "./pages/StudentSupport/Screening/ScreeningParentPage";
-import HomeVisitDashboard from "./pages/StudentSupport/HomeVisit/HomeVisitDashboard";
-import NewHomeVisit from "./pages/StudentSupport/HomeVisit/NewHomeVisit";
-import HomeVisitSummary from "./pages/StudentSupport/HomeVisit/HomeVisitSummary";
-import HomeVisitSummaryHub from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryHub";
-import HomeVisitSummaryClassroom from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryClassroom";
-import HomeVisitSummaryAll from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryAll";
-import HomeVisitSummaryOBEC from "./pages/StudentSupport/HomeVisit/HomeVisitSummaryOBEC";
-import HomeVisitTracking from "./pages/StudentSupport/HomeVisit/HomeVisitTracking";
 // Import Teacher Pages
-import AddTeacherPage from "./pages/Teachers/AddTeacherPage";
-import TeacherListPage from "./pages/Teachers/TeacherListPage";
-import EditTeacherPage from "./pages/Teachers/EditTeacherPage"; // เพิ่มการ import
-import TeacherLeaveHistoryPage from "./pages/Attendance/TeacherLeaveHistoryPage"; // 📌 เพิ่มการ import
-import TeacherLeaveRequestPage from "./pages/Attendance/TeacherLeaveRequestPage"; // 📌 เพิ่มการ import หน้าใบลากิจ/ลาป่วยของครู
-import OfficialTravelRequestPage from "./pages/Attendance/OfficialTravelRequestPage";
-import OfficialTravelHistoryPage from "./pages/Attendance/OfficialTravelHistoryPage"; // 📌 เพิ่มการ import หน้าขอไปราชการ
-import ViewTeacherPage from "./pages/Teachers/ViewTeacherPage";
-import QuickAddTeacherPage from "./pages/Teachers/QuickAddTeacherPage";
-import ImportTeacherPage from "./pages/Teachers/ImportTeacherPage";
-import ImportStudentPage from "./pages/Students/ImportStudentPage";
-import StudentAttendanceDateSelectionPage from "./pages/Students/StudentAttendanceDateSelectionPage";
-import StudentBK14ReportPage from "./pages/Students/StudentBK14ReportPage";
-import BulkUploadTeacherImagesPage from "./pages/Administrator/BulkUploadTeacherImagesPage";
-import AdvisorManagementPage from "./pages/Teachers/AdvisorManagementPage";
 
 // Import Academic Pages
-import AcademicAdminPage from "./pages/AcademicDepartment/AcademicAdminPage";
-import CourseManagementPage from "./pages/AcademicDepartment/CourseManagementPage";
-import CourseEnrollmentPage from "@/pages/AcademicDepartment/CourseEnrollmentPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนรายวิชา
-import CourseAssignmentPage from "@/pages/AcademicDepartment/CourseAssignmentPage"; // 📌 เพิ่มการ import หน้าลงทะเบียนครูและสถานที่
-import CourseAssignmentPage2 from "@/pages/AcademicDepartment/CourseAssignmentPage2"; // 📌 เพิ่มการ import หน้ามอบหมายรายวิชา 2 (แบบตาราง)
-import TeacherSchedulePage from "./pages/AcademicDepartment/schedule/TeacherSchedulePage"; // กลับไปใช้ไฟล์ UI เดิมตามคำขอของผู้ใช้
-import StudentSchedulePage from "./pages/AcademicDepartment/StudentSchedulePage"; // 📌 เพิ่มการ import หน้าใหม่
-import MySchedulePage from "./pages/AcademicDepartment/MySchedulePage";
-import SpecialPeriodManagementPage from "./pages/AcademicDepartment/SpecialPeriodManagementPage"; // 📌 เพิ่มการ import หน้าจัดการคาบเรียนพิเศษ
-import ClassroomAttendancePage from "./pages/AcademicDepartment/ClassroomAttendance"; // 📌 เปลี่ยนพาธให้ชี้ที่โฟลเดอร์ใหม่ที่มี index.tsx
-import HomeroomAttendancePage from "./pages/AcademicDepartment/HomeroomAttendancePage";
-import HomeroomStudentListPage from "./pages/AcademicDepartment/HomeroomStudentListPage";
-import GuidanceAttendancePage from "./pages/AcademicDepartment/GuidanceAttendancePage";
-import HistoricalClassroomAttendancePage from "./pages/AcademicDepartment/HistoricalClassroomAttendancePage"; // 📌 เพิ่มการ import หน้าเช็คชื่อย้อนหลัง
-import AttendanceSummaryPage from "./pages/AcademicDepartment/AttendanceSummaryPage"; // 📌 เพิ่มการสรุปการมาเรียน
-import ClassroomAttendanceAuditPage from "./pages/AcademicDepartment/ClassroomAttendanceAuditPage"; // 📌 เพิ่มหน้าตรวจสอบการเช็คชื่อของครู
-import EscapeSummaryPage from "./pages/AcademicDepartment/EscapeSummaryPage";
-import TimeRangeAttendanceSummaryPage from "./pages/AcademicDepartment/TimeRangeAttendanceSummaryPage";
-import StudentBehaviorClassReportPage from "./pages/AcademicDepartment/StudentBehaviorClassReportPage";
-import GradeBookPage from "./pages/AcademicDepartment/GradeBookPage";
-import SchoolCalendarPage from "./pages/AcademicDepartment/SchoolCalendarPage"; // 📌 เพิ่มการ import หน้าใหม่
-import SubstituteManagementPage from "./pages/AcademicDepartment/SubstituteManagementPage"; // 📌 เพิ่มการ import หน้าใหม่
-import SubstituteReportPage from "./pages/AcademicDepartment/SubstituteReportPage";
-import TeacherScheduleViewPage from "./pages/AcademicDepartment/TeacherScheduleViewPage"; // 📌 เพิ่มการ import หน้าใหม่
-import ViewCoursesPage from "./pages/AcademicDepartment/ViewCoursesPage"; // 📌 เพิ่มการ import หน้าดูหลักสูตร
+
 // import AddDesiredCharacteristicsPage from "./pages/AcademicDepartment/AddDesiredCharacteristicsPage"; // 📌 นำออกตามคำขอ
 // import AssessmentReadingThinkingWritingPage from "./pages/AcademicDepartment/AssessmentReadingThinkingWritingPage"; // 📌 นำออกตามคำขอ
-import DocumentVerificationPage from "./pages/Public/DocumentVerificationPage"; // 📌 เพิ่มหน้าตรวจสอบเอกสาร
-import SlugResolverPage from "./pages/Public/SlugResolverPage"; // 📌 เพิ่มหน้าจัดการ Slug
-import LineRegisterPage from "./pages/Public/LineRegisterPage"; // 📌 เพิ่มหน้าลงทะเบียน LINE
 
-
-import PeriodSettingsPage from "./pages/AcademicDepartment/PeriodSettingsPage"; // 📌 เพิ่มการ import หน้าตั้งค่าคาบเรียน
-
-
-import ClubAttendancePage from "./pages/AcademicDepartment/ClubAttendancePage"; // 📌 เพิ่มการ import หน้าเช็คชื่อชุมนุม
-
-import ClubManagementPage from "./pages/AcademicDepartment/ClubManagementPage"; // 📌 เพิ่มการ import หน้าจัดการชุมนุม
-import ClubMemberManagementPage from "./pages/AcademicDepartment/ClubMemberManagementPage"; // 📌 เพิ่มการ import หน้าจัดการสมาชิกชุมนุม
-import ClubReportsPage from "./pages/AcademicDepartment/ClubReportsPage"; // 📌 เพิ่มการ import หน้าสรุปรายงานชุมนุม
-import ClubListPage from "./pages/AcademicDepartment/ClubListPage"; // 📌 เพิ่มการ import หน้าทำเนียบชุมนุมทั้งหมด
-import ClubViewPage from "./pages/AcademicDepartment/ClubViewPage"; // 📌 เพิ่มการ import หน้าดูข้อมูลชุมนุมรายตัว
-import LearnerActivityAttendancePage from "./pages/AcademicDepartment/LearnerActivityAttendancePage";
-import LearnerActivityManagementPage from "./pages/AcademicDepartment/LearnerActivityManagementPage";
-import LearnerActivityStudentManagementPage from "./pages/AcademicDepartment/LearnerActivityStudentManagementPage";
-import ActivityEvaluationPage from "./pages/AcademicDepartment/ActivityEvaluationPage";
-import SchoolInfoPage from "./pages/owner/SchoolInfoPage";
-import SchoolListPage from "./pages/owner/SchoolListPage";
-import SchoolDetailsPage from "./pages/owner/SchoolDetailsPage"; // New page
-import UserListPage from "./pages/owner/UserListPage";
-import EditUserPage from "./pages/owner/EditUserPage";
-import AddUserPage from "./pages/owner/AddUserPage";
-import PermissionManagementPage from "./pages/owner/PermissionManagementPage";
 import { PermissionProvider } from "@/contexts/PermissionContext";
 
-import ImportCoursePage from "./pages/AcademicDepartment/ImportCoursePage"; // 📌 เพิ่มการ import หน้านำเข้าหลักสูตรจาก Excel
-import EnrollmentListPage from "./pages/AcademicDepartment/EnrollmentListPage"; // 📌 เพิ่มการสรุปการลงทะเบียน
-import SubjectGroupManagementPage from "@/pages/AcademicDepartment/SubjectGroupManagementPage"; // 📌 เพิ่มการ import หน้าจัดการกลุ่มสาระและตัวชี้วัด
-import ScoreConfigurationPage from "./pages/AcademicDepartment/ScoreConfigurationPage"; // 📌 เพิ่มการ import หน้าตั้งค่าคะแนนเต็มรายวิชา
-import FormativeScoreEntryPage from "./pages/AcademicDepartment/FormativeScoreEntryPage"; // 📌 เพิ่มหน้าบันทึกคะแนนก่อนกลางภาค
-import PostMidtermScoreEntryPage from "./pages/AcademicDepartment/PostMidtermScoreEntryPage"; // 📌 เพิ่มหน้าบันทึกคะแนนหลังกลางภาค
-import AcademicSettingsPage from "./pages/AcademicDepartment/AcademicSettingsPage"; // 📌 เพิ่มการ import หน้าตั้งค่าระบบวิชาการ
-import PeriodConstraintPage from "./pages/AcademicDepartment/schedule/PeriodConstraintPage";
-import GraduationManagementPage from "./pages/AcademicDepartment/GraduationManagementPage";
-import GraduationPendingPage from "./pages/AcademicDepartment/GraduationPendingPage";
-import AlumniManagementPage from "./pages/AcademicDepartment/AlumniManagementPage";
-import RoomTransferManagementPage from "./pages/AcademicDepartment/RoomTransferManagementPage";
-import GradeTransferPage from "./pages/Students/GradeTransferPage";
-import PhysicalRoomsPage from "./pages/AcademicDepartment/PhysicalRoomsPage";
-import PorBor7Page from "./pages/AcademicDepartment/PorBor7Page";
-import HubPage from "./pages/Shared/HubPage"; // 📌 เพิ่มหน้า Hub กลาง
-import AttendanceConfigPage from "./pages/HumanResources/AttendanceConfigPage"; // 📌 เพิ่มการ import หน้าตั้งค่าเวลาลงเวลา
-import BehaviorScoreConfigPage from "./pages/HumanResources/BehaviorScoreConfigPage"; // 📌 เพิ่มการ import หน้าตั้งค่าคะแนนพฤติกรรม
-import TeacherAttendanceTodayPage from "./pages/HumanResources/TeacherAttendanceTodayPage";
-import TeacherAttendanceSummaryPage from "./pages/HumanResources/TeacherAttendanceSummaryPage";
-import TeacherAttendanceIndividualPage from "./pages/HumanResources/TeacherAttendanceIndividualPage";
-import TeacherAttendanceDateSelectionPage from "./pages/HumanResources/TeacherAttendanceDateSelectionPage";
-import LeaveApprovalPage from "./pages/HumanResources/LeaveApprovalPage";
-import HRTimeRegistrationPage from "./pages/HumanResources/HRTimeRegistrationPage";
-import StudentsAttendanceSummaryPage from "./pages/Students/StudentsAttendanceSummaryPage";
-import LineOAManagementPage from "./pages/Administrator/LineOAManagementPage";
-import TelegramManagementPage from "./pages/Administrator/TelegramManagementPage";
-
-
-
-
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { useFcmNotification } from "@/hooks/useFcmNotification";
 import { ROLES } from "@/constants/roles";
 
+const LoginPage = lazy(() => import("./pages/Auth/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/Auth/RegisterPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/Auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("./pages/Auth/ResetPasswordPage"));
+const HomePage = lazy(() => import("./pages/Home/HomePage"));
+const NotificationsPage = lazy(() => import("./pages/Notifications/NotificationsPage"));
+const ProfilePage = lazy(() => import("./pages/Profile/ProfilePage"));
+const LeaveRequestPage = lazy(() => import("./pages/Attendance/LeaveRequestPage"));
+const LeaveHistoryPage = lazy(() => import("./pages/Attendance/LeaveHistoryPage"));
+const CheckinOutPage = lazy(() => import("./pages/Attendance/CheckinOutPage"));
+const FlagCeremonyPage = lazy(() => import("./pages/Attendance/FlagCeremonyPage"));
+const UserManagementPage = lazy(() => import("./pages/Administrator/UserManagementPage"));
+const AddStudentPage = lazy(() => import("./pages/Students/AddStudentPage"));
+const QuickAddStudentPage = lazy(() => import("./pages/Students/QuickAddStudentPage"));
+const StudentListPage = lazy(() => import("./pages/Students/StudentListPage"));
+const EditStudentPage = lazy(() => import("./pages/Students/EditStudentPage"));
+const ViewStudentPage = lazy(() => import("./pages/Students/ViewStudentPage"));
+const MapRfidPage = lazy(() => import("./pages/Students/MapRfidPage"));
+const BehaviorScorePage = lazy(() => import("./pages/Students/BehaviorScorePage"));
+const BulkUploadStudentImagesPage = lazy(() => import("./pages/Administrator/BulkUploadStudentImagesPage"));
+const ImportStudentDMCPage = lazy(() => import("./pages/Administrator/ImportStudentDMCPage"));
+const StudentSupportPage = lazy(() => import("./pages/StudentSupport/StudentSupportPage"));
+const SDQPage = lazy(() => import("./pages/StudentSupport/SDQPage"));
+const SDQStudentPage = lazy(() => import("./pages/StudentSupport/SDQStudentPage"));
+const SDQTeacherPage = lazy(() => import("./pages/StudentSupport/SDQTeacherPage"));
+const SDQParentPage = lazy(() => import("./pages/StudentSupport/SDQParentPage"));
+const ScreeningHub = lazy(() => import("./pages/StudentSupport/Screening/ScreeningHub"));
+const ScreeningTeacherPage = lazy(() => import("./pages/StudentSupport/Screening/ScreeningTeacherPage"));
+const ScreeningStudentPage = lazy(() => import("./pages/StudentSupport/Screening/ScreeningStudentPage"));
+const ScreeningParentPage = lazy(() => import("./pages/StudentSupport/Screening/ScreeningParentPage"));
+const HomeVisitDashboard = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitDashboard"));
+const NewHomeVisit = lazy(() => import("./pages/StudentSupport/HomeVisit/NewHomeVisit"));
+const HomeVisitSummary = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummary"));
+const HomeVisitSummaryHub = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryHub"));
+const HomeVisitSummaryClassroom = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryClassroom"));
+const HomeVisitSummaryAll = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryAll"));
+const HomeVisitSummaryOBEC = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryOBEC"));
+const HomeVisitTracking = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitTracking"));
+const AddTeacherPage = lazy(() => import("./pages/Teachers/AddTeacherPage"));
+const TeacherListPage = lazy(() => import("./pages/Teachers/TeacherListPage"));
+const EditTeacherPage = lazy(() => import("./pages/Teachers/EditTeacherPage"));
+const TeacherLeaveHistoryPage = lazy(() => import("./pages/Attendance/TeacherLeaveHistoryPage"));
+const TeacherLeaveRequestPage = lazy(() => import("./pages/Attendance/TeacherLeaveRequestPage"));
+const OfficialTravelRequestPage = lazy(() => import("./pages/Attendance/OfficialTravelRequestPage"));
+const OfficialTravelHistoryPage = lazy(() => import("./pages/Attendance/OfficialTravelHistoryPage"));
+const ViewTeacherPage = lazy(() => import("./pages/Teachers/ViewTeacherPage"));
+const QuickAddTeacherPage = lazy(() => import("./pages/Teachers/QuickAddTeacherPage"));
+const ImportTeacherPage = lazy(() => import("./pages/Teachers/ImportTeacherPage"));
+const ImportStudentPage = lazy(() => import("./pages/Students/ImportStudentPage"));
+const StudentAttendanceDateSelectionPage = lazy(() => import("./pages/Students/StudentAttendanceDateSelectionPage"));
+const StudentBK14ReportPage = lazy(() => import("./pages/Students/StudentBK14ReportPage"));
+const BulkUploadTeacherImagesPage = lazy(() => import("./pages/Administrator/BulkUploadTeacherImagesPage"));
+const AdvisorManagementPage = lazy(() => import("./pages/Teachers/AdvisorManagementPage"));
+const CourseManagementPage = lazy(() => import("./pages/AcademicDepartment/CourseManagementPage"));
+const CourseEnrollmentPage = lazy(() => import("@/pages/AcademicDepartment/CourseEnrollmentPage"));
+const CourseAssignmentPage = lazy(() => import("@/pages/AcademicDepartment/CourseAssignmentPage"));
+const CourseAssignmentPage2 = lazy(() => import("@/pages/AcademicDepartment/CourseAssignmentPage2"));
+const TeacherSchedulePage = lazy(() => import("./pages/AcademicDepartment/schedule/TeacherSchedulePage"));
+const StudentSchedulePage = lazy(() => import("./pages/AcademicDepartment/StudentSchedulePage"));
+const MySchedulePage = lazy(() => import("./pages/AcademicDepartment/MySchedulePage"));
+const SpecialPeriodManagementPage = lazy(() => import("./pages/AcademicDepartment/SpecialPeriodManagementPage"));
+const ClassroomAttendancePage = lazy(() => import("./pages/AcademicDepartment/ClassroomAttendance"));
+const HomeroomAttendancePage = lazy(() => import("./pages/AcademicDepartment/HomeroomAttendancePage"));
+const HomeroomStudentListPage = lazy(() => import("./pages/AcademicDepartment/HomeroomStudentListPage"));
+const GuidanceAttendancePage = lazy(() => import("./pages/AcademicDepartment/GuidanceAttendancePage"));
+const SpecialPeriodAttendancePage = lazy(() => import("./pages/AcademicDepartment/SpecialPeriodAttendancePage"));
+const SpecialPeriodReportsPage = lazy(() => import("./pages/AcademicDepartment/SpecialPeriodReportsPage"));
+const HistoricalClassroomAttendancePage = lazy(() => import("./pages/AcademicDepartment/HistoricalClassroomAttendancePage"));
+const AttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/AttendanceSummaryPage"));
+const ClassroomAttendanceAuditPage = lazy(() => import("./pages/AcademicDepartment/ClassroomAttendanceAuditPage"));
+const EscapeSummaryPage = lazy(() => import("./pages/AcademicDepartment/EscapeSummaryPage"));
+const TimeRangeAttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/TimeRangeAttendanceSummaryPage"));
+const StudentBehaviorClassReportPage = lazy(() => import("./pages/AcademicDepartment/StudentBehaviorClassReportPage"));
+const GradeBookPage = lazy(() => import("./pages/AcademicDepartment/GradeBookPage"));
+const SchoolCalendarPage = lazy(() => import("./pages/AcademicDepartment/SchoolCalendarPage"));
+const SubstituteManagementPage = lazy(() => import("./pages/AcademicDepartment/SubstituteManagementPage"));
+const SubstituteReportPage = lazy(() => import("./pages/AcademicDepartment/SubstituteReportPage"));
+const TeacherScheduleViewPage = lazy(() => import("./pages/AcademicDepartment/TeacherScheduleViewPage"));
+const ViewCoursesPage = lazy(() => import("./pages/AcademicDepartment/ViewCoursesPage"));
+const DocumentVerificationPage = lazy(() => import("./pages/Public/DocumentVerificationPage"));
+const SlugResolverPage = lazy(() => import("./pages/Public/SlugResolverPage"));
+const LineRegisterPage = lazy(() => import("./pages/Public/LineRegisterPage"));
+const PeriodSettingsPage = lazy(() => import("./pages/AcademicDepartment/PeriodSettingsPage"));
+const ClubAttendancePage = lazy(() => import("./pages/AcademicDepartment/ClubAttendancePage"));
+const ClubManagementPage = lazy(() => import("./pages/AcademicDepartment/ClubManagementPage"));
+const ClubMemberManagementPage = lazy(() => import("./pages/AcademicDepartment/ClubMemberManagementPage"));
+const ClubReportsPage = lazy(() => import("./pages/AcademicDepartment/ClubReportsPage"));
+const ClubListPage = lazy(() => import("./pages/AcademicDepartment/ClubListPage"));
+const ClubViewPage = lazy(() => import("./pages/AcademicDepartment/ClubViewPage"));
+const LearnerActivityAttendancePage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityAttendancePage"));
+const LearnerActivityManagementPage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityManagementPage"));
+const LearnerActivityStudentManagementPage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityStudentManagementPage"));
+const ActivityEvaluationPage = lazy(() => import("./pages/AcademicDepartment/ActivityEvaluationPage"));
+const SchoolInfoPage = lazy(() => import("./pages/owner/SchoolInfoPage"));
+const SchoolListPage = lazy(() => import("./pages/owner/SchoolListPage"));
+const SchoolDetailsPage = lazy(() => import("./pages/owner/SchoolDetailsPage"));
+const UserListPage = lazy(() => import("./pages/owner/UserListPage"));
+const EditUserPage = lazy(() => import("./pages/owner/EditUserPage"));
+const AddUserPage = lazy(() => import("./pages/owner/AddUserPage"));
+const PermissionManagementPage = lazy(() => import("./pages/owner/PermissionManagementPage"));
+const SchoolPermissionManagementPage = lazy(() => import("./pages/AcademicDepartment/SchoolPermissionManagementPage"));
+const ImportCoursePage = lazy(() => import("./pages/AcademicDepartment/ImportCoursePage"));
+const EnrollmentListPage = lazy(() => import("./pages/AcademicDepartment/EnrollmentListPage"));
+const SubjectGroupManagementPage = lazy(() => import("@/pages/AcademicDepartment/SubjectGroupManagementPage"));
+const ScoreConfigurationPage = lazy(() => import("./pages/AcademicDepartment/ScoreConfigurationPage"));
+const FormativeScoreEntryPage = lazy(() => import("./pages/AcademicDepartment/FormativeScoreEntryPage"));
+const PostMidtermScoreEntryPage = lazy(() => import("./pages/AcademicDepartment/PostMidtermScoreEntryPage"));
+const AcademicSettingsPage = lazy(() => import("./pages/AcademicDepartment/AcademicSettingsPage"));
+const PeriodConstraintPage = lazy(() => import("./pages/AcademicDepartment/schedule/PeriodConstraintPage"));
+const GraduationManagementPage = lazy(() => import("./pages/AcademicDepartment/GraduationManagementPage"));
+const GraduationPendingPage = lazy(() => import("./pages/AcademicDepartment/GraduationPendingPage"));
+const AlumniManagementPage = lazy(() => import("./pages/AcademicDepartment/AlumniManagementPage"));
+const RoomTransferManagementPage = lazy(() => import("./pages/AcademicDepartment/RoomTransferManagementPage"));
+const GradeTransferPage = lazy(() => import("./pages/Students/GradeTransferPage"));
+const PhysicalRoomsPage = lazy(() => import("./pages/AcademicDepartment/PhysicalRoomsPage"));
+const PorBor7Page = lazy(() => import("./pages/AcademicDepartment/PorBor7Page"));
+const HubPage = lazy(() => import("./pages/Shared/HubPage"));
+const AttendanceConfigPage = lazy(() => import("./pages/HumanResources/AttendanceConfigPage"));
+const BehaviorScoreConfigPage = lazy(() => import("./pages/HumanResources/BehaviorScoreConfigPage"));
+const TeacherAttendanceTodayPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceTodayPage"));
+const TeacherAttendanceSummaryPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceSummaryPage"));
+const TeacherAttendanceIndividualPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceIndividualPage"));
+const TeacherAttendanceDateSelectionPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceDateSelectionPage"));
+const LeaveApprovalPage = lazy(() => import("./pages/HumanResources/LeaveApprovalPage"));
+const HRTimeRegistrationPage = lazy(() => import("./pages/HumanResources/HRTimeRegistrationPage"));
+const StudentsAttendanceSummaryPage = lazy(() => import("./pages/Students/StudentsAttendanceSummaryPage"));
+const LineOAManagementPage = lazy(() => import("./pages/Administrator/LineOAManagementPage"));
+const TelegramManagementPage = lazy(() => import("./pages/Administrator/TelegramManagementPage"));
+
 function App() {
-  const { loading } = useSelector((state: RootState) => state.auth);
+  const { loading, user } = useSelector((state: RootState) => state.auth);
+  useFcmNotification(user?.uid);
   const TEACHER_LEAVE_HISTORY_ACCESS = [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
   const TEACHER_ATTENDANCE_TODAY_ACCESS = [ROLES.SCHOOL_ADMIN, ...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
   const HUB_ACCESS = [...STAFF_ACCESS, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
@@ -210,10 +203,10 @@ function App() {
   // Permission groups are imported from @/constants/permissions
 
   return (
-    <PermissionProvider>
+    <PermissionProvider schoolId={user?.schoolId}>
     <PullToRefresh>
       <Router>
-        <Routes>
+        <Suspense fallback={<LoadingScreen />}><Routes>
           {/* Public Pages */}
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><RegisterPage /></ProtectedRoute>} />
@@ -320,6 +313,7 @@ function App() {
           <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
           <Route path="/academic/settings/line-oa" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LineOAManagementPage /></ProtectedRoute>} />
           <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/permission-management" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><SchoolPermissionManagementPage /></ProtectedRoute>} />
           <Route path="/academic/personnel-time-registration" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><HRTimeRegistrationPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={TEACHER_ATTENDANCE_TODAY_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-date-selection" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN]}><TeacherAttendanceDateSelectionPage /></ProtectedRoute>} />
@@ -351,6 +345,8 @@ function App() {
           <Route path="/academic/flag-ceremony" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FlagCeremonyPage /></ProtectedRoute>} />
           <Route path="/academic/homeroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HomeroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/guidance-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GuidanceAttendancePage /></ProtectedRoute>} />
+          <Route path="/academic/special-period-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><SpecialPeriodAttendancePage /></ProtectedRoute>} />
+          <Route path="/academic/special-period-reports" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SpecialPeriodReportsPage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><AttendanceSummaryPage /></ProtectedRoute>} />
@@ -380,7 +376,7 @@ function App() {
 
           {/* Default fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+        </Routes></Suspense>
       </Router>
     </PullToRefresh>
     </PermissionProvider>

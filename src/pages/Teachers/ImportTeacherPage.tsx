@@ -28,7 +28,7 @@ const REQUIRED_FIELDS = [
 ];
 
 const POSITIONS = ['ครู', 'ครูผู้ช่วย', 'ผู้อำนวยการ', 'รองผู้อำนวยการ'];
-const TITLES = ['นาย', 'นาง', 'น.ส.'];
+const TITLES = ['นาย', 'นาง', 'น.ส.', 'พระ', 'พระสามเณร', 'พระมหา', 'พระครู', 'พระใบฎีกา', 'หลวงพ่อ', 'พระอาจารย์'];
 
 interface MappedTeacher {
     title: string;

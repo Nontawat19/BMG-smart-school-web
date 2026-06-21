@@ -156,13 +156,10 @@ export const PERFORMANCE_CONFIG = {
 };
 
 // --- Logic Helpers ---
-
-export const getSubjectCategory = (title: string): 'ACADEMIC' | 'ACTIVITY' | 'GENERAL' => {
-    const lowerTitle = title.toLowerCase();
-    const academicKeywords = ['คณิต', 'วิทย์', 'วิทยาศาสตร์', 'ฟิสิกส์', 'เคมี', 'ชีวะ', 'ไทย', 'ภาษาไทย', 'อังกฤษ', 'สังคม', 'ประวัติ', 'ศาสนา', 'math', 'sci', 'phy', 'chem', 'bio', 'eng'];
-    if (academicKeywords.some(k => lowerTitle.includes(k))) return 'ACADEMIC';
-    return 'GENERAL';
-};
+// NOTE: subject-category classification lives in engine/schedulerEngine.ts
+// (it checks `course.subjectGroup` first and also classifies ACTIVITY, which
+// this file's old copy didn't). A second, drifted copy used to live here with
+// zero callers anywhere in the codebase — removed rather than kept in sync by hand.
 
 const THAI_DIGITS: Record<string, string> = {
     '๐': '0',
@@ -215,20 +212,32 @@ export const getRequiredWeeklyPeriods = (
 
 export const isProtectedSpecialPeriodSetting = (period?: Pick<PeriodSetting, 'id' | 'label'>) => {
     if (!period) return true;
-    const value = `${period.id || ''} ${period.label || ''}`.toLowerCase();
-    return [
+    const normalizedId = String(period.id || '').trim().toLowerCase();
+    const normalizedLabel = String(period.label || '').trim().toLowerCase().replace(/\s+/g, '');
+
+    const protectedIds = new Set([
         'homeroom',
-        'โฮมรูม',
         'lunch',
+        'guidance',
+        'club',
+        'scout',
+        'special-activity',
+        'integrated'
+    ]);
+
+    const protectedLabels = new Set([
+        'โฮมรูม',
+        'พักกลางวัน',
         'พัก',
         'แนะแนว',
-        'กิจกรรม',
         'ชุมนุม',
         'ลูกเสือ',
         'เนตรนารี',
         'ยุวกาชาด',
         'บูรณาการ'
-    ].some(keyword => value.includes(keyword));
+    ].map(value => value.replace(/\s+/g, '')));
+
+    return protectedIds.has(normalizedId) || protectedLabels.has(normalizedLabel);
 };
 
 const normalizeScheduleTime = (value?: string) => String(value || '').trim().replace('.', ':');
@@ -314,16 +323,23 @@ export const isDoubleCapableConstraint = (constraint?: AssignmentConstraint) => 
 };
 
 export const getPartnerIndex = (idx: number): number => {
-    // Standard Thai school block pairs: (1,2), (3,4), (6,7), (8,9)
-    // index 0=Homeroom, 5=Lunch
-    if (idx === 1) return 2;
-    if (idx === 2) return 1;
-    if (idx === 3) return 4;
-    if (idx === 4) return 3;
-    if (idx === 6) return 7;
-    if (idx === 7) return 6;
-    if (idx === 8) return 9;
-    if (idx === 9) return 8;
+    // Default fallback when custom period settings are not available:
+    // allow doubles on any consecutive teaching periods inside the common
+    // pre-lunch and post-lunch teaching runs, e.g. 1-2, 2-3, 3-4 and 6-7.
+    const defaultTeachingRuns = [
+        [1, 2, 3, 4],
+        [6, 7, 8, 9],
+    ];
+
+    for (const teachingRun of defaultTeachingRuns) {
+        const position = teachingRun.indexOf(idx);
+        if (position === -1) continue;
+
+        if (position + 1 < teachingRun.length) return teachingRun[position + 1];
+        if (position - 1 >= 0) return teachingRun[position - 1];
+        return -1;
+    }
+
     return -1;
 };
 
@@ -351,15 +367,26 @@ export const getPartnerIndexForPeriods = (idx: number, periodSettings: Array<Per
         const position = teachingIndexes.indexOf(idx);
         if (position === -1) continue;
 
-        const pairPosition = position % 2 === 0 ? position + 1 : position - 1;
-        return teachingIndexes[pairPosition] ?? -1;
+        // Any two consecutive periods within the same uninterrupted teaching block
+        // (i.e. not separated by lunch/homeroom/a non-teaching period) can form a double
+        // session — not only the rigid (1,2)/(3,4)/(5,6)/(7,8) blocks. Prefer the next
+        // period as the partner so `idx` can act as the start of a pair (e.g. period 2
+        // pairs with period 3, period 6 pairs with period 7); fall back to the previous
+        // period when `idx` is the last slot in the run (it can then only be a partner,
+        // never a start).
+        if (position + 1 < teachingIndexes.length) return teachingIndexes[position + 1];
+        if (position - 1 >= 0) return teachingIndexes[position - 1];
+        return -1;
     }
 
     return -1;
 };
 
-export const isDoublePeriodStart = (idx: number): boolean => {
-    return getPartnerIndex(idx) === idx + 1;
+export const isDoublePeriodStart = (
+    idx: number,
+    periodSettings: Array<PeriodSetting & { index?: number }> = []
+): boolean => {
+    return getPartnerIndexForPeriods(idx, periodSettings) === idx + 1;
 };
 
 export const checkConstraints = (
@@ -390,7 +417,7 @@ export const checkConstraints = (
     if (isExplicitlyLocked) {
         // For explicitly locked slots, we only check physical Master Schedule conflicts (Constraint 10)
         // Bypass all other preference-based/soft constraints.
-        const currentTeacherId = teacher?.id || course.teacherId;
+        const currentTeacherIds = course.teacherIds?.length ? course.teacherIds : [teacher?.id || course.teacherId].filter(Boolean) as string[];
         const occupancies = schoolMasterSchedule[targetSlotId] || [];
         const courseClasses = Array.isArray(course.classId) ? course.classId : [course.classId || ''];
         const courseRooms = course.room && course.room.length > 0 ? course.room : ['all'];
@@ -398,8 +425,8 @@ export const checkConstraints = (
         for (const occ of occupancies) {
             // A) Teacher Conflict: Same teacher teaching another course/group in the same slot
             const isSameAssignment = (occ.course?.id === course.id && Number(occ.course?.groupNumber) === Number(course.groupNumber));
-            if (occ.teacherId === currentTeacherId && !isSameAssignment) {
-                return { forbidden: true, message: `ครู ${teacher?.name || 'ผู้นี้'} มีสอนวิชาอื่น (${occ.course?.title || 'ไม่ทราบชื่อ'}) อยู่แล้วในคาบนี้` };
+            if (currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
+                return { forbidden: true, message: `ครูมีสอนวิชาอื่น (${occ.course?.title || 'ไม่ทราบชื่อ'}) อยู่แล้วในคาบนี้` };
             }
 
             // B) Class Conflict: This class group already has another teacher in this slot
@@ -408,7 +435,7 @@ export const checkConstraints = (
             
             if (sharedClass) {
                 const currentGroup = Number(course.groupNumber || 0);
-                if (occ.teacherId !== currentTeacherId && !isSameAssignment) {
+                if (!currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
                     const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
                     return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
                 }
@@ -417,7 +444,7 @@ export const checkConstraints = (
             // C) Room Conflict: Another teacher is using the same room
             const occRooms = occ.course?.room && occ.course.room.length > 0 ? occ.course.room : ['all'];
             const hasSpecificRoomConflict = !courseRooms.includes('all') && !occRooms.includes('all') && courseRooms.some(r => occRooms.includes(r));
-            if (hasSpecificRoomConflict && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+            if (hasSpecificRoomConflict && !currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
                 return { forbidden: true, message: `ห้องปฏิบัติการถูกใช้งานโดยครูท่านอื่นในคาบนี้` };
             }
         }
@@ -440,7 +467,7 @@ export const checkConstraints = (
 
     // Constraint 4: Assignment-specific Locked Slots
     if (asgnCst?.isLocked && asgnCst.lockedSlots && asgnCst.lockedSlots.length > 0) {
-        const isThisSlotLocked = asgnCst.lockedSlots.some((s: any) => {
+        const isThisSlotLocked = asgnCst.lockedSlots.some((s: { day: string; periodId: string } | string) => {
             if (typeof s === 'string') return s === targetSlotId;
             return s.day === dayKey && s.periodId === periodSetting.id;
         });
@@ -516,7 +543,7 @@ export const checkConstraints = (
     }
 
     // Constraint 10: Master Schedule Conflicts (Class, Teacher, Room)
-    const currentTeacherId = teacher?.id || course.teacherId;
+    const currentTeacherIds = course.teacherIds?.length ? course.teacherIds : [teacher?.id || course.teacherId].filter(Boolean) as string[];
     const occupancies = schoolMasterSchedule[targetSlotId] || [];
     const courseClasses = Array.isArray(course.classId) ? course.classId : [course.classId || ''];
     const courseRooms = course.room && course.room.length > 0 ? course.room : ['all'];
@@ -524,8 +551,8 @@ export const checkConstraints = (
     for (const occ of occupancies) {
         // A) Teacher Conflict: Same teacher teaching another course/group in the same slot
         const isSameAssignment = (occ.course?.id === course.id && Number(occ.course?.groupNumber) === Number(course.groupNumber));
-        if (occ.teacherId === currentTeacherId && !isSameAssignment) {
-            return { forbidden: true, message: `ครู ${teacher?.name || 'ผู้นี้'} มีสอนวิชาอื่น (${occ.course?.title || 'ไม่ทราบชื่อ'}) อยู่แล้วในคาบนี้` };
+        if (currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
+            return { forbidden: true, message: `ครูมีสอนวิชาอื่น (${occ.course?.title || 'ไม่ทราบชื่อ'}) อยู่แล้วในคาบนี้` };
         }
 
         // B) Class Conflict: This class group already has another teacher in this slot
@@ -534,7 +561,7 @@ export const checkConstraints = (
         
         if (sharedClass) {
             const currentGroup = Number(course.groupNumber || 0);
-            if (occ.teacherId !== currentTeacherId && !isSameAssignment) {
+            if (!currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
                 const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
                 return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
             }
@@ -543,7 +570,7 @@ export const checkConstraints = (
         // C) Room Conflict: Another teacher is using the same room
         const occRooms = occ.course?.room && occ.course.room.length > 0 ? occ.course.room : ['all'];
         const hasSpecificRoomConflict = !courseRooms.includes('all') && !occRooms.includes('all') && courseRooms.some(r => occRooms.includes(r));
-        if (hasSpecificRoomConflict && occ.teacherId !== currentTeacherId && !isSameAssignment) {
+        if (hasSpecificRoomConflict && !currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
             return { forbidden: true, message: `ห้องปฏิบัติการถูกใช้งานโดยครูท่านอื่นในคาบนี้` };
         }
     }

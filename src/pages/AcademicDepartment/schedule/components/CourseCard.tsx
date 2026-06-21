@@ -1,13 +1,13 @@
 import React from 'react';
 import { Users, Lock, MapPin, AlertCircle } from 'lucide-react';
-import { CourseInstance } from '../types';
+import { CourseInstance, Teacher } from '../types';
 import { formatClassDisplay, getClassDisplayName, thaiFormatClass } from '../utils';
 
 export interface CourseCardProps {
     course: CourseInstance;
     isOverlay?: boolean;
     viewType?: 'teacher' | 'class' | 'room';
-    teachers?: any[];
+    teachers?: Teacher[];
     onHover?: (rect: DOMRect | null) => void;
     periodSummary?: {
         scheduled: number;
@@ -18,7 +18,7 @@ export interface CourseCardProps {
 export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [], onHover, periodSummary }) => {
     const isLocked = course.locked || (course.constraints?.lockedSlots && course.constraints.lockedSlots.length > 0);
     const isTemporary = Boolean(course.isTemporarySchedule);
-    const isRelaxed = Boolean((course as any).isRelaxedSchedule);
+    const isRelaxed = Boolean(course.isRelaxedSchedule);
     
     // Determine primary label based on view type
     const courseTeacherIds = Array.isArray(course.teacherIds) && course.teacherIds.length > 0 ? course.teacherIds : [course.teacherId];
@@ -32,7 +32,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
         const cleanName = (name: string) => {
             if (!name) return '';
             // Remove common Thai titles and academic prefixes
-            return name.replace(/^(นาย|นาง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่\s?ร\.ต\.|ว่าที่ร้อยตรี|อาจารย์|อ\.|ครู)\s?/, '').trim();
+            return name.replace(/^(พระสามเณร|พระมหา|พระครู|พระใบฎีกา|หลวงพ่อ|พระอาจารย์|พระ|สามเณร|นาย|นาง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่\s?ร\.ต\.|ว่าที่ร้อยตรี|อาจารย์|อ\.|ครู)\s?/, '').trim();
         };
 
         const namePart = cleanName(teacher.firstName || (teacher.name ? teacher.name.split(' ')[0] : ''));
@@ -71,8 +71,9 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
         );
 
     return (
-        <div className={`
-            group absolute inset-0 transition-all duration-300 flex flex-col items-center justify-center overflow-hidden rounded-xl border
+        <div 
+            className={`
+            group absolute inset-0 transition-all duration-300 flex flex-col items-center justify-center overflow-hidden rounded-xl border min-w-0
             ${isOverlay 
                 ? 'cursor-grabbing bg-indigo-600 dark:bg-indigo-700 text-white ring-[4px] ring-indigo-500/30 z-[9999] scale-105 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.4)] border-white/30' 
                 : isTemporary
@@ -83,13 +84,22 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                     ? 'cursor-grab bg-rose-50/70 dark:bg-rose-950/20 border-rose-200/60 dark:border-rose-900/30 hover:border-rose-400/60 dark:hover:border-rose-500/60 hover:shadow-lg hover:shadow-rose-500/10'
                     : 'cursor-grab bg-white dark:bg-[#1a1b1e] border-gray-100 dark:border-white/5 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 hover:shadow-lg dark:hover:shadow-indigo-500/10'
             }
-        `}>
+        `}
+            onMouseEnter={(e) => {
+                e.stopPropagation();
+                onHover?.(e.currentTarget.getBoundingClientRect());
+            }}
+            onMouseLeave={(e) => {
+                e.stopPropagation();
+                onHover?.(null);
+            }}
+        >
             {/* Main Content Container - Ultra Compact */}
-            <div className={`relative z-10 w-full h-full flex flex-col items-center justify-center px-0.5 text-center min-w-0 gap-[1px] overflow-hidden ${viewType === 'teacher' ? 'pt-1 pb-1' : 'pt-0.5 pb-0.5'}`}>
+            <div className="relative z-10 w-full h-full flex flex-col items-center justify-center px-0.5 py-0.5 text-center min-w-0 gap-0 overflow-hidden">
                 
                 {/* Subject Code */}
                 <span className={`
-                    text-[9px] font-black uppercase tabular-nums leading-tight truncate w-full px-0.5 shrink-0
+                    text-[10px] md:text-[11px] font-black uppercase tabular-nums leading-[1.1] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-white' : isTemporary ? 'text-amber-800 dark:text-amber-200' : isRelaxed ? 'text-orange-800 dark:text-orange-300' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
                 `}>
                     {course.code}{isTemporary && <span className="text-[8px] font-black text-amber-600/90 ml-0.5">รอตรวจ</span>}{isRelaxed && <span className="text-[7.5px] font-black text-orange-600/90 ml-0.5">(เงื่อนไขไม่ตรง)</span>}{course.isElective && <span className="text-[8px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
@@ -97,7 +107,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
                 {/* Subject Name */}
                 <span className={`
-                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
+                    text-[6.5px] md:text-[7.5px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-700 dark:text-slate-200'}
                 `}>
                     {course.title}
@@ -105,7 +115,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 
                 {/* Secondary Info Line (Teacher/Class) */}
                 <span className={`
-                    text-[7.5px] font-bold leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
+                    text-[6.5px] md:text-[7.5px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'}
                 `}>
                     {mainLabel}
@@ -114,7 +124,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 {/* Tertiary Info (Group/Class) */}
                 {viewType === 'teacher' && (
                     <span className={`
-                        text-[7px] font-black leading-tight truncate w-full whitespace-nowrap px-0.5 shrink-0
+                        text-[6px] md:text-[7px] font-black leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
                         ${isOverlay ? 'text-indigo-100' : (periodSummary && periodSummary.total > 0 && periodSummary.scheduled > periodSummary.total) ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}
                     `}>
                         {periodSummary
@@ -131,21 +141,6 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                     {isTemporary ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-amber-600/80'} /> : isRelaxed ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-orange-500/80'} /> : <Lock size={7} className={isOverlay ? 'text-white/40' : 'text-amber-500/60'} />}
                 </div>
             )}
-
-            {/* Info Indicator - Bottom Right */}
-            <div
-                className="absolute bottom-0.5 right-0.5 opacity-70 hover:opacity-100 transition-opacity duration-200 cursor-help z-50"
-                onMouseEnter={(e) => {
-                    e.stopPropagation();
-                    onHover?.(e.currentTarget.getBoundingClientRect());
-                }}
-                onMouseLeave={(e) => {
-                    e.stopPropagation();
-                    onHover?.(null);
-                }}
-            >
-                <AlertCircle size={9} className={isOverlay ? 'text-white drop-shadow-sm' : 'text-indigo-600 dark:text-indigo-400 drop-shadow-sm'} />
-            </div>
         </div>
     );
 };

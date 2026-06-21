@@ -21,8 +21,7 @@ import {
   limit,
 } from "firebase/firestore";
 
-import { formatDistanceToNow } from "date-fns";
-import { th } from "date-fns/locale";
+import { formatNotificationTime } from "@/utils/dateUtils";
 
 import { FaBell, FaBars, FaBookOpen, FaSun, FaMoon, FaHome, FaUserCheck, FaChalkboardTeacher } from "react-icons/fa";
 import { FiSearch } from "react-icons/fi";
@@ -65,6 +64,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const { isDarkMode, toggleTheme } = useTheme();
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
+  const { schoolId: settingsSchoolId, schoolName, logoUrl } = useSelector((state: RootState) => state.schoolSettings);
   const profileUrl = currentUser?.profileUrl || defaultProfile;
   const isPwaMode = usePwaMode();
 
@@ -78,6 +78,8 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const [processingNotificationId, setProcessingNotificationId] = useState<string | null>(null);
 
   const resolvedSchoolId = schoolId || (currentUser as any)?.schoolId || null;
+  const schoolDisplayName = settingsSchoolId === resolvedSchoolId ? schoolName : "";
+  const schoolLogoUrl = settingsSchoolId === resolvedSchoolId ? logoUrl : "";
 
   /* -------------------- realtime notification ----โ---------------- */
   useEffect(() => {
@@ -405,7 +407,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   /* -------------------- render -------------------- */
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 h-[60px] bg-white/90 dark:bg-[#18191a]/95 backdrop-blur-md z-50 px-4 shadow-sm">
+      <nav className="fixed top-0 left-0 right-0 h-[60px] bg-white/90 dark:bg-[#18191a]/95 backdrop-blur-md z-[9999] px-4 shadow-sm">
         <div className="max-w-[1440px] mx-auto h-full flex justify-between items-center">
 
           {/* Left */}
@@ -422,9 +424,17 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 }
               }}
             >
-              <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
+              {schoolLogoUrl ? (
+                <img
+                  src={schoolLogoUrl}
+                  alt={schoolDisplayName || "School logo"}
+                  className="w-8 h-8 rounded-full object-cover bg-white"
+                />
+              ) : (
+                <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
+              )}
               <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
-                BMG Smart School
+                {schoolDisplayName || "BMG Smart School"}
               </span>
             </div>
 
@@ -478,7 +488,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           {/* Right */}
           <div className="flex items-center gap-3">
             {/* Notification */}
-            {!isPwaMode && !isAttendanceEntryOnly(currentUser?.role) && (
+            {!isAttendanceEntryOnly(currentUser?.role) && (
               <div className="relative" ref={notificationRef}>
               <FaBell
                 className={iconClass('notify')}
@@ -497,7 +507,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               )}
 
               {isOpenNoti && (
-                <div className="fixed left-4 right-4 top-[65px] z-50 sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-[640px] sm:max-w-[calc(100vw-2rem)] sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
+                <div className="fixed left-4 right-4 top-[65px] z-[9999] sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-[640px] sm:max-w-[calc(100vw-2rem)] sm:mt-2 bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
                   {/* Header */}
                   <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">การแจ้งเตือน</h3>
@@ -568,10 +578,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                                   </p>
                                 </div>
                                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                  {formatDistanceToNow(n.createdAt.toDate(), {
-                                    addSuffix: true,
-                                    locale: th,
-                                  })}
+                                  {formatNotificationTime(n.createdAt.toDate())}
                                 </p>
                               </div>
                               {n.source === "club-request" && n.clubRequest && (
@@ -612,7 +619,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               )}
             </div>
             )}
-            {isPwaMode || isAttendanceEntryOnly(currentUser?.role) ? (
+            {isAttendanceEntryOnly(currentUser?.role) ? (
               <ProfileAvatar
                 src={profileUrl}
                 onError={(e) => (e.currentTarget.src = defaultProfile)}
@@ -626,7 +633,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 className="w-9 h-9 cursor-pointer"
                 onClick={() => navigate("/profile")}
                 alt={`รูปโปรไฟล์ของ ${currentUser?.fullName || 'ผู้ใช้'}`}
-                title="ไปที่โปรไฟล์"
+                title="ดูโปรไฟล์"
               />
             )}
 

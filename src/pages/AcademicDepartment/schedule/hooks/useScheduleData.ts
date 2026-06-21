@@ -3,48 +3,45 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
-import { RootState } from '@/store';
+import { AppDispatch, RootState } from '@/store';
 import Swal from 'sweetalert2';
-import { Course, CourseInstance, Schedule, SpecialPeriod, PeriodSetting, SchoolSettings, AssignmentConstraintMap, getAssignmentTeacherIds } from '../types';
+import { Course, CourseInstance, Schedule, SpecialPeriod, PeriodSetting, SchoolSettings, AssignmentConstraintMap, MasterScheduleEntry, getAssignmentTeacherIds } from '../types';
 import { CLASSES } from '../utils';
+import { getScheduleDocId, resolveScheduleTeacherId } from '../scheduleSharedUtils';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { isActiveTeacher } from '@/utils/teacherSortUtils';
 
-type MasterScheduleEntry = {
-    teacherId: string;
-    teacherIds?: string[];
-    classId: string | string[];
+/** Shape of a raw `schedules/{docId}` Firestore document. */
+interface ScheduleDocData {
+    academicYear?: string;
+    semester?: string;
+    teacherId?: string;
+    classId?: string | string[];
     room?: string[];
-    courseId?: string;
-    course: Course | null;
-    groupNumber: number;
-};
+    schedule?: Schedule;
+}
 
-const getScheduleDocId = (teacherId: string, academicYear: string, semester: string) => {
-    return `${teacherId}__${academicYear || 'unknown'}__${semester || '1'}`;
-};
+/** Shape of a raw `course_assignments/{docId}` Firestore document. */
+interface CourseAssignmentDocData {
+    id: string;
+    courseId: string;
+    academicYear?: string;
+    semester?: string;
+    teacherAssignments?: Course['teacherAssignments'];
+}
 
-const resolveScheduleTeacherId = (
-    scheduleKey: string,
-    storedTeacherId: string | undefined,
-    knownTeacherIds: string[]
-) => {
-    if (storedTeacherId && knownTeacherIds.includes(storedTeacherId)) return storedTeacherId;
-    const byPattern = knownTeacherIds.find(tId =>
-        scheduleKey === tId ||
-        scheduleKey.startsWith(`${tId}__`) ||
-        scheduleKey.startsWith(`${tId}_`)
-    );
-    return byPattern || storedTeacherId || scheduleKey.split('__')[0] || scheduleKey.split('_')[0];
-};
+const toStringArray = (value: string | string[] | undefined): string[] =>
+    Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 
 export const useScheduleData = (
     schoolId: string | undefined,
-    selectedYear?: string,
-    selectedSemester: string = "1"
+    selectedYear: string | undefined,
+    selectedSemester: string = "1",
+    setSchedule: React.Dispatch<React.SetStateAction<Schedule>>,
+    setSchoolMasterSchedule: React.Dispatch<React.SetStateAction<Record<string, MasterScheduleEntry[]>>>,
+    setAvailableCourseInstances: React.Dispatch<React.SetStateAction<CourseInstance[]>>
 ) => {
-    const [availableCourseInstances, setAvailableCourseInstances] = useState<CourseInstance[]>([]);
     const [allCourses, setAllCourses] = useState<Course[]>([]);
     const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
     const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
@@ -53,20 +50,19 @@ export const useScheduleData = (
         opportunityExpansionLevel: '',
         availableClasses: []
     });
-    const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, MasterScheduleEntry[]>>({});
     const [teacherMasterSchedule, setTeacherMasterSchedule] = useState<Record<string, { classId: string | string[]; course: Course | null }>>({});
-    const [schedule, setSchedule] = useState<Schedule>({});
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
     const academicTerm = useSelector((state: RootState) => state.calendar.rawData?.currentTerm || "1");
     const [assignmentConstraints, setAssignmentConstraints] = useState<AssignmentConstraintMap>({});
+    const [masterScheduleLoadVersion, setMasterScheduleLoadVersion] = useState(0);
 
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
 
     const loadSchoolMasterSchedule = useCallback(async (currentSchoolId: string) => {
         const targetYear = String(selectedYear || academicYear || "");
         const targetSemester = String(selectedSemester || academicTerm || "1");
-        const matchesYearSemester = (data: any) => {
+        const matchesYearSemester = (data: ScheduleDocData) => {
             const dataYear = String(data.academicYear || "");
             const dataSemester = String(data.semester || "");
             const yearMatches = !targetYear || !dataYear || dataYear === targetYear;
@@ -94,7 +90,7 @@ export const useScheduleData = (
                     isCanonical: scheduleDoc.id === canonicalDocId || scheduleDoc.id.includes('__')
                 };
             })
-            .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+            .filter(Boolean) as Array<{ id: string; data: ScheduleDocData; teacherId: string; isCanonical: boolean }>;
 
         const teachersWithCanonicalDocs = new Set(
             matchingScheduleDocs
@@ -107,7 +103,6 @@ export const useScheduleData = (
 
             const data = scheduleDoc.data;
             const teacherId = scheduleDoc.teacherId;
-            const classId = data.classId;
             const scheduleData = data.schedule as Schedule;
 
             for (const slot in scheduleData) {
@@ -118,14 +113,15 @@ export const useScheduleData = (
                     }
                     const coursesArr = Array.isArray(slotData) ? slotData : [slotData];
                     coursesArr.forEach(course => {
+                        if (course?.isTemporarySchedule) return;
                         // Strict check: only include if the teacher is actually assigned and active
                         if (!teacherId || teacherId === 'pending' || teacherId.startsWith('GHOST')) return;
                         const teacher = teacherMap[teacherId];
                         if (teacher && teacher.status && teacher.status !== 'อยู่') return;
 
                         // Priority: course instance data > teacher-level data
-                        const resolvedClassId = course.classId || data.classId;
-                        const resolvedRoom = course.room || data.room || [];
+                        const resolvedClassId = course.classId || data.classId || [];
+                        const resolvedRoom = toStringArray(course.room || data.room);
                         
                         masterSchedule[slot].push({ 
                             teacherId, 
@@ -146,7 +142,8 @@ export const useScheduleData = (
             }
         });
         setSchoolMasterSchedule(masterSchedule);
-    }, [academicTerm, academicYear, selectedSemester, selectedYear]);
+        setMasterScheduleLoadVersion(v => v + 1);
+    }, [academicTerm, academicYear, selectedSemester, selectedYear, setSchoolMasterSchedule, teacherMap]);
 
     const fetchData = useCallback(async (currentSchoolId: string) => {
         const fetchCourses = async () => {
@@ -159,12 +156,12 @@ export const useScheduleData = (
 
                 const assignmentsCollectionRef = collection(db, 'school-settings', currentSchoolId, 'course_assignments');
                 const assignmentsSnap = await getDocs(assignmentsCollectionRef);
-                const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+                const assignmentsData = assignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CourseAssignmentDocData));
 
                 const coursesData = rawCoursesData.map(course => {
                     const targetSem = String(selectedSemester || academicTerm || "1");
                     const targetYear = String(selectedYear || academicYear || "");
-                    const semesterAssignment = assignmentsData.find((a: any) => {
+                    const semesterAssignment = assignmentsData.find((a) => {
                         const aSem = String(a.semester || "");
                         const aYear = String(a.academicYear || "");
                         const yearMatches = !targetYear || !aYear || aYear === targetYear;
@@ -187,7 +184,7 @@ export const useScheduleData = (
                 const flattened: CourseInstance[] = [];
                 coursesData.forEach(course => {
                     if (course.teacherAssignments && course.teacherAssignments.length > 0) {
-                        course.teacherAssignments.forEach((asgn: any, idx: number) => {
+                        course.teacherAssignments.forEach((asgn, idx: number) => {
                             // Filter out assignments without a valid teacher or inactive teachers
                             const teacherIds = getAssignmentTeacherIds(asgn);
                             teacherIds.forEach(teacherId => {
@@ -201,7 +198,7 @@ export const useScheduleData = (
                                     groupNumber: asgn.groupNumber || idx + 1,
                                     teacherId,
                                     teacherIds,
-                                    room: asgn.roomIds || course.room,
+                                    room: toStringArray(asgn.roomIds || course.room),
                                     classId: asgn.classLevels && asgn.classLevels.length > 0 ? asgn.classLevels : course.classId
                                 } as CourseInstance);
                             });
@@ -331,11 +328,11 @@ export const useScheduleData = (
                 loadSchoolMasterSchedule(currentSchoolId)
             ]);
         }
-    }, [loadSchoolMasterSchedule, academicTerm, academicYear, selectedSemester, selectedYear]);
+    }, [loadSchoolMasterSchedule, academicTerm, academicYear, selectedSemester, selectedYear, setAvailableCourseInstances, teacherMap]);
 
     useEffect(() => {
         if (teacherMapStatus === 'idle' && schoolId) {
-            dispatch(fetchTeachersMap(schoolId) as any);
+            dispatch(fetchTeachersMap(schoolId));
         }
     }, [dispatch, teacherMapStatus, schoolId]);
 
@@ -346,18 +343,17 @@ export const useScheduleData = (
     }, [schoolId, fetchData]);
 
     return {
-        availableCourseInstances, setAvailableCourseInstances,
         assignmentConstraints,
         allCourses, setAllCourses,
         specialPeriods, setSpecialPeriods,
         periodSettings, setPeriodSettings,
         schoolSettings, setSchoolSettings,
-        schoolMasterSchedule, setSchoolMasterSchedule,
+        schoolMasterSchedule: {}, // Returning dummy or removing from return. Let's just remove them since context provides them
         teacherMasterSchedule, setTeacherMasterSchedule,
-        schedule, setSchedule,
         academicYear,
         academicTerm,
         loadSchoolMasterSchedule,
-        fetchData
+        fetchData,
+        masterScheduleLoadVersion
     };
 };

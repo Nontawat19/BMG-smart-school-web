@@ -12,6 +12,7 @@ import {
   setDoc,
   addDoc,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import Swal from "sweetalert2";
 import { useSearchParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
@@ -306,7 +307,7 @@ const SubstituteTeacherSelect = ({ value, options, onChange, placeholder = "--- 
           const displayName = getTeacherDisplayName(option);
           const initials = option.firstName && option.lastName
             ? `${option.firstName.charAt(0)}${option.lastName.charAt(0)}`
-            : displayName.replace(/^(นาย|นางสาว|นาง|ครู|ผอ\.|ดร\.|ว่าที่\s*ร\.ต\.)\s*/, '').substring(0, 1);
+            : displayName.replace(/^(พระสามเณร|พระมหา|พระครู|พระใบฎีกา|หลวงพ่อ|พระอาจารย์|พระ|สามเณร|นาย|นางสาว|นาง|ครู|ผอ\.|ดร\.|ว่าที่\s*ร\.ต\.)\s*/, '').substring(0, 1);
 
           return (
             <div className="flex w-full min-w-0 items-center gap-3 py-1">
@@ -383,21 +384,26 @@ const SubstituteManagementPage: React.FC = () => {
     );
 
     let semester: string;
+    let academicYear: string;
+
     if (matchedTerm) {
-      // ตรวจสอบเฉพาะ "ที่ 2" เพื่อป้องกัน false-positive จากเลขปี เช่น "ปี 2568"
+      // วันที่อยู่ในภาคเรียนของปีการศึกษาปัจจุบัน
+      academicYear = String(calendarState.academicYear || getCurrentThaiYear());
       const isSemester2 =
         /ที่\s*2(?!\d)/.test(matchedTerm.name) ||
         matchedTerm.id === '2' ||
         /[_\-]2$/.test(matchedTerm.id);
       semester = isSemester2 ? '2' : '1';
     } else {
-      semester = String(calendarRawData?.currentTerm || '1');
+      // วันที่อยู่นอกภาคเรียนปัจจุบัน — คำนวณจากวันที่จริง
+      // ปีการศึกษาไทยเริ่มเดือนพฤษภาคม (5) ถึงเมษายน (4) ของปีถัดไป
+      const buddhistYear = targetDate.getFullYear() + 543;
+      const month = targetDate.getMonth() + 1; // 1–12
+      academicYear = String(month >= 5 ? buddhistYear : buddhistYear - 1);
+      semester = month >= 5 && month <= 10 ? '1' : '2';
     }
 
-    return {
-      academicYear: String(calendarState.academicYear || getCurrentThaiYear()),
-      semester,
-    };
+    return { academicYear, semester };
   };
 
   const matchesScheduleYearTerm = (data: any, year: string, semester: string) => {
@@ -1035,7 +1041,7 @@ const SubstituteManagementPage: React.FC = () => {
       const dateDay = String(scheduleEntry.originalDate.getDate()).padStart(2, '0');
       const dateStr = `${dateYear}-${dateMonth}-${dateDay}`;
 
-      await addDoc(collection(firestore, "school-settings", schoolId, "notifications"), {
+      const notificationDocRef = await addDoc(collection(firestore, "school-settings", schoolId, "notifications"), {
         userId: substitute.uid, // 📌 แก้ไข: ใช้ uid ของครูเพื่อให้ Navbar ดึงข้อมูลเจอ
         message: newTeacherNotificationMessage,
         createdAt: Timestamp.now(),
@@ -1043,17 +1049,51 @@ const SubstituteManagementPage: React.FC = () => {
         link: `/academic/classroom-attendance?date=${dateStr}&selectSub=${substitutionDocId}`, // นำทางไปยังหน้าเช็คชื่อ
       });
 
+      // 📌 ส่ง Push Notification ผ่าน Callable Function
+      try {
+        const functions = getFunctions();
+        const processPushNotification = httpsCallable(functions, "processPushNotification");
+        const response = await processPushNotification({
+          userId: substitute.uid,
+          message: newTeacherNotificationMessage,
+          link: `/academic/classroom-attendance?date=${dateStr}&selectSub=${substitutionDocId}`,
+          source: "substitute",
+          schoolId: schoolId,
+          notificationId: notificationDocRef.id
+        });
+        console.log("✅ ส่งแจ้งเตือน Push Notification สำเร็จ:", response.data);
+      } catch (pushErr) {
+        console.error("Error calling push notification function:", pushErr);
+      }
+
 
       // 📌 เพิ่ม: หากมีการเปลี่ยนแปลงครูสอนแทน (ไม่ใช่การมอบหมายครั้งแรก และครูคนใหม่ไม่ซ้ำคนเก่า) ให้ส่งแจ้งเตือนไปหาครูคนเก่าด้วย
       if (oldSubstitute && oldSubstitute.uid !== substitute.uid) {
         const oldTeacherNotificationMessage = `การสอนแทนวิชา ${scheduleEntry.subjectName} (${scheduleEntry.className}) ในวันที่ ${substitutionDate} คาบที่ ${scheduleEntry.period} ของคุณได้ถูกเปลี่ยนแปลง/ยกเลิก`;
-        await addDoc(collection(firestore, "school-settings", schoolId, "notifications"), {
+        const oldNotiDocRef = await addDoc(collection(firestore, "school-settings", schoolId, "notifications"), {
           userId: oldSubstitute.uid,
           message: oldTeacherNotificationMessage,
           createdAt: Timestamp.now(),
           isRead: false,
           link: `/academic/classroom-attendance?date=${dateStr}`,
         });
+
+        // 📌 ส่ง Push Notification ยกเลิกงาน ผ่าน Callable Function
+        try {
+          const functions = getFunctions();
+          const processPushNotification = httpsCallable(functions, "processPushNotification");
+          const response = await processPushNotification({
+            userId: oldSubstitute.uid,
+            message: oldTeacherNotificationMessage,
+            link: `/academic/classroom-attendance?date=${dateStr}`,
+            source: "substitute",
+            schoolId: schoolId,
+            notificationId: oldNotiDocRef.id
+          });
+          console.log("✅ ส่งแจ้งเตือน Push Notification (ยกเลิก) สำเร็จ:", response.data);
+        } catch (pushErr) {
+          console.error("Error calling push notification function:", pushErr);
+        }
       }
 
       // สร้างข้อมูล schedule ที่อัปเดตแล้ว

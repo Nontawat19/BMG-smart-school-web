@@ -1,5 +1,36 @@
-import { AssignmentConstraintMap, Course } from '../types';
+import { AssignmentConstraintMap, Course, CourseInstance } from '../types';
 import { getRequiredWeeklyPeriods } from '../utils';
+import { getTaskTeacherIds } from '../scheduleSharedUtils';
+import { isCoreAcademicCourseTitle } from '../scheduleMetrics';
+import {
+    SCORE_BASE, SCORE_PREF_MATCH_BONUS, SCORE_PREF_MISMATCH_PENALTY, SCORE_CATEGORY_HALF_BONUS,
+    TEACHER_HEAVY_DAY_LOAD, TEACHER_HEAVY_DAY_PENALTY, TEACHER_MODERATE_DAY_LOAD, TEACHER_MODERATE_DAY_PENALTY,
+    TEACHER_LIGHT_DAY_LOAD, TEACHER_LIGHT_DAY_BONUS,
+    CLASS_VERY_HEAVY_DAY_LOAD, CLASS_VERY_HEAVY_DAY_PENALTY, CLASS_HEAVY_DAY_LOAD, CLASS_HEAVY_DAY_PENALTY,
+    CLASS_MODERATE_DAY_LOAD, CLASS_MODERATE_DAY_PENALTY, CLASS_LIGHT_DAY_LOAD, CLASS_LIGHT_DAY_BONUS,
+    HALF_DAY_BALANCE_WEIGHT, HALF_DAY_IMBALANCE_THRESHOLD, HALF_DAY_IMBALANCE_PENALTY,
+    PREV_SLOT_PENALTY_DOUBLE, PREV_SLOT_PENALTY_SINGLE,
+    GAP_WEIGHT_PER_PERIOD, CONSECUTIVE_VERY_HIGH_THRESHOLD, CONSECUTIVE_VERY_HIGH_PENALTY,
+    CONSECUTIVE_HIGH_THRESHOLD, CONSECUTIVE_HIGH_PENALTY,
+    ROOM_HEAVY_DAY_LOAD, ROOM_HEAVY_DAY_PENALTY, ROOM_MODERATE_DAY_LOAD, ROOM_MODERATE_DAY_PENALTY,
+    ROOM_LIGHT_DAY_LOAD, ROOM_LIGHT_DAY_BONUS,
+    CLASS_PERIOD_LOAD_WEIGHT, TEACHER_PERIOD_LOAD_WEIGHT,
+    LAST_MORNING_PERIOD_BONUS,
+    TEACHER_STREAM_HEAVY_THRESHOLD, TEACHER_STREAM_HEAVY_PENALTY,
+    TEACHER_STREAM_MODERATE_THRESHOLD, TEACHER_STREAM_MODERATE_PENALTY,
+    CONTINUITY_BONUS, GAP_AVOIDANCE_PENALTY, FRAGMENTATION_PENALTY,
+    SUBJECT_REPEAT_PENALTY_HIGH_FREQ, SUBJECT_REPEAT_PENALTY_LOW_FREQ, NEW_DAY_BONUS, REPEAT_HALF_DAY_NUDGE,
+    CATEGORY_TIME_BONUS, CATEGORY_TIME_WEAK_BONUS, JITTER_RANGE,
+    CORE_SUBJECT_MORNING_BONUS, CORE_SUBJECT_AFTERNOON_PENALTY,
+    QUALITY_PLACED_WEIGHT, QUALITY_UNPLACED_PENALTY,
+    QUALITY_TEACHER_BALANCE_WEIGHT, QUALITY_TEACHER_HALF_BALANCE_WEIGHT,
+    QUALITY_CLASS_BALANCE_WEIGHT, QUALITY_CLASS_GAP_WEIGHT,
+    QUALITY_CLASS_CONSECUTIVE_THRESHOLD, QUALITY_CLASS_CONSECUTIVE_WEIGHT,
+    QUALITY_CLASS_HALF_BALANCE_WEIGHT, QUALITY_ROOM_BALANCE_WEIGHT,
+    QUALITY_SUBJECT_OVER_REPEAT_PENALTY, QUALITY_SUBJECT_BALANCED_BONUS,
+    QUALITY_BBL_COMPLIANCE_WEIGHT,
+    REPAIR_STRICT_PHASE_RATIO, MAX_EJECT_BLOCKERS, EJECT_DOUBLE_BLOCKER_WEIGHT, MAX_BACKTRACK_DEPTH, MAX_BACKTRACK_BRANCHES,
+} from './engineConstants';
 
 export type TimetableOccupancy = {
     teacherId: string;
@@ -13,7 +44,16 @@ export type TimetableOccupancy = {
 };
 
 export type EngineSchedule = Record<string, TimetableOccupancy[]>;
-export type EngineBatchUpdates = Record<string, Record<string, any[]>>;
+
+/** A single per-teacher-per-class Firestore write payload item: a CourseInstance
+ *  plus the engine's own placement bookkeeping (`taskId`). Existing/carried-over
+ *  entries seeded by the caller are plain CourseInstance values without a taskId. */
+export type EngineBatchWriteItem = CourseInstance & { taskId?: number };
+export type EngineBatchUpdates = Record<string, Record<string, EngineBatchWriteItem[]>>;
+
+/** Bookkeeping used by the backtracking repair phase to undo/redo an ejected task's placement. */
+type RemovedOccupancy = { slotId: string; occupancy: TimetableOccupancy };
+type RemovedUpdate = { docId: string; sId: string; items: EngineBatchWriteItem[] };
 
 export type EngineTeachingSlot = {
     dayKey: string;
@@ -42,7 +82,7 @@ export type EngineTask = {
     requiredSlot?: string;
 };
 
-type RuntimeConflictIndex = {
+export type RuntimeConflictIndex = {
     teacherSlots: Map<string, Set<string>>;
     classSlots: Map<string, Map<string, Set<string>>>; // classId -> slotId -> Set of placement keys
     roomSlots: Map<string, Set<string>>;
@@ -69,6 +109,8 @@ export type SchedulingEngineInput = {
     assignmentConstraints: AssignmentConstraintMap;
     maxRuns: number;
     maxRepairAttempts?: number;
+    /** Maximum allowed consecutive same-subject periods per class per day (default: 3) */
+    maxConsecutivePeriodsPerDay?: number;
 };
 
 export type SchedulingEngineProgress = {
@@ -83,7 +125,10 @@ export type SchedulingEngineResult = {
     placedPeriods: number;
 };
 
-const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+const clone = <T,>(value: T): T =>
+    typeof structuredClone === 'function'
+        ? structuredClone(value)
+        : (JSON.parse(JSON.stringify(value)) as T);
 
 const getSubjectCategory = (course: Course): 'ACADEMIC' | 'ACTIVITY' | 'GENERAL' => {
     if (course.subjectGroup === 'ACADEMIC' || course.subjectGroup === 'ACTIVITY' || course.subjectGroup === 'GENERAL') {
@@ -97,7 +142,12 @@ const getSubjectCategory = (course: Course): 'ACADEMIC' | 'ACTIVITY' | 'GENERAL'
     return 'GENERAL';
 };
 
-const createRuntimeConflictIndex = (): RuntimeConflictIndex => ({
+// Whether this task is one of the 4 core subjects that `calculateBBLCompliance`
+// (scheduleMetrics.ts) measures — kept in sync with that function so the engine
+// optimizes for the same metric that gets reported to users.
+const isCoreSubjectTask = (task: Pick<EngineTask, 'course'>) => isCoreAcademicCourseTitle(task.course.title || '');
+
+export const createRuntimeConflictIndex = (): RuntimeConflictIndex => ({
     teacherSlots: new Map(),
     classSlots: new Map(),
     roomSlots: new Map(),
@@ -117,6 +167,18 @@ const createRuntimeConflictIndex = (): RuntimeConflictIndex => ({
 const addSetValue = (map: Map<string, Set<string>>, key: string, value: string) => {
     if (!map.has(key)) map.set(key, new Set());
     map.get(key)!.add(value);
+};
+
+/** Insert `value` into a sorted numeric array without a full re-sort (O(n) vs O(n log n)). */
+const insertSorted = (arr: number[], value: number): void => {
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (arr[mid] < value) lo = mid + 1;
+        else hi = mid;
+    }
+    arr.splice(lo, 0, value);
 };
 
 const deleteSetValue = (map: Map<string, Set<string>>, key: string, value: string) => {
@@ -139,11 +201,8 @@ const getClassPlacementKey = (occupancy: Pick<TimetableOccupancy, 'courseId' | '
     `${occupancy.courseId}|${occupancy.groupNumber || 0}`
 );
 
-const getTaskTeacherIds = (task: Pick<EngineTask, 'teacherId' | 'teacherIds'>) => (
-    Array.from(new Set((task.teacherIds && task.teacherIds.length > 0 ? task.teacherIds : [task.teacherId]).filter(Boolean)))
-);
 
-const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupancy: TimetableOccupancy) => {
+export const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupancy: TimetableOccupancy) => {
     const [dayKey, pStr] = slotId.split('-');
     const periodIdx = parseInt(pStr);
     
@@ -154,8 +213,7 @@ const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupa
     index.teacherPeriodLoad.set(teacherPeriodKey, (index.teacherPeriodLoad.get(teacherPeriodKey) || 0) + 1);
     
     const daySched = index.teacherDailySchedule.get(teacherDayKey) || [];
-    daySched.push(periodIdx);
-    daySched.sort((a, b) => a - b);
+    insertSorted(daySched, periodIdx);
     index.teacherDailySchedule.set(teacherDayKey, daySched);
 
     const placementKey = occupancy.taskId !== undefined 
@@ -177,8 +235,7 @@ const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string, occupa
             index.classPeriodLoad.set(classPeriodKey, (index.classPeriodLoad.get(classPeriodKey) || 0) + 1);
 
             const classDaySched = index.classDailySchedule.get(classDayKey) || [];
-            classDaySched.push(periodIdx);
-            classDaySched.sort((a, b) => a - b);
+            insertSorted(classDaySched, periodIdx);
             index.classDailySchedule.set(classDayKey, classDaySched);
 
             if (!index.classSlots.has(classId)) index.classSlots.set(classId, new Map());
@@ -324,7 +381,7 @@ const hasClassConflict = (index: RuntimeConflictIndex, classId: string, slotId: 
     return occupiedGroups.size > 0;
 };
 
-const countGaps = (periods: number[]) => {
+export const countGaps = (periods: number[]) => {
     if (periods.length <= 1) return 0;
     const sorted = [...periods].sort((a, b) => a - b);
     let gaps = 0;
@@ -335,7 +392,7 @@ const countGaps = (periods: number[]) => {
     return gaps;
 };
 
-const getMaxConsecutive = (periods: number[]) => {
+export const getMaxConsecutive = (periods: number[]) => {
     if (periods.length === 0) return 0;
     const sorted = [...periods].sort((a, b) => a - b);
     let max = 1;
@@ -351,7 +408,7 @@ const getMaxConsecutive = (periods: number[]) => {
     return max;
 };
 
-const getBalancePenalty = (loadsByDay: number[]) => {
+export const getBalancePenalty = (loadsByDay: number[]) => {
     if (loadsByDay.length <= 1) return 0;
     const total = loadsByDay.reduce((sum, load) => sum + load, 0);
     const average = total / loadsByDay.length;
@@ -368,7 +425,7 @@ const getPeriodLoad = (map: Map<string, number>, ownerIds: string[], periodIndex
     return maxLoad;
 };
 
-const getSessionSlotsForStart = (
+export const getSessionSlotsForStart = (
     startSlotId: string,
     duration: number,
     slots: EngineTeachingSlot[]
@@ -379,25 +436,17 @@ const getSessionSlotsForStart = (
 
     const [dayKey, pStr] = startSlotId.split('-');
     const startIndex = parseInt(pStr);
-    const daySlots = slots
-        .filter(slot => slot.dayKey === dayKey && slot.periodSetting.isTeachingPeriod)
-        .map(slot => ({
-            slotId: slot.slotId,
-            index: parseInt(slot.slotId.split('-')[1])
-        }))
-        .sort((a, b) => a.index - b.index);
-
-    const position = daySlots.findIndex(slot => slot.index === startIndex);
-    if (position === -1) return [];
-    if (position % duration !== 0) return [];
-
-    const session = daySlots.slice(position, position + duration);
-    if (session.length !== duration) return [];
-    for (let i = 1; i < session.length; i++) {
-        if (session[i].index !== session[i - 1].index + 1) return [];
+    
+    const session = [];
+    for (let i = 0; i < duration; i++) {
+        const nextId = `${dayKey}-${startIndex + i}`;
+        if (slots.some(slot => slot.slotId === nextId)) {
+            session.push(nextId);
+        } else {
+            return [];
+        }
     }
-
-    return session.map(slot => slot.slotId);
+    return session;
 };
 
 const hasPlacementPreference = (task: EngineTask, assignmentConstraints: AssignmentConstraintMap) => {
@@ -411,7 +460,10 @@ const getTaskPriority = (task: EngineTask, assignmentConstraints: AssignmentCons
     if (task.duration > 1) return 1;
     if (task.requiredSlot) return 2;
     if (hasPlacementPreference(task, assignmentConstraints)) return 3;
-    return 4;
+    // Let core (BBL) subjects claim their preferred morning slots before the
+    // generic ACADEMIC/ACTIVITY pool competes for the same slots.
+    if (isCoreSubjectTask(task)) return 4;
+    return 5;
 };
 
 const getTaskPressureKey = (task: EngineTask) => `${getTaskTeacherIds(task).join('+')}|${task.compositeId}|${task.targetClasses.join(',')}`;
@@ -458,7 +510,7 @@ const orderTasksForRun = (
     });
 };
 
-const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: RuntimeConflictIndex, assignmentConstraints?: AssignmentConstraintMap) => {
+export const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: RuntimeConflictIndex, assignmentConstraints?: AssignmentConstraintMap, maxConsecutivePeriodsPerDay = 2) => {
     const requestedRooms = normalizeSpecificRooms(task.targetRooms);
     const teacherIds = getTaskTeacherIds(task);
     const isDoubleSession = task.duration > 1;
@@ -515,7 +567,7 @@ const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], index: Runt
                 }
             }
 
-            if (maxConsecutive >= 3) {
+            if (maxConsecutive >= maxConsecutivePeriodsPerDay) {
                 return false;
             }
         }
@@ -528,8 +580,8 @@ const getWeightedSlots = (
     task: EngineTask,
     slots: EngineTeachingSlot[],
     validSlots: Set<string>,
-    validSlotsByTaskIndex: string[][],
-    taskIndex: number,
+    _validSlotsByTaskIndex: string[][],
+    _taskIndex: number,
     assignmentConstraints: AssignmentConstraintMap,
     ignorePrefs: boolean,
     conflictIndex: RuntimeConflictIndex,
@@ -544,7 +596,7 @@ const getWeightedSlots = (
     const totalPeriodsForAssignment = sameAssignmentTasks.reduce((sum, t) => sum + t.duration, 0);
     const expectedWeeklyPeriods = Math.max(totalPeriodsForAssignment, getRequiredWeeklyPeriods(task.course));
     const canRepeatOnSomeDays = expectedWeeklyPeriods >= 5;
-    const maxPeriodsPerDayForAssignment = canRepeatOnSomeDays ? 2 : 1;
+    const maxPeriodsPerDayForAssignment = canRepeatOnSomeDays ? 2 : Math.max(1, task.duration);
     const getMaxSubjectCountForDay = (dayKey: string) => {
         let maxSubjectInDay = 0;
         task.targetClasses.forEach(classId => {
@@ -555,71 +607,87 @@ const getWeightedSlots = (
         return maxSubjectInDay;
     };
 
+    const NOON = '12:00';
+
+    // Cache morning period indices and half-day boundary per dayKey — computed once, not per-slot
+    const morningPIdxsByDay = new Map<string, number[]>();
+    const halfBoundaryByDay = new Map<string, number>();
+    for (const s of availableSlots) {
+        if (!morningPIdxsByDay.has(s.dayKey)) {
+            const dayMorningPIdxs = slots
+                .filter(d => d.dayKey === s.dayKey && d.periodSetting.isTeachingPeriod && d.periodSetting.startTime < NOON)
+                .map(d => parseInt(d.slotId.split('-')[1]));
+            morningPIdxsByDay.set(s.dayKey, dayMorningPIdxs);
+            const boundary = dayMorningPIdxs.length > 0
+                ? Math.max(...dayMorningPIdxs) + 1
+                : Math.max(1, Math.floor(slots.filter(d => d.dayKey === s.dayKey && d.periodSetting.isTeachingPeriod).length / 2));
+            halfBoundaryByDay.set(s.dayKey, boundary);
+        }
+    }
+
     const scoredSlots = availableSlots.filter(slot => {
         if (task.duration <= 1) return true;
         return getSessionSlotsForStart(slot.slotId, task.duration, slots).length === task.duration;
     }).filter(slot => {
         if (task.requiredSlot) return true;
-        
+
         // HARD CONSTRAINT: Teacher Overload
         const teacherIds = getTaskTeacherIds(task);
         const currentLoad = Math.max(...teacherIds.map(teacherId => conflictIndex.teacherDayLoad.get(`${teacherId}|${slot.dayKey}`) || 0));
-        
+
         const taskTeacherKey = teacherIds.join('+');
         const sameTeacherTasks = allTasks.filter(t => getTaskTeacherIds(t).join('+') === taskTeacherKey);
         const totalWeeklyTeacherLoad = sameTeacherTasks.reduce((sum, t) => sum + t.duration, 0);
-        const maxExpectedDailyLoad = Math.max(6, Math.ceil(totalWeeklyTeacherLoad / 5) + 1);
-        
+        const maxExpectedDailyLoad = Math.max(TEACHER_HEAVY_DAY_LOAD, Math.ceil(totalWeeklyTeacherLoad / 5) + 1);
+
         if (currentLoad + task.duration > maxExpectedDailyLoad) {
-            return false; // Hard Invalid
+            return false;
         }
 
         if (ignorePrefs) return true;
         const currentSubjectCount = getMaxSubjectCountForDay(slot.dayKey);
         return currentSubjectCount + task.duration <= maxPeriodsPerDayForAssignment;
     }).map(slot => {
-        let score = 500; 
+        let score = SCORE_BASE;
         const { dayKey, periodSetting } = slot;
         const pIdx = parseInt(slot.slotId.split('-')[1]);
-        
-        const NOON = '12:00';
+
         const isMorning = periodSetting.startTime < NOON;
         const asgnCst = assignmentConstraints[task.compositeId];
-        const morningPIdxs = slots
-            .filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod && s.periodSetting.startTime < NOON)
-            .map(s => parseInt(s.slotId.split('-')[1]));
-        const halfBoundary = morningPIdxs.length > 0
-            ? Math.max(...morningPIdxs) + 1
-            : Math.max(1, Math.floor(slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod).length / 2));
+        const halfBoundary = halfBoundaryByDay.get(dayKey) ?? 0;
         const countHalfLoad = (periods: number[], preferMorning: boolean) => (
             periods.filter(period => preferMorning ? period < halfBoundary : period >= halfBoundary).length
         );
 
         // 1. Mandatory / Preferences Logic
-        const prefMultiplier = ignorePrefs ? 0.2 : 1; // Reduce weight in rescue mode instead of completely ignoring
-        
+        const prefMultiplier = ignorePrefs ? 0.2 : 1;
+
         if (asgnCst) {
             const pref = task.duration >= 2 ? asgnCst.doublePreference : asgnCst.singlePreference;
-            if (pref === 'morning' && isMorning) score += (2000 * prefMultiplier);
-            else if (pref === 'afternoon' && !isMorning) score += (2000 * prefMultiplier);
-            else if (pref && pref !== 'any') score -= (500 * prefMultiplier); 
+            if (pref === 'morning' && isMorning) score += SCORE_PREF_MATCH_BONUS * prefMultiplier;
+            else if (pref === 'afternoon' && !isMorning) score += SCORE_PREF_MATCH_BONUS * prefMultiplier;
+            else if (pref && pref !== 'any') score -= SCORE_PREF_MISMATCH_PENALTY * prefMultiplier;
+        } else if (isCoreSubjectTask(task)) {
+            // Core subjects (Thai/Math/Science/Social) drive the BBL compliance metric —
+            // give them a much stronger morning pull than the generic ACADEMIC bonus below,
+            // since that one is shared with every academic-tagged subject and gets diluted.
+            if (isMorning) score += CORE_SUBJECT_MORNING_BONUS * prefMultiplier;
+            else score -= CORE_SUBJECT_AFTERNOON_PENALTY * prefMultiplier;
         } else {
-            // ลดน้ำหนักลงจาก 300 เป็น 50 เพื่อไม่ให้ทุกวิชาแย่งกันลงแต่ช่วงเช้าจนบ่ายโล่ง
-            if (category === 'ACADEMIC' && isMorning) score += (50 * prefMultiplier);
-            else if (category === 'ACTIVITY' && !isMorning) score += (50 * prefMultiplier);
+            if (category === 'ACADEMIC' && isMorning) score += SCORE_CATEGORY_HALF_BONUS * prefMultiplier;
+            else if (category === 'ACTIVITY' && !isMorning) score += SCORE_CATEGORY_HALF_BONUS * prefMultiplier;
         }
 
-        // 2. Teacher Load & Balancing (Spread workload across the week)
+        // 2. Teacher Load & Balancing
         const teacherIds = getTaskTeacherIds(task);
         const primaryTeacherDayKey = `${task.teacherId}|${dayKey}`;
         const currentLoad = Math.max(...teacherIds.map(teacherId => conflictIndex.teacherDayLoad.get(`${teacherId}|${dayKey}`) || 0));
         const teacherMorningLoad = Math.max(...teacherIds.map(teacherId => countHalfLoad(conflictIndex.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [], true)));
         const teacherAfternoonLoad = Math.max(...teacherIds.map(teacherId => countHalfLoad(conflictIndex.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [], false)));
-        
-        // Dynamic penalty for load imbalance
-        if (currentLoad >= 6) score -= 800; // Increased penalty for heavy days
-        else if (currentLoad >= 4) score -= 200;
-        else if (currentLoad <= 2) score += 300; // Bonus for light days
+
+        if (currentLoad >= TEACHER_HEAVY_DAY_LOAD) score -= TEACHER_HEAVY_DAY_PENALTY;
+        else if (currentLoad >= TEACHER_MODERATE_DAY_LOAD) score -= TEACHER_MODERATE_DAY_PENALTY;
+        else if (currentLoad <= TEACHER_LIGHT_DAY_LOAD) score += TEACHER_LIGHT_DAY_BONUS;
 
         let maxClassLoadForDay = 0;
         let maxClassMorningLoad = 0;
@@ -631,10 +699,10 @@ const getWeightedSlots = (
             maxClassMorningLoad = Math.max(maxClassMorningLoad, countHalfLoad(classPeriods, true));
             maxClassAfternoonLoad = Math.max(maxClassAfternoonLoad, countHalfLoad(classPeriods, false));
         });
-        if (maxClassLoadForDay >= 7) score -= 1200;
-        else if (maxClassLoadForDay >= 6) score -= 700;
-        else if (maxClassLoadForDay >= 5) score -= 300;
-        else if (maxClassLoadForDay <= 3) score += 250;
+        if (maxClassLoadForDay >= CLASS_VERY_HEAVY_DAY_LOAD) score -= CLASS_VERY_HEAVY_DAY_PENALTY;
+        else if (maxClassLoadForDay >= CLASS_HEAVY_DAY_LOAD) score -= CLASS_HEAVY_DAY_PENALTY;
+        else if (maxClassLoadForDay >= CLASS_MODERATE_DAY_LOAD) score -= CLASS_MODERATE_DAY_PENALTY;
+        else if (maxClassLoadForDay <= CLASS_LIGHT_DAY_LOAD) score += CLASS_LIGHT_DAY_BONUS;
 
         const currentHalfLoad = isMorning
             ? Math.max(teacherMorningLoad, maxClassMorningLoad)
@@ -642,17 +710,17 @@ const getWeightedSlots = (
         const oppositeHalfLoad = isMorning
             ? Math.max(teacherAfternoonLoad, maxClassAfternoonLoad)
             : Math.max(teacherMorningLoad, maxClassMorningLoad);
-        score += (oppositeHalfLoad - currentHalfLoad) * 180;
+        score += (oppositeHalfLoad - currentHalfLoad) * HALF_DAY_BALANCE_WEIGHT;
 
         if (task.previousSlots?.includes(slot.slotId)) {
-            score -= task.duration > 1 ? 2200 : 1400;
+            score -= task.duration > 1 ? PREV_SLOT_PENALTY_DOUBLE : PREV_SLOT_PENALTY_SINGLE;
         }
 
-        if (isMorning && teacherMorningLoad >= teacherAfternoonLoad + 2) {
-            score -= 220;
+        if (isMorning && teacherMorningLoad >= teacherAfternoonLoad + HALF_DAY_IMBALANCE_THRESHOLD) {
+            score -= HALF_DAY_IMBALANCE_PENALTY;
         }
-        if (!isMorning && teacherAfternoonLoad >= teacherMorningLoad + 2) {
-            score -= 220;
+        if (!isMorning && teacherAfternoonLoad >= teacherMorningLoad + HALF_DAY_IMBALANCE_THRESHOLD) {
+            score -= HALF_DAY_IMBALANCE_PENALTY;
         }
 
         const daySched = conflictIndex.teacherDailySchedule.get(primaryTeacherDayKey) || [];
@@ -665,29 +733,26 @@ const getWeightedSlots = (
             const sessionPeriods = sessionSlots.length === task.duration
                 ? sessionSlots.map(sessionSlot => parseInt(sessionSlot.split('-')[1]))
                 : Array.from({ length: task.duration }, (_, offset) => pIdx + offset);
-            const nextClassPeriods = [
-                ...classPeriods,
-                ...sessionPeriods
-            ];
+            const nextClassPeriods = [...classPeriods, ...sessionPeriods];
             maxClassGapsAfterPlacement = Math.max(maxClassGapsAfterPlacement, countGaps(nextClassPeriods));
             maxClassConsecutiveAfterPlacement = Math.max(maxClassConsecutiveAfterPlacement, getMaxConsecutive(nextClassPeriods));
         });
-        score -= maxClassGapsAfterPlacement * 180;
-        if (maxClassConsecutiveAfterPlacement > 6) score -= 800;
-        else if (maxClassConsecutiveAfterPlacement > 5) score -= 400;
+        score -= maxClassGapsAfterPlacement * GAP_WEIGHT_PER_PERIOD;
+        if (maxClassConsecutiveAfterPlacement > CONSECUTIVE_VERY_HIGH_THRESHOLD) score -= CONSECUTIVE_VERY_HIGH_PENALTY;
+        else if (maxClassConsecutiveAfterPlacement > CONSECUTIVE_HIGH_THRESHOLD) score -= CONSECUTIVE_HIGH_PENALTY;
 
         const requestedRooms = normalizeSpecificRooms(task.targetRooms);
         if (requestedRooms.length > 0) {
             const maxRoomLoadForDay = Math.max(...requestedRooms.map(roomId => conflictIndex.roomDayLoad.get(`${roomId}|${dayKey}`) || 0));
-            if (maxRoomLoadForDay >= 6) score -= 500;
-            else if (maxRoomLoadForDay >= 4) score -= 200;
-            else if (maxRoomLoadForDay <= 1) score += 150;
+            if (maxRoomLoadForDay >= ROOM_HEAVY_DAY_LOAD) score -= ROOM_HEAVY_DAY_PENALTY;
+            else if (maxRoomLoadForDay >= ROOM_MODERATE_DAY_LOAD) score -= ROOM_MODERATE_DAY_PENALTY;
+            else if (maxRoomLoadForDay <= ROOM_LIGHT_DAY_LOAD) score += ROOM_LIGHT_DAY_BONUS;
         }
 
         const classPeriodLoad = getPeriodLoad(conflictIndex.classPeriodLoad, task.targetClasses, pIdx, task.duration);
         const teacherPeriodLoad = getPeriodLoad(conflictIndex.teacherPeriodLoad, teacherIds, pIdx, task.duration);
-        score -= classPeriodLoad * 260;
-        score -= teacherPeriodLoad * 80;
+        score -= classPeriodLoad * CLASS_PERIOD_LOAD_WEIGHT;
+        score -= teacherPeriodLoad * TEACHER_PERIOD_LOAD_WEIGHT;
 
         const teachingPeriodSlots = slots.filter(s => s.dayKey === dayKey && s.periodSetting.isTeachingPeriod);
         const lastMorningTeachingSlot = [...teachingPeriodSlots]
@@ -695,93 +760,52 @@ const getWeightedSlots = (
             .sort((a, b) => parseInt(b.slotId.split('-')[1]) - parseInt(a.slotId.split('-')[1]))[0];
         const isLastMorningPeriod = lastMorningTeachingSlot?.slotId === slot.slotId;
         if (isLastMorningPeriod && classPeriodLoad <= 1) {
-            score += 80;
+            score += LAST_MORNING_PERIOD_BONUS;
         }
 
         let consecutiveCount = 0;
-        
         let i = pIdx - 1;
-        while (daySched.includes(i)) {
-            consecutiveCount++;
-            i--;
-        }
+        while (daySched.includes(i)) { consecutiveCount++; i--; }
         i = pIdx + task.duration;
-        while (daySched.includes(i)) {
-            consecutiveCount++;
-            i++;
-        }
-        
-        const totalConsecutive = consecutiveCount + task.duration;
-        if (totalConsecutive > 3) score -= 1500; 
-        else if (totalConsecutive > 2) score -= 300;
+        while (daySched.includes(i)) { consecutiveCount++; i++; }
 
-        // 3. Gap Penalty & Continuous Reward (Look-ahead logic)
+        const totalConsecutive = consecutiveCount + task.duration;
+        if (totalConsecutive > TEACHER_STREAM_HEAVY_THRESHOLD) score -= TEACHER_STREAM_HEAVY_PENALTY;
+        else if (totalConsecutive > TEACHER_STREAM_MODERATE_THRESHOLD) score -= TEACHER_STREAM_MODERATE_PENALTY;
+
+        // 3. Gap Penalty & Continuous Reward
         const prevP = pIdx - 1;
         const nextP = pIdx + task.duration;
         const hasPrev = daySched.includes(prevP);
         const hasNext = daySched.includes(nextP);
-        
-        // Reward for being continuous (touching an existing period)
-        if (hasPrev || hasNext) {
-            score += 800; // Strong reward for grouping periods together
-        }
-        
-        // Look-ahead for gaps: if placing this leaves exactly 1 empty slot before or after another block
-        const hasBeforeGap = daySched.includes(prevP - 1) && !hasPrev; 
-        const hasAfterGap = daySched.includes(nextP + 1) && !hasNext;  
-        
-        if (hasBeforeGap) score -= 1500; // Strong penalty for leaving a 1-period gap
-        if (hasAfterGap) score -= 1500;
-        
-        // Fragmentation penalty: if placing this creates a standalone island in a day that already has periods
-        if (!hasPrev && !hasNext && daySched.length > 0) {
-            score -= 1000;
-        }
 
-        // 4. Class Subject Spreading (Crucial for User Request)
-        let maxSubjectInDay = 0;
-        let hasMorning = false;
-        let hasAfternoon = false;
+        if (hasPrev || hasNext) score += CONTINUITY_BONUS;
 
-        maxSubjectInDay = getMaxSubjectCountForDay(dayKey);
+        const hasBeforeGap = daySched.includes(prevP - 1) && !hasPrev;
+        const hasAfterGap = daySched.includes(nextP + 1) && !hasNext;
+        if (hasBeforeGap) score -= GAP_AVOIDANCE_PENALTY;
+        if (hasAfterGap) score -= GAP_AVOIDANCE_PENALTY;
 
+        if (!hasPrev && !hasNext && daySched.length > 0) score -= FRAGMENTATION_PENALTY;
+
+        // 4. Class Subject Spreading
+        const maxSubjectInDay = getMaxSubjectCountForDay(dayKey);
         if (maxSubjectInDay > 0) {
-            // Strong penalty for repeating subject on same day
-            // High-load subjects (5+ periods/week) may need one double day to fit cleanly.
-            const dayRepeatPenalty = canRepeatOnSomeDays ? 1500 : 3000;
-            score -= (maxSubjectInDay * dayRepeatPenalty);
-
-            // Half-day balancing logic: If we MUST repeat, prefer the other half
-            // We search the timetable for existing instances of this course for these classes on this day
-            let existingInMorning = false;
-            let existingInAfternoon = false;
-            
-            // Heuristic check using teacher's schedule (usually same since teacher + class are linked in tasks)
-            daySched.forEach(idx => {
-                const occs = conflictIndex.teacherSlots.get(task.teacherId); // Not quite right, need to check if it's the SAME course
-                // For performance, we'll use a simpler check: if we already have one today, 
-                // we just try to be in the other half regardless of where the first one was, 
-                // assuming the first one took its preferred half.
-                // Or better: we look at morning vs afternoon load for this class/course.
-            });
-            
-            // Simple logic: if repeating, give a small nudge to the "other" half
-            // (Morning courses prefer afternoon for 2nd period, and vice-versa)
-            if (isMorning) score -= 120; 
-            else score += 120;
+            const dayRepeatPenalty = canRepeatOnSomeDays ? SUBJECT_REPEAT_PENALTY_HIGH_FREQ : SUBJECT_REPEAT_PENALTY_LOW_FREQ;
+            score -= maxSubjectInDay * dayRepeatPenalty;
+            if (isMorning) score -= REPEAT_HALF_DAY_NUDGE;
+            else score += REPEAT_HALF_DAY_NUDGE;
         } else {
-            // Bonus for spreading to a new day
-            score += 1000;
+            score += NEW_DAY_BONUS;
         }
 
         // 5. Time Slot Specific
-        if (category === 'ACADEMIC' && !isMorning) score += 25;
-        else if (category === 'ACADEMIC' && isMorning) score += 5;
-        if (category === 'ACTIVITY' && !isMorning) score += 25;
-        else if (category === 'ACTIVITY' && isMorning) score += 5;
+        if (category === 'ACADEMIC' && !isMorning) score += CATEGORY_TIME_BONUS;
+        else if (category === 'ACADEMIC' && isMorning) score += CATEGORY_TIME_WEAK_BONUS;
+        if (category === 'ACTIVITY' && !isMorning) score += CATEGORY_TIME_BONUS;
+        else if (category === 'ACTIVITY' && isMorning) score += CATEGORY_TIME_WEAK_BONUS;
 
-        // สุ่มคะแนนเล็กน้อยเพื่อให้เกิดการกระจายตัว (ถ้าคะแนนเท่ากันหมด)
-        score += Math.random() * 80; 
+        score += Math.random() * JITTER_RANGE;
         return { slot, score };
     });
 
@@ -789,6 +813,11 @@ const getWeightedSlots = (
     return scoredSlots.map(s => s.slot.slotId);
 };
 
+/**
+ * Computes a quality score [0, ~1] for a candidate schedule.
+ * Higher is better. Factors: placement rate, teacher/class distribution balance,
+ * gap penalties, consecutive-period overrun penalties, and BBL morning compliance.
+ */
 const evaluateScheduleQuality = (
     timetable: EngineSchedule,
     allTeachingSlots: EngineTeachingSlot[],
@@ -797,7 +826,7 @@ const evaluateScheduleQuality = (
 ) => {
     const index = buildRuntimeConflictIndex(timetable);
     const dayKeys = Array.from(new Set(allTeachingSlots.map(slot => slot.dayKey)));
-    let score = placedPeriods * 10000 - unplacedCount * 1000000;
+    let score = placedPeriods * QUALITY_PLACED_WEIGHT - unplacedCount * QUALITY_UNPLACED_PENALTY;
 
     const teacherIds = Array.from(new Set(Array.from(index.teacherDayLoad.keys()).map(key => key.split('|')[0])));
     const classIds = Array.from(new Set(Array.from(index.classDayLoad.keys()).map(key => key.split('|')[0])));
@@ -805,34 +834,36 @@ const evaluateScheduleQuality = (
 
     teacherIds.forEach(teacherId => {
         const loads = dayKeys.map(dayKey => index.teacherDayLoad.get(`${teacherId}|${dayKey}`) || 0);
-        score -= getBalancePenalty(loads) * 220;
+        score -= getBalancePenalty(loads) * QUALITY_TEACHER_BALANCE_WEIGHT;
 
         dayKeys.forEach(dayKey => {
             const periods = index.teacherDailySchedule.get(`${teacherId}|${dayKey}`) || [];
             const morning = periods.filter(period => period < 5).length;
             const afternoon = periods.length - morning;
-            score -= Math.abs(morning - afternoon) * 140;
+            score -= Math.abs(morning - afternoon) * QUALITY_TEACHER_HALF_BALANCE_WEIGHT;
         });
     });
 
     classIds.forEach(classId => {
         const loads = dayKeys.map(dayKey => index.classDayLoad.get(`${classId}|${dayKey}`) || 0);
-        score -= getBalancePenalty(loads) * 420;
+        score -= getBalancePenalty(loads) * QUALITY_CLASS_BALANCE_WEIGHT;
 
         dayKeys.forEach(dayKey => {
             const periods = index.classDailySchedule.get(`${classId}|${dayKey}`) || [];
-            score -= countGaps(periods) * 260;
+            score -= countGaps(periods) * QUALITY_CLASS_GAP_WEIGHT;
             const maxConsecutive = getMaxConsecutive(periods);
-            if (maxConsecutive > 6) score -= (maxConsecutive - 6) * 900;
+            if (maxConsecutive > QUALITY_CLASS_CONSECUTIVE_THRESHOLD) {
+                score -= (maxConsecutive - QUALITY_CLASS_CONSECUTIVE_THRESHOLD) * QUALITY_CLASS_CONSECUTIVE_WEIGHT;
+            }
             const morning = periods.filter(period => period < 5).length;
             const afternoon = periods.length - morning;
-            score -= Math.abs(morning - afternoon) * 220;
+            score -= Math.abs(morning - afternoon) * QUALITY_CLASS_HALF_BALANCE_WEIGHT;
         });
     });
 
     roomIds.forEach(roomId => {
         const loads = dayKeys.map(dayKey => index.roomDayLoad.get(`${roomId}|${dayKey}`) || 0);
-        score -= getBalancePenalty(loads) * 120;
+        score -= getBalancePenalty(loads) * QUALITY_ROOM_BALANCE_WEIGHT;
     });
 
     const classCourseDay = new Map<string, { count: number; course: Course | null }>();
@@ -840,8 +871,8 @@ const evaluateScheduleQuality = (
         const [dayKey] = slotId.split('-');
         const processedInSlot = new Set<string>();
         occupancies.forEach(occupancy => {
-            const placementKey = occupancy.taskId !== undefined 
-                ? `task-${occupancy.taskId}` 
+            const placementKey = occupancy.taskId !== undefined
+                ? `task-${occupancy.taskId}`
                 : `course-${occupancy.courseId}-${occupancy.groupNumber}`;
             if (processedInSlot.has(placementKey)) return;
             processedInSlot.add(placementKey);
@@ -857,13 +888,44 @@ const evaluateScheduleQuality = (
     classCourseDay.forEach(({ count, course }) => {
         const expectedWeeklyPeriods = course ? getRequiredWeeklyPeriods(course) : 1;
         const maxPerDay = expectedWeeklyPeriods >= 5 ? 2 : 1;
-        if (count > maxPerDay) score -= (count - maxPerDay) * 5000;
-        else if (count === maxPerDay && expectedWeeklyPeriods > 5) score += 250;
+        if (count > maxPerDay) score -= (count - maxPerDay) * QUALITY_SUBJECT_OVER_REPEAT_PENALTY;
+        else if (count === maxPerDay && expectedWeeklyPeriods > 5) score += QUALITY_SUBJECT_BALANCED_BONUS;
     });
+
+    // BBL compliance: reward the run with the highest share of core-subject
+    // (Thai/Math/Science/Social) placements in the morning, mirroring
+    // `calculateBBLCompliance` (scheduleMetrics.ts) so multi-run selection
+    // actually optimizes for the metric reported back to users.
+    const isMorningBySlotId = new Map(allTeachingSlots.map(slot => [slot.slotId, slot.periodSetting.startTime < '12:00']));
+    let totalCoreSlots = 0;
+    let morningCoreSlots = 0;
+    Object.entries(timetable).forEach(([slotId, occupancies]) => {
+        const processedInSlot = new Set<string>();
+        occupancies.forEach(occupancy => {
+            const placementKey = occupancy.taskId !== undefined
+                ? `task-${occupancy.taskId}`
+                : `course-${occupancy.courseId}-${occupancy.groupNumber}`;
+            if (processedInSlot.has(placementKey)) return;
+            processedInSlot.add(placementKey);
+
+            if (!isCoreAcademicCourseTitle(occupancy.course?.title || '')) return;
+            totalCoreSlots++;
+            if (isMorningBySlotId.get(slotId)) morningCoreSlots++;
+        });
+    });
+    if (totalCoreSlots > 0) {
+        score += (morningCoreSlots / totalCoreSlots) * QUALITY_BBL_COMPLIANCE_WEIGHT;
+    }
 
     return score;
 };
 
+/**
+ * Multi-run CSP scheduling engine.
+ * Runs up to `maxRuns` independent attempts, keeping the solution with the
+ * highest quality score (placement rate + BBL compliance + gap/consecutive penalties).
+ * Each run uses backtracking with an ejection/restoration repair step.
+ */
 export const runSchedulingEngine = (
     input: SchedulingEngineInput,
     onProgress?: (progress: SchedulingEngineProgress) => void
@@ -877,7 +939,8 @@ export const runSchedulingEngine = (
         relaxedValidSlotsByTaskIndex,
         assignmentConstraints,
         maxRuns,
-        maxRepairAttempts = 1000
+        maxRepairAttempts = 1000,
+        maxConsecutivePeriodsPerDay = 2
     } = input;
 
     let bestSchoolTimetable: EngineSchedule = {};
@@ -905,6 +968,14 @@ export const runSchedulingEngine = (
         const currentConflictIndex = buildRuntimeConflictIndex(currentTimetable);
         const currentUnplacedTasks: EngineTask[] = [];
         let currentPlacedPeriods = 0;
+        // Per-run circuit breaker: `maxRepairAttempts` was previously accepted as an
+        // input but never actually consulted anywhere, so a pathological mix of
+        // hard-to-place tasks had no upper bound on backtracking work within a run.
+        // Once the budget is spent, remaining tasks fall back to a direct (non-
+        // backtracking) placement attempt for the rest of this run only — every
+        // other run still gets its own full budget, so this can only help worst-case
+        // runs finish in bounded time and never makes an already-successful run worse.
+        let repairAttemptsUsed = 0;
 
         onProgress?.({
             percentage: 35 + (run / maxRuns) * 30,
@@ -959,7 +1030,7 @@ export const runSchedulingEngine = (
                 const sessionSlots = getSessionSlotsForStart(startSlotId, task.duration, allTeachingSlots);
                 if (sessionSlots.length !== task.duration) continue;
 
-                if (canPlaceWithIndex(task, sessionSlots, conflictIndex, assignmentConstraints)) {
+                if (canPlaceWithIndex(task, sessionSlots, conflictIndex, assignmentConstraints, maxConsecutivePeriodsPerDay)) {
                     const teacherIds = getTaskTeacherIds(task);
                     const isRelaxedPlacement = !(validSlotsByTaskIndexSets[taskIndex]?.has(startSlotId));
 
@@ -975,7 +1046,7 @@ export const runSchedulingEngine = (
                                     ...task.course,
                                     isRelaxedSchedule: true,
                                     scheduleWarning: `จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)`
-                                } as any : task.course,
+                                } : task.course,
                                 taskId: taskIndex,
                                 groupNumber: task.groupNumber
                             };
@@ -1014,158 +1085,168 @@ export const runSchedulingEngine = (
             return false;
         };
 
+        const removeTaskFromTimetable = (tId: number, ttt: EngineSchedule, upd: EngineBatchUpdates, idx: RuntimeConflictIndex) => {
+            const removedOccs: RemovedOccupancy[] = [];
+            for (const sId in ttt) {
+                const removed = ttt[sId].filter(o => o.taskId === tId);
+                removed.forEach(occupancy => {
+                    removeOccupancyFromIndex(idx, sId, occupancy);
+                    removedOccs.push({slotId: sId, occupancy});
+                });
+                ttt[sId] = ttt[sId].filter(o => o.taskId !== tId);
+            }
+            const bTask = tasks[tId];
+            const removedUpdates: RemovedUpdate[] = [];
+            if (bTask) {
+                getTaskTeacherIds(bTask).forEach(teacherId => {
+                    bTask.targetClasses.forEach(cId => {
+                        const docId = `${teacherId}_${cId}`;
+                        if (upd[docId]) {
+                            for (const sId in upd[docId]) {
+                                const items = upd[docId][sId];
+                                const removing = items.filter(it => it.taskId === tId);
+                                if (removing.length > 0) {
+                                    removedUpdates.push({ docId, sId, items: removing });
+                                }
+                                upd[docId][sId] = items.filter(it => it.taskId !== tId);
+                                if (upd[docId][sId].length === 0) delete upd[docId][sId];
+                            }
+                        }
+                    });
+                });
+            }
+            return { removedOccs, removedUpdates };
+        };
+
+        const restoreTaskToTimetable = (removedOccs: RemovedOccupancy[], removedUpdates: RemovedUpdate[], ttt: EngineSchedule, upd: EngineBatchUpdates, idx: RuntimeConflictIndex) => {
+            removedOccs.forEach(({slotId, occupancy}) => {
+                if (!ttt[slotId]) ttt[slotId] = [];
+                ttt[slotId].push(occupancy);
+                addOccupancyToIndex(idx, slotId, occupancy);
+            });
+            removedUpdates.forEach(({docId, sId, items}) => {
+                if (!upd[docId]) upd[docId] = {};
+                upd[docId][sId] = [...(upd[docId][sId] || []), ...items];
+            });
+        };
+
+        const tryPlaceWithBacktracking = (
+            task: EngineTask,
+            depth: number,
+            timetable: EngineSchedule,
+            updates: EngineBatchUpdates,
+            conflictIndex: RuntimeConflictIndex
+        ): boolean => {
+            if (tryPlaceInRun(task, depth > 0, timetable, updates, conflictIndex)) return true;
+            if (depth >= MAX_BACKTRACK_DEPTH) return false;
+            if (repairAttemptsUsed >= maxRepairAttempts) return false;
+            repairAttemptsUsed++;
+
+            const taskIndex = taskIndexByRef.get(task) ?? tasks.indexOf(task);
+            const repairSlotPool = depth > 0 ? emergencySlotPoolByTaskIndex : validSlotsByTaskIndex;
+            
+            const potentialSlots = getWeightedSlots(
+                task,
+                allTeachingSlots,
+                new Set(repairSlotPool[taskIndex] || []),
+                repairSlotPool,
+                taskIndex,
+                assignmentConstraints,
+                depth > 0,
+                conflictIndex,
+                tasks
+            );
+
+            const repairSearchLimit = Math.min(potentialSlots.length, MAX_BACKTRACK_BRANCHES);
+            const repairTaskTeacherIdSet = new Set(getTaskTeacherIds(task));
+            const repairRequestedRooms = normalizeSpecificRooms(task.targetRooms);
+            const repairGroupNumber = Number(task.groupNumber || 0);
+
+            for (const slotId of potentialSlots.slice(0, repairSearchLimit)) {
+                const sessionSlots = getSessionSlotsForStart(slotId, task.duration, allTeachingSlots);
+                if (sessionSlots.length !== task.duration) continue;
+
+                const blockers: TimetableOccupancy[] = [];
+                let fatalConflict = false;
+
+                for (const sId of sessionSlots) {
+                    const occs = timetable[sId] || [];
+                    const localBlockers = occs.filter(o => {
+                        const occClasses: string[] = Array.isArray(o.classId) ? o.classId : (o.classId ? [o.classId] : []);
+                        const occRooms = normalizeSpecificRooms(o.room);
+                        const occGroup = Number(o.groupNumber || 0);
+                        const sameAssignment = o.courseId === task.course.id && occGroup === repairGroupNumber;
+                        return repairTaskTeacherIdSet.has(o.teacherId) ||
+                            (task.targetClasses.some(c => occClasses.includes(c)) && !sameAssignment) ||
+                            repairRequestedRooms.some(roomId => occRooms.includes(roomId));
+                    });
+                    if (localBlockers.some(o => {
+                        if (o.taskId === undefined) return true;
+                        const t = tasks[o.taskId];
+                        return Boolean(t?.requiredSlot) || t.duration > task.duration;
+                    })) {
+                        fatalConflict = true;
+                        break;
+                    }
+                    blockers.push(...localBlockers);
+                }
+
+                if (fatalConflict) continue;
+
+                const uniqueBlockers = Array.from(new Map(blockers.map(b => [b.taskId, b])).values());
+                if (uniqueBlockers.length === 0 || uniqueBlockers.length > MAX_EJECT_BLOCKERS) continue;
+
+                // Attempt Ejection
+                const rollbacks: { tId: number; removedOccs: RemovedOccupancy[]; removedUpdates: RemovedUpdate[]; task: EngineTask }[] = [];
+                let allEjected = true;
+
+                for (const b of uniqueBlockers) {
+                    if (b.taskId === undefined) { allEjected = false; break; }
+                    const bTask = tasks[b.taskId];
+                    const { removedOccs, removedUpdates } = removeTaskFromTimetable(b.taskId, timetable, updates, conflictIndex);
+                    rollbacks.push({ tId: b.taskId, removedOccs, removedUpdates, task: bTask });
+                }
+
+                if (allEjected) {
+                    const tempPool: string[][] = [];
+                    tempPool[taskIndex] = [slotId];
+                    if (tryPlaceInRun(task, true, timetable, updates, conflictIndex, tempPool)) {
+                        // Recursively try to place ejected tasks
+                        let allReplaced = true;
+                        let placedCount = 0;
+                        for (const r of rollbacks) {
+                            if (!tryPlaceWithBacktracking(r.task, depth + 1, timetable, updates, conflictIndex)) {
+                                allReplaced = false;
+                                break;
+                            }
+                            placedCount++;
+                        }
+
+                        if (allReplaced) {
+                            return true; // Success!
+                        } else {
+                            // Rollback the successfully replaced tasks in reverse order
+                            // Use pre-stored tId (task array index) to avoid O(n) indexOf scan
+                            for (let i = placedCount - 1; i >= 0; i--) {
+                                removeTaskFromTimetable(rollbacks[i].tId, timetable, updates, conflictIndex);
+                            }
+                            // Rollback the task we just placed
+                            removeTaskFromTimetable(taskIndex, timetable, updates, conflictIndex);
+                        }
+                    }
+                }
+
+                // Restore ejections (Rollback the blockers that were removed)
+                rollbacks.forEach(r => restoreTaskToTimetable(r.removedOccs, r.removedUpdates, timetable, updates, conflictIndex));
+            }
+            return false;
+        };
+
         for (const task of orderedTasks) {
-            if (tryPlaceInRun(task, false, currentTimetable, currentBatchUpdates, currentConflictIndex)) {
+            if (tryPlaceWithBacktracking(task, 0, currentTimetable, currentBatchUpdates, currentConflictIndex)) {
                 currentPlacedPeriods += task.duration;
             } else {
                 currentUnplacedTasks.push(task);
-            }
-        }
-
-        if (currentUnplacedTasks.length > 0) {
-            let repairCount = 0;
-
-            while (currentUnplacedTasks.length > 0 && repairCount < maxRepairAttempts) {
-                repairCount++;
-                const task = currentUnplacedTasks.shift()!;
-                const taskIndex = taskIndexByRef.get(task) ?? tasks.indexOf(task);
-                let repaired = false;
-
-                // Two-phase repair:
-                // Phase 1 (Strict): use strict valid slots and enforce preferences (first 60% of attempts)
-                // Phase 2 (Relaxed): use relaxed fallback slots and ignore preferences
-                const useStrict = repairCount < maxRepairAttempts * 0.6;
-                const repairSlotPool = useStrict ? validSlotsByTaskIndex : emergencySlotPoolByTaskIndex;
-                const ignorePrefs = !useStrict;
-
-                const potentialSlots = getWeightedSlots(
-                    task,
-                    allTeachingSlots,
-                    new Set(repairSlotPool[taskIndex] || []),
-                    repairSlotPool,
-                    taskIndex,
-                    assignmentConstraints,
-                    ignorePrefs,
-                    currentConflictIndex,
-                    tasks
-                );
-
-                const repairSearchLimit = Math.min(
-                    potentialSlots.length,
-                    Math.max(30, Math.ceil(allTeachingSlots.length * 0.75))
-                );
-
-                let bestSlotId: string | null = null;
-                let bestBlockers: TimetableOccupancy[] = [];
-                let minBlockerCost = Infinity;
-
-                // Hoist per-task invariants outside the slot search loop
-                const repairTaskTeacherIdSet = new Set(getTaskTeacherIds(task));
-                const repairRequestedRooms = normalizeSpecificRooms(task.targetRooms);
-                const repairGroupNumber = Number(task.groupNumber || 0);
-
-                for (const slotId of potentialSlots.slice(0, repairSearchLimit)) {
-                    const sessionSlots = getSessionSlotsForStart(slotId, task.duration, allTeachingSlots);
-                    if (sessionSlots.length !== task.duration) continue;
-
-                    const blockers: TimetableOccupancy[] = [];
-                    let fatalConflict = false;
-
-                    for (const sId of sessionSlots) {
-                        const occs = currentTimetable[sId] || [];
-                        const localBlockers = occs.filter(o => {
-                            // Inline flatten (no Set dedup needed — engine-written occupancies are already clean)
-                            const occClasses: string[] = Array.isArray(o.classId) ? o.classId : (o.classId ? [o.classId] : []);
-                            const occRooms = normalizeSpecificRooms(o.room);
-                            const occGroup = Number((o as any).groupNumber || 0);
-                            const sameAssignment = o.courseId === task.course.id && occGroup === repairGroupNumber;
-                            return repairTaskTeacherIdSet.has(o.teacherId) ||
-                                (task.targetClasses.some(c => occClasses.includes(c)) && !sameAssignment) ||
-                                repairRequestedRooms.some(roomId => occRooms.includes(roomId));
-                        });
-                        if (localBlockers.some(o => {
-                            if (o.taskId === undefined) return true;
-                            const t = tasks[o.taskId];
-                            return Boolean(t?.requiredSlot);
-                        })) {
-                            fatalConflict = true;
-                            break;
-                        }
-                        blockers.push(...localBlockers);
-                    }
-
-                    if (fatalConflict) continue;
-
-                    const uniqueBlockers = Array.from(new Map(blockers.map(b => [b.taskId, b])).values());
-
-                    // Ejecting limit
-                    if (uniqueBlockers.length <= 2) {
-                        let blockerCost = 0;
-                        for (const b of uniqueBlockers) {
-                            if (b.taskId === undefined) {
-                                blockerCost = Infinity;
-                                break;
-                            }
-                            const bTask = tasks[b.taskId];
-                            if (!bTask || bTask.requiredSlot) {
-                                blockerCost = Infinity;
-                                break;
-                            }
-                            if (bTask.duration > task.duration) {
-                                blockerCost = Infinity;
-                                break;
-                            }
-                            // Strongly prefer ejecting single period tasks over double periods
-                            const blockerWeight = bTask.duration > 1 ? 10 : 1;
-                            blockerCost += blockerWeight;
-                        }
-
-                        if (blockerCost < minBlockerCost) {
-                            minBlockerCost = blockerCost;
-                            bestSlotId = slotId;
-                            bestBlockers = uniqueBlockers;
-                        }
-                    }
-                }
-
-                if (bestSlotId && minBlockerCost < Infinity) {
-                    bestBlockers.forEach(b => {
-                        if (b.taskId === undefined) return;
-                        for (const sId in currentTimetable) {
-                            const removed = currentTimetable[sId].filter(o => o.taskId === b.taskId);
-                            removed.forEach(occupancy => removeOccupancyFromIndex(currentConflictIndex, sId, occupancy));
-                            currentTimetable[sId] = currentTimetable[sId].filter(o => o.taskId !== b.taskId);
-                        }
-                        const bTask = tasks[b.taskId];
-                        if (bTask) {
-                            getTaskTeacherIds(bTask).forEach(teacherId => {
-                                bTask.targetClasses.forEach(cId => {
-                                    const docId = `${teacherId}_${cId}`;
-                                    if (currentBatchUpdates[docId]) {
-                                        for (const sId in currentBatchUpdates[docId]) {
-                                            const items = currentBatchUpdates[docId][sId] as any[];
-                                            currentBatchUpdates[docId][sId] = items.filter(it => it.taskId !== b.taskId);
-                                            if (currentBatchUpdates[docId][sId].length === 0) delete currentBatchUpdates[docId][sId];
-                                        }
-                                    }
-                                });
-                            });
-                            currentUnplacedTasks.push(bTask);
-                            currentPlacedPeriods -= bTask.duration;
-                        }
-                    });
-
-                    const tempPool: string[][] = [];
-                    tempPool[taskIndex] = [bestSlotId];
-                    if (tryPlaceInRun(task, ignorePrefs, currentTimetable, currentBatchUpdates, currentConflictIndex, tempPool)) {
-                        currentPlacedPeriods += task.duration;
-                        repaired = true;
-                    }
-                }
-
-                if (!repaired) {
-                    currentUnplacedTasks.push(task);
-                }
             }
         }
 
@@ -1187,6 +1268,9 @@ export const runSchedulingEngine = (
             finalUnplacedTasks = [...currentUnplacedTasks];
             totalPlacedPeriods = currentPlacedPeriods;
         }
+
+        // Perfect result: all tasks placed — skip remaining runs
+        if (minUnplacedCount === 0 && run >= 2) break;
     }
 
     return {

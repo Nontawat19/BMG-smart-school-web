@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path'; // ✅ ต้อง import path
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
@@ -10,6 +10,10 @@ export default defineConfig({
     react(), 
     nodePolyfills(),
     VitePWA({
+      // injectManifest: รวม workbox precache + Firebase Messaging ใน SW เดียว
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['Epp5 online.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
@@ -33,11 +37,9 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024 // 15MB
-      }
+      injectManifest: {
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15MB
+      },
     }),
     {
       name: 'camera-proxy-middleware',
@@ -124,5 +126,22 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['vite-plugin-node-polyfills'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@react-pdf') || id.includes('pdf-lib') || id.includes('pdfjs-dist') || id.includes('react-pdf')) return 'vendor-pdf';
+          if (id.includes('xlsx') || id.includes('exceljs')) return 'vendor-spreadsheet';
+          if (id.includes('@dnd-kit')) return 'vendor-dnd';
+          return undefined;
+        }
+      }
+    }
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 });

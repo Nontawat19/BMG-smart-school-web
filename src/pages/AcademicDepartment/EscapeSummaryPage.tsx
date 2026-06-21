@@ -624,35 +624,46 @@ const EscapeSummaryPage: React.FC = () => {
         <MainLayout>
             <div className="min-h-screen bg-[#eef0f4] px-2 py-4 text-slate-900 transition-colors dark:bg-[#0f1117] dark:text-slate-100 print:bg-white">
                 <div className="mx-auto max-w-[1080px]">
-                    <div className="mb-3 flex items-center gap-4 print:hidden">
-                        <BackButton to="/academic/hub/registration" />
-                        <span className="font-medium text-gray-500 dark:text-gray-400">กลับไปหน้าบริหารงานวิชาการ</span>
-                    </div>
-
-                    <div className="rounded-sm border border-[#d6dbe0] bg-white shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922]">
-                    <div className="flex items-center justify-between border-b border-[#d6dbe0] px-4 py-2.5 dark:border-slate-700">
-                        <h1 className="text-[15px] font-medium text-slate-950 dark:text-slate-100">รายงานสรุปยอดรวมนักเรียนที่หนีเรียนตามรายวิชา</h1>
-                        <div className="flex items-center gap-1.5 print:hidden">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300 print:hidden">
+                        <div className="space-y-1 text-left">
+                            <div className="flex items-center gap-3">
+                                <BackButton to="/academic/hub/registration" />
+                                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                                    <Search className="text-indigo-600 dark:text-indigo-400" size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                                        สรุปยอดการหนีเรียน
+                                    </h1>
+                                    <p className="text-gray-500 dark:text-gray-400 text-xs font-bold pt-0.5">
+                                        รายงานสรุปยอดรวมนักเรียนที่หนีเรียนตามรายวิชา
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 self-start md:self-center">
                             <button
                                 type="button"
                                 onClick={fetchEscapeData}
                                 disabled={loading}
                                 title="รีเฟรชข้อมูล"
-                                className="inline-flex h-[30px] w-[34px] items-center justify-center rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60"
+                                className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 shadow-sm transition disabled:opacity-60"
                             >
-                                {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                                {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
                             </button>
                             <button
                                 type="button"
                                 onClick={handleExportPdf}
                                 disabled={pdfGenerating || loading}
-                                className="inline-flex h-[30px] items-center gap-1.5 rounded bg-sky-500 px-3 text-[12px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold shadow-sm transition disabled:opacity-60"
                             >
-                                {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                                {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
                                 สร้างรายงาน
                             </button>
                         </div>
                     </div>
+
+                    <div className="rounded-sm border border-[#d6dbe0] bg-white shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922]">
 
                     <div className="grid grid-cols-1 gap-x-12 gap-y-3 px-7 py-4 md:grid-cols-2 print:hidden">
                         <label className="block">

@@ -476,15 +476,13 @@ const ClubReportsPage: React.FC = () => {
         orientation: "landscape",
         columns: [
           { label: "ลำดับ", width: 6, align: "center" },
-          { label: "โรงเรียน", width: 16, align: "center" },
           { label: "รหัส", width: 8, align: "center" },
-          { label: "ชื่อ-นามสกุล", width: 35, align: "center" },
-          { label: "ชั้นเรียน", width: 21, align: "center" },
-          { label: "หมายเหตุ", width: 14, align: "center" },
+          { label: "ชื่อ-นามสกุล", width: 42, align: "center" },
+          { label: "ชั้นเรียน", width: 26, align: "center" },
+          { label: "หมายเหตุ", width: 18, align: "center" },
         ],
         rows: (rows as Student[]).map((student, index) => [
           String(index + 1),
-          schoolName || "-",
           getStudentCode(student),
           getStudentName(student),
           formatClassRoom(student),
@@ -499,15 +497,14 @@ const ClubReportsPage: React.FC = () => {
         orientation: "landscape",
         columns: [
           { label: "ลำดับ", width: 4, align: "center" },
-          { label: "โรงเรียน", width: 13, align: "center", compact: true },
-          { label: "ชื่อชุมนุม", width: 17, align: "center", compact: true },
+          { label: "ชื่อชุมนุม", width: 23, align: "center", compact: true },
           { label: "คาบเรียน", width: 6, align: "center", compactHeader: true },
           { label: "จำนวนสูงสุด", width: 6, align: "center", compactHeader: true },
           { label: "จำนวนทั้งหมด", width: 8, align: "center", compactHeader: true },
           { label: "จำนวนผ่าน", width: 7, align: "center", compactHeader: true },
           { label: "จำนวนไม่ผ่าน", width: 8, align: "center", compactHeader: true },
           { label: "ร้อยละ", width: 6, align: "center" },
-          { label: "คุณครูประจำชุมนุม", width: 25, align: "left" },
+          { label: "คุณครูประจำชุมนุม", width: 38, align: "left" },
         ],
         rows: (rows as Club[]).map((club, index) => {
           const members = students.filter((student) => memberships[student.id]?.clubId === club.id);
@@ -517,7 +514,6 @@ const ClubReportsPage: React.FC = () => {
           const percent = members.length ? ((passed / members.length) * 100).toFixed(2) : "0.00";
           return [
             String(index + 1),
-            schoolName || "-",
             club.name,
             "20",
             String(club.capacity || "-"),
@@ -705,11 +701,10 @@ const ClubReportsPage: React.FC = () => {
 
     if (reportType === "students-without-club") {
       return (
-        <ReportTable headers={["#", "โรงเรียน", "รหัส", "ชื่อ-นามสกุล", "ชั้นเรียน"]}>
+        <ReportTable headers={["#", "รหัส", "ชื่อ-นามสกุล", "ชั้นเรียน"]}>
           {(rows as Student[]).map((student, index) => (
             <tr key={student.id}>
               <Td>{index + 1}</Td>
-              <Td className="font-bold text-slate-900 dark:text-white">{schoolName}</Td>
               <Td>{getStudentCode(student)}</Td>
               <Td>{getStudentName(student)}</Td>
               <Td>{formatClassRoom(student)}</Td>
@@ -721,7 +716,7 @@ const ClubReportsPage: React.FC = () => {
 
     if (reportType === "club-student-count-summary") {
       return (
-        <ReportTable headers={["#", "โรงเรียน", "ชื่อชุมนุม", "คาบเรียน", "จำนวนสูงสุด", "จำนวนทั้งหมด", "จำนวนผ่าน", "จำนวนไม่ผ่าน", "ร้อยละ", "คุณครูประจำชุมนุม"]}>
+        <ReportTable headers={["#", "ชื่อชุมนุม", "คาบเรียน", "จำนวนสูงสุด", "จำนวนทั้งหมด", "จำนวนผ่าน", "จำนวนไม่ผ่าน", "ร้อยละ", "คุณครูประจำชุมนุม"]}>
           {(rows as Club[]).map((club, index) => {
             const members = students.filter((student) => memberships[student.id]?.clubId === club.id);
             const evalResults = evaluationsByClub[club.id] || {};
@@ -731,7 +726,6 @@ const ClubReportsPage: React.FC = () => {
             return (
               <tr key={club.id}>
                 <Td>{index + 1}</Td>
-                <Td className="font-bold text-slate-900 dark:text-white">{schoolName}</Td>
                 <Td>{club.name}</Td>
                 <Td>20</Td>
                 <Td>{club.capacity || "-"}</Td>

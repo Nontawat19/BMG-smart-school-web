@@ -1,15 +1,22 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import Select, { components, MenuListProps } from 'react-select';
+import Select, { components, MenuListProps, SingleValue } from 'react-select';
 import { User, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Teacher } from '../types';
+import { Schedule, Teacher } from '../types';
 import { useTheme } from '@/ThemeContext';
 import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
+
+interface TeacherOption {
+    value: string;
+    label: string;
+    teacher: Teacher;
+    displayIndex: number;
+}
 
 interface TeacherSelectProps {
     teachers: Teacher[];
     selectedTeacher: string;
     setSelectedTeacher: (val: string) => void;
-    setSchedule: (val: any) => void;
+    setSchedule: (val: Schedule) => void;
 }
 
 export const TeacherSelect: React.FC<TeacherSelectProps> = ({
@@ -35,7 +42,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
             <Select
                 menuPortalTarget={document.body}
                 value={sortedTeacherOptions.find(opt => opt.value === selectedTeacher) || null}
-                onChange={(option: any) => {
+                onChange={(option: SingleValue<TeacherOption>) => {
                     const val = option?.value || '';
                     setSelectedTeacher(val);
                     if (!val) {
@@ -51,7 +58,7 @@ export const TeacherSelect: React.FC<TeacherSelectProps> = ({
                 isClearable
                 className="react-select-container"
                 classNamePrefix="react-select"
-                formatOptionLabel={(data: any, { context }: any) => (
+                formatOptionLabel={(data: TeacherOption, { context }) => (
                     <div className="flex items-center gap-3 py-1">
                         <div className="relative flex-shrink-0">
                             <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-black text-slate-500 dark:text-slate-400 overflow-hidden ring-1 ring-white/20 shadow-sm">

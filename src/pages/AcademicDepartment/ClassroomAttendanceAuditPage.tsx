@@ -957,34 +957,35 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
                 <div className="max-w-7xl mx-auto">
                     
-                    {/* Breadcrumbs & Title */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 mb-5 border-b border-gray-200 dark:border-gray-700 no-print">
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-2">
-                                <BackButton to="/academic/hub/attendance" className="w-8 h-8 sm:w-9 sm:h-9 shrink-0" />
-                                <Clock size={20} />
-                                <span className="text-sm font-bold">ระบบตรวจสอบการเช็คชื่อเข้าสอนของครู</span>
+                    {/* Header */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-5 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300 no-print">
+                        <div className="space-y-1 text-left">
+                            <div className="flex items-center gap-3">
+                                <BackButton to="/academic/hub/attendance" />
+                                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                                    <Clock className="text-indigo-600 dark:text-indigo-400" size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                                        ตรวจสอบการเข้าสอน & การเช็คชื่อ
+                                    </h1>
+                                    <p className="text-gray-500 dark:text-gray-400 text-xs font-bold pt-0.5">
+                                        ตรวจสอบการลงเวลาเช็คชื่อรายวิชาของครูและสถิติในแต่ละคาบเรียนแบบเรียลไทม์
+                                    </p>
+                                </div>
                             </div>
-                            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-                                ตรวจสอบการเข้าสอน & การเช็คชื่อ
-                            </h1>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium">
-                                ตรวจสอบการลงเวลาเช็คชื่อรายวิชาของครูและสถิติในแต่ละคาบเรียนแบบเรียลไทม์
-                            </p>
                         </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 self-start lg:self-center">
+                        <div className="flex items-center gap-2 self-start md:self-center">
                             <button
                                 onClick={handlePrint}
-                                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-xl bg-white border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 shadow-sm transition duration-200 cursor-pointer"
+                                className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition cursor-pointer"
                             >
                                 <Printer size={16} className="text-gray-500 dark:text-gray-400" />
                                 <span>พิมพ์รายงาน</span>
                             </button>
                             <button
                                 onClick={handleExportCSV}
-                                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/80 shadow-sm transition duration-200 cursor-pointer"
+                                className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/80 shadow-sm transition cursor-pointer"
                             >
                                 <FileSpreadsheet size={16} />
                                 <span>ส่งออก Excel/CSV</span>

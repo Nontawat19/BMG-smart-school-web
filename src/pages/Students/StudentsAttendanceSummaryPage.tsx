@@ -15,6 +15,7 @@ import defaultProfile from "@/assets/profile.png";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import { isActiveStudentStatus } from "@/utils/studentStatusUtils";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -410,7 +411,9 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
             fullName: `${data.title || ''}${data.firstName || ''} ${data.lastName || ''}`.trim(),
             ...data
           };
-        }).sort((a, b) => (a.studentNumber || 0) - (b.studentNumber || 0)); // Sort by student number
+        })
+        .filter((student) => isActiveStudentStatus(student.status || student.studentStatus || "กำลังศึกษาอยู่"))
+        .sort((a, b) => (a.studentNumber || 0) - (b.studentNumber || 0)); // Sort by student number
         setStudents(studentList);
       } catch (error) {
         console.error("Error fetching students:", error);
@@ -720,7 +723,26 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
     const directorName = schoolSettings?.directorName || "";
 
     const classLevel = selectedClassLevel;
-    const homeroomTeacher = Object.values(teacherMap || {}).find((t: any) => t.homeroomGrade === classLevel);
+    const room = selectedRoom;
+    const academicStandingRank: { [key: string]: number } = {
+      "เชี่ยวชาญพิเศษ (คศ.5)": 5,
+      "เชี่ยวชาญ (คศ.4)": 4,
+      "ชำนาญการพิเศษ (คศ.3)": 3,
+      "ชำนาญการ (คศ.2)": 2
+    };
+
+    const homeroomTeachers = Object.values(teacherMap || {}).filter(
+      (t: any) => t.homeroomGrade === classLevel && t.homeroomRoom === room
+    );
+
+    homeroomTeachers.sort((a: any, b: any) => {
+      const rankA = academicStandingRank[a.academicStanding] || 0;
+      const rankB = academicStandingRank[b.academicStanding] || 0;
+      return rankB - rankA;
+    });
+
+    const homeroomTeacher = homeroomTeachers.length > 0 ? homeroomTeachers[0] : null;
+
     let homeroomTeacherName = "";
     if (homeroomTeacher) {
       const t = homeroomTeacher as any;
@@ -779,24 +801,28 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <BackButton to="/academic/hub/personnel_info" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <FaUsers className="text-indigo-600 dark:text-indigo-400" />
-                สรุปการมาเรียนนักเรียน
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                รายงานสรุป ขาด ลา มา สาย ของนักเรียน (รายห้อง/วัน/สัปดาห์/เดือน/ภาคเรียน)
-              </p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
+          <div className="space-y-1 text-left">
+            <div className="flex items-center gap-3">
+              <BackButton to="/academic/hub/personnel_info" />
+              <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                <FaUsers className="text-indigo-600 dark:text-indigo-400" size={24} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                  สรุปการมาเรียนนักเรียน
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 text-xs font-bold pt-0.5">
+                  รายงานสรุป ขาด ลา มา สาย ของนักเรียน (รายห้อง/วัน/สัปดาห์/เดือน/ภาคเรียน)
+                </p>
+              </div>
             </div>
           </div>
           <div className="flex gap-2">
             <button
               onClick={exportPDF}
               disabled={loading || filteredData.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm font-bold"
             >
               <FaFilePdf /> Export PDF
             </button>

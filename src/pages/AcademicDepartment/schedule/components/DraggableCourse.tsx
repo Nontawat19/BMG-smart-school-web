@@ -2,7 +2,7 @@ import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Trash2, Lock, Unlock } from 'lucide-react';
-import { CourseInstance } from '../types';
+import { CourseInstance, Teacher } from '../types';
 import { CourseCard } from './CourseCard';
 
 interface DraggableCourseProps {
@@ -11,7 +11,7 @@ interface DraggableCourseProps {
     showRemove?: boolean;
     onLockToggle?: (courseId: string) => void;
     viewType?: 'teacher' | 'class' | 'room';
-    teachers?: any[];
+    teachers?: Teacher[];
     onHover?: (rect: DOMRect | null) => void;
     onClick?: (course: CourseInstance) => void;
     periodSummary?: {
@@ -82,15 +82,20 @@ export const DraggableCourse: React.FC<DraggableCourseProps> = ({
             )}
             
             {/* Remove Button - Precision Style (Matched with Lock UI) */}
-            {showRemove && onRemove && !course.locked && (
+            {showRemove && onRemove && (
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
                         onRemove();
                     }}
-                    className="absolute top-0 right-0 z-50 w-4 h-4 rounded-tr-xl rounded-bl-md bg-rose-500/40 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-0 group-hover:opacity-100"
-                    title="ลบวิชา"
+                    className={`
+                        absolute top-0 right-0 z-50 w-4 h-4 rounded-tr-xl rounded-bl-md text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95
+                        ${course.locked
+                            ? 'bg-rose-500/60 hover:bg-rose-600 opacity-90'
+                            : 'bg-rose-500/40 hover:bg-rose-600 opacity-0 group-hover:opacity-100'}
+                    `}
+                    title={course.locked ? "ลบวิชาที่ล็อคอยู่" : "ลบวิชา"}
                 >
                     <Trash2 size={7} strokeWidth={4} />
                 </button>

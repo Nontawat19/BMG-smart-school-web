@@ -10,7 +10,7 @@ import { FaPlus, FaUserEdit, FaTrashAlt, FaSearch, FaUserPlus, FaFileImport, FaF
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, History, ChevronDown, Pencil } from "lucide-react";
 import { deleteStudentLookup } from "@/utils/studentLookupUtils";
 import Swal from 'sweetalert2';
-import { getLevelsByRange } from "@/utils/schoolUtils";
+import { CLASSES, CLASS_FULL_NAMES, getLevelsByRange } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
@@ -119,6 +119,7 @@ const SkeletonLoader = () => (
 );
 
 export default function StudentListPage() {
+  const params = useParams<{ schoolId?: string }>();
   const { ACADEMIC_ACCESS } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -140,6 +141,28 @@ export default function StudentListPage() {
   const [editingBehaviorScoreId, setEditingBehaviorScoreId] = useState<string | null>(null);
   const [selectedPhotoStudent, setSelectedPhotoStudent] = useState<Student | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const normalizeClassLevel = useCallback((value?: string) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if ((CLASSES as Record<string, string>)[raw]) return (CLASSES as Record<string, string>)[raw];
+    const fullNameEntry = Object.entries(CLASS_FULL_NAMES).find(([, label]) => label === raw);
+    if (fullNameEntry) return CLASSES[fullNameEntry[0]];
+    const shortEntry = Object.entries(CLASSES).find(([, label]) => label === raw);
+    if (shortEntry) return shortEntry[1];
+    return raw
+      .replace(/^ประถมศึกษาปีที่\s*/u, "ป.")
+      .replace(/^มัธยมศึกษาปีที่\s*/u, "ม.")
+      .replace(/^อนุบาล\s*/u, "อ.");
+  }, []);
+
+  const normalizeRoom = useCallback((value?: string) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric) && numeric > 0) return String(numeric);
+    return raw.replace(/^0+/, "") || raw;
+  }, []);
 
   const selectStyles: StylesConfig<any, false> = {
     control: (provided) => ({
@@ -501,7 +524,7 @@ export default function StudentListPage() {
       const isMale = (s: Student) => {
         const title = (s.title || "").trim();
         const gender = (s.gender || "").trim();
-        return ["นาย", "ด.ช.", "เด็กชาย"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
+        return ["นาย", "ด.ช.", "เด็กชาย", "สามเณร"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
       };
 
       const sortFn = (a: Student, b: Student) => {
@@ -582,7 +605,11 @@ export default function StudentListPage() {
       const studentsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-      } as Student)).filter(isCurrentStudent);
+      } as Student)).map((student) => ({
+        ...student,
+        classLevel: normalizeClassLevel(student.classLevel),
+        room: normalizeRoom(student.room),
+      })).filter(isCurrentStudent);
       setStudents(studentsData);
     } catch (err) {
       console.error("Error fetching students: ", err);
@@ -590,7 +617,7 @@ export default function StudentListPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [normalizeClassLevel, normalizeRoom]);
 
 
 
@@ -612,6 +639,21 @@ export default function StudentListPage() {
     fetchLevels();
   }, [schoolId]);
 
+  useEffect(() => {
+    const levelsFromStudents = Array.from(new Set(
+      students.map((student) => normalizeClassLevel(student.classLevel)).filter(Boolean)
+    ));
+    if (levelsFromStudents.length === 0) return;
+
+    setAvailableLevels((prev) => {
+      const merged = Array.from(new Set([...prev, ...levelsFromStudents]));
+      return merged.sort((first, second) => {
+        const order = ["อ.1", "อ.2", "อ.3", "ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6", "ม.1", "ม.2", "ม.3", "ม.4", "ม.5", "ม.6"];
+        return order.indexOf(first) - order.indexOf(second);
+      });
+    });
+  }, [students, normalizeClassLevel]);
+
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -620,13 +662,20 @@ export default function StudentListPage() {
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
       if (user) {
+        const routeSchoolId = String(params.schoolId || "").trim();
+        if (routeSchoolId) {
+          setSchoolId(routeSchoolId);
+          fetchStudents(routeSchoolId);
+          return;
+        }
+
         const userDocRef = doc(firestore, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          const schoolId = userDocSnap.data().schoolId;
-          if (schoolId) {
-            setSchoolId(schoolId);
-            fetchStudents(schoolId);
+          const resolvedSchoolId = userDocSnap.data().schoolId;
+          if (resolvedSchoolId) {
+            setSchoolId(resolvedSchoolId);
+            fetchStudents(resolvedSchoolId);
           } else {
             setError("ไม่พบข้อมูลโรงเรียนสำหรับบัญชีของคุณ");
             setIsLoading(false);
@@ -635,7 +684,7 @@ export default function StudentListPage() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [fetchStudents, params.schoolId]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -646,7 +695,7 @@ export default function StudentListPage() {
       return <div className="text-center py-10 text-red-400">{error}</div>;
     }
 
-    if (!selectedClassLevel) {
+    if (!selectedClassLevel && !searchTerm) {
       return (
         <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
           <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-4">
@@ -654,21 +703,24 @@ export default function StudentListPage() {
           </div>
           <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">กรุณาเลือกชั้นเรียน</h3>
           <p className="text-gray-500 dark:text-gray-400 max-w-sm">
-            โปรดเลือกชั้นเรียนจากเมนูเลือกด้านบน เพื่อแสดงรายชื่อนักเรียนในชั้นเรียนนั้นๆ
+            โปรดเลือกชั้นเรียนจากเมนูเลือกด้านบน หรือพิมพ์ค้นหาชื่อ/รหัสนักเรียนได้เลย
           </p>
         </div>
       );
     }
 
     const filteredStudents = students.filter(student =>
+      !searchTerm ||
       `${student.title}${student.firstName} ${student.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId.toLowerCase().includes(searchTerm.toLowerCase())
     ).filter(student => {
-      if (selectedClassLevel === 'ม.ต้น') return ['ม.1', 'ม.2', 'ม.3'].includes(student.classLevel);
-      if (selectedClassLevel === 'ม.ปลาย') return ['ม.4', 'ม.5', 'ม.6'].includes(student.classLevel);
-      return student.classLevel === selectedClassLevel;
+      if (!selectedClassLevel) return true;
+      const studentClassLevel = normalizeClassLevel(student.classLevel);
+      if (selectedClassLevel === 'ม.ต้น') return ['ม.1', 'ม.2', 'ม.3'].includes(studentClassLevel);
+      if (selectedClassLevel === 'ม.ปลาย') return ['ม.4', 'ม.5', 'ม.6'].includes(studentClassLevel);
+      return studentClassLevel === normalizeClassLevel(selectedClassLevel);
     })
-      .filter(student => selectedRoom === '' || student.room === selectedRoom)
+      .filter(student => selectedRoom === '' || normalizeRoom(student.room) === normalizeRoom(selectedRoom))
       .filter(student => {
         if (selectedStatus === '') return true;
         return getStudentStatus(student) === selectedStatus;
@@ -678,7 +730,7 @@ export default function StudentListPage() {
     const isMaleStudent = (s: Student) => {
       const title = (s.title || "").trim();
       const gender = (s.gender || "").trim();
-      return ["นาย", "ด.ช.", "เด็กชาย"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
+      return ["นาย", "ด.ช.", "เด็กชาย", "สามเณร"].includes(title) || ["ชาย", "male", "m"].includes(gender.toLowerCase());
     };
 
     const sortedStudents = [...filteredStudents].sort((a, b) => {
@@ -1076,8 +1128,8 @@ export default function StudentListPage() {
                 {Array.from(
                   new Set(
                     students
-                      .filter(s => !selectedClassLevel || s.classLevel === selectedClassLevel)
-                      .map(s => s.room)
+                      .filter(s => !selectedClassLevel || normalizeClassLevel(s.classLevel) === normalizeClassLevel(selectedClassLevel))
+                      .map(s => normalizeRoom(s.room))
                       .filter(Boolean)
                   )
                 )

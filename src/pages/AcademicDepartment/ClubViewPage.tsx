@@ -339,331 +339,232 @@ const ClubViewPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
-        
-        {/* Back navigation & Page Header */}
-        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <BackButton to="/academic/club-list" />
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-2">
-                <Compass className="text-indigo-500" size={28} />
-                รายละเอียดกิจกรรมชุมนุม
-              </h1>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium">ดูข้อมูลชุมนุม สมาชิก และจัดการรายละเอียดเบื้องต้น</p>
-            </div>
-          </div>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
 
-          <div className="flex items-center gap-3">
+        {/* ===== HEADER ===== */}
+        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 sm:p-5 mb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <BackButton to="/academic/club-list" />
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Compass size={18} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-black text-gray-900 dark:text-white tracking-tight leading-tight">รายละเอียดกิจกรรมชุมนุม</h1>
+                <p className="text-gray-500 dark:text-gray-400 text-[11px] font-medium hidden sm:block">ดูข้อมูลชุมนุม สมาชิก และจัดการรายละเอียดเบื้องต้น</p>
+              </div>
+            </div>
             {canManage && (
-              <>
-                <Link
-                  to={`/academic/club-members?clubId=${club.id}`}
-                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-4 py-2.5 rounded-2xl font-black text-xs transition-all shadow-md shadow-indigo-500/20"
-                >
-                  <UserPlus size={14} />
-                  จัดการสมาชิก
+              <div className="flex gap-2 flex-shrink-0">
+                <Link to={`/academic/club-members?clubId=${club.id}`} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 whitespace-nowrap">
+                  <UserPlus size={13} />จัดการสมาชิก
                 </Link>
-                <Link
-                  to={`/academic/club-management`}
-                  className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-[#1a1b22] dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-2xl font-black text-xs border border-gray-200/55 dark:border-gray-800 transition-all active:scale-95 shadow-sm"
-                >
-                  <Settings size={14} />
-                  แก้ไขข้อมูลชุมนุม
+                <Link to="/academic/club-management" className="flex items-center gap-1.5 bg-gray-500 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 whitespace-nowrap">
+                  <Settings size={13} />แก้ไขข้อมูล
                 </Link>
-              </>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Club Profile Cover Banner Card */}
-        <div className="bg-white dark:bg-[#1a1b22] rounded-3xl overflow-hidden border border-gray-100 dark:border-gray-800 shadow-sm mb-6 flex flex-col md:flex-row">
-          {/* Banner cover section */}
-          <div className="md:w-1/3 relative h-48 md:h-auto bg-gray-50 dark:bg-gray-800/40 flex items-center justify-center flex-shrink-0">
-            {club.imageUrl ? (
-              <img src={club.imageUrl} className="absolute inset-0 w-full h-full object-cover" alt={club.name} />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-sky-500/10 to-transparent dark:from-indigo-500/10 dark:via-sky-500/5 dark:to-transparent" />
-            )}
-            <div className="relative z-10 w-16 h-16 rounded-2xl bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 flex items-center justify-center shadow-md">
-              <Compass size={32} className="text-indigo-500" />
+        {/* ===== CLUB INFO CARD ===== */}
+        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 mb-4">
+          <div className="flex items-start gap-4">
+            {/* Icon */}
+            <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+              {club.imageUrl
+                ? <img src={club.imageUrl} className="w-full h-full object-cover rounded-2xl" alt={club.name} />
+                : <Compass size={26} className="text-white" />
+              }
             </div>
-            
-            {/* Status dynamic overlays */}
-            <div className="absolute top-4 left-4 z-10">
-              <span className={`px-2.5 py-1 text-[10px] font-black rounded-xl backdrop-blur-md flex items-center gap-1.5 shadow-sm ${clubStatus.bg} ${clubStatus.color}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${clubStatus.dot}`} />
-                {clubStatus.text}
-              </span>
-            </div>
-          </div>
-
-          {/* Club core details */}
-          <div className="p-6 md:w-2/3 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 text-[10px] font-black rounded-md">
-                  รหัสชุมนุม: {clubId ? clubId.slice(0, 6).toUpperCase() : ''}
-                </span>
-                <span className="px-2 py-0.5 bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300 text-[10px] font-black rounded-md">
-                  ระดับชั้นที่รับสมัคร: {formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo)}
+            {/* Title + meta */}
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h2 className="text-xl font-black text-gray-900 dark:text-white leading-tight">{club.name}</h2>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black ${clubStatus.bg} ${clubStatus.color}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${clubStatus.dot}`} />{clubStatus.text}
                 </span>
               </div>
-              <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-tight mb-2">
-                {club.name}
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed mb-6">
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-3 line-clamp-2">
                 {club.description || 'ไม่มีการระบุรายละเอียดกิจกรรมชุมนุม'}
               </p>
+              <div className="flex flex-wrap gap-2">
+                <span className="px-2.5 py-1 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg">
+                  {formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo) || 'ทุกระดับชั้น'}
+                </span>
+              </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-50 dark:border-gray-800/40">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400">
-                  <Users size={18} />
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">สมาชิกร่วมชุมนุม</span>
-                  <span className="text-sm font-black tabular-nums">{members.length} / {club.capacity || 40} คน</span>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400">
-                  <Clock size={18} />
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">คาบเรียนเรียนกิจกรรม</span>
-                  <span className="text-sm font-black truncate max-w-[150px] block">
-                    {club.specialPeriodTitle
-                      ? `${club.specialPeriodTitle} (${formatSpecialPeriodDay(club.specialPeriodDay)})`
-                      : 'ยังไม่กำหนด'}
-                  </span>
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+            {[
+              { icon: <Users size={14} />, label: 'สมาชิก', value: `${members.length} / ${club.capacity || 40} คน`, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
+              { icon: <Clock size={14} />, label: 'คาบเรียน', value: club.specialPeriodTitle ? `${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || ''} – ${club.specialPeriodEndTime || ''}` : 'ยังไม่กำหนด', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-500/10' },
+              { icon: <Calendar size={14} />, label: 'ช่วงลงทะเบียน', value: globalStartDate ? `${new Date(globalStartDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} – ${new Date(globalEndDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}` : 'ไม่กำหนด', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+            ].map((s, i) => (
+              <div key={i} className="flex items-center gap-2.5 p-3 bg-gray-50 dark:bg-white/5 rounded-xl">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${s.bg} ${s.color}`}>{s.icon}</div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-gray-400 font-medium">{s.label}</p>
+                  <p className="text-xs font-black text-gray-800 dark:text-gray-200 truncate">{s.value}</p>
                 </div>
               </div>
+            ))}
+          </div>
 
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400">
-                  <Calendar size={18} />
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">ช่วงสมัครเรียน</span>
-                  <span className="text-sm font-black">
-                    {globalStartDate ? new Date(globalStartDate).toLocaleDateString('th-TH', { month: 'short', day: 'numeric' }) : 'ไม่กำหนด'}
-                  </span>
-                </div>
-              </div>
+          {/* Capacity bar */}
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] font-semibold text-gray-400 mb-1">
+              <span>ความจุ</span>
+              <span className="tabular-nums">{percent}%</span>
+            </div>
+            <div className="h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+              <motion.div initial={{ width: 0 }} animate={{ width: `${percent}%` }} transition={{ duration: 0.6 }}
+                className={`h-full rounded-full ${percent >= 100 ? 'bg-rose-500' : percent >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+              />
             </div>
           </div>
         </div>
 
-        {/* Dashboard Grid layouts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* Column Left (Table of Student Members) */}
-          <div className="lg:col-span-2 space-y-6">
-            
-            <div className="bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
-              
-              {/* Header inside the card */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-50 dark:border-gray-800">
-                <div>
-                  <h3 className="text-lg font-black tracking-tight flex items-center gap-2">
-                    <Users className="text-indigo-500" size={22} />
-                    รายชื่อสมาชิกในชุมนุม
-                    <span className="text-xs bg-gray-50 dark:bg-gray-800 text-indigo-500 border border-gray-100 dark:border-gray-800 px-2 py-0.5 rounded-md font-black tabular-nums ml-1">
-                      {members.length} คน
-                    </span>
-                  </h3>
-                  <p className="text-[10px] sm:text-xs text-gray-400 font-semibold mt-0.5">รายชื่อนักเรียนทั้งหมดที่มีสถานะและได้เลือกลงทะเบียนเข้าชุมนุมนี้</p>
-                </div>
+        {/* ===== MAIN GRID ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
 
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <button
-                    onClick={exportToCSV}
-                    disabled={members.length === 0}
-                    className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-3.5 py-2 rounded-2xl font-black text-xs border border-emerald-100 dark:border-emerald-500/20 active:scale-95 transition-all shadow-inner disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <FileSpreadsheet size={14} />
-                    ส่งออกรายชื่อ (CSV)
-                  </button>
-                </div>
+          {/* Members Table */}
+          <div className="lg:col-span-2 bg-white dark:bg-[#2a2b2f] rounded-2xl p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white flex items-center gap-2">
+                  <Users size={16} className="text-indigo-500" />
+                  รายชื่อสมาชิก
+                  <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded-md font-bold tabular-nums">{members.length} คน</span>
+                </h3>
+                <p className="text-[10px] text-gray-400 font-medium mt-0.5">นักเรียนที่ลงทะเบียนเข้าชุมนุมนี้</p>
               </div>
-
-              {/* Internal search/filter tools */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 mb-6">
-                <div className="relative w-full sm:flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                  <input
-                    type="text"
-                    placeholder="ค้นหาตามรหัส รหัสนักเรียน หรือชื่อ-นามสกุล..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs font-bold"
-                  />
-                </div>
-
-                <div className="relative w-full sm:w-48">
-                  <select
-                    value={selectedRoomFilter}
-                    onChange={(e) => setSelectedRoomFilter(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs font-bold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
-                  >
-                    <option value="all">กรองตามห้องเรียน: ทั้งหมด</option>
-                    {roomOptions.map((roomOpt, idx) => (
-                      <option key={idx} value={roomOpt}>ชั้นเรียน {roomOpt}</option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                    <ChevronLeft size={12} className="-rotate-90" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Members Table */}
-              {filteredStudents.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-gray-200 dark:border-gray-800 rounded-2xl bg-gray-50/50 dark:bg-gray-900/10">
-                  <Users className="mx-auto text-gray-300 dark:text-gray-700 mb-3 animate-pulse" size={44} />
-                  <p className="text-gray-500 text-xs sm:text-sm font-bold">ไม่พบรายชื่อสมาชิก</p>
-                  <p className="text-gray-400 text-[10px] sm:text-xs mt-0.5">
-                    {members.length === 0 ? 'ยังไม่มีนักเรียนลงทะเบียนในชุมนุมนี้' : 'ลองพิมพ์เพื่อเปลี่ยนเงื่อนไขค้นหา'}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-50 dark:border-gray-800 text-[10px] font-black text-gray-400 uppercase tracking-wider">
-                        <th className="py-3 px-2 w-12 text-center">ลำดับ</th>
-                        <th className="py-3 px-2 w-28">รหัสนักเรียน</th>
-                        <th className="py-3 px-4">ชื่อ - นามสกุล</th>
-                        <th className="py-3 px-2 text-center w-24">ระดับชั้น/ห้อง</th>
-                        <th className="py-3 px-3 text-center w-24">สถานะสมัคร</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800/40">
-                      {filteredStudents.map((student, idx) => {
-                        const fullName = `${student.title || ''}${student.firstName || ''} ${student.lastName || ''}`.trim();
-                        const isConfirmed = student.status === 'confirmed';
-                        
-                        return (
-                          <tr key={student.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/10 group transition-all text-xs font-bold">
-                            <td className="py-3.5 px-2 text-center text-gray-400 font-extrabold tabular-nums">
-                              {idx + 1}
-                            </td>
-                            <td className="py-3.5 px-2 font-mono text-gray-500 dark:text-gray-400 tabular-nums">
-                              {student.studentId || '-'}
-                            </td>
-                            <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-7 h-7 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center shadow-inner">
-                                  {student.profileImageUrl ? (
-                                    <img src={student.profileImageUrl} className="w-full h-full object-cover" alt="" />
-                                  ) : (
-                                    <span className="text-[10px] text-gray-400 font-black">
-                                      {student.firstName.charAt(0)}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="min-w-0">
-                                  <span className="text-gray-900 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors block truncate">
-                                    {fullName}
-                                  </span>
-                                  {student.nickname && (
-                                    <span className="text-[10px] font-black text-gray-400 block mt-0.5">
-                                      ชื่อเล่น: {student.nickname}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-3.5 px-2 text-center text-gray-600 dark:text-gray-300">
-                              <span className="px-2 py-0.5 bg-slate-50 dark:bg-gray-800 border border-slate-100 dark:border-gray-700/30 rounded-md font-black tabular-nums">
-                                {student.classLevel}/{student.room}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-3 text-center">
-                              {isConfirmed ? (
-                                <span className="inline-flex items-center justify-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 px-2 py-0.5 rounded-full">
-                                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                                  อนุมัติแล้ว
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center justify-center gap-1 text-[9px] font-black text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 px-2 py-0.5 rounded-full">
-                                  <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />
-                                  รอตรวจสอบ
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <button onClick={exportToCSV} disabled={members.length === 0}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none self-start sm:self-auto"
+              >
+                <FileSpreadsheet size={13} />ส่งออก CSV
+              </button>
             </div>
+
+            {/* Search + filter */}
+            <div className="flex gap-2 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={13} />
+                <input type="text" placeholder="ค้นหารหัสนักเรียน หรือชื่อ..." value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 bg-gray-100 dark:bg-gray-700/60 border border-gray-200 dark:border-gray-600/40 rounded-xl text-xs font-medium text-gray-800 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+                />
+              </div>
+              <div className="relative">
+                <select value={selectedRoomFilter} onChange={(e) => setSelectedRoomFilter(e.target.value)}
+                  className="appearance-none pl-3 pr-7 py-2 bg-gray-100 dark:bg-gray-700/60 border border-gray-200 dark:border-gray-600/40 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500/30 cursor-pointer"
+                >
+                  <option value="all">ห้อง: ทั้งหมด</option>
+                  {roomOptions.map((r, i) => <option key={i} value={r}>{r}</option>)}
+                </select>
+                <ChevronLeft size={11} className="-rotate-90 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+
+            {filteredStudents.length === 0 ? (
+              <div className="py-14 text-center bg-gray-100 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600/20">
+                <Users size={36} className="mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                <p className="text-sm font-bold text-gray-500 dark:text-gray-400">ไม่พบรายชื่อสมาชิก</p>
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{members.length === 0 ? 'ยังไม่มีนักเรียนลงทะเบียน' : 'ลองปรับเงื่อนไขการค้นหา'}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-gray-600/30 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <th className="pb-2.5 px-2 w-10 text-center">#</th>
+                      <th className="pb-2.5 px-2">รหัส</th>
+                      <th className="pb-2.5 px-3">ชื่อ - นามสกุล</th>
+                      <th className="pb-2.5 px-2 text-center">ห้อง</th>
+                      <th className="pb-2.5 px-2 text-center">สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-600/20">
+                    {filteredStudents.map((student, idx) => {
+                      const fullName = `${student.title || ''}${student.firstName || ''} ${student.lastName || ''}`.trim();
+                      const isConfirmed = student.status === 'confirmed';
+                      return (
+                        <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors group text-xs">
+                          <td className="py-3 px-2 text-center text-gray-400 font-bold tabular-nums">{idx + 1}</td>
+                          <td className="py-3 px-2 font-mono text-gray-500 dark:text-gray-400 text-[11px] tabular-nums">{student.studentId || '-'}</td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-600/60 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                {student.profileImageUrl
+                                  ? <img src={student.profileImageUrl} className="w-full h-full object-cover" alt="" />
+                                  : <span className="text-[10px] font-bold text-gray-500 dark:text-gray-300">{student.firstName.charAt(0)}</span>
+                                }
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-bold text-gray-900 dark:text-gray-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors block truncate">{fullName}</span>
+                                {student.nickname && <span className="text-[10px] text-gray-400">({student.nickname})</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 rounded-md font-bold text-[11px] tabular-nums">{student.classLevel}/{student.room}</span>
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            {isConfirmed
+                              ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-2 py-0.5 rounded-full"><span className="w-1 h-1 rounded-full bg-emerald-500" />อนุมัติแล้ว</span>
+                              : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/15 px-2 py-0.5 rounded-full"><span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />รอตรวจสอบ</span>
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
-          {/* Column Right (Teachers Profile & Quick Actions) */}
-          <div className="space-y-6">
-            
-            {/* Responsible Teachers Card */}
-            <div className="bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-base font-black tracking-tight mb-4 flex items-center gap-2">
-                <Award className="text-amber-500 animate-bounce-slow" size={20} />
-                ครูผู้รับผิดชอบดูแลชุมนุม
-              </h3>
+          {/* Sidebar */}
+          <div className="space-y-4">
 
+            {/* Teachers */}
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5">
+              <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                <Award size={15} className="text-amber-500" />ครูผู้รับผิดชอบ
+              </h3>
               {club.responsibleTeacherIds && club.responsibleTeacherIds.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {club.responsibleTeacherIds.map((teacherId) => {
                     const teacher = teacherMap?.[teacherId];
-                    if (!teacher) {
-                      return (
-                        <div key={teacherId} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800/50">
-                          <div className="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                          <div className="flex-1 space-y-1.5">
-                            <div className="h-3.5 bg-gray-200 dark:bg-gray-700 rounded w-2/3 animate-pulse" />
-                            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-1/2 animate-pulse" />
-                          </div>
-                        </div>
-                      );
-                    }
-
+                    if (!teacher) return (
+                      <div key={teacherId} className="flex items-center gap-3 p-3 bg-gray-100 dark:bg-gray-700/40 rounded-xl animate-pulse">
+                        <div className="w-10 h-10 bg-gray-200 dark:bg-gray-600/50 rounded-xl" />
+                        <div className="flex-1 space-y-1.5"><div className="h-3 bg-gray-200 dark:bg-gray-600/50 rounded w-2/3" /><div className="h-2.5 bg-gray-200 dark:bg-gray-600/50 rounded w-1/2" /></div>
+                      </div>
+                    );
                     const teacherName = teacher.name || `${teacher.title || ''}${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
                     return (
-                      <div 
-                        key={teacherId} 
-                        className="flex flex-col gap-3 p-4 bg-gray-50/50 dark:bg-gray-800/10 rounded-2xl border border-gray-100 dark:border-gray-800/50 hover:shadow-sm hover:border-indigo-100 dark:hover:border-indigo-950 transition-all duration-300"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-800 border border-white dark:border-[#1a1b22] flex-shrink-0 flex items-center justify-center shadow-sm">
-                            {teacher.profileImageUrl ? (
-                              <img src={teacher.profileImageUrl} className="w-full h-full object-cover" alt="" />
-                            ) : (
-                              <span className="text-xs text-gray-500 font-black">ครู</span>
-                            )}
+                      <div key={teacherId} className="p-3 bg-gray-100 dark:bg-gray-700/40 rounded-xl">
+                        <div className="flex items-center gap-3 mb-2.5">
+                          <div className="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-600/60 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                            {teacher.profileImageUrl
+                              ? <img src={teacher.profileImageUrl} className="w-full h-full object-cover" alt="" />
+                              : <span className="text-xs font-bold text-gray-500 dark:text-gray-300">ครู</span>
+                            }
                           </div>
                           <div className="min-w-0">
-                            <span className="text-xs font-black text-gray-900 dark:text-gray-200 block leading-tight truncate">
-                              {teacherName}
-                            </span>
-                            <span className="text-[10px] font-black text-gray-400 block mt-0.5">
-                              รหัสครู: {teacher.teacherId || '-'}
-                            </span>
+                            <p className="text-xs font-black text-gray-900 dark:text-white truncate">{teacherName}</p>
+                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">รหัสครู: {teacher.teacherId || '-'}</p>
                           </div>
                         </div>
-
-                        {/* Contact information fields */}
-                        <div className="text-[10px] font-bold text-gray-500 dark:text-gray-400 space-y-1.5 pt-2 border-t border-gray-100 dark:border-gray-800/50">
-                          <div className="flex items-center gap-1.5">
-                            <Phone size={11} className="text-gray-400" />
-                            <span>เบอร์โทร: {(teacher as any).phone || 'ไม่ระบุ'}</span>
+                        <div className="space-y-1 border-t border-gray-200 dark:border-gray-600/30 pt-2.5">
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                            <Phone size={10} /><span>{(teacher as any).phone || 'ไม่ระบุเบอร์โทร'}</span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Mail size={11} className="text-gray-400" />
-                            <span className="truncate">อีเมล: {(teacher as any).email || 'ไม่ระบุ'}</span>
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                            <Mail size={10} /><span className="truncate">{(teacher as any).email || 'ไม่ระบุอีเมล'}</span>
                           </div>
                         </div>
                       </div>
@@ -671,48 +572,33 @@ const ClubViewPage: React.FC = () => {
                   })}
                 </div>
               ) : (
-                <div className="py-8 text-center bg-gray-50/50 dark:bg-gray-900/10 border border-dashed border-gray-100 dark:border-gray-800 rounded-2xl text-xs text-gray-400 italic font-bold">
-                  ยังไม่มีการมอบหมายครูผู้ดูแลชุมนุม
-                </div>
+                <div className="py-8 text-center bg-gray-100 dark:bg-gray-700/30 rounded-xl text-xs text-gray-400 dark:text-gray-500 italic border border-gray-200 dark:border-gray-600/20">ยังไม่มีการมอบหมายครูผู้ดูแล</div>
               )}
             </div>
-            
-            {/* Quick Action Shortcuts Panel */}
-            <div className="bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-base font-black tracking-tight mb-4 flex items-center gap-2">
-                <Bookmark className="text-indigo-500" size={20} />
-                เมนูการทำงานอื่นๆ
+
+            {/* Quick Actions */}
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5">
+              <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                <Bookmark size={15} className="text-indigo-500" />เมนูที่เกี่ยวข้อง
               </h3>
-              
-              <div className="space-y-3">
-                <Link
-                  to="/academic/club-attendance"
-                  className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-indigo-50/50 dark:bg-[#1e1f26]/40 dark:hover:bg-indigo-500/10 rounded-2xl text-xs font-black text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/30 group shadow-sm active:scale-98"
+              <div className="space-y-2">
+                <Link to="/academic/club-attendance"
+                  className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700/40 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-xl text-xs font-bold text-gray-700 dark:text-gray-200 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all group"
                 >
-                  <span className="flex items-center gap-2">
-                    <UserCheck size={16} className="text-indigo-500" />
-                    เช็คชื่อเข้าทำกิจกรรมชุมนุม
-                  </span>
-                  <ArrowUpRight size={14} className="text-gray-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  <span className="flex items-center gap-2"><UserCheck size={14} className="text-indigo-500" />เช็คชื่อกิจกรรมชุมนุม</span>
+                  <ArrowUpRight size={13} className="text-gray-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </Link>
-
-                <Link
-                  to="/academic/club-reports"
-                  className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-indigo-50/50 dark:bg-[#1e1f26]/40 dark:hover:bg-indigo-500/10 rounded-2xl text-xs font-black text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/30 group shadow-sm active:scale-98"
+                <Link to="/academic/club-reports"
+                  className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700/40 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-xl text-xs font-bold text-gray-700 dark:text-gray-200 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all group"
                 >
-                  <span className="flex items-center gap-2">
-                    <FileSpreadsheet size={16} className="text-sky-500" />
-                    ออกใบสรุปรายงานชุมนุม
-                  </span>
-                  <ArrowUpRight size={14} className="text-gray-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  <span className="flex items-center gap-2"><FileSpreadsheet size={14} className="text-sky-500" />รายงานชุมนุม</span>
+                  <ArrowUpRight size={13} className="text-gray-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </Link>
-
-                <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10 text-[10px] leading-relaxed text-amber-600/90 dark:text-amber-400/80 font-bold flex items-start gap-2 shadow-inner">
-                  <ShieldAlert size={14} className="shrink-0 mt-0.5 text-amber-500" />
-                  <div>
-                    <h5 className="font-black text-amber-700 dark:text-amber-300 mb-0.5">เงื่อนไขการย้ายชุมนุม</h5>
-                    <p>ขณะนี้ระบบ{allowTransfer ? 'เปิดให้' : 'ปิดไม่ให้'}นักเรียนส่งคำร้องขอย้ายชุมนุมด้วยตนเอง ครูวิชาการสามารถจัดการและอนุมัติการย้ายชุมนุมได้ทันทีในระบบสมาชิกชุมนุม</p>
-                  </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-700/30 flex gap-2 items-start">
+                  <ShieldAlert size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-medium text-amber-700 dark:text-amber-300 leading-relaxed">
+                    ขณะนี้ระบบ<span className="font-black">{allowTransfer ? 'เปิด' : 'ปิด'}</span>การย้ายชุมนุม ครูวิชาการสามารถอนุมัติผ่านระบบสมาชิกได้
+                  </p>
                 </div>
               </div>
             </div>

@@ -1,8 +1,68 @@
 import React from 'react';
 import { DAYS, checkConstraints, getClassDisplayName, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isProtectedSpecialPeriodSetting } from '../utils';
 import { DroppableCell } from './DroppableCell';
-import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, AssignmentConstraintMap } from '../types';
+import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, AssignmentConstraintMap, MasterScheduleEntry } from '../types';
 import { getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
+
+// Pure helpers with no dependency on props/state — hoisted to module scope so
+// their identity is stable across renders (they were previously redeclared
+// inside the component on every render, which silently broke the
+// useMemo/useCallback hooks below that read them without listing them as deps).
+const normalizeValue = (value: unknown) => String(value || '').replace(/\s+/g, '').toLowerCase();
+const normalizeList = (value: unknown) => {
+    const list = Array.isArray(value) ? value : [value].filter(Boolean);
+    return list.map(normalizeValue).filter(Boolean).sort().join('|');
+};
+const hasSameCourseIdentity = (first: CourseInstance, second: CourseInstance) => {
+    const firstComposite = normalizeValue(first.compositeId);
+    const secondComposite = normalizeValue(second.compositeId);
+    if (firstComposite && secondComposite) return firstComposite === secondComposite;
+
+    return normalizeValue(first.id) === normalizeValue(second.id) &&
+        String(first.groupNumber || 1) === String(second.groupNumber || 1);
+};
+const mergeCourseInstancesForDisplay = (courses: CourseInstance[]) => {
+    const merged = new Map<string, CourseInstance>();
+
+    courses.forEach(course => {
+        const classKey = normalizeList(course.classId || course.className);
+        const roomKey = normalizeList(course.room);
+        const key = [
+            normalizeValue(course.compositeId) || normalizeValue(course.id),
+            String(course.groupNumber || 1),
+            classKey,
+            roomKey,
+        ].join('|');
+
+        const existing = merged.get(key);
+        if (!existing) {
+            merged.set(key, { ...course });
+            return;
+        }
+
+        const teacherIds = Array.from(new Set([
+            ...(Array.isArray(existing.teacherIds) ? existing.teacherIds : [existing.teacherId].filter(Boolean) as string[]),
+            ...(Array.isArray(course.teacherIds) ? course.teacherIds : [course.teacherId].filter(Boolean) as string[]),
+        ].filter(Boolean)));
+
+        const existingClassIds = Array.isArray(existing.classId) ? existing.classId : [existing.classId].filter(Boolean) as string[];
+        const courseClassIds = Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[];
+        const classIds = Array.from(new Set([...existingClassIds, ...courseClassIds]));
+
+        merged.set(key, {
+            ...existing,
+            teacherIds,
+            teacherId: existing.teacherId || course.teacherId,
+            classId: classIds.length > 1 ? classIds : (classIds[0] || existing.classId),
+            className: classIds.length > 0 ? classIds.map(getClassDisplayName).join(' + ') : existing.className,
+        });
+    });
+
+    return Array.from(merged.values());
+};
+const getCourseKey = (course: CourseInstance) => (
+    normalizeValue(course.compositeId) || `${normalizeValue(course.id)}_${String(course.groupNumber || 1)}`
+);
 
 export interface TimetableGridProps {
     title: string;
@@ -21,7 +81,7 @@ export interface TimetableGridProps {
     setSchedule: (s: Schedule) => void;
     filterClass: string;
     filterRoom: string;
-    schoolMasterSchedule: Record<string, any[]>;
+    schoolMasterSchedule: Record<string, MasterScheduleEntry[]>;
     activeDragItem: CourseInstance | null;
     dynamicUnavailableSlots: string[];
     setDynamicUnavailableSlots: React.Dispatch<React.SetStateAction<string[]>>;
@@ -82,58 +142,6 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
         })
     const gridTemplateColumns = `35px repeat(${displayPeriods.length}, minmax(0, 1fr))`;
 
-    const normalizeValue = (value: unknown) => String(value || '').replace(/\s+/g, '').toLowerCase();
-    const normalizeList = (value: unknown) => {
-        const list = Array.isArray(value) ? value : [value].filter(Boolean);
-        return list.map(normalizeValue).filter(Boolean).sort().join('|');
-    };
-    const hasSameCourseIdentity = (first: CourseInstance, second: CourseInstance) => {
-        const firstComposite = normalizeValue(first.compositeId);
-        const secondComposite = normalizeValue(second.compositeId);
-        if (firstComposite && secondComposite) return firstComposite === secondComposite;
-
-        return normalizeValue(first.id) === normalizeValue(second.id) &&
-            String(first.groupNumber || 1) === String(second.groupNumber || 1);
-    };
-    const mergeCourseInstancesForDisplay = (courses: CourseInstance[]) => {
-        const merged = new Map<string, CourseInstance>();
-
-        courses.forEach(course => {
-            const classKey = normalizeList(course.classId || course.className);
-            const roomKey = normalizeList(course.room);
-            const key = [
-                normalizeValue(course.compositeId) || normalizeValue(course.id),
-                String(course.groupNumber || 1),
-                classKey,
-                roomKey,
-            ].join('|');
-
-            const existing = merged.get(key);
-            if (!existing) {
-                merged.set(key, { ...course });
-                return;
-            }
-
-            const teacherIds = Array.from(new Set([
-                ...(Array.isArray(existing.teacherIds) ? existing.teacherIds : [existing.teacherId].filter(Boolean) as string[]),
-                ...(Array.isArray(course.teacherIds) ? course.teacherIds : [course.teacherId].filter(Boolean) as string[]),
-            ].filter(Boolean)));
-
-            const existingClassIds = Array.isArray(existing.classId) ? existing.classId : [existing.classId].filter(Boolean) as string[];
-            const courseClassIds = Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[];
-            const classIds = Array.from(new Set([...existingClassIds, ...courseClassIds]));
-
-            merged.set(key, {
-                ...existing,
-                teacherIds,
-                teacherId: existing.teacherId || course.teacherId,
-                classId: classIds.length > 1 ? classIds : (classIds[0] || existing.classId),
-                className: classIds.length > 0 ? classIds.map(getClassDisplayName).join(' + ') : existing.className,
-            });
-        });
-
-        return Array.from(merged.values());
-    };
     const areConsecutiveCoursesMergeable = (first: CourseInstance, second: CourseInstance) => {
         if (!hasSameCourseIdentity(first, second)) return false;
 
@@ -152,9 +160,6 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
 
         return true;
     };
-    const getCourseKey = (course: CourseInstance) => (
-        normalizeValue(course.compositeId) || `${normalizeValue(course.id)}_${String(course.groupNumber || 1)}`
-    );
     const scheduledPeriodCountByCourse = React.useMemo(() => {
         const counts = new Map<string, number>();
 
@@ -175,6 +180,18 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
             total: getRequiredWeeklyPeriods(course),
         };
     }, [scheduledPeriodCountByCourse]);
+
+    const temporaryCourseCounts = React.useMemo(() => {
+        let tempCount = 0;
+        let relaxedCount = 0;
+        Object.values(schedule).forEach(courses => {
+            (courses || []).forEach(c => {
+                if (c.isTemporarySchedule) tempCount++;
+                else if (c.isRelaxedSchedule) relaxedCount++;
+            });
+        });
+        return { tempCount, relaxedCount };
+    }, [schedule]);
 
     return (
         <div className="flex flex-col bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] shadow-sm dark:shadow-[0_8px_30px_rgb(0,0,0,0.12)] relative transition-colors h-full">
@@ -198,6 +215,21 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                 )}
             </div>
 
+            {/* Warning banner for temporary / constraint-relaxed placements */}
+            {(temporaryCourseCounts.tempCount > 0 || temporaryCourseCounts.relaxedCount > 0) && (
+                <div className="flex items-center gap-2 px-4 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/60 dark:border-amber-700/40 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    <svg className="shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>
+                        {temporaryCourseCounts.tempCount > 0 && (
+                            <><strong>{temporaryCourseCounts.tempCount} คาบ</strong>{" รอตรวจสอบ (วางชั่วคราว — กรุณาย้ายไปยังตำแหน่งจริง)"}{temporaryCourseCounts.relaxedCount > 0 ? " · " : ""}</>
+                        )}
+                        {temporaryCourseCounts.relaxedCount > 0 && (
+                            <><strong>{temporaryCourseCounts.relaxedCount} คาบ</strong>{" เงื่อนไขไม่ตรง (constraint ถูกผ่อนปรน)"}</>
+                        )}
+                    </span>
+                </div>
+            )}
+
             {!showGrid ? (
                 <div className="flex min-h-[270px] flex-grow items-center justify-center px-4 py-10 text-center">
                     <div className="max-w-[260px] text-[11px] font-black text-gray-400 dark:text-gray-500">
@@ -205,7 +237,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                     </div>
                 </div>
             ) : (
-            <div className="flex-grow px-1.5 py-1.5 flex flex-col bg-transparent overflow-hidden">
+            <div className="flex-grow px-1.5 py-1.5 flex flex-col bg-transparent overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="min-w-0 flex-1 min-h-0 flex flex-col gap-0.5 pb-1">
                         
                         {/* Days / Times Header Row - High Precision Alignment */}
@@ -222,7 +254,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                         {/* Daily Rows */}
                         {Object.entries(DAYS).map(([dayKey, dayLabel]) => {
                             // Calculate spans for the current day
-                            const daySpans: { period: any; span: number; skip: boolean }[] = [];
+                            const daySpans: { period: (typeof displayPeriods)[number]; span: number; skip: boolean }[] = [];
                             const periods = [...displayPeriods];
                             
                             for (let i = 0; i < periods.length; i++) {
@@ -277,7 +309,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                             }
 
                             return (
-                                <div key={dayKey} className="grid gap-0.5 items-stretch flex-1" style={{ gridTemplateColumns }}>
+                                <div key={dayKey} className="grid gap-0.5 items-stretch flex-1 min-h-0" style={{ gridTemplateColumns }}>
                                     <div className="flex items-center justify-center bg-transparent">
                                         <span className="text-[10px] font-black text-gray-700 dark:text-gray-400 uppercase tracking-tight">{dayLabel}</span>
                                     </div>
@@ -325,7 +357,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                          }
                                      }
 
-                                     const { forbidden, message } = activeDragItem 
+                                     const constraintResult = activeDragItem 
                                          ? checkConstraints(
                                              activeDragItem, 
                                              rawSlotId, 
@@ -339,6 +371,11 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                              ignoredInstanceIds
                                          ) 
                                          : { forbidden: false, message: '' };
+                                     const isLockedUnavailable = type === 'teacher' && dynamicUnavailableSlots.includes(rawSlotId);
+                                     const forbidden = constraintResult.forbidden || isLockedUnavailable;
+                                     const message = isLockedUnavailable
+                                         ? 'คาบว่างนี้ถูกล็อคไว้'
+                                         : constraintResult.message;
 
                                     // Special check for double period partner
                                     let isDoublePartner = false;
@@ -374,6 +411,11 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                                     } else {
                                                         setDynamicUnavailableSlots(prev => [...(prev as string[]), rawSlotId]);
                                                     }
+                                                }
+                                            }}
+                                            onRemoveUnavailable={() => {
+                                                if (type === 'teacher') {
+                                                    setDynamicUnavailableSlots(prev => (prev as string[]).filter(s => s !== rawSlotId));
                                                 }
                                             }}
                                             onLockToggle={onLockToggle}

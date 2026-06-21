@@ -21,8 +21,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { formatDistanceToNow } from "date-fns";
-import { th } from "date-fns/locale";
+import { formatNotificationTime } from "@/utils/dateUtils";
 import Swal from "sweetalert2";
 import { Bell, Check, ExternalLink, Inbox, X } from "lucide-react";
 
@@ -356,7 +355,7 @@ const NotificationsPage: React.FC = () => {
                           </p>
                         </div>
                         <p className="mt-1 text-xs font-medium text-slate-500">
-                          {formatDistanceToNow(item.createdAt.toDate(), { addSuffix: true, locale: th })}
+                          {formatNotificationTime(item.createdAt.toDate())}
                         </p>
                       </div>
                     </div>

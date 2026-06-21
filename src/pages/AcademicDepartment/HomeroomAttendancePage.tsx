@@ -541,13 +541,13 @@ const HomeroomAttendancePage: React.FC = () => {
         <MainLayout>
             <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6'}`}>
                 <div className={`${isPwaMode ? 'max-w-full' : 'max-w-5xl'} mx-auto min-w-0`}>
-                    {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}
                         academicYear={academicYear}
                         semester={semester}
                         onDateChange={setCurrentDate}
+                        onBack={() => navigate('/academic/hub/attendance')}
                         title="ระบบเช็คชื่อโฮมรูม"
                     />
 

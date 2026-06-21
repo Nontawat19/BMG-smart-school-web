@@ -274,6 +274,7 @@ export default function QuickAddStudentPage() {
                         <option value="ด.ญ.">ด.ญ.</option>
                         <option value="นาย">นาย</option>
                         <option value="น.ส.">น.ส.</option>
+                        <option value="สามเณร">สามเณร</option>
                       </select>
                     </div>
                     <div className="sm:col-span-2"><InputField label="ชื่อจริง" name="firstName" value={form.firstName} onChange={handleChange} required /></div>

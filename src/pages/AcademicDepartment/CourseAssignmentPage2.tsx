@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,11 +22,14 @@ import {
     Edit2,
     GripVertical,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Scissors,
+    Clock
 } from "lucide-react";
 import Swal from "sweetalert2";
 import Select from "react-select";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import BackButton from "@/components/Shared/BackButton";
 
 import {
     DndContext,
@@ -151,7 +154,20 @@ interface Room {
     isActive?: boolean;
 }
 
+interface TeacherSelectOption {
+    value: string;
+    label: string;
+    teacherCode: string;
+    teacherName: string;
+    profileImageUrl?: string;
+    subjectGroup?: string;
+    initial?: string;
+}
+
 const WEEKS_PER_SEMESTER = 20;
+
+const getCourseWeeks = (course?: Pick<Course, 'semester'> | null): number =>
+    Number(course?.semester) === 0 ? WEEKS_PER_SEMESTER * 2 : WEEKS_PER_SEMESTER;
 
 const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): string[] => {
     const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
@@ -160,11 +176,11 @@ const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): st
     return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
 };
 
-const getCourseTeachingHours = (course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null) => {
+const getCourseTeachingHours = (course?: Pick<Course, 'credits' | 'hoursPerWeek' | 'semester'> | null) => {
     if (!course) return 0;
     const creditsNum = Number(course.credits || 0);
     const weeklyPeriods = creditsNum > 0 ? Math.round(creditsNum * 2) : Number(course.hoursPerWeek || 0);
-    return Math.max(0, Math.round(weeklyPeriods * WEEKS_PER_SEMESTER));
+    return Math.max(0, Math.round(weeklyPeriods * getCourseWeeks(course)));
 };
 
 const getCourseWeeklyTeachingPeriods = (course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null) => {
@@ -178,6 +194,16 @@ const formatWeeklyLoad = (load: number) => {
     if (!Number.isFinite(load)) return '0';
     const rounded = Math.round(load * 10) / 10;
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+const distributeTeacherHours = (teacherIds: string[], totalHours: number) => {
+    if (teacherIds.length === 0 || totalHours <= 0) return {};
+    const base = Math.floor(totalHours / teacherIds.length);
+    const remainder = totalHours % teacherIds.length;
+    return teacherIds.reduce((acc, id, index) => {
+        acc[id] = base + (index < remainder ? 1 : 0);
+        return acc;
+    }, {} as Record<string, number>);
 };
 
 const resolveTeacherHours = (
@@ -205,12 +231,8 @@ const resolveTeacherHours = (
         ? assignment.teacherHours
         : {};
 
-    if (teacherIds.length === 2 && Object.keys(savedHours).length === 0 && totalHours > 0) {
-        const firstHours = Math.ceil(totalHours / 2);
-        return {
-            [teacherIds[0]]: firstHours,
-            [teacherIds[1]]: Math.max(0, totalHours - firstHours)
-        };
+    if (teacherIds.length >= 2 && Object.keys(savedHours).length === 0 && totalHours > 0) {
+        return distributeTeacherHours(teacherIds, totalHours);
     }
 
     return teacherIds.reduce((acc, id) => {
@@ -243,11 +265,12 @@ const resolveTeacherPeriodRanges = (
     if (Object.keys(validSaved).length === teacherIds.length) return validSaved;
 
     const teacherHours = resolveTeacherHours(assignment, course);
+    const distributed = teacherIds.length >= 2 && totalHours > 0
+        ? distributeTeacherHours(teacherIds, totalHours)
+        : {};
     let cursor = 1;
-    return teacherIds.reduce((acc, id, index) => {
-        const fallbackHours = teacherIds.length === 2 && totalHours > 0
-            ? (index === 0 ? Math.ceil(totalHours / 2) : Math.floor(totalHours / 2))
-            : Number(teacherHours[id] || 0);
+    return teacherIds.reduce((acc, id) => {
+        const fallbackHours = distributed[id] ?? Number(teacherHours[id] || 0);
         const hours = Math.max(1, Math.round(Number(teacherHours[id] || fallbackHours || 1)));
         const start = cursor;
         const end = Math.min(totalHours || start + hours - 1, start + hours - 1);
@@ -312,7 +335,11 @@ const filterSelectStyles = {
         border: '1px solid var(--select-border, #f3f4f6)',
         width: 'max-content',
         minWidth: '200px',
-        zIndex: 100
+        zIndex: 99999
+    }),
+    menuPortal: (base: any) => ({
+        ...base,
+        zIndex: 99999
     }),
     option: (base: any, state: any) => ({
         ...base,
@@ -371,7 +398,11 @@ const miniSelectStyles = {
         padding: '4px',
         border: '1px solid var(--select-border, #e2e8f0)',
         width: '240px',
-        zIndex: 100
+        zIndex: 99999
+    }),
+    menuPortal: (base: any) => ({
+        ...base,
+        zIndex: 99999
     }),
     option: (base: any, state: any) => ({
         ...base,
@@ -547,11 +578,127 @@ const multiSelectStyles = {
     }),
 };
 
+const coTeacherMultiSelectStyles = {
+    ...multiSelectStyles,
+    menu: (base: any) => ({
+        ...base,
+        backgroundColor: 'var(--select-menu-bg, #ffffff)',
+        borderRadius: '1rem',
+        boxShadow: '0 16px 32px -14px rgba(15, 23, 42, 0.24)',
+        padding: '8px',
+        border: '1px solid var(--select-border, #334155)',
+        width: '100%',
+        minWidth: '320px',
+        zIndex: 99999
+    }),
+    menuList: (base: any) => ({
+        ...base,
+        display: 'block',
+        padding: 0,
+        maxHeight: '240px',
+    }),
+    option: (base: any, state: any) => ({
+        ...base,
+        backgroundColor: state.isSelected
+            ? 'rgba(99, 102, 241, 0.16)'
+            : state.isFocused
+                ? 'rgba(99, 102, 241, 0.08)'
+                : 'var(--select-bg, #ffffff)',
+        color: 'var(--select-text, #334155)',
+        borderRadius: '0.875rem',
+        margin: '0 0 5px 0',
+        minHeight: '42px',
+        padding: '7px 10px',
+        border: state.isSelected
+            ? '1px solid rgba(129, 140, 248, 0.55)'
+            : '1px solid rgba(148, 163, 184, 0.18)',
+        cursor: 'pointer',
+        boxShadow: state.isSelected
+            ? '0 8px 20px -14px rgba(99, 102, 241, 0.45), inset 0 0 0 1px rgba(129, 140, 248, 0.15)'
+            : 'inset 0 1px 0 rgba(255,255,255,0.02)',
+        transition: 'all 140ms ease',
+        '&:active': {
+            backgroundColor: 'rgba(99, 102, 241, 0.12)'
+        }
+    }),
+};
+
+const renderCoTeacherOptionLabel = (
+    option: TeacherSelectOption,
+    context: 'menu' | 'value',
+    selectedValues: TeacherSelectOption[]
+) => {
+    if (context === 'value') {
+        return `${option.teacherCode} ${option.teacherName}`;
+    }
+
+    const checked = selectedValues.some(item => item.value === option.value);
+    return (
+        <div className="flex items-center gap-3 min-w-0 w-full">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                <input
+                    type="checkbox"
+                    checked={checked}
+                    readOnly
+                    tabIndex={-1}
+                    className="h-4 w-4 cursor-pointer rounded border border-slate-400/60 bg-slate-100 text-indigo-500 accent-indigo-500 pointer-events-none"
+                    aria-hidden="true"
+                />
+            </span>
+            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+                {option.profileImageUrl ? (
+                    <img
+                        src={option.profileImageUrl}
+                        alt={option.teacherName}
+                        className="h-8 w-8 rounded-full object-cover border border-slate-500/30 shadow-sm"
+                    />
+                ) : (
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-500/35 bg-slate-600/35 text-[11px] font-black text-slate-200 shadow-inner">
+                        {option.initial || option.teacherName.charAt(0)}
+                    </span>
+                )}
+                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#243146] bg-emerald-400 shadow-sm" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-200 dark:text-slate-200">
+                <span
+                    className={`mr-2.5 inline-flex min-w-[68px] items-center justify-center rounded-lg border px-2 py-0.5 text-[10px] font-black font-mono tracking-[0.04em] ${
+                        checked
+                            ? 'border-amber-400/35 bg-amber-400/12 text-amber-300'
+                            : 'border-amber-500/25 bg-amber-400/8 text-amber-300/95'
+                    }`}
+                >
+                    {option.teacherCode}
+                </span>
+                <span className={`align-middle ${checked ? 'text-white' : 'text-slate-200'}`}>
+                    {option.teacherName}
+                </span>
+            </span>
+        </div>
+    );
+};
+
+
+const getSwalBg = () => document.documentElement.classList.contains('dark') ? '#161a27' : '#ffffff';
+const getSwalColor = () => document.documentElement.classList.contains('dark') ? '#f8fafc' : '#0f172a';
+const getSwalPeriodStyles = () => {
+    const d = document.documentElement.classList.contains('dark');
+    return `<style>
+        .teacher-hour-split { text-align: left; display: grid; gap: 12px; margin-top: 12px; }
+        .teacher-hour-total { padding: 10px 12px; border-radius: 12px; background: ${d ? '#1e3a5f' : '#eef2ff'}; color: ${d ? '#a5b4fc' : '#3730a3'}; font-size: 14px; font-weight: 800; }
+        .teacher-hour-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: center; }
+        .teacher-label-text { color: ${d ? '#f1f5f9' : '#1e293b'} !important; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .teacher-period-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .teacher-period-inputs label { display: grid; gap: 4px; }
+        .teacher-period-inputs small { color: ${d ? '#94a3b8' : '#64748b'}; font-size: 10px; font-weight: 900; text-align: center; }
+        .teacher-period-inputs select { width: 100%; border: 1px solid ${d ? '#475569' : '#cbd5e1'}; border-radius: 10px; padding: 8px 10px; font-size: 15px; font-weight: 900; text-align: center; color: ${d ? '#ffffff' : '#1e293b'}; background: ${d ? '#1e293b' : '#f1f5f9'}; }
+        .teacher-period-inputs select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16); }
+        .teacher-hour-note { color: ${d ? '#94a3b8' : '#64748b'}; font-size: 12px; font-weight: 700; margin: 0; }
+    </style>`;
+};
 
 const CourseAssignmentPage2: React.FC = () => {
     const dispatch = useDispatch();
     const { availableClassOptions, classKeys } = useSelector((state: RootState) => state.schoolSettings);
-    const BackButton = React.lazy(() => import("@/components/Shared/BackButton"));
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = urlSchoolId || (currentUser as any)?.schoolId;
@@ -562,6 +709,8 @@ const CourseAssignmentPage2: React.FC = () => {
     const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const saveInFlightRef = useRef(false);
 
     // Selection States
     const [pendingQueue, setPendingQueue] = useState<{ courseId: string, teacherId: string, teacherIds?: string[], teacherHours?: Record<string, number>, teacherPeriods?: Record<string, { start: number; end: number }>, roomIds: string[], groupNumber: number, room?: string, title: string, code: string, classId: any }[]>([]);
@@ -587,7 +736,7 @@ const CourseAssignmentPage2: React.FC = () => {
     const [assignGroupNumber, setAssignGroupNumber] = useState<number>(1);
     const [assignRoomSuffix, setAssignRoomSuffix] = useState<string>("1");
     const [assignPhysicalRoomId, setAssignPhysicalRoomId] = useState<string>("");
-    const [assignCoTeacherId, setAssignCoTeacherId] = useState<string>("");
+    const [assignCoTeacherIds, setAssignCoTeacherIds] = useState<string[]>([]);
 
     // --- DND States & Handlers ---
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
@@ -651,8 +800,8 @@ const CourseAssignmentPage2: React.FC = () => {
                 confirmButtonColor: '#ef4444',
                 confirmButtonText: 'ลบออก',
                 cancelButtonText: 'ยกเลิก',
-                background: '#161a27',
-                color: '#fff'
+                background: getSwalBg(),
+                color: getSwalColor()
             });
             if (result.isConfirmed) {
                  handleRemoveGroupInModalForDrag(courseId, groupNumber, isPending);
@@ -674,7 +823,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                       pendingQueue.some(p => p.courseId === course.id && p.groupNumber === nextGroupNum);
 
             if (isAlreadyAssigned) {
-                 Swal.fire({ icon: "warning", title: "กลุ่มการเรียนซ้ำซ้อน", text: `วิชานี้ถูกมอบหมายไปแล้ว โปรดจัดการในโหมดปกติ`, background: '#161a27', color: '#fff' });
+                 Swal.fire({ icon: "warning", title: "กลุ่มการเรียนซ้ำซ้อน", text: `วิชานี้ถูกมอบหมายไปแล้ว โปรดจัดการในโหมดปกติ`, background: getSwalBg(), color: getSwalColor() });
                  return;
             }
 
@@ -699,8 +848,8 @@ const CourseAssignmentPage2: React.FC = () => {
                 position: 'top-end',
                 timer: 1500,
                 showConfirmButton: false,
-                background: '#161a27',
-                color: '#fff'
+                background: getSwalBg(),
+                color: getSwalColor()
             });
         }
     };
@@ -1097,7 +1246,7 @@ const CourseAssignmentPage2: React.FC = () => {
                     isPending: item.isPending,
                     coTeacherIds: coTeachers,
                     teacherLoad,
-                    periodLabel: teacherRange ? `ค${teacherRange.start}-${teacherRange.end}` : undefined,
+                    periodLabel: coTeachers.length > 0 && teacherRange ? `ค${teacherRange.start}-${teacherRange.end}` : undefined,
                     teacherHours: item.group.teacherHours,
                     teacherPeriods: item.group.teacherPeriods
                 });
@@ -1106,39 +1255,47 @@ const CourseAssignmentPage2: React.FC = () => {
             const aggregatedRows = Object.values(courseGroupMap).map(({ course, groups }) => {
                 // Sort groups by groupNumber
                 groups.sort((a, b) => a.groupNumber - b.groupNumber);
-                
+
                 const weeklyPeriods = getCourseWeeklyTeachingPeriods(course);
                 const totalPeriodsTaught = groups.reduce((sum, group) => sum + group.teacherLoad, 0);
+                const weeks = getCourseWeeks(course);
+                const totalSemesterHours = Math.round(totalPeriodsTaught * weeks);
+                const isFullYear = Number(course.semester) === 0;
 
                 return {
                     course,
                     groups,
                     weeklyPeriods,
-                    totalPeriodsTaught
+                    totalPeriodsTaught,
+                    totalSemesterHours,
+                    isFullYear
                 };
             });
 
-            // Compute total weekly load (periods/week)
+            // Compute total weekly load (periods/week) — used for load color threshold
             const totalLoad = aggregatedRows.reduce((acc, row) => acc + row.totalPeriodsTaught, 0);
+            // Compute total semester/year hours across all courses
+            const totalSemesterLoad = aggregatedRows.reduce((acc, row) => acc + row.totalSemesterHours, 0);
 
             return {
                 teacher,
                 assignedCourses: aggregatedRows,
-                totalLoad
+                totalLoad,
+                totalSemesterLoad
             };
         });
     }, [teacherList, coursesWithAssignments, pendingQueue, courses, teacherMap]);
 
     // Filtering teachers and courses
     const filteredTeachersData = useMemo(() => {
-        return teachersData.reduce<typeof teachersData>((acc, { teacher, assignedCourses, totalLoad }) => {
+        return teachersData.reduce<typeof teachersData>((acc, { teacher, assignedCourses, totalLoad, totalSemesterLoad }) => {
             // Match teacher selected dropdown
             if (selectedTeacherId !== "ทั้งหมด" && teacher.id !== selectedTeacherId) {
                 return acc;
             }
 
             // Match teacher search
-            const matchTeacher = (teacher.name || '').toLowerCase().includes(teacherSearch.toLowerCase()) || 
+            const matchTeacher = (teacher.name || '').toLowerCase().includes(teacherSearch.toLowerCase()) ||
                                  String(teacher.teacherId || '').toLowerCase().includes(teacherSearch.toLowerCase());
             if (!matchTeacher) return acc;
 
@@ -1155,12 +1312,16 @@ const CourseAssignmentPage2: React.FC = () => {
             // Match assignment check
             const visibleLoad = visibleAssignments.reduce((sum, row) => sum + row.totalPeriodsTaught, 0);
             const nextLoad = hasCourseFilters ? visibleLoad : totalLoad;
+            const nextSemesterLoad = hasCourseFilters
+                ? visibleAssignments.reduce((sum, row) => sum + row.totalSemesterHours, 0)
+                : totalSemesterLoad;
             if (showOnlyAssignedTeachers && nextLoad === 0) return acc;
 
             acc.push({
                 teacher,
                 assignedCourses: hasCourseFilters ? visibleAssignments : assignedCourses,
-                totalLoad: nextLoad
+                totalLoad: nextLoad,
+                totalSemesterLoad: nextSemesterLoad
             });
             return acc;
         }, []);
@@ -1182,10 +1343,28 @@ const CourseAssignmentPage2: React.FC = () => {
     }, [teachersData, filteredTeachersData]);
 
     const assignableCourses = useMemo(() => {
+        const excludedTypes = ['กิจกรรม', 'ชุมนุม'];
         return coursesWithAssignments
-            .filter(course => courseMatchesActiveFilters(course))
+            .filter(course => {
+                const t = String(course.type || '').trim();
+                return !excludedTypes.includes(t) && courseMatchesActiveFilters(course);
+            })
             .sort((a, b) => (a.code || "").localeCompare(b.code || "", "th", { numeric: true }));
     }, [coursesWithAssignments, courseSearch, subjectGroupFilter, categoryFilter, selectedLevel, selectedSemester, subjectGroupsList]);
+
+    const getCoTeacherOptions = useCallback((excludedTeacherId?: string): TeacherSelectOption[] => {
+        return teacherList
+            .filter(t => t.id !== excludedTeacherId)
+            .map(t => ({
+                value: t.id,
+                label: `${t.teacherId || "—"} ${t.name}`,
+                teacherCode: t.teacherId || "—",
+                teacherName: t.name,
+                profileImageUrl: t.profileImageUrl || '',
+                subjectGroup: t.subjectGroup || '',
+                initial: t.name?.charAt(0) || '?'
+            }));
+    }, [teacherList]);
 
     // Handle adding a course assignment
     const handleOpenAssignModal = (teacherId: string) => {
@@ -1194,7 +1373,7 @@ const CourseAssignmentPage2: React.FC = () => {
         setAssignGroupNumber(1);
         setAssignRoomSuffix("1");
         setAssignPhysicalRoomId("");
-        setAssignCoTeacherId("");
+        setAssignCoTeacherIds([]);
     };
 
     const handleCloseAssignPanel = () => {
@@ -1203,7 +1382,7 @@ const CourseAssignmentPage2: React.FC = () => {
         setAssignGroupNumber(1);
         setAssignRoomSuffix("1");
         setAssignPhysicalRoomId("");
-        setAssignCoTeacherId("");
+        setAssignCoTeacherIds([]);
     };
 
     // Triggered when selected course changes in assign modal to auto-suggest next group number
@@ -1226,11 +1405,19 @@ const CourseAssignmentPage2: React.FC = () => {
             return;
         }
 
+        if (!assignPhysicalRoomId) {
+            Swal.fire({
+                icon: "warning",
+                title: "กรุณาเลือกสถานที่เรียน",
+                text: "ข้อมูลสถานที่เรียนเป็นข้อมูลบังคับของระบบสถานที่สอน"
+            });
+            return;
+        }
+
         const course = coursesWithAssignments.find(c => c.id === assignCourseId);
         if (!course) return;
 
-        const teacherIds = [assignTeacherId];
-        if (assignCoTeacherId) teacherIds.push(assignCoTeacherId);
+        const teacherIds = [assignTeacherId, ...assignCoTeacherIds.filter(id => id !== assignTeacherId)];
 
         const newDraftItem = {
             courseId: assignCourseId,
@@ -1242,10 +1429,10 @@ const CourseAssignmentPage2: React.FC = () => {
             title: course.title,
             code: course.code,
             classId: course.classId || "m1",
-            teacherHours: teacherIds.length === 2
+            teacherHours: teacherIds.length >= 2
                 ? resolveTeacherHours({ teacherIds }, course)
                 : undefined,
-            teacherPeriods: teacherIds.length === 2
+            teacherPeriods: teacherIds.length >= 2
                 ? resolveTeacherPeriodRanges({ teacherIds }, course)
                 : undefined
         };
@@ -1274,8 +1461,8 @@ const CourseAssignmentPage2: React.FC = () => {
             position: 'top-end',
             timer: 2000,
             showConfirmButton: false,
-            background: '#161a27',
-            color: '#fff'
+            background: getSwalBg(),
+            color: getSwalColor()
         });
     };
 
@@ -1312,7 +1499,7 @@ const CourseAssignmentPage2: React.FC = () => {
         const course = coursesWithAssignments.find(c => c.id === manageCourseId);
         const totalHours = getCourseTeachingHours(course);
 
-        if (teacherIds.length !== 2 || !course) return;
+        if (teacherIds.length < 2 || !course) return;
 
         const currentRanges = resolveTeacherPeriodRanges({ teacherIds, teacherPeriods: group.teacherPeriods }, course);
         const teacherLabels = teacherIds.map(id => {
@@ -1324,7 +1511,7 @@ const CourseAssignmentPage2: React.FC = () => {
         });
 
         const result = await Swal.fire({
-            title: 'กำหนดช่วงคาบครูคู่',
+            title: 'กำหนดช่วงคาบครูร่วมสอน',
             html: `
                 <div class="teacher-hour-split">
                     <div class="teacher-hour-total">คาบรวมรายวิชาทั้งภาคเรียน: <strong>${escapeHtml(totalHours)}</strong> คาบ</div>
@@ -1357,25 +1544,14 @@ const CourseAssignmentPage2: React.FC = () => {
                     `).join("")}
                     <p class="teacher-hour-note">ตัวอย่าง: ครูคนที่ 1 สอนคาบ 1 ถึง 10, ครูคนที่ 2 สอนคาบ 11 ถึง 20</p>
                 </div>
-                <style>
-                    .teacher-hour-split { text-align: left; display: grid; gap: 12px; margin-top: 12px; }
-                    .teacher-hour-total { padding: 10px 12px; border-radius: 12px; background: #eef2ff; color: #3730a3; font-size: 14px; font-weight: 800; }
-                    .teacher-hour-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: center; }
-                    .teacher-label-text { color: #ffffff !important; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                    .teacher-period-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-                    .teacher-period-inputs label { display: grid; gap: 4px; }
-                    .teacher-period-inputs small { color: #94a3b8; font-size: 10px; font-weight: 900; text-align: center; }
-                    .teacher-period-inputs select { width: 100%; border: 1px solid #475569; border-radius: 10px; padding: 8px 10px; font-size: 15px; font-weight: 900; text-align: center; color: #ffffff; background: #1e293b; }
-                    .teacher-period-inputs select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16); }
-                    .teacher-hour-note { color: #94a3b8; font-size: 12px; font-weight: 700; margin: 0; }
-                </style>
+                ${getSwalPeriodStyles()}
             `,
             showCancelButton: true,
             confirmButtonText: 'บันทึกช่วงคาบ',
             cancelButtonText: 'ยกเลิก',
             confirmButtonColor: '#4f46e5',
-            background: '#161a27',
-            color: '#fff',
+            background: getSwalBg(),
+            color: getSwalColor(),
             preConfirm: () => {
                 const values = teacherIds.map((id, idx) => {
                     const startInput = document.getElementById(`teacher-period-start-${idx}`) as HTMLSelectElement | null;
@@ -1416,6 +1592,136 @@ const CourseAssignmentPage2: React.FC = () => {
             const { teacherHours, teacherPeriods } = result.value;
             handleUpdateGroupInModal(index, 'teacherHours', teacherHours);
             handleUpdateGroupInModal(index, 'teacherPeriods', teacherPeriods);
+        }
+    };
+
+    const handleConfigurePeriodsDirect = async (
+        courseId: string,
+        groupNumber: number,
+        isPending: boolean,
+        allTeacherIds: string[],
+        currentPeriods?: Record<string, { start: number; end: number }>
+    ) => {
+        const course = coursesWithAssignments.find(c => c.id === courseId);
+        if (!course || allTeacherIds.length < 2 || !schoolId) return;
+
+        const totalHours = getCourseTeachingHours(course);
+        if (totalHours <= 0) {
+            Swal.fire({ icon: 'warning', title: 'ไม่สามารถกำหนดช่วงคาบได้', text: 'รายวิชานี้ไม่มีข้อมูลจำนวนคาบ กรุณาตรวจสอบหน่วยกิต/คาบ/สัปดาห์' });
+            return;
+        }
+
+        const currentRanges = resolveTeacherPeriodRanges(
+            { teacherIds: allTeacherIds, teacherPeriods: currentPeriods },
+            course
+        );
+        const teacherLabels = allTeacherIds.map(id => {
+            const t = teacherList.find(t => t.id === id);
+            return { id, label: `${t?.teacherId || "—"} ${t?.name || id}` };
+        });
+
+        const result = await Swal.fire({
+            title: 'กำหนดช่วงคาบครูร่วมสอน',
+            html: `
+                <div class="teacher-hour-split">
+                    <div class="teacher-hour-total">คาบรวมรายวิชาทั้งภาคเรียน: <strong>${escapeHtml(totalHours)}</strong> คาบ</div>
+                    ${teacherLabels.map((teacher, idx) => `
+                        <div class="teacher-hour-row">
+                            <span class="teacher-label-text">${escapeHtml(teacher.label)}</span>
+                            <div class="teacher-period-inputs">
+                                <label>
+                                    <small>สอนคาบ</small>
+                                    <select id="tpd-start-${idx}">
+                                        ${Array.from({ length: totalHours }, (_, i) => {
+                                            const p = i + 1;
+                                            const sel = Number(currentRanges[teacher.id]?.start || 1) === p ? 'selected' : '';
+                                            return `<option value="${p}" ${sel}>${p}</option>`;
+                                        }).join("")}
+                                    </select>
+                                </label>
+                                <label>
+                                    <small>ถึงคาบ</small>
+                                    <select id="tpd-end-${idx}">
+                                        ${Array.from({ length: totalHours }, (_, i) => {
+                                            const p = i + 1;
+                                            const defEnd = currentRanges[teacher.id]?.end ?? p;
+                                            const sel = Number(defEnd) === p ? 'selected' : '';
+                                            return `<option value="${p}" ${sel}>${p}</option>`;
+                                        }).join("")}
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                    `).join("")}
+                    <p class="teacher-hour-note">กำหนดช่วงคาบของครูแต่ละคนให้ต่อเนื่องครบทั้งภาคเรียน และไม่ซ้ำกัน</p>
+                </div>
+                ${getSwalPeriodStyles()}
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'บันทึกช่วงคาบ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#4f46e5',
+            background: getSwalBg(),
+            color: getSwalColor(),
+            preConfirm: () => {
+                const values = allTeacherIds.map((id, idx) => {
+                    const startEl = document.getElementById(`tpd-start-${idx}`) as HTMLSelectElement | null;
+                    const endEl = document.getElementById(`tpd-end-${idx}`) as HTMLSelectElement | null;
+                    const start = Number(startEl?.value || 0);
+                    const end = Number(endEl?.value || 0);
+                    return { id, start, end, hours: end - start + 1 };
+                });
+                if (values.some(v => !Number.isFinite(v.start) || !Number.isFinite(v.end) || v.start <= 0 || v.end < v.start)) {
+                    Swal.showValidationMessage('กรุณากำหนดช่วงคาบให้ถูกต้อง');
+                    return false;
+                }
+                const covered = new Set<number>();
+                values.forEach(v => { for (let p = v.start; p <= v.end; p++) covered.add(p); });
+                const sum = values.reduce((acc, v) => acc + v.hours, 0);
+                if (sum !== totalHours || covered.size !== totalHours) {
+                    Swal.showValidationMessage(`ช่วงคาบต้องรวมกันครบ ${totalHours} คาบ และไม่ซ้ำกัน`);
+                    return false;
+                }
+                return {
+                    teacherHours: values.reduce((acc, v) => { acc[v.id] = v.hours; return acc; }, {} as Record<string, number>),
+                    teacherPeriods: values.reduce((acc, v) => { acc[v.id] = { start: v.start, end: v.end }; return acc; }, {} as Record<string, { start: number; end: number }>)
+                };
+            }
+        });
+
+        if (!result.isConfirmed || !result.value) return;
+        const { teacherHours, teacherPeriods } = result.value;
+
+        try {
+            if (isPending) {
+                setPendingQueue(prev => prev.map(item =>
+                    item.courseId === courseId && item.groupNumber === groupNumber
+                        ? { ...item, teacherHours, teacherPeriods }
+                        : item
+                ));
+            } else {
+                const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
+                const courseObj = coursesWithAssignments.find(c => c.id === courseId);
+                if (!courseObj) return;
+                const updatedAssignments = (courseObj.teacherAssignments || []).map((a: any) =>
+                    a.groupNumber === groupNumber ? { ...a, teacherHours, teacherPeriods } : a
+                );
+                await setDoc(
+                    doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId),
+                    removeUndefinedFields({ courseId, academicYear: selectedYear, semester: selectedSemester, teacherAssignments: updatedAssignments }),
+                    { merge: true }
+                );
+                setSemesterAssignments(prev => {
+                    const idx = prev.findIndex(item => item.courseId === courseId);
+                    const next = [...prev];
+                    if (idx !== -1) next[idx] = { ...next[idx], teacherAssignments: updatedAssignments };
+                    return next;
+                });
+            }
+            Swal.fire({ icon: 'success', title: 'บันทึกช่วงคาบสำเร็จ', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+        } catch (error) {
+            console.error(error);
+            Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถบันทึกช่วงคาบได้' });
         }
     };
 
@@ -1489,8 +1795,8 @@ const CourseAssignmentPage2: React.FC = () => {
             confirmButtonColor: '#ef4444',
             confirmButtonText: 'ลบออก',
             cancelButtonText: 'ยกเลิก',
-            background: '#161a27',
-            color: '#fff'
+            background: getSwalBg(),
+            color: getSwalColor()
         });
 
         if (!result.isConfirmed) return;
@@ -1598,6 +1904,16 @@ const CourseAssignmentPage2: React.FC = () => {
     const handleSaveChangesFromModal = async () => {
         if (!schoolId || !manageCourseId || !manageTeacherId) return;
 
+        const missingRoomGroup = editingGroups.find(group => !Array.isArray(group.roomIds) || group.roomIds.length === 0);
+        if (missingRoomGroup) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'กรุณาระบุสถานที่เรียนให้ครบ',
+                text: `กลุ่มที่ ${missingRoomGroup.groupNumber} ยังไม่ได้เลือกสถานที่เรียน`
+            });
+            return;
+        }
+
         try {
             // 1. Separate pending items and saved items
             const pendingEdits = editingGroups.filter(g => g.isPending);
@@ -1693,29 +2009,36 @@ const CourseAssignmentPage2: React.FC = () => {
         }
     };
 
-    // Commit draft queue to Firestore
-    const handleCommitAllDrafts = async () => {
-        if (!pendingQueue.length || !schoolId) return;
+    // Commit draft queue to Firestore (supports both manual confirm and silent auto-save)
+    const commitPendingQueue = useCallback(async (
+        queueSnapshot = pendingQueue,
+        options: { confirm?: boolean; silent?: boolean } = {}
+    ) => {
+        if (!queueSnapshot.length || !schoolId || saveInFlightRef.current) return;
 
-        const confirmResult = await Swal.fire({
-            title: 'บันทึกลงฐานข้อมูลจริง?',
-            text: `ยืนยันการมอบหมายรายวิชาทั้งหมด จำนวน ${pendingQueue.length} รายการ ลงในระบบตารางเรียนจริง?`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#10b981',
-            cancelButtonColor: '#64748b',
-            confirmButtonText: 'บันทึกข้อมูล',
-            cancelButtonText: 'ยกเลิก'
-        });
+        if (options.confirm) {
+            const confirmResult = await Swal.fire({
+                title: 'บันทึกลงฐานข้อมูลจริง?',
+                text: `ยืนยันการมอบหมายรายวิชาทั้งหมด จำนวน ${queueSnapshot.length} รายการ ลงในระบบตารางเรียนจริง?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#10b981',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'บันทึกข้อมูล',
+                cancelButtonText: 'ยกเลิก'
+            });
+            if (!confirmResult.isConfirmed) return;
+        }
 
-        if (!confirmResult.isConfirmed) return;
-
+        saveInFlightRef.current = true;
         setIsSaving(true);
-        Swal.fire({ title: 'กำลังบันทึกลงระบบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        if (!options.silent) {
+            Swal.fire({ title: 'กำลังบันทึกลงระบบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        }
 
         try {
             const byCourse: Record<string, typeof pendingQueue> = {};
-            pendingQueue.forEach(item => {
+            queueSnapshot.forEach(item => {
                 if (!byCourse[item.courseId]) byCourse[item.courseId] = [];
                 byCourse[item.courseId].push(item);
             });
@@ -1727,7 +2050,7 @@ const CourseAssignmentPage2: React.FC = () => {
                 if (!courseData) continue;
 
                 const currentAssignments = [...(courseData.teacherAssignments || [])];
-                
+
                 queueItems.forEach(item => {
                     const existingIdx = currentAssignments.findIndex(a => a.groupNumber === item.groupNumber);
                     const newAssign: GroupAssignment = {
@@ -1748,23 +2071,56 @@ const CourseAssignmentPage2: React.FC = () => {
                     }
                 });
 
-                await setDoc(assignmentRef, removeUndefinedFields({ 
+                await setDoc(assignmentRef, removeUndefinedFields({
                     courseId,
                     academicYear: selectedYear,
                     semester: selectedSemester,
-                    teacherAssignments: currentAssignments 
+                    teacherAssignments: currentAssignments
                 }), { merge: true });
             }
 
-            Swal.fire({ icon: 'success', title: 'บันทึกตารางเรียนสำเร็จ', text: 'ตารางการมอบหมายทั้งหมดบันทึกเรียบร้อย', timer: 2000, showConfirmButton: false });
-            setPendingQueue([]);
+            if (!options.silent) {
+                Swal.fire({ icon: 'success', title: 'บันทึกตารางเรียนสำเร็จ', text: 'ตารางการมอบหมายทั้งหมดบันทึกเรียบร้อย', timer: 2000, showConfirmButton: false });
+            } else {
+                Swal.fire({ icon: 'success', title: `บันทึกอัตโนมัติแล้ว (${queueSnapshot.length})`, toast: true, position: 'top-end', timer: 1300, showConfirmButton: false });
+            }
+            setPendingQueue(prev => prev.filter(item => !queueSnapshot.includes(item)));
         } catch (error) {
             console.error("Error committing drafts:", error);
-            Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถบันทึกข้อมูลตารางเรียนได้' });
+            Swal.fire({
+                icon: 'error',
+                title: options.silent ? 'บันทึกอัตโนมัติไม่สำเร็จ' : 'เกิดข้อผิดพลาด',
+                text: 'ไม่สามารถบันทึกข้อมูลตารางเรียนได้'
+            });
         } finally {
+            saveInFlightRef.current = false;
             setIsSaving(false);
         }
-    };
+    }, [coursesWithAssignments, pendingQueue, schoolId, selectedSemester, selectedYear]);
+
+    const handleCommitAllDrafts = useCallback(async () => {
+        await commitPendingQueue(pendingQueue, { confirm: true });
+    }, [commitPendingQueue, pendingQueue]);
+
+    // Auto-save: fires 1800ms after last queue change (same as Page 1)
+    useEffect(() => {
+        if (!pendingQueue.length || !schoolId || isLoading) return;
+
+        if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+        }
+
+        const queueSnapshot = [...pendingQueue];
+        autoSaveTimerRef.current = setTimeout(() => {
+            commitPendingQueue(queueSnapshot, { silent: true });
+        }, 1800);
+
+        return () => {
+            if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+            }
+        };
+    }, [commitPendingQueue, isLoading, pendingQueue, schoolId]);
 
     if (isLoading) {
         return (
@@ -1793,8 +2149,8 @@ const CourseAssignmentPage2: React.FC = () => {
                                     <Users size={20} className="text-white" />
                                 </div>
                                 <div>
-                                    <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">มอบหมายรายวิชา 2 (ตารางภาระงาน)</h1>
-                                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-1 uppercase tracking-wider">จัดทำตารางรายวิชาสอนตามรายครูผู้สอน</p>
+                                    <h1 className="text-lg font-black text-slate-900 dark:text-white leading-none">เปิดสอนรายวิชา</h1>
+                                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-1 uppercase tracking-wider">กำหนดรายวิชาที่เปิดสอน พร้อมครูผู้สอนและห้องเรียนแบบตาราง</p>
                                 </div>
                             </div>
                         </div>
@@ -1979,138 +2335,6 @@ const CourseAssignmentPage2: React.FC = () => {
                         )}
                     </div>
 
-                    <AnimatePresence>
-                        {assignTeacherId && (
-                            <motion.div
-                                initial={{ opacity: 0, y: -8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -8 }}
-                                className="min-w-[1180px] mb-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-500/30 bg-white dark:bg-[#161a27] shadow-sm overflow-visible"
-                            >
-                                <div className="px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 border-b border-indigo-100 dark:border-indigo-500/20 flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                            <BookOpen size={18} />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <h3 className="text-sm font-black text-slate-900 dark:text-white">มอบหมายรายวิชาใหม่</h3>
-                                            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate">
-                                                ครูผู้สอนหลัก: {teacherList.find(t => t.id === assignTeacherId)?.teacherId || "—"} {teacherList.find(t => t.id === assignTeacherId)?.name || assignTeacherId}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={handleCloseAssignPanel}
-                                        className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white dark:hover:bg-white/10 dark:hover:text-white transition-colors"
-                                        title="ปิดแผงมอบหมาย"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
-
-                                <div className="p-4 grid grid-cols-12 gap-3 items-end">
-                                    <div className="col-span-12 lg:col-span-4">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">เลือกรายวิชา</label>
-                                        <Select
-                                            options={assignableCourses.map(course => ({
-                                                value: course.id,
-                                                label: `[${course.code}] ${course.title} (${getLevelLabel(course.classId)})`
-                                            }))}
-                                            value={courses.find(c => c.id === assignCourseId) ? {
-                                                value: assignCourseId,
-                                                label: `[${courses.find(c => c.id === assignCourseId)?.code}] ${courses.find(c => c.id === assignCourseId)?.title}`
-                                            } : null}
-                                            onChange={(opt: any) => setAssignCourseId(opt?.value || "")}
-                                            styles={filterSelectStyles}
-                                            isSearchable={true}
-                                            placeholder="พิมพ์เพื่อค้นหารหัสหรือชื่อวิชา..."
-                                        />
-                                    </div>
-
-                                    <div className="col-span-6 lg:col-span-1">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">กลุ่ม</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={30}
-                                            value={assignGroupNumber}
-                                            onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                setAssignGroupNumber(val);
-                                                setAssignRoomSuffix(String(val));
-                                            }}
-                                            className="w-full h-[38px] px-3 rounded-xl text-xs font-black bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
-                                        />
-                                    </div>
-
-                                    <div className="col-span-6 lg:col-span-1">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">ห้อง/ทับ</label>
-                                        <input
-                                            type="text"
-                                            value={assignRoomSuffix}
-                                            onChange={(e) => setAssignRoomSuffix(e.target.value)}
-                                            placeholder="1"
-                                            className="w-full h-[38px] px-3 rounded-xl text-xs font-black bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
-                                        />
-                                    </div>
-
-                                    <div className="col-span-12 lg:col-span-2">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">สถานที่เรียน</label>
-                                        <Select
-                                            options={rooms.map(room => ({
-                                                value: room.id,
-                                                label: `${room.roomCode} - ${room.roomName} (${room.building || "ไม่มีอาคาร"})`
-                                            }))}
-                                            value={rooms.find(r => r.id === assignPhysicalRoomId) ? {
-                                                value: assignPhysicalRoomId,
-                                                label: rooms.find(r => r.id === assignPhysicalRoomId)?.roomCode || ""
-                                            } : null}
-                                            onChange={(opt: any) => setAssignPhysicalRoomId(opt ? opt.value : "")}
-                                            styles={filterSelectStyles}
-                                            isClearable={true}
-                                            isSearchable={true}
-                                            placeholder="ไม่บังคับ"
-                                        />
-                                    </div>
-
-                                    <div className="col-span-12 lg:col-span-2">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">ครูร่วม</label>
-                                        <Select
-                                            options={teacherList
-                                                .filter(t => t.id !== assignTeacherId)
-                                                .map(t => ({ value: t.id, label: `${t.teacherId || "—"} ${t.name}` }))
-                                            }
-                                            value={teacherList.find(t => t.id === assignCoTeacherId) ? {
-                                                value: assignCoTeacherId,
-                                                label: `${teacherList.find(t => t.id === assignCoTeacherId)?.teacherId || "—"} ${teacherList.find(t => t.id === assignCoTeacherId)?.name || ""}`
-                                            } : null}
-                                            onChange={(opt: any) => setAssignCoTeacherId(opt ? opt.value : "")}
-                                            styles={filterSelectStyles}
-                                            isClearable={true}
-                                            isSearchable={true}
-                                            placeholder="ไม่บังคับ"
-                                        />
-                                    </div>
-
-                                    <div className="col-span-12 lg:col-span-2 flex gap-2">
-                                        <button
-                                            onClick={handleCloseAssignPanel}
-                                            className="flex-1 h-[38px] rounded-xl border border-slate-200 dark:border-white/10 text-xs font-black text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-                                        >
-                                            ยกเลิก
-                                        </button>
-                                        <button
-                                            onClick={handleAddAssignmentToQueue}
-                                            className="flex-1 h-[38px] rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shadow-sm shadow-indigo-600/20 transition-colors"
-                                        >
-                                            เพิ่มร่าง
-                                        </button>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
                     <div className="min-w-[1180px] bg-white dark:bg-[#161a27] border border-slate-300 dark:border-white/10 shadow-sm rounded-xl overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-300 dark:border-white/10 bg-white dark:bg-[#161a27] text-center">
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
@@ -2152,7 +2376,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                         </tr>
                                     </tbody>
                                 ) : (
-                                    filteredTeachersData.map(({ teacher, assignedCourses, totalLoad }) => {
+                                    filteredTeachersData.map(({ teacher, assignedCourses, totalLoad, totalSemesterLoad }) => {
                                         const rows = assignedCourses.length > 0 ? assignedCourses : [null];
                                         const canCollapse = assignedCourses.length > 1;
                                         const isCollapsed = canCollapse && collapsedTeachers[teacher.id];
@@ -2237,20 +2461,49 @@ const CourseAssignmentPage2: React.FC = () => {
                                                                                             />
                                                                                         </div>
                                                                                     </div>
-                                                                                    {(group.coTeacherIds.length > 0 || group.periodLabel) && (
-                                                                                        <div className="bg-slate-50 dark:bg-white/[0.02] px-1.5 py-0.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-1 text-[8px] font-black text-slate-500 dark:text-slate-400">
-                                                                                            <span className="truncate max-w-[80px]">
-                                                                                                {group.coTeacherIds.map(coId => {
-                                                                                                    const coTeacher = teacherList.find(t => t.id === coId);
-                                                                                                    return `คู่: ${coTeacher?.name?.split(" ")[0] || coId}`;
-                                                                                                }).join(", ")}
-                                                                                            </span>
-                                                                                            {group.periodLabel && (
-                                                                                                <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-1 rounded shrink-0 font-mono">
-                                                                                                    {group.periodLabel}
-                                                                                                </span>
+                                                                                    {group.coTeacherIds.length > 0 && (
+                                                                                        <button
+                                                                                            onClick={() => handleConfigurePeriodsDirect(
+                                                                                                row.course.id,
+                                                                                                group.groupNumber,
+                                                                                                group.isPending,
+                                                                                                [teacher.id, ...group.coTeacherIds],
+                                                                                                group.teacherPeriods
                                                                                             )}
-                                                                                        </div>
+                                                                                            className="w-full border-t border-dashed border-slate-200 dark:border-white/10 group/period-btn"
+                                                                                            title="คลิกเพื่อแบ่งช่วงคาบสอนระหว่างครูร่วมสอน"
+                                                                                        >
+                                                                                            {/* Action header row */}
+                                                                                            <div className={`flex items-center justify-between gap-1 px-1.5 py-[3px] transition-colors ${group.periodLabel ? 'bg-indigo-500/10 group-hover/period-btn:bg-indigo-500/20' : 'bg-amber-400/10 group-hover/period-btn:bg-amber-400/20'}`}>
+                                                                                                <div className="flex items-center gap-1 min-w-0">
+                                                                                                    <Scissors size={8} className={`shrink-0 ${group.periodLabel ? 'text-indigo-500 dark:text-indigo-400' : 'text-amber-500 dark:text-amber-400'}`} />
+                                                                                                    <span className={`text-[8px] font-black tracking-wide whitespace-nowrap ${group.periodLabel ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                                                                        แบ่งคาบสอน
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <div className="flex items-center gap-0.5 shrink-0">
+                                                                                                    {group.periodLabel ? (
+                                                                                                        <span className="flex items-center gap-0.5 bg-indigo-500 text-white text-[8px] font-black px-1 py-px rounded-sm font-mono">
+                                                                                                            <Clock size={7} />
+                                                                                                            {group.periodLabel}
+                                                                                                        </span>
+                                                                                                    ) : (
+                                                                                                        <span className="text-[8px] font-black text-amber-500 dark:text-amber-400 opacity-80">ยังไม่กำหนด</span>
+                                                                                                    )}
+                                                                                                    <Edit2 size={8} className={`ml-0.5 transition-opacity opacity-40 group-hover/period-btn:opacity-100 ${group.periodLabel ? 'text-indigo-400 dark:text-indigo-400' : 'text-amber-400 dark:text-amber-400'}`} />
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            {/* Co-teacher names — single truncated line */}
+                                                                                            <div className="px-1.5 py-[3px] flex items-center gap-0.5 overflow-hidden">
+                                                                                                <Users size={7} className="shrink-0 text-slate-400 dark:text-slate-500" />
+                                                                                                <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 truncate">
+                                                                                                    {group.coTeacherIds.map(coId => {
+                                                                                                        const coTeacher = teacherList.find(t => t.id === coId);
+                                                                                                        return `+${coTeacher?.name?.split(" ")[0] || coId}`;
+                                                                                                    }).join(" ")}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        </button>
                                                                                     )}
                                                                                 </div>
                                                                             ))}
@@ -2265,8 +2518,9 @@ const CourseAssignmentPage2: React.FC = () => {
                                                                     <td className="border border-slate-300 dark:border-white/10 px-2 py-2 text-center align-top font-black text-slate-700 dark:text-slate-200">
                                                                         {row.groups.length}
                                                                     </td>
-                                                                    <td className="border border-slate-300 dark:border-white/10 px-2 py-2 text-center align-top font-black text-slate-900 dark:text-white">
-                                                                        {formatWeeklyLoad(row.totalPeriodsTaught)}
+                                                                    <td className="border border-slate-300 dark:border-white/10 px-2 py-2 text-center align-top">
+                                                                        <div className="font-black text-slate-900 dark:text-white text-sm">{row.totalSemesterHours}</div>
+                                                                        <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">{row.isFullYear ? 'คาบ/ปี' : 'คาบ/ภาค'}</div>
                                                                     </td>
                                                                     <td className="border border-slate-300 dark:border-white/10 px-2 py-2 align-top">
                                                                         <div className="flex flex-col gap-1">
@@ -2310,6 +2564,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                                                                                     isSearchable={true}
                                                                                                     placeholder="เลือกสถานที่..."
                                                                                                     menuPortalTarget={document.body}
+                                                                                                    menuPosition="fixed"
                                                                                                 />
                                                                                             </div>
                                                                                         ) : (
@@ -2394,11 +2649,12 @@ const CourseAssignmentPage2: React.FC = () => {
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className={`border border-slate-300 dark:border-white/10 px-2 py-2 text-center text-sm font-black ${loadColor}`}>
-                                                        {formatWeeklyLoad(totalLoad)}
+                                                    <td className={`border border-slate-300 dark:border-white/10 px-2 py-2 text-center`}>
+                                                        <div className={`font-black text-sm ${loadColor}`}>{totalSemesterLoad}</div>
+                                                        <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">คาบรวม</div>
                                                     </td>
-                                                    <td colSpan={2} className="border border-slate-300 dark:border-white/10 px-2 py-2 text-center text-[11px] font-bold text-slate-400 dark:text-slate-500">
-                                                        คาบ/สัปดาห์
+                                                    <td colSpan={2} className="border border-slate-300 dark:border-white/10 px-2 py-2 text-center text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                                                        {formatWeeklyLoad(totalLoad)} คาบ/สัปดาห์
                                                     </td>
                                                 </tr>
                                             </TeacherDroppableTbody>
@@ -2409,167 +2665,351 @@ const CourseAssignmentPage2: React.FC = () => {
                     </div>
                 </main>
 
-                {/* --- MODAL 2: Manage Course Groups --- */}
+                {/* --- MODAL: Add Course Assignment --- */}
+                <AnimatePresence>
+                    {assignTeacherId && (() => {
+                        const assignTeacher = teacherList.find(t => t.id === assignTeacherId);
+                        return (
+                            <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={handleCloseAssignPanel}>
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                                    transition={{ duration: 0.16 }}
+                                    className="w-full max-w-2xl bg-white dark:bg-[#161a27] rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-visible"
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    {/* Header */}
+                                    <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-t-2xl flex items-center justify-between">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                                                <BookOpen size={18} className="text-white" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="text-sm font-black text-white">มอบหมายรายวิชาใหม่</h3>
+                                                <p className="text-[11px] font-bold text-indigo-200 truncate">
+                                                    ครู: {assignTeacher?.teacherId || "—"} {assignTeacher?.name || ""}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleCloseAssignPanel} className="p-2 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+
+                                    {/* Body */}
+                                    <div className="p-5 grid grid-cols-12 gap-4 overflow-visible">
+                                        {/* Course selector - full width */}
+                                        <div className="col-span-12">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">เลือกรายวิชา <span className="text-rose-500">*</span></label>
+                                            <Select
+                                                options={assignableCourses.map(course => ({
+                                                    value: course.id,
+                                                    label: `[${course.code}] ${course.title} (${getLevelLabel(course.classId)})`
+                                                }))}
+                                                value={courses.find(c => c.id === assignCourseId) ? {
+                                                    value: assignCourseId,
+                                                    label: `[${courses.find(c => c.id === assignCourseId)?.code}] ${courses.find(c => c.id === assignCourseId)?.title}`
+                                                } : null}
+                                                onChange={(opt: any) => setAssignCourseId(opt?.value || "")}
+                                                styles={filterSelectStyles}
+                                                isSearchable
+                                                autoFocus
+                                                placeholder="พิมพ์เพื่อค้นหารหัสหรือชื่อวิชา..."
+                                                menuPortalTarget={document.body}
+                                                menuPosition="fixed"
+                                            />
+                                        </div>
+
+                                        {/* Group + Room suffix */}
+                                        <div className="col-span-6">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">กลุ่มที่</label>
+                                            <input
+                                                type="number"
+                                                min={1} max={30}
+                                                value={assignGroupNumber}
+                                                onChange={(e) => {
+                                                    const val = Number(e.target.value);
+                                                    setAssignGroupNumber(val);
+                                                    setAssignRoomSuffix(String(val));
+                                                }}
+                                                className="w-full h-[38px] px-3 rounded-xl text-sm font-black bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+                                            />
+                                        </div>
+                                        <div className="col-span-6">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">ห้อง/ทับ</label>
+                                            <input
+                                                type="text"
+                                                value={assignRoomSuffix}
+                                                onChange={(e) => setAssignRoomSuffix(e.target.value)}
+                                                placeholder="1"
+                                                className="w-full h-[38px] px-3 rounded-xl text-sm font-black bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+                                            />
+                                        </div>
+
+                                        {/* Room */}
+                                        <div className="col-span-6">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">สถานที่เรียน <span className="text-rose-500">*</span></label>
+                                            <Select
+                                                options={rooms.map(room => ({
+                                                    value: room.id,
+                                                    label: `${room.roomCode} – ${room.roomName}${room.building ? ` (${room.building})` : ''}`
+                                                }))}
+                                                value={rooms.find(r => r.id === assignPhysicalRoomId) ? {
+                                                    value: assignPhysicalRoomId,
+                                                    label: rooms.find(r => r.id === assignPhysicalRoomId)?.roomCode || ""
+                                                } : null}
+                                                onChange={(opt: any) => setAssignPhysicalRoomId(opt ? opt.value : "")}
+                                                styles={filterSelectStyles}
+                                                isSearchable
+                                                placeholder="เลือกสถานที่เรียน"
+                                                menuPortalTarget={document.body}
+                                                menuPosition="fixed"
+                                            />
+                                        </div>
+                                        <div className="col-span-6">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase">
+                                                    ครูร่วมสอน
+                                                    {assignCoTeacherIds.length > 0 && (
+                                                        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[9px] font-black normal-case">
+                                                            เลือกแล้ว {assignCoTeacherIds.length} คน
+                                                        </span>
+                                                    )}
+                                                </label>
+                                                {assignCoTeacherIds.length > 0 && (
+                                                    <button type="button" onClick={() => setAssignCoTeacherIds([])} className="text-[10px] font-black text-rose-400 hover:text-rose-500 transition-colors">
+                                                        ล้างทั้งหมด
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <Select
+                                                options={getCoTeacherOptions(assignTeacherId || undefined)}
+                                                value={getCoTeacherOptions(assignTeacherId || undefined).filter(opt => assignCoTeacherIds.includes(opt.value))}
+                                                onChange={(opts: any) => setAssignCoTeacherIds(Array.isArray(opts) ? opts.map((o: TeacherSelectOption) => o.value) : [])}
+                                                styles={coTeacherMultiSelectStyles}
+                                                isMulti={true}
+                                                isClearable={true}
+                                                isSearchable={true}
+                                                closeMenuOnSelect={false}
+                                                hideSelectedOptions={false}
+                                                blurInputOnSelect={false}
+                                                placeholder="ค้นหาชื่อหรือรหัสครู..."
+                                                menuPortalTarget={document.body}
+                                                menuPosition="fixed"
+                                                noOptionsMessage={() => "ไม่พบครูที่ค้นหา"}
+                                                formatOptionLabel={(option: TeacherSelectOption, meta: any) =>
+                                                    renderCoTeacherOptionLabel(option, meta.context, meta.selectValue || [])
+                                                }
+                                            />
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="col-span-12 flex gap-3 pt-1">
+                                            <button
+                                                onClick={handleCloseAssignPanel}
+                                                className="flex-1 h-10 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-black text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                                            >
+                                                ยกเลิก
+                                            </button>
+                                            <button
+                                                onClick={handleAddAssignmentToQueue}
+                                                className="flex-[2] h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-black shadow-sm shadow-indigo-600/20 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <Plus size={15} strokeWidth={3} />
+                                                เพิ่มเข้าร่าง
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </div>
+                        );
+                    })()}
+                </AnimatePresence>
+
+                {/* --- MODAL: Manage Course Groups --- */}
                 <AnimatePresence>
                     {isManageModalOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                            <motion.div 
-                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.97, y: 16 }}
                                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                                className="w-full max-w-2xl bg-white dark:bg-[#161a27] rounded-2xl border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden text-slate-800 dark:text-slate-200"
+                                exit={{ opacity: 0, scale: 0.97, y: 16 }}
+                                transition={{ duration: 0.18 }}
+                                className="w-full max-w-3xl bg-white dark:bg-[#161a27] rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl text-slate-800 dark:text-slate-200 flex flex-col"
+                                style={{ maxHeight: 'calc(100vh - 64px)' }}
                             >
-                                <div className="px-6 py-4 bg-[#1e293b] text-white flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <Edit2 size={18} />
-                                        <h3 className="font-black text-sm">
-                                            จัดการกลุ่มการเรียนของวิชา {courses.find(c => c.id === manageCourseId)?.code}
-                                        </h3>
+                                {/* Header */}
+                                <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-t-2xl flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+                                            <Edit2 size={16} className="text-white" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-black text-sm text-white leading-none">
+                                                จัดการกลุ่มการเรียน
+                                            </h3>
+                                            <p className="text-[11px] text-indigo-200 font-bold mt-0.5">
+                                                วิชา {courses.find(c => c.id === manageCourseId)?.code} — {courses.find(c => c.id === manageCourseId)?.title}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={() => setIsManageModalOpen(false)}
-                                        className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+                                        className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/15 rounded-lg transition-colors"
                                     >
                                         <X size={18} />
                                     </button>
                                 </div>
 
-                                <div className="p-6 space-y-4">
-                                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                        ครูผู้สอนหลัก: <span className="text-slate-800 dark:text-white font-black">{teacherList.find(t => t.id === manageTeacherId)?.name}</span>
+                                {/* Teacher info strip */}
+                                <div className="px-6 py-3 border-b border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-white/[0.02] shrink-0 flex items-center gap-3">
+                                    <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-[10px] font-black shrink-0">
+                                        {teacherList.find(t => t.id === manageTeacherId)?.name?.charAt(0) || "?"}
                                     </div>
-
-                                    {/* List of groups */}
-                                    <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-1">
-                                        {editingGroups.length === 0 ? (
-                                            <div className="text-center py-6 text-slate-400 font-bold text-xs italic">
-                                                ไม่มีกลุ่มการเรียนที่เปิดอยู่
-                                            </div>
-                                        ) : (
-                                            editingGroups.map((group, index) => (
-                                                <div 
-                                                    key={group.groupNumber}
-                                                    className="p-4 rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.01] flex items-center justify-between gap-4"
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-lg bg-indigo-600 text-white flex flex-col items-center justify-center font-black">
-                                                            <span className="text-[6px] tracking-tighter uppercase opacity-80 leading-none">กลุ่ม</span>
-                                                            <span className="text-base font-black leading-none mt-0.5">{group.groupNumber}</span>
-                                                        </div>
-                                                        {group.isPending && (
-                                                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:bg-amber-500/5 dark:text-amber-400 border border-amber-500/20 rounded text-[9px] font-black animate-pulse">
-                                                                แบบร่าง
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="flex-1 grid grid-cols-4 gap-3">
-                                                        {/* Room Suffix */}
-                                                        <div>
-                                                            <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">ทับ/ห้อง (Room)</label>
-                                                            <input 
-                                                                type="text"
-                                                                value={group.room}
-                                                                onChange={(e) => handleUpdateGroupInModal(index, "room", e.target.value)}
-                                                                className="w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-950 dark:text-white outline-none focus:border-indigo-500"
-                                                            />
-                                                        </div>
-
-                                                        {/* Physical Room */}
-                                                        <div>
-                                                            <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1">สถานที่เรียน</label>
-                                                            <Select
-                                                                options={rooms.map(room => ({
-                                                                    value: room.id,
-                                                                    label: `${room.roomCode} - ${room.roomName} (${room.building || "ไม่มีอาคาร"})`
-                                                                }))}
-                                                                value={rooms.find(r => r.id === group.roomIds[0]) ? {
-                                                                    value: group.roomIds[0],
-                                                                    label: rooms.find(r => r.id === group.roomIds[0])?.roomCode || ""
-                                                                } : null}
-                                                                onChange={(opt: any) => handleUpdateGroupInModal(index, "roomIds", opt ? [opt.value] : [])}
-                                                                styles={filterSelectStyles}
-                                                                isClearable={true}
-                                                                isSearchable={true}
-                                                                placeholder="ไม่มีระบุสถานที่..."
-                                                            />
-                                                        </div>
-
-                                                        <div className="col-span-2">
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase block">ครูร่วม</label>
-                                                                {group.coTeacherIds.length === 1 && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleConfigurePeriodsInModal(index)}
-                                                                        className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 underline"
-                                                                    >
-                                                                        กำหนดช่วงคาบครูคู่ (ค{(() => {
-                                                                            const cObj = coursesWithAssignments.find(c => c.id === manageCourseId);
-                                                                            const ids = [manageTeacherId!, ...group.coTeacherIds];
-                                                                            const ranges = resolveTeacherPeriodRanges({ teacherIds: ids, teacherPeriods: group.teacherPeriods }, cObj);
-                                                                            const r = ranges[manageTeacherId!];
-                                                                            return r ? `${r.start}-${r.end}` : '1-30';
-                                                                        })()})
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                            <Select
-                                                                options={teacherList
-                                                                    .filter(teacher => teacher.id !== manageTeacherId)
-                                                                    .map(teacher => ({
-                                                                        value: teacher.id,
-                                                                        label: `${teacher.teacherId || "—"} ${teacher.name}`
-                                                                    }))
-                                                                }
-                                                                value={teacherList
-                                                                    .filter(teacher => group.coTeacherIds.includes(teacher.id))
-                                                                    .map(teacher => ({
-                                                                        value: teacher.id,
-                                                                        label: `${teacher.teacherId || "—"} ${teacher.name}`
-                                                                    }))
-                                                                }
-                                                                onChange={(opts: any) => handleUpdateGroupInModal(
-                                                                    index,
-                                                                    "coTeacherIds",
-                                                                    Array.isArray(opts) ? opts.map((opt: any) => opt.value) : []
-                                                                )}
-                                                                styles={multiSelectStyles}
-                                                                isMulti={true}
-                                                                isClearable={true}
-                                                                isSearchable={true}
-                                                                placeholder="ไม่มีครูร่วม"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <button 
-                                                        onClick={() => handleRemoveGroupInModal(group.groupNumber, group.isPending)}
-                                                        className="p-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-600 rounded-lg transition-colors shrink-0"
-                                                        title="ลบกลุ่มการเรียนนี้"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            ))
-                                        )}
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">ครูผู้สอนหลัก</span>
+                                        <p className="text-sm font-black text-slate-800 dark:text-white leading-tight">{teacherList.find(t => t.id === manageTeacherId)?.name || "—"}</p>
+                                    </div>
+                                    <div className="ml-auto px-3 py-1 bg-indigo-50 dark:bg-indigo-500/10 rounded-full border border-indigo-100 dark:border-indigo-500/20">
+                                        <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">{editingGroups.length} กลุ่ม</span>
                                     </div>
                                 </div>
 
-                                <div className="px-6 py-4 bg-slate-50 dark:bg-white/[0.02] border-t border-slate-200 dark:border-white/5 flex justify-between gap-3">
-                                    <div className="text-[10px] font-bold text-slate-400 self-center">
-                                        * การเปลี่ยนแปลงของกลุ่มข้อมูลจริง จะบันทึกเข้าฐานข้อมูลทันทีเมื่อกดตกลง
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <button 
+                                {/* Groups list */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-3">
+                                    {editingGroups.length === 0 ? (
+                                        <div className="text-center py-12 text-slate-400 font-bold text-sm">
+                                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center mx-auto mb-3">
+                                                <BookOpen size={20} className="text-slate-300 dark:text-slate-600" />
+                                            </div>
+                                            ไม่มีกลุ่มการเรียนที่เปิดอยู่
+                                        </div>
+                                    ) : (
+                                        editingGroups.map((group, index) => (
+                                            <div
+                                                key={group.groupNumber}
+                                                className="rounded-xl border border-slate-200 dark:border-white/8 bg-white dark:bg-[#0e1120] shadow-sm overflow-visible"
+                                            >
+                                                {/* Group header bar */}
+                                                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/5 rounded-t-xl">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white font-black text-sm shadow-sm shadow-indigo-600/30">
+                                                            {group.groupNumber}
+                                                        </div>
+                                                        <span className="text-xs font-black text-slate-600 dark:text-slate-300">กลุ่มที่ {group.groupNumber}</span>
+                                                        {group.isPending && (
+                                                            <span className="px-2 py-0.5 bg-amber-400/15 text-amber-600 dark:text-amber-400 border border-amber-400/30 rounded-full text-[9px] font-black">
+                                                                ● แบบร่าง
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveGroupInModal(group.groupNumber, group.isPending)}
+                                                        className="w-7 h-7 flex items-center justify-center hover:bg-rose-50 dark:hover:bg-rose-500/10 text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg transition-colors"
+                                                        title="ลบกลุ่มนี้"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+
+                                                {/* Group fields */}
+                                                <div className="p-4 grid grid-cols-12 gap-3">
+                                                    {/* Room suffix */}
+                                                    <div className="col-span-2">
+                                                        <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wide block mb-1.5">ทับ/ห้อง</label>
+                                                        <input
+                                                            type="text"
+                                                            value={group.room}
+                                                            onChange={(e) => handleUpdateGroupInModal(index, "room", e.target.value)}
+                                                            className="w-full h-[38px] px-3 rounded-xl text-sm font-black bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/8 text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all text-center"
+                                                        />
+                                                    </div>
+
+                                                    {/* Physical room */}
+                                                    <div className="col-span-4">
+                                                        <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wide block mb-1.5">สถานที่เรียน <span className="text-rose-500">*</span></label>
+                                                        <Select
+                                                            options={rooms.map(room => ({
+                                                                value: room.id,
+                                                                label: `${room.roomCode} — ${room.roomName}`,
+                                                                sublabel: room.building || "ไม่มีอาคาร"
+                                                            }))}
+                                                            value={rooms.find(r => r.id === group.roomIds[0]) ? {
+                                                                value: group.roomIds[0],
+                                                                label: (() => {
+                                                                    const r = rooms.find(rm => rm.id === group.roomIds[0]);
+                                                                    return r ? `${r.roomCode} — ${r.roomName}` : "";
+                                                                })()
+                                                            } : null}
+                                                            onChange={(opt: any) => handleUpdateGroupInModal(index, "roomIds", opt ? [opt.value] : [])}
+                                                            styles={filterSelectStyles}
+                                                            isSearchable={true}
+                                                            placeholder="เลือกสถานที่เรียน"
+                                                            menuPortalTarget={document.body}
+                                                            menuPosition="fixed"
+                                                        />
+                                                    </div>
+
+                                                    {/* Co-teacher */}
+                                                    <div className="col-span-6">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wide">ครูร่วมสอน</label>
+                                                            {group.coTeacherIds.length >= 1 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleConfigurePeriodsInModal(index)}
+                                                                    className="text-[9px] font-black text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 flex items-center gap-1"
+                                                                >
+                                                                    ⚙ กำหนดช่วงคาบ ({group.coTeacherIds.length + 1} คน)
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <Select
+                                                            options={getCoTeacherOptions(manageTeacherId || undefined)}
+                                                            value={getCoTeacherOptions(manageTeacherId || undefined).filter(opt => group.coTeacherIds.includes(opt.value))}
+                                                            onChange={(opts: any) => handleUpdateGroupInModal(
+                                                                index,
+                                                                "coTeacherIds",
+                                                                Array.isArray(opts) ? opts.map((o: TeacherSelectOption) => o.value) : []
+                                                            )}
+                                                            styles={coTeacherMultiSelectStyles}
+                                                            isMulti={true}
+                                                            isClearable={true}
+                                                            isSearchable={true}
+                                                            closeMenuOnSelect={false}
+                                                            hideSelectedOptions={false}
+                                                            blurInputOnSelect={false}
+                                                            placeholder="ค้นหาชื่อหรือรหัสครู..."
+                                                            menuPortalTarget={document.body}
+                                                            menuPosition="fixed"
+                                                            noOptionsMessage={() => "ไม่พบครูที่ค้นหา"}
+                                                            formatOptionLabel={(option: TeacherSelectOption, meta: any) =>
+                                                                renderCoTeacherOptionLabel(option, meta.context, meta.selectValue || [])
+                                                            }
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Footer */}
+                                <div className="px-6 py-4 border-t border-slate-100 dark:border-white/5 bg-slate-50/80 dark:bg-white/[0.02] rounded-b-2xl flex items-center justify-between gap-3 shrink-0">
+                                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                                        * ข้อมูลจริงจะบันทึกลงฐานข้อมูลทันทีเมื่อกด <strong>ตกลงบันทึก</strong>
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button
                                             onClick={() => setIsManageModalOpen(false)}
-                                            className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition-colors"
+                                            className="px-4 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-slate-200 dark:hover:border-white/10"
                                         >
                                             ยกเลิก
                                         </button>
-                                        <button 
+                                        <button
                                             onClick={handleSaveChangesFromModal}
-                                            className="px-4 py-2 text-xs font-black text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+                                            className="px-5 py-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors shadow-sm shadow-indigo-600/20"
                                         >
                                             ตกลงบันทึก
                                         </button>

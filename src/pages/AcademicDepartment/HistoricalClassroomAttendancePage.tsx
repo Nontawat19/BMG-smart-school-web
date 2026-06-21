@@ -1797,32 +1797,35 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 <div className="w-full mx-auto space-y-1">
 
                     {/* Header */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <div className="flex items-center gap-3">
-                                    <BackButton to={searchParams.get('courseId') ? `/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.room}&groupId=${backNavParams.groupId}&year=${backNavParams.year}` : '/academic/hub/attendance'} />
-                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-medium">
-                                        {searchParams.get('courseId') ? 'กลับไปยังสมุดประจำวิชา (Grade Book)' : 'กลับไปยังระบบเช็คชื่อ'}
-                                    </span>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
+                        <div className="space-y-1 text-left">
+                            <div className="flex items-center gap-3">
+                                <BackButton to={searchParams.get('courseId') ? `/academic/grade-book?classId=${backNavParams.levelID}&courseId=${backNavParams.courseId}&semester=${backNavParams.semester}&room=${backNavParams.room}&groupId=${backNavParams.groupId}&year=${backNavParams.year}` : '/academic/hub/attendance'} />
+                                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                                    <Users className="text-indigo-600 dark:text-indigo-400" size={24} />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                                        เช็คชื่อรายวิชาย้อนหลัง
+                                    </h1>
+                                    <p className="text-gray-500 dark:text-gray-400 text-xs font-bold flex items-center gap-1.5 pt-0.5">
+                                        <span className="opacity-60">ปีการศึกษา {academicYear || '...'}</span>
+                                        <span className="opacity-30">·</span>
+                                        <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
+                                            {isPrimaryAnnualMode ? 'รายปี (ประถม)' : `ภาคเรียนที่ ${semester || '...'}`}
+                                        </span>
+                                    </p>
                                 </div>
                             </div>
-                            <h1 className="text-xl font-bold flex items-center gap-2">
-                                <Users className="text-indigo-600" size={20} />
-                                เช็คชื่อรายวิชาย้อนหลัง (Historical Attendance)
-                            </h1>
-                            <p className="text-gray-400 text-[11px]">
-                                ปีการศึกษา {academicYear} {isPrimaryAnnualMode ? 'รายปี (ประถม)' : `ภาคเรียนที่ ${semester}`}
-                            </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                             {students.length > 0 && (
-                                <button onClick={exportToExcel} className="flex items-center gap-2 text-green-600 hover:text-green-700 border border-green-200 dark:border-green-800 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors">
+                                <button onClick={exportToExcel} className="flex items-center gap-2 text-green-600 hover:text-green-700 border border-green-200 dark:border-green-800 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl shadow-sm font-bold text-sm transition-colors">
                                     <FileSpreadsheet size={16} /> Export Excel
                                 </button>
                             )}
                             {isModified && (
-                                <button onClick={handleSave} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg shadow-md font-bold text-xs transition-all animate-pulse">
+                                <button onClick={handleSave} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-md font-bold text-sm transition-all animate-pulse">
                                     <Save size={16} /> บันทึกการเปลี่ยนแปลง
                                 </button>
                             )}

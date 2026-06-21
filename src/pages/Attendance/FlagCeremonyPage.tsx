@@ -28,7 +28,8 @@ import {
 } from "@/utils/attendanceLogic";
 import Swal from "sweetalert2";
 import { FaCheck, FaTimes, FaClock, FaUserSlash, FaUserGraduate } from "react-icons/fa";
-import { CalendarOff, Sparkles, School } from "lucide-react";
+import { CalendarOff, Sparkles, School, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
@@ -309,6 +310,7 @@ const FlagCeremonyPageSkeleton: React.FC = () => (
 );
 
 const FlagCeremonyPage: React.FC = () => {
+  const navigate = useNavigate();
   const isPwaStandaloneMode = usePwaMode();
   const [isMobileScreen, setIsMobileScreen] = useState(false);
 
@@ -1659,15 +1661,24 @@ const FlagCeremonyPage: React.FC = () => {
 
           {/* Header Section */}
           <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 ${isPwaMode ? 'p-4' : 'p-6'}`}>
-            <div>
-              <h1 className={`${isPwaMode ? 'text-xl' : 'text-2xl sm:text-3xl'} font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400`}>
-                เช็คชื่อกิจกรรมเข้าแถว
-              </h1>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate('/academic/hub/attendance')}
+                className="w-10 h-10 rounded-full bg-[#26282d] border border-white/10 flex items-center justify-center text-[#a9aebb] hover:bg-[#2d3036] hover:text-white active:scale-95 transition-all shadow-[0_6px_18px_rgba(0,0,0,0.16)] shrink-0"
+              >
+                <ArrowLeft size={20} strokeWidth={2.2} />
+              </button>
+              <div>
+                <h1 className={`${isPwaMode ? 'text-xl' : 'text-2xl sm:text-3xl'} font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400`}>
+                  เช็คชื่อกิจกรรมเข้าแถว
+                </h1>
               <div className={`${isPwaMode ? 'text-xs' : ''} flex items-center gap-2 mt-2 text-gray-500 dark:text-gray-400`}>
                 <FaClock className="text-indigo-500" />
                 <span>{new Date().toLocaleDateString("th-TH", { dateStyle: 'long' })}</span>
               </div>
             </div>
+          </div>
+
 
             <div className="w-full md:w-72">
               {isHomeroom ? (

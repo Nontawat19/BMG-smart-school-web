@@ -4,7 +4,7 @@ import MainLayout from "@/layouts/MainLayout";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth, storage } from "@/firebase";
 import { compressImage } from "@/utils/imageUtils";
-import { doc, getDoc, collection, addDoc, serverTimestamp, GeoPoint, query, orderBy, limit, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, updateDoc, serverTimestamp, GeoPoint, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
 import {
@@ -107,6 +107,132 @@ const getCurrentAcademicFallback = () => {
 
 const currentAcademic = getCurrentAcademicFallback();
 
+const COPYABLE_VISIT_FIELDS = [
+    'schoolName',
+    'educationArea',
+    'visitNo',
+    'semester',
+    'academicYear',
+    'visitStatus',
+    'visitType',
+    'visitDate',
+    'startTime',
+    'endTime',
+    'visitorNameBySide',
+    'relationshipWithStudent',
+    'parentFirstName',
+    'parentLastName',
+    'parentPhone',
+    'parentOccupation',
+    'parentEducation',
+    'parentCitizenId',
+    'parentNoGuardian',
+    'parentNoCitizenId',
+    'parentWelfareRegistered',
+    'bothParentsDeceased',
+    'oneParentDeceased',
+    'parentsSeparated',
+    'notLivingWithParents',
+    'studentNickname',
+    'studentPhone',
+    'studentLineId',
+    'studentFacebook',
+    'travelDistance',
+    'travelTimeHours',
+    'travelTimeMinutes',
+    'travelMethod',
+    'housingType',
+    'housingCondition',
+    'housingCleanliness',
+    'utilitiesElectricity',
+    'utilitiesWater',
+    'utilitiesToilet',
+    'environmentNear',
+    'familyMaleCount',
+    'familyFemaleCount',
+    'familyTotalCount',
+    'siblingSameParentsMale',
+    'siblingSameParentsFemale',
+    'siblingDifferentParentsMale',
+    'siblingDifferentParentsFemale',
+    'specialNeedHelpCount',
+    'vehiclePrivateCar',
+    'vehiclePickup',
+    'vehicleFarmMachine',
+    'familyAtmosphere',
+    'hoursTogetherPerDay',
+    'studentResponsibility',
+    'studentHobby',
+    'caregiverWhenParentsAway',
+    'caregiverWhenParentsAwayOther',
+    'familyMonthlyIncome',
+    'householdIncomeAverage',
+    'expensePayer',
+    'studentWorkingExtra',
+    'extraJobDetail',
+    'extraIncome',
+    'studentAllowancePerDay',
+    'internetUsage',
+    'parentConcerns',
+    'schoolAssistanceNeededDetail',
+    'assistanceReceivedOther',
+    'assistanceHistory',
+    'visitSummary',
+    'visitSummaryPromoteDetail',
+    'visitSummaryUrgentDetail',
+    'teacherComments',
+    'suggestionForUse',
+    'obstacles',
+    'overallSuggestions',
+    'studentResponsibilities',
+    'studentHobbies',
+    'computerAccess',
+    'electronicUsage',
+    'parentHousePhotoPermission',
+    'informantRelationship',
+    'teacherPosition',
+    'housingTypeOther',
+    'travelMethodDetail',
+    'housingCleanlinessOther',
+    'specialNeedDetail'
+] as const;
+
+const normalizePhotoList = (value: unknown): string[] => (
+    Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : []
+);
+
+const normalizePhotoValue = (value: unknown): string | null => (
+    typeof value === "string" && value.trim().length > 0 ? value : null
+);
+
+const normalizeGpsValue = (value: any): { lat: number; lng: number } | null => {
+    if (!value) return null;
+    if (typeof value.latitude === "number" && typeof value.longitude === "number") {
+        return { lat: value.latitude, lng: value.longitude };
+    }
+    if (typeof value._lat === "number" && typeof value._long === "number") {
+        return { lat: value._lat, lng: value._long };
+    }
+    if (typeof value.lat === "number" && typeof value.lng === "number") {
+        return { lat: value.lat, lng: value.lng };
+    }
+    return null;
+};
+
+const hasAnyVisitPhotos = (visit: any): boolean => {
+    const photos = visit?.photos || {};
+    return (
+        normalizePhotoList(photos.internal).length > 0 ||
+        normalizePhotoList(photos.external).length > 0 ||
+        !!normalizePhotoValue(photos.exterior) ||
+        !!normalizePhotoValue(photos.interior) ||
+        !!normalizePhotoValue(photos.schoolSign) ||
+        !!normalizePhotoValue(photos.sketchMap)
+    );
+};
+
 const getStudentGuardianInfo = (student: Student) => {
     const guardianName = compactName(student.guardianTitle, student.guardianFirstName, student.guardianLastName);
     if (guardianName || student.guardianPhone || student.guardianIdNumber || student.guardianOccupation) {
@@ -207,8 +333,11 @@ const NewHomeVisit: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const shouldCopy = searchParams.get("copy") === "true";
+    const isEditLatest = searchParams.get("mode") === "edit-latest";
     const [student, setStudent] = useState<Student | null>(null);
     const [previousVisit, setPreviousVisit] = useState<any | null>(null);
+    const [previousVisitWithPhotos, setPreviousVisitWithPhotos] = useState<any | null>(null);
+    const [previousVisitDocId, setPreviousVisitDocId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
@@ -220,6 +349,8 @@ const NewHomeVisit: React.FC = () => {
     const [photosExternal, setPhotosExternal] = useState<File[]>([]);
     const [previewsInternal, setPreviewsInternal] = useState<string[]>([]);
     const [previewsExternal, setPreviewsExternal] = useState<string[]>([]);
+    const [existingPhotosInternal, setExistingPhotosInternal] = useState<string[]>([]);
+    const [existingPhotosExternal, setExistingPhotosExternal] = useState<string[]>([]);
 
     // Specific Photos state
     const [exteriorPhoto, setExteriorPhoto] = useState<File | null>(null);
@@ -230,6 +361,10 @@ const NewHomeVisit: React.FC = () => {
     const [interiorPreview, setInteriorPreview] = useState<string | null>(null);
     const [schoolSignPreview, setSchoolSignPreview] = useState<string | null>(null);
     const [sketchMapPreview, setSketchMapPreview] = useState<string | null>(null);
+    const [existingExteriorPhoto, setExistingExteriorPhoto] = useState<string | null>(null);
+    const [existingInteriorPhoto, setExistingInteriorPhoto] = useState<string | null>(null);
+    const [existingSchoolSignPhoto, setExistingSchoolSignPhoto] = useState<string | null>(null);
+    const [existingSketchMapPhoto, setExistingSketchMapPhoto] = useState<string | null>(null);
 
     // Family Members list
     const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([
@@ -304,7 +439,7 @@ const NewHomeVisit: React.FC = () => {
         // 4.5 ความสัมพันธ์ในครอบครัว (อ้างอิงภาพที่ 2)
         familyAtmosphere: "รักใคร่กันดี", // รักใคร่กันดี, ขัดแย้งทะเลาะกันบางครั้ง/บ่อยครั้ง, ห่างเหิน, ขัดแย้งและทำร้ายร่างกาย...
         relationships: {
-            father: "สนิทสนม", // สนิทสนม, เฉยๆ, ห่างเหิน, ขัดแย้ง
+            father: "สนิทสนม", // สนิทสนม, เฉยๆ, ห่างเหิน, ขัดแย้ง, ไม่มี
             mother: "สนิทสนม",
             brother: "เฉยๆ",
             sister: "เฉยๆ",
@@ -488,10 +623,16 @@ const NewHomeVisit: React.FC = () => {
 
                         // Fetch previous home visit to enable copy feature
                         const visitsCol = collection(firestore, "school-settings", schoolId, "students", studentId, "home-visits");
-                        const q = query(visitsCol, orderBy("createdAt", "desc"), limit(1));
+                        const q = query(visitsCol, orderBy("createdAt", "desc"), limit(10));
                         const querySnapshot = await getDocs(q);
                         if (!querySnapshot.empty) {
-                            setPreviousVisit(querySnapshot.docs[0].data());
+                            const visits = querySnapshot.docs.map(snapshot => ({
+                                id: snapshot.id,
+                                ...snapshot.data()
+                            }));
+                            setPreviousVisit(visits[0]);
+                            setPreviousVisitDocId(visits[0].id);
+                            setPreviousVisitWithPhotos(visits.find(hasAnyVisitPhotos) || null);
                         }
                     }
                 }
@@ -505,154 +646,118 @@ const NewHomeVisit: React.FC = () => {
         getCurrentLocation();
     }, [studentId]);
 
-    // Automatically copy data if shouldCopy is true
-    useEffect(() => {
-        if (shouldCopy && previousVisit) {
-            setFormData(prev => {
-                const nextData = { ...prev };
-                
-                const fieldsToCopy = [
-                    'schoolName',
-                    'educationArea',
-                    'visitorNameBySide',
-                    'relationshipWithStudent',
-                    'parentFirstName',
-                    'parentLastName',
-                    'parentPhone',
-                    'parentOccupation',
-                    'parentEducation',
-                    'parentCitizenId',
-                    'parentNoGuardian',
-                    'parentNoCitizenId',
-                    'parentWelfareRegistered',
-                    'bothParentsDeceased',
-                    'oneParentDeceased',
-                    'parentsSeparated',
-                    'notLivingWithParents',
-                    'studentNickname',
-                    'studentPhone',
-                    'studentLineId',
-                    'studentFacebook',
-                    'travelDistance',
-                    'travelTimeHours',
-                    'travelTimeMinutes',
-                    'travelMethod',
-                    'housingType',
-                    'housingCondition',
-                    'housingCleanliness',
-                    'utilitiesElectricity',
-                    'utilitiesWater',
-                    'utilitiesToilet',
-                    'environmentNear',
-                    'familyMaleCount',
-                    'familyFemaleCount',
-                    'familyTotalCount',
-                    'siblingSameParentsMale',
-                    'siblingSameParentsFemale',
-                    'siblingDifferentParentsMale',
-                    'siblingDifferentParentsFemale',
-                    'specialNeedHelpCount',
-                    'vehiclePrivateCar',
-                    'vehiclePickup',
-                    'vehicleFarmMachine',
-                    'familyAtmosphere',
-                    'hoursTogetherPerDay',
-                    'studentResponsibility',
-                    'studentHobby',
-                    'caregiverWhenParentsAway',
-                    'caregiverWhenParentsAwayOther',
-                    'familyMonthlyIncome',
-                    'householdIncomeAverage',
-                    'expensePayer',
-                    'studentWorkingExtra',
-                    'extraJobDetail',
-                    'extraIncome',
-                    'studentAllowancePerDay',
-                    'internetUsage',
-                    'parentConcerns',
-                    'schoolAssistanceNeededDetail',
-                    'assistanceReceivedOther',
-                    'assistanceHistory',
-                    'visitSummaryPromoteDetail',
-                    'visitSummaryUrgentDetail',
-                    'teacherComments',
-                    'suggestionForUse',
-                    'overallSuggestions',
-                    'studentResponsibilities',
-                    'studentHobbies',
-                    'computerAccess',
-                    'electronicUsage',
-                    'parentHousePhotoPermission',
-                    'informantRelationship',
-                    'teacherPosition',
-                    'housingTypeOther',
-                    'travelMethodDetail',
-                    'housingCleanlinessOther',
-                    'specialNeedDetail'
-                ];
+    const applyPreviousVisitData = (visit: any) => {
+        setFormData(prev => {
+            const nextData = { ...prev };
 
-                fieldsToCopy.forEach(field => {
-                    if (previousVisit[field] !== undefined) {
-                        (nextData as any)[field] = previousVisit[field];
-                    }
-                });
-
-                if (previousVisit.relationships) {
-                    nextData.relationships = {
-                        ...prev.relationships,
-                        ...previousVisit.relationships
-                    };
+            COPYABLE_VISIT_FIELDS.forEach(field => {
+                if (visit[field] !== undefined) {
+                    (nextData as any)[field] = visit[field];
                 }
-
-                if (Array.isArray(previousVisit.healthRisk)) nextData.healthRisk = [...previousVisit.healthRisk];
-                if (Array.isArray(previousVisit.welfareRisk)) nextData.welfareRisk = [...previousVisit.welfareRisk];
-                if (Array.isArray(previousVisit.drugRisk)) nextData.drugRisk = [...previousVisit.drugRisk];
-                if (Array.isArray(previousVisit.violenceRisk)) nextData.violenceRisk = [...previousVisit.violenceRisk];
-                if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
-                if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
-                if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
-                if (Array.isArray(previousVisit.householdDependency)) nextData.householdDependency = [...previousVisit.householdDependency];
-                if (Array.isArray(previousVisit.farmlandStatus)) nextData.farmlandStatus = [...previousVisit.farmlandStatus];
-                if (Array.isArray(previousVisit.assistanceReceived)) nextData.assistanceReceived = [...previousVisit.assistanceReceived];
-                if (Array.isArray(previousVisit.electronicUsage)) nextData.electronicUsage = [...previousVisit.electronicUsage];
-                else if (typeof previousVisit.electronicUsage === 'string' && previousVisit.electronicUsage) nextData.electronicUsage = [previousVisit.electronicUsage];
-
-                return nextData;
             });
 
-            if (Array.isArray(previousVisit.familyMembers) && previousVisit.familyMembers.length > 0) {
-                setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
-                    id: m.id || Date.now().toString() + Math.random().toString(),
-                    name: m.name || '',
-                    relationship: m.relationship || '',
-                    age: m.age || '',
-                    education: m.education || '',
-                    occupation: m.occupation || '',
-                    income: m.income || '',
-                    disability: m.disability || '',
-                    wageIncome: m.wageIncome || '',
-                    agricultureIncome: m.agricultureIncome || '',
-                    businessIncome: m.businessIncome || '',
-                    welfareIncome: m.welfareIncome || '',
-                    otherIncome: m.otherIncome || '',
-                    totalIncome: m.totalIncome || ''
-                })));
+            if (visit.relationships) {
+                nextData.relationships = {
+                    ...prev.relationships,
+                    ...visit.relationships
+                };
             }
 
-            Swal.fire({
-                icon: 'success',
-                title: 'ดึงข้อมูลการเยี่ยมบ้านครั้งก่อนให้เรียบร้อยแล้ว!',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 3000,
-                timerProgressBar: true,
-                customClass: {
-                    popup: 'rounded-xl font-bold'
-                }
-            });
+            if (Array.isArray(visit.healthRisk)) nextData.healthRisk = [...visit.healthRisk];
+            if (Array.isArray(visit.welfareRisk)) nextData.welfareRisk = [...visit.welfareRisk];
+            if (Array.isArray(visit.drugRisk)) nextData.drugRisk = [...visit.drugRisk];
+            if (Array.isArray(visit.violenceRisk)) nextData.violenceRisk = [...visit.violenceRisk];
+            if (Array.isArray(visit.sexualRisk)) nextData.sexualRisk = [...visit.sexualRisk];
+            if (Array.isArray(visit.gameRisk)) nextData.gameRisk = [...visit.gameRisk];
+            if (Array.isArray(visit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...visit.schoolAssistanceNeeded];
+            if (Array.isArray(visit.householdDependency)) nextData.householdDependency = [...visit.householdDependency];
+            if (Array.isArray(visit.farmlandStatus)) nextData.farmlandStatus = [...visit.farmlandStatus];
+            if (Array.isArray(visit.assistanceReceived)) nextData.assistanceReceived = [...visit.assistanceReceived];
+            if (Array.isArray(visit.studentResponsibilities)) nextData.studentResponsibilities = [...visit.studentResponsibilities];
+            if (Array.isArray(visit.studentHobbies)) nextData.studentHobbies = [...visit.studentHobbies];
+            if (Array.isArray(visit.electronicUsage)) nextData.electronicUsage = [...visit.electronicUsage];
+            else if (typeof visit.electronicUsage === 'string' && visit.electronicUsage) nextData.electronicUsage = [visit.electronicUsage];
+
+            return nextData;
+        });
+
+        if (Array.isArray(visit.familyMembers) && visit.familyMembers.length > 0) {
+            setFamilyMembers(visit.familyMembers.map((m: any) => ({
+                id: m.id || Date.now().toString() + Math.random().toString(),
+                name: m.name || '',
+                relationship: m.relationship || '',
+                age: m.age || '',
+                education: m.education || '',
+                occupation: m.occupation || '',
+                income: m.income || '',
+                disability: m.disability || '',
+                wageIncome: m.wageIncome || '',
+                agricultureIncome: m.agricultureIncome || '',
+                businessIncome: m.businessIncome || '',
+                welfareIncome: m.welfareIncome || '',
+                otherIncome: m.otherIncome || '',
+                totalIncome: m.totalIncome || ''
+            })));
         }
-    }, [shouldCopy, previousVisit]);
+
+        const normalizedGps = normalizeGpsValue(visit.gps);
+        if (normalizedGps) {
+            setGps(normalizedGps);
+        }
+
+        const photoSource = hasAnyVisitPhotos(visit) ? visit : (previousVisitWithPhotos || visit);
+        const photos = photoSource?.photos || {};
+        const nextExternalPhotos = normalizePhotoList(photos.external);
+        const nextInternalPhotos = normalizePhotoList(photos.internal);
+        const nextExteriorPhoto = normalizePhotoValue(photos.exterior);
+        const nextInteriorPhoto = normalizePhotoValue(photos.interior);
+        const nextSchoolSignPhoto = normalizePhotoValue(photos.schoolSign);
+        const nextSketchMapPhoto = normalizePhotoValue(photos.sketchMap);
+
+        setExistingPhotosExternal(nextExternalPhotos);
+        setExistingPhotosInternal(nextInternalPhotos);
+        setPreviewsExternal([]);
+        setPreviewsInternal([]);
+        setPhotosExternal([]);
+        setPhotosInternal([]);
+
+        setExistingExteriorPhoto(nextExteriorPhoto);
+        setExistingInteriorPhoto(nextInteriorPhoto);
+        setExistingSchoolSignPhoto(nextSchoolSignPhoto);
+        setExistingSketchMapPhoto(nextSketchMapPhoto);
+
+        setExteriorPhoto(null);
+        setInteriorPhoto(null);
+        setSchoolSignPhoto(null);
+        setSketchMapPhoto(null);
+
+        setExteriorPreview(nextExteriorPhoto);
+        setInteriorPreview(nextInteriorPhoto);
+        setSchoolSignPreview(nextSchoolSignPhoto);
+        setSketchMapPreview(nextSketchMapPhoto);
+    };
+
+    // Automatically load prior data for copy-new or edit-latest flows
+    useEffect(() => {
+        if ((shouldCopy || isEditLatest) && previousVisit) {
+            applyPreviousVisitData(previousVisit);
+
+            if (shouldCopy) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'ดึงข้อมูลการเยี่ยมบ้านครั้งก่อนให้เรียบร้อยแล้ว!',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    timerProgressBar: true,
+                    customClass: {
+                        popup: 'rounded-xl font-bold'
+                    }
+                });
+            }
+        }
+    }, [shouldCopy, isEditLatest, previousVisit]);
 
     const getCurrentLocation = () => {
         setGettingGps(true);
@@ -697,7 +802,7 @@ const NewHomeVisit: React.FC = () => {
         
         Swal.fire({
             title: 'ดึงข้อมูลจากการเยี่ยมบ้านครั้งก่อน?',
-            text: 'ข้อมูลเดิมในฟอร์มนี้ (อาทิ ข้อมูลครอบครัว ความสัมพันธ์ ความเสี่ยง) จะถูกเขียนทับด้วยข้อมูลจากการเยี่ยมบ้านครั้งล่าสุด แต่จะไม่กระทบต่อวันที่ เวลา พิกัด GPS และรูปภาพของวิสิทใหม่นี้',
+            text: 'ระบบจะคัดลอกข้อมูลทั้งหมดจากการเยี่ยมบ้านครั้งล่าสุด รวมถึงวันเวลา พิกัด GPS และรูปภาพเดิมเข้ามาในฟอร์มนี้ โดยข้อมูลจะคงอยู่จนกว่าคุณจะกดแก้ไขหรือลบเอง',
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#2563eb',
@@ -709,145 +814,12 @@ const NewHomeVisit: React.FC = () => {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                // Copy values from previousVisit
-                setFormData(prev => {
-                    const nextData = { ...prev };
-                    
-                    const fieldsToCopy = [
-                        'schoolName',
-                        'educationArea',
-                        'visitorNameBySide',
-                        'relationshipWithStudent',
-                        'parentFirstName',
-                        'parentLastName',
-                        'parentPhone',
-                        'parentOccupation',
-                        'parentEducation',
-                        'parentCitizenId',
-                        'parentNoGuardian',
-                        'parentNoCitizenId',
-                        'parentWelfareRegistered',
-                        'bothParentsDeceased',
-                        'oneParentDeceased',
-                        'parentsSeparated',
-                        'notLivingWithParents',
-                        'studentNickname',
-                        'studentPhone',
-                        'studentLineId',
-                        'studentFacebook',
-                        'travelDistance',
-                        'travelTimeHours',
-                        'travelTimeMinutes',
-                        'travelMethod',
-                        'housingType',
-                        'housingCondition',
-                        'housingCleanliness',
-                        'utilitiesElectricity',
-                        'utilitiesWater',
-                        'utilitiesToilet',
-                        'environmentNear',
-                        'familyMaleCount',
-                        'familyFemaleCount',
-                        'familyTotalCount',
-                        'siblingSameParentsMale',
-                        'siblingSameParentsFemale',
-                        'siblingDifferentParentsMale',
-                        'siblingDifferentParentsFemale',
-                        'specialNeedHelpCount',
-                        'vehiclePrivateCar',
-                        'vehiclePickup',
-                        'vehicleFarmMachine',
-                        'familyAtmosphere',
-                        'hoursTogetherPerDay',
-                        'studentResponsibility',
-                        'studentHobby',
-                        'caregiverWhenParentsAway',
-                        'caregiverWhenParentsAwayOther',
-                        'familyMonthlyIncome',
-                        'householdIncomeAverage',
-                        'expensePayer',
-                        'studentWorkingExtra',
-                        'extraJobDetail',
-                        'extraIncome',
-                        'studentAllowancePerDay',
-                        'internetUsage',
-                        'parentConcerns',
-                        'schoolAssistanceNeededDetail',
-                        'assistanceReceivedOther',
-                        'assistanceHistory',
-                        'visitSummaryPromoteDetail',
-                        'visitSummaryUrgentDetail',
-                        'teacherComments',
-                        'suggestionForUse',
-                        'overallSuggestions',
-                        'studentResponsibilities',
-                        'studentHobbies',
-                        'computerAccess',
-                        'electronicUsage',
-                        'parentHousePhotoPermission',
-                        'informantRelationship',
-                        'teacherPosition',
-                        'housingTypeOther',
-                        'travelMethodDetail',
-                        'housingCleanlinessOther',
-                        'specialNeedDetail'
-                    ];
-
-                    fieldsToCopy.forEach(field => {
-                        if (previousVisit[field] !== undefined) {
-                            (nextData as any)[field] = previousVisit[field];
-                        }
-                    });
-
-                    // Handle nested relationships specifically
-                    if (previousVisit.relationships) {
-                        nextData.relationships = {
-                            ...prev.relationships,
-                            ...previousVisit.relationships
-                        };
-                    }
-
-                    // Handle arrays specifically to ensure safe copy
-                    if (Array.isArray(previousVisit.healthRisk)) nextData.healthRisk = [...previousVisit.healthRisk];
-                    if (Array.isArray(previousVisit.welfareRisk)) nextData.welfareRisk = [...previousVisit.welfareRisk];
-                    if (Array.isArray(previousVisit.drugRisk)) nextData.drugRisk = [...previousVisit.drugRisk];
-                    if (Array.isArray(previousVisit.violenceRisk)) nextData.violenceRisk = [...previousVisit.violenceRisk];
-                    if (Array.isArray(previousVisit.sexualRisk)) nextData.sexualRisk = [...previousVisit.sexualRisk];
-                    if (Array.isArray(previousVisit.gameRisk)) nextData.gameRisk = [...previousVisit.gameRisk];
-                    if (Array.isArray(previousVisit.schoolAssistanceNeeded)) nextData.schoolAssistanceNeeded = [...previousVisit.schoolAssistanceNeeded];
-                    if (Array.isArray(previousVisit.householdDependency)) nextData.householdDependency = [...previousVisit.householdDependency];
-                    if (Array.isArray(previousVisit.farmlandStatus)) nextData.farmlandStatus = [...previousVisit.farmlandStatus];
-                    if (Array.isArray(previousVisit.assistanceReceived)) nextData.assistanceReceived = [...previousVisit.assistanceReceived];
-                    if (Array.isArray(previousVisit.electronicUsage)) nextData.electronicUsage = [...previousVisit.electronicUsage];
-                    else if (typeof previousVisit.electronicUsage === 'string' && previousVisit.electronicUsage) nextData.electronicUsage = [previousVisit.electronicUsage];
-
-                    return nextData;
-                });
-
-                // Copy familyMembers if present and is a non-empty array
-                if (Array.isArray(previousVisit.familyMembers) && previousVisit.familyMembers.length > 0) {
-                    setFamilyMembers(previousVisit.familyMembers.map((m: any) => ({
-                        id: m.id || Date.now().toString() + Math.random().toString(),
-                        name: m.name || '',
-                        relationship: m.relationship || '',
-                        age: m.age || '',
-                        education: m.education || '',
-                        occupation: m.occupation || '',
-                        income: m.income || '',
-                        disability: m.disability || '',
-                        wageIncome: m.wageIncome || '',
-                        agricultureIncome: m.agricultureIncome || '',
-                        businessIncome: m.businessIncome || '',
-                        welfareIncome: m.welfareIncome || '',
-                        otherIncome: m.otherIncome || '',
-                        totalIncome: m.totalIncome || ''
-                    })));
-                }
+                applyPreviousVisitData(previousVisit);
 
                 Swal.fire({
                     icon: 'success',
                     title: 'ดึงข้อมูลสำเร็จ',
-                    text: 'คัดลอกข้อมูลการเยี่ยมบ้านครั้งก่อนเข้ามาในแบบฟอร์มแล้ว คุณสามารถตรวจสอบและปรับปรุงข้อมูลเพิ่มเติมให้เป็นปัจจุบันได้ทันที',
+                    text: 'คัดลอกข้อมูลการเยี่ยมบ้านครั้งก่อนเข้ามาในแบบฟอร์มครบแล้ว รวมถึงรูปภาพและพิกัดเดิม คุณสามารถตรวจสอบและปรับปรุงข้อมูลเพิ่มเติมให้เป็นปัจจุบันได้ทันที',
                     confirmButtonColor: '#2563eb',
                     customClass: {
                         popup: 'rounded-[2rem] font-bold p-8',
@@ -880,15 +852,19 @@ const NewHomeVisit: React.FC = () => {
             const compressedFile = await compressImage(file, 1280, 0.75, 'image/jpeg');
             const previewUrl = URL.createObjectURL(compressedFile);
             if (type === 'exterior') {
+                setExistingExteriorPhoto(null);
                 setExteriorPhoto(compressedFile);
                 setExteriorPreview(previewUrl);
             } else if (type === 'interior') {
+                setExistingInteriorPhoto(null);
                 setInteriorPhoto(compressedFile);
                 setInteriorPreview(previewUrl);
             } else if (type === 'schoolSign') {
+                setExistingSchoolSignPhoto(null);
                 setSchoolSignPhoto(compressedFile);
                 setSchoolSignPreview(previewUrl);
             } else if (type === 'sketchMap') {
+                setExistingSketchMapPhoto(null);
                 setSketchMapPhoto(compressedFile);
                 setSketchMapPreview(previewUrl);
             }
@@ -985,12 +961,19 @@ const NewHomeVisit: React.FC = () => {
                 uploadSinglePhoto(sketchMapPhoto, 'sketchMap')
             ]);
 
+            const fallbackPhotos = previousVisitWithPhotos?.photos || previousVisit?.photos || {};
+            const fallbackInternalPhotos = normalizePhotoList(fallbackPhotos.internal);
+            const fallbackExternalPhotos = normalizePhotoList(fallbackPhotos.external);
+            const fallbackExteriorPhoto = normalizePhotoValue(fallbackPhotos.exterior);
+            const fallbackInteriorPhoto = normalizePhotoValue(fallbackPhotos.interior);
+            const fallbackSchoolSignPhoto = normalizePhotoValue(fallbackPhotos.schoolSign);
+            const fallbackSketchMapPhoto = normalizePhotoValue(fallbackPhotos.sketchMap);
+
             // Combine all data for Firestore
             const finalData = {
                 ...formData,
                 familyMembers,
                 gps: gps ? new GeoPoint(gps.lat, gps.lng) : null,
-                createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 teacherId: auth.currentUser.uid,
                 studentId: student.id,
@@ -1001,21 +984,33 @@ const NewHomeVisit: React.FC = () => {
                     studentId: student.studentId
                 },
                 photos: {
-                    internal: internalUrls,
-                    external: externalUrls,
-                    exterior: exteriorUrl,
-                    interior: interiorUrl,
-                    schoolSign: schoolSignUrl,
-                    sketchMap: sketchMapUrl
+                    internal: [...(existingPhotosInternal.length ? existingPhotosInternal : fallbackInternalPhotos), ...internalUrls],
+                    external: [...(existingPhotosExternal.length ? existingPhotosExternal : fallbackExternalPhotos), ...externalUrls],
+                    exterior: exteriorUrl ?? existingExteriorPhoto ?? fallbackExteriorPhoto,
+                    interior: interiorUrl ?? existingInteriorPhoto ?? fallbackInteriorPhoto,
+                    schoolSign: schoolSignUrl ?? existingSchoolSignPhoto ?? fallbackSchoolSignPhoto,
+                    sketchMap: sketchMapUrl ?? existingSketchMapPhoto ?? fallbackSketchMapPhoto
                 }
             };
 
-            await addDoc(collection(firestore, "school-settings", schoolId, "students", student.id, "home-visits"), finalData);
+            if (isEditLatest && previousVisitDocId) {
+                await updateDoc(
+                    doc(firestore, "school-settings", schoolId, "students", student.id, "home-visits", previousVisitDocId),
+                    finalData
+                );
+            } else {
+                await addDoc(collection(firestore, "school-settings", schoolId, "students", student.id, "home-visits"), {
+                    ...finalData,
+                    createdAt: serverTimestamp(),
+                });
+            }
 
             Swal.fire({
                 icon: 'success',
-                title: 'บันทึกสำเร็จ (มาตรฐาน สพฐ.)',
-                text: 'ข้อมูลการเยี่ยมบ้านทั้งหมดถูกจัดเก็บลงระบบเรียบร้อยแล้ว',
+                title: isEditLatest ? 'อัปเดตข้อมูลสำเร็จ' : 'บันทึกสำเร็จ (มาตรฐาน สพฐ.)',
+                text: isEditLatest
+                    ? 'ข้อมูลการเยี่ยมบ้านล่าสุดถูกอัปเดตเรียบร้อยแล้ว'
+                    : 'ข้อมูลการเยี่ยมบ้านทั้งหมดถูกจัดเก็บลงระบบเรียบร้อยแล้ว',
                 confirmButtonColor: '#4f46e5',
                 customClass: {
                     popup: 'rounded-[2rem] font-bold p-10',
@@ -1068,6 +1063,7 @@ const NewHomeVisit: React.FC = () => {
     const progressPercent = Math.round(((currentStep + 1) / steps.length) * 100);
     const CurrentStepIcon = steps[currentStep]?.icon || FileText;
     const academicYearNumber = Number(formData.academicYear || currentAcademic.academicYear);
+    const allExternalPreviews = [...existingPhotosExternal, ...previewsExternal];
     const academicYearOptions = Array.from(
         new Set([
             academicYearNumber + 1,
@@ -1735,7 +1731,7 @@ const NewHomeVisit: React.FC = () => {
                                     <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider">
                                         <tr>
                                             <th className="px-4 py-3 text-left">ความสัมพันธ์</th>
-                                            {["สนิทสนม", "เฉยๆ", "ห่างเหิน", "ขัดแย้ง"].map(q => <th key={q} className="px-2 py-3 text-center">{q}</th>)}
+                                            {["สนิทสนม", "เฉยๆ", "ห่างเหิน", "ขัดแย้ง", "ไม่มี"].map(q => <th key={q} className="px-2 py-3 text-center">{q}</th>)}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1748,7 +1744,7 @@ const NewHomeVisit: React.FC = () => {
                                         ].map(m => (
                                             <tr key={m.id}>
                                                 <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">{m.label}</td>
-                                                {["สนิทสนม", "เฉยๆ", "ห่างเหิน", "ขัดแย้ง"].map(q => (
+                                                {["สนิทสนม", "เฉยๆ", "ห่างเหิน", "ขัดแย้ง", "ไม่มี"].map(q => (
                                                     <td key={q} className="px-2 py-3 text-center">
                                                         <input type="radio" checked={(formData.relationships as any)[m.id] === q} onChange={() => setFormData(p => ({ ...p, relationships: { ...p.relationships, [m.id]: q } }))} className="w-4 h-4 accent-blue-600 cursor-pointer" />
                                                     </td>
@@ -2054,14 +2050,19 @@ const NewHomeVisit: React.FC = () => {
                                 </div>
 
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 flex-grow min-h-[200px]">
-                                    {previewsExternal.map((p, idx) => (
+                                    {allExternalPreviews.map((p, idx) => (
                                         <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-100 dark:border-slate-700 group">
                                             <img src={p} className="w-full h-full object-cover" alt="Home Visit" />
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    setPhotosExternal(prev => prev.filter((_, i) => i !== idx));
-                                                    setPreviewsExternal(prev => prev.filter((_, i) => i !== idx));
+                                                    if (idx < existingPhotosExternal.length) {
+                                                        setExistingPhotosExternal(prev => prev.filter((_, i) => i !== idx));
+                                                    } else {
+                                                        const newIndex = idx - existingPhotosExternal.length;
+                                                        setPhotosExternal(prev => prev.filter((_, i) => i !== newIndex));
+                                                        setPreviewsExternal(prev => prev.filter((_, i) => i !== newIndex));
+                                                    }
                                                 }}
                                                 className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shadow-lg"
                                             >
@@ -2069,7 +2070,7 @@ const NewHomeVisit: React.FC = () => {
                                             </button>
                                         </div>
                                     ))}
-                                    {previewsExternal.length === 0 && (
+                                    {allExternalPreviews.length === 0 && (
                                         <div className="col-span-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl py-10">
                                             <Camera size={48} strokeWidth={1} />
                                             <span className="text-xs font-bold mt-2">ยังไม่มีรูปถ่าย</span>
@@ -2110,7 +2111,7 @@ const NewHomeVisit: React.FC = () => {
                                         preview={exteriorPreview}
                                         type="exterior"
                                         icon={Home}
-                                        onClear={() => { setExteriorPhoto(null); setExteriorPreview(null); }}
+                                        onClear={() => { setExteriorPhoto(null); setExistingExteriorPhoto(null); setExteriorPreview(null); }}
                                     />
                                     <SinglePhotoField
                                         title="ภาพถ่ายเห็นข้างในบ้าน"
@@ -2118,7 +2119,7 @@ const NewHomeVisit: React.FC = () => {
                                         preview={interiorPreview}
                                         type="interior"
                                         icon={Eye}
-                                        onClear={() => { setInteriorPhoto(null); setInteriorPreview(null); }}
+                                        onClear={() => { setInteriorPhoto(null); setExistingInteriorPhoto(null); setInteriorPreview(null); }}
                                     />
                                 </div>
                             ) : (
@@ -2139,7 +2140,7 @@ const NewHomeVisit: React.FC = () => {
                                             preview={schoolSignPreview}
                                             type="schoolSign"
                                             icon={Save}
-                                            onClear={() => { setSchoolSignPhoto(null); setSchoolSignPreview(null); }}
+                                            onClear={() => { setSchoolSignPhoto(null); setExistingSchoolSignPhoto(null); setSchoolSignPreview(null); }}
                                         />
                                     </div>
                                 </div>
@@ -2153,7 +2154,7 @@ const NewHomeVisit: React.FC = () => {
                                 preview={sketchMapPreview}
                                 type="sketchMap"
                                 icon={Map}
-                                onClear={() => { setSketchMapPhoto(null); setSketchMapPreview(null); }}
+                                onClear={() => { setSketchMapPhoto(null); setExistingSketchMapPhoto(null); setSketchMapPreview(null); }}
                                 accent="indigo"
                             />
                         </div>

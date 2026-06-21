@@ -20,8 +20,8 @@ interface TeacherFormState {
     title: string;
     firstName: string;
     lastName: string;
-    teacherId: string; // รหัสบุคลากร
-    position: string; // เพิ่มตำแหน่ง
+    teacherId: string;
+    position: string;
     subject: string;
     department: string;
     gender: string;
@@ -45,6 +45,7 @@ interface TeacherFormState {
     idCardNumber?: string;
     role: string[];
     status: string;
+    personnelType?: 'teacher' | 'user';
 }
 
 // --- Reusable Components ---
@@ -98,6 +99,7 @@ const initialState: TeacherFormState = {
     idCardNumber: "",
     role: ["teacher"],
     status: "อยู่",
+    personnelType: "teacher",
 };
 
 export default function EditTeacherPage() {
@@ -132,6 +134,17 @@ export default function EditTeacherPage() {
         { value: 'academic_admin', label: 'ฝ่ายวิชาการ (Academic Admin)' },
         { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
     ];
+
+    const staffRoles = [
+        { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลานักเรียน' },
+        { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลาครู' },
+        { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาทั้งโรงเรียน' },
+        { value: 'student_affairs', label: 'งานกิจการนักเรียน' },
+        { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน' },
+    ];
+
+    const activeRoles = form.personnelType === 'user' ? staffRoles : userRoles;
+    const allRoleOptions = [...userRoles, ...staffRoles];
 
     const handleRoleToggle = (roleValue: string) => {
         const currentRoles = Array.isArray(form.role) ? [...form.role] : [form.role];
@@ -205,7 +218,7 @@ export default function EditTeacherPage() {
                     }
 
                     // --- ตรวจสอบคำนำหน้าที่กำหนดเอง ---
-                    const standardTitles = ["นาย", "นาง", "น.ส.", ""];
+                    const standardTitles = ["นาย", "นาง", "น.ส.", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์", ""];
                     if (data.title && !standardTitles.includes(data.title)) {
                         setCustomTitle(data.title);
                         data.title = "อื่นๆ";
@@ -219,12 +232,20 @@ export default function EditTeacherPage() {
                     }
 
                     // --- ส่วนที่แก้ไข Type Error Code 2322 ---
-                    // ผสานข้อมูลที่ได้จาก Firestore เข้ากับ initialState 
+                    // ผสานข้อมูลที่ได้จาก Firestore เข้ากับ initialState
                     // และยืนยัน Type ให้ถูกต้อง
+                    const resolvePersonnelType = (d: any): 'teacher' | 'user' => {
+                        if (d.personnelType === 'teacher' || d.personnelType === 'user') return d.personnelType;
+                        const roles: string[] = Array.isArray(d.role) ? d.role : (typeof d.role === 'string' ? [d.role] : []);
+                        const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+                        if (roles.length > 0 && roles.every(r => attendanceOnly.includes(r))) return 'user';
+                        return 'teacher';
+                    };
                     const mergedData = {
                         ...initialState,
                         ...data,
                         learningArea: data.learningArea || data.subjectGroup || "",
+                        personnelType: resolvePersonnelType(data),
                     } as TeacherFormState;
 
                     setForm(mergedData);
@@ -351,11 +372,12 @@ export default function EditTeacherPage() {
                 ...teacherDataWithoutImageAndGrade,
                 title: finalTitle,
                 gender: finalGender,
-                learningArea: form.learningArea || "",
-                subjectGroup: form.learningArea || "",
-                homeroomGrade: homeroomGrade,
+                learningArea: form.personnelType === 'user' ? "" : (form.learningArea || ""),
+                subjectGroup: form.personnelType === 'user' ? "" : (form.learningArea || ""),
+                homeroomGrade: form.personnelType === 'user' ? "" : homeroomGrade,
                 updatedAt: serverTimestamp(),
-                isHomeroomTeacher: homeroomGrade !== "",
+                isHomeroomTeacher: form.personnelType === 'user' ? false : (homeroomGrade !== ""),
+                personnelType: form.personnelType || 'teacher',
             };
 
             // 1. จัดการรูปภาพใหม่
@@ -488,6 +510,27 @@ export default function EditTeacherPage() {
                     </header>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
+                        {/* ประเภทบุคลากร toggle */}
+                        <div className="flex items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">ประเภทบุคลากร:</span>
+                            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
+                                <button
+                                    type="button"
+                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'teacher', role: prev.role.some(r => ['teacher','school_admin','academic_admin'].includes(r)) ? prev.role : ['teacher'] }))}
+                                    className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${form.personnelType !== 'user' ? 'bg-white dark:bg-[#3a3b3f] text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                                >
+                                    ครูผู้สอน
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'user', role: prev.role.some(r => ['student_attendance','teacher_attendance','school_attendance','student_affairs'].includes(r)) ? prev.role : ['student_attendance'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
+                                    className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${form.personnelType === 'user' ? 'bg-white dark:bg-[#3a3b3f] text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                                >
+                                    ผู้ใช้ระบบ
+                                </button>
+                            </div>
+                        </div>
+
                         <InfoCard title="ข้อมูลส่วนตัว">
                             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                                 <div className="flex-shrink-0">
@@ -547,6 +590,13 @@ export default function EditTeacherPage() {
                                                     <option value="นาย">นาย</option>
                                                     <option value="นาง">นาง</option>
                                                     <option value="น.ส.">นางสาว</option>
+                                                    <option value="พระ">พระ</option>
+                                                    <option value="พระสามเณร">พระสามเณร</option>
+                                                    <option value="พระมหา">พระมหา</option>
+                                                    <option value="พระครู">พระครู</option>
+                                                    <option value="พระใบฎีกา">พระใบฎีกา</option>
+                                                    <option value="หลวงพ่อ">หลวงพ่อ</option>
+                                                    <option value="พระอาจารย์">พระอาจารย์</option>
                                                     <option value="อื่นๆ">อื่นๆ</option>
                                                 </select>
                                             )}
@@ -621,6 +671,7 @@ export default function EditTeacherPage() {
                                             </div>
                                         </div>
                                     </div>
+                                    {form.personnelType !== 'user' && (
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะดูแลชั้นเรียน</label>
@@ -650,8 +701,10 @@ export default function EditTeacherPage() {
                                             </select>
                                         </div>
                                     </div>
+                                    )}
 
                                     {/* กลุ่มสาระการเรียนรู้ และ หัวหน้ากลุ่มสาระ */}
+                                    {form.personnelType !== 'user' && (
                                     <div>
                                         <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">กลุ่มสาระการเรียนรู้</label>
                                         <select
@@ -666,6 +719,8 @@ export default function EditTeacherPage() {
                                             ))}
                                         </select>
                                     </div>
+                                    )}
+                                    {form.personnelType !== 'user' && (
                                     <div className="sm:col-span-2">
                                         <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
                                             บทบาทพิเศษ
@@ -707,6 +762,7 @@ export default function EditTeacherPage() {
                                             </label>
                                         </div>
                                     </div>
+                                    )}
                                 </div>
                             </div>
                         </InfoCard>
@@ -790,7 +846,7 @@ export default function EditTeacherPage() {
                                     <div className="flex flex-wrap gap-1">
                                         {Array.isArray(form.role) && form.role.length > 0 ? (
                                             form.role.map(r => {
-                                                const roleLabel = userRoles.find(ur => ur.value === r)?.label ?? r;
+                                                const roleLabel = allRoleOptions.find(ur => ur.value === r)?.label ?? r;
                                                 return (
                                                     <span key={r} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                                                         {roleLabel}
@@ -806,7 +862,7 @@ export default function EditTeacherPage() {
 
                                 {isRoleDropdownOpen && !isEditingSelf && (
                                     <div className="absolute z-50 bottom-full mb-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in slide-in-from-bottom-2 fade-in zoom-in duration-200">
-                                        {userRoles.map((role) => {
+                                        {activeRoles.map((role) => {
                                             const isChecked = Array.isArray(form.role) && form.role.includes(role.value);
                                             return (
                                                 <div

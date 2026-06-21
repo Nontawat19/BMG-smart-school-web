@@ -1722,7 +1722,7 @@ const CheckinOutPage: React.FC = () => {
     // ฟังก์ชันช่วยจัดการลบคำนำหน้าชื่อภาษาไทย
     const cleanName = (fullName: string) => {
       let clean = fullName.trim();
-      const titles = ["นาย", "นางสาว", "นาง", "เด็กชาย", "ด.ช.", "เด็กหญิง", "ด.ญ.", "ดร.", "ครู"];
+      const titles = ["พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์", "พระ", "สามเณร", "นาย", "นางสาว", "นาง", "เด็กชาย", "ด.ช.", "เด็กหญิง", "ด.ญ.", "ดร.", "ครู"];
       for (const title of titles) {
         if (clean.startsWith(title)) {
           clean = clean.substring(title.length).trim();

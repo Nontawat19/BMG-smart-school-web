@@ -1,5 +1,5 @@
 import React from 'react';
-import { Course, Teacher, getAssignmentTeacherIds } from '../types';
+import { Course, CourseInstance, PhysicalRoom, Teacher, getAssignmentTeacherIds } from '../types';
 import { getClassDisplayName } from '../utils';
 
 const formatClassWithGroup = (course?: Course) => {
@@ -61,11 +61,17 @@ const getTeacherDisplayName = (teacher: Teacher | undefined, teacherId?: string)
         : '(ไม่ระบุ)';
 };
 
+export interface HoveredSlotInfo {
+    rect: DOMRect;
+    courses: CourseInstance[];
+    isDynamicUnavailable: boolean;
+}
+
 interface HoveredSlotTooltipProps {
-    hoveredSlot: any;
+    hoveredSlot: HoveredSlotInfo | null;
     allCourses: Course[];
     teachers: Teacher[];
-    physicalRooms: any[];
+    physicalRooms: PhysicalRoom[];
 }
 
 export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
@@ -81,10 +87,10 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
             className="fixed z-[9999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95"
             style={{
                 top: hoveredSlot.rect.top - 210 > 0 ? hoveredSlot.rect.top - 210 : hoveredSlot.rect.bottom + 10,
-                left: Math.max(10, Math.min(window.innerWidth - 250, hoveredSlot.rect.left + (hoveredSlot.rect.width / 2) - 120))
+                left: Math.max(10, Math.min(window.innerWidth - 320, hoveredSlot.rect.left + (hoveredSlot.rect.width / 2) - 150))
             }}
         >
-            <div className="relative w-[240px] p-4 bg-white/95 dark:bg-[#1a1b1e] border border-slate-200/80 dark:border-white/10 rounded-[24px] shadow-2xl shadow-slate-900/10 dark:shadow-black/40 backdrop-blur-xl">
+            <div className="relative w-[300px] p-4 bg-white/95 dark:bg-[#1a1b1e] border border-slate-200/80 dark:border-white/10 rounded-[24px] shadow-2xl shadow-slate-900/10 dark:shadow-black/40 backdrop-blur-xl">
                 <div className="flex items-center justify-between mb-3 px-1 text-indigo-600 dark:text-indigo-400 font-black text-[10px] uppercase">
                     <span>รายละเอียดวิชา</span>
                     {(() => {
@@ -118,7 +124,7 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                                 const teacher = teachers?.find(t => t.id === teacherId || t.teacherId === teacherId);
                                 const displayName = getTeacherDisplayName(teacher, teacherId);
                                 return (
-                                    <span key={index} className="truncate leading-tight">
+                                    <span key={index} className="leading-tight break-words">
                                         {displayName}
                                     </span>
                                 );
@@ -135,7 +141,7 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                             const roomIds = c.room || [];
                             if (roomIds.length === 0 || (roomIds.length === 1 && roomIds[0] === 'all')) return 'ห้องเรียนปกติ';
                             return roomIds.map((id: string) => {
-                                const room = physicalRooms.find((item: any) => item.id === id);
+                                const room = physicalRooms.find(item => item.id === id);
                                 if (!room) return id;
                                 const roomName = room.roomName || '';
                                 const roomCode = room.roomCode || '';

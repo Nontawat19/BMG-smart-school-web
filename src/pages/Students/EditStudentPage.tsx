@@ -530,6 +530,7 @@ export default function EditStudentPage() {
                               <option value="ด.ญ.">เด็กหญิง (ด.ญ.)</option>
                               <option value="นาย">นาย</option>
                               <option value="น.ส.">นางสาว</option>
+                              <option value="สามเณร">สามเณร</option>
                             </select>
                           </div>
                           <InputField label="ชื่อจริง" name="firstName" value={form.firstName} onChange={handleChange} />

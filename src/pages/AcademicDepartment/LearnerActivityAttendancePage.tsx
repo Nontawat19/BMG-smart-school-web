@@ -13,6 +13,14 @@ import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
 import { Link, useSearchParams } from 'react-router-dom';
 import { usePwaMode } from '@/hooks/usePwaMode';
+import { formatSemesterLabel, normalizeSemesterValue } from '@/utils/semesterUtils';
+import {
+  LearnerActivityTeacherScope,
+  buildLearnerActivityAttendanceDocId,
+  deriveTeacherScopesFromCourse,
+  formatTeacherScopeLabel,
+  scopeIncludesTeacher,
+} from '@/utils/learnerActivityUtils';
 
 interface LearnerActivity {
   id: string;
@@ -29,6 +37,13 @@ interface LearnerActivity {
   specialPeriodStartTime?: string;
   specialPeriodEndTime?: string;
   responsibleTeacherIds: string[];
+  teacherScopes?: LearnerActivityTeacherScope[];
+}
+
+interface Course {
+  id: string;
+  classId?: string | string[];
+  teacherAssignments?: any[];
 }
 
 interface Student {
@@ -46,13 +61,6 @@ interface Student {
   status?: string;
 }
 
-interface Enrollment {
-  id: string;
-  courseId: string;
-  studentId: string;
-  academicYear?: string;
-  semester?: string;
-}
 
 interface SpecialPeriod {
   id: string;
@@ -81,9 +89,11 @@ const LearnerActivityAttendancePage: React.FC = () => {
   const calendarState = useSelector((state: RootState) => state.calendar);
 
   const [activities, setActivities] = useState<LearnerActivity[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [selectedSpecialPeriodId, setSelectedSpecialPeriodId] = useState('');
   const [selectedActivity, setSelectedActivity] = useState<LearnerActivity | null>(null);
+  const [selectedTeacherScopeKey, setSelectedTeacherScopeKey] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave'>>({});
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -99,6 +109,19 @@ const LearnerActivityAttendancePage: React.FC = () => {
   }, [teacherMap, currentUser]);
 
   const currentTeacherId = currentTeacher?.id || (currentUser as any)?.uid || '';
+  const selectedCourse = useMemo(
+    () => courses.find(course => course.id === selectedActivity?.courseId) || null,
+    [courses, selectedActivity?.courseId]
+  );
+  const teacherScopes = useMemo(() => {
+    if (!selectedActivity) return [];
+    return deriveTeacherScopesFromCourse(selectedActivity, selectedCourse, teacherMap as any)
+      .filter(scope => scopeIncludesTeacher(scope, currentTeacherId));
+  }, [selectedActivity, selectedCourse, teacherMap, currentTeacherId]);
+  const selectedTeacherScope = useMemo(
+    () => teacherScopes.find(scope => scope.key === selectedTeacherScopeKey) || null,
+    [teacherScopes, selectedTeacherScopeKey]
+  );
   const activeAcademicYear = String(calendarState.academicYear || new Date().getFullYear() + 543);
   const activeSemester = useMemo(() => {
     const dateStr = toIsoDate(currentDate);
@@ -124,15 +147,18 @@ const LearnerActivityAttendancePage: React.FC = () => {
     const fetchActivities = async () => {
       setLoading(true);
       try {
-        const q = query(
-          collection(db, 'school-settings', schoolId, 'learner-activities'),
-          where('responsibleTeacherIds', 'array-contains', currentTeacherId)
-        );
-        const snap = await getDocs(q);
+        const [snap, courseSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'school-settings', schoolId, 'learner-activities'),
+            where('responsibleTeacherIds', 'array-contains', currentTeacherId)
+          )),
+          getDocs(collection(db, 'school-settings', schoolId, 'courses')),
+        ]);
         const activityList = snap.docs
           .map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as LearnerActivity))
           .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
         setActivities(activityList);
+        setCourses(courseSnap.docs.map(courseDoc => ({ id: courseDoc.id, ...courseDoc.data() } as Course)));
 
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs
@@ -151,6 +177,16 @@ const LearnerActivityAttendancePage: React.FC = () => {
     fetchActivities();
   }, [schoolId, currentTeacherId]);
 
+  useEffect(() => {
+    if (teacherScopes.length === 0) {
+      setSelectedTeacherScopeKey('');
+      return;
+    }
+    if (!teacherScopes.some(scope => scope.key === selectedTeacherScopeKey)) {
+      setSelectedTeacherScopeKey(teacherScopes[0].key);
+    }
+  }, [teacherScopes, selectedTeacherScopeKey]);
+
   const currentDateEvent = useMemo(() => {
     return calendarState.rawData?.events?.[toIsoDate(currentDate)];
   }, [calendarState.rawData, currentDate]);
@@ -165,8 +201,9 @@ const LearnerActivityAttendancePage: React.FC = () => {
 
   const availableSpecialPeriods = useMemo(() => {
     return specialPeriods.filter(period => {
-      if (selectedActivity?.specialPeriodId && period.id !== selectedActivity.specialPeriodId) return false;
+      // queryPeriodId always takes priority — ensure it's always available
       if (queryPeriodId && period.id === queryPeriodId) return true;
+      if (selectedActivity?.specialPeriodId && period.id !== selectedActivity.specialPeriodId) return false;
       if (selectedActivity?.specialPeriodId && period.id === selectedActivity.specialPeriodId) return true;
       return isPeriodAvailableOnDay(period, effectiveDayKey);
     });
@@ -200,39 +237,36 @@ const LearnerActivityAttendancePage: React.FC = () => {
     const fetchStudentsAndAttendance = async () => {
       setStudentsLoading(true);
       try {
-        const [studentSnap, enrollmentSnap] = await Promise.all([
+        const [studentSnap, membersSnap] = await Promise.all([
           getDocs(collection(db, 'school-settings', schoolId, 'students')),
-          getDocs(query(collection(db, 'school-settings', schoolId, 'enrollments'), where('courseId', '==', selectedActivity.courseId))),
+          getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members')),
         ]);
 
         const allStudents = studentSnap.docs
           .map(studentDoc => ({ id: studentDoc.id, ...studentDoc.data() } as Student))
           .filter(student => isActiveStudent(student));
-        const membersSnap = await getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members'));
-        const memberIds = membersSnap.docs
-          .map(memberDoc => memberDoc.data() as any)
+
+        const allMemberData = membersSnap.docs.map(memberDoc => memberDoc.data() as any);
+
+        const scopeMatch = (member: any) =>
+          !selectedTeacherScope ||
+          String(member.teacherScopeKey || '') === selectedTeacherScope.key ||
+          scopeIncludesTeacher(selectedTeacherScope, member.teacherId) ||
+          (Array.isArray(member.teacherIds) && member.teacherIds.some((id: string) => selectedTeacherScope.teacherIds.includes(String(id))));
+
+        // Load members for current year + semester only — no cross-year fallback
+        const memberIds = allMemberData
           .filter(member =>
             String(member.academicYear || '') === activeAcademicYear &&
-            isSemesterAvailable(member.semester, activeSemester)
+            isSemesterAvailable(member.semester, activeSemester) &&
+            scopeMatch(member)
           )
           .map(member => String(member.studentId || ''))
           .filter(Boolean);
+
         const memberIdSet = new Set(memberIds);
-        const enrollments = enrollmentSnap.docs.map(enrollmentDoc => ({ id: enrollmentDoc.id, ...enrollmentDoc.data() } as Enrollment));
-        const currentEnrollments = enrollments.filter(enrollment =>
-          (!enrollment.academicYear || String(enrollment.academicYear) === activeAcademicYear) &&
-          isSemesterAvailable(enrollment.semester, activeSemester)
-        );
-
-        const enrolledIds = new Set(currentEnrollments.map(enrollment => enrollment.studentId));
-        const targetClasses = normalizeClassIds(selectedActivity.classId);
-        const targetClassNames = targetClasses.map(classId => CLASSES[classId] || classId);
-
-        const activityStudents = memberIdSet.size > 0
-          ? allStudents.filter(student => memberIdSet.has(student.id))
-          : enrolledIds.size > 0
-          ? allStudents.filter(student => enrolledIds.has(student.id))
-          : allStudents.filter(student => targetClassNames.length === 0 || targetClassNames.includes(String(student.classLevel || '')));
+        // Student list is strictly from members configured in learner-activity-students page
+        const activityStudents = allStudents.filter(student => memberIdSet.has(student.id));
 
         const sortedStudents = activityStudents.sort(sortStudents);
         setStudents(sortedStudents);
@@ -241,8 +275,8 @@ const LearnerActivityAttendancePage: React.FC = () => {
         sortedStudents.forEach(student => initialAttendance[student.id] = 'present');
 
         const dateStr = toIsoDate(currentDate);
-        const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', getAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod?.id));
-        const noPeriodAttDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', getAttendanceDocId(activeAcademicYear, activeSemester, dateStr));
+        const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', buildLearnerActivityAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod?.id, selectedTeacherScope?.key));
+        const noPeriodAttDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', buildLearnerActivityAttendanceDocId(activeAcademicYear, activeSemester, dateStr, undefined, selectedTeacherScope?.key));
         const legacyAttDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', dateStr);
         const attSnap = await getDoc(attDocRef);
         const noPeriodAttSnap = attSnap.exists() ? null : await getDoc(noPeriodAttDocRef);
@@ -265,7 +299,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
     };
 
     fetchStudentsAndAttendance();
-  }, [schoolId, selectedActivity, currentDate, activeAcademicYear, activeSemester, selectedSpecialPeriod]);
+  }, [schoolId, selectedActivity, currentDate, activeAcademicYear, activeSemester, selectedSpecialPeriod, selectedTeacherScope]);
 
   const termActivities = useMemo(() => {
     return activities.filter(activity => isSemesterAvailable(activity.semester, activeSemester));
@@ -273,7 +307,10 @@ const LearnerActivityAttendancePage: React.FC = () => {
 
   const availableActivities = useMemo(() => {
     if (queryPeriodId) {
-      return termActivities.filter(activity => activity.specialPeriodId === queryPeriodId);
+      // Show activities specifically linked to this period
+      const linked = termActivities.filter(a => a.specialPeriodId === queryPeriodId);
+      // Fall back to all assigned activities if none are linked — teacher can still check in
+      return linked.length > 0 ? linked : termActivities;
     }
     return termActivities;
   }, [termActivities, queryPeriodId]);
@@ -331,6 +368,10 @@ const LearnerActivityAttendancePage: React.FC = () => {
 
   const handleSaveAttendance = async () => {
     if (!schoolId || !selectedActivity || isSaving) return;
+    if (teacherScopes.length > 0 && !selectedTeacherScope) {
+      Swal.fire('ยังไม่ได้เลือกชุดครู/ห้อง', 'กรุณาเลือกชุดครูหรือห้องรับผิดชอบก่อนบันทึกการเช็คชื่อ', 'warning');
+      return;
+    }
     if (!selectedSpecialPeriod) {
       Swal.fire('ยังไม่ได้กำหนดคาบกิจกรรม', 'กรุณาเพิ่มคาบกิจกรรมพัฒนาผู้เรียนในหน้า “คาบเรียนพิเศษ” หรือเลือกวันที่ตรงกับคาบกิจกรรมก่อนบันทึก', 'warning');
       return;
@@ -338,7 +379,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
     setIsSaving(true);
     try {
       const dateStr = toIsoDate(currentDate);
-      const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', getAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod.id));
+      const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', buildLearnerActivityAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod.id, selectedTeacherScope?.key));
       await setDoc(attDocRef, {
         schoolId,
         activityId: selectedActivity.id,
@@ -351,9 +392,14 @@ const LearnerActivityAttendancePage: React.FC = () => {
         date: dateStr,
         teacherId: currentTeacherId,
         teacherName: currentTeacher?.name || (currentUser as any)?.displayName || '',
+        teacherScopeKey: selectedTeacherScope?.key || '',
+        teacherScopeLabel: selectedTeacherScope ? formatTeacherScopeLabel(selectedTeacherScope, teacherMap as any) : '',
+        teacherScopeTeacherIds: selectedTeacherScope?.teacherIds || [],
+        targetClassLevels: selectedTeacherScope?.classLevels || [],
+        targetRoomIds: selectedTeacherScope?.roomIds || [],
         academicYear: activeAcademicYear,
         semester: activeSemester,
-        activitySemester: normalizeSemester(selectedActivity.semester),
+        activitySemester: normalizeSemesterValue(selectedActivity.semester),
         specialPeriodId: selectedSpecialPeriod.id,
         specialPeriodTitle: selectedSpecialPeriod.title,
         specialPeriodDay: selectedSpecialPeriod.day || 'all',
@@ -409,7 +455,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
             <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
               <AlertCircle className="mx-auto mb-4 text-amber-500" size={46} />
               <h2 className="text-xl font-black">ยังไม่พบกิจกรรมที่เช็คชื่อได้ในภาคเรียนนี้</h2>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">กิจกรรมภาคเรียน {activeSemester} จะแสดงเฉพาะกิจกรรมภาคเรียนเดียวกัน หรือกิจกรรมภาคเรียน 0 ที่ใช้ได้ทั้งสองภาคเรียน</p>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">กิจกรรมภาคเรียน {activeSemester} จะแสดงเฉพาะกิจกรรมภาคเรียนเดียวกัน หรือกิจกรรมแบบทั้งสองภาคเรียน</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -507,15 +553,35 @@ const LearnerActivityAttendancePage: React.FC = () => {
                           <p className="truncate text-xs font-bold text-gray-500">
                             นักเรียน {students.length} คน • {selectedSpecialPeriod ? `${selectedSpecialPeriod.title} ${formatSpecialPeriodDay(selectedSpecialPeriod.day)} ${selectedSpecialPeriod.startTime}-${selectedSpecialPeriod.endTime} น.` : 'ยังไม่พบคาบกิจกรรม'} • {isSubmitted ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}
                           </p>
+                          {teacherScopes.length > 0 && (
+                            <p className="mt-1 truncate text-xs font-bold text-teal-600 dark:text-teal-300">
+                              {selectedTeacherScope ? formatTeacherScopeLabel(selectedTeacherScope, teacherMap as any) : 'เลือกชุดครู/ห้องรับผิดชอบ'}
+                            </p>
+                          )}
                         </div>
-                        <button
-                          onClick={handleSaveAttendance}
-                          disabled={isSaving || students.length === 0 || !selectedSpecialPeriod}
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-sm font-black text-white shadow-lg shadow-teal-500/20 transition hover:bg-teal-500 disabled:opacity-60"
-                        >
-                          {isSaving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
-                          {isSubmitted ? 'อัปเดตข้อมูล' : 'บันทึกการเช็คชื่อ'}
-                        </button>
+                        <div className="flex flex-col gap-2 sm:items-end">
+                          {teacherScopes.length > 0 && (
+                            <select
+                              value={selectedTeacherScopeKey}
+                              onChange={e => setSelectedTeacherScopeKey(e.target.value)}
+                              className="h-10 min-w-[280px] rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                            >
+                              {teacherScopes.map(scope => (
+                                <option key={scope.key} value={scope.key}>
+                                  {formatTeacherScopeLabel(scope, teacherMap as any)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            onClick={handleSaveAttendance}
+                            disabled={isSaving || students.length === 0 || !selectedSpecialPeriod}
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 text-sm font-black text-white shadow-lg shadow-teal-500/20 transition hover:bg-teal-500 disabled:opacity-60"
+                          >
+                            {isSaving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+                            {isSubmitted ? 'อัปเดตข้อมูล' : 'บันทึกการเช็คชื่อ'}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -636,17 +702,12 @@ const normalizeClassIds = (classId?: string | string[]) => {
   return (Array.isArray(classId) ? classId : [classId]).map(item => String(item).trim()).filter(Boolean);
 };
 
-const normalizeSemester = (semester?: string | number) => String(semester ?? '').trim() || '0';
-
 const isSemesterAvailable = (itemSemester: string | number | undefined, activeSemester: string) => {
-  const normalized = normalizeSemester(itemSemester);
+  const normalized = normalizeSemesterValue(itemSemester);
   return normalized === '0' || normalized === activeSemester;
 };
 
-const formatSemester = (semester?: string | number) => {
-  const normalized = normalizeSemester(semester);
-  return normalized === '0' ? 'ทั้งสองภาคเรียน' : normalized;
-};
+const formatSemester = (semester?: string | number) => formatSemesterLabel(semester);
 
 const getAttendanceDocId = (academicYear: string, semester: string, dateStr: string, specialPeriodId?: string) => {
   const baseId = `${academicYear}_S${semester}_${dateStr}`;

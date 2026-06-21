@@ -24,7 +24,7 @@ const formatFullName = (title?: string, firstName?: string, lastName?: string): 
 
     if (!f && !t) return "-";
 
-    const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+    const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส.", "สามเณร", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์"];
     // เช็คว่าชื่อเริ่มต้นด้วยคำนำหน้าอยู่แล้วหรือไม่
     const startsWithTitle = commonTitles.some(prefix => f.startsWith(prefix)) || (t && f.startsWith(t));
 
@@ -643,7 +643,7 @@ const ImportStudentDMCPage: React.FC = () => {
 
 
                 // 3. Name Normalization Helper
-                const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส."];
+                const commonTitles = ["นาย", "นาง", "นางสาว", "ด.ช.", "ด.ญ.", "น.ส.", "สามเณร", "พระ", "พระสามเณร", "พระมหา", "พระครู", "พระใบฎีกา", "หลวงพ่อ", "พระอาจารย์"];
                 const cleanName = (titleKey: string, firstKey: string) => {
                     let t = (rowData[titleKey] || "").trim();
                     let f = (rowData[firstKey] || "").trim();

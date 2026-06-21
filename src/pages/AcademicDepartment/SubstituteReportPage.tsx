@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
-import { collection, doc, getDoc, getDocs, query, Timestamp, where } from "firebase/firestore";
-import { ChevronLeft, ChevronRight, FileText, Printer, RefreshCw, Search } from "lucide-react";
+import { collection, doc, getDoc, getDocs, Timestamp } from "firebase/firestore";
+import { Calendar, ChevronLeft, ChevronRight, FileText, Printer, RefreshCw, Search } from "lucide-react";
 import {
   Document as PdfDocument,
   Font,
@@ -18,6 +18,7 @@ import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { firestore as db } from "@/firebase";
 import { RootState } from "@/store";
+import { Term } from "@/store/slices/calendarSlice";
 
 try {
   Font.register({
@@ -65,6 +66,10 @@ interface PdfReportData {
   rows: string[][];
 }
 
+interface CalendarTermsByYear {
+  [academicYear: string]: Term[];
+}
+
 const CLASS_NAMES: Record<string, string> = {
   k1: "อ.1", k2: "อ.2", k3: "อ.3",
   p1: "ป.1", p2: "ป.2", p3: "ป.3", p4: "ป.4", p5: "ป.5", p6: "ป.6",
@@ -97,6 +102,27 @@ const toDateKey = (ts: Timestamp | undefined): string => {
   return d.toISOString().slice(0, 10);
 };
 
+const getSemesterFromDate = (date: Date | null, terms: Term[] = []) => {
+  if (!date) return "";
+  const dateKey = date.toISOString().slice(0, 10);
+  const matchedTerm = terms.find((term) =>
+    term.startDate && term.endDate && dateKey >= term.startDate && dateKey <= term.endDate
+  );
+
+  if (matchedTerm?.id === "term1") return "1";
+  if (matchedTerm?.id === "term2") return "2";
+  if (matchedTerm?.name?.includes("1")) return "1";
+  if (matchedTerm?.name?.includes("2")) return "2";
+  return "";
+};
+
+const formatFullThaiDate = (dateKey: string) => {
+  if (!dateKey) return "";
+  const date = new Date(dateKey);
+  if (!Number.isFinite(date.getTime())) return dateKey;
+  return date.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+};
+
 const PDF_ROWS_FIRST_PAGE = 20;  // หน้าแรก: มี header โรงเรียน+ชื่อรายงาน
 const PDF_ROWS_OTHER_PAGES = 25; // หน้าถัดไป: ไม่มี header
 const ITEMS_PER_PAGE = 25;
@@ -117,7 +143,12 @@ const SubstituteReportPage: React.FC = () => {
   const [schoolName, setSchoolName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
   const [records, setRecords] = useState<SubstitutionRecord[]>([]);
+  const [calendarTermsByYear, setCalendarTermsByYear] = useState<CalendarTermsByYear>({});
   const [academicYear, setAcademicYear] = useState(defaultYear);
+  const [semester, setSemester] = useState("");
+  const [startDateKey, setStartDateKey] = useState("");
+  const [endDateKey, setEndDateKey] = useState("");
+  const [groupBy, setGroupBy] = useState<"none" | "original" | "substitute">("none");
   const [filterOriginalTeacher, setFilterOriginalTeacher] = useState("all");
   const [filterSubstituteTeacher, setFilterSubstituteTeacher] = useState("all");
   const [search, setSearch] = useState("");
@@ -126,16 +157,14 @@ const SubstituteReportPage: React.FC = () => {
   useEffect(() => {
     if (!schoolId) return;
     loadData();
-  }, [schoolId, academicYear]);
+  }, [schoolId]);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [schoolSnap, subsSnap] = await Promise.all([
         getDoc(doc(db, "school-settings", schoolId)),
-        academicYear
-          ? getDocs(query(collection(db, "school-settings", schoolId, "substitutions"), where("academicYear", "==", academicYear)))
-          : getDocs(collection(db, "school-settings", schoolId, "substitutions")),
+        getDocs(collection(db, "school-settings", schoolId, "substitutions")),
       ]);
 
       const schoolData = schoolSnap.exists() ? schoolSnap.data() : {};
@@ -151,7 +180,43 @@ const SubstituteReportPage: React.FC = () => {
           return (a.period ?? 0) - (b.period ?? 0);
         });
 
+
       setRecords(rows);
+
+      const yearsToLoad = Array.from(new Set(
+        [
+          ...rows.map((row) => String(row.academicYear || "").trim()),
+          String(defaultYear || "").trim(),
+        ].filter(Boolean)
+      ));
+
+      const calendarEntries = await Promise.all(
+        yearsToLoad.map(async (year) => {
+          if (!year) return [year, []] as const;
+          const yearDoc = await getDoc(doc(db, "school-settings", schoolId, "main_calendar", year));
+          if (!yearDoc.exists()) {
+            return [year, year === String(defaultYear || "").trim() ? (calendarState.terms || []) : []] as const;
+          }
+          const data = yearDoc.data();
+          const termsData = data.terms || {};
+          const terms: Term[] = Array.isArray(termsData)
+            ? termsData.map((t: any, i: number) => ({
+              id: t.id || `term-${i}`,
+              name: t.name || `ภาคเรียนที่ ${i + 1}`,
+              startDate: t.startDate || "",
+              endDate: t.endDate || "",
+            }))
+            : Object.entries(termsData).map(([key, t]: [string, any]) => ({
+              id: key,
+              name: t.name || (key === "term1" ? "ภาคเรียนที่ 1" : key === "term2" ? "ภาคเรียนที่ 2" : key),
+              startDate: t.startDate || "",
+              endDate: t.endDate || "",
+            }));
+          return [year, terms] as const;
+        })
+      );
+
+      setCalendarTermsByYear(Object.fromEntries(calendarEntries));
     } catch (err) {
       console.error("Error loading substitute report data:", err);
     } finally {
@@ -171,31 +236,90 @@ const SubstituteReportPage: React.FC = () => {
 
   const keyword = search.trim().toLowerCase();
 
-  const filteredRows = useMemo(() => {
+  const recordsWithDerivedSemester = useMemo(() => {
+    return records.map((record) => {
+      const year = String(record.academicYear || "").trim();
+      const date = timestampToDate(record.date);
+      const fallbackTerms = year === String(defaultYear || "").trim() ? (calendarState.terms || []) : [];
+      const terms = calendarTermsByYear[year] && calendarTermsByYear[year].length > 0
+        ? calendarTermsByYear[year]
+        : fallbackTerms;
+      const derivedSemester = getSemesterFromDate(date, terms);
+      return { ...record, derivedSemester, normalizedAcademicYear: year };
+    });
+  }, [records, calendarTermsByYear, calendarState.terms, defaultYear]);
+
+  useEffect(() => {
     setCurrentPage(1);
-    return records.filter((r) => {
+  }, [academicYear, semester, startDateKey, endDateKey, filterOriginalTeacher, filterSubstituteTeacher, keyword, groupBy]);
+
+  useEffect(() => {
+    if (!defaultYear) return;
+    setAcademicYear((current) => current || defaultYear);
+  }, [defaultYear]);
+
+  useEffect(() => {
+    if (!recordsWithDerivedSemester.length) return;
+    const hasCurrentYearData = recordsWithDerivedSemester.some((record) => record.normalizedAcademicYear === academicYear);
+    if (!academicYear || hasCurrentYearData) return;
+
+    const latestAvailableYear = Array.from(new Set(
+      recordsWithDerivedSemester.map((record) => record.normalizedAcademicYear).filter(Boolean)
+    )).sort((a, b) => Number(b) - Number(a))[0];
+
+    if (latestAvailableYear) {
+      setAcademicYear(latestAvailableYear);
+    }
+  }, [recordsWithDerivedSemester, academicYear]);
+
+  useEffect(() => {
+    if (!academicYear) return;
+    setSemester("");
+  }, [academicYear]);
+
+
+  const filteredRows = useMemo(() => {
+    return recordsWithDerivedSemester.filter((r) => {
+      if (academicYear && r.normalizedAcademicYear && r.normalizedAcademicYear !== academicYear) return false;
+      if (semester && r.derivedSemester && r.derivedSemester !== semester) return false;
+      const dk = toDateKey(r.date);
+      if (startDateKey && dk < startDateKey) return false;
+      if (endDateKey && dk > endDateKey) return false;
       if (filterOriginalTeacher !== "all" && r.originalTeacherName !== filterOriginalTeacher) return false;
       if (filterSubstituteTeacher !== "all" && r.substituteTeacherName !== filterSubstituteTeacher) return false;
       if (keyword) {
-        const text = [
-          r.originalTeacherName,
-          r.substituteTeacherName,
-          r.subjectName,
-          r.subjectCode,
-          formatClassId(r.classId),
-        ].join(" ").toLowerCase();
+        const text = [r.originalTeacherName, r.substituteTeacherName, r.subjectName, r.subjectCode, formatClassId(r.classId)].join(" ").toLowerCase();
         if (!text.includes(keyword)) return false;
       }
       return true;
     });
-  }, [records, filterOriginalTeacher, filterSubstituteTeacher, keyword]);
+  }, [recordsWithDerivedSemester, academicYear, semester, startDateKey, endDateKey, filterOriginalTeacher, filterSubstituteTeacher, keyword]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / ITEMS_PER_PAGE));
-  const pagedRows = filteredRows.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const groupedSections = useMemo(() => {
+    if (groupBy === "none") return null;
+    const map = new Map<string, typeof filteredRows>();
+    filteredRows.forEach(r => {
+      const key = groupBy === "original"
+        ? (r.originalTeacherName || "ไม่ระบุครูเจ้าของคาบ")
+        : (r.substituteTeacherName || "ไม่ระบุครูสอนแทน");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    });
+    return Array.from(map.entries())
+      .map(([key, rows]) => ({ key, label: key, rows }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }, [filteredRows, groupBy]);
+
+  const totalPages = groupBy === "none" ? Math.max(1, Math.ceil(filteredRows.length / ITEMS_PER_PAGE)) : 1;
+  const pagedRows = groupBy === "none" ? filteredRows.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE) : [];
+
+  const dateRangeLabel = startDateKey && endDateKey
+    ? ` ช่วง ${formatFullThaiDate(startDateKey)} – ${formatFullThaiDate(endDateKey)}`
+    : startDateKey ? ` ตั้งแต่ ${formatFullThaiDate(startDateKey)}` : "";
 
   const buildPdfData = (): PdfReportData => ({
     title: "รายงานการสอนแทน",
-    subtitle: `${schoolName || "โรงเรียน"} ปีการศึกษา ${academicYear || "2568"}`,
+    subtitle: `${schoolName || "โรงเรียน"} ปีการศึกษา ${academicYear || "-"} ${semester ? `ภาคเรียนที่ ${semester}` : "ทุกภาคเรียน"}${dateRangeLabel}`,
     schoolName: schoolName || "โรงเรียน",
     logoUrl,
     columns: [
@@ -239,9 +363,10 @@ const SubstituteReportPage: React.FC = () => {
   };
 
   const yearOptions = useMemo(() => {
-    const currentYear = Number(defaultYear) || 2568;
-    return [currentYear - 1, currentYear, currentYear + 1].map(String);
-  }, [defaultYear]);
+    return Array.from(new Set(
+      [defaultYear, ...records.map((record) => String(record.academicYear || "")).filter(Boolean)]
+    )).sort((a, b) => Number(b) - Number(a));
+  }, [defaultYear, records]);
 
   return (
     <MainLayout>
@@ -286,10 +411,31 @@ const SubstituteReportPage: React.FC = () => {
 
             {/* Filters */}
             <div className="border-b border-gray-200 p-4 dark:border-white/10 sm:p-5 print:hidden">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_200px]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.6fr]">
                 <ReportField label="ปีการศึกษา">
                   <select className="report-input" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)}>
                     {yearOptions.map((y) => <option key={y} value={y}>ปีการศึกษา {y}</option>)}
+                  </select>
+                </ReportField>
+                <ReportField label="ภาคเรียน">
+                  <select className="report-input" value={semester} onChange={(e) => setSemester(e.target.value)}>
+                    <option value="">ทุกภาคเรียน</option>
+                    <option value="1">ภาคเรียนที่ 1</option>
+                    <option value="2">ภาคเรียนที่ 2</option>
+                  </select>
+                </ReportField>
+                <ReportField label="ช่วงวันที่จัดสอนแทน">
+                  <DateRangePicker
+                    startDate={startDateKey}
+                    endDate={endDateKey}
+                    onChange={(s, e) => { setStartDateKey(s); setEndDateKey(e); }}
+                  />
+                </ReportField>
+                <ReportField label="จัดกลุ่มตาม">
+                  <select className="report-input" value={groupBy} onChange={(e) => setGroupBy(e.target.value as "none" | "original" | "substitute")}>
+                    <option value="none">ไม่จัดกลุ่ม</option>
+                    <option value="original">แยกตามครูเจ้าของคาบ</option>
+                    <option value="substitute">แยกตามครูสอนแทน</option>
                   </select>
                 </ReportField>
                 <ReportField label="ครูเจ้าของคาบ">
@@ -306,21 +452,15 @@ const SubstituteReportPage: React.FC = () => {
                 </ReportField>
                 <ReportField label="ค้นหา">
                   <div className="flex gap-2">
-                    <input
-                      className="report-input"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="ชื่อครู / วิชา / ชั้นเรียน"
-                    />
-                    <button className="inline-flex h-10 min-w-[100px] items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-700">
-                      <Search size={16} />
-                      ค้นหา
+                    <input className="report-input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ชื่อครู / วิชา / ชั้นเรียน" />
+                    <button className="inline-flex h-10 min-w-[80px] items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700">
+                      <Search size={15} />ค้นหา
                     </button>
                   </div>
                 </ReportField>
               </div>
-              <div className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-                พบ {filteredRows.length} รายการ
+              <div className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+                พบ {filteredRows.length} รายการ{groupBy !== "none" && ` แบ่งเป็น ${groupedSections?.length ?? 0} กลุ่ม`}
               </div>
             </div>
 
@@ -334,61 +474,66 @@ const SubstituteReportPage: React.FC = () => {
                     <thead>
                       <tr className="bg-gray-200 dark:bg-white/10">
                         {["#", "วันที่", "คาบที่", "เวลา", "รหัสวิชา", "ชื่อวิชา", "ชั้นเรียน", "ครูเจ้าของคาบ", "ครูสอนแทน", "สถานที่"].map((h) => (
-                          <th key={h} className="whitespace-nowrap border border-gray-300 px-2 py-2 text-center font-bold dark:border-white/10">
-                            {h}
-                          </th>
+                          <th key={h} className="whitespace-nowrap border border-gray-300 px-2 py-2 text-center font-bold dark:border-white/10">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {pagedRows.map((r, index) => (
-                        <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
-                          <ReportTd className="text-center">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</ReportTd>
-                          <ReportTd className="whitespace-nowrap text-center">{formatShortThaiDate(r.date)}</ReportTd>
-                          <ReportTd className="text-center">{r.period ?? "-"}</ReportTd>
-                          <ReportTd className="whitespace-nowrap text-center">
-                            {r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-"}
-                          </ReportTd>
-                          <ReportTd className="text-center">{r.subjectCode || "-"}</ReportTd>
-                          <ReportTd>{r.subjectName || "-"}</ReportTd>
-                          <ReportTd className="text-center">{formatClassId(r.classId)}</ReportTd>
-                          <ReportTd>{r.originalTeacherName || "-"}</ReportTd>
-                          <ReportTd className="font-semibold text-teal-700 dark:text-teal-400">{r.substituteTeacherName || "-"}</ReportTd>
-                          <ReportTd className="text-center">{r.roomName || "-"}</ReportTd>
-                        </tr>
-                      ))}
+                      {groupBy === "none" ? (
+                        pagedRows.map((r, index) => (
+                          <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
+                            <ReportTd className="text-center">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</ReportTd>
+                            <ReportTd className="whitespace-nowrap text-center">{formatShortThaiDate(r.date)}</ReportTd>
+                            <ReportTd className="text-center">{r.period ?? "-"}</ReportTd>
+                            <ReportTd className="whitespace-nowrap text-center">{r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-"}</ReportTd>
+                            <ReportTd className="text-center">{r.subjectCode || "-"}</ReportTd>
+                            <ReportTd>{r.subjectName || "-"}</ReportTd>
+                            <ReportTd className="text-center">{formatClassId(r.classId)}</ReportTd>
+                            <ReportTd>{r.originalTeacherName || "-"}</ReportTd>
+                            <ReportTd className="font-semibold text-teal-700 dark:text-teal-400">{r.substituteTeacherName || "-"}</ReportTd>
+                            <ReportTd className="text-center">{r.roomName || "-"}</ReportTd>
+                          </tr>
+                        ))
+                      ) : (
+                        groupedSections!.map(section => (
+                          <React.Fragment key={section.key}>
+                            <tr className="bg-indigo-50 dark:bg-indigo-900/20">
+                              <td colSpan={10} className="border border-gray-300 px-3 py-2.5 dark:border-white/10">
+                                <span className="font-bold text-indigo-700 dark:text-indigo-300">
+                                  {groupBy === "original" ? "ครูเจ้าของคาบ: " : "ครูสอนแทน: "}{section.label}
+                                </span>
+                                <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                  {section.rows.length} คาบ
+                                </span>
+                              </td>
+                            </tr>
+                            {section.rows.map((r, index) => (
+                              <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
+                                <ReportTd className="text-center text-gray-400">{index + 1}</ReportTd>
+                                <ReportTd className="whitespace-nowrap text-center">{formatShortThaiDate(r.date)}</ReportTd>
+                                <ReportTd className="text-center">{r.period ?? "-"}</ReportTd>
+                                <ReportTd className="whitespace-nowrap text-center">{r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-"}</ReportTd>
+                                <ReportTd className="text-center">{r.subjectCode || "-"}</ReportTd>
+                                <ReportTd>{r.subjectName || "-"}</ReportTd>
+                                <ReportTd className="text-center">{formatClassId(r.classId)}</ReportTd>
+                                <ReportTd>{r.originalTeacherName || "-"}</ReportTd>
+                                <ReportTd className="font-semibold text-teal-700 dark:text-teal-400">{r.substituteTeacherName || "-"}</ReportTd>
+                                <ReportTd className="text-center">{r.roomName || "-"}</ReportTd>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        ))
+                      )}
                     </tbody>
                   </table>
-                  {totalPages > 1 && (
+                  {groupBy === "none" && totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-between gap-2 print:hidden">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        หน้า {currentPage} / {totalPages} (ทั้งหมด {filteredRows.length} รายการ)
-                      </span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">หน้า {currentPage} / {totalPages} (ทั้งหมด {filteredRows.length} รายการ)</span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10">«</button>
-                        <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10">
-                          <ChevronLeft size={15} />
-                        </button>
-                        {Array.from({ length: totalPages }, (_, i) => i + 1)
-                          .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
-                          .reduce<(number | "...")[]>((acc, p, idx, arr) => {
-                            if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
-                            acc.push(p);
-                            return acc;
-                          }, [])
-                          .map((item, idx) =>
-                            item === "..." ? (
-                              <span key={`ellipsis-${idx}`} className="px-1 text-gray-400">…</span>
-                            ) : (
-                              <button key={item} onClick={() => setCurrentPage(item as number)}
-                                className={`inline-flex h-8 min-w-[32px] items-center justify-center rounded border px-2 text-sm font-bold transition ${currentPage === item ? "border-teal-500 bg-teal-500 text-white" : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"}`}>
-                                {item}
-                              </button>
-                            )
-                          )}
-                        <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10">
-                          <ChevronRight size={15} />
-                        </button>
+                        <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"><ChevronLeft size={15} /></button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2).reduce<(number | "...")[]>((acc, p, idx, arr) => { if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("..."); acc.push(p); return acc; }, []).map((item, idx) => item === "..." ? <span key={`e-${idx}`} className="px-1 text-gray-400">…</span> : <button key={item} onClick={() => setCurrentPage(item as number)} className={`inline-flex h-8 min-w-[32px] items-center justify-center rounded border px-2 text-sm font-bold transition ${currentPage === item ? "border-teal-500 bg-teal-500 text-white" : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"}`}>{item}</button>)}
+                        <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10"><ChevronRight size={15} /></button>
                         <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/10">»</button>
                       </div>
                     </div>
@@ -417,6 +562,204 @@ const ReportField: React.FC<{ label: string; children: React.ReactNode }> = ({ l
 const ReportTd: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className = "" }) => (
   <td className={`border border-gray-300 px-2 py-2 align-middle dark:border-white/10 ${className}`}>{children}</td>
 );
+
+// ─── DateRangePicker ─────────────────────────────────────────────────────────
+
+const THAI_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const DAY_LABELS = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+
+const DateRangePicker: React.FC<{
+  startDate: string;
+  endDate: string;
+  onChange: (start: string, end: string) => void;
+}> = ({ startDate, endDate, onChange }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState<"start" | "end">("start");
+  const [hoverKey, setHoverKey] = useState("");
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setHoverKey("");
+      }
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const fmtShort = (k: string) =>
+    k ? new Date(k + "T00:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" }) : "—";
+
+  const displayLabel = () => {
+    if (!startDate && !endDate) return "ทุกวัน";
+    if (startDate && endDate) return startDate === endDate ? fmtShort(startDate) : `${fmtShort(startDate)} – ${fmtShort(endDate)}`;
+    if (startDate) return `ตั้งแต่ ${fmtShort(startDate)}`;
+    return fmtShort(endDate);
+  };
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const makeKey = (y: number, m: number, d: number) =>
+    `${y}-${String(m + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+  const handleDayClick = (day: number) => {
+    const key = makeKey(viewYear, viewMonth, day);
+    if (picking === "start") {
+      onChange(key, "");
+      setPicking("end");
+    } else {
+      if (key < startDate) {
+        onChange(key, startDate);
+      } else {
+        onChange(startDate, key);
+      }
+      setPicking("start");
+      setHoverKey("");
+      setOpen(false);
+    }
+  };
+
+  const dispStart = picking === "end" && hoverKey && hoverKey < startDate ? hoverKey : startDate;
+  const dispEnd = picking === "end" && hoverKey
+    ? (hoverKey >= startDate ? hoverKey : startDate)
+    : endDate;
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const tk = todayKey();
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(o => !o); if (!open) setPicking(startDate && !endDate ? "end" : "start"); }}
+        className="report-input flex items-center justify-between gap-2"
+      >
+        <span className={(startDate || endDate) ? "font-semibold text-gray-900 dark:text-white" : "text-gray-400 dark:text-gray-500"}>
+          {displayLabel()}
+        </span>
+        <Calendar size={15} className="shrink-0 text-gray-400 dark:text-gray-500" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-2xl dark:border-white/10 dark:bg-[#252629]">
+          {/* Start / End tabs */}
+          <div className="flex gap-2 px-4 pt-4 pb-2">
+            <button
+              onClick={() => setPicking("start")}
+              className={`flex-1 rounded-xl border-2 px-2 py-1.5 text-[11px] font-bold transition ${picking === "start" ? "border-teal-500 bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400" : "border-gray-200 text-gray-400 dark:border-white/10 dark:text-gray-500"}`}
+            >
+              <div className="mb-0.5 text-[9px] uppercase tracking-widest opacity-60">เริ่มต้น</div>
+              {startDate ? fmtShort(startDate) : "—"}
+            </button>
+            <div className="flex items-center text-gray-300 dark:text-gray-600 text-sm">→</div>
+            <button
+              onClick={() => { if (startDate) setPicking("end"); }}
+              className={`flex-1 rounded-xl border-2 px-2 py-1.5 text-[11px] font-bold transition ${picking === "end" ? "border-teal-500 bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400" : "border-gray-200 text-gray-400 dark:border-white/10 dark:text-gray-500"}`}
+            >
+              <div className="mb-0.5 text-[9px] uppercase tracking-widest opacity-60">สิ้นสุด</div>
+              {endDate ? fmtShort(endDate) : "—"}
+            </button>
+          </div>
+
+          {/* Month nav */}
+          <div className="flex items-center justify-between px-4 py-2">
+            <button onClick={prevMonth} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-sm font-bold text-gray-800 dark:text-white">
+              {THAI_MONTHS[viewMonth]} {viewYear + 543}
+            </span>
+            <button onClick={nextMonth} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Day labels */}
+          <div className="grid grid-cols-7 px-3">
+            {DAY_LABELS.map((d, i) => (
+              <div key={d} className={`py-1 text-center text-[10px] font-bold ${i === 0 ? "text-red-400" : i === 6 ? "text-blue-400" : "text-gray-400 dark:text-gray-500"}`}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 px-2 pb-2">
+            {Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const day = i + 1;
+              const key = makeKey(viewYear, viewMonth, day);
+              const isRangeStart = key === dispStart;
+              const isRangeEnd = key === dispEnd;
+              const inRange = dispStart && dispEnd && key > dispStart && key < dispEnd;
+              const isEndpoint = key === startDate || key === endDate || isRangeStart || isRangeEnd;
+              const isToday = key === tk;
+              const col = (firstDay + i) % 7;
+
+              return (
+                <div
+                  key={day}
+                  className={[
+                    "relative flex h-9 items-center justify-center",
+                    inRange ? "bg-teal-50 dark:bg-teal-500/10" : "",
+                    isRangeStart && dispEnd ? "rounded-l-full" : "",
+                    isRangeEnd && dispStart ? "rounded-r-full" : "",
+                  ].filter(Boolean).join(" ")}
+                >
+                  <button
+                    onClick={() => handleDayClick(day)}
+                    onMouseEnter={() => picking === "end" && setHoverKey(key)}
+                    onMouseLeave={() => picking === "end" && setHoverKey("")}
+                    className={[
+                      "relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-medium transition",
+                      isEndpoint ? "bg-teal-500 text-white shadow-md shadow-teal-500/25" : "",
+                      !isEndpoint && isToday ? "ring-2 ring-teal-400 ring-offset-1 text-teal-600 dark:ring-teal-500 dark:text-teal-400 dark:ring-offset-[#252629]" : "",
+                      !isEndpoint && !isToday && col === 0 ? "text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10" : "",
+                      !isEndpoint && !isToday && col === 6 ? "text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10" : "",
+                      !isEndpoint && !isToday && col !== 0 && col !== 6 ? "text-gray-700 hover:bg-teal-50 dark:text-gray-300 dark:hover:bg-teal-500/10" : "",
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {day}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 dark:border-white/10">
+            <button
+              onClick={() => { onChange("", ""); setPicking("start"); setHoverKey(""); setOpen(false); }}
+              className="text-sm font-semibold text-gray-400 transition hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
+            >ล้างทั้งหมด</button>
+            <button
+              onClick={() => { onChange(tk, tk); setPicking("start"); setHoverKey(""); setOpen(false); }}
+              className="text-sm font-semibold text-teal-500 transition hover:text-teal-600 dark:hover:text-teal-400"
+            >วันนี้</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── PDF ─────────────────────────────────────────────────────────────────────
 

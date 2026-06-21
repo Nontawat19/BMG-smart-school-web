@@ -121,15 +121,19 @@ interface PdfData {
   logoUrl?: string;
   academicYear: string;
   semester: string;
-  classLevel: string;
-  room: string;
   subjectLabel: string;
   subject: string;
+  sections: PdfSection[];
+}
+
+interface PdfSection {
+  classLevel: string;
+  room: string;
   advisorName: string;
   students: StudentRow[];
 }
 
-const ROWS_PER_PAGE = 30;
+const ROWS_PER_PAGE = 20;
 const BLANK_COLUMNS = 8;
 
 const getStudentCode = (student: StudentRow) => student.studentId || student.studentNumber || "";
@@ -165,6 +169,7 @@ const normalizeClassValue = (value?: string) => {
 const asArray = (value: unknown) => Array.isArray(value) ? value : [value].filter(Boolean);
 
 const courseMatchesClass = (course: CourseRow, selectedClassLevel: string) => {
+  if (!selectedClassLevel) return true;
   const selected = normalizeClassValue(selectedClassLevel);
   const classIds = asArray(course.classId).map(value => String(value || "").trim()).filter(Boolean);
   if (classIds.length === 0) return true;
@@ -215,6 +220,7 @@ const valueMatchesAcademicContext = (item: { academicYear?: string; year?: strin
 };
 
 const clubMatchesClass = (club: ClubRow, selectedClassLevel: string) => {
+  if (!selectedClassLevel) return true;
   if (!club.allowedClassLevelFrom && !club.allowedClassLevelTo) return true;
   const selected = normalizeClassValue(selectedClassLevel);
   return isClassLevelInRange(selected.key, club.allowedClassLevelFrom, club.allowedClassLevelTo)
@@ -264,6 +270,8 @@ const getSemesterOptions = (calendar: RootState["calendar"]) => {
 
   return Array.from(new Set([...termSemesters, "1", "2"]));
 };
+
+const getGroupKey = (student: StudentRow) => `${classLabel(student.classLevel)}__${String(student.room || "").trim()}`;
 
 const pdfStyles = StyleSheet.create({
   page: {
@@ -356,76 +364,91 @@ const pdfStyles = StyleSheet.create({
 });
 
 const StudentListPdfDocument: React.FC<{ data: PdfData }> = ({ data }) => {
-  const chunks: StudentRow[][] = [];
-  for (let i = 0; i < data.students.length; i += ROWS_PER_PAGE) {
-    chunks.push(data.students.slice(i, i + ROWS_PER_PAGE));
-  }
-  if (chunks.length === 0) chunks.push([]);
-
-  const counts = getGenderCounts(data.students);
   const logoSrc = data.logoUrl || "/Epp5 online.png";
 
   return (
     <PdfDocument>
-      {chunks.map((pageRows, pageIndex) => {
-        const isLastPage = pageIndex === chunks.length - 1;
-        return (
-          <Page key={`student-list-${pageIndex}`} size="A4" orientation="landscape" style={pdfStyles.page}>
-            <View style={pdfStyles.header}>
-              <PdfImage src={logoSrc} style={pdfStyles.logo} />
-              <Text style={pdfStyles.schoolName}>{data.schoolName || "โรงเรียน"}</Text>
-              <Text style={pdfStyles.title}>
-                รายชื่อนักเรียน ปีการศึกษา {data.academicYear || "........"} ภาคเรียนที่ {data.semester || "...."} ชั้น {data.classLevel || "...."} ห้องที่ {data.room || "...."}
-              </Text>
-              <Text style={pdfStyles.subjectLine}>{data.subjectLabel || "วิชา"} {data.subject || "........................................................................"}</Text>
-              <Text style={pdfStyles.advisorLine}>ครูที่ปรึกษา : {data.advisorName || "........................................................"}</Text>
-            </View>
+      {data.sections.flatMap((section, sectionIndex) => {
+        const chunks: StudentRow[][] = [];
+        for (let i = 0; i < section.students.length; i += ROWS_PER_PAGE) {
+          chunks.push(section.students.slice(i, i + ROWS_PER_PAGE));
+        }
+        if (chunks.length === 0) chunks.push([]);
 
-            <View style={pdfStyles.table}>
-              <View style={pdfStyles.row}>
-                <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขที่</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขประจำตัว</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text style={pdfStyles.headerCell}>ชื่อ นามสกุล</Text></View>
-                {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                  <View key={`blank-head-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
-                ))}
+        const counts = getGenderCounts(section.students);
+
+        return chunks.map((pageRows, pageIndex) => {
+          const isLastPage = pageIndex === chunks.length - 1;
+          const emptyRows = Math.max(0, ROWS_PER_PAGE - pageRows.length);
+          return (
+            <Page key={`student-list-${sectionIndex}-${pageIndex}`} size="A4" orientation="landscape" style={pdfStyles.page}>
+              <View style={pdfStyles.header}>
+                <PdfImage src={logoSrc} style={pdfStyles.logo} />
+                <Text style={pdfStyles.schoolName}>{data.schoolName || "โรงเรียน"}</Text>
+                <Text style={pdfStyles.title}>
+                  รายชื่อนักเรียน ปีการศึกษา {data.academicYear || "........"} ภาคเรียนที่ {data.semester || "...."} ชั้น {section.classLevel || "...."} ห้องที่ {section.room || "...."}
+                </Text>
+                <Text style={pdfStyles.subjectLine}>{data.subjectLabel || "วิชา"} {data.subject || "........................................................................"}</Text>
+                <Text style={pdfStyles.advisorLine}>ครูที่ปรึกษา : {section.advisorName || "........................................................"}</Text>
               </View>
 
-              {pageRows.map((student, rowIndex) => {
-                const absoluteIndex = pageIndex * ROWS_PER_PAGE + rowIndex;
-                return (
-                  <View key={student.id} style={pdfStyles.row}>
-                    <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={pdfStyles.center}>{getStudentNumber(student, absoluteIndex)}</Text></View>
-                    <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={pdfStyles.center}>{getStudentCode(student)}</Text></View>
-                    <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text>{getStudentName(student)}</Text></View>
-                    {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                      <View key={`${student.id}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
-                    ))}
-                  </View>
-                );
-              })}
-
-              {isLastPage && (
-                <View style={pdfStyles.summaryRow}>
-                  <View style={[pdfStyles.cell, pdfStyles.summaryCell]}>
-                    <Text style={pdfStyles.bold}>
-                      ห้องที่ {data.room || "-"} รวม {data.students.length} คน ( ช. {counts.male}, ญ. {counts.female} )
-                    </Text>
-                  </View>
+              <View style={pdfStyles.table}>
+                <View style={pdfStyles.row}>
+                  <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขที่</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขประจำตัว</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text style={pdfStyles.headerCell}>ชื่อ นามสกุล</Text></View>
                   {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                    <View key={`summary-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                    <View key={`blank-head-${sectionIndex}-${pageIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
                   ))}
                 </View>
-              )}
-            </View>
 
-            <Text
-              style={pdfStyles.footer}
-              render={({ pageNumber, totalPages }) => `หน้า ${pageNumber}/${totalPages}`}
-              fixed
-            />
-          </Page>
-        );
+                {pageRows.map((student, rowIndex) => {
+                  const absoluteIndex = pageIndex * ROWS_PER_PAGE + rowIndex;
+                  return (
+                    <View key={student.id} style={pdfStyles.row}>
+                      <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={pdfStyles.center}>{getStudentNumber(student, absoluteIndex)}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={pdfStyles.center}>{getStudentCode(student)}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text>{getStudentName(student)}</Text></View>
+                      {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
+                        <View key={`${student.id}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                      ))}
+                    </View>
+                  );
+                })}
+
+                {Array.from({ length: emptyRows }).map((_, emptyIndex) => (
+                  <View key={`empty-row-${sectionIndex}-${pageIndex}-${emptyIndex}`} style={pdfStyles.row}>
+                    <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text> </Text></View>
+                    <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text> </Text></View>
+                    <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text> </Text></View>
+                    {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
+                      <View key={`empty-row-${sectionIndex}-${pageIndex}-${emptyIndex}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                    ))}
+                  </View>
+                ))}
+
+                {isLastPage && (
+                  <View style={pdfStyles.summaryRow}>
+                    <View style={[pdfStyles.cell, pdfStyles.summaryCell]}>
+                      <Text style={pdfStyles.bold}>
+                        ห้องที่ {section.room || "-"} รวม {section.students.length} คน ( ช. {counts.male}, ญ. {counts.female} )
+                      </Text>
+                    </View>
+                    {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
+                      <View key={`summary-blank-${sectionIndex}-${pageIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <Text
+                style={pdfStyles.footer}
+                render={({ pageNumber, totalPages }) => `หน้า ${pageNumber}/${totalPages}`}
+                fixed
+              />
+            </Page>
+          );
+        });
       })}
     </PdfDocument>
   );
@@ -629,10 +652,10 @@ const HomeroomStudentListPage: React.FC = () => {
     const text = keyword.trim().toLowerCase();
     return students
       .filter(student => {
-        if (subjectStudentIds) return subjectStudentIds.includes(student.id);
         const matchClass = !selectedClassLevel || classLabel(student.classLevel) === selectedClassLevel;
         const matchRoom = !selectedRoom || String(student.room || "") === selectedRoom;
-        return matchClass && matchRoom;
+        const matchSubject = !subjectStudentIds || subjectStudentIds.includes(student.id);
+        return matchClass && matchRoom && matchSubject;
       })
       .filter(student => {
         if (!text) return true;
@@ -642,6 +665,9 @@ const HomeroomStudentListPage: React.FC = () => {
   }, [keyword, selectedClassLevel, selectedRoom, students, subjectStudentIds]);
 
   const advisorName = useMemo(() => {
+    if (!selectedClassLevel || !selectedRoom) {
+      return filteredStudents.length > 0 ? "แยกตามห้องในไฟล์ PDF" : "";
+    }
     const selected = normalizeClassValue(selectedClassLevel);
     const candidates = [
       selectedRoom ? `${selected.label}/${selectedRoom}` : "",
@@ -657,7 +683,47 @@ const HomeroomStudentListPage: React.FC = () => {
     });
 
     return getTeacherName(matched);
-  }, [selectedClassLevel, selectedRoom, teachers]);
+  }, [filteredStudents.length, selectedClassLevel, selectedRoom, teachers]);
+
+  const groupedSections = useMemo<PdfSection[]>(() => {
+    const grouped = new Map<string, StudentRow[]>();
+    filteredStudents.forEach(student => {
+      const key = getGroupKey(student);
+      const current = grouped.get(key) || [];
+      current.push(student);
+      grouped.set(key, current);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([key, groupedStudents]) => {
+        const [classLevel, room] = key.split("__");
+        const normalized = normalizeClassValue(classLevel);
+        const candidates = [
+          room ? `${normalized.label}/${room}` : "",
+          room ? `${normalized.key}/${room}` : "",
+          normalized.label,
+          normalized.key,
+        ].filter(Boolean);
+
+        const matchedTeacher = teachers.find(teacher => {
+          const grade = String(teacher.homeroomGrade || "").trim();
+          const teacherRoom = String(teacher.homeroomRoom || "").trim();
+          return candidates.includes(grade) || (teacherRoom && teacherRoom === room && (grade === normalized.label || grade === normalized.key));
+        });
+
+        return {
+          classLevel,
+          room,
+          advisorName: getTeacherName(matchedTeacher),
+          students: [...groupedStudents].sort(sortStudents),
+        };
+      })
+      .sort((a, b) => {
+        const classDiff = getClassLevelRank(a.classLevel) - getClassLevelRank(b.classLevel);
+        if (classDiff !== 0) return classDiff;
+        return a.room.localeCompare(b.room, "th", { numeric: true });
+      });
+  }, [filteredStudents, teachers]);
 
   const counts = getGenderCounts(filteredStudents);
   const selectedSubject = selectedSubjectOption?.subject || "";
@@ -675,18 +741,15 @@ const HomeroomStudentListPage: React.FC = () => {
         logoUrl: schoolSettings.logoUrl || "/Epp5 online.png",
         academicYear,
         semester: selectedSemester || currentSemester,
-        classLevel: selectedClassLevel,
-        room: selectedRoom,
         subjectLabel: selectedSubjectLabel,
         subject: selectedSubject,
-        advisorName,
-        students: filteredStudents,
+        sections: groupedSections,
       };
       const blob = await pdf(<StudentListPdfDocument data={data} />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `รายชื่อนักเรียนประจำชั้น_${selectedClassLevel}_${selectedRoom || "ทั้งหมด"}_${academicYear || "ปีการศึกษา"}.pdf`;
+      link.download = `รายชื่อนักเรียนประจำชั้น_${selectedClassLevel || "ทุกชั้น"}_${selectedRoom || "ทุกห้อง"}_${academicYear || "ปีการศึกษา"}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -700,17 +763,20 @@ const HomeroomStudentListPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 px-4 py-6 text-gray-900 dark:bg-[#15161a] dark:text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <BackButton to="/academic/hub/students" className="mb-4" />
-
           <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#242529] lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
-                <FileText size={14} />
-                PDF รายชื่อนักเรียน
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex items-start gap-3">
+                <BackButton to="/academic/hub/students" className="mb-0 shrink-0" />
+                <div className="min-w-0 pt-1">
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                    <FileText size={14} />
+                    PDF รายชื่อนักเรียน
+                  </div>
+                  <h1 className="text-2xl font-black tracking-tight">รายชื่อนักเรียนประจำชั้น</h1>
+                </div>
               </div>
-              <h1 className="text-2xl font-black tracking-tight">รายชื่อนักเรียนประจำชั้น</h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                เลือกชั้นและห้องเพื่อพิมพ์รายชื่อนักเรียนตามแม่แบบเอกสารโรงเรียน
+              <p className="text-sm text-gray-500 dark:text-gray-400 lg:pl-[72px]">
+                เลือกชั้นและห้องเพื่อพิมพ์รายชื่อนักเรียนตามแม่แบบเอกสารโรงเรียน หากเลือกทุกชั้นหรือทุกห้อง ระบบจะแยก PDF ตามห้องให้อัตโนมัติ
               </p>
             </div>
             <button

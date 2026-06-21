@@ -244,6 +244,13 @@ const RegisterPage: React.FC = () => {
                                     <option value="นาย">นาย</option>
                                     <option value="นาง">นาง</option>
                                     <option value="น.ส.">นางสาว</option>
+                                    <option value="พระ">พระ</option>
+                                    <option value="พระสามเณร">พระสามเณร</option>
+                                    <option value="พระมหา">พระมหา</option>
+                                    <option value="พระครู">พระครู</option>
+                                    <option value="พระใบฎีกา">พระใบฎีกา</option>
+                                    <option value="หลวงพ่อ">หลวงพ่อ</option>
+                                    <option value="พระอาจารย์">พระอาจารย์</option>
                                     <option value="อื่นๆ">อื่นๆ</option>
                                 </select>
                             </div>

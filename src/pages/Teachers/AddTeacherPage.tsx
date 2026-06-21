@@ -116,6 +116,7 @@ const initialState = {
   lineId: "",
   role: ["teacher"] as string[],
   status: "อยู่",
+  personnelType: "teacher" as "teacher" | "user",
 };
 
 export default function AddTeacherPage() {
@@ -149,6 +150,17 @@ export default function AddTeacherPage() {
     { value: 'academic_admin', label: 'ฝ่ายวิชาการ (Academic Admin)' },
     { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
   ];
+
+  const staffRoles = [
+    { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลานักเรียน' },
+    { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลาครู' },
+    { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาทั้งโรงเรียน' },
+    { value: 'student_affairs', label: 'งานกิจการนักเรียน' },
+    { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน' },
+  ];
+
+  const activeRoles = form.personnelType === 'user' ? staffRoles : userRoles;
+  const allRoleOptions = [...userRoles, ...staffRoles];
 
   const handleRoleToggle = (roleValue: string) => {
     const currentRoles = [...form.role];
@@ -411,6 +423,7 @@ export default function AddTeacherPage() {
         role: form.role,
         profileImageUrl: finalProfileImageUrl,
         isHomeroomTeacher: form.homeroomGrade !== "",
+        personnelType: form.personnelType,
         createdAt: serverTimestamp(),
       };
 
@@ -500,6 +513,28 @@ export default function AddTeacherPage() {
           </header>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* ประเภทบุคลากร */}
+            <div className="flex items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm">
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">ประเภทบุคลากร:</span>
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, personnelType: 'teacher', role: ['teacher'] }))}
+                className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${form.personnelType === 'teacher' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+              >
+                ครูผู้สอน
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(p => ({ ...p, personnelType: 'user', role: ['student_attendance'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
+                className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${form.personnelType === 'user' ? 'bg-emerald-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+              >
+                ผู้ใช้ระบบ
+              </button>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {form.personnelType === 'teacher' ? '— ครูผู้สอน มีข้อมูลกลุ่มสาระและห้องเรียน' : '— เจ้าหน้าที่ที่เข้าระบบได้ ไม่ใช่ครูผู้สอน'}
+              </span>
+            </div>
+
             <InfoCard title="ข้อมูลส่วนตัว">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                 {/* ส่วนอัปโหลดรูปภาพ (คงเดิม) */}
@@ -596,6 +631,13 @@ export default function AddTeacherPage() {
                           <option value="นาย">นาย</option>
                           <option value="นาง">นาง</option>
                           <option value="น.ส.">นางสาว</option>
+                          <option value="พระ">พระ</option>
+                          <option value="พระสามเณร">พระสามเณร</option>
+                          <option value="พระมหา">พระมหา</option>
+                          <option value="พระครู">พระครู</option>
+                          <option value="พระใบฎีกา">พระใบฎีกา</option>
+                          <option value="หลวงพ่อ">หลวงพ่อ</option>
+                          <option value="พระอาจารย์">พระอาจารย์</option>
                           <option value="อื่นๆ">อื่นๆ</option>
                         </select>
                       )}
@@ -726,61 +768,63 @@ export default function AddTeacherPage() {
                       </select>
                     </div>
 
-                    {/* สถานะดูแลชั้นเรียน */}
-                    <div>
-                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะดูแลชั้นเรียน</label>
-                      <select
-                        name="advisorRole"
-                        value={form.advisorRole}
-                        onChange={handleChange}
-                        className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white"
-                      >
-                        <option value="">-- ระบุสถานะ --</option>
-                        <option value="ครูสอนประจำชั้น">ครูสอนประจำชั้น</option>
-                        <option value="ครูที่ปรึกษา">ครูที่ปรึกษา</option>
-                      </select>
-                    </div>
+                    {/* ครูประจำชั้น / กลุ่มสาระ — แสดงเฉพาะครูผู้สอน */}
+                    {form.personnelType === 'teacher' && (
+                      <>
+                        {/* สถานะดูแลชั้นเรียน */}
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">สถานะดูแลชั้นเรียน</label>
+                          <select
+                            name="advisorRole"
+                            value={form.advisorRole}
+                            onChange={handleChange}
+                            className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white"
+                          >
+                            <option value="">-- ระบุสถานะ --</option>
+                            <option value="ครูสอนประจำชั้น">ครูสอนประจำชั้น</option>
+                            <option value="ครูที่ปรึกษา">ครูที่ปรึกษา</option>
+                          </select>
+                        </div>
 
-                    {/* ฟอร์ม ระดับชั้นที่ดูแล */}
-                    <div>
-                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">ระดับชั้นที่ดูแล</label>
-                      <select name="homeroomGrade" value={form.homeroomGrade} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white">
-                        <option value="">-- ไม่ได้เป็นครูประจำชั้น --</option>
-                        {availableLevels.map(level => (
-                          <option key={level} value={level}>{level}</option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">ระดับชั้นที่ดูแล</label>
+                          <select name="homeroomGrade" value={form.homeroomGrade} onChange={handleChange} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white">
+                            <option value="">-- ไม่ได้เป็นครูประจำชั้น --</option>
+                            {availableLevels.map(level => (
+                              <option key={level} value={level}>{level}</option>
+                            ))}
+                          </select>
+                        </div>
 
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">ห้องประจำชั้น</label>
+                          <select name="homeroomRoom" value={form.homeroomRoom} onChange={handleChange} disabled={!form.homeroomGrade} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                            <option value="">-- เลือกห้อง --</option>
+                            {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </div>
 
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">ห้องประจำชั้น</label>
-                      <select name="homeroomRoom" value={form.homeroomRoom} onChange={handleChange} disabled={!form.homeroomGrade} className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed">
-                        <option value="">-- เลือกห้อง --</option>
-                        {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* กลุ่มสาระการเรียนรู้ และ หัวหน้ากลุ่มสาระ (รวมบรรทัดเดียวกัน) */}
-                    <div>
-                      <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">กลุ่มสาระการเรียนรู้</label>
-                      <select
-                        name="learningArea"
-                        value={form.learningArea}
-                        onChange={handleChange}
-                        className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white"
-                      >
-                        <option value="">-- เลือกกลุ่มสาระ --</option>
-                        {subjectGroups.map((group) => (
-                          <option key={group.id} value={group.name}>{group.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">กลุ่มสาระการเรียนรู้</label>
+                          <select
+                            name="learningArea"
+                            value={form.learningArea}
+                            onChange={handleChange}
+                            className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white"
+                          >
+                            <option value="">-- เลือกกลุ่มสาระ --</option>
+                            {subjectGroups.map((group) => (
+                              <option key={group.id} value={group.name}>{group.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  {/* บทบาทพิเศษ */}
+                  {/* บทบาทพิเศษ — แสดงเฉพาะครูผู้สอน */}
+                  {form.personnelType === 'teacher' && (
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">บทบาทพิเศษ</label>
                     <div className="flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -798,6 +842,7 @@ export default function AddTeacherPage() {
                       </label>
                     </div>
                   </div>
+                  )}
                 </div>
               </div>
             </InfoCard>
@@ -876,7 +921,7 @@ export default function AddTeacherPage() {
                   <div className="flex flex-wrap gap-1">
                     {form.role.length > 0 ? (
                       form.role.map(r => {
-                        const roleLabel = userRoles.find(ur => ur.value === r)?.label ?? r;
+                        const roleLabel = allRoleOptions.find(ur => ur.value === r)?.label ?? r;
                         return (
                           <span key={r} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                             {roleLabel}
@@ -892,7 +937,7 @@ export default function AddTeacherPage() {
 
                 {isRoleDropdownOpen && (
                   <div className="absolute z-50 bottom-full mb-1 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 max-h-60 overflow-auto animate-in slide-in-from-bottom-2 fade-in zoom-in duration-200">
-                    {userRoles.map((role) => {
+                    {activeRoles.map((role) => {
                       const isChecked = form.role.includes(role.value);
                       return (
                         <div

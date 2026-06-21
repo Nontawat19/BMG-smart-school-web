@@ -37,6 +37,7 @@ import {
 import Swal from "sweetalert2";
 import Select from "react-select";
 import { compareTeachersByGroupAndId, getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import BackButton from "@/components/Shared/BackButton";
 
 // --- Types ---
 interface GroupAssignment {
@@ -258,14 +259,15 @@ const headerSelectStyles = {
         border: '1px solid var(--select-border, #f3f4f6)',
         width: 'max-content',
         minWidth: '150px',
-        zIndex: 100
+        zIndex: 99999
     }),
+    menuPortal: (base: any) => ({ ...base, zIndex: 99999 }),
     option: (base: any, state: any) => ({
         ...base,
-        backgroundColor: state.isSelected 
-            ? '#6366f1' 
-            : state.isFocused 
-                ? 'rgba(99, 102, 241, 0.1)' 
+        backgroundColor: state.isSelected
+            ? '#6366f1'
+            : state.isFocused
+                ? 'rgba(99, 102, 241, 0.1)'
                 : 'transparent',
         color: state.isSelected ? '#ffffff' : 'var(--select-text, #1f2937)',
         borderRadius: '0.5rem',
@@ -341,8 +343,9 @@ const filterSelectStyles = {
         border: '1px solid var(--select-border, #f3f4f6)',
         width: 'max-content',
         minWidth: '150px',
-        zIndex: 100
+        zIndex: 99999
     }),
+    menuPortal: (base: any) => ({ ...base, zIndex: 99999 }),
     option: (base: any, state: any) => ({
         ...base,
         backgroundColor: state.isSelected 
@@ -427,11 +430,28 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: { currentPage: nu
     return null;
 };
 
+const getSwalBg = () => document.documentElement.classList.contains('dark') ? '#161a27' : '#ffffff';
+const getSwalColor = () => document.documentElement.classList.contains('dark') ? '#f8fafc' : '#0f172a';
+const getSwalPeriodStyles = () => {
+    const d = document.documentElement.classList.contains('dark');
+    return `<style>
+        .teacher-hour-split { text-align: left; display: grid; gap: 12px; margin-top: 12px; }
+        .teacher-hour-total { padding: 10px 12px; border-radius: 12px; background: ${d ? '#1e3a5f' : '#eef2ff'}; color: ${d ? '#a5b4fc' : '#3730a3'}; font-size: 14px; font-weight: 800; }
+        .teacher-hour-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: center; }
+        .teacher-hour-row > span { color: ${d ? '#f1f5f9' : '#334155'}; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .teacher-period-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .teacher-period-inputs label { display: grid; gap: 4px; }
+        .teacher-period-inputs small { color: ${d ? '#94a3b8' : '#64748b'}; font-size: 10px; font-weight: 900; text-align: center; }
+        .teacher-period-inputs select { width: 100%; border: 1px solid ${d ? '#475569' : '#cbd5e1'}; border-radius: 10px; padding: 8px 10px; font-size: 15px; font-weight: 900; text-align: center; color: ${d ? '#ffffff' : '#0f172a'}; background: ${d ? '#1e293b' : 'white'}; }
+        .teacher-period-inputs select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16); }
+        .teacher-hour-note { color: ${d ? '#94a3b8' : '#64748b'}; font-size: 12px; font-weight: 700; margin: 0; }
+    </style>`;
+};
+
 const CourseAssignmentPage: React.FC = () => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const { availableClassOptions, classKeys } = useSelector((state: RootState) => state.schoolSettings);
-    const BackButton = React.lazy(() => import("@/components/Shared/BackButton"));
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = urlSchoolId || (currentUser as any)?.schoolId;
@@ -977,7 +997,8 @@ const CourseAssignmentPage: React.FC = () => {
         const unsubGroups = onSnapshot(collection(db, 'school-settings', schoolId, 'subject_groups'), (snap) => {
             const data = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as { name: string, code: string }) }));
             data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
-            setSubjectGroupsList(data);
+            const seenNames = new Set<string>();
+            setSubjectGroupsList(data.filter(g => g.name && !seenNames.has(g.name) && seenNames.add(g.name)));
         });
 
         return () => {
@@ -1075,8 +1096,8 @@ const CourseAssignmentPage: React.FC = () => {
             position: 'top-end',
             timer: 1800,
             showConfirmButton: false,
-            background: '#161a27',
-            color: '#fff'
+            background: getSwalBg(),
+            color: getSwalColor()
         });
     };
 
@@ -1248,7 +1269,6 @@ const CourseAssignmentPage: React.FC = () => {
 
             // 2. Update Firestore (Saved Items) via Batch
             if (hasSaved) {
-                const { writeBatch } = await import("firebase/firestore");
                 const batch = writeBatch(db);
                 const savedTargets = targetAssignments.filter(a => !a.isPending);
                 const updatedAssignmentsByCourse: Record<string, GroupAssignment[]> = {};
@@ -1400,23 +1420,14 @@ const CourseAssignmentPage: React.FC = () => {
                     `).join("")}
                     <p class="teacher-hour-note">กำหนดช่วงคาบของครูแต่ละคนให้ต่อเนื่องครบทั้งภาคเรียน และไม่ซ้ำกัน</p>
                 </div>
-                <style>
-                    .teacher-hour-split { text-align: left; display: grid; gap: 12px; margin-top: 12px; }
-                    .teacher-hour-total { padding: 10px 12px; border-radius: 12px; background: #eef2ff; color: #3730a3; font-size: 14px; font-weight: 800; }
-                    .teacher-hour-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 12px; align-items: center; }
-                    .teacher-hour-row > span { color: #334155; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                    .teacher-period-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-                    .teacher-period-inputs label { display: grid; gap: 4px; }
-                    .teacher-period-inputs small { color: #64748b; font-size: 10px; font-weight: 900; text-align: center; }
-                    .teacher-period-inputs select { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 8px 10px; font-size: 15px; font-weight: 900; text-align: center; color: #0f172a; background: white; }
-                    .teacher-period-inputs select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16); }
-                    .teacher-hour-note { color: #64748b; font-size: 12px; font-weight: 700; margin: 0; }
-                </style>
+                ${getSwalPeriodStyles()}
             `,
             showCancelButton: true,
             confirmButtonText: 'บันทึกช่วงคาบ',
             cancelButtonText: 'ยกเลิก',
             confirmButtonColor: '#4f46e5',
+            background: getSwalBg(),
+            color: getSwalColor(),
             preConfirm: () => {
                 const values = teacherIds.map((id, index) => {
                     const startInput = document.getElementById(`teacher-period-start-${index}`) as HTMLSelectElement | null;
@@ -1524,7 +1535,6 @@ const CourseAssignmentPage: React.FC = () => {
 
             // 2. Update Firestore (Saved Items) via Batch
             if (hasSaved) {
-                const { writeBatch } = await import("firebase/firestore");
                 const batch = writeBatch(db);
                 const savedTargets = selectedAssignments.filter(a => !a.isPending);
                 
@@ -1578,7 +1588,6 @@ const CourseAssignmentPage: React.FC = () => {
             }
 
             if (hasSaved) {
-                const { writeBatch } = await import("firebase/firestore");
                 const batch = writeBatch(db);
                 const savedTargets = selectedAssignments.filter(a => !a.isPending);
                 
@@ -1643,7 +1652,6 @@ const CourseAssignmentPage: React.FC = () => {
 
             // 2. Update Firestore via Batch
             if (hasSaved) {
-                const { writeBatch } = await import("firebase/firestore");
                 const batch = writeBatch(db);
                 const savedTargets = selectedAssignments.filter(a => !a.isPending);
                 
@@ -1811,7 +1819,8 @@ const CourseAssignmentPage: React.FC = () => {
     useEffect(() => { setRoomPage(1); }, [roomSearch, buildingFilter]);
 
     const subjectGroups = useMemo(() => {
-        const names = subjectGroupsList.map(g => g.name);
+        const excludedGroups = ["กิจกรรมพัฒนาผู้เรียน"];
+        const names = subjectGroupsList.map(g => g.name).filter(n => !excludedGroups.includes(n));
         return ["กลุ่มสาระทั้งหมด", ...names];
     }, [subjectGroupsList]);
 
@@ -1828,6 +1837,11 @@ const CourseAssignmentPage: React.FC = () => {
     
     // 1. Filter for Left Panel (Source Courses)
     const filteredCourses = coursesWithAssignments.filter(c => {
+        // ซ่อนกิจกรรมพัฒนาผู้เรียน (ชุมนุม/กิจกรรม/รหัส ก) เพราะมีหน้าจัดการแยกต่างหาก
+        const cType = c.type?.trim() || "";
+        const cCode = c.code?.trim() || "";
+        if (cType.includes("ชุมนุม") || cType.includes("กิจกรรม") || cCode.startsWith("ก")) return false;
+
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
         const matchesGroup = isSubjectGroupMatch(c.subjectGroup, subjectGroupFilter);
@@ -1837,7 +1851,7 @@ const CourseAssignmentPage: React.FC = () => {
             return c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase();
         })();
         const matchesLevelFilter = matchesLevel(c.classId);
-        
+
         let matchesSemester = true;
         if (selectedSemester !== "0") {
             const courseSem = c.semester?.toString().trim() || "0";
@@ -2810,8 +2824,8 @@ const CourseAssignmentPage: React.FC = () => {
                                                 confirmButtonText: 'ล้างข้อมูล',
                                                 cancelButtonText: 'ยกเลิก',
                                                 confirmButtonColor: '#ef4444',
-                                                background: '#161a27',
-                                                color: '#fff'
+                                                background: getSwalBg(),
+                                                color: getSwalColor()
                                             }).then(res => {
                                                 if (res.isConfirmed) {
                                                     setPendingQueue([]);

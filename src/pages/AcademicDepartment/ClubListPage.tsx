@@ -284,403 +284,271 @@ const ClubListPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto text-gray-900 dark:text-white transition-colors duration-300">
-        
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-          <div className="flex items-center gap-4">
-            <BackButton to="/academic/hub/activities" />
-            <div>
-              <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-                <Compass className="text-indigo-500 animate-spin-slow" size={32} />
-                ทำเนียบกิจกรรมชุมนุม
-              </h1>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 font-medium flex items-center gap-1.5">
-                <Info size={14} className="text-gray-400" />
-                รายชื่อข้อมูลชุมนุม สถิติ และการลงทะเบียนเรียนกิจกรรมชุมนุมทั้งหมดในโรงเรียน
-              </p>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+
+        {/* ===== HEADER ===== */}
+        <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 sm:p-5 mb-4">
+          {/* Title row */}
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <BackButton to="/academic/hub/activities" />
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Compass size={18} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-black text-gray-900 dark:text-white tracking-tight leading-tight">ทำเนียบกิจกรรมชุมนุม</h1>
+                <p className="text-gray-500 dark:text-gray-400 text-[11px] font-medium hidden sm:block truncate">รายชื่อชุมนุม สถิติ และการลงทะเบียนกิจกรรมชุมนุมทั้งหมดในโรงเรียน</p>
+              </div>
             </div>
+            {canManage && (
+              <div className="flex gap-2 flex-shrink-0">
+                <Link to="/academic/club-management" className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 whitespace-nowrap">
+                  <Settings size={13} />จัดการชุมนุม
+                </Link>
+                <Link to="/academic/club-members" className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 whitespace-nowrap">
+                  <UserCheck size={13} />จัดการสมาชิก
+                </Link>
+                <Link to="/academic/club-reports" className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 whitespace-nowrap">
+                  <FileText size={13} />รายงานชุมนุม
+                </Link>
+              </div>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {canManage && (
-              <>
-                <Link
-                  to="/academic/club-management"
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-lg shadow-indigo-500/20 dark:shadow-none"
-                >
-                  <Settings size={16} />
-                  จัดการชุมนุม
-                </Link>
-                <Link
-                  to="/academic/club-members"
-                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-lg shadow-violet-500/20 dark:shadow-none"
-                >
-                  <UserCheck size={16} />
-                  จัดการสมาชิก
-                </Link>
-                <Link
-                  to="/academic/club-reports"
-                  className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-lg shadow-sky-500/20 dark:shadow-none"
-                >
-                  <FileText size={16} />
-                  รายงานชุมนุม
-                </Link>
-              </>
-            )}
+          {/* Stats strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: 'ชุมนุมทั้งหมด', value: stats.totalClubs, unit: 'ชุมนุม', sub: `เปิดรับสมัคร ${stats.openClubs} ชุมนุม`, icon: <Compass size={15} className="text-white" />, badge: 'bg-indigo-600' },
+              { label: 'สมาชิกลงทะเบียน', value: stats.totalMembers, unit: 'คน', sub: `ความจุ ${stats.totalCapacity} ที่นั่ง`, icon: <Users size={15} className="text-white" />, badge: 'bg-sky-600' },
+              { label: 'ที่นั่งว่างเหลือ', value: stats.remainingSeats, unit: 'ที่นั่ง', sub: `${stats.totalCapacity > 0 ? Math.round((stats.remainingSeats / stats.totalCapacity) * 100) : 0}% ของความจุ`, icon: <Sparkles size={15} className="text-white" />, badge: 'bg-emerald-600' },
+              { label: 'อัตราเข้าร่วม', value: stats.totalCapacity > 0 ? Math.round((stats.totalMembers / stats.totalCapacity) * 100) : 0, unit: '%', sub: allowTransfer ? 'อนุญาตให้ย้ายชุมนุม' : 'ปิดการย้ายชุมนุม', icon: <Layers size={15} className="text-white" />, badge: 'bg-violet-600' },
+            ].map((s, i) => (
+              <div key={i} className="bg-gray-50 dark:bg-white/5 rounded-xl px-3 py-2.5 flex items-center gap-3">
+                <div className={`w-8 h-8 ${s.badge} rounded-lg flex items-center justify-center flex-shrink-0`}>{s.icon}</div>
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-1 leading-none">
+                    <span className="text-xl font-black tabular-nums text-gray-900 dark:text-white">{s.value}</span>
+                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">{s.unit}</span>
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 text-[10px] font-medium truncate mt-0.5">{s.label} · {s.sub}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Global Registration Dates Banner */}
+        {/* ===== REGISTRATION BANNER (compact single row) ===== */}
         {globalStartDate && globalEndDate && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-8 p-4 bg-gradient-to-r from-indigo-50 to-sky-50 dark:from-indigo-950/20 dark:to-sky-950/20 border border-indigo-100/50 dark:border-indigo-900/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            className="mb-3 flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-700/40 rounded-xl px-3.5 py-2.5"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                <Calendar size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-black text-indigo-950 dark:text-indigo-200">ช่วงเวลาสมัครลงทะเบียนกิจกรรมชุมนุม</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  ระบบจะเปิดให้นักเรียนเลือกลงทะเบียนชุมนุมตามช่วงเวลาที่กำหนดนี้เท่านั้น
-                </p>
-              </div>
+            <div className="flex items-center gap-2.5">
+              <Calendar size={15} className="text-amber-500 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-200">ช่วงเวลาลงทะเบียนชุมนุม</p>
             </div>
-            <div className="flex items-center gap-3 text-xs sm:text-sm font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-[#1a1b22] px-4 py-2 rounded-xl border border-indigo-100/50 dark:border-indigo-900/30 shadow-sm">
-              <span>{new Date(globalStartDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-              <ArrowRight size={14} className="text-indigo-400" />
-              <span>{new Date(globalEndDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap">
+              <span>{new Date(globalStartDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</span>
+              <ArrowRight size={12} className="text-amber-400" />
+              <span>{new Date(globalEndDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </div>
           </motion.div>
         )}
 
-        {/* Statistics Cards Dashboard */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
-          {[
-            {
-              title: 'ชุมนุมทั้งหมด',
-              value: stats.totalClubs,
-              unit: 'ชุมนุม',
-              desc: `เปิดรับสมัครอยู่ ${stats.openClubs} ชุมนุม`,
-              icon: <Compass size={22} className="text-indigo-500" />,
-              bg: 'from-indigo-500/5 to-indigo-500/0',
-              border: 'hover:border-indigo-500/30'
-            },
-            {
-              title: 'สมาชิกลงทะเบียนแล้ว',
-              value: stats.totalMembers,
-              unit: 'คน',
-              desc: `ความจุทั้งหมด ${stats.totalCapacity} ที่นั่ง`,
-              icon: <Users size={22} className="text-violet-500" />,
-              bg: 'from-violet-500/5 to-violet-500/0',
-              border: 'hover:border-violet-500/30'
-            },
-            {
-              title: 'ที่นั่งว่างคงเหลือ',
-              value: stats.remainingSeats,
-              unit: 'ที่นั่ง',
-              desc: `คิดเป็น ${stats.totalCapacity > 0 ? Math.round((stats.remainingSeats / stats.totalCapacity) * 100) : 0}% ของความจุ`,
-              icon: <Sparkles size={22} className="text-emerald-500" />,
-              bg: 'from-emerald-500/5 to-emerald-500/0',
-              border: 'hover:border-emerald-500/30'
-            },
-            {
-              title: 'อัตราการเข้าร่วม',
-              value: stats.totalCapacity > 0 ? Math.round((stats.totalMembers / stats.totalCapacity) * 100) : 0,
-              unit: '%',
-              desc: allowTransfer ? 'อนุญาตให้นักเรียนย้ายชุมนุม' : 'ปิดการย้ายชุมนุมชั่วคราว',
-              icon: <Layers size={22} className="text-sky-500" />,
-              bg: 'from-sky-500/5 to-sky-500/0',
-              border: 'hover:border-sky-500/30'
-            }
-          ].map((card, idx) => (
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              key={idx}
-              className={`bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden flex flex-col justify-between group ${card.border}`}
-            >
-              <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-b ${card.bg} rounded-bl-full -mr-8 -mt-8 -z-0 transition-all duration-300 group-hover:scale-110`} />
-              
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-wider">{card.title}</span>
-                  <div className="w-9 h-9 rounded-xl bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center shadow-inner">
-                    {card.icon}
-                  </div>
-                </div>
-                
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl sm:text-3xl font-black tracking-tight tabular-nums">{card.value}</span>
-                  <span className="text-xs sm:text-sm font-extrabold text-gray-400">{card.unit}</span>
-                </div>
-              </div>
-              
-              <div className="relative z-10 border-t border-gray-50 dark:border-gray-800/40 mt-4 pt-3 text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 line-clamp-1">
-                {card.desc}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Filter Controls Row */}
-        <div className="bg-white dark:bg-[#1a1b22] rounded-3xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm mb-8">
-          <div className="flex items-center gap-2 mb-4 border-b border-gray-50 dark:border-gray-800 pb-3">
-            <Filter size={16} className="text-indigo-500" />
-            <h3 className="text-sm font-black text-gray-500 dark:text-gray-400">ตัวกรองและการค้นหาข้อมูล</h3>
+        {/* ===== FILTER BAR ===== */}
+        <div className="bg-white dark:bg-[#2a2b2f]/70 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-gray-200/60 dark:border-white/5 mb-4 flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input
+              type="text"
+              placeholder="ค้นหาชุมนุม..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/8 rounded-lg focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-500/40 outline-none text-sm font-medium text-gray-800 dark:text-gray-200 placeholder:text-gray-400 transition-all"
+            />
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            {/* Search Input */}
+          <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อ หรือรายละเอียดชุมนุม..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs sm:text-sm font-semibold"
-              />
-            </div>
-
-            {/* Allowed Class Filter */}
-            <div className="relative">
-              <select
-                value={selectedLevelFilter}
-                onChange={(e) => setSelectedLevelFilter(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
+              <select value={selectedLevelFilter} onChange={(e) => setSelectedLevelFilter(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/8 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500/30 outline-none cursor-pointer"
               >
-                <option value="all">ระดับชั้นที่รับสมัคร: ทั้งหมด</option>
-                <option value="junior">เฉพาะระดับ มัธยมศึกษาตอนต้น</option>
-                <option value="senior">เฉพาะระดับ มัธยมศึกษาตอนปลาย</option>
-                <option disabled className="text-gray-400">--- รายระดับชั้น ---</option>
-                <option value="ม.1">มัธยมศึกษาปีที่ 1</option>
-                <option value="ม.2">มัธยมศึกษาปีที่ 2</option>
-                <option value="ม.3">มัธยมศึกษาปีที่ 3</option>
-                <option value="ม.4">มัธยมศึกษาปีที่ 4</option>
-                <option value="ม.5">มัธยมศึกษาปีที่ 5</option>
-                <option value="ม.6">มัธยมศึกษาปีที่ 6</option>
+                <option value="all">ระดับชั้น: ทั้งหมด</option>
+                <option value="junior">ม.ต้น (ม.1–3)</option>
+                <option value="senior">ม.ปลาย (ม.4–6)</option>
+                <option disabled>──────</option>
+                <option value="ม.1">ม.1</option><option value="ม.2">ม.2</option><option value="ม.3">ม.3</option>
+                <option value="ม.4">ม.4</option><option value="ม.5">ม.5</option><option value="ม.6">ม.6</option>
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
-                <ChevronRight size={14} className="rotate-90" />
-              </div>
+              <ChevronRight size={12} className="rotate-90 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
-
-            {/* Responsible Teacher Filter */}
             <div className="relative">
-              <select
-                value={selectedTeacherFilter}
-                onChange={(e) => setSelectedTeacherFilter(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
+              <select value={selectedTeacherFilter} onChange={(e) => setSelectedTeacherFilter(e.target.value)}
+                className="appearance-none pl-3 pr-7 py-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/8 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500/30 outline-none cursor-pointer"
               >
-                <option value="all">ครูผู้ดูแลชุมนุม: ทั้งหมด</option>
+                <option value="all">ครูผู้ดูแล: ทั้งหมด</option>
                 {teachersList.map((teacher: any) => {
                   const teacherName = teacher.name || `${teacher.title || ''}${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
-                  return (
-                    <option key={teacher.id} value={teacher.id}>{teacherName}</option>
-                  );
+                  return <option key={teacher.id} value={teacher.id}>{teacherName}</option>;
                 })}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
-                <ChevronRight size={14} className="rotate-90" />
-              </div>
+              <ChevronRight size={12} className="rotate-90 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
-
-            {/* Registration Status Filter */}
-            <div className="relative">
-              <select
-                value={selectedStatusFilter}
-                onChange={(e) => setSelectedStatusFilter(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 rounded-2xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-xs sm:text-sm font-semibold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
-              >
-                <option value="all">สถานะลงทะเบียน: ทั้งหมด</option>
-                <option value="open">เปิดรับสมัคร (มีที่ว่าง)</option>
-                <option value="full">เต็มแล้ว (ความจุเต็ม)</option>
-                <option value="closed">ปิดรับสมัคร</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
-                <ChevronRight size={14} className="rotate-90" />
-              </div>
+            <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-white/5 rounded-lg p-0.5">
+              {[
+                { value: 'all', label: 'ทั้งหมด' },
+                { value: 'open', label: 'เปิด', dot: 'bg-emerald-500' },
+                { value: 'full', label: 'เต็ม', dot: 'bg-rose-500' },
+                { value: 'closed', label: 'ปิด', dot: 'bg-slate-400' },
+              ].map((s) => (
+                <button key={s.value} onClick={() => setSelectedStatusFilter(s.value)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all whitespace-nowrap ${selectedStatusFilter === s.value ? 'bg-indigo-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                >
+                  {s.dot && <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />}{s.label}
+                </button>
+              ))}
             </div>
-
+            {(searchTerm || selectedLevelFilter !== 'all' || selectedTeacherFilter !== 'all' || selectedStatusFilter !== 'all') && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                <span className="font-black text-indigo-600 dark:text-indigo-400">{filteredClubs.length}</span>/{clubs.length}
+                <button onClick={() => { setSearchTerm(''); setSelectedLevelFilter('all'); setSelectedTeacherFilter('all'); setSelectedStatusFilter('all'); }} className="ml-2 text-rose-400 hover:text-rose-500 font-bold">ล้าง</button>
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Club Grid Section */}
+        {/* ===== CLUB GRID ===== */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[...Array(6)].map((_, idx) => (
-              <div key={idx} className="bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800 rounded-3xl p-6 h-72 animate-pulse flex flex-col justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-gray-200 dark:bg-gray-800" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded-md w-2/3" />
-                    <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded-md w-1/2" />
-                  </div>
+              <div key={idx} className="bg-white dark:bg-[#2a2b2f]/60 border border-gray-200/50 dark:border-white/5 rounded-2xl overflow-hidden animate-pulse">
+                <div className="h-24 bg-gray-100 dark:bg-white/5" />
+                <div className="p-5 space-y-3">
+                  <div className="h-4 bg-gray-100 dark:bg-white/5 rounded-lg w-3/4" />
+                  <div className="h-3 bg-gray-100 dark:bg-white/5 rounded-lg w-full" />
+                  <div className="h-3 bg-gray-100 dark:bg-white/5 rounded-lg w-2/3" />
+                  <div className="h-2 bg-gray-100 dark:bg-white/5 rounded-full mt-4" />
+                  <div className="h-9 bg-gray-100 dark:bg-white/5 rounded-xl" />
                 </div>
-                <div className="space-y-2">
-                  <div className="h-2 bg-gray-200 dark:bg-gray-800 rounded-full" />
-                  <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded-md w-1/4" />
-                </div>
-                <div className="h-10 bg-gray-200 dark:bg-gray-800 rounded-xl" />
               </div>
             ))}
           </div>
         ) : filteredClubs.length === 0 ? (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-[#1a1b22] border border-dashed border-gray-200 dark:border-gray-800 rounded-3xl p-16 text-center shadow-sm"
+            className="bg-white dark:bg-[#2a2b2f]/60 border border-dashed border-gray-200 dark:border-white/10 rounded-2xl py-20 text-center"
           >
-            <Compass className="mx-auto text-gray-300 dark:text-gray-700 mb-4 animate-bounce-slow" size={64} />
-            <h3 className="text-lg font-black text-gray-700 dark:text-gray-300">ไม่พบรายชื่อกิจกรรมชุมนุม</h3>
-            <p className="text-gray-400 text-xs sm:text-sm mt-1 max-w-sm mx-auto font-medium">
-              ไม่พบข้อมูลชุมนุมตามที่ค้นหาหรือไม่มีข้อมูลการกรอง ลองปรับปรุงเงื่อนไขตัวกรองของคุณหรือล้างการค้นหา
+            <div className="w-16 h-16 bg-gray-100 dark:bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Compass size={32} className="text-gray-300 dark:text-gray-600" />
+            </div>
+            <h3 className="text-base font-black text-gray-600 dark:text-gray-300">ไม่พบรายชื่อกิจกรรมชุมนุม</h3>
+            <p className="text-gray-400 text-xs mt-1.5 max-w-xs mx-auto font-medium">
+              ลองปรับเงื่อนไขตัวกรองหรือล้างการค้นหา
             </p>
             <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedLevelFilter('all');
-                setSelectedTeacherFilter('all');
-                setSelectedStatusFilter('all');
-              }}
-              className="mt-5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-5 py-2 rounded-2xl font-bold text-xs transition-all active:scale-95"
+              onClick={() => { setSearchTerm(''); setSelectedLevelFilter('all'); setSelectedTeacherFilter('all'); setSelectedStatusFilter('all'); }}
+              className="mt-5 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-all active:scale-95"
             >
-              ล้างค่าตัวกรองทั้งหมด
+              ล้างตัวกรองทั้งหมด
             </button>
           </motion.div>
         ) : (
-          <motion.div
-            layout
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
+          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <AnimatePresence mode="popLayout">
               {filteredClubs.map((club, idx) => {
                 const status = getClubStatus(club);
                 const percent = Math.min(100, Math.round(((club.memberCount || 0) / (club.capacity || 40)) * 100));
-                
-                // Dynamic colors for progress bar based on capacity level
-                let progressColor = 'bg-gradient-to-r from-blue-500 to-indigo-500';
-                if (percent >= 100) {
-                  progressColor = 'bg-gradient-to-r from-rose-500 to-red-500';
-                } else if (percent >= 85) {
-                  progressColor = 'bg-gradient-to-r from-amber-500 to-orange-500';
-                } else if (percent >= 50) {
-                  progressColor = 'bg-gradient-to-r from-emerald-500 to-teal-500';
-                }
+
+                let progressColor = 'bg-gradient-to-r from-indigo-500 to-blue-500';
+                if (percent >= 100) progressColor = 'bg-gradient-to-r from-rose-500 to-red-500';
+                else if (percent >= 85) progressColor = 'bg-gradient-to-r from-amber-500 to-orange-400';
+                else if (percent >= 50) progressColor = 'bg-gradient-to-r from-emerald-500 to-teal-400';
+
+                const accentColors = [
+                  { card: 'from-indigo-500/20 to-indigo-600/5', icon: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
+                  { card: 'from-violet-500/20 to-violet-600/5', icon: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
+                  { card: 'from-emerald-500/20 to-emerald-600/5', icon: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+                  { card: 'from-amber-500/20 to-amber-600/5', icon: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+                  { card: 'from-rose-500/20 to-rose-600/5', icon: 'bg-rose-500/20 text-rose-400 border-rose-500/30' },
+                  { card: 'from-sky-500/20 to-sky-600/5', icon: 'bg-sky-500/20 text-sky-400 border-sky-500/30' },
+                ];
+                let sum = 0;
+                for (let i = 0; i < club.id.length; i++) sum += club.id.charCodeAt(i);
+                const accent = accentColors[sum % accentColors.length];
+                const IconComp = [Users, Layers, Sparkles, Compass, BookOpen, Clock][sum % 6];
 
                 return (
                   <motion.div
                     layout
-                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    transition={{ duration: 0.35, delay: idx * 0.02 }}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 16 }}
+                    transition={{ duration: 0.25, delay: idx * 0.03 }}
                     key={club.id}
                     onClick={() => navigate(`/academic/club-list/${club.id}`)}
-                    className="bg-white dark:bg-[#1a1b22] border border-gray-100 dark:border-gray-800/80 rounded-[32px] shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between overflow-hidden group relative cursor-pointer active:scale-[0.99] select-none"
+                    className="bg-white dark:bg-[#2a2b2f]/70 border border-gray-200/60 dark:border-white/5 rounded-xl overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer active:scale-[0.99] select-none group"
                   >
-                    {/* Cover Header and category graphics matching mockup */}
-                    <div className="relative h-28 overflow-hidden bg-gray-50 dark:bg-gray-850/50 flex-shrink-0 flex items-center justify-center">
-                      <div className={`absolute inset-0 bg-gradient-to-b ${getGradientByCode(club.id)} transition-all duration-300 group-hover:scale-105`} />
-                      
-                      {/* Floating Category Badge (Top-Left) */}
-                      <div className="absolute top-4 left-4 z-10">
-                        <span className="px-3 py-1 bg-white/95 dark:bg-[#1a1b22]/95 border border-white/20 shadow-sm rounded-full text-[10px] font-black text-gray-700 dark:text-indigo-300">
-                          {formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo) || 'ทุกระดับชั้น'}
-                        </span>
-                      </div>
-
-                      {/* Floating Registration Status Badge (Top-Right) */}
-                      <div className="absolute top-4 right-4 z-10">
-                        <span className={`px-3 py-1 text-[10px] font-black rounded-full backdrop-blur-md flex items-center gap-1.5 shadow-sm ${status.bg} ${status.color}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-                          {status.text}
-                        </span>
-                      </div>
-
-                      {/* Center Floating Custom Icon Container */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-md relative z-10 border transition-all duration-300 group-hover:scale-110 ${getAccentColor(club.id)}`}>
-                          {getCategoryIcon(club.id)}
+                    <div className={`h-1 bg-gradient-to-r ${accent.card} w-full`} />
+                    <div className="p-4">
+                      {/* Header row */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${accent.icon}`}>
+                          <IconComp size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-black text-gray-900 dark:text-white text-sm leading-tight line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                            {club.name}
+                          </h3>
+                          <p className="text-[11px] text-gray-400 font-medium line-clamp-1 mt-0.5">
+                            {club.description || `กิจกรรมชุมนุม ${club.name}`}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black ${status.bg} ${status.color}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />{status.text}
+                          </span>
+                          <ChevronRight size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 transition-colors" />
                         </div>
                       </div>
-                    </div>
 
-                    {/* Content Body */}
-                    <div className="p-6 pt-5 flex-1 flex flex-col justify-between">
-                      <div>
-                        {/* Club Title - Highlighted on hover with dynamic accent */}
-                        <h3 className="font-extrabold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors text-base line-clamp-1 mb-1">
-                          {club.name}
-                        </h3>
-                        {/* Club Description - Left-aligned */}
-                        <p className="text-[11px] sm:text-xs text-gray-400 dark:text-gray-400 line-clamp-2 leading-relaxed font-semibold mb-5 h-8">
-                          {club.description || `กิจกรรมชุมนุม ${club.name}`}
-                        </p>
+                      {/* Capacity bar */}
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-semibold text-gray-400 flex items-center gap-1"><Users size={10} /> สมาชิก</span>
+                          <span className="text-[10px] font-black text-gray-600 dark:text-gray-300 tabular-nums">{club.memberCount || 0}/{club.capacity || 40} คน ({percent}%)</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${percent}%` }}
+                            transition={{ duration: 0.5, delay: idx * 0.04 }}
+                            className={`h-full rounded-full ${progressColor}`}
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-4">
-                        {/* Members Capacity Section */}
-                        <div>
-                          <div className="flex items-center justify-between text-[11px] font-black text-gray-500 dark:text-gray-400 mb-1.5">
-                            <span className="flex items-center gap-1">
-                              <Users size={12} className="text-gray-400" />
-                              จำนวนสมาชิกร่วมชุมนุม
-                            </span>
-                            <span className="tabular-nums font-black text-gray-700 dark:text-gray-200">
-                              {club.memberCount || 0} / {club.capacity || 40} คน ({percent}%)
-                            </span>
-                          </div>
-                          {/* Sleek Dynamic Progress Bar */}
-                          <div className="w-full h-1.5 bg-gray-50 dark:bg-gray-800 rounded-full overflow-hidden shadow-inner flex border border-gray-100/30 dark:border-gray-800">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${percent}%` }}
-                              transition={{ duration: 0.5, delay: idx * 0.05 }}
-                              className={`h-full rounded-full transition-all duration-300 ${progressColor}`}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Learning Time Period Pill (Full Width) */}
-                        <div className="flex items-center justify-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100/50 dark:border-indigo-900/30 px-3 py-2.5 rounded-full w-full">
-                          <Clock size={14} className="text-indigo-500" />
-                          <span className="truncate">
-                            {club.specialPeriodTitle
-                              ? `ชุมนุม (${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || ''} - ${club.specialPeriodEndTime || ''})`
-                              : 'ชุมนุม (ยังไม่กำหนดช่วงคาบเรียน)'}
+                      {/* Meta row */}
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-gray-400 min-w-0">
+                          <Clock size={11} className="text-indigo-400 flex-shrink-0" />
+                          <span className="truncate font-medium">
+                            {club.specialPeriodTitle ? `${formatSpecialPeriodDay(club.specialPeriodDay)} ${club.specialPeriodStartTime || ''} – ${club.specialPeriodEndTime || ''}` : 'ยังไม่กำหนดคาบเรียน'}
                           </span>
                         </div>
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-50 dark:bg-white/5 rounded-md px-1.5 py-0.5 border border-gray-100 dark:border-white/5 flex-shrink-0">
+                          {formatClassLevelRange(club.allowedClassLevelFrom, club.allowedClassLevelTo) || 'ทุกระดับ'}
+                        </span>
+                      </div>
 
-                        {/* Subtle Footer for Responsible Teacher and arrow */}
-                        <div className="border-t border-gray-50 dark:border-gray-850/40 pt-4 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-[11px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider flex-shrink-0">
-                              ครูผู้ดูแล:
-                            </span>
-                            <span className="text-[11px] font-bold text-gray-650 dark:text-gray-300 truncate">
-                              {(club.responsibleTeacherIds || []).length > 0 ? (
-                                <>
-                                  {teacherMap?.[club.responsibleTeacherIds[0]]?.name || 'ครูผู้ดูแล'}
-                                  {(club.responsibleTeacherIds || []).length > 1 && ` (+${club.responsibleTeacherIds.length - 1})`}
-                                </>
-                              ) : (
-                                <span className="italic text-gray-400 text-[10px]">ยังไม่ระบุครูผู้ดูแล</span>
-                              )}
-                            </span>
-                          </div>
-                          
-                          {/* Tiny subtle indicator arrow */}
-                          <div className="w-7 h-7 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 dark:group-hover:bg-indigo-500/10 dark:group-hover:text-indigo-400 transition-all">
-                            <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-                          </div>
-                        </div>
+                      {/* Teacher */}
+                      <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+                        <span className="text-gray-400 font-medium flex-shrink-0">ครูผู้ดูแล:</span>
+                        <span className="font-bold text-gray-700 dark:text-gray-300 truncate">
+                          {(club.responsibleTeacherIds || []).length > 0 ? (
+                            <>{teacherMap?.[club.responsibleTeacherIds[0]]?.name || 'ครูผู้ดูแล'}{club.responsibleTeacherIds.length > 1 && ` +${club.responsibleTeacherIds.length - 1}`}</>
+                          ) : <span className="italic text-gray-400">ยังไม่ระบุ</span>}
+                        </span>
                       </div>
                     </div>
                   </motion.div>

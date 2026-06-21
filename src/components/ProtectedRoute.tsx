@@ -41,10 +41,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   let effectiveRoles: string[] | undefined = allowedRoles;
   let effectiveDepts: string[] = [];
   let effectiveSpecialRoles: string[] = [];
+  let effectivePersonnelTypes: string[] = [];
   if (matchedEntry) {
     effectiveRoles = matchedEntry.allowedRoles;
     effectiveDepts = matchedEntry.allowedDepartments;
     effectiveSpecialRoles = matchedEntry.allowedSpecialRoles;
+    effectivePersonnelTypes = matchedEntry.allowedPersonnelTypes ?? [];
   }
 
   useEffect(() => {
@@ -167,8 +169,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     const hasSpecialRoleAccess = effectiveSpecialRoles.length > 0 &&
       effectiveSpecialRoles.some(sr => (user as unknown as Record<string, unknown>)[sr] === true);
 
-    if (!hasRoleAccess && !hasDeptAccess && !hasSpecialRoleAccess) {
-      console.warn(`Access denied. Required: roles=${effectiveRoles}, depts=${effectiveDepts}, specialRoles=${effectiveSpecialRoles}. User: roles=${userRoles}, dept=${user.department}`);
+    const hasPersonnelTypeAccess = effectivePersonnelTypes.length > 0 &&
+      !!(user as unknown as Record<string, unknown>).personnelType &&
+      effectivePersonnelTypes.includes((user as unknown as Record<string, unknown>).personnelType as string);
+
+    if (!hasRoleAccess && !hasDeptAccess && !hasSpecialRoleAccess && !hasPersonnelTypeAccess) {
+      console.warn(`Access denied. Required: roles=${effectiveRoles}, depts=${effectiveDepts}, specialRoles=${effectiveSpecialRoles}, personnelTypes=${effectivePersonnelTypes}. User: roles=${userRoles}, dept=${user.department}`);
       return <Navigate to="/home" replace />;
     }
   }

@@ -558,32 +558,63 @@ const GuidanceAttendancePage: React.FC = () => {
         <div className={`${isPwaMode ? 'max-w-full' : 'max-w-7xl'} mx-auto min-w-0 ${isPwaMode ? 'space-y-4' : 'space-y-6'}`}>
           
           {/* Top Header Card with Back Button */}
-          {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
-          
-          <div className={`flex ${isPwaMode ? 'flex-col p-4 rounded-2xl gap-3' : 'flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl'} bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-800 shadow-xl text-white`}>
-            <div className="flex items-center gap-4">
-              {isPwaMode && <BackButton to="/academic/hub/attendance" className="text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl" />}
-              <div>
-                <h1 className={`font-extrabold tracking-tight flex items-center gap-2 ${isPwaMode ? 'text-lg' : 'text-2xl sm:text-3xl'}`}>
-                  <BookOpen className={isPwaMode ? 'h-5 w-5' : 'h-8 w-8'} />
-                  ระบบเช็คชื่อแนะแนว
-                </h1>
-                <p className={`text-indigo-100 font-medium ${isPwaMode ? 'text-xs mt-0.5' : 'text-sm sm:text-base mt-1'}`}>
-                  ปีการศึกษา {activeAcademicYear} | ภาคเรียนที่ {activeSemester}
-                </p>
+          {isPwaMode ? (
+            <div className="mb-3 space-y-1.5">
+              <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm px-3 py-2 rounded-xl border border-gray-200/50 dark:border-white/5">
+                <BackButton to="/academic/hub/attendance" />
+                <div className="p-1 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg shrink-0">
+                  <BookOpen className="text-indigo-600 dark:text-indigo-400" size={14} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-black text-gray-900 dark:text-white leading-none truncate">เช็คชื่อแนะแนว</p>
+                  <p className="text-[9px] text-indigo-500 dark:text-indigo-400 font-semibold truncate mt-0.5">ปีการศึกษา {activeAcademicYear}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0 text-[10px] font-black text-gray-900 dark:text-white bg-gray-100 dark:bg-white/5 rounded-lg px-2 py-1">
+                  <span className="text-gray-400 font-normal text-[9px]">เทอม</span>
+                  <span>{activeSemester || '...'}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-white dark:bg-[#1a1b1e] rounded-xl border border-gray-100 dark:border-gray-800 px-3 py-2">
+                <Calendar size={12} className="text-indigo-500/70 shrink-0" />
+                <input
+                  type="date"
+                  value={toIsoDate(currentDate)}
+                  onChange={(e) => setCurrentDate(new Date(e.target.value))}
+                  className="flex-1 bg-transparent text-gray-800 dark:text-gray-100 focus:outline-none font-black text-[11px]"
+                />
               </div>
             </div>
-            
-            <div className={`flex items-center gap-2 self-start ${isPwaMode ? 'w-full justify-between' : 'sm:self-center'} bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-inner`}>
-              <Calendar className="h-5 w-5 text-indigo-200" />
-              <input
-                type="date"
-                value={toIsoDate(currentDate)}
-                onChange={(e) => setCurrentDate(new Date(e.target.value))}
-                className="bg-transparent text-white focus:outline-none font-bold text-sm"
-              />
+          ) : (
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
+              <div className="space-y-1 text-left">
+                <div className="flex items-center gap-3">
+                  <BackButton to="/academic/hub/attendance" />
+                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
+                    <BookOpen className="text-indigo-600 dark:text-indigo-400" size={24} />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
+                      ระบบเช็คชื่อแนะแนว
+                    </h1>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs font-bold flex items-center gap-1.5 pt-0.5">
+                      <span className="opacity-60">ปีการศึกษา {activeAcademicYear || '...'}</span>
+                      <span className="opacity-30">·</span>
+                      <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">ภาคเรียนที่ {activeSemester || '...'}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-white dark:bg-[#1a1b1e] p-2 px-4 rounded-xl shadow-lg shadow-indigo-500/5 border border-gray-100 dark:border-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/30">
+                <Calendar size={16} className="text-indigo-500/70" />
+                <input
+                  type="date"
+                  value={toIsoDate(currentDate)}
+                  onChange={(e) => setCurrentDate(new Date(e.target.value))}
+                  className="bg-transparent text-gray-800 dark:text-gray-100 focus:outline-none font-black text-xs"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
         {/* Holiday Warning Banner */}
         {isHoliday && (

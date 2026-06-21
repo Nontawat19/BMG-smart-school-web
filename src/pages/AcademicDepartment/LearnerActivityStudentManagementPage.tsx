@@ -3,13 +3,26 @@ import BackButton from '@/components/Shared/BackButton';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore as db } from '@/firebase';
 import { RootState } from '@/store';
+import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
-import { collection, doc, getDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
-import { getClassOptionsBySchoolSettings } from '@/utils/schoolUtils';
-import { BookOpenCheck, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, RefreshCw, Save, Search, Users } from 'lucide-react';
+import { CLASS_MAPPING, getClassOptionsBySchoolSettings } from '@/utils/schoolUtils';
+import { isStudyingStudent } from '@/utils/studentStatusUtils';
+import {
+  BookOpenCheck, Check, ChevronLeft, ChevronRight, ClipboardList,
+  RefreshCw, Save, Search, Trash2, Users, X,
+} from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
+import { formatSemesterLabel, normalizeSemesterValue, semestersOverlap } from '@/utils/semesterUtils';
+import {
+  LearnerActivityTeacherScope,
+  buildLearnerActivityMemberDocId,
+  deriveTeacherScopesFromCourse,
+  formatTeacherScopeLabel,
+  scopeIncludesTeacher,
+} from '@/utils/learnerActivityUtils';
 
 interface LearnerActivity {
   id: string;
@@ -17,10 +30,16 @@ interface LearnerActivity {
   courseCode?: string;
   name: string;
   description?: string;
-  subjectGroup?: string;
   semester?: string | number;
   classId?: string | string[];
   responsibleTeacherIds?: string[];
+  teacherScopes?: LearnerActivityTeacherScope[];
+}
+
+interface Course {
+  id: string;
+  classId?: string | string[];
+  teacherAssignments?: any[];
 }
 
 interface Student {
@@ -42,64 +61,93 @@ interface SchoolSettings {
   opportunityExpansionLevel?: string;
 }
 
-const normalizeSemester = (semester?: string | number) => String(semester ?? '').trim() || '0';
-
-const formatSemester = (semester?: string | number) => {
-  const normalized = normalizeSemester(semester);
-  return normalized === '0' ? 'ทั้งสองภาคเรียน' : normalized;
+const getLevelLabel = (id?: string): string => {
+  const map: Record<string, string> = {
+    k1: 'อ.1', k2: 'อ.2', k3: 'อ.3',
+    p1: 'ป.1', p2: 'ป.2', p3: 'ป.3', p4: 'ป.4', p5: 'ป.5', p6: 'ป.6',
+    m1: 'ม.1', m2: 'ม.2', m3: 'ม.3', m4: 'ม.4', m5: 'ม.5', m6: 'ม.6',
+  };
+  return map[String(id || '').toLowerCase()] || id || '';
 };
 
-const semesterOverlaps = (a?: string | number, b?: string | number) => {
-  const first = normalizeSemester(a);
-  const second = normalizeSemester(b);
-  return first === second || first === '0' || second === '0';
-};
-
-const isActiveStudent = (student: Student) => {
-  const status = String(student.status || 'กำลังศึกษาอยู่').trim();
-  return !['ย้าย', 'ลาออก', 'จำหน่าย', 'สำเร็จการศึกษา', 'ศิษย์เก่า'].includes(status);
-};
 
 const sortStudents = (a: Student, b: Student) => {
-  const classCompare = String(a.classLevel || '').localeCompare(String(b.classLevel || ''), 'th', { numeric: true });
-  if (classCompare !== 0) return classCompare;
-  const roomCompare = String(a.room || '').localeCompare(String(b.room || ''), 'th', { numeric: true });
-  if (roomCompare !== 0) return roomCompare;
-  return (Number(a.studentNumber || a.number || 0) || 0) - (Number(b.studentNumber || b.number || 0) || 0);
+  const cl = String(a.classLevel || '').localeCompare(String(b.classLevel || ''), 'th', { numeric: true });
+  if (cl !== 0) return cl;
+  const rl = String(a.room || '').localeCompare(String(b.room || ''), 'th', { numeric: true });
+  if (rl !== 0) return rl;
+  return (Number(a.studentNumber || a.number || 0)) - (Number(b.studentNumber || b.number || 0));
 };
 
-const getVisiblePages = (currentPage: number, totalPages: number) => {
-  const start = Math.max(1, Math.min(currentPage - 2, Math.max(1, totalPages - 4)));
-  return Array.from({ length: Math.min(5, totalPages) }, (_, index) => start + index);
+const formatSemester = (v?: string | number) => formatSemesterLabel(v);
+const semesterOverlaps = (a?: string | number, b?: string | number) => semestersOverlap(a, b);
+
+const KG_LABELS = ['อ.1', 'อ.2', 'อ.3'];
+const PRIM_LABELS = ['ป.1', 'ป.2', 'ป.3', 'ป.4', 'ป.5', 'ป.6'];
+const JR_LABELS = ['ม.1', 'ม.2', 'ม.3'];
+const SR_LABELS = ['ม.4', 'ม.5', 'ม.6'];
+
+// Expands teacher scope classLevels (keys like 'm1') or group keywords
+// to student classLevel labels (e.g., 'ม.1') for source student filtering
+const expandScopeToStudentLevels = (
+  classLevels: string[],
+  classId?: string | string[]
+): string[] | null => {
+  const process = (raw: string): string[] => {
+    const l = raw.toLowerCase().trim().replace(/[\s._\-]/g, '');
+    if (['มัธยมต้น','มัธยมศึกษาตอนต้น','มต','junior','lowersecondary','ม1ม3','m1m3'].includes(l)) return JR_LABELS;
+    if (['มัธยมปลาย','มัธยมศึกษาตอนปลาย','มป','senior','uppersecondary','ม4ม6','m4m6'].includes(l)) return SR_LABELS;
+    if (['มัธยม','มัธยมศึกษา','secondary','ม1ม6','m1m6'].includes(l)) return [...JR_LABELS, ...SR_LABELS];
+    if (['ประถม','ประถมศึกษา','primary','ป1ป6','p1p6'].includes(l)) return PRIM_LABELS;
+    if (['อนุบาล','ปฐมวัย','kindergarten','อ1อ3','k1k3'].includes(l)) return KG_LABELS;
+    // specific key like m1, p3, k2
+    const label = CLASS_MAPPING[raw] || CLASS_MAPPING[l];
+    if (label) return [label];
+    // already a label like 'ม.1'
+    if (Object.values(CLASS_MAPPING).includes(raw)) return [raw];
+    return [];
+  };
+  const sources = [...classLevels];
+  if (classId) (Array.isArray(classId) ? classId : [classId]).forEach(c => sources.push(String(c)));
+  if (sources.length === 0) return null;
+  const expanded = new Set<string>();
+  sources.forEach(s => process(s).forEach(l => expanded.add(l)));
+  return expanded.size > 0 ? [...expanded] : null;
 };
 
 const LearnerActivityStudentManagementPage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const calendarState = useSelector((state: RootState) => state.calendar);
+  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const dispatch = useDispatch();
 
   const [activities, setActivities] = useState<LearnerActivity[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState('');
+  const [selectedTeacherScopeKey, setSelectedTeacherScopeKey] = useState('');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
-  const [selectedAssignedIds, setSelectedAssignedIds] = useState<string[]>([]);
-  const [selectedAvailableIds, setSelectedAvailableIds] = useState<string[]>([]);
+  const [selectedEnrolledIds, setSelectedEnrolledIds] = useState<string[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [activitySearch, setActivitySearch] = useState('');
-  const [studentSearch, setStudentSearch] = useState('');
+  const [activityClassFilter, setActivityClassFilter] = useState('ALL');
+  const [sourceSearch, setSourceSearch] = useState('');
   const [activeYear, setActiveYear] = useState(String(getCurrentThaiYear()));
   const [selectedClassLevel, setSelectedClassLevel] = useState('ALL');
-  const [selectedRoom, setSelectedRoom] = useState('ALL');
+  const [activeRoom, setActiveRoom] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (schoolId && calendarState.status === 'idle') {
-      dispatch(fetchCalendar(schoolId) as any);
-    }
+    if (schoolId && calendarState.status === 'idle') dispatch(fetchCalendar(schoolId) as any);
   }, [schoolId, calendarState.status, dispatch]);
+
+  useEffect(() => {
+    if (schoolId && teacherMapStatus === 'idle') dispatch(fetchTeachersMap(schoolId) as any);
+  }, [schoolId, teacherMapStatus, dispatch]);
 
   useEffect(() => {
     if (calendarState.academicYear) setActiveYear(calendarState.academicYear);
@@ -110,16 +158,26 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [activitySnap, studentSnap, schoolSnap] = await Promise.all([
-          getDocs(query(collection(db, 'school-settings', schoolId, 'learner-activities'), orderBy('createdAt', 'desc'))),
-          getDocs(query(collection(db, 'school-settings', schoolId, 'students'), orderBy('firstName', 'asc'))),
+        const [activitySnap, courseSnap, studentSnap, schoolSnap] = await Promise.all([
+          getDocs(collection(db, 'school-settings', schoolId, 'learner-activities')),
+          getDocs(collection(db, 'school-settings', schoolId, 'courses')),
+          getDocs(collection(db, 'school-settings', schoolId, 'students')),
           getDoc(doc(db, 'school-settings', schoolId)),
         ]);
-        setActivities(activitySnap.docs.map(d => ({ id: d.id, ...d.data() } as LearnerActivity)));
-        setStudents(studentSnap.docs.map(d => ({ id: d.id, ...d.data() } as Student)).filter(isActiveStudent));
+        setActivities(
+          activitySnap.docs
+            .map(d => ({ id: d.id, ...d.data() } as LearnerActivity))
+            .sort((a, b) => ((b as any).createdAt?.toMillis?.() ?? 0) - ((a as any).createdAt?.toMillis?.() ?? 0))
+        );
+        setCourses(courseSnap.docs.map(d => ({ id: d.id, ...d.data() } as Course)));
+        setStudents(
+          studentSnap.docs
+            .map(d => ({ id: d.id, ...d.data() } as Student))
+            .filter(isStudyingStudent)
+            .sort(sortStudents)
+        );
         setSchoolSettings(schoolSnap.exists() ? (schoolSnap.data() as SchoolSettings) : null);
-      } catch (error) {
-        console.error('Error loading learner activity students page:', error);
+      } catch {
         Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลได้', 'error');
       } finally {
         setLoading(false);
@@ -128,87 +186,126 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
     fetchData();
   }, [schoolId]);
 
-  const selectedActivity = useMemo(
-    () => activities.find(activity => activity.id === selectedActivityId) || null,
-    [activities, selectedActivityId]
+  const selectedActivity = useMemo(() => activities.find(a => a.id === selectedActivityId) || null, [activities, selectedActivityId]);
+  const selectedSemester = normalizeSemesterValue(selectedActivity?.semester);
+  const selectedCourse = useMemo(() => courses.find(c => c.id === selectedActivity?.courseId) || null, [courses, selectedActivity?.courseId]);
+  const teacherScopes = useMemo(
+    () => selectedActivity ? deriveTeacherScopesFromCourse(selectedActivity, selectedCourse, teacherMap as any) : [],
+    [selectedActivity, selectedCourse, teacherMap]
   );
-  const selectedSemester = normalizeSemester(selectedActivity?.semester);
+  const selectedTeacherScope = useMemo(
+    () => teacherScopes.find(s => s.key === selectedTeacherScopeKey) || null,
+    [teacherScopes, selectedTeacherScopeKey]
+  );
 
   const academicYearOptions = useMemo(() => {
     const base = Number(calendarState.academicYear || activeYear || getCurrentThaiYear());
-    return Array.from({ length: 5 }, (_, index) => String(base - index));
+    return Array.from({ length: 5 }, (_, i) => String(base - i));
   }, [calendarState.academicYear, activeYear]);
+
+  const classOptions = useMemo(() => (
+    getClassOptionsBySchoolSettings(schoolSettings?.opportunityExpansionLevel, schoolSettings?.schoolType)
+      .map(([, label]) => label)
+  ), [schoolSettings]);
+
+  const levelOrder = ['k1','k2','k3','p1','p2','p3','p4','p5','p6','m1','m2','m3','m4','m5','m6'];
+
+  const availableActivityClassLevels = useMemo(() => {
+    const set = new Set<string>();
+    activities.forEach(a => {
+      a.teacherScopes?.forEach(s => s.classLevels.forEach(l => set.add(l.toLowerCase())));
+      const ids = Array.isArray(a.classId) ? a.classId : a.classId ? [a.classId] : [];
+      ids.forEach(l => set.add(String(l).toLowerCase()));
+    });
+    return [...set].sort((a, b) => {
+      const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+  }, [activities]);
 
   const filteredActivities = useMemo(() => {
     const term = activitySearch.toLowerCase();
-    return activities.filter(activity => {
-      const text = `${activity.courseCode || ''} ${activity.name || ''} ${activity.description || ''}`.toLowerCase();
-      return !term || text.includes(term);
+    return activities.filter(a => {
+      const text = `${a.courseCode || ''} ${a.name || ''} ${a.description || ''}`.toLowerCase();
+      if (term && !text.includes(term)) return false;
+      if (activityClassFilter !== 'ALL') {
+        const scopeLevels = a.teacherScopes?.flatMap(s => s.classLevels.map(l => l.toLowerCase())) || [];
+        const classIds = (Array.isArray(a.classId) ? a.classId : a.classId ? [a.classId] : []).map(l => String(l).toLowerCase());
+        if (![...scopeLevels, ...classIds].includes(activityClassFilter)) return false;
+      }
+      return true;
     });
-  }, [activities, activitySearch]);
+  }, [activities, activitySearch, activityClassFilter]);
 
-  const assignedStudents = useMemo(() => {
-    const selectedSet = new Set(selectedStudents);
-    return students.filter(student => selectedSet.has(student.id)).sort(sortStudents);
-  }, [students, selectedStudents]);
+  const selectedSet = useMemo(() => new Set(selectedStudents), [selectedStudents]);
 
-  const classOptions = useMemo(() => {
-    return getClassOptionsBySchoolSettings(
-      schoolSettings?.opportunityExpansionLevel,
-      schoolSettings?.schoolType
-    ).map(([, label]) => label);
-  }, [schoolSettings?.opportunityExpansionLevel, schoolSettings?.schoolType]);
+  const enrolledStudents = useMemo(
+    () => students.filter(s => selectedSet.has(s.id)).sort(sortStudents),
+    [students, selectedSet]
+  );
 
-  useEffect(() => {
-    if (selectedClassLevel !== 'ALL' && classOptions.length > 0 && !classOptions.includes(selectedClassLevel)) {
-      setSelectedClassLevel('ALL');
-      setSelectedRoom('ALL');
-    }
-  }, [classOptions, selectedClassLevel]);
+  // Derived from selected activity's teacher scope — pre-filters source students automatically
+  const activityStudentClassLevels = useMemo((): string[] | null => {
+    if (!selectedActivity) return null;
+    const classLevels = selectedTeacherScope?.classLevels || [];
+    return expandScopeToStudentLevels(classLevels, selectedActivity.classId);
+  }, [selectedActivity, selectedTeacherScope]);
 
-  const roomOptions = useMemo(() => {
-    return Array.from(new Set(students
-      .filter(student => selectedClassLevel === 'ALL' || student.classLevel === selectedClassLevel)
-      .map(student => student.room)
-      .filter(Boolean) as string[]))
+  const availableRooms = useMemo(() => {
+    let base = students;
+    if (activityStudentClassLevels) base = base.filter(s => activityStudentClassLevels.includes(s.classLevel || ''));
+    if (selectedClassLevel !== 'ALL') base = base.filter(s => s.classLevel === selectedClassLevel);
+    return Array.from(new Set(base.map(s => s.room).filter(Boolean) as string[]))
       .sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
-  }, [students, selectedClassLevel]);
+  }, [students, selectedClassLevel, activityStudentClassLevels]);
 
-  const availableStudents = useMemo(() => {
-    const selectedSet = new Set(selectedStudents);
-    const term = studentSearch.toLowerCase();
+  const sourceStudents = useMemo(() => {
+    const term = sourceSearch.toLowerCase();
     return students
-      .filter(student => !selectedSet.has(student.id))
-      .filter(student => selectedClassLevel === 'ALL' || student.classLevel === selectedClassLevel)
-      .filter(student => selectedRoom === 'ALL' || String(student.room || '') === selectedRoom)
-      .filter(student => {
-        const text = `${student.studentId || ''} ${student.firstName || ''} ${student.lastName || ''} ${student.classLevel || ''}/${student.room || ''}`.toLowerCase();
-        return !term || text.includes(term);
+      .filter(s => !selectedSet.has(s.id))
+      .filter(s => !activityStudentClassLevels || activityStudentClassLevels.includes(s.classLevel || ''))
+      .filter(s => selectedClassLevel === 'ALL' || s.classLevel === selectedClassLevel)
+      .filter(s => activeRoom === 'ALL' || String(s.room || '') === activeRoom)
+      .filter(s => {
+        if (!term) return true;
+        const text = `${s.studentId || ''} ${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+        return text.includes(term);
       })
       .sort(sortStudents);
-  }, [students, selectedStudents, selectedClassLevel, selectedRoom, studentSearch]);
+  }, [students, selectedSet, selectedClassLevel, activeRoom, sourceSearch, activityStudentClassLevels]);
 
-  const loadMembers = async (activity: LearnerActivity | null, year = activeYear) => {
-    if (!schoolId || !activity) {
-      setSelectedStudents([]);
-      return;
+  useEffect(() => {
+    if (teacherScopes.length === 0) { setSelectedTeacherScopeKey(''); return; }
+    if (!teacherScopes.some(s => s.key === selectedTeacherScopeKey)) {
+      setSelectedTeacherScopeKey(teacherScopes[0].key);
     }
+  }, [teacherScopes, selectedTeacherScopeKey]);
+
+  const loadMembers = async (
+    activity: LearnerActivity | null,
+    year = activeYear,
+    scope: LearnerActivityTeacherScope | null = selectedTeacherScope
+  ) => {
+    if (!schoolId || !activity) { setSelectedStudents([]); return; }
     setMembersLoading(true);
     try {
-      const membersSnap = await getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', activity.id, 'members'));
-      const ids = membersSnap.docs
-        .map(memberDoc => memberDoc.data() as any)
-        .filter(member =>
-          String(member.academicYear || '') === year &&
-          semesterOverlaps(member.semester, activity.semester)
+      const snap = await getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', activity.id, 'members'));
+      const ids = snap.docs
+        .map(d => d.data() as any)
+        .filter(m =>
+          String(m.academicYear || '') === year &&
+          semesterOverlaps(m.semester, activity.semester) &&
+          (!scope ||
+            String(m.teacherScopeKey || '') === scope.key ||
+            scopeIncludesTeacher(scope, m.teacherId) ||
+            (Array.isArray(m.teacherIds) && m.teacherIds.some((id: string) => scope.teacherIds.includes(String(id)))))
         )
-        .map(member => String(member.studentId || ''))
+        .map(m => String(m.studentId || ''))
         .filter(Boolean);
       setSelectedStudents(Array.from(new Set(ids)));
-      setSelectedAssignedIds([]);
-      setSelectedAvailableIds([]);
-    } catch (error) {
-      console.error('Error loading learner activity members:', error);
+      setSelectedEnrolledIds([]);
+      setSelectedSourceIds([]);
+    } catch {
       Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดรายชื่อนักเรียนในกิจกรรมได้', 'error');
     } finally {
       setMembersLoading(false);
@@ -217,242 +314,595 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
 
   const handleActivitySelect = async (activity: LearnerActivity) => {
     setSelectedActivityId(activity.id);
-    await loadMembers(activity);
+    setSelectedTeacherScopeKey('');
+    setSelectedEnrolledIds([]);
+    setSelectedSourceIds([]);
+    setSourceSearch('');
+    await loadMembers(activity, activeYear, null);
   };
 
   useEffect(() => {
-    if (selectedActivity) loadMembers(selectedActivity, activeYear);
-  }, [activeYear]);
+    if (selectedActivity) loadMembers(selectedActivity, activeYear, selectedTeacherScope);
+  }, [activeYear, selectedActivity, selectedTeacherScope]);
 
-  const toggleAssigned = (studentId: string) => {
-    setSelectedAssignedIds(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
+  const enrollSelected = () => {
+    if (!selectedActivity || selectedSourceIds.length === 0) return;
+    setSelectedStudents(prev => Array.from(new Set([...prev, ...selectedSourceIds])));
+    setSelectedSourceIds([]);
   };
 
-  const toggleAvailable = (studentId: string) => {
-    setSelectedAvailableIds(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
+  const unenrollSelected = () => {
+    if (selectedEnrolledIds.length === 0) return;
+    setSelectedStudents(prev => prev.filter(id => !selectedEnrolledIds.includes(id)));
+    setSelectedEnrolledIds([]);
   };
 
-  const addSelectedStudents = () => {
-    setSelectedStudents(prev => Array.from(new Set([...prev, ...selectedAvailableIds])));
-    setSelectedAvailableIds([]);
+  const toggleSelectAllEnrolled = () => {
+    if (selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0) {
+      setSelectedEnrolledIds([]);
+    } else {
+      setSelectedEnrolledIds(enrolledStudents.map(s => s.id));
+    }
   };
 
-  const removeSelectedStudents = () => {
-    setSelectedStudents(prev => prev.filter(id => !selectedAssignedIds.includes(id)));
-    setSelectedAssignedIds([]);
+  const toggleSelectAllSource = () => {
+    if (selectedSourceIds.length === sourceStudents.length && sourceStudents.length > 0) {
+      setSelectedSourceIds([]);
+    } else {
+      setSelectedSourceIds(sourceStudents.map(s => s.id));
+    }
   };
 
   const handleSave = async () => {
     if (!schoolId || !selectedActivity || saving) return;
+    if (teacherScopes.length > 0 && !selectedTeacherScope) {
+      Swal.fire('กรุณาเลือกครูผู้รับผิดชอบ', 'เลือกครูด้านซ้ายก่อนบันทึก', 'warning');
+      return;
+    }
     setSaving(true);
     try {
-      const activitySemester = selectedSemester;
       const membersRef = collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members');
       const existingSnap = await getDocs(membersRef);
       const batch = writeBatch(db);
+      const totalMemberIds = new Set<string>();
+
       existingSnap.docs.forEach(memberDoc => {
         const member = memberDoc.data() as any;
-        if (String(member.academicYear || '') === activeYear && semesterOverlaps(member.semester, activitySemester)) {
+        const matchesScope = selectedTeacherScope
+          ? String(member.teacherScopeKey || '') === selectedTeacherScope.key ||
+            scopeIncludesTeacher(selectedTeacherScope, member.teacherId) ||
+            (Array.isArray(member.teacherIds) && member.teacherIds.some((id: string) => selectedTeacherScope.teacherIds.includes(String(id))))
+          : !member.teacherScopeKey;
+        if (String(member.academicYear || '') === activeYear && semesterOverlaps(member.semester, selectedSemester) && !matchesScope) {
+          const sid = String(member.studentId || '');
+          if (sid) totalMemberIds.add(sid);
+        }
+        if (String(member.academicYear || '') === activeYear && semesterOverlaps(member.semester, selectedSemester) && matchesScope) {
           batch.delete(memberDoc.ref);
         }
       });
+
       selectedStudents.forEach(studentId => {
-        const student = students.find(item => item.id === studentId);
-        const memberDocId = `${activeYear}_${activitySemester}_${studentId}`;
+        totalMemberIds.add(studentId);
+        const student = students.find(s => s.id === studentId);
+        const memberDocId = buildLearnerActivityMemberDocId(activeYear, selectedSemester, selectedTeacherScope?.key || 'legacy', studentId);
         batch.set(doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members', memberDocId), {
           studentId,
           studentName: student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() : '',
           studentCode: student?.studentId || '',
           classLevel: student?.classLevel || '',
           room: student?.room || '',
+          teacherScopeKey: selectedTeacherScope?.key || '',
+          teacherId: selectedTeacherScope?.teacherId || '',
+          teacherIds: selectedTeacherScope?.teacherIds || [],
+          teacherName: selectedTeacherScope ? formatTeacherScopeLabel(selectedTeacherScope, teacherMap as any) : '',
+          targetClassLevels: selectedTeacherScope?.classLevels || [],
+          targetRoomIds: selectedTeacherScope?.roomIds || [],
+          groupNumber: selectedTeacherScope?.groupNumber || null,
           academicYear: activeYear,
-          semester: activitySemester,
+          semester: selectedSemester,
           addedAt: serverTimestamp(),
           addedBy: (currentUser as any)?.uid || '',
         });
       });
+
       batch.update(doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id), {
-        memberCountByYear: { [activeYear]: selectedStudents.length },
+        memberCountByYear: { [activeYear]: totalMemberIds.size },
         updatedAt: serverTimestamp(),
       });
       await batch.commit();
       Swal.fire({ icon: 'success', title: 'บันทึกรายชื่อนักเรียนสำเร็จ', timer: 1400, showConfirmButton: false });
-    } catch (error) {
-      console.error('Error saving learner activity members:', error);
+    } catch {
       Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกรายชื่อนักเรียนได้', 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-slate-50 dark:bg-[#0b0e14]">
+        <RefreshCw className="mb-4 animate-spin text-emerald-500" size={36} />
+        <p className="font-bold text-slate-400">กำลังโหลดระบบ...</p>
+      </div>
+    );
+  }
+
   return (
     <MainLayout>
-      <div className="min-h-screen p-4 sm:p-8 text-gray-900 dark:text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <BackButton to="/academic/hub/activities" className="mb-3" />
-              <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-black">
-                <BookOpenCheck className="text-emerald-500" size={32} />
-                จัดรายชื่อนักเรียนกิจกรรมพัฒนาผู้เรียน
-              </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">เลือกปีการศึกษา ชั้น ห้อง และย้ายนักเรียนเข้าออกกิจกรรม</p>
+      <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-slate-50 text-black dark:bg-[#0b0e14] dark:text-white select-none transition-colors">
+
+        {/* ══════════ HEADER ══════════ */}
+        <header className="flex shrink-0 items-center justify-between border-b-2 border-emerald-500/30 bg-slate-100 pl-16 pr-4 py-3 shadow-lg dark:bg-[#11141d] z-30">
+          <div className="flex items-center gap-4">
+            <BackButton to="/academic/hub/activities" />
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-emerald-600 p-2 shadow-lg shadow-emerald-600/30">
+                <BookOpenCheck size={18} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-base font-black leading-none">จัดรายชื่อนักเรียนกิจกรรมพัฒนาผู้เรียน</h1>
+                <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">
+                  เลือกกิจกรรม → กำหนดนักเรียน → บันทึก
+                </p>
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Year + Class filter */}
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1 shadow-inner dark:border-white/5 dark:bg-white/5">
+              <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">ปีการศึกษา</span>
+              <select
+                value={activeYear}
+                onChange={e => setActiveYear(e.target.value)}
+                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white"
+              >
+                {academicYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <span className="mx-1 text-slate-300 dark:text-white/10">|</span>
+              <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">ชั้น</span>
+              <select
+                value={selectedClassLevel}
+                onChange={e => { setSelectedClassLevel(e.target.value); setActiveRoom('ALL'); }}
+                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white"
+              >
+                <option value="ALL">ทั้งหมด</option>
+                {classOptions.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+
+            {/* Save button */}
             <button
               onClick={handleSave}
               disabled={!selectedActivity || saving}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 text-sm font-black text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-500 disabled:opacity-50"
+              className={`flex h-10 items-center gap-2 rounded-xl border px-5 text-sm font-black transition-all ${
+                selectedActivity
+                  ? 'border-emerald-500/30 bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 hover:-translate-y-0.5 hover:bg-emerald-500'
+                  : 'border-slate-200 bg-slate-200 text-slate-400 dark:border-white/5 dark:bg-white/5 dark:text-slate-500'
+              } disabled:opacity-50`}
             >
-              {saving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
-              บันทึกรายชื่อนักเรียน
+              {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} className={selectedActivity ? 'animate-bounce' : ''} />}
+              {selectedActivity ? `บันทึก (${selectedStudents.length} คน)` : 'บันทึก'}
             </button>
           </div>
+        </header>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
-            <section className="rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] overflow-hidden">
-              <div className="border-b border-gray-100 p-4 dark:border-gray-700">
-                <h2 className="flex items-center gap-2 text-sm font-black"><ClipboardList className="text-emerald-500" size={18} /> กิจกรรมที่เปิดเช็คชื่อ</h2>
-                <div className="relative mt-3">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input value={activitySearch} onChange={e => setActivitySearch(e.target.value)} placeholder="ค้นหากิจกรรม..." className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-[#1e1f21]" />
-                </div>
+        {/* ══════════ MAIN GRID ══════════ */}
+        <main className="flex flex-1 gap-2 overflow-hidden p-2 pl-16">
+
+          {/* ── COLUMN 1: Activity List ── */}
+          <div className="flex w-[240px] shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-[#161a27]">
+            {/* Search */}
+            <div className="space-y-2 border-b border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-black/10">
+              <div className="flex items-center justify-between">
+                <h2 className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider">
+                  <ClipboardList size={12} className="text-emerald-500" /> กิจกรรม
+                </h2>
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                  {filteredActivities.length}
+                </span>
               </div>
-              <div className="max-h-[700px] overflow-y-auto p-3">
-                {loading ? <div className="p-8 text-center text-sm text-gray-500">กำลังโหลด...</div> : filteredActivities.map(activity => {
-                  const isSelected = selectedActivityId === activity.id;
-                  return (
-                    <button key={activity.id} type="button" onClick={() => handleActivitySelect(activity)} className={`mb-2 flex w-full items-start gap-3 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-emerald-500 bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'border-gray-100 bg-gray-50 hover:border-emerald-200 dark:border-gray-700 dark:bg-[#1e1f21]'}`}>
-                      <ClipboardList size={18} className="mt-0.5 shrink-0" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-black">{activity.courseCode ? `${activity.courseCode} ` : ''}{activity.name}</span>
-                        <span className={`block truncate text-xs ${isSelected ? 'text-emerald-100' : 'text-gray-500 dark:text-gray-400'}`}>ภาคเรียน {formatSemester(activity.semester)}</span>
-                        {isSelected && <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-1 text-[10px] font-black text-white"><CheckCircle2 size={12} /> กำลังจัดรายชื่อ</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-                {!loading && filteredActivities.length === 0 && <div className="p-8 text-center text-sm text-gray-500">ยังไม่มีกิจกรรมที่เปิดเช็คชื่อ</div>}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                <input
+                  value={activitySearch}
+                  onChange={e => setActivitySearch(e.target.value)}
+                  placeholder="ค้นหากิจกรรม..."
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
               </div>
-            </section>
-
-            <section className="rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] overflow-hidden">
-              <div className="border-b border-gray-100 bg-emerald-50/60 p-4 dark:border-gray-700 dark:bg-emerald-500/10">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h2 className="flex items-center gap-2 text-lg font-black text-emerald-700 dark:text-emerald-300"><Users size={20} /> {selectedActivity?.name || 'เลือกกิจกรรมก่อน'}</h2>
-                    <p className="mt-1 text-xs font-bold text-gray-500 dark:text-gray-400">นักเรียนที่เลือกแล้ว {selectedStudents.length} คน | ภาคเรียน {selectedActivity ? formatSemester(selectedActivity.semester) : '-'}</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:w-[520px]">
-                    <select value={activeYear} onChange={e => setActiveYear(e.target.value)} className="h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-[#1e1f21]">
-                      {academicYearOptions.map(year => <option key={year} value={year}>ปีการศึกษา {year}</option>)}
-                    </select>
-                    <select value={selectedClassLevel} onChange={e => { setSelectedClassLevel(e.target.value); setSelectedRoom('ALL'); }} className="h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-[#1e1f21]">
-                      <option value="ALL">ทุกชั้น</option>
-                      {classOptions.map(level => <option key={level} value={level}>{level}</option>)}
-                    </select>
-                    <select value={selectedRoom} onChange={e => setSelectedRoom(e.target.value)} className="h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-[#1e1f21]">
-                      <option value="ALL">ทุกห้อง</option>
-                      {roomOptions.map(room => <option key={room} value={room}>ห้อง {room}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-[1fr_70px_1fr]">
-                <StudentList title="นักเรียนในกิจกรรม" count={assignedStudents.length} students={assignedStudents} selectedIds={selectedAssignedIds} loading={membersLoading} onToggle={toggleAssigned} emptyText="ยังไม่มีนักเรียนในกิจกรรมนี้" />
-                <div className="flex items-center justify-center gap-3 xl:flex-col">
-                  <ArrowButton direction="right" onClick={removeSelectedStudents} disabled={!selectedActivity || selectedAssignedIds.length === 0} />
-                  <ArrowButton direction="left" onClick={addSelectedStudents} disabled={!selectedActivity || selectedAvailableIds.length === 0} />
-                </div>
-                <div className="rounded-2xl border border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-[#1e1f21] overflow-hidden">
-                  <div className="border-b border-gray-100 bg-white p-3 dark:border-gray-700 dark:bg-white/5">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                      <input value={studentSearch} onChange={e => setStudentSearch(e.target.value)} placeholder="ค้นหาชื่อ/รหัสนักเรียน..." className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-[#1e1f21]" />
-                    </div>
-                  </div>
-                  <StudentListBody students={availableStudents} selectedIds={selectedAvailableIds} disabled={!selectedActivity} onToggle={toggleAvailable} emptyText="ไม่พบนักเรียนตามเงื่อนไข" />
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </div>
-    </MainLayout>
-  );
-};
-
-const StudentList = ({ title, count, students, selectedIds, loading, onToggle, emptyText }: {
-  title: string; count: number; students: Student[]; selectedIds: string[]; loading?: boolean; onToggle: (id: string) => void; emptyText: string;
-}) => (
-  <div className="rounded-2xl border border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-[#1e1f21] overflow-hidden">
-    <div className="flex items-center justify-between border-b border-gray-100 bg-white p-3 dark:border-gray-700 dark:bg-white/5">
-      <h3 className="text-sm font-black">{title}</h3>
-      <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-600 dark:text-emerald-300">{count} คน</span>
-    </div>
-    {loading ? <div className="p-10 text-center text-sm text-gray-500">กำลังโหลดรายชื่อ...</div> : <StudentListBody students={students} selectedIds={selectedIds} onToggle={onToggle} emptyText={emptyText} />}
-  </div>
-);
-
-const StudentListBody = ({ students, selectedIds, disabled, onToggle, emptyText }: {
-  students: Student[]; selectedIds: string[]; disabled?: boolean; onToggle: (id: string) => void; emptyText: string;
-}) => {
-  const [page, setPage] = React.useState(1);
-  const itemsPerPage = 20;
-  const totalPages = Math.max(1, Math.ceil(students.length / itemsPerPage));
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [students]);
-
-  const paginatedStudents = React.useMemo(() => {
-    const start = (page - 1) * itemsPerPage;
-    return students.slice(start, start + itemsPerPage);
-  }, [students, page]);
-
-  return (
-    <>
-      <div className="max-h-[470px] overflow-y-auto p-2">
-        {students.length === 0 ? <div className="p-10 text-center text-sm text-gray-500">{emptyText}</div> : paginatedStudents.map(student => (
-          <button key={student.id} type="button" disabled={disabled} onClick={() => onToggle(student.id)} className={`mb-2 grid w-full grid-cols-[28px_1fr_auto] items-center gap-3 rounded-xl border p-3 text-left transition disabled:opacity-50 ${selectedIds.includes(student.id) ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'border-gray-100 bg-white hover:border-emerald-200 dark:border-gray-700 dark:bg-white/5'}`}>
-            <div className={`h-5 w-5 rounded-full border-2 ${selectedIds.includes(student.id) ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300 dark:border-gray-600'}`} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black">{student.title || student.prefix || ''}{student.firstName || ''} {student.lastName || ''}</p>
-              <p className="truncate text-xs text-gray-500">รหัส: {student.studentId || '-'} | ชั้น {student.classLevel || '-'}/{student.room || '-'}</p>
+              {availableActivityClassLevels.length > 0 && (
+                <select
+                  value={activityClassFilter}
+                  onChange={e => setActivityClassFilter(e.target.value)}
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                >
+                  <option value="ALL">ทุกชั้น</option>
+                  {availableActivityClassLevels.map(level => (
+                    <option key={level} value={level}>{getLevelLabel(level)}</option>
+                  ))}
+                </select>
+              )}
             </div>
-            <span className="text-xs font-black text-gray-400">{student.studentNumber || student.number || '-'}</span>
-          </button>
-        ))}
-      </div>
-      {totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-gray-100 bg-white p-3 dark:border-gray-700 dark:bg-white/5">
-          {getVisiblePages(page, totalPages).map(pageNum => (
+
+            {/* Activity rows */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {filteredActivities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 opacity-20">
+                  <ClipboardList size={24} className="mb-1" />
+                  <p className="text-[10px] font-black uppercase">ไม่พบกิจกรรม</p>
+                </div>
+              ) : filteredActivities.map(activity => {
+                const isSelected = selectedActivityId === activity.id;
+                return (
+                  <div
+                    key={activity.id}
+                    onClick={() => handleActivitySelect(activity)}
+                    className={`flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 transition-all ${
+                      isSelected
+                        ? 'bg-emerald-600/10 dark:bg-emerald-500/10'
+                        : 'border-slate-100 hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    {/* Radio dot */}
+                    <div className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 flex items-center justify-center transition-all ${
+                      isSelected ? 'border-emerald-500 bg-white dark:bg-slate-900' : 'border-slate-300 dark:border-white/10'
+                    }`}>
+                      {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                    </div>
+                    <div className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
+                      {activity.courseCode && (
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black tracking-wider ${
+                          isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'
+                        }`}>{activity.courseCode}</span>
+                      )}
+                      <p className={`truncate text-[11px] font-black ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>
+                        {activity.name}
+                      </p>
+                      <span className={`shrink-0 text-[9px] font-bold ml-auto ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        เทอม {formatSemester(activity.semester)}
+                      </span>
+                    </div>
+                    {isSelected && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Transfer Arrows (activities → enrolled) ── */}
+          <div className="relative flex flex-col items-center justify-center gap-2">
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-slate-200 to-transparent dark:via-white/5" />
             <button
-              key={pageNum}
-              type="button"
-              onClick={() => setPage(pageNum)}
-              className={`h-9 min-w-9 rounded-xl px-3 text-xs font-black transition ${
-                page === pageNum
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
-                  : 'bg-gray-50 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300'
+              onClick={() => selectedActivity && Swal.fire({ icon: 'info', title: `เลือก: ${selectedActivity.name}`, text: 'ย้ายนักเรียนจากด้านขวาเข้ากิจกรรมนี้', toast: true, position: 'top-end', timer: 2000, showConfirmButton: false })}
+              disabled={!selectedActivity}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                selectedActivity ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
               }`}
             >
-              {pageNum}
+              <ChevronRight size={16} strokeWidth={3} />
             </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
-};
+            <button
+              onClick={() => { setSelectedActivityId(''); setSelectedStudents([]); setSelectedEnrolledIds([]); setSelectedSourceIds([]); }}
+              disabled={!selectedActivity}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                selectedActivity ? 'cursor-pointer border-slate-400 bg-slate-600 text-white shadow-sm hover:bg-slate-500' : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
+              }`}
+            >
+              <ChevronLeft size={16} strokeWidth={3} />
+            </button>
+          </div>
 
-const ArrowButton = ({ direction, onClick, disabled }: { direction: 'left' | 'right'; onClick: () => void; disabled?: boolean }) => {
-  const Icon = direction === 'left' ? ChevronLeft : ChevronRight;
-  return (
-    <button type="button" onClick={onClick} disabled={disabled} className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400 bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-500 disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-300 disabled:shadow-none dark:disabled:border-white/5 dark:disabled:bg-white/5">
-      <Icon size={24} strokeWidth={3} className="hidden xl:block" />
-      <Icon size={24} strokeWidth={3} className="block rotate-90 xl:hidden" />
-    </button>
+          {/* ── COLUMN 2: Middle — Enrolled Students ── */}
+          <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-[#161a27]">
+
+            {/* Header: activity name + count */}
+            <div className="shrink-0 border-b border-slate-200 bg-slate-100 dark:border-white/5 dark:bg-black/60">
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Users size={13} className="text-emerald-500 shrink-0" />
+                  <h3 className="text-[11px] font-black truncate">
+                    {selectedActivity ? selectedActivity.name : 'นักเรียนในกิจกรรม'}
+                  </h3>
+                  {selectedActivity && (
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+                      {enrolledStudents.length} คน
+                    </span>
+                  )}
+                </div>
+                {membersLoading && <RefreshCw size={12} className="animate-spin text-slate-400 shrink-0" />}
+              </div>
+
+              {/* Scope pills (horizontal, only if multiple scopes) */}
+              {teacherScopes.length > 0 && (
+                <div className="px-4 pb-2 flex gap-1.5 flex-wrap">
+                  {teacherScopes.map((scope, idx) => {
+                    const isActive = selectedTeacherScopeKey === scope.key;
+                    const teacher = (teacherMap as any)[scope.teacherId];
+                    return (
+                      <button
+                        key={scope.key}
+                        type="button"
+                        onClick={() => { setSelectedTeacherScopeKey(scope.key); setActiveRoom('ALL'); }}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-black transition-all ${
+                          isActive
+                            ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm'
+                            : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                        }`}
+                      >
+                        <span className={`text-[8px] font-black w-4 h-4 flex items-center justify-center rounded ${isActive ? 'bg-white/25' : 'bg-slate-100 dark:bg-white/10'}`}>{idx + 1}</span>
+                        {teacher?.name || scope.teacherName || 'ไม่ระบุ'}
+                        {scope.classLevels.length > 0 && (
+                          <span className={`px-1 rounded text-[8px] font-black ${isActive ? 'bg-white/25' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}`}>
+                            {scope.classLevels.map(getLevelLabel).join(', ')}
+                          </span>
+                        )}
+                        {isActive && <div className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Table header */}
+            <div className="grid grid-cols-12 gap-1 shrink-0 border-b border-slate-200 bg-slate-100 px-4 py-2 text-[9px] font-black uppercase tracking-tighter text-slate-500 dark:border-white/5 dark:bg-white/[0.03] dark:text-white/60 sticky top-0 z-10 shadow-sm">
+              <div
+                className="col-span-1 flex cursor-pointer items-center gap-1 hover:text-emerald-500 transition-colors group"
+                onClick={toggleSelectAllEnrolled}
+              >
+                <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                  selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0
+                    ? 'border-emerald-500 bg-white dark:bg-[#161a27]'
+                    : 'border-slate-500 group-hover:border-emerald-500'
+                }`}>
+                  {selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0 && (
+                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                  )}
+                </div>
+              </div>
+              <div className="col-span-2">ชั้น/ห้อง</div>
+              <div className="col-span-1">เลขที่</div>
+              <div className="col-span-2">รหัส</div>
+              <div className="col-span-6">ชื่อ-นามสกุล</div>
+            </div>
+
+            {/* Table body */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {!selectedActivity ? (
+                <div className="flex flex-col items-center justify-center h-full opacity-10">
+                  <ClipboardList size={40} className="mb-2" />
+                  <p className="text-xs font-black uppercase">เลือกกิจกรรมก่อน</p>
+                </div>
+              ) : membersLoading ? (
+                <div className="flex items-center justify-center h-32 text-slate-400">
+                  <RefreshCw size={18} className="animate-spin mr-2" />
+                  <span className="text-xs font-bold">กำลังโหลด...</span>
+                </div>
+              ) : enrolledStudents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full opacity-10">
+                  <Users size={40} className="mb-2" />
+                  <p className="text-xs font-black uppercase">ยังไม่มีนักเรียน</p>
+                </div>
+              ) : enrolledStudents.map(s => {
+                const isSel = selectedEnrolledIds.includes(s.id);
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => setSelectedEnrolledIds(prev => isSel ? prev.filter(x => x !== s.id) : [...prev, s.id])}
+                    className={`grid cursor-pointer grid-cols-12 gap-1 items-center border-b px-4 py-1.5 text-[11px] transition-all hover:bg-slate-50 dark:border-white/[0.02] dark:hover:bg-white/[0.03] ${
+                      isSel ? 'bg-emerald-600/10 dark:bg-emerald-500/10' : ''
+                    }`}
+                  >
+                    <div className="col-span-1 flex justify-center">
+                      <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                        isSel ? 'border-emerald-500 bg-white dark:bg-[#161a27]' : 'border-slate-600'
+                      }`}>
+                        {isSel && <div className="h-2 w-2 rounded-full bg-emerald-500" />}
+                      </div>
+                    </div>
+                    <div className="col-span-2 font-bold text-slate-700 dark:text-white/80">
+                      {getLevelLabel(s.classLevel)}/{s.room || '-'}
+                    </div>
+                    <div className="col-span-1 font-black">{s.studentNumber || s.number || '-'}</div>
+                    <div className="col-span-2 font-mono font-bold text-slate-500 dark:text-white/60">{s.studentId || '-'}</div>
+                    <div className="col-span-6 font-bold">
+                      {s.title || s.prefix || ''}{s.firstName || ''} {s.lastName || ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Transfer Arrows (enrolled ↔ source) ── */}
+          <div className="relative flex flex-col items-center justify-center gap-2">
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-slate-200 to-transparent dark:via-white/5" />
+            {/* Enroll (← move to enrolled) */}
+            <button
+              onClick={enrollSelected}
+              disabled={selectedSourceIds.length === 0 || !selectedActivity}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                selectedSourceIds.length > 0 && selectedActivity
+                  ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm cursor-pointer'
+                  : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
+              }`}
+              title={`ลงทะเบียน ${selectedSourceIds.length} คน`}
+            >
+              <ChevronLeft size={16} strokeWidth={3} />
+            </button>
+            {/* Unenroll (→ move out) */}
+            <button
+              onClick={unenrollSelected}
+              disabled={selectedEnrolledIds.length === 0}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                selectedEnrolledIds.length > 0
+                  ? 'border-slate-400 bg-slate-500 text-white shadow-lg cursor-pointer hover:bg-slate-400'
+                  : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
+              }`}
+              title={`ถอน ${selectedEnrolledIds.length} คน`}
+            >
+              <ChevronRight size={16} strokeWidth={3} />
+            </button>
+            {/* Delete (unenroll via trash icon) */}
+            <button
+              onClick={unenrollSelected}
+              disabled={selectedEnrolledIds.length === 0}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                selectedEnrolledIds.length > 0
+                  ? 'border-rose-500/20 bg-rose-500/10 text-rose-500 cursor-pointer hover:bg-rose-500 hover:text-white'
+                  : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
+              }`}
+            >
+              <Trash2 size={14} strokeWidth={2.5} />
+            </button>
+            {/* Cancel selection */}
+            <button
+              onClick={() => { setSelectedEnrolledIds([]); setSelectedSourceIds([]); }}
+              disabled={selectedEnrolledIds.length === 0 && selectedSourceIds.length === 0}
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${
+                (selectedEnrolledIds.length > 0 || selectedSourceIds.length > 0)
+                  ? 'border-slate-400 bg-slate-200 text-slate-600 cursor-pointer hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600'
+                  : 'border-slate-200 bg-white text-slate-300 opacity-30 dark:border-white/5 dark:bg-white/5 dark:text-slate-700'
+              }`}
+            >
+              <X size={14} strokeWidth={2.5} />
+            </button>
+          </div>
+
+          {/* ── COLUMN 3: Source Students ── */}
+          <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-[#161a27]">
+            <div className="flex h-full overflow-hidden">
+
+              {/* Room sidebar */}
+              <div className="flex w-12 shrink-0 flex-col border-r border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-black/20">
+                <div className="shrink-0 border-b border-slate-200 bg-slate-100 py-2 text-center text-[8px] font-black uppercase tracking-tighter dark:border-white/5 dark:bg-white/[0.03]">
+                  ห้อง
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar no-scrollbar">
+                  <button
+                    onClick={() => setActiveRoom('ALL')}
+                    className={`w-full py-2 text-[10px] font-black transition-all ${
+                      activeRoom === 'ALL' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:text-emerald-500 dark:text-white/60 dark:hover:text-emerald-400'
+                    }`}
+                  >
+                    ทั้งหมด
+                  </button>
+                  {availableRooms.map(room => (
+                    <button
+                      key={room}
+                      onClick={() => setActiveRoom(room)}
+                      className={`w-full py-2 text-[10px] font-black transition-all ${
+                        activeRoom === room ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:text-emerald-500 dark:text-white/60 dark:hover:text-emerald-400'
+                      }`}
+                    >
+                      {room}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Student list */}
+              <div className="flex flex-1 flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-100 px-3 py-3 dark:border-white/5 dark:bg-black/60">
+                  <div className="flex items-center gap-2">
+                    <Users size={13} className="text-blue-500" />
+                    <h3 className="text-[10px] font-black uppercase tracking-wider">รายชื่อนักเรียน</h3>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400">{sourceStudents.length} คน</span>
+                </div>
+
+                {/* Search */}
+                <div className="shrink-0 border-b border-slate-200 bg-slate-50 p-2 dark:border-white/5 dark:bg-black/10">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={11} />
+                    <input
+                      type="text"
+                      placeholder="ค้นหารหัส/ชื่อนักเรียน..."
+                      value={sourceSearch}
+                      onChange={e => setSourceSearch(e.target.value)}
+                      className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Table header */}
+                <div className="grid grid-cols-12 gap-1 shrink-0 border-b border-slate-200 bg-slate-100 px-3 py-2 text-[8px] font-black uppercase tracking-tighter text-slate-500 dark:border-white/5 dark:bg-white/[0.03] dark:text-white/60 sticky top-0 z-10 shadow-sm">
+                  <div
+                    className="col-span-1 flex cursor-pointer items-center gap-1 hover:text-emerald-500 transition-colors group"
+                    onClick={toggleSelectAllSource}
+                  >
+                    <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                      selectedSourceIds.length === sourceStudents.length && sourceStudents.length > 0
+                        ? 'border-emerald-500 bg-white dark:bg-[#161a27]'
+                        : 'border-slate-600 group-hover:border-emerald-500'
+                    }`}>
+                      {selectedSourceIds.length === sourceStudents.length && sourceStudents.length > 0 && (
+                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                      )}
+                    </div>
+                    เลือก
+                  </div>
+                  <div className="col-span-2">ห้อง</div>
+                  <div className="col-span-1">เลขที่</div>
+                  <div className="col-span-8">ชื่อ-นามสกุล</div>
+                </div>
+
+                {/* Student rows */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar pb-6 px-1">
+                  {sourceStudents.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 opacity-10">
+                      <Users size={28} className="mb-1" />
+                      <p className="text-[9px] font-black uppercase">ไม่พบนักเรียน</p>
+                    </div>
+                  ) : sourceStudents.map(s => {
+                    const isSel = selectedSourceIds.includes(s.id);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => setSelectedSourceIds(prev => isSel ? prev.filter(x => x !== s.id) : [...prev, s.id])}
+                        className={`grid cursor-pointer grid-cols-12 gap-1 items-center border-b px-2 py-1.5 text-[10px] transition-all hover:bg-slate-50 dark:border-white/[0.02] dark:hover:bg-white/[0.03] ${
+                          isSel ? 'bg-emerald-600/10 dark:bg-emerald-500/10' : ''
+                        }`}
+                      >
+                        <div className="col-span-1 flex justify-center">
+                          <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                            isSel ? 'border-emerald-500 bg-white dark:bg-[#161a27]' : 'border-slate-600'
+                          }`}>
+                            {isSel && <div className="h-2 w-2 rounded-full bg-emerald-500" />}
+                          </div>
+                        </div>
+                        <div className="col-span-2 font-bold text-slate-700 dark:text-white/80">
+                          {getLevelLabel(s.classLevel)}/{s.room || '-'}
+                        </div>
+                        <div className="col-span-1 font-black">{s.studentNumber || s.number || '-'}</div>
+                        <div className="col-span-8 font-bold">
+                          <span className="mr-1 font-mono text-[9px] text-slate-400 dark:text-white/40">[{s.studentId}]</span>
+                          {s.title || s.prefix || ''}{s.firstName || ''} {s.lastName || ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </main>
+      </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.15); }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+      `}} />
+    </MainLayout>
   );
 };
 

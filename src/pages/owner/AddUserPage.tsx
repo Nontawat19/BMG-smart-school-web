@@ -531,6 +531,13 @@ const AddUserPage = () => {
                                                         <option value="นาย">นาย</option>
                                                         <option value="นาง">นาง</option>
                                                         <option value="น.ส.">น.ส.</option>
+                                                        <option value="พระ">พระ</option>
+                                                        <option value="พระสามเณร">พระสามเณร</option>
+                                                        <option value="พระมหา">พระมหา</option>
+                                                        <option value="พระครู">พระครู</option>
+                                                        <option value="พระใบฎีกา">พระใบฎีกา</option>
+                                                        <option value="หลวงพ่อ">หลวงพ่อ</option>
+                                                        <option value="พระอาจารย์">พระอาจารย์</option>
                                                         <option value="อื่นๆ">อื่นๆ</option>
                                                     </select>
                                                     <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">

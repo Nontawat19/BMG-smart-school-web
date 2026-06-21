@@ -5,12 +5,20 @@ type WorkerRequest = {
     payload: SchedulingEngineInput;
 };
 
-type WorkerResponse =
+export type WorkerResponse =
     | { type: 'progress'; payload: SchedulingEngineProgress }
     | { type: 'success'; payload: ReturnType<typeof runSchedulingEngine> }
     | { type: 'error'; error: string };
 
-const ctx = self as any;
+// `self` inside a dedicated worker is a DedicatedWorkerGlobalScope, but this
+// project's tsconfig only includes the DOM lib (not "webworker", which would
+// conflict with DOM's own `self`/`postMessage` typings). Narrow to just the
+// shape this file actually uses instead of casting to `any`.
+type WorkerContext = {
+    onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+    postMessage: (message: WorkerResponse) => void;
+};
+const ctx = self as unknown as WorkerContext;
 
 ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
     if (event.data?.type !== 'run') return;

@@ -5,8 +5,8 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { RootState } from '@/store';
 import { firestore as db } from '@/firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot, getDocs, serverTimestamp, query, where } from 'firebase/firestore';
-import { Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users, AlertTriangle, Ban } from 'lucide-react';
+import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, getDocs, serverTimestamp, query, where } from 'firebase/firestore';
+import { Save, Zap, Search, ChevronDown, Lock, Unlock, Settings, Filter, Info, BookOpen, X, Check, Book, CalendarX, ChevronLeft, ChevronRight, User, Users, AlertTriangle, Ban, Trash2 } from 'lucide-react';
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from '@/components/Shared/BackButton';
 import Swal from 'sweetalert2';
@@ -120,6 +120,9 @@ const DEFAULT_PERIODS: PeriodSettingItem[] = [
 const getRequiredWeeklyPeriods = (course: Pick<Course, 'credits' | 'hoursPerWeek'>) => {
     return getScheduleRequiredWeeklyPeriods(course, 0);
 };
+
+const toStringArray = (value: string | string[] | undefined): string[] =>
+    Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 
 const normalizeGroupNumber = (groupNumber?: number | string) => {
     const normalized = Number(groupNumber || 1);
@@ -281,6 +284,7 @@ const PeriodConstraintPage: React.FC = () => {
     const [filterPhysicalRoom, setFilterPhysicalRoom] = useState('all'); // NEW
     const [physicalRooms, setPhysicalRooms] = useState<any[]>([]); // NEW
     const [schoolMasterSchedule, setSchoolMasterSchedule] = useState<Record<string, ScheduledOccupancy[]>>({});
+    const [hiddenScheduleSlots, setHiddenScheduleSlots] = useState<Record<string, string[]>>({});
     const [showActivityCourses, setShowActivityCourses] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 20;
@@ -573,7 +577,7 @@ const PeriodConstraintPage: React.FC = () => {
                         const coursesInSlot = Array.isArray(slotData) ? slotData : [slotData];
                         coursesInSlot.filter(Boolean).forEach((course: any) => {
                             const resolvedClassId = course.classId || scheduleDoc.data.classId;
-                            const resolvedRoom = course.room || scheduleDoc.data.room || [];
+                            const resolvedRoom = toStringArray(course.room || scheduleDoc.data.room);
 
                             if (!masterSchedule[slotId]) masterSchedule[slotId] = [];
                             masterSchedule[slotId].push({
@@ -744,6 +748,13 @@ const PeriodConstraintPage: React.FC = () => {
         }));
     };
 
+    const dismissDraftSchedule = useCallback((assignmentId: string, slotId: string) => {
+        setHiddenScheduleSlots(prev => ({
+            ...prev,
+            [assignmentId]: [...(prev[assignmentId] || []), slotId]
+        }));
+    }, []);
+
     const toggleSlot = useCallback((assignmentId: string, slotId: string, totalPeriods: number, totalHoursNeeded: number) => {
         const c = allAssignments.find(a => a.compositeId === assignmentId);
         if (!c) return;
@@ -794,100 +805,10 @@ const PeriodConstraintPage: React.FC = () => {
                 return;
             }
 
-            // 3. Overlap with subjects already placed in the school timetable.
-            const scheduledOverlap = (schoolMasterSchedule[slotId] || []).find(occupancy =>
-                Boolean(getScheduledOccupancyConflict(c, occupancy, teacherIds))
-            );
-
-            if (scheduledOverlap?.course) {
-                const conflict = getScheduledOccupancyConflict(c, scheduledOverlap, teacherIds);
-                const scheduledClass = formatClassDisplayName(scheduledOverlap.classId || scheduledOverlap.course.classId);
-                const msg = conflict?.type === 'teacher'
-                    ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} มีสอนวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`
-                    : conflict?.type === 'room'
-                        ? `สถานที่สอนถูกใช้กับวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`
-                        : `ชั้น/ห้องเดียวกันมีเรียนวิชา ${scheduledOverlap.course.code || ''} ${scheduledClass} ในคาบนี้`;
-                showLimitWarning('คาบนี้มีวิชาสอนอยู่แล้ว', msg);
-                return;
-            }
+            // schoolMasterSchedule block removed to allow constraints to be set overriding draft schedules.
         }
 
-        if (!isRemoving && (type === 'double' || type === 'mixed')) {
-            const remaining = requiredPeriods - slots.length;
-            const shouldPair = remaining >= 2 && (type === 'double' || (type === 'mixed' && remaining >= 2));
-
-            if (shouldPair) {
-                const partnerIndex = getPartnerIndexForPeriods(index, periodSettings);
-                const partnerId = `${dayKey}-${partnerIndex}`;
-                const partnerSetting = periodSettings[partnerIndex];
-
-                if (partnerIndex === -1 || partnerIndex >= totalPeriods || !partnerSetting?.isTeachingPeriod) {
-                    showLimitWarning('เลือกคาบคู่ไม่ได้', 'คาบนี้ไม่มีคาบคู่มาตรฐานที่ติดกัน กรุณาเลือกคาบในบล็อกคู่ เช่น 1-2, 3-4, 6-7 หรือ 8-9');
-                    return;
-                }
-
-                if (slots.includes(partnerId)) {
-                    showLimitWarning('คาบคู่ถูกเลือกไว้แล้ว', 'คาบที่เป็นคู่กับช่องนี้ถูกล็อกไว้แล้ว กรุณาเลือกคู่อื่นหรือยกเลิกคาบเดิมก่อน');
-                    return;
-                }
-
-                // Check conflicts for partner too
-                const teacherIds = getAssignmentTeacherIds(c.assignment);
-                const unavailableTeacher = teacherIds
-                    .map(id => ({ id, teacher: teacherMap[id] as Teacher | undefined }))
-                    .find(item => item.teacher?.preferences?.unavailableSlots?.includes(partnerId));
-                if (unavailableTeacher) {
-                    showLimitWarning('คาบคู่ติดคาบว่าง', `คู่ของคาบนี้ (${partnerSetting.label}) ถูกล็อคว่างไว้สำหรับครู ${formatTeacherDisplayName(unavailableTeacher.id)}`);
-                    return;
-                }
-
-                const partnerOverlap = allAssignments.find(a => {
-                    if (a.compositeId === assignmentId) return false;
-                    const cst = constraints[a.compositeId];
-                    if (!cst?.isLocked || !cst.lockedSlots?.includes(partnerId)) return false;
-                    const otherTeacherIds = getAssignmentTeacherIds(a.assignment);
-                    return Boolean(getAssignmentConflict(c, a, teacherIds, otherTeacherIds));
-                });
-
-                if (partnerOverlap) {
-                    const overlapTeacherIds = getAssignmentTeacherIds(partnerOverlap.assignment);
-                    const conflict = getAssignmentConflict(c, partnerOverlap, teacherIds, overlapTeacherIds);
-                    const reason = conflict?.type === 'teacher'
-                        ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} ติดสอน`
-                        : conflict?.type === 'room'
-                            ? 'สถานที่สอนถูกใช้แล้ว'
-                            : 'ชั้น/ห้องเดียวกันมีเรียนแล้ว';
-                    showLimitWarning('คาบคู่ติดวิชาอื่น', `คู่ของคาบนี้ (${partnerSetting.label}) ${reason}: ${partnerOverlap.code}`);
-                    return;
-                }
-
-                const scheduledPartnerOverlap = (schoolMasterSchedule[partnerId] || []).find(occupancy =>
-                    Boolean(getScheduledOccupancyConflict(c, occupancy, teacherIds))
-                );
-
-                if (scheduledPartnerOverlap?.course) {
-                    const conflict = getScheduledOccupancyConflict(c, scheduledPartnerOverlap, teacherIds);
-                    const scheduledClass = formatClassDisplayName(scheduledPartnerOverlap.classId || scheduledPartnerOverlap.course.classId);
-                    const reason = conflict?.type === 'teacher'
-                        ? `ครู ${formatTeacherDisplayName(conflict.teacherId)} มีสอน`
-                        : conflict?.type === 'room'
-                            ? 'สถานที่สอนถูกใช้แล้ว'
-                            : 'ชั้น/ห้องเดียวกันมีเรียนแล้ว';
-                    showLimitWarning('คาบคู่ติดวิชาสอน', `คู่ของคาบนี้ (${partnerSetting.label}) ${reason}: ${scheduledPartnerOverlap.course.code || ''} ${scheduledClass}`);
-                    return;
-                }
-
-                targets.push(partnerId);
-            }
-        } else if (isRemoving) {
-            const partnerIndex = getPartnerIndexForPeriods(index, periodSettings);
-            if (partnerIndex !== -1) {
-                const partnerId = `${dayKey}-${partnerIndex}`;
-                if (slots.includes(partnerId) && (type === 'double' || type === 'mixed')) {
-                    targets.push(partnerId);
-                }
-            }
-        }
+        // Auto-pairing has been removed based on user request to separate locked slots
 
         const uniqueTargets = Array.from(new Set(targets));
         let newSlots = [...slots];
@@ -1723,6 +1644,9 @@ const PeriodConstraintPage: React.FC = () => {
                 // Pre-calculate subjects that would make this slot unavailable:
                 // existing timetable entries first, then manual period locks.
                 const otherLockedMap = Object.entries(schoolMasterSchedule).reduce((acc, [slotId, occupancies]) => {
+                    // Skip if user explicitly unlocked this draft schedule slot for this assignment
+                    if (hiddenScheduleSlots[c.compositeId]?.includes(slotId)) return acc;
+
                     occupancies.forEach(occupancy => {
                         const conflict = getScheduledOccupancyConflict(c, occupancy, teacherIds);
                         if (!conflict || !occupancy.course) return;
@@ -1764,7 +1688,7 @@ const PeriodConstraintPage: React.FC = () => {
                 });
 
                 return (
-                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSlotModalCourse(null)}>
+                    <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSlotModalCourse(null)}>
                         <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl w-[810px] max-w-[95vw] shadow-2xl border border-slate-200 dark:border-white/10" onClick={e => e.stopPropagation()}>
                             {/* Header */}
                             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 dark:border-white/5">
@@ -1855,9 +1779,83 @@ const PeriodConstraintPage: React.FC = () => {
                                                     if (isUnavailable) {
                                                         return (
                                                             <td key={p.id} className="px-0.5 py-1.5">
-                                                                <div 
-                                                                    className="relative w-full h-9 rounded-lg bg-amber-50 dark:bg-amber-500/[0.03] border border-amber-200/50 dark:border-amber-500/20 flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-sm transition-all duration-300"
-                                                                    title={`ครู ${unavailableTeachers.map(item => formatTeacherDisplayName(item.id)).join(', ')} ล็อคคาบว่าง`}
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        Swal.fire({
+                                                                            icon: 'warning',
+                                                                            title: 'คาบนี้ถูกล็อกเป็นคาบว่าง',
+                                                                            text: 'คาบนี้ถูกกำหนดเป็น "คาบว่าง" ไว้ที่ข้อมูลครูผู้สอน คุณต้องการปลดล็อกคาบว่างนี้เพื่อให้สามารถจัดสอนได้หรือไม่?',
+                                                                            showCancelButton: true,
+                                                                            confirmButtonText: 'ปลดล็อกคาบว่าง',
+                                                                            cancelButtonText: 'ปิด',
+                                                                            confirmButtonColor: '#ef4444',
+                                                                            customClass: {
+                                                                                container: '!z-[99999]'
+                                                                            }
+                                                                        }).then(async (result) => {
+                                                                            if (result.isConfirmed) {
+                                                                                try {
+                                                                                    // Show loading
+                                                                                    Swal.fire({
+                                                                                        title: 'กำลังปลดล็อก...',
+                                                                                        allowOutsideClick: false,
+                                                                                        customClass: {
+                                                                                            container: '!z-[99999]'
+                                                                                        },
+                                                                                        didOpen: () => {
+                                                                                            Swal.showLoading();
+                                                                                        }
+                                                                                    });
+
+                                                                                    // Process all unavailable teachers
+                                                                                    for (const t of unavailableTeachers) {
+                                                                                        if (!t.teacher?.id || !t.teacher?.preferences) continue;
+                                                                                        
+                                                                                        const currentSlots = t.teacher.preferences.unavailableSlots || [];
+                                                                                        const updatedSlots = currentSlots.filter(id => id !== slotId);
+                                                                                        
+                                                                                        const teacherRef = doc(db, 'school-settings', schoolId, 'teachers', t.teacher.id);
+                                                                                        await setDoc(teacherRef, {
+                                                                                            preferences: {
+                                                                                                unavailableSlots: updatedSlots
+                                                                                            },
+                                                                                            updatedAt: serverTimestamp()
+                                                                                        }, { merge: true });
+                                                                                    }
+                                                                                    
+                                                                                    // Automatically hide draft schedule for this slot so it becomes empty immediately
+                                                                                    dismissDraftSchedule(c.compositeId, slotId);
+
+                                                                                    // Refresh Redux state so UI updates
+                                                                                    dispatch(fetchTeachersMap(schoolId) as any);
+
+                                                                                    Swal.fire({
+                                                                                        icon: 'success',
+                                                                                        title: 'ปลดล็อกสำเร็จ',
+                                                                                        text: 'ปลดล็อกคาบว่างเรียบร้อยแล้ว',
+                                                                                        timer: 1500,
+                                                                                        showConfirmButton: false,
+                                                                                        customClass: {
+                                                                                            container: '!z-[99999]'
+                                                                                        }
+                                                                                    });
+                                                                                } catch (error) {
+                                                                                    console.error('Error unlocking teacher slots:', error);
+                                                                                    Swal.fire({
+                                                                                        icon: 'error',
+                                                                                        title: 'เกิดข้อผิดพลาด',
+                                                                                        text: `ไม่สามารถปลดล็อกคาบว่างได้: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                                                                                        customClass: {
+                                                                                            container: '!z-[99999]'
+                                                                                        }
+                                                                                    });
+                                                                                }
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    className="group relative w-full h-9 rounded-lg bg-amber-50 dark:bg-amber-500/[0.03] border border-amber-200/50 dark:border-amber-500/20 flex flex-col items-center justify-center cursor-pointer overflow-hidden shadow-sm transition-all duration-300 hover:bg-amber-100 dark:hover:bg-amber-500/10 active:scale-95"
+                                                                    title={`คลิกเพื่อดูรายละเอียด (คาบว่างของครู ${unavailableTeachers.map(item => formatTeacherDisplayName(item.id)).join(', ')})`}
                                                                 >
                                                                     {/* Red Corner Badge with Lock - Premium Style */}
                                                                     <div className="absolute top-0 left-0 w-3.5 h-3.5 bg-rose-500 dark:bg-rose-600 rounded-br-lg flex items-center justify-center shadow-sm z-10">
@@ -1871,9 +1869,30 @@ const PeriodConstraintPage: React.FC = () => {
                                                                         <div className="w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-600 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                                                                     </div>
 
+                                                                    {/* Trash Icon for Unlocking */}
+                                                                    <div className="absolute top-0 right-0 z-40 w-4 h-4 rounded-tr-lg rounded-bl-md bg-rose-500/60 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-0 group-hover:opacity-100">
+                                                                        <Trash2 size={7} strokeWidth={4} />
+                                                                    </div>
+
                                                                     {/* Glassy overlay for premium feel */}
                                                                     <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent dark:from-white/[0.02] pointer-events-none" />
-                                                                </div>
+                                                                </button>
+                                                            </td>
+                                                        );
+                                                    }
+
+                                                    if (isSelected) {
+                                                        return (
+                                                            <td key={p.id} className="px-0.5 py-1.5">
+                                                                <button
+                                                                    onClick={() => toggleSlot(c.compositeId, slotId, periodSettings.length, totalHours)}
+                                                                    className="w-full h-9 rounded-lg border transition-all flex items-center justify-center bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20"
+                                                                >
+                                                                    <span className="flex max-w-full flex-col items-center justify-center leading-none">
+                                                                        <span className="max-w-full truncate px-1 text-[8px] font-black uppercase">{c.code}</span>
+                                                                        <span className="max-w-full truncate px-1 text-[7px] font-black text-white/80 mt-0.5">{currentClassLabel}</span>
+                                                                    </span>
+                                                                </button>
                                                             </td>
                                                         );
                                                     }
@@ -1882,15 +1901,26 @@ const PeriodConstraintPage: React.FC = () => {
                                                         const first = otherLocked[0];
                                                         const isTeacherOverlap = otherLocked.some(o => o.type === 'teacher');
                                                         const sourceLabel = first.source === 'schedule' ? 'ตารางสอน' : 'ล็อกคาบ';
+                                                        const isDraftSchedule = first.source === 'schedule';
+
                                                         return (
                                                             <td key={p.id} className="px-0.5 py-1.5">
-                                                                <div 
-                                                                    className={`relative w-full h-9 rounded-lg border flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner ${
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        if (!isDraftSchedule) {
+                                                                            // Real constraints cannot be dismissed, toggle Slot will show limit warning
+                                                                            toggleSlot(c.compositeId, slotId, periodSettings.length, totalHours);
+                                                                        }
+                                                                    }}
+                                                                    disabled={!isDraftSchedule && isDisabledByLimit}
+                                                                    className={`group relative w-full h-9 rounded-lg border flex flex-col items-center justify-center overflow-hidden shadow-inner transition-all hover:ring-2 hover:ring-amber-400/50 hover:opacity-90 active:scale-95 ${
+                                                                        !isDraftSchedule && isDisabledByLimit ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                                                    } ${
                                                                         isTeacherOverlap 
                                                                             ? 'bg-[#2a2b2f] border-rose-900/30' 
                                                                             : 'bg-indigo-950/30 border-indigo-500/20'
                                                                     }`}
-                                                                    title={`${sourceLabel} • ${isTeacherOverlap ? `ครู ${(first.teacherNames || []).join(', ')} ติดสอน` : `ห้อง ${first.classLabel} มีเรียน`}: ${first.code} ${first.title}`}
+                                                                    title={`${sourceLabel} • ${isTeacherOverlap ? `ครู ${(first.teacherNames || []).join(', ')} ติดสอน` : `ห้อง ${first.classLabel} มีเรียน`}: ${first.code} ${first.title} ${isDraftSchedule ? '(คลิกเพื่อปลดล็อกคาบนี้ให้ว่าง)' : ''}`}
                                                                 >
                                                                     {/* Top-Left Badge for Teacher Overlap */}
                                                                     {isTeacherOverlap && (
@@ -1907,7 +1937,21 @@ const PeriodConstraintPage: React.FC = () => {
                                                                     </span>
                                                                     {/* Bottom Status Dot */}
                                                                     <div className={`w-1 h-1 rounded-full mt-0.5 ${isTeacherOverlap ? 'bg-rose-600' : 'bg-indigo-500'}`} />
-                                                                </div>
+
+                                                                    {/* Trash Icon for Dismissing Draft Schedule */}
+                                                                    {isDraftSchedule && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                dismissDraftSchedule(c.compositeId, slotId);
+                                                                            }}
+                                                                            className="absolute top-0 right-0 z-40 w-4 h-4 rounded-tr-lg rounded-bl-md bg-rose-500/60 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-sm hover:scale-110 active:scale-95 opacity-0 group-hover:opacity-100"
+                                                                            title="ยกเลิก/ซ่อนคาบตารางสอนนี้"
+                                                                        >
+                                                                            <Trash2 size={7} strokeWidth={4} />
+                                                                        </button>
+                                                                    )}
+                                                                </button>
                                                             </td>
                                                         );
                                                     }
@@ -1919,20 +1963,11 @@ const PeriodConstraintPage: React.FC = () => {
                                                                 disabled={isDisabledByLimit}
                                                                 title={isDisabledByLimit ? `เลือกครบ ${totalHours} คาบ/สัปดาห์แล้ว` : undefined}
                                                                 className={`w-full h-9 rounded-lg border transition-all flex items-center justify-center ${
-                                                                    isSelected
-                                                                        ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20'
-                                                                        : isDisabledByLimit
-                                                                            ? 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 opacity-35 cursor-not-allowed'
-                                                                        : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:border-amber-400/50 hover:bg-amber-50 dark:hover:bg-amber-500/5'
+                                                                    isDisabledByLimit
+                                                                        ? 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 opacity-35 cursor-not-allowed'
+                                                                        : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:border-amber-400/50 hover:bg-amber-50 dark:hover:bg-amber-500/5 cursor-pointer active:scale-95'
                                                                 }`}
-                                                            >
-                                                                {isSelected ? (
-                                                                    <span className="flex max-w-full flex-col items-center justify-center leading-none">
-                                                                        <span className="max-w-full truncate px-1 text-[8px] font-black uppercase">{c.code}</span>
-                                                                        <span className="max-w-full truncate px-1 text-[7px] font-black text-white/80 mt-0.5">{currentClassLabel}</span>
-                                                                    </span>
-                                                                ) : null}
-                                                            </button>
+                                                            />
                                                         </td>
                                                     );
                                                 })}

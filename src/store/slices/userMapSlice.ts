@@ -23,6 +23,7 @@ interface Teacher {
   lastName?: string;
   title?: string;
   status?: string;
+  academicStanding?: string;
   preferences?: {
     unavailableSlots?: string[];
     unavailableDays?: string[];
@@ -91,6 +92,7 @@ const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): 
     lastName,
     title,
     status: data.status || 'อยู่',
+    academicStanding: data.academicStanding || '',
     preferences: data.preferences || {},
   };
 };
@@ -144,6 +146,7 @@ export const fetchTeachersMap = createAsyncThunk(
           lastName,
           title,
           status: data.status || userData.status || 'อยู่',
+          academicStanding: data.academicStanding || userData.academicStanding || '',
           preferences: data.preferences || userData.preferences || {},
         };
       });

@@ -108,7 +108,7 @@ const RelationTable = ({ relationships }: { relationships: HomeVisitPdfProps["vi
                         <Cell width={185} height={16}><Text style={styles.tableText}>{label}</Text></Cell>
                         {columns.map((col, index) => (
                             <Cell key={col} width={index === 4 ? 50 : 49} height={16} last={index === 4}>
-                                {relation === col ? <CheckMarkSymbol /> : null}
+                                <Mark checked={relation === col} />
                             </Cell>
                         ))}
                     </View>

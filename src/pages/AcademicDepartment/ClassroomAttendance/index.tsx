@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { useSearchParams } from 'react-router-dom';
-import BackButton from "@/components/Shared/BackButton";
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
@@ -23,6 +22,7 @@ import AttendanceHeader from './components/AttendanceHeader';
 import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
+import { applyClassroomBehaviorScore } from '@/utils/behaviorScoreUtils';
 
 interface PeriodSetting {
     id: string;
@@ -153,6 +153,11 @@ const getStableClassKey = (value: unknown) => {
     return String(value || '');
 };
 
+const hasRoomSpecificClass = (value: unknown) => {
+    const values = Array.isArray(value) ? value : [value];
+    return values.some(item => String(item || '').includes('/'));
+};
+
 const normalizeRoomIds = (value: unknown): string[] => {
     const values = Array.isArray(value) ? value : [value];
     return values
@@ -192,6 +197,7 @@ const parseTimeParts = (time: string) => {
 
 const ClassroomAttendancePage: React.FC = () => {
     const isPwaMode = usePwaMode();
+    const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const [currentDate, setCurrentDate] = useState(() => {
         const dateParam = searchParams.get('date');
@@ -232,10 +238,12 @@ const ClassroomAttendancePage: React.FC = () => {
     });
     const [students, setStudents] = useState<Student[]>([]);
     const [attendance, setAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
-    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [originalAttendance, setOriginalAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
     const [studentLeaves, setStudentLeaves] = useState<Record<string, boolean>>({});
+    const [isSubmitted, setIsSubmitted] = useState(false);
     const [loading, setLoading] = useState(true);
     const [studentsLoading, setStudentsLoading] = useState(false);
+    const [behaviorConfig, setBehaviorConfig] = useState<any>(null);
     const [isHoliday, setIsHoliday] = useState(false);
     const [holidayName, setHolidayName] = useState('');
     const [scheduleDayOverride, setScheduleDayOverride] = useState<string | null>(null);
@@ -451,7 +459,24 @@ const ClassroomAttendancePage: React.FC = () => {
         fetchCalendarEvents();
     }, [schoolId, calendarState.status, calendarState.academicYear, calendarState.rawData, academicYear]);
 
-    // --- 1.1 Fetch Courses to find inactive ones ---
+    // --- 1.1 Fetch Behavior Score Config ---
+    useEffect(() => {
+        const fetchBehaviorConfig = async () => {
+            if (!schoolId) return;
+            try {
+                const schoolRef = doc(db, 'school-settings', schoolId);
+                const snap = await getDoc(schoolRef);
+                if (snap.exists() && snap.data().behaviorScoreConfig) {
+                    setBehaviorConfig(snap.data().behaviorScoreConfig);
+                }
+            } catch (err) {
+                console.error("Error fetching behavior config:", err);
+            }
+        };
+        fetchBehaviorConfig();
+    }, [schoolId]);
+
+    // --- 1.2 Fetch Courses to find inactive ones ---
     useEffect(() => {
         const fetchCourses = async () => {
             if (!schoolId) return;
@@ -469,7 +494,7 @@ const ClassroomAttendancePage: React.FC = () => {
         fetchCourses();
     }, [schoolId]);
 
-    // --- 1.2 Fetch Physical Rooms for mapping ---
+    // --- 1.3 Fetch Physical Rooms for mapping ---
     useEffect(() => {
         const fetchRooms = async () => {
             if (!schoolId) return;
@@ -484,7 +509,7 @@ const ClassroomAttendancePage: React.FC = () => {
         fetchRooms();
     }, [schoolId]);
 
-    // --- 1.3 Fetch Period Settings for accurate period times ---
+    // --- 1.4 Fetch Period Settings for accurate period times ---
     useEffect(() => {
         const fetchPeriodSettings = async () => {
             if (!schoolId) return;
@@ -501,7 +526,7 @@ const ClassroomAttendancePage: React.FC = () => {
         fetchPeriodSettings();
     }, [schoolId]);
 
-    // --- 1.3 Check for Holidays ---
+    // --- 2. Check for Holidays ---
     useEffect(() => {
         if (!schoolId) return;
         setIsHoliday(false);
@@ -980,6 +1005,29 @@ const ClassroomAttendancePage: React.FC = () => {
                         filteredDocs = enrollmentDocs.filter(d => classFilter(d.data()));
                     }
 
+                    if (filteredDocs.length === 0 && selectedClass.isSubstitute) {
+                        const canRelaxClassMatch = !selectedClass.groupNumber && !hasRoomSpecificClass(selectedClass.classId);
+                        if (canRelaxClassMatch) {
+                            // Some substitute records are saved with grade-level classId such as "m1"
+                            // while enrollments store room-level values such as "m1/1". In that case
+                            // the strict matcher returns zero students even though the course enrollment
+                            // is valid, so relax to the normal matcher as a fallback.
+                            filteredDocs = enrollmentDocs.filter(d => {
+                                const data = d.data();
+                                return !data.classLevel ||
+                                    matchesClassValue(data.classLevel, selectedClass.classId) ||
+                                    matchesClassValue(data.classLevel, selectedClass.className);
+                            });
+                        }
+                    }
+
+                    if (filteredDocs.length === 0 && selectedClass.isSubstitute) {
+                        // Last resort for substitute classes: if enrollment records were found for the
+                        // course but class metadata on the substitution is incomplete, prefer showing
+                        // the enrolled students over an empty attendance sheet.
+                        filteredDocs = enrollmentDocs;
+                    }
+
                     // For non-substitute: additional fallbacks to avoid empty list
                     if (filteredDocs.length === 0 && !selectedClass.isSubstitute) {
                         filteredDocs = enrollmentDocs.filter(d => matchesEnrollmentGroup(d.data(), groupNumber));
@@ -1176,6 +1224,7 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
                 });
                 setAttendance(loadedAttendance);
+                setOriginalAttendance(hasRecord ? { ...loadedAttendance } : {});
 
                 if (hasRecord) {
                     setIsSubmitted(true);
@@ -1258,6 +1307,25 @@ const ClassroomAttendancePage: React.FC = () => {
                         semester,
                         updatedAt: Timestamp.now(),
                     }, { merge: true });
+
+                    // Apply behavior score if changed
+                    const newStatus = `class:${attendance[student.id] || 'present'}`;
+                    // If no record exists yet, we assume the previous state was neutral (no penalty applied yet).
+                    // Or we could compare against "present". Usually, unrecorded defaults to "present" anyway.
+                    const originalStatusStr = originalAttendance[student.id];
+                    const oldStatus = originalStatusStr ? `class:${originalStatusStr}` : "class:present";
+
+                    if (newStatus !== oldStatus && behaviorConfig) {
+                        const studentMainRef = doc(db, 'school-settings', schoolId, 'students', student.id);
+                        applyClassroomBehaviorScore({
+                            batch,
+                            studentRef: studentMainRef,
+                            currentScore: student.behaviorScore,
+                            oldStatus,
+                            newStatus,
+                            config: behaviorConfig
+                        });
+                    }
                 });
 
                 // Deletes for legacy format or older periods in case they exist
@@ -1310,13 +1378,20 @@ const ClassroomAttendancePage: React.FC = () => {
         <MainLayout>
             <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6'}`}>
                 <div className={`${isPwaMode ? 'max-w-full' : 'max-w-5xl'} mx-auto min-w-0`}>
-                    {!isPwaMode && <BackButton to="/academic/hub/attendance" className="mb-4" />}
                     <AttendanceHeader
                         teacherName={(currentTeacher as any)?.name || ''}
                         currentDate={currentDate}
                         academicYear={academicYear}
                         semester={semester}
                         onDateChange={setCurrentDate}
+                        onBack={() => {
+                            if (selectedClass) {
+                                setSelectedClass(null);
+                                sessionStorage.removeItem('attendance_selected_class');
+                            } else {
+                                navigate('/academic/hub/attendance');
+                            }
+                        }}
                         title="ระบบเช็คชื่อเข้าเรียน"
                     />
 

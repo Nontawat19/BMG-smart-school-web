@@ -143,13 +143,21 @@ const styles = StyleSheet.create({
     courseTitle: { fontWeight: 'bold', fontSize: 11, marginBottom: 1, paddingHorizontal: 2, lineHeight: 1.1 },
     courseCode: { fontSize: 9, marginBottom: 1, color: '#333' },
     teacherName: { fontSize: 9, color: '#444', marginBottom: 1 },
-    roomCode: { fontSize: 10, color: '#000000', fontWeight: 'bold' },
+    roomCode: { fontSize: 9, color: '#000000', fontWeight: 'bold' },
 
     // Footer
 
 });
 
 const DAYS = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัสบดี', fri: 'ศุกร์' };
+
+const getCourseTitleFontSize = (title: string): number => {
+    const len = title.length;
+    if (len > 24) return 7;
+    if (len > 18) return 8;
+    if (len > 12) return 9.5;
+    return 11;
+};
 
 const StudentSchedulePageContent = ({
     schedule,
@@ -226,7 +234,7 @@ const StudentSchedulePageContent = ({
                             continue;
                         }
 
-                        const slot = getScheduleSlotCandidates(dayKey, period, i).find(key => schedule[key]) || `${dayKey}-${(period as any).index ?? i}`;
+                        const slot = getScheduleSlotCandidates(dayKey, period, i).find(key => schedule[key]) || `${dayKey}-${period.index ?? i}`;
                         const entry = schedule[slot];
                         
                         const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
@@ -244,7 +252,7 @@ const StudentSchedulePageContent = ({
                             const nextPeriod = displayPeriods[i + 1];
                             if (nextPeriod.id === 'lunch') break;
 
-                            const nextSlot = getScheduleSlotCandidates(dayKey, nextPeriod, i + 1).find(key => schedule[key]) || `${dayKey}-${(nextPeriod as any).index ?? (i + 1)}`;
+                            const nextSlot = getScheduleSlotCandidates(dayKey, nextPeriod, i + 1).find(key => schedule[key]) || `${dayKey}-${nextPeriod.index ?? (i + 1)}`;
                             const nextEntry = schedule[nextSlot];
                             const nextSpecial = getSpecialPeriod(dayKey, nextPeriod);
                             const nextSpecialTitle = nextSpecial?.title;
@@ -309,7 +317,7 @@ const StudentSchedulePageContent = ({
                                         <View key={sIndex} style={[styles.cell, styles.periodCell, { width: `${teachingWidth * span}%` }]}>
                                             {entry ? (
                                                 <>
-                                                    <Text style={styles.courseTitle}>{entry.course.title}</Text>
+                                                    <Text style={[styles.courseTitle, { fontSize: getCourseTitleFontSize(entry.course.title) }]}>{entry.course.title}</Text>
                                                     <Text style={styles.courseCode}>{entry.course.code}</Text>
                                                     <Text style={styles.teacherName}>{entry.teacherName}</Text>
                                                     {entry.roomCode && <Text style={styles.roomCode}>{entry.roomCode}</Text>}

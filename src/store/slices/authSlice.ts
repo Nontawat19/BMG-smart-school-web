@@ -11,6 +11,7 @@ interface UserProfile {
   schoolId?: string | null;
   role: string[];
   department?: string;
+  personnelType?: 'teacher' | 'user';
   isHeadOfLearningArea?: boolean;
   isHeadOfAssessment?: boolean;
   isGuidanceTeacher?: boolean;
@@ -57,8 +58,16 @@ export const listenToAuthChanges = createAsyncThunk(
                     const teacherSnap = await getDoc(teacherRef);
                     if (teacherSnap.exists()) {
                       const td = teacherSnap.data();
+                      const resolvePersonnelType = (): 'teacher' | 'user' => {
+                        if (td.personnelType === 'teacher' || td.personnelType === 'user') return td.personnelType;
+                        const tdRoles: string[] = Array.isArray(td.role) ? td.role : typeof td.role === 'string' ? [td.role] : roles;
+                        const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+                        if (tdRoles.length > 0 && tdRoles.every((r: string) => attendanceOnly.includes(r))) return 'user';
+                        return 'teacher';
+                      };
                       teacherFields = {
                         ...(td.department ? { department: td.department } : {}),
+                        personnelType: resolvePersonnelType(),
                         isHeadOfLearningArea: !!td.isHeadOfLearningArea,
                         isHeadOfAssessment: !!td.isHeadOfAssessment,
                         isGuidanceTeacher: !!td.isGuidanceTeacher,

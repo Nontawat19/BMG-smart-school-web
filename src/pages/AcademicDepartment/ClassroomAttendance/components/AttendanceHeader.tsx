@@ -1,5 +1,6 @@
 import React from 'react';
-import { UserCheck, Calendar, ChevronLeft } from 'lucide-react';
+import { UserCheck, Calendar, ChevronLeft, ArrowLeft } from 'lucide-react';
+import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 
 interface AttendanceHeaderProps {
     teacherName: string;
@@ -7,6 +8,7 @@ interface AttendanceHeaderProps {
     academicYear: string;
     semester: string;
     onDateChange: (date: Date) => void;
+    onBack?: () => void;
     title?: string;
 }
 
@@ -16,8 +18,11 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
     academicYear,
     semester,
     onDateChange,
+    onBack,
     title = "ระบบเช็คชื่อเข้าเรียน",
 }) => {
+    const isPwaMode = usePwaMode();
+
     const prevDate = () => {
         const d = new Date(currentDate);
         d.setDate(d.getDate() - 1);
@@ -30,10 +35,71 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
         onDateChange(d);
     };
 
+    if (isPwaMode) {
+        const shortDate = currentDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        return (
+            <div className="mb-3 space-y-1.5">
+                {/* Single compact row: back + icon + title/teacher + year/sem */}
+                <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm px-3 py-2 rounded-xl border border-gray-200/50 dark:border-white/5">
+                    {onBack && (
+                        <button
+                            onClick={onBack}
+                            className="w-10 h-10 rounded-full bg-[#26282d] border border-white/10 flex items-center justify-center text-[#a9aebb] hover:bg-[#2d3036] hover:text-white active:scale-95 transition-all shadow-[0_6px_18px_rgba(0,0,0,0.16)] shrink-0"
+                        >
+                            <ArrowLeft size={20} strokeWidth={2.2} />
+                        </button>
+                    )}
+                    <div className="p-1 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg shrink-0">
+                        <UserCheck className="text-indigo-600 dark:text-indigo-400" size={14} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-black text-gray-900 dark:text-white leading-none truncate">เช็คชื่อเข้าเรียน</p>
+                        <p className="text-[9px] text-indigo-500 dark:text-indigo-400 font-semibold truncate mt-0.5">{teacherName || 'กำลังโหลด...'}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 text-[10px] font-black text-gray-900 dark:text-white bg-gray-100 dark:bg-white/5 rounded-lg px-2 py-1">
+                        <span className="text-gray-400 font-normal text-[9px]">ปี</span>
+                        <span>{academicYear || '...'}</span>
+                        <span className="text-gray-300 dark:text-gray-600">/</span>
+                        <span className="text-gray-400 font-normal text-[9px]">เทอม</span>
+                        <span>{semester || '...'}</span>
+                    </div>
+                </div>
+
+                {/* Compact date navigator */}
+                <div className="flex items-center bg-white dark:bg-[#1a1b1e] rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    <button
+                        onClick={prevDate}
+                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 active:scale-90 shrink-0"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2">
+                        <Calendar size={12} className="text-indigo-500/70 shrink-0" />
+                        <span className="font-black text-[11px] text-gray-800 dark:text-gray-100 tracking-tight">{shortDate}</span>
+                    </div>
+                    <button
+                        onClick={nextDate}
+                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 rotate-180 active:scale-90 shrink-0"
+                    >
+                        <ChevronLeft size={16} />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
             <div className="space-y-1 text-left">
                 <div className="flex items-center gap-3">
+                    {onBack && (
+                        <button
+                            onClick={onBack}
+                            className="w-10 h-10 rounded-full bg-[#26282d] border border-white/10 flex items-center justify-center text-[#a9aebb] hover:bg-[#2d3036] hover:text-white active:scale-95 transition-all shadow-[0_6px_18px_rgba(0,0,0,0.16)] shrink-0"
+                        >
+                            <ArrowLeft size={20} strokeWidth={2.2} />
+                        </button>
+                    )}
                     <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
                         <UserCheck className="text-indigo-600 dark:text-indigo-400" size={24} />
                     </div>
@@ -50,7 +116,6 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-                {/* Academic Context Display - Only show, not selectable */}
                 <div className="flex bg-gray-50 dark:bg-white/5 p-1 rounded-xl border border-gray-200 dark:border-gray-800 items-center px-4 shadow-inner">
                     <div className="flex items-baseline gap-1 py-1">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">ปี</span>

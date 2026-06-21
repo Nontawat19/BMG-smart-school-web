@@ -67,7 +67,7 @@ const HomeVisitSummaryPdfButton: React.FC<Props> = ({
         const visitedStudentIds = new Set(visits.map(v => v.studentId));
         const visitedStudents = students.filter(s => visitedStudentIds.has(s.id));
 
-        const isMale = (title: string) => ['เด็กชาย', 'นาย'].includes(title);
+        const isMale = (title: string) => ['เด็กชาย', 'นาย', 'สามเณร'].includes(title);
         const isFemale = (title: string) => ['เด็กหญิง', 'นางสาว', 'นาง'].includes(title);
 
         const visitedMale = visitedStudents.filter(s => isMale(s.title)).length;

@@ -130,140 +130,38 @@ const noticeStyles = StyleSheet.create({
     color: "#000",
     lineHeight: 1.25,
   },
-  topCodeBlock: {
-    width: "100%",
-    alignItems: "flex-end",
-    marginBottom: 5,
-  },
-  topCodeText: {
-    fontSize: 15,
-    fontWeight: "bold",
-  },
-  titleBlock: {
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  titleText: {
-    fontSize: 16.5,
-    fontWeight: "bold",
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 0,
-  },
-  headerLeft: {
-    width: "35%",
-    alignItems: "flex-start",
-  },
-  headerCenter: {
-    width: "30%",
-    alignItems: "center",
-  },
-  headerRight: {
-    width: "35%",
-    alignItems: "flex-start",
-  },
-  addressRemainingRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 10,
-  },
-  addressRemainingBlock: {
-    width: "35%",
-    alignItems: "flex-start",
-  },
-  garuda: {
-    width: 60,
-    height: 68,
-    objectFit: "contain",
-  },
-  docNoText: {
-    fontSize: 15,
-  },
-  schoolAddressText: {
-    fontSize: 15,
-    lineHeight: 1.2,
-  },
-  dateRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  dateText: {
-    fontSize: 15,
-  },
-  formBlock: {
-    width: "100%",
-  },
-  subjectBlock: {
-    marginBottom: 6,
-  },
-  subjectText: {
-    fontSize: 15,
-    marginBottom: 3,
-  },
-  textParagraph: {
-    fontSize: 15,
-    lineHeight: 1.25,
-    textAlign: "justify",
-    marginBottom: 8,
-  },
-  signBlockRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    paddingRight: 40,
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  signBlock: {
-    width: 240,
-    alignItems: "center",
-  },
-  signText: {
-    fontSize: 15,
-    lineHeight: 1.25,
-    textAlign: "center",
-  },
-  dividerBlock: {
-    marginVertical: 10,
-    alignItems: "center",
-  },
-  dividerLine: {
-    width: "100%",
-    borderBottomWidth: 0.75,
-    borderBottomColor: "#000",
-    borderStyle: "dashed",
-  },
-  receiptHeader: {
-    fontSize: 14.5,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  receiptTextParagraph: {
-    fontSize: 14.5,
-    lineHeight: 1.2,
-    textAlign: "justify",
-    marginBottom: 8,
-  },
-  receiptSignBlockRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginRight: 10,
-    marginTop: 6,
-  },
-  receiptSignBlock: {
-    width: 240,
-    alignItems: "center",
-  },
-  receiptSignText: {
-    fontSize: 14.5,
-    lineHeight: 1.25,
-    textAlign: "center",
-  },
+  topCodeBlock: { width: "100%", alignItems: "flex-end", marginBottom: 5 },
+  topCodeText: { fontSize: 15, fontWeight: "bold" },
+  titleBlock: { width: "100%", alignItems: "center", marginBottom: 8 },
+  titleText: { fontSize: 16.5, fontWeight: "bold" },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 0 },
+  headerLeft: { width: "35%", alignItems: "flex-start" },
+  headerCenter: { width: "30%", alignItems: "center" },
+  headerRight: { width: "35%", alignItems: "flex-start" },
+  addressRemainingRow: { flexDirection: "row", justifyContent: "flex-end", marginBottom: 10 },
+  addressRemainingBlock: { width: "35%", alignItems: "flex-start" },
+  garuda: { width: 60, height: 68, objectFit: "contain" },
+  docNoText: { fontSize: 15 },
+  schoolAddressText: { fontSize: 15, lineHeight: 1.2 },
+  dateRow: { flexDirection: "row", justifyContent: "center", marginBottom: 10 },
+  dateText: { fontSize: 15 },
+  formBlock: { width: "100%" },
+  subjectBlock: { marginBottom: 6 },
+  subjectText: { fontSize: 15, marginBottom: 3 },
+  textParagraph: { fontSize: 15, lineHeight: 1.25, textAlign: "justify", marginBottom: 8 },
+  signBlockRow: { flexDirection: "row", justifyContent: "flex-end", paddingRight: 40, marginTop: 8, marginBottom: 10 },
+  signBlock: { width: 240, alignItems: "center" },
+  signText: { fontSize: 15, lineHeight: 1.25, textAlign: "center" },
+  dividerBlock: { marginVertical: 10, alignItems: "center" },
+  dividerLine: { width: "100%", borderBottomWidth: 0.75, borderBottomColor: "#000", borderStyle: "dashed" },
+  receiptHeader: { fontSize: 14.5, fontWeight: "bold", marginBottom: 4 },
+  receiptTextParagraph: { fontSize: 14.5, lineHeight: 1.2, textAlign: "justify", marginBottom: 8 },
+  receiptSignBlockRow: { flexDirection: "row", justifyContent: "flex-end", marginRight: 10, marginTop: 6 },
+  receiptSignBlock: { width: 240, alignItems: "center" },
+  receiptSignText: { fontSize: 14.5, lineHeight: 1.25, textAlign: "center" },
 });
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
 const getCurrentMonth = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
 
@@ -342,7 +240,6 @@ const getMaxConsecutive = (riskDates: string[]) => {
   let bestEnd = sorted[0];
   let currentCount = 1;
   let currentStart = sorted[0];
-
   for (let index = 1; index < sorted.length; index += 1) {
     const previous = new Date(`${sorted[index - 1]}T00:00:00`);
     const current = new Date(`${sorted[index]}T00:00:00`);
@@ -353,14 +250,12 @@ const getMaxConsecutive = (riskDates: string[]) => {
       currentCount = 1;
       currentStart = sorted[index];
     }
-
     if (currentCount > bestCount) {
       bestCount = currentCount;
       bestStart = currentStart;
       bestEnd = sorted[index];
     }
   }
-
   return { count: bestCount, start: bestStart, end: bestEnd };
 };
 
@@ -370,7 +265,8 @@ const chunkRows = <T,>(rows: T[], size: number) => {
   return chunks;
 };
 
-const getReportedStorageKey = (schoolId: string | null | undefined, month: string) => `bk14_reported_${schoolId || "unknown"}_${month}`;
+const getReportedStorageKey = (schoolId: string | null | undefined, month: string) =>
+  `bk14_reported_${schoolId || "unknown"}_${month}`;
 
 const getRowReportKey = (month: string, row: RiskRecord) => `${month}:${row.id}`;
 
@@ -401,130 +297,24 @@ const getMiddleSchoolClassText = (classLevel: string, room: string) => {
 };
 
 const getParentName = (student: any) => {
-  if (student.parentFirstName) {
+  if (student.parentFirstName)
     return `${student.parentTitle || ""}${student.parentFirstName} ${student.parentLastName || ""}`.trim();
-  }
-  if (student.guardianFirstName) {
+  if (student.guardianFirstName)
     return `${student.guardianTitle || ""}${student.guardianFirstName} ${student.guardianLastName || ""}`.trim();
-  }
   if (student.parentName && student.parentName !== "-") return student.parentName.trim();
   if (student.guardianName && student.guardianName !== "-") return student.guardianName.trim();
-  
-  if (student.fatherFirstName) {
+  if (student.fatherFirstName)
     return `${student.fatherTitle || ""}${student.fatherFirstName} ${student.fatherLastName || ""}`.trim();
-  }
-  if (student.motherFirstName) {
+  if (student.motherFirstName)
     return `${student.motherTitle || ""}${student.motherFirstName} ${student.motherLastName || ""}`.trim();
-  }
   return "";
 };
 
-const getParentPhone = (student: any) => {
-  return student.parentPhone || student.guardianPhone || student.parentTelephone || student.guardianTelephone || student.telephone || student.phone || "";
-};
+const getParentPhone = (student: any) =>
+  student.parentPhone || student.guardianPhone || student.parentTelephone ||
+  student.guardianTelephone || student.telephone || student.phone || "";
 
-const Bk14NoticePdfDocument: React.FC<{
-  row: RiskRecord;
-  schoolInfo: SchoolInfo;
-  month: string;
-}> = ({ row, schoolInfo, month }) => {
-  const today = new Date();
-  const currentDay = String(today.getDate());
-  const currentThaiMonth = getThaiMonthName(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
-  const currentThaiYear = String(today.getFullYear() + 543);
-  const thaiYear = getThaiYearFromMonth(month);
-  const schoolName = normalizeSchoolName(schoolInfo.schoolName);
-  const directorName = getDirectorDisplayName(schoolInfo);
-  const classText = getMiddleSchoolClassText(row.classLevel, row.room);
-  
-  const addressLine1 = schoolInfo.addressLine1 || "ต........................ อ........................";
-  const addressLine2 = [
-    schoolInfo.addressLine2 || "จ........................",
-    schoolInfo.postalCode || "............"
-  ].filter(Boolean).join(" ");
-
-  return (
-    <Document>
-      <Page size="A4" style={noticeStyles.page}>
-        <View style={noticeStyles.topCodeBlock}>
-          <Text style={noticeStyles.topCodeText}>แบบ บค.14</Text>
-        </View>
-
-        <View style={noticeStyles.titleBlock}>
-          <Text style={noticeStyles.titleText}>หนังสือเตือนให้ผู้ปกครองส่งนักเรียนเข้าเรียน</Text>
-        </View>
-
-        <View style={noticeStyles.headerRow}>
-          <View style={noticeStyles.headerLeft}>
-            <Text style={noticeStyles.docNoText}>ที่ {schoolInfo.documentCode || "ศธ ................../"}</Text>
-          </View>
-          <View style={noticeStyles.headerCenter}>
-            <Image src="/assets/images/garuda_official.jpg" style={noticeStyles.garuda} />
-          </View>
-          <View style={noticeStyles.headerRight}>
-            <Text style={[noticeStyles.schoolAddressText, { fontWeight: "bold" }]}>{schoolName}</Text>
-          </View>
-        </View>
-
-        <View style={noticeStyles.addressRemainingRow}>
-          <View style={noticeStyles.addressRemainingBlock}>
-            <Text style={noticeStyles.schoolAddressText}>{addressLine1}</Text>
-            <Text style={noticeStyles.schoolAddressText}>{addressLine2}</Text>
-          </View>
-        </View>
-
-        <View style={noticeStyles.dateRow}>
-          <Text style={noticeStyles.dateText}>
-            วันที่  {currentDay}  เดือน  {currentThaiMonth}  พ.ศ.  {currentThaiYear}
-          </Text>
-        </View>
-
-        <View style={noticeStyles.formBlock}>
-          <View style={noticeStyles.subjectBlock}>
-            <Text style={noticeStyles.subjectText}>เรื่อง   นักเรียนขาดเรียน ครั้งที่ ............</Text>
-            <Text style={noticeStyles.subjectText}>
-              เรียน   ผู้ปกครอง(ด.ช./ด.ญ./นาย/นางสาว)  <Text style={{ fontWeight: "bold" }}>{row.parentName || "..........................................................................."}</Text>
-            </Text>
-          </View>
-
-          <Text style={noticeStyles.textParagraph}>
-            {"\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0"}ด้วย(ด.ช./ด.ญ./นาย/นางสาว)  <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>  นักเรียน ชั้น ม.  <Text style={{ fontWeight: "bold" }}>{classText}</Text>  ปีการศึกษา  <Text style={{ fontWeight: "bold" }}>{thaiYear}</Text>  เลขประจำตัว  <Text style={{ fontWeight: "bold" }}>{row.studentId}</Text>  ซึ่งอยู่ในความปกครองของท่านหยุดเรียนมาแล้วในเดือนนี้ รวม  <Text style={{ fontWeight: "bold" }}>{row.absentCount}</Text>  วัน (เกิน 5 วัน ติดต่อกัน และเกินกว่า 7 วัน ในรอบ 1 เดือน) โดยไม่ได้รับอนุญาตและไม่แจ้งเหตุให้โรงเรียนทราบ ซึ่งก่อให้เกิดผลเสียต่อการเรียนของนักเรียนเป็นอย่างยิ่ง โรงเรียนจึงขอเตือนให้ท่านส่งนักเรียนไปเข้าเรียนตามปกติโดยด่วน หากฝ่าฝืนโดยปราศจากเหตุผลอันสมควรจะมีความผิดตามมาตรา 15 แห่งพระราชบัญญัติการศึกษา ภาคบังคับ พ.ศ. 2545 ต้องระวางโทษปรับไม่เกิน 10,000 บาท (หนึ่งหมื่นบาทถ้วน)
-          </Text>
-
-          <Text style={noticeStyles.textParagraph}>
-            {"\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0"}จึงเรียนมาเพื่อทราบและดำเนินการต่อไป
-          </Text>
-
-          <View style={noticeStyles.signBlockRow}>
-            <View style={noticeStyles.signBlock}>
-              <Text style={noticeStyles.signText}>ขอแสดงความนับถือ</Text>
-              <Text style={[noticeStyles.signText, { marginTop: 24, fontWeight: "bold" }]}>({directorName})</Text>
-              <Text style={noticeStyles.signText}>ผู้อำนวยการ{schoolName}</Text>
-            </View>
-          </View>
-
-          <View style={noticeStyles.dividerBlock}>
-            <View style={noticeStyles.dividerLine} />
-          </View>
-
-          <Text style={noticeStyles.receiptHeader}>เรียน   ผู้อำนวยการ{schoolName}</Text>
-
-          <Text style={noticeStyles.receiptTextParagraph}>
-            {"\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0"}ข้าพเจ้า  <Text style={{ fontWeight: "bold" }}>{row.parentName || "............................................................"}</Text>  ผู้ปกครองของ  <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>  ชั้น ม.  <Text style={{ fontWeight: "bold" }}>{classText}</Text>  ได้รับทราบว่านักเรียนขาดเรียน ครั้งที่ ............ ซึ่งนักเรียนอาจไม่จบหลักสูตร ข้าพเจ้าขอตอบรับการนัดหมายการติดต่อครูที่ปรึกษา ภายในวันที่ ....... เดือน ............................ พ.ศ. ................. เวลา ................. น.
-          </Text>
-
-          <View style={noticeStyles.receiptSignBlockRow}>
-            <View style={noticeStyles.receiptSignBlock}>
-              <Text style={[noticeStyles.receiptSignText, { marginBottom: 4 }]}>ลงชื่อ ............................................................ผู้ปกครอง</Text>
-              <Text style={[noticeStyles.receiptSignText, { marginBottom: 4 }]}>( {row.parentName || "............................................................"} )</Text>
-              <Text style={noticeStyles.receiptSignText}>หมายเลขโทรศัพท์ {row.parentPhone || "............................................................"}</Text>
-            </View>
-          </View>
-        </View>
-      </Page>
-    </Document>
-  );
-};
+// ─── PDF Components ─────────────────────────────────────────────────────────
 
 const Bk14PdfDocument: React.FC<{
   rows: RiskRecord[];
@@ -580,9 +370,133 @@ const Bk14PdfDocument: React.FC<{
   );
 };
 
+const Bk14NoticePdfDocument: React.FC<{
+  row: RiskRecord;
+  schoolInfo: SchoolInfo;
+  month: string;
+}> = ({ row, schoolInfo, month }) => {
+  const today = new Date();
+  const currentDay = String(today.getDate());
+  const currentThaiMonth = getThaiMonthName(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+  const currentThaiYear = String(today.getFullYear() + 543);
+  const thaiYear = getThaiYearFromMonth(month);
+  const schoolName = normalizeSchoolName(schoolInfo.schoolName);
+  const directorName = getDirectorDisplayName(schoolInfo);
+  const classText = getMiddleSchoolClassText(row.classLevel, row.room);
+  const addressLine1 = schoolInfo.addressLine1 || "ต........................ อ........................";
+  const addressLine2 = [
+    schoolInfo.addressLine2 || "จ........................",
+    schoolInfo.postalCode || "............",
+  ].filter(Boolean).join(" ");
+
+  return (
+    <Document>
+      <Page size="A4" style={noticeStyles.page}>
+        <View style={noticeStyles.topCodeBlock}>
+          <Text style={noticeStyles.topCodeText}>แบบ บค.14</Text>
+        </View>
+
+        <View style={noticeStyles.titleBlock}>
+          <Text style={noticeStyles.titleText}>หนังสือเตือนให้ผู้ปกครองส่งนักเรียนเข้าเรียน</Text>
+        </View>
+
+        <View style={noticeStyles.headerRow}>
+          <View style={noticeStyles.headerLeft}>
+            <Text style={noticeStyles.docNoText}>ที่ {schoolInfo.documentCode || "ศธ ................../"}</Text>
+          </View>
+          <View style={noticeStyles.headerCenter}>
+            <Image src="/assets/images/garuda_official.jpg" style={noticeStyles.garuda} />
+          </View>
+          <View style={noticeStyles.headerRight}>
+            <Text style={[noticeStyles.schoolAddressText, { fontWeight: "bold" }]}>{schoolName}</Text>
+          </View>
+        </View>
+
+        <View style={noticeStyles.addressRemainingRow}>
+          <View style={noticeStyles.addressRemainingBlock}>
+            <Text style={noticeStyles.schoolAddressText}>{addressLine1}</Text>
+            <Text style={noticeStyles.schoolAddressText}>{addressLine2}</Text>
+          </View>
+        </View>
+
+        <View style={noticeStyles.dateRow}>
+          <Text style={noticeStyles.dateText}>
+            วันที่  {currentDay}  เดือน  {currentThaiMonth}  พ.ศ.  {currentThaiYear}
+          </Text>
+        </View>
+
+        <View style={noticeStyles.formBlock}>
+          <View style={noticeStyles.subjectBlock}>
+            <Text style={noticeStyles.subjectText}>เรื่อง   นักเรียนขาดเรียน ครั้งที่ ............</Text>
+            <Text style={noticeStyles.subjectText}>
+              เรียน   ผู้ปกครอง(ด.ช./ด.ญ./นาย/นางสาว){" "}
+              <Text style={{ fontWeight: "bold" }}>{row.parentName || "..........................................................................."}</Text>
+            </Text>
+          </View>
+
+          <Text style={noticeStyles.textParagraph}>
+            {"          "}ด้วย(ด.ช./ด.ญ./นาย/นางสาว){" "}
+            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{"  "}นักเรียน ชั้น ม.{"  "}
+            <Text style={{ fontWeight: "bold" }}>{classText}</Text>{"  "}ปีการศึกษา{"  "}
+            <Text style={{ fontWeight: "bold" }}>{thaiYear}</Text>{"  "}เลขประจำตัว{"  "}
+            <Text style={{ fontWeight: "bold" }}>{row.studentId}</Text>
+            {"  "}ซึ่งอยู่ในความปกครองของท่านหยุดเรียนมาแล้วในเดือนนี้ รวม{"  "}
+            <Text style={{ fontWeight: "bold" }}>{row.absentCount}</Text>
+            {"  "}วัน (เกิน 5 วัน ติดต่อกัน และเกินกว่า 7 วัน ในรอบ 1 เดือน) โดยไม่ได้รับอนุญาตและไม่แจ้งเหตุให้โรงเรียนทราบ ซึ่งก่อให้เกิดผลเสียต่อการเรียนของนักเรียนเป็นอย่างยิ่ง โรงเรียนจึงขอเตือนให้ท่านส่งนักเรียนไปเข้าเรียนตามปกติโดยด่วน หากฝ่าฝืนโดยปราศจากเหตุผลอันสมควรจะมีความผิดตามมาตรา 15 แห่งพระราชบัญญัติการศึกษา ภาคบังคับ พ.ศ. 2545 ต้องระวางโทษปรับไม่เกิน 10,000 บาท (หนึ่งหมื่นบาทถ้วน)
+          </Text>
+
+          <Text style={noticeStyles.textParagraph}>
+            {"          "}จึงเรียนมาเพื่อทราบและดำเนินการต่อไป
+          </Text>
+
+          <View style={noticeStyles.signBlockRow}>
+            <View style={noticeStyles.signBlock}>
+              <Text style={noticeStyles.signText}>ขอแสดงความนับถือ</Text>
+              <Text style={[noticeStyles.signText, { marginTop: 24, fontWeight: "bold" }]}>({directorName})</Text>
+              <Text style={noticeStyles.signText}>ผู้อำนวยการ{schoolName}</Text>
+            </View>
+          </View>
+
+          <View style={noticeStyles.dividerBlock}>
+            <View style={noticeStyles.dividerLine} />
+          </View>
+
+          <Text style={noticeStyles.receiptHeader}>เรียน   ผู้อำนวยการ{schoolName}</Text>
+
+          <Text style={noticeStyles.receiptTextParagraph}>
+            {"          "}ข้าพเจ้า{"  "}
+            <Text style={{ fontWeight: "bold" }}>{row.parentName || "............................................................"}</Text>
+            {"  "}ผู้ปกครองของ{"  "}
+            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{"  "}ชั้น ม.{"  "}
+            <Text style={{ fontWeight: "bold" }}>{classText}</Text>
+            {"  "}ได้รับทราบว่านักเรียนขาดเรียน ครั้งที่ ............ ซึ่งนักเรียนอาจไม่จบหลักสูตร ข้าพเจ้าขอตอบรับการนัดหมายการติดต่อครูที่ปรึกษา ภายในวันที่ ....... เดือน ............................ พ.ศ. ................. เวลา ................. น.
+          </Text>
+
+          <View style={noticeStyles.receiptSignBlockRow}>
+            <View style={noticeStyles.receiptSignBlock}>
+              <Text style={[noticeStyles.receiptSignText, { marginBottom: 4 }]}>
+                ลงชื่อ ............................................................ผู้ปกครอง
+              </Text>
+              <Text style={[noticeStyles.receiptSignText, { marginBottom: 4 }]}>
+                ( {row.parentName || "............................................................"} )
+              </Text>
+              <Text style={noticeStyles.receiptSignText}>
+                หมายเลขโทรศัพท์ {row.parentPhone || "............................................................"}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Page>
+    </Document>
+  );
+};
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
 const StudentBK14ReportPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolId = currentUser?.schoolId;
+
   const defaultSchoolInfo: SchoolInfo = {
     schoolName: "-",
     directorName: "",
@@ -592,6 +506,7 @@ const StudentBK14ReportPage: React.FC = () => {
     addressLine2: "",
     postalCode: "",
   };
+
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -703,9 +618,6 @@ const StudentBK14ReportPage: React.FC = () => {
         }
         if (criteriaParts.length === 0) return null;
 
-        const parentName = getParentName(student);
-        const parentPhone = getParentPhone(student);
-
         return {
           id: student.id,
           studentId: student.studentId || "-",
@@ -720,8 +632,8 @@ const StudentBK14ReportPage: React.FC = () => {
           maxConsecutiveRange: streak.start ? `${formatDateDisplay(streak.start)}-${formatDateDisplay(streak.end)}` : "-",
           riskDates,
           criteria: criteriaParts.join(" / "),
-          parentName,
-          parentPhone,
+          parentName: getParentName(student),
+          parentPhone: getParentPhone(student),
         } as RiskRecord;
       }));
 
@@ -751,12 +663,7 @@ const StudentBK14ReportPage: React.FC = () => {
     }
     const printedAt = new Date().toLocaleString("th-TH");
     const blob = await pdf(
-      <Bk14PdfDocument
-        rows={filteredRows}
-        schoolName={schoolName}
-        month={selectedMonth}
-        printedAt={printedAt}
-      />
+      <Bk14PdfDocument rows={filteredRows} schoolName={schoolName} month={selectedMonth} printedAt={printedAt} />
     ).toBlob();
     saveAs(blob, `รายงาน_BK14_${selectedMonth}.pdf`);
   };
@@ -773,72 +680,10 @@ const StudentBK14ReportPage: React.FC = () => {
 
   const exportStudentPdf = async (row: RiskRecord) => {
     const blob = await pdf(
-      <Bk14NoticePdfDocument
-        row={row}
-        schoolInfo={schoolInfo}
-        month={selectedMonth}
-      />
+      <Bk14NoticePdfDocument row={row} schoolInfo={schoolInfo} month={selectedMonth} />
     ).toBlob();
-    saveAs(blob, `รายงาน_BK14_${row.studentId}_${selectedMonth}.pdf`);
+    saveAs(blob, `บค14_${row.studentId}_${selectedMonth}.pdf`);
     markRowReported(row);
-  };
-
-  const createMockAbsenceData = () => {
-    const { startDate, endDate } = getMonthRange(selectedMonth);
-    const workingDates = getDatesBetween(startDate, endDate).filter((date) => {
-      const day = new Date(`${date}T00:00:00`).getDay();
-      return day !== 0 && day !== 6;
-    });
-    const firstStreak = workingDates.slice(0, 6);
-    const secondRiskDates = workingDates.slice(3, 12);
-
-    setSchoolName((prev) => prev === "-" ? "โรงเรียนตัวอย่าง" : prev);
-    setSchoolInfo((prev) => ({
-      ...prev,
-      schoolName: prev.schoolName === "-" ? "โรงเรียนตัวอย่าง" : prev.schoolName,
-      directorPrefix: prev.directorPrefix || "นาย",
-      directorName: prev.directorName || "ตัวอย่าง ผู้อำนวยการ",
-      documentCode: prev.documentCode || "ศธ ............/",
-      addressLine1: prev.addressLine1 || "ต.ตัวอย่าง อ.ตัวอย่าง",
-      addressLine2: prev.addressLine2 || "จ.ตัวอย่าง",
-      postalCode: prev.postalCode || "00000",
-    }));
-    setRows([
-      {
-        id: "mock-bk14-absent-001",
-        studentId: "99901",
-        studentNumber: "1",
-        fullName: "เด็กชายตัวอย่าง ขาดเรียน",
-        classLevel: "ม.1",
-        room: "1",
-        lateCount: 0,
-        absentCount: firstStreak.length,
-        totalRiskDays: firstStreak.length,
-        maxConsecutiveDays: firstStreak.length,
-        maxConsecutiveRange: firstStreak.length ? `${formatDateDisplay(firstStreak[0])}-${formatDateDisplay(firstStreak[firstStreak.length - 1])}` : "-",
-        riskDates: firstStreak,
-        criteria: `ติดต่อกัน ${firstStreak.length} วัน (${firstStreak.length ? `${formatDateDisplay(firstStreak[0])}-${formatDateDisplay(firstStreak[firstStreak.length - 1])}` : "-"})`,
-        parentName: "นายสมชาย ใจดี",
-        parentPhone: "081-234-5678",
-      },
-      {
-        id: "mock-bk14-late-absent-002",
-        studentId: "99902",
-        studentNumber: "2",
-        fullName: "เด็กหญิงตัวอย่าง มาสายสะสม",
-        classLevel: "ม.2",
-        room: "1",
-        lateCount: 6,
-        absentCount: Math.max(0, secondRiskDates.length - 6),
-        totalRiskDays: secondRiskDates.length,
-        maxConsecutiveDays: secondRiskDates.length,
-        maxConsecutiveRange: secondRiskDates.length ? `${formatDateDisplay(secondRiskDates[0])}-${formatDateDisplay(secondRiskDates[secondRiskDates.length - 1])}` : "-",
-        riskDates: secondRiskDates,
-        criteria: `ติดต่อกัน ${secondRiskDates.length} วัน (${secondRiskDates.length ? `${formatDateDisplay(secondRiskDates[0])}-${formatDateDisplay(secondRiskDates[secondRiskDates.length - 1])}` : "-"}) / รวม ${secondRiskDates.length} วันในเดือน`,
-        parentName: "นางสมศรี รักษ์เรียน",
-        parentPhone: "089-876-5432",
-      },
-    ]);
   };
 
   return (
@@ -849,11 +694,7 @@ const StudentBK14ReportPage: React.FC = () => {
             <div className="flex items-start gap-4">
               <BackButton to="/academic/hub/students" />
               <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase text-rose-600 dark:text-rose-400">
-                  <AlertTriangle size={16} />
-                  BK14 Attendance Risk Report
-                </div>
-                <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
+                <h1 className="text-2xl font-black text-slate-900 dark:text-white">
                   รายงานนักเรียนมาสาย/ขาดเรียน สำหรับ บค.14
                 </h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -861,25 +702,15 @@ const StudentBK14ReportPage: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={createMockAbsenceData}
-                disabled={loading}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-700 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                สร้างข้อมูลจำลอง
-              </button>
-              <button
-                type="button"
-                onClick={exportPdf}
-                disabled={loading || filteredRows.length === 0}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FileDown size={16} />
-                ดาวน์โหลด PDF รวม
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={exportPdf}
+              disabled={loading || filteredRows.length === 0}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FileDown size={16} />
+              ดาวน์โหลด PDF รวม
+            </button>
           </div>
 
           <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700">
@@ -949,7 +780,7 @@ const StudentBK14ReportPage: React.FC = () => {
                   <th className="border-b border-r border-slate-200 px-3 py-3 text-center dark:border-slate-700">รวม</th>
                   <th className="border-b border-r border-slate-200 px-3 py-3 text-center dark:border-slate-700">ติดต่อกันสูงสุด</th>
                   <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">เกณฑ์ที่พบ</th>
-                  <th className="border-b border-slate-200 px-3 py-3 text-center dark:border-slate-700">รายงาน/PDF</th>
+                  <th className="border-b border-slate-200 px-3 py-3 text-center dark:border-slate-700">PDF รายคน</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -989,7 +820,7 @@ const StudentBK14ReportPage: React.FC = () => {
                             {isReported && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                                 <CheckCircle size={12} />
-                                รายงานแล้ว
+                                พิมพ์แล้ว
                               </span>
                             )}
                             <button
@@ -998,7 +829,7 @@ const StudentBK14ReportPage: React.FC = () => {
                               className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-red-700"
                             >
                               <FileDown size={13} />
-                              {isReported ? "ดาวน์โหลดซ้ำ" : "PDF รายคน"}
+                              {isReported ? "พิมพ์ซ้ำ" : "PDF บค.14"}
                             </button>
                           </div>
                         </td>

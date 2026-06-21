@@ -19,6 +19,7 @@ import { saveAs } from 'file-saver';
 import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
 import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 import { normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
+import { getScheduleDocId, matchesScheduleTerm, resolveScheduleTeacherId } from './schedule/scheduleSharedUtils';
 
 // Types imported from @/components/pdf/TeacherScheduleDocument
 
@@ -61,6 +62,28 @@ const matchesYearTermValue = (data: any, year: string, term: string): boolean =>
   const yearMatches = !year || !dataYear || dataYear === String(year);
   const termMatches = !term || !dataTerm || dataTerm === String(term) || dataTerm.startsWith(`${term}/`) || String(term).startsWith(`${dataTerm}/`);
   return yearMatches && termMatches;
+};
+
+const getCanonicalScheduleDocs = (
+  docs: Array<{ id: string; data: any }>,
+  knownTeacherIds: string[],
+  year: string,
+  term: string
+) => {
+  const matching = docs
+    .map(({ id, data }) => {
+      if (!matchesScheduleTerm(data, year, term)) return null;
+      const teacherId = resolveScheduleTeacherId(id, data.teacherId, knownTeacherIds);
+      const canonicalId = getScheduleDocId(teacherId, String(data.academicYear || year || ''), String(data.semester || term || '1'));
+      return { id, data, teacherId, isCanonical: id === canonicalId || id.includes('__') };
+    })
+    .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+
+  const teachersWithCanonicalDocs = new Set(
+    matching.filter(item => item.isCanonical).map(item => item.teacherId)
+  );
+
+  return matching.filter(item => item.isCanonical || !teachersWithCanonicalDocs.has(item.teacherId));
 };
 
 const DEFAULT_PERIODS: PeriodSetting[] = [
@@ -251,7 +274,7 @@ const TeacherScheduleViewPage: React.FC = () => {
     const assignmentSnap = await getDocs(assignmentQuery);
     const assignmentMap: Record<string, any> = {};
     assignmentSnap.forEach(doc => {
-      const data = doc.data();
+      const data = doc.data() as any;
       if (data.courseId) {
         assignmentMap[data.courseId] = data;
       }
@@ -348,7 +371,7 @@ const TeacherScheduleViewPage: React.FC = () => {
         const snap = await getDocs(q);
         const clubsData = snap.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...(doc.data() as any)
         } as Club));
         setClubs(clubsData);
       } catch (error) {
@@ -362,7 +385,7 @@ const TeacherScheduleViewPage: React.FC = () => {
         const snap = await getDocs(q);
         const map: Record<string, string> = {};
         snap.forEach(doc => {
-          const data = doc.data();
+          const data = doc.data() as any;
           map[doc.id] = data.roomCode || data.roomName || doc.id;
         });
         setRoomMap(map);
@@ -377,7 +400,7 @@ const TeacherScheduleViewPage: React.FC = () => {
         const snap = await getDocs(q);
         const map: Record<string, any> = {};
         snap.forEach(doc => {
-          map[doc.id] = { id: doc.id, ...doc.data() };
+          map[doc.id] = { id: doc.id, ...(doc.data() as any) };
         });
         setCoursesMap(map);
       } catch (error) {
@@ -408,14 +431,15 @@ const TeacherScheduleViewPage: React.FC = () => {
 
       try {
         const assignmentMap = await fetchAssignmentMap();
-        const q = query(
-          collection(db, 'school-settings', schoolId, 'schedules'),
-          where('teacherId', '==', selectedTeacher)
-        );
-        const snap = await getDocs(q);
+        const snap = await getDocs(collection(db, 'school-settings', schoolId, 'schedules'));
+        const canonicalDocs = getCanonicalScheduleDocs(
+          snap.docs.map(scheduleDoc => ({ id: scheduleDoc.id, data: scheduleDoc.data() })),
+          teachers.map(t => t.id),
+          academicYear,
+          currentTerm
+        ).filter(item => item.teacherId === selectedTeacher);
 
-        snap.forEach(doc => {
-          const data = doc.data();
+        canonicalDocs.forEach(({ data, teacherId }) => {
           if (!matchesSelectedYearTerm(data)) return;
 
           const scheduleClassName = formatClassNames(data.classId, (Object.values(data.schedule || {})[0] as any)?.groupNumber);
@@ -426,14 +450,14 @@ const TeacherScheduleViewPage: React.FC = () => {
             if (courseData) {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
-                if (!course) return;
+                if (!course || (course as any).isTemporarySchedule) return;
 
                 const groupNum = (course as any).groupNumber || 1;
-                const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
+                const assignment = findAssignment(course, teacherId, groupNum, assignmentMap);
                 const courseWithGroup = {
                   ...course,
                   groupNumber: groupNum,
-                  teacherPeriodLabel: getTeacherPeriodLabel(assignment, data.teacherId),
+                  teacherPeriodLabel: getTeacherPeriodLabel(assignment, teacherId),
                 };
 
                 const roomIds = assignment?.roomIds || course.room || [];
@@ -483,15 +507,19 @@ const TeacherScheduleViewPage: React.FC = () => {
     setIsPreparingBulk(true);
     try {
       const assignmentMap = await fetchAssignmentMap();
-      const q = query(collection(db, 'school-settings', schoolId, 'schedules'));
-      const snap = await getDocs(q);
+      const snap = await getDocs(collection(db, 'school-settings', schoolId, 'schedules'));
+      const canonicalDocs = getCanonicalScheduleDocs(
+        snap.docs.map(scheduleDoc => ({ id: scheduleDoc.id, data: scheduleDoc.data() })),
+        teachers.map(t => t.id),
+        academicYear,
+        currentTerm
+      );
       const allSchedules: Record<string, any> = {};
 
-      snap.forEach(doc => {
-        const data = doc.data();
+      canonicalDocs.forEach(({ data, teacherId }) => {
         if (!matchesSelectedYearTerm(data)) return;
 
-        if (!allSchedules[data.teacherId]) allSchedules[data.teacherId] = {};
+        if (!allSchedules[teacherId]) allSchedules[teacherId] = {};
 
         const scheduleClassName = formatClassNames(data.classId);
 
@@ -500,14 +528,14 @@ const TeacherScheduleViewPage: React.FC = () => {
           if (courseData) {
             const courses = Array.isArray(courseData) ? courseData : [courseData];
             courses.forEach((course: Course) => {
-              if (!course) return;
+              if (!course || (course as any).isTemporarySchedule) return;
 
               const groupNum = (course as any).groupNumber || 1;
-              const assignment = findAssignment(course, data.teacherId, groupNum, assignmentMap);
+              const assignment = findAssignment(course, teacherId, groupNum, assignmentMap);
               const courseWithGroup = {
                 ...course,
                 groupNumber: groupNum,
-                teacherPeriodLabel: getTeacherPeriodLabel(assignment, data.teacherId),
+                teacherPeriodLabel: getTeacherPeriodLabel(assignment, teacherId),
               };
 
               const roomIds = assignment?.roomIds || course.room || [];
@@ -524,13 +552,13 @@ const TeacherScheduleViewPage: React.FC = () => {
                 ? formatClassNames(assignment.classLevels, groupNum, assignment.room)
                 : formatClassNames(data.classId, groupNum, (course as any).room);
 
-              const currentEntry = allSchedules[data.teacherId][slot];
+              const currentEntry = allSchedules[teacherId][slot];
               if (currentEntry && currentEntry.course.id === course.id && currentEntry.course.groupNumber === groupNum) {
                 if (!currentEntry.className.includes(className)) {
                   currentEntry.className = `${currentEntry.className}, ${className}`;
                 }
               } else {
-                allSchedules[data.teacherId][slot] = { course: courseWithGroup, className, roomDisplay };
+                allSchedules[teacherId][slot] = { course: courseWithGroup, className, roomDisplay };
               }
             });
           }

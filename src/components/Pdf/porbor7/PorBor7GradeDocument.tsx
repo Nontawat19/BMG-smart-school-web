@@ -527,7 +527,7 @@ const normalizeGender = (value?: string, title?: string) => {
     const raw = String(value || '').trim();
     if (raw === 'ช' || raw === 'ชาย' || raw.toLowerCase() === 'male') return 'ชาย';
     if (raw === 'ญ' || raw === 'หญิง' || raw.toLowerCase() === 'female') return 'หญิง';
-    if (String(title || '').includes('เด็กชาย') || String(title || '').includes('นาย')) return 'ชาย';
+    if (String(title || '').includes('เด็กชาย') || String(title || '').includes('นาย') || String(title || '').includes('สามเณร') || String(title || '').includes('พระ')) return 'ชาย';
     return 'หญิง';
 };
 

@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { collection, getDocs, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
-import { DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, closestCenter, defaultDropAnimationSideEffects } from '@dnd-kit/core';
+import { CollisionDetection, DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, closestCenter, defaultDropAnimationSideEffects, pointerWithin } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import { useTheme } from '@/ThemeContext';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import Swal from 'sweetalert2';
 import MainLayout from "@/layouts/MainLayout";
-import { Course, CourseInstance, Schedule, Teacher, getAssignmentTeacherIds } from './types';
+import { Course, CourseInstance, PhysicalRoom, Schedule, SchedulingMetrics, Teacher, getAssignmentTeacherIds } from './types';
 import { CLASSES, getClassDisplayName, isAcademicCourse, getRequiredWeeklyPeriods } from './utils';
 import { CourseCard } from './components/CourseCard';
 import { TimetableGrid } from './components/TimetableGrid';
@@ -17,18 +18,30 @@ import { TeacherScheduleHeader } from './components/TeacherScheduleHeader';
 import { CompactScheduleToolbar } from './components/CompactScheduleToolbar';
 import { TeacherSelect } from './components/TeacherSelect';
 import { HoveredSlotTooltip } from './components/HoveredSlotTooltip';
+import { HoveredSlotInfo } from './components/HoveredSlotTooltip';
 import { useScheduleData } from './hooks/useScheduleData';
-import { useSmartMove } from './hooks/useSmartMove';
 import { useScheduleActions } from './hooks/useScheduleActions';
 import { useDragAndDrop } from './hooks/useDragAndDrop';
+import { useScheduleHistory } from './hooks/useScheduleHistory';
+import { ScheduleProvider, useScheduleContext } from './context/ScheduleContext';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
+import { ScheduleErrorBoundary } from './components/ScheduleErrorBoundary';
 
-const TeacherSchedulePage: React.FC = () => {
+const toStringArray = (value: string | string[] | undefined): string[] =>
+    Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+
+const areSameSlots = (first: string[] | undefined, second: string[] | undefined) => {
+    const left = first || [];
+    const right = second || [];
+    return left.length === right.length && left.every((slot, index) => slot === right[index]);
+};
+
+const TeacherSchedulePageContent: React.FC = () => {
     const { isDarkMode } = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
-    const schoolId = (currentUser as any)?.schoolId;
+    const schoolId = currentUser?.schoolId ?? undefined;
     const calendarState = useSelector((state: RootState) => state.calendar);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
     const teachers = useMemo<Teacher[]>(() => {
@@ -44,32 +57,50 @@ const TeacherSchedulePage: React.FC = () => {
     const [filterGroup, setFilterGroup] = useState<string>('all');
     const [filterPhysicalRoom, setFilterPhysicalRoom] = useState<string>('all');
     const [filterPhysicalRoomTeacher, setFilterPhysicalRoomTeacher] = useState<string>('all');
-    const [physicalRooms, setPhysicalRooms] = useState<any[]>([]);
+    const [physicalRooms, setPhysicalRooms] = useState<PhysicalRoom[]>([]);
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [activeDragItem, setActiveDragItem] = useState<CourseInstance | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isAutoScheduling, setIsAutoScheduling] = useState(false);
-    const [, setSchedulingMetrics] = useState<any>(null);
+    const [, setSchedulingMetrics] = useState<SchedulingMetrics | null>(null);
     const [dynamicUnavailableSlots, setDynamicUnavailableSlots] = useState<string[]>([]);
     const [localUnavailableSlotsMap, setLocalUnavailableSlotsMap] = useState<Record<string, string[]>>({});
-    const [hoveredSlot, setHoveredSlot] = useState<any>(null);
+    const [hoveredSlot, setHoveredSlot] = useState<HoveredSlotInfo | null>(null);
     const scheduleSectionRef = useRef<HTMLDivElement>(null);
 
     const {
+        schedule, setSchedule,
+        schoolMasterSchedule, setSchoolMasterSchedule,
         availableCourseInstances, setAvailableCourseInstances,
+        takeSnapshot, undo, redo, canUndo, canRedo
+    } = useScheduleContext();
+
+    const {
         allCourses,
         specialPeriods,
         periodSettings,
         schoolSettings,
-        schoolMasterSchedule, setSchoolMasterSchedule,
         fetchData,
-        schedule, setSchedule,
         academicYear, academicTerm,
         loadSchoolMasterSchedule,
-        assignmentConstraints
-    } = useScheduleData(schoolId, selectedYear, selectedSemester);
+        assignmentConstraints,
+        masterScheduleLoadVersion
+    } = useScheduleData(
+        schoolId, selectedYear, selectedSemester,
+        setSchedule, setSchoolMasterSchedule, setAvailableCourseInstances
+    );
 
     const hasSetDefaults = useRef(false);
+    // Keeps the latest SM snapshot available to the schedule-derivation effect
+    // WITHOUT making that effect re-run on drag-triggered SM updates.
+    const schoolMasterScheduleRef = useRef(schoolMasterSchedule);
+    useEffect(() => { schoolMasterScheduleRef.current = schoolMasterSchedule; });
+    // Same technique for `schedule`: the derivation effect below both reads it
+    // (to avoid double-counting already-scheduled periods) and calls
+    // setSchedule(...) itself — listing `schedule` directly as a dependency
+    // would make the effect re-trigger on its own output and loop forever.
+    const scheduleRef = useRef(schedule);
+    useEffect(() => { scheduleRef.current = schedule; });
 
     useEffect(() => {
         if (schoolId && calendarState.status === 'idle') {
@@ -128,7 +159,7 @@ const TeacherSchedulePage: React.FC = () => {
         if (!schoolId) return;
         const q = query(collection(db, 'school-settings', schoolId, 'physical-rooms'), orderBy('roomName', 'asc'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setPhysicalRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setPhysicalRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PhysicalRoom)));
         });
         return () => unsubscribe();
     }, [schoolId]);
@@ -164,6 +195,8 @@ const TeacherSchedulePage: React.FC = () => {
         periodSettings,
         specialPeriods,
         dynamicUnavailableSlots,
+        setDynamicUnavailableSlots,
+        setLocalUnavailableSlotsMap,
         fetchData,
         loadTeacherMasterSchedule: async () => { if (schoolId) await fetchData(schoolId); },
         schoolSettings,
@@ -171,23 +204,34 @@ const TeacherSchedulePage: React.FC = () => {
         assignmentConstraints
     });
 
-    useSmartMove({
-        schoolId,
-        selectedTeacher,
-        schedule,
-        availableCourseInstances,
-        fetchData,
-        loadTeacherMasterSchedule: () => fetchData(schoolId!)
-    });
-
     const selectedTeacherData = teachers.find((t: Teacher) => t.id === selectedTeacher);
+
+    useEffect(() => {
+        if (!selectedTeacher || !schoolId) {
+            setDynamicUnavailableSlots([]);
+            return;
+        }
+
+        const storeSlots = selectedTeacherData?.preferences?.unavailableSlots;
+        const cachedSlots = localUnavailableSlotsMap[selectedTeacher];
+        const nextSlots = storeSlots ?? cachedSlots ?? [];
+
+        setDynamicUnavailableSlots(prev => areSameSlots(prev, nextSlots) ? prev : nextSlots);
+
+        if (storeSlots !== undefined) {
+            setLocalUnavailableSlotsMap(prev => {
+                if (areSameSlots(prev[selectedTeacher], storeSlots)) return prev;
+                return { ...prev, [selectedTeacher]: storeSlots };
+            });
+        }
+    }, [selectedTeacher, schoolId, selectedTeacherData, localUnavailableSlotsMap]);
 
     const isCourseAllowedInScheduleViews = useCallback((courseId: string | undefined, teacherId?: string, groupNumber?: number) => {
         if (!courseId) return true;
         const courseDoc = allCourses.find(c => c.id === courseId);
         if (!courseDoc) return false;
 
-        return (courseDoc.teacherAssignments || []).some((assignment: any) => {
+        return (courseDoc.teacherAssignments || []).some((assignment) => {
             const teacherIds = getAssignmentTeacherIds(assignment);
             const groupMatches = !groupNumber || !assignment.groupNumber || Number(assignment.groupNumber) === Number(groupNumber);
             const teacherMatches = !teacherId || teacherIds.includes(teacherId);
@@ -211,7 +255,7 @@ const TeacherSchedulePage: React.FC = () => {
             if (!isCorrectSemester || !isAcademicCourse(course)) return sum;
 
             const assignments = course.teacherAssignments || [];
-            const relevantAssignments = assignments.filter((assignment: any) => {
+            const relevantAssignments = assignments.filter((assignment) => {
                 const teacherIds = getAssignmentTeacherIds(assignment);
                 const groupNumber = assignment.groupNumber || 1;
                 return teacherIds.includes(selectedTeacher) &&
@@ -278,10 +322,18 @@ const TeacherSchedulePage: React.FC = () => {
         setFilterPhysicalRoom(firstPhysicalRoom || 'all');
     }, [getClassFilterFromCourse]);
 
+    const roomMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        physicalRooms.forEach(r => {
+            map[r.id] = r.roomCode ? `(${r.roomCode}) ${r.roomName}` : (r.roomName || r.id);
+        });
+        return map;
+    }, [physicalRooms]);
+
     const {
         handleDragStart,
-        handleDragEnd, 
-        toggleLock, 
+        handleDragEnd,
+        toggleLock,
         handleRemoveCourse,
         handleManualAdd
     } = useDragAndDrop({
@@ -294,21 +346,15 @@ const TeacherSchedulePage: React.FC = () => {
         selectedTeacher,
         selectedTeacherData,
         teacherMap,
+        roomMap,
         selectedSemester,
         periodSettings,
         specialPeriods,
         dynamicUnavailableSlots,
         setActiveDragItem,
-        assignmentConstraints
+        assignmentConstraints,
+        takeSnapshot
     });
-
-    const roomMap = useMemo(() => {
-        const map: Record<string, string> = {};
-        physicalRooms.forEach(r => {
-            map[r.id] = r.roomName;
-        });
-        return map;
-    }, [physicalRooms]);
 
     const getTeacherDisplayName = useCallback((teacherId: string) => {
         const teacher = teachers.find(t => t.id === teacherId || (t.teacherId && t.teacherId === teacherId));
@@ -320,28 +366,18 @@ const TeacherSchedulePage: React.FC = () => {
         if (!selectedTeacher || !schoolId) {
             setSchedule({});
             setAvailableCourseInstances([]);
-            setDynamicUnavailableSlots([]);
             return;
         }
 
-        const cachedSlots = localUnavailableSlotsMap[selectedTeacher];
-        if (cachedSlots) {
-            setDynamicUnavailableSlots(cachedSlots);
-        } else if (selectedTeacherData?.preferences?.unavailableSlots) {
-            setDynamicUnavailableSlots(selectedTeacherData.preferences.unavailableSlots);
-        } else {
-            setDynamicUnavailableSlots([]);
-        }
-
         const consolidatedSchedule: Schedule = {};
-        Object.entries(schoolMasterSchedule).forEach(([slotId, occupancies]: [string, any[]]) => {
-            const teacherOccupancies = occupancies.filter((occ: any) => {
+        Object.entries(schoolMasterScheduleRef.current).forEach(([slotId, occupancies]) => {
+            const teacherOccupancies = occupancies.filter((occ) => {
                 if (occ.teacherId === selectedTeacher) return true;
                 if (Array.isArray(occ.teacherIds) && occ.teacherIds.includes(selectedTeacher)) return true;
                 return false;
             });
-            teacherOccupancies.forEach((teacherOcc: any) => {
-                if (teacherOcc.course) {
+            teacherOccupancies.forEach((teacherOcc) => {
+                if (teacherOcc.course && !teacherOcc.course.isTemporarySchedule) {
                     const courseDoc = allCourses.find(c => c.id === teacherOcc.course?.id);
                     const groupNum = teacherOcc.course?.groupNumber || 1;
                     if (!isCourseAllowedInScheduleViews(teacherOcc.course?.id, selectedTeacher, groupNum)) return;
@@ -391,7 +427,7 @@ const TeacherSchedulePage: React.FC = () => {
         setSchedule(consolidatedSchedule);
 
         const teacherCourses = allCourses.filter((c: Course) => {
-            const isAssignedToTeacher = c.teacherAssignments?.some((a: any) => getAssignmentTeacherIds(a).includes(selectedTeacher));
+            const isAssignedToTeacher = c.teacherAssignments?.some((a) => getAssignmentTeacherIds(a).includes(selectedTeacher));
             
             const isGhost = !selectedTeacher || selectedTeacher === 'pending' || selectedTeacher.startsWith('GHOST');
             if (isGhost) return false;
@@ -439,9 +475,9 @@ const TeacherSchedulePage: React.FC = () => {
         const bank: CourseInstance[] = [];
         teacherCourses.forEach((course: Course) => {
             const totalHours = getRequiredWeeklyPeriods(course);
-            const relevantAssignments = course.teacherAssignments?.filter((a: any) => getAssignmentTeacherIds(a).includes(selectedTeacher)) || [];
+            const relevantAssignments = course.teacherAssignments?.filter((a) => getAssignmentTeacherIds(a).includes(selectedTeacher)) || [];
 
-            relevantAssignments.forEach((assign: any) => {
+            relevantAssignments.forEach((assign) => {
                 const groupNum = assign.groupNumber || 1;
                 if (filterGroup !== 'all' && String(groupNum) !== filterGroup) return;
 
@@ -461,7 +497,8 @@ const TeacherSchedulePage: React.FC = () => {
 
                 let scheduledCount = 0;
                 // Use the current local schedule if it's already loaded for this teacher
-                const targetSchedule = (Object.keys(schedule).length > 0) ? schedule : consolidatedSchedule;
+                const currentSchedule = scheduleRef.current;
+                const targetSchedule = (Object.keys(currentSchedule).length > 0) ? currentSchedule : consolidatedSchedule;
                 Object.values(targetSchedule).forEach(slots => {
                     scheduledCount += slots.filter(inst => inst.id === course.id && inst.groupNumber === groupNum).length;
                 });
@@ -490,20 +527,32 @@ const TeacherSchedulePage: React.FC = () => {
             });
         });
         setAvailableCourseInstances(bank);
-    }, [selectedTeacher, selectedSemester, schoolId, teachers, allCourses, schoolMasterSchedule, selectedTeacherData, setSchedule, setAvailableCourseInstances, localUnavailableSlotsMap, filterClass, filterRoom, filterGroup, searchTerm, isCourseAllowedInScheduleViews]);
+    }, [masterScheduleLoadVersion, selectedTeacher, selectedSemester, schoolId, teachers, allCourses, selectedTeacherData, setSchedule, setAvailableCourseInstances, filterClass, filterRoom, filterGroup, searchTerm, isCourseAllowedInScheduleViews, roomMap]);
 
     const saveTeacherUnavailableSlots = useCallback(async (teacherId: string, slots: string[]) => {
-        if (!schoolId || !teacherId) return;
+        if (!schoolId || !teacherId) return false;
         try {
             const { doc, setDoc } = await import('firebase/firestore');
             const teacherRef = doc(db, 'school-settings', schoolId, 'teachers', teacherId);
             await setDoc(teacherRef, {
                 preferences: { unavailableSlots: slots }
             }, { merge: true });
+            await dispatch(fetchTeachersMap(schoolId));
+            return true;
         } catch (error) {
             console.error("Error saving teacher preferences:", error);
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'error',
+                title: 'บันทึกคาบว่างไม่สำเร็จ',
+                text: 'ระบบไม่สามารถอัปเดตข้อมูลคาบว่างของครูได้',
+                showConfirmButton: false,
+                timer: 3000,
+            });
+            return false;
         }
-    }, [schoolId]);
+    }, [dispatch, schoolId]);
 
     const roomSchedule = useMemo(() => {
         const hasPhysicalRoomFilter = filterPhysicalRoom !== 'all';
@@ -512,7 +561,7 @@ const TeacherSchedulePage: React.FC = () => {
         if (!hasPhysicalRoomFilter && !hasTeacherFilter && !hasClassFilter) return {};
         const filtered: Schedule = {};
         const classLabel = CLASSES[filterClass as keyof typeof CLASSES] || filterClass;
-        const clean = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+        const clean = (s: unknown) => String(s || '').replace(/\s+/g, '').toLowerCase();
         const normFilterClass = clean(filterClass);
         const normClassLabel = clean(classLabel);
         const normFilterRoom = clean(filterRoom);
@@ -630,7 +679,7 @@ const TeacherSchedulePage: React.FC = () => {
         const classLabel = CLASSES[filterClass as keyof typeof CLASSES] || filterClass;
         
         // Helper to clean strings for robust matching
-        const clean = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase();
+        const clean = (s: unknown) => String(s || '').replace(/\s+/g, '').toLowerCase();
         const normFilterClass = clean(filterClass);
         const normClassLabel = clean(classLabel);
         const normFilterRoom = clean(filterRoom);
@@ -691,14 +740,14 @@ const TeacherSchedulePage: React.FC = () => {
                     });
                     if (roomMatch) return true;
 
-                    const rooms = (item as any).room || (item as any).course?.room || [];
-                    return rooms.some((r: any) => {
+                    const rooms = toStringArray(item.room || item.course?.room);
+                    return rooms.some((r) => {
                         const nr = clean(r);
                         return nr === normFilterRoom || nr === clean(`Room_${filterRoom}`) || (!isNaN(Number(nr)) && Number(nr) === Number(normFilterRoom));
                     });
                 })();
                 const matchesGroup = filterGroup === 'all' || clean(item.groupNumber) === clean(filterGroup) || String(item.groupNumber || 1) === filterGroup;
-                
+
                 if (isMatch(item.classId) && item.course && matchesRoom && matchesGroup) {
                     const groupNumber = item.groupNumber || 1;
                     const courseDoc = allCourses.find(c => c.id === item.course?.id);
@@ -736,8 +785,8 @@ const TeacherSchedulePage: React.FC = () => {
                     });
                     if (roomMatch) return true;
 
-                    const rooms = (item as any).room || (item as any).course?.room || [];
-                    return rooms.some((r: any) => {
+                    const rooms = item.room || [];
+                    return rooms.some((r) => {
                         const nr = clean(r);
                         return nr === normFilterRoom || nr === clean(`Room_${filterRoom}`) || (!isNaN(Number(nr)) && Number(nr) === Number(normFilterRoom));
                     });
@@ -869,7 +918,7 @@ const TeacherSchedulePage: React.FC = () => {
                     onChange={(event) => setFilterPhysicalRoom(event.target.value || 'all')}
                 >
                     <option value="all" className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">ทุกห้องปฏิบัติการ</option>
-                    {physicalRooms.map((room: any) => (
+                    {physicalRooms.map((room) => (
                         <option key={room.id} value={room.id} className="bg-white dark:bg-[#2a2b2f] text-gray-800 dark:text-white">
                             {`${room.roomCode ? `(${room.roomCode}) ` : ''}${room.roomName}`}
                         </option>
@@ -894,6 +943,12 @@ const TeacherSchedulePage: React.FC = () => {
         return ids;
     }, []);
 
+    const collisionDetectionStrategy: CollisionDetection = useCallback((args) => {
+        const pointerHits = pointerWithin(args);
+        if (pointerHits.length > 0) return pointerHits;
+        return closestCenter(args);
+    }, []);
+
     const handleClearAllSchedules = () => {
         handleClearAllTeachersSchedules();
     };
@@ -903,7 +958,7 @@ const TeacherSchedulePage: React.FC = () => {
             sensors={sensors}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
-            collisionDetection={closestCenter}
+            collisionDetection={collisionDetectionStrategy}
             modifiers={[restrictToWindowEdges]}
         >
             <MainLayout>
@@ -923,6 +978,7 @@ const TeacherSchedulePage: React.FC = () => {
                     />
 
                     <main className="max-w-[1600px] mx-auto w-full flex-grow flex flex-col min-h-0 px-4 pt-1 pb-2 gap-3">
+                        <ScheduleErrorBoundary fallbackTitle="ตารางสอนครูผู้สอนเกิดข้อผิดพลาด">
                         <div className="flex-[5_5_0%] flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                             <TimetableGrid
                                 title="ตารางสอนครูผู้สอน"
@@ -952,6 +1008,10 @@ const TeacherSchedulePage: React.FC = () => {
                                         setFilterPhysicalRoom={setFilterPhysicalRoom}
                                         handleClearSchedule={handleClearSchedule}
                                         handleAutoScheduleForTeacherAndClasses={handleAutoScheduleForTeacherAndClasses}
+                                        undo={undo}
+                                        redo={redo}
+                                        canUndo={canUndo}
+                                        canRedo={canRedo}
                                     />
                                 }
                                 type="teacher"
@@ -971,7 +1031,7 @@ const TeacherSchedulePage: React.FC = () => {
                                 setDynamicUnavailableSlots={(newSlots) => {
                                     if (typeof newSlots === 'function') {
                                         setDynamicUnavailableSlots(prev => {
-                                            const updated = (newSlots as any)(prev);
+                                            const updated = newSlots(prev);
                                             setLocalUnavailableSlotsMap(prevMap => ({ ...prevMap, [selectedTeacher]: updated }));
                                             saveTeacherUnavailableSlots(selectedTeacher, updated);
                                             return updated;
@@ -993,8 +1053,10 @@ const TeacherSchedulePage: React.FC = () => {
                                 selectedCourseCode={searchTerm}
                             />
                         </div>
+                        </ScheduleErrorBoundary>
 
                         <div className="flex-[4_4_0%] grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
+                            <ScheduleErrorBoundary fallbackTitle="ตารางเรียนห้องเรียนเกิดข้อผิดพลาด">
                             <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                                 <TimetableGrid
                                     title="ตารางเรียนห้องเรียน"
@@ -1003,7 +1065,7 @@ const TeacherSchedulePage: React.FC = () => {
                                         : 'กรุณาเลือกชั้นเรียน'
                                     }
                                     headerActions={classroomPreviewControls}
-                                    showGrid={classroomPreviewReady}
+                                    showGrid={true}
                                     emptyMessage="กรุณาเลือกชั้นเรียนและห้องเรียนก่อนแสดงตาราง"
                                     type="class"
                                     allDroppableIds={allDroppableIds}
@@ -1030,12 +1092,14 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedCourseCode={searchTerm}
                                 />
                             </div>
+                            </ScheduleErrorBoundary>
+                            <ScheduleErrorBoundary fallbackTitle="ตารางห้องปฏิบัติการเกิดข้อผิดพลาด">
                             <div className="flex flex-col min-h-0 bg-white dark:bg-[#2a2b2f] border-none rounded-[24px] overflow-hidden shadow-sm">
                                 <TimetableGrid
                                     title="ตารางการใช้งานห้องปฏิบัติการ"
                                     subtitle={roomScheduleSubtitle}
                                     headerActions={physicalRoomPreviewControls}
-                                    showGrid={physicalRoomPreviewReady}
+                                    showGrid={true}
                                     emptyMessage="กรุณาเลือกครูหรือห้องปฏิบัติการก่อนแสดงตาราง"
                                     type="room"
                                     allDroppableIds={allDroppableIds}
@@ -1062,6 +1126,7 @@ const TeacherSchedulePage: React.FC = () => {
                                     selectedCourseCode={searchTerm}
                                 />
                             </div>
+                            </ScheduleErrorBoundary>
                         </div>
                     </main>
 
@@ -1098,4 +1163,12 @@ const TeacherSchedulePage: React.FC = () => {
     );
 };
 
-export default TeacherSchedulePage;
+export default function TeacherSchedulePage() {
+    return (
+        <ScheduleErrorBoundary fallbackTitle="เกิดข้อผิดพลาดในหน้าจัดตารางสอน">
+            <ScheduleProvider>
+                <TeacherSchedulePageContent />
+            </ScheduleProvider>
+        </ScheduleErrorBoundary>
+    );
+}

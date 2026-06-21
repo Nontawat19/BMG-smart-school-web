@@ -16,6 +16,7 @@ import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { classMatchesSelection, getRoomsForClass, normalizePeriodSettings, parseClassRoom } from '@/utils/scheduleDisplayUtils';
+import { getScheduleDocId, matchesScheduleTerm, resolveScheduleTeacherId } from './schedule/scheduleSharedUtils';
 
 // --- Types ---
 interface Course {
@@ -83,6 +84,28 @@ const DEFAULT_PERIODS: (PeriodSetting & { index: number })[] = [
   { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true, index: 8 },
   { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true, index: 9 },
 ];
+
+const getCanonicalScheduleDocs = (
+  docs: Array<{ id: string; data: any }>,
+  knownTeacherIds: string[],
+  year: string,
+  term: string
+) => {
+  const matching = docs
+    .map(({ id, data }) => {
+      if (!matchesScheduleTerm(data, year, term)) return null;
+      const teacherId = resolveScheduleTeacherId(id, data.teacherId, knownTeacherIds);
+      const canonicalId = getScheduleDocId(teacherId, String(data.academicYear || year || ''), String(data.semester || term || '1'));
+      return { id, data, teacherId, isCanonical: id === canonicalId || id.includes('__') };
+    })
+    .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+
+  const teachersWithCanonicalDocs = new Set(
+    matching.filter(item => item.isCanonical).map(item => item.teacherId)
+  );
+
+  return matching.filter(item => item.isCanonical || !teachersWithCanonicalDocs.has(item.teacherId));
+};
 
 // --- Register Thai Font ---
 Font.register({
@@ -202,7 +225,7 @@ const formatTeacherName = (teacher: any) => {
   
   let name = teacher.name || '';
   // Remove common Thai prefixes and academic/military titles
-  name = name.replace(/^(นาย|นางสาว|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ว่าที่ ร\.ต\.หญิง|ว่าที่ร้อยโท|ดร\.|ผอ\.|ครู)\s*/, '');
+  name = name.replace(/^(พระสามเณร|พระมหา|พระครู|พระใบฎีกา|หลวงพ่อ|พระอาจารย์|พระ|สามเณร|นาย|นางสาว|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ว่าที่ ร\.ต\.หญิง|ว่าที่ร้อยโท|ดร\.|ผอ\.|ครู)\s*/, '');
   
   // Take only the first part of the name (the first name)
   const firstName = name.trim().split(/\s+/)[0];
@@ -350,11 +373,45 @@ const StudentSchedulePage: React.FC = () => {
         if (data.courseId) assignmentMap[data.courseId] = data;
       });
 
+      // Detect available rooms and groups from course_assignments for the selected class
+      const detectedRooms = new Set<string>();
+      const detectedGroups = new Set<string>();
+      Object.values(assignmentMap).forEach((assignmentDoc: any) => {
+        (assignmentDoc.teacherAssignments || []).forEach((a: any) => {
+          const levels: string[] = Array.isArray(a.classLevels) ? a.classLevels : [];
+          const matchesGrade = levels.some(cl => {
+            const { level } = parseClassRoom(cl);
+            return level === selectedClass || cl === selectedClass;
+          });
+          if (!matchesGrade) return;
+          // Room from GroupAssignment.room (e.g. "1", "2")
+          if (a.room && a.room !== 'all') detectedRooms.add(String(a.room));
+          // Room from classLevels format "m1/2"
+          levels.forEach(cl => {
+            const { level, room } = parseClassRoom(cl);
+            if (level === selectedClass && room) detectedRooms.add(room);
+          });
+          if (a.groupNumber) detectedGroups.add(String(a.groupNumber));
+        });
+      });
+      if (detectedRooms.size > 0) {
+        setAvailableGroups(Array.from(detectedRooms).sort((a, b) => parseInt(a) - parseInt(b)));
+      }
+      if (detectedGroups.size > 0) {
+        setAvailableGroupNumbers(Array.from(detectedGroups).sort((a, b) => parseInt(a) - parseInt(b)));
+      }
+
+      const canonicalDocs = getCanonicalScheduleDocs(
+        querySnapshot.docs.map(scheduleDoc => ({ id: scheduleDoc.id, data: scheduleDoc.data() })),
+        Object.keys(teacherMap),
+        academicYear,
+        currentTerm
+      );
+
       if (selectedRoom) {
         // --- Existing Single Room Logic ---
         const mergedSchedule: Schedule = {};
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
+        canonicalDocs.forEach(({ data, teacherId }) => {
             if (!matchesYearTerm(data, academicYear, currentTerm)) return;
 
             // Client-side Filter for Grade
@@ -362,7 +419,7 @@ const StudentSchedulePage: React.FC = () => {
             const isGradeMatch = classIds.some(id => classMatchesSelection(id, selectedClass));
             if (!isGradeMatch) return;
 
-            const teacher = teacherMap[data.teacherId];
+            const teacher = teacherMap[teacherId];
             const teacherName = formatTeacherName(teacher);
             const scheduleData = data.schedule as Record<string, any>;
 
@@ -371,7 +428,7 @@ const StudentSchedulePage: React.FC = () => {
               if (courseData) {
                 const courses = Array.isArray(courseData) ? courseData : [courseData];
                 courses.forEach((course: Course) => {
-                  if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+                  if (course && !(course as any).isTemporarySchedule && (!course.id || !inactiveCourseIds.has(course.id))) {
                     const latestCourse = coursesMap[course.id];
                     const allAssignments = [
                       ...(assignmentMap[course.id]?.teacherAssignments || []),
@@ -397,8 +454,8 @@ const StudentSchedulePage: React.FC = () => {
 
                     if (matchesRoom && matchesGroup) {
                       // Final validation against teacherAssignments for specific room/group pairing if exists
-                      const isStrictMatch = !hasAssignments || allAssignments.some((a: any) => {
-                        const teacherMatch = assignmentIncludesTeacher(a, data.teacherId);
+                        const isStrictMatch = !hasAssignments || allAssignments.some((a: any) => {
+                        const teacherMatch = assignmentIncludesTeacher(a, teacherId);
                         const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
                         const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
                         return teacherMatch && roomMatch && groupMatch;
@@ -406,7 +463,7 @@ const StudentSchedulePage: React.FC = () => {
 
                       if (isStrictMatch) {
                         const assignment = allAssignments.find((a: any) => {
-                          const teacherMatch = assignmentIncludesTeacher(a, data.teacherId);
+                          const teacherMatch = assignmentIncludesTeacher(a, teacherId);
                           const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
                           const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
                           return teacherMatch && roomMatch && groupMatch;
@@ -434,14 +491,13 @@ const StudentSchedulePage: React.FC = () => {
         const roomSchedules: Record<string, Record<string, ScheduleEntry>> = {};
         const commonSchedule: Record<string, ScheduleEntry> = {};
 
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
+        canonicalDocs.forEach(({ data, teacherId }) => {
           if (!matchesYearTerm(data, academicYear, currentTerm)) return;
           const classIds = asArray(data.classId);
           const isGradeMatch = classIds.some(id => classMatchesSelection(id, selectedClass));
           if (!isGradeMatch) return;
 
-          const teacher = teacherMap[data.teacherId];
+          const teacher = teacherMap[teacherId];
           const teacherName = formatTeacherName(teacher);
           const scheduleData = data.schedule as Record<string, any>;
 
@@ -450,7 +506,7 @@ const StudentSchedulePage: React.FC = () => {
             if (courseData) {
               const courses = Array.isArray(courseData) ? courseData : [courseData];
               courses.forEach((course: Course) => {
-                if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+                if (course && !(course as any).isTemporarySchedule && (!course.id || !inactiveCourseIds.has(course.id))) {
                   const latestCourse = coursesMap[course.id];
                   const allAssignments = [
                     ...(assignmentMap[course.id]?.teacherAssignments || []),
@@ -546,15 +602,19 @@ const StudentSchedulePage: React.FC = () => {
         const data = d.data();
         if (data.courseId) assignmentMap[data.courseId] = data;
       });
+      const canonicalDocs = getCanonicalScheduleDocs(
+        querySnapshot.docs.map(scheduleDoc => ({ id: scheduleDoc.id, data: scheduleDoc.data() })),
+        Object.keys(teacherMap),
+        academicYear,
+        currentTerm
+      );
 
       // Map to store schedules: ClassID -> RoomNumber -> Schedule
       const schoolSchedules: Record<string, Record<string, Record<string, ScheduleEntry>>> = {};
 
       // 2. Process each teacher's schedule
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
+      canonicalDocs.forEach(({ data, teacherId }) => {
         if (!matchesYearTerm(data, academicYear, currentTerm)) return;
-        const teacherId = data.teacherId;
         const teacher = teacherMap[teacherId];
         const teacherName = formatTeacherName(teacher);
 
@@ -580,9 +640,9 @@ const StudentSchedulePage: React.FC = () => {
           for (const slot in scheduleData) {
             const courseData = scheduleData[slot];
             if (courseData) {
-              const courses = Array.isArray(courseData) ? courseData : [courseData];
-              courses.forEach((course: Course) => {
-                  if (course && (!course.id || !inactiveCourseIds.has(course.id))) {
+            const courses = Array.isArray(courseData) ? courseData : [courseData];
+            courses.forEach((course: Course) => {
+                  if (course && !(course as any).isTemporarySchedule && (!course.id || !inactiveCourseIds.has(course.id))) {
                     const latestCourse = coursesMap[course.id];
                     const allAssignments = [
                       ...(assignmentMap[course.id]?.teacherAssignments || []),

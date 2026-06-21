@@ -134,7 +134,7 @@ export const useGradeBookData = (
                 const processedList = studentList
                     .map(s => {
                         let fName = s.firstName || "";
-                        const commonPrefixes = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว', 'นาง'];
+                        const commonPrefixes = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว', 'นาง', 'สามเณร', 'พระ', 'พระสามเณร', 'พระมหา', 'พระครู', 'พระใบฎีกา', 'หลวงพ่อ', 'พระอาจารย์'];
                         const foundPrefix = commonPrefixes.find(p => fName.startsWith(p));
 
                         return {
