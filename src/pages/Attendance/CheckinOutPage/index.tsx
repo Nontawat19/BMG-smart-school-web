@@ -293,6 +293,7 @@ const CheckinOutPage: React.FC = () => {
   const activeSearchKeysRef = useRef<Set<string>>(new Set());
   const activeAttendanceKeysRef = useRef<Set<string>>(new Set());
   const faceScanFailSpeechAtRef = useRef<number>(0);
+  const attendanceFetchCacheRef = useRef<Map<string, { data: any; cachedAt: number }>>(new Map());
   const adminTeacherLineIdsRef = useRef<string[]>([]);
 
   // Use the imported getTodayString from dateUtils
@@ -305,6 +306,50 @@ const CheckinOutPage: React.FC = () => {
     if (storedUsers) {
       setLatestUsers(JSON.parse(storedUsers).slice(0, 8));
     }
+  }, []);
+
+  // ล้าง localStorage attendance ของวันเก่าทุกครั้งที่เปิดหน้า
+  useEffect(() => {
+    const today = getTodayString();
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("att_") && !key.includes(`_${today}_`)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  }, []);
+
+  // Midnight watchdog: ตรวจทุก 1 นาที ถ้าวันเปลี่ยนให้ล้าง cache เก่าทันที
+  // รองรับ kiosk ที่เปิดหน้าทิ้งไว้ข้ามคืน 24/7
+  useEffect(() => {
+    let lastKnownDate = getTodayString();
+
+    const midnightCheck = () => {
+      const today = getTodayString();
+      if (today === lastKnownDate) return;
+      lastKnownDate = today;
+
+      // ล้าง att_* keys ของวันก่อนหน้าออกจาก localStorage
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("att_") && !key.includes(`_${today}_`)) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
+
+      // ล้าง in-memory cache (attendance fetch + face scan cooldowns)
+      attendanceFetchCacheRef.current.clear();
+      faceScanCooldownRef.current.clear();
+
+      console.log(`[Cleanup] วันใหม่ ${today} — ล้าง att_* ${keysToRemove.length} keys, memory cache, cooldowns`);
+    };
+
+    const timer = setInterval(midnightCheck, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   // Pre-load and cache all teachers to avoid Firestore reads during scanning
@@ -1178,6 +1223,36 @@ const CheckinOutPage: React.FC = () => {
     };
   }, [schoolId]);
 
+  const ATTENDANCE_FETCH_CACHE_TTL_MS = 12_000;
+  const getAttLsKey = useCallback((user: FoundUser) =>
+    `att_${schoolId}_${getTodayString()}_${user.type}_${user.id}`, [schoolId]);
+
+  const fetchAttendanceCached = useCallback(async (user: FoundUser) => {
+    const memKey = `${user.type}:${user.id}:${getTodayString()}`;
+
+    // 1. ตรวจ in-memory cache (12 วินาที)
+    const memEntry = attendanceFetchCacheRef.current.get(memKey);
+    if (memEntry && Date.now() - memEntry.cachedAt < ATTENDANCE_FETCH_CACHE_TTL_MS) {
+      return memEntry.data;
+    }
+
+    // 2. ตรวจ localStorage (เก็บไว้ตลอดวัน ไม่ต้องถาม Firebase ซ้ำหลังรีเฟรช)
+    try {
+      const lsRaw = localStorage.getItem(getAttLsKey(user));
+      if (lsRaw) {
+        const lsData = JSON.parse(lsRaw);
+        attendanceFetchCacheRef.current.set(memKey, { data: lsData, cachedAt: Date.now() });
+        return lsData;
+      }
+    } catch { /* ignore */ }
+
+    // 3. Firebase (fallback สุดท้าย)
+    const data = await fetchAttendance(user);
+    attendanceFetchCacheRef.current.set(memKey, { data, cachedAt: Date.now() });
+    try { localStorage.setItem(getAttLsKey(user), JSON.stringify(data)); } catch { /* quota */ }
+    return data;
+  }, [fetchAttendance, getAttLsKey]);
+
   const uploadFaceScanSnapshot = useCallback(async (
     image: Blob,
     user: FoundUser,
@@ -1788,12 +1863,16 @@ const CheckinOutPage: React.FC = () => {
     };
 
     // 1. ตรวจสอบใน Local In-Memory Cache ก่อนเพื่อประหยัดการอ่าน Firebase
-    for (const lookupKey of uniqueKeys(userId, ...displayCandidates, ...cardCandidates)) {
+    const lookupKeys = uniqueKeys(userId, ...displayCandidates, ...cardCandidates);
+    console.log("[FaceScan] 🔍 ค้นหาใน sessionUserCache ด้วย keys:", lookupKeys);
+    for (const lookupKey of lookupKeys) {
       if (sessionUserCache.current.has(lookupKey)) {
         const cached = sessionUserCache.current.get(lookupKey)!;
+        console.log("[FaceScan] ✅ พบใน cache:", cached.name, "(key:", lookupKey, ")");
         return { ...cached, faceConfidence: confidence, findfaceCardId: cardId ? String(cardId) : cached.findfaceCardId };
       }
     }
+    console.warn("[FaceScan] ❌ ไม่พบใน cache — cache size:", sessionUserCache.current.size, "| cardId:", cardId, "| displayId:", displayId);
 
     // เพิ่มการจับคู่ด้วยชื่อใน Cache เพิ่มเติมแบบทนทาน (Robust Name Caching)
     const nameToMatch = payload.name || payload.cardName || displayCandidates.find((value) => value.includes(" ")) || null;
@@ -1911,15 +1990,16 @@ const CheckinOutPage: React.FC = () => {
       if (nameMatch) return nameMatch;
     }
 
-    if (FACE_SCAN_DEBUG) {
-      console.warn("[FaceScan] FindFace returned a face, but no matching local cached user was found:", {
-        userId,
-        type,
-        displayCandidates,
-        cardCandidates,
-        name: payload.name || payload.cardName || payload.comment || payload.description,
-      });
-    }
+    console.warn("[FaceScan] ❌ ค้นหาใน Firebase แล้วก็ไม่เจอ:", {
+      canScanTeachers,
+      canScanStudents,
+      cardCandidates,
+      displayCandidates,
+      name: payload.name || payload.cardName || payload.comment || payload.description,
+      hint: canScanTeachers
+        ? "ตรวจสอบว่า teacher document มี field findfaceCardId หรือ idCardNumber ที่ตรงกับ cardCandidates ไหม"
+        : "canScanTeachers=false — ผู้ใช้ที่ login อาจไม่มี role SCHOOL_ADMIN / TEACHER_ATTENDANCE",
+    });
 
     return null;
   }, [schoolId, canScanStudents, canScanTeachers, buildFoundUser]);
@@ -2128,7 +2208,9 @@ const CheckinOutPage: React.FC = () => {
           checkoutTime: attData.checkoutTime,
           scanMethod: user.scanMethod,
         });
-        if (!isFaceScan) {
+        if (isFaceScan) {
+          setSpeechTrigger({ user, type: null, timestamp: Date.now(), status: 'success' });
+        } else {
           Swal.fire({
             icon: "info",
             title: "ลงเวลาครบแล้ว",
@@ -2493,7 +2575,16 @@ const CheckinOutPage: React.FC = () => {
   }, [schoolSettings, calendarEvents, isCalendarLoaded, isHoliday, timeOffset]);
 
   const userName = (currentUser as any)?.displayName || "ผู้ดูแลระบบ";
-  const isFaceScanModeEnabled = schoolSettings?.useFaceScanMode === true;
+  const currentUserIdForCamera = (currentUser as any)?.uid || (currentUser as any)?.id || "";
+  const configuredCameras: any[] = Array.isArray(schoolSettings?.faceScanConfig?.cameras)
+    ? schoolSettings.faceScanConfig.cameras
+    : [];
+  const pairedCamera = currentUserIdForCamera
+    ? configuredCameras.find((c: any) => c.pairedUserId === currentUserIdForCamera) ?? null
+    : null;
+  const isFaceScanModeEnabled = pairedCamera !== null
+    ? pairedCamera.enableFaceScan === true
+    : schoolSettings?.useFaceScanMode === true;
   const recommendedVoiceURI = getPreferredThaiVoice(availableVoices)?.voiceURI || null;
   let faceScanEndpoint =
     schoolSettings?.faceScanConfig?.endpoint ||
@@ -2691,7 +2782,7 @@ const CheckinOutPage: React.FC = () => {
               const searchResult = await searchResponse.json();
               const matchedCard = searchResult.results?.[0];
               if (!matchedCard) {
-                if (FACE_SCAN_DEBUG) console.log("[FaceScan] FindFace search returned no matched card:", searchResult);
+                console.warn("[FaceScan] ⚠️ FindFace พบใบหน้าแต่ไม่มี card ตรงกันเลย (ยังไม่ได้ลงทะเบียนใบหน้าในระบบ FindFace?):", searchResult);
                 return;
               }
 
@@ -2703,9 +2794,12 @@ const CheckinOutPage: React.FC = () => {
                 matchedCard.score ??
                 0
               );
-              if (FACE_SCAN_DEBUG) console.log(`⚙️ [FaceScan] ใบหน้า #${faceIdx}: ${matchedCard.name || "ไม่มีชื่อ"}, ความมั่นใจ=${(confidence * 100).toFixed(1)}%, เกณฑ์=${(effectiveFaceScanThreshold * 100).toFixed(1)}%`);
-              
-              if (confidence < effectiveFaceScanThreshold) return;
+              console.log(`⚙️ [FaceScan] ใบหน้า #${faceIdx}: cardId=${matchedCard.id}, name="${matchedCard.name || "-"}", ความมั่นใจ=${(confidence * 100).toFixed(1)}%, เกณฑ์=${(effectiveFaceScanThreshold * 100).toFixed(1)}%`);
+
+              if (confidence < effectiveFaceScanThreshold) {
+                console.warn(`[FaceScan] ⚠️ ความมั่นใจต่ำเกินไป: ${(confidence * 100).toFixed(1)}% < ${(effectiveFaceScanThreshold * 100).toFixed(1)}% — ข้ามการจับคู่`);
+                return;
+              }
 
               const matchedMeta = matchedCard.meta || {};
               const matchedDisplayId =
@@ -2741,8 +2835,16 @@ const CheckinOutPage: React.FC = () => {
               const user = await resolveFaceMatchedUser(facePayload);
               if (user) {
                 faceResults[faceIdx].user = { ...user, faceConfidence: confidence };
-              } else if (FACE_SCAN_DEBUG) {
-                console.log("[FaceScan] FindFace card matched but no school user resolved:", facePayload);
+              } else {
+                console.warn("[FaceScan] ⚠️ FindFace จับคู่ card ได้แต่ไม่พบข้อมูลใน Firestore:", {
+                  cardId: facePayload.findfaceCardId,
+                  cardName: facePayload.cardName,
+                  teacherId: facePayload.teacherId,
+                  studentId: facePayload.studentId,
+                  displayId: facePayload.displayId,
+                  confidence: `${(confidence * 100).toFixed(1)}%`,
+                  hint: "ตรวจสอบว่า field findfaceCardId ใน Firestore ตรงกับ card ID นี้ไหม",
+                });
               }
             } catch (err) {
               console.error("Error searching face object:", faceObj.id, err);
@@ -2794,7 +2896,7 @@ const CheckinOutPage: React.FC = () => {
 
           if (Date.now() - lastScanAt < 30_000) {
             try {
-              const attData = await fetchAttendance(user);
+              const attData = await fetchAttendanceCached(user);
               updatedUsers.push({
                 ...user,
                 checkinTime: attData.checkinTime || undefined,
@@ -2805,9 +2907,11 @@ const CheckinOutPage: React.FC = () => {
             }
           } else {
             faceScanCooldownRef.current.set(user.id, Date.now());
+            attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getTodayString()}`);
+            try { localStorage.removeItem(getAttLsKey(user)); } catch { /* ignore */ }
             setError(null);
             const faceScanImageUrl = await uploadFaceScanSnapshot(image, user, user.faceConfidence);
-            
+
             const processedUser = {
               ...user,
               scanMethod: "สแกนใบหน้า",
@@ -2819,6 +2923,8 @@ const CheckinOutPage: React.FC = () => {
 
             try {
               const attData = await fetchAttendance(user);
+              attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getTodayString()}`, { data: attData, cachedAt: Date.now() });
+              try { localStorage.setItem(getAttLsKey(user), JSON.stringify(attData)); } catch { /* quota */ }
               updatedUsers.push({
                 ...processedUser,
                 checkinTime: attData.checkinTime || undefined,
@@ -2917,7 +3023,7 @@ const CheckinOutPage: React.FC = () => {
       setDisplayUser(user);
       setDisplayUsers([user]);
       try {
-        const attData = await fetchAttendance(user);
+        const attData = await fetchAttendanceCached(user);
         checkinTimeStr = attData.checkinTime || undefined;
         checkoutTimeStr = attData.checkoutTime || undefined;
         setCheckinTime(checkinTimeStr || null);
@@ -2925,6 +3031,8 @@ const CheckinOutPage: React.FC = () => {
       } catch (err) {}
     } else {
       faceScanCooldownRef.current.set(user.id, Date.now());
+      attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getTodayString()}`);
+      try { localStorage.removeItem(getAttLsKey(user)); } catch { /* ignore */ }
       setError(null);
       const faceScanImageUrl = await uploadFaceScanSnapshot(image, user, confidence || user.faceConfidence);
       uploadedFaceScanImageUrl = faceScanImageUrl || user.faceScanImageUrl;
@@ -2936,6 +3044,8 @@ const CheckinOutPage: React.FC = () => {
       }, isIpCamera);
       try {
         const attData = await fetchAttendance(user);
+        attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getTodayString()}`, { data: attData, cachedAt: Date.now() });
+        try { localStorage.setItem(getAttLsKey(user), JSON.stringify(attData)); } catch { /* quota */ }
         checkinTimeStr = attData.checkinTime || undefined;
         checkoutTimeStr = attData.checkoutTime || undefined;
       } catch (err) {}

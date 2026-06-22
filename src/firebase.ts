@@ -2,7 +2,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, setLogLevel } from "firebase/firestore"; // เปลี่ยนจาก database เป็น firestore
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, setLogLevel } from "firebase/firestore"; // เปลี่ยนจาก database เป็น firestore
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 
@@ -23,7 +23,10 @@ setLogLevel("silent");
 export const auth = getAuth(app);
 export const firestore = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}); // export firestore แทน database
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+}); // export firestore แทน database — persistentLocalCache เก็บ pending writes ใน IndexedDB
 export const storage = getStorage(app);
 
 // FCM messaging — only available in secure contexts with service worker support

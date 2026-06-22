@@ -108,7 +108,9 @@ const AttendanceSpeech: React.FC<AttendanceSpeechProps> = ({
         };
 
         utterance.onerror = (e) => {
-            console.error("SpeechSynthesisUtterance error:", e);
+            if (e.error !== 'canceled') {
+                console.error("SpeechSynthesisUtterance error:", e);
+            }
             isSpeaking.current = false;
             processQueue();
         };
