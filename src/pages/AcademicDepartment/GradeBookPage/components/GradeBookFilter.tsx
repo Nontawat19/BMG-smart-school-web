@@ -43,10 +43,10 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
     setSearchTerm,
 }) => {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-8 bg-white/80 dark:bg-[#2a2b2f]/60 backdrop-blur-xl p-5 rounded-[1.5rem] shadow-xl shadow-indigo-500/5 border border-white/50 dark:border-white/5 transition-all duration-300 group/container items-end">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-4 bg-white/80 dark:bg-[#2a2b2f]/60 backdrop-blur-xl p-3 rounded-2xl shadow-lg shadow-indigo-500/5 border border-white/50 dark:border-white/5 transition-all duration-300 group/container items-end">
             {/* ชั้นเรียน */}
             <div className="md:col-span-1 group">
-                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     ชั้นเรียน
                 </label>
                 <div className="relative">
@@ -57,7 +57,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                             setSelectedCourse(''); 
                             setSelectedGroup('');
                         }}
-                        className="w-full pl-3 pr-8 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer whitespace-nowrap text-gray-900 dark:text-gray-100"
+                        className="w-full pl-3 pr-8 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer whitespace-nowrap text-gray-900 dark:text-gray-100"
                     >
                         <option value="" className="bg-white dark:bg-gray-800">ชั้น...</option>
                         {availableClassOptions.map(([id, name]) => <option key={id} value={id} className="bg-white dark:bg-gray-800">{name}</option>)}
@@ -70,7 +70,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
 
             {/* ห้องเรียน */}
             <div className="md:col-span-1 group">
-                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     ห้อง
                 </label>
                 <div className="relative">
@@ -82,7 +82,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                             setSelectedGroup('');
                         }}
                         disabled={!selectedClass}
-                        className="w-full pl-3 pr-8 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer disabled:opacity-40 whitespace-nowrap text-gray-900 dark:text-gray-100"
+                        className="w-full pl-3 pr-8 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer disabled:opacity-40 whitespace-nowrap text-gray-900 dark:text-gray-100"
                     >
                         <option value="" className="bg-white dark:bg-gray-800">ทุกห้อง</option>
                         {Array.from({ length: 20 }, (_, i) => i + 1).map(room => (
@@ -97,7 +97,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
 
             {/* ภาคเรียน */}
             <div className="md:col-span-2 group">
-                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     ภาคเรียน
                 </label>
                 <div className="relative">
@@ -108,7 +108,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                             setSelectedCourse('');
                             setSelectedGroup('');
                         }}
-                        className="w-full pl-9 pr-8 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer text-gray-900 dark:text-gray-100"
+                        className="w-full pl-9 pr-8 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer text-gray-900 dark:text-gray-100"
                     >
                         <option value="" className="bg-white dark:bg-gray-800">ทุกภาคเรียน</option>
                         <option value="1" className="bg-white dark:bg-gray-800">ภาคเรียนที่ 1</option>
@@ -126,7 +126,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
 
             {/* รายวิชา */}
             <div className="md:col-span-2 group">
-                <label className="flex items-center gap-2 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-2 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     รายวิชาที่เปิดสอน
                 </label>
                 <div className="relative">
@@ -136,7 +136,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                             setSelectedCourse(e.target.value);
                             setSelectedGroup('');
                         }}
-                        className="w-full pl-9 pr-10 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm disabled:opacity-50 truncate text-gray-900 dark:text-gray-100"
+                        className="w-full pl-9 pr-10 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm disabled:opacity-50 truncate text-gray-900 dark:text-gray-100"
                     >
                         <option value="" className="bg-white dark:bg-gray-800">เลือกรายวิชา...</option>
                         {filteredCourses.map(c => {
@@ -159,7 +159,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
 
             {/* กลุ่มเรียน (เดิมคือห้อง) */}
             <div className="md:col-span-3 group">
-                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     กลุ่มเรียน / ห้องเรียน
                 </label>
                 <div className="relative">
@@ -167,7 +167,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                         value={selectedGroup}
                         onChange={(e) => setSelectedGroup(e.target.value)}
                         disabled={!selectedCourse}
-                        className="w-full pl-9 pr-8 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer disabled:opacity-40 text-gray-900 dark:text-gray-100"
+                        className="w-full pl-9 pr-8 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none font-bold text-xs shadow-sm cursor-pointer disabled:opacity-40 text-gray-900 dark:text-gray-100"
                     >
                         <option value="" className="bg-white dark:bg-gray-800">{!selectedCourse ? 'กรุณาเลือกวิชา...' : 'ทุกกลุ่ม / ห้อง'}</option>
                         {availableGroups.map(g => (
@@ -185,7 +185,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
 
             {/* ค้นหารายวิชา */}
             <div className="md:col-span-3">
-                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1.5 uppercase tracking-wider ml-1">
+                <label className="flex items-center gap-1 text-[9px] font-black text-indigo-600/50 dark:text-indigo-400/40 mb-1 uppercase tracking-wider ml-0.5">
                     ค้นหา
                 </label>
                 <div className="relative">
@@ -194,7 +194,7 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
                         placeholder="รหัส หรือ ชื่อวิชา..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700/50 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium text-xs shadow-sm text-gray-900 dark:text-gray-100"
+                        className="w-full pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700/50 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium text-xs shadow-sm text-gray-900 dark:text-gray-100"
                     />
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                         <Search size={16} />

@@ -115,13 +115,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
 
   const renderSectionHeader = (title: string, sectionKey: string) => {
     return (
-      <div
-        className="flex items-center justify-between px-4 mb-2 cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+      <button
+        type="button"
+        className="flex items-center justify-between w-full px-4 mb-2 cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors bg-transparent border-0 p-0"
         onClick={() => toggleSection(sectionKey)}
+        aria-expanded={openSections[sectionKey]}
+        aria-label={`${title} ${openSections[sectionKey] ? 'ยุบ' : 'ขยาย'}`}
       >
-        <h3 className="text-xs font-semibold tracking-wider uppercase select-none">{title}</h3>
-        {openSections[sectionKey] ? <FaChevronDown size={10} /> : <FaChevronRight size={10} />}
-      </div>
+        <span className="text-xs font-semibold tracking-wider uppercase select-none">{title}</span>
+        {openSections[sectionKey] ? <FaChevronDown size={10} aria-hidden="true" /> : <FaChevronRight size={10} aria-hidden="true" />}
+      </button>
     );
   };
 
@@ -132,6 +135,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[45] lg:hidden transition-opacity duration-300"
           onClick={onClose}
+          aria-hidden="true"
         />
       )}
 
@@ -360,9 +364,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           <button
             onClick={toggleSidebar}
             className={`hidden lg:block fixed top-[180px] z-[45] bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-r-md p-2 text-gray-500 hover:text-indigo-600 shadow-md transition-all duration-300 ${isCollapsed ? 'left-0' : 'left-[280px]'}`}
+            aria-label={isCollapsed ? "แสดงเมนูนำทาง" : "ซ่อนเมนูนำทาง"}
             title={isCollapsed ? "แสดงเมนู" : "ซ่อนเมนู"}
           >
-            {isCollapsed ? <FaAngleDoubleRight size={14} /> : <FaAngleDoubleLeft size={14} />}
+            {isCollapsed ? <FaAngleDoubleRight size={14} aria-hidden="true" /> : <FaAngleDoubleLeft size={14} aria-hidden="true" />}
           </button>
         )
       }

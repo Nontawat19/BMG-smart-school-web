@@ -458,6 +458,8 @@ const CourseAssignmentPage: React.FC = () => {
 
     // Data States
     const [courses, setCourses] = useState<Course[]>([]);
+    const [activityCoursesWithPeriod, setActivityCoursesWithPeriod] = useState<Set<string>>(new Set());
+    const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('course-based');
     const [rooms, setRooms] = useState<Room[]>([]);
     const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -999,6 +1001,21 @@ const CourseAssignmentPage: React.FC = () => {
             data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
             const seenNames = new Set<string>();
             setSubjectGroupsList(data.filter(g => g.name && !seenNames.has(g.name) && seenNames.add(g.name)));
+        });
+
+        // Fetch learner-activities to know which activity courses have a special period (Mode 1)
+        // Load activity hub mode setting
+        getDoc(doc(db, 'school-settings', schoolId)).then(snap => {
+            const mode = snap.data()?.activityHubSettings?.activityMode;
+            if (mode === 'special-period' || mode === 'course-based') setActivityMode(mode);
+        });
+        getDocs(collection(db, 'school-settings', schoolId, 'learner-activities')).then(snap => {
+            const withPeriod = new Set<string>();
+            snap.docs.forEach(d => {
+                const data = d.data();
+                if (data.specialPeriodId && data.courseId) withPeriod.add(data.courseId);
+            });
+            setActivityCoursesWithPeriod(withPeriod);
         });
 
         return () => {
@@ -1819,10 +1836,18 @@ const CourseAssignmentPage: React.FC = () => {
     useEffect(() => { setRoomPage(1); }, [roomSearch, buildingFilter]);
 
     const subjectGroups = useMemo(() => {
-        const excludedGroups = ["กิจกรรมพัฒนาผู้เรียน"];
-        const names = subjectGroupsList.map(g => g.name).filter(n => !excludedGroups.includes(n));
+        const names = subjectGroupsList
+            .map(g => g.name)
+            .filter(name => {
+                // โหมดคาบเรียนพิเศษ: ซ่อนกลุ่มสาระกิจกรรมพัฒนาผู้เรียนออกจาก dropdown
+                if (activityMode === 'special-period') {
+                    const lower = name.toLowerCase();
+                    return !lower.includes('กิจกรรมพัฒนาผู้เรียน');
+                }
+                return true;
+            });
         return ["กลุ่มสาระทั้งหมด", ...names];
-    }, [subjectGroupsList]);
+    }, [subjectGroupsList, activityMode]);
 
     if (isLoading) {
         return (
@@ -1837,10 +1862,18 @@ const CourseAssignmentPage: React.FC = () => {
     
     // 1. Filter for Left Panel (Source Courses)
     const filteredCourses = coursesWithAssignments.filter(c => {
-        // ซ่อนกิจกรรมพัฒนาผู้เรียน (ชุมนุม/กิจกรรม/รหัส ก) เพราะมีหน้าจัดการแยกต่างหาก
         const cType = c.type?.trim() || "";
         const cCode = c.code?.trim() || "";
-        if (cType.includes("ชุมนุม") || cType.includes("กิจกรรม") || cCode.startsWith("ก")) return false;
+        const cSG = (c.subjectGroup || "").toLowerCase();
+        // ชุมนุม → ใช้หน้าชุมนุมเท่านั้น ซ่อนออกจาก CourseAssignment เสมอ
+        const isClubCourse = cType.toLowerCase() === 'ชุมนุม' || (c.title || '').includes('ชุมนุม');
+        if (isClubCourse) return false;
+        const isActivityCourse = cType.includes("กิจกรรม") ||
+            cCode.startsWith("ก") || cSG.includes("กิจกรรมพัฒนาผู้เรียน");
+        // โหมดคาบเรียนพิเศษ → ซ่อนกิจกรรมทั้งหมดจาก CourseAssignment
+        if (isActivityCourse && activityMode === 'special-period') return false;
+        // โหมดรายวิชา → ซ่อนเฉพาะที่ผูก specialPeriod แล้ว (Mode 1)
+        if (isActivityCourse && activityCoursesWithPeriod.has(c.id)) return false;
 
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());

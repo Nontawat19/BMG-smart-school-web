@@ -11,7 +11,7 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import Swal from 'sweetalert2';
 import MainLayout from "@/layouts/MainLayout";
 import { Course, CourseInstance, PhysicalRoom, Schedule, SchedulingMetrics, Teacher, getAssignmentTeacherIds } from './types';
-import { CLASSES, getClassDisplayName, isAcademicCourse, getRequiredWeeklyPeriods } from './utils';
+import { CLASSES, getClassDisplayName, isAcademicCourse, isActivityCourse, isClubCourse, getRequiredWeeklyPeriods } from './utils';
 import { CourseCard } from './components/CourseCard';
 import { TimetableGrid } from './components/TimetableGrid';
 import { TeacherScheduleHeader } from './components/TeacherScheduleHeader';
@@ -198,7 +198,6 @@ const TeacherSchedulePageContent: React.FC = () => {
         setDynamicUnavailableSlots,
         setLocalUnavailableSlotsMap,
         fetchData,
-        loadTeacherMasterSchedule: async () => { if (schoolId) await fetchData(schoolId); },
         schoolSettings,
         scheduleSectionRef,
         assignmentConstraints
@@ -252,7 +251,9 @@ const TeacherSchedulePageContent: React.FC = () => {
                 semStr.startsWith(targetSem + '/') ||
                 targetSem.startsWith(semStr + '/');
 
-            if (!isCorrectSemester || !isAcademicCourse(course)) return sum;
+            if (!isCorrectSemester) return sum;
+            if (isClubCourse(course)) return sum;
+            if (!isAcademicCourse(course) && !isActivityCourse(course)) return sum;
 
             const assignments = course.teacherAssignments || [];
             const relevantAssignments = assignments.filter((assignment) => {
@@ -436,7 +437,9 @@ const TeacherSchedulePageContent: React.FC = () => {
             const targetSem = String(selectedSemester || "1");
             const isCorrectSemester = (!c.semester || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/'));
 
-            if (!isAssignedToTeacher || !isCorrectSemester || !isAcademicCourse(c)) return false;
+            if (!isAssignedToTeacher || !isCorrectSemester) return false;
+            if (isClubCourse(c)) return false;
+            if (!isAcademicCourse(c) && !isActivityCourse(c)) return false;
 
             if (filterClass !== 'all') {
                 const classIds = Array.isArray(c.classId) ? c.classId : [c.classId].filter(Boolean) as string[];

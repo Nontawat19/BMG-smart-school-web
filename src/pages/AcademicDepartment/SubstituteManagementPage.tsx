@@ -99,6 +99,63 @@ const normalizeTeachingPeriod = (period: unknown, fallback = 1) => {
   return parsed === 0 ? 1 : parsed;
 };
 
+// Resolve a schedule slot key to its teaching period number (1-based).
+// Returns null for non-teaching slots (homeroom, lunch).
+// Handles 3 formats: numeric index ('mon-6'), named period ('mon-period-5'), named slot ('mon-lunch').
+const resolveSlotPeriod = (
+  slot: string,
+  dayKey: string,
+  periods: PeriodSetting[]
+): { periodNumber: number; pIdx: number; setting: PeriodSetting } | null => {
+  const suffix = slot.startsWith(`${dayKey}-`) ? slot.slice(dayKey.length + 1) : slot;
+
+  // Named non-teaching slots
+  if (suffix === 'homeroom' || suffix === 'lunch') return null;
+
+  // Named period id like 'period-5'
+  if (suffix.startsWith('period-')) {
+    const num = Number(suffix.replace('period-', ''));
+    if (!Number.isFinite(num) || num <= 0) return null;
+    const pIdx = periods.findIndex(p => p.id === suffix);
+    if (pIdx >= 0) {
+      const setting = periods[pIdx];
+      if (setting.isTeachingPeriod === false) return null;
+      return { periodNumber: num, pIdx, setting };
+    }
+    // Setting not found but id is valid
+    return { periodNumber: num, pIdx: -1, setting: { id: suffix, label: `คาบที่ ${num}`, startTime: '', endTime: '', isTeachingPeriod: true } };
+  }
+
+  // Numeric suffix — treat as array index into periodSettings
+  const index = Number(suffix);
+  if (!Number.isFinite(index) || index < 0) return null;
+
+  const setting = periods[index];
+  if (!setting) return null;
+
+  // If array index points to a non-teaching slot (lunch/homeroom),
+  // the slot key may have been saved using period NUMBER as the key
+  // (older schedule format, before lunch was inserted into periodSettings).
+  // Try to find the matching period-X entry by id.
+  if (setting.id === 'homeroom' || setting.id === 'lunch' || setting.isTeachingPeriod === false) {
+    const periodIdCandidate = `period-${index}`;
+    const altIdx = periods.findIndex(p => p.id === periodIdCandidate);
+    if (altIdx >= 0 && periods[altIdx].isTeachingPeriod !== false) {
+      return { periodNumber: index, pIdx: altIdx, setting: periods[altIdx] };
+    }
+    return null;
+  }
+
+  const match = String(setting.id || '').match(/^period-(\d+)$/);
+  if (match) {
+    return { periodNumber: Number(match[1]), pIdx: index, setting };
+  }
+
+  // Fallback: use index as period number
+  const periodNumber = index === 0 ? 1 : index;
+  return { periodNumber, pIdx: index, setting };
+};
+
 
 const selectStyles = (isDarkMode: boolean) => ({
   control: (base: any, state: any) => ({
@@ -751,42 +808,50 @@ const SubstituteManagementPage: React.FC = () => {
         existingSubstitutions.set(key, { id: subDoc.id, ...subData });
       });
 
-      // Pre-compute teacher loads and busy-slot map จาก termScheduleDocs ครั้งเดียว
-      // เพื่อหลีกเลี่ยง O(ครู × schedules × slots) ต่อคาบ
+      // Pre-compute teacher loads and busy-period map จาก termScheduleDocs ครั้งเดียว
+      // Normalize ด้วย period number (1-based) เพื่อรองรับทั้ง slot format เก่า (mon-5) และใหม่ (mon-6, mon-period-5)
       const preComputedDayLoads: Record<string, Record<string, number>> = {};
       const preComputedWeekLoad: Record<string, number> = {};
-      const slotBusyMap: Record<string, Set<string>> = {};
-      // ป้องกัน double-count เมื่อครูปรากฏใน docs หลายใบสำหรับ slot เดียวกัน
-      const seenTeacherSlots = new Set<string>();
+      // keyed by `${dayKey}-${periodNumber}` (normalized)
+      const periodBusyMap: Record<string, Set<string>> = {};
+      // ป้องกัน double-count: tid-dayKey-periodNumber
+      const seenTeacherPeriods = new Set<string>();
 
       termScheduleDocs.forEach((classScheduleDoc: any) => {
         const schedule = classScheduleDoc.schedule || {};
         Object.keys(schedule).forEach(slotKey => {
           const rawCourse = schedule[slotKey];
           if (!rawCourse) return;
+          const slotDayKey = slotKey.split('-')[0];
+          const resolved = resolveSlotPeriod(slotKey, slotDayKey, periodSettings);
+          if (!resolved) return; // skip non-teaching periods
+
+          const { periodNumber } = resolved;
+          const normalizedKey = `${slotDayKey}-${periodNumber}`;
+
           const coursesArr = Array.isArray(rawCourse) ? rawCourse : [rawCourse];
-          const dayKey = slotKey.split('-')[0];
           const teacherIds = new Set<string>();
           if (classScheduleDoc.teacherId) teacherIds.add(classScheduleDoc.teacherId);
           coursesArr.forEach((c: any) => { if (c?.teacherId) teacherIds.add(c.teacherId); });
-          if (!slotBusyMap[slotKey]) slotBusyMap[slotKey] = new Set();
+
+          if (!periodBusyMap[normalizedKey]) periodBusyMap[normalizedKey] = new Set();
           teacherIds.forEach(tid => {
-            slotBusyMap[slotKey].add(tid);
-            const dedupKey = `${tid}-${slotKey}`;
-            if (!seenTeacherSlots.has(dedupKey)) {
-              seenTeacherSlots.add(dedupKey);
+            periodBusyMap[normalizedKey].add(tid);
+            const dedupKey = `${tid}-${normalizedKey}`;
+            if (!seenTeacherPeriods.has(dedupKey)) {
+              seenTeacherPeriods.add(dedupKey);
               preComputedWeekLoad[tid] = (preComputedWeekLoad[tid] || 0) + 1;
-              if (!preComputedDayLoads[dayKey]) preComputedDayLoads[dayKey] = {};
-              preComputedDayLoads[dayKey][tid] = (preComputedDayLoads[dayKey][tid] || 0) + 1;
+              if (!preComputedDayLoads[slotDayKey]) preComputedDayLoads[slotDayKey] = {};
+              preComputedDayLoads[slotDayKey][tid] = (preComputedDayLoads[slotDayKey][tid] || 0) + 1;
             }
           });
         });
       });
 
-      const findAvailableTeachers = (date: Date, periodIndex: number) => {
+      const findAvailableTeachers = (date: Date, periodNumber: number) => {
         const checkDayKey = getEffectiveScheduleDay(date).scheduleDayKey;
-        const checkSlotKey = `${checkDayKey}-${periodIndex}`;
-        const busyTeacherIds = slotBusyMap[checkSlotKey] || new Set<string>();
+        const normalizedKey = `${checkDayKey}-${periodNumber}`;
+        const busyTeacherIds = periodBusyMap[normalizedKey] || new Set<string>();
 
         return teachers
           .filter(t => {
@@ -794,7 +859,7 @@ const SubstituteManagementPage: React.FC = () => {
             if (t.value === leave.teacherDocId) return false;
             const prefs = (t as any).preferences;
             if (prefs?.unavailableDays?.includes(checkDayKey)) return false;
-            if (prefs?.unavailableSlots?.includes(checkSlotKey)) return false;
+            if (prefs?.unavailableSlots?.includes(normalizedKey)) return false;
             return true;
           })
           .map(t => ({
@@ -824,14 +889,11 @@ const SubstituteManagementPage: React.FC = () => {
 
           for (const slot in classSchedule) {
             if (slot.startsWith(dayKey) && classSchedule[slot]) {
-              const pIdxMatch = slot.match(/(\d+)$/);
-              const pIdx = pIdxMatch ? parseInt(pIdxMatch[1]) : -1;
-              const setting = periodSettings[pIdx];
-              
-              if (!setting) continue;
+              // Resolve period using robust multi-format helper (handles 'mon-6', 'mon-period-5', 'mon-5')
+              const resolved = resolveSlotPeriod(slot, dayKey, periodSettings);
+              if (!resolved) continue; // skip homeroom, lunch, and unknown slots
 
-              // Parse actual period number from ID (e.g., 'period-1' -> 1)
-              const periodNumber = normalizeTeachingPeriod(parseInt(setting.id.replace('period-', '')), pIdx + 1);
+              const { periodNumber, pIdx, setting } = resolved;
               const substitutionKey = `${dateString}-${periodNumber}`;
               const existingSub = existingSubstitutions.get(substitutionKey);
 
@@ -892,7 +954,7 @@ const SubstituteManagementPage: React.FC = () => {
                   substituteTeacherId: existingSub?.substituteTeacherId,
                   substituteTeacherName: existingSub?.substituteTeacherName,
                   substitutionDocId: existingSub?.id,
-                  availableTeachers: findAvailableTeachers(currentDate, pIdx),
+                  availableTeachers: findAvailableTeachers(currentDate, periodNumber),
                   roomName: (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])))
                     .map((id: string) => roomMap[id] || id)
                     .join(', ') || 'ไม่ระบุสถานที่',
@@ -1332,7 +1394,7 @@ const SubstituteManagementPage: React.FC = () => {
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
                             <Clock size={10} />
-                            {periodSettings[schedule.periodIndex]?.startTime || '--:--'} - {periodSettings[schedule.periodIndex]?.endTime || '--:--'}
+                            {schedule.startTime || '--:--'} - {schedule.endTime || '--:--'}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center gap-1">
                             <MapPin size={10} />

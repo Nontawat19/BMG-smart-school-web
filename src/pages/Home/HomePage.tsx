@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { Suspense, lazy, useEffect, useState, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { useNavigate } from "react-router-dom";
@@ -7,8 +7,9 @@ import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { firestore as db } from "../../firebase";
+
+const DonutChart = lazy(() => import('@/components/Shared/DonutChart'));
 
 import { X, ChevronLeft, ChevronRight, Award, CalendarX, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
 
@@ -125,8 +126,8 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">{thaiMonths[viewDate.getMonth()]} {getThaiYear(viewDate)}</h3>
                 <div className="flex gap-1">
-                    <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronLeft size={18} /></button>
-                    <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronRight size={18} /></button>
+                    <button onClick={() => changeMonth(-1)} aria-label="เดือนก่อนหน้า" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronLeft size={18} aria-hidden="true" /></button>
+                    <button onClick={() => changeMonth(1)} aria-label="เดือนถัดไป" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronRight size={18} aria-hidden="true" /></button>
                 </div>
             </div>
             <div className="grid grid-cols-7 gap-1 mb-2 text-center">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => <span key={d} className="text-xs font-semibold text-gray-400">{d}</span>)}</div>
@@ -1361,39 +1362,6 @@ const HomePage = () => {
         </div>
     );
 
-    const CustomTooltip = ({ active, payload, isPie }: any) => {
-        if (active && payload && payload.length) {
-            if (isPie) {
-                const data = payload[0].payload;
-                return (
-                    <div className="relative bg-white/95 dark:bg-[#1a1b1e]/95 backdrop-blur-md p-3.5 border border-gray-200/80 dark:border-gray-800 shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-none rounded-xl text-xs z-50 min-w-[170px] pointer-events-none transition-all duration-200">
-                        {/* Status Header */}
-                        <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-gray-100 dark:border-white/5">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.actualColor, boxShadow: `0 0 8px ${data.actualColor}` }} />
-                            <p className="font-extrabold text-gray-800 dark:text-gray-200 text-[13px] tracking-tight">{data.name}</p>
-                        </div>
-                        {/* Metrics */}
-                        <div className="space-y-1.5 font-medium">
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-400 dark:text-gray-500 font-semibold">จำนวน:</span>
-                                <span className="font-extrabold text-gray-900 dark:text-white text-right">{data.value} คน</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-400 dark:text-gray-500 font-semibold">คิดเป็น:</span>
-                                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 text-right">{data.percent}%</span>
-                            </div>
-                        </div>
-                        {/* Micro Progress Bar */}
-                        <div className="mt-2.5 h-1 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${data.percent}%`, backgroundColor: data.actualColor }} />
-                        </div>
-                    </div>
-                );
-            }
-        }
-        return null;
-    };
-
     const getPieData = (stats: any, isTeacher: boolean = false) => {
         if (!stats || !stats.total) return [];
         return [
@@ -1422,20 +1390,20 @@ const HomePage = () => {
                 <div className="max-w-7xl mx-auto w-full">
                     {/* NEWS MODAL */}
                     {showNewsModal && currentNews && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity">
+                        <div role="dialog" aria-modal="true" aria-labelledby="news-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity">
                             <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-2xl w-full sm:max-w-xl md:max-w-3xl lg:max-w-4xl overflow-hidden flex flex-col max-h-[85vh] relative">
                                 <div className="flex justify-between items-center p-4 md:p-5 border-b border-gray-100 dark:border-gray-700">
-                                    <h2 className="text-lg md:text-2xl font-bold truncate pr-4">{currentNews.title}</h2>
-                                    <button onClick={closeNewsPopup} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><X size={24} /></button>
+                                    <h2 id="news-modal-title" className="text-lg md:text-2xl font-bold truncate pr-4">{currentNews.title}</h2>
+                                    <button onClick={closeNewsPopup} aria-label="ปิด" className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"><X size={24} aria-hidden="true" /></button>
                                 </div>
                                 <div className="overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
                                     {currentNews.imageUrl && <div className="w-full bg-gray-100 dark:bg-gray-800"><img src={currentNews.imageUrl} alt={currentNews.title} className="w-full h-auto max-h-[35vh] sm:max-h-[45vh] object-contain mx-auto" /></div>}
                                     <div className="p-6 md:p-8 lg:p-10"><p className="text-base md:text-lg text-gray-600 dark:text-gray-300 whitespace-pre-line leading-relaxed">{currentNews.content}</p></div>
                                 </div>
-                                {newsList.length > 1 && (<><button onClick={handlePrevNews} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors z-10"><ChevronLeft size={32} /></button><button onClick={handleNextNews} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors z-10"><ChevronRight size={32} /></button></>)}
+                                {newsList.length > 1 && (<><button onClick={handlePrevNews} aria-label="ข่าวก่อนหน้า" className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors z-10"><ChevronLeft size={32} aria-hidden="true" /></button><button onClick={handleNextNews} aria-label="ข่าวถัดไป" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors z-10"><ChevronRight size={32} aria-hidden="true" /></button></>)}
                                 {(newsList.length > 1 || currentNews.linkUrl) && (
                                     <div className="p-4 md:p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2b2f]/50 flex flex-col sm:flex-row justify-between items-center gap-4">
-                                        {newsList.length > 1 ? <div className="flex gap-2">{newsList.map((_, idx) => <button key={idx} onClick={() => setCurrentNewsIndex(idx)} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentNewsIndex ? 'bg-indigo-600 w-6' : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400'}`} />)}</div> : <div />}
+                                        {newsList.length > 1 ? <div className="flex gap-2">{newsList.map((_, idx) => <button key={idx} aria-label={`ข่าวที่ ${idx + 1}`} aria-current={idx === currentNewsIndex ? 'true' : undefined} onClick={() => setCurrentNewsIndex(idx)} className={`w-2.5 h-2.5 rounded-full transition-all ${idx === currentNewsIndex ? 'bg-indigo-600 w-6' : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400'}`} />)}</div> : <div />}
                                         {currentNews.linkUrl && <a href={currentNews.linkUrl} target="_blank" rel="noreferrer" className="w-full sm:w-auto py-2.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white text-center font-medium rounded-xl transition-colors shadow-sm ml-auto">{currentNews.linkText || 'ดูรายละเอียด'}</a>}
                                     </div>
                                 )}
@@ -1550,17 +1518,9 @@ const HomePage = () => {
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
                                         ) : (
-                                            <ResponsiveContainer width="100%" height="100%" minHeight={80}>
-                                                <PieChart>
-                                                    <Pie
-                                                        data={getPieData(studentAttendanceStats)}
-                                                        cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
-                                                    >
-                                                        {getPieData(studentAttendanceStats).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                                    </Pie>
-                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} wrapperStyle={{ zIndex: 50 }} />
-                                                </PieChart>
-                                            </ResponsiveContainer>
+                                            <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" /></div>}>
+                                                <DonutChart data={getPieData(studentAttendanceStats)} />
+                                            </Suspense>
                                         )}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
                                             <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-indigo-600 dark:text-indigo-400 leading-none tracking-tighter">
@@ -1611,17 +1571,9 @@ const HomePage = () => {
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
                                         ) : (
-                                            <ResponsiveContainer width="100%" height="100%" minHeight={80}>
-                                                <PieChart>
-                                                    <Pie
-                                                        data={getPieData(teacherAttendanceStats, true)}
-                                                        cx="50%" cy="50%" innerRadius="65%" outerRadius="85%" paddingAngle={2} dataKey="value" stroke="none" startAngle={90} endAngle={450}
-                                                    >
-                                                        {getPieData(teacherAttendanceStats, true).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                                    </Pie>
-                                                    <RechartsTooltip content={<CustomTooltip isPie={true} />} wrapperStyle={{ zIndex: 50 }} />
-                                                </PieChart>
-                                            </ResponsiveContainer>
+                                            <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center"><SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" /></div>}>
+                                                <DonutChart data={getPieData(teacherAttendanceStats, true)} />
+                                            </Suspense>
                                         )}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
                                             <span className="text-xs xs:text-base sm:text-2xl lg:text-4xl font-black text-emerald-600 dark:text-emerald-400 leading-none tracking-tighter">

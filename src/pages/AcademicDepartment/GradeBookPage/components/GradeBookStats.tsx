@@ -81,33 +81,24 @@ const GradeBookStats: React.FC<GradeBookStatsProps> = ({ students, grades, compl
     ];
 
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
             {stats.map((stat, idx) => (
-                <div key={idx} className={`relative overflow-hidden bg-white/60 dark:bg-[#1a1b1e]/60 p-4 rounded-3xl border ${stat.border} dark:border-gray-800 backdrop-blur-xl shadow-lg shadow-gray-200/30 dark:shadow-none transition-all hover:scale-[1.02] hover:shadow-xl group`}>
-                    {/* Decorative Background Icon */}
-                    <stat.icon className={`absolute -right-4 -bottom-4 w-24 h-24 ${stat.color} opacity-[0.03] group-hover:scale-110 transition-transform duration-500`} />
-                    
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className={`p-2.5 rounded-2xl ${stat.bg} ${stat.color}`}>
-                            <stat.icon size={20} />
-                        </div>
-                        <p className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">{stat.label}</p>
+                <div key={idx} className={`flex items-center gap-2.5 bg-white/60 dark:bg-[#1a1b1e]/60 px-3 py-2.5 rounded-xl border ${stat.border} dark:border-gray-800 backdrop-blur-xl shadow-sm transition-all hover:shadow-md`}>
+                    <div className={`p-2 rounded-xl flex-shrink-0 ${stat.bg} ${stat.color}`}>
+                        <stat.icon size={16} />
                     </div>
-
-                    <div className="flex items-baseline gap-1">
-                        <h4 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">{stat.value}</h4>
-                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500">{stat.unit}</span>
-                    </div>
-                    
-                    {/* Progress indicator bar for percentage card */}
-                    {stat.label === 'ความคืบหน้าการกรอก' && (
-                        <div className="mt-3 w-full h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                            <div 
-                                className="h-full bg-emerald-500 rounded-full transition-all duration-1000" 
-                                style={{ width: `${displayPercentage}%` }}
-                            />
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide truncate">{stat.label}</p>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-base font-black text-gray-900 dark:text-white tracking-tight leading-tight">{stat.value}</span>
+                            <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500">{stat.unit}</span>
                         </div>
-                    )}
+                        {stat.label === 'ความคืบหน้าการกรอก' && (
+                            <div className="mt-1 w-full h-0.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${displayPercentage}%` }} />
+                            </div>
+                        )}
+                    </div>
                 </div>
             ))}
         </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import {
   Document as PdfDocument,
   Font,
@@ -59,6 +59,8 @@ interface TeacherRow {
   homeroomRoom?: string;
   isHomeroomTeacher?: boolean;
   advisorRole?: string;
+  academicStanding?: string;
+  position?: string;
 }
 
 interface CourseRow {
@@ -100,14 +102,6 @@ interface LearnerActivityRow {
   classId?: string | string[];
 }
 
-interface EnrollmentRow {
-  id: string;
-  courseId?: string;
-  studentId?: string;
-  academicYear?: string;
-  semester?: string;
-}
-
 interface SubjectOption {
   key: string;
   id: string;
@@ -129,19 +123,70 @@ interface PdfData {
 interface PdfSection {
   classLevel: string;
   room: string;
-  advisorName: string;
+  advisorNames: string[];
   students: StudentRow[];
 }
 
-const ROWS_PER_PAGE = 20;
+const PDF_ROWS_PER_PAGE = 35;
 const BLANK_COLUMNS = 8;
 
 const getStudentCode = (student: StudentRow) => student.studentId || student.studentNumber || "";
 const getStudentNumber = (student: StudentRow, index: number) => student.number || student.studentNumber || String(index + 1);
 const getStudentName = (student: StudentRow) => `${student.prefix || student.title || ""}${student.firstName || ""} ${student.lastName || ""}`.trim();
+const getFullClassDisplay = (classLevel?: string, room?: string) => {
+  const label = classLabel(classLevel);
+  const normalizedRoom = String(room || "").trim();
+  const primaryMatch = label.match(/^ป\.(\d+)$/);
+  if (primaryMatch) return `ประถมศึกษาปีที่ ${primaryMatch[1]}${normalizedRoom ? `/${normalizedRoom}` : ""}`;
+  const secondaryMatch = label.match(/^ม\.(\d+)$/);
+  if (secondaryMatch) return `มัธยมศึกษาปีที่ ${secondaryMatch[1]}${normalizedRoom ? `/${normalizedRoom}` : ""}`;
+  return [label, normalizedRoom].filter(Boolean).join("/");
+};
+const buildDottedText = (label: string, value: string, targetLength = 86) => {
+  const prefix = `${label}${value ? ` ${value}` : ""}`;
+  const dots = ".".repeat(Math.max(12, targetLength - prefix.length));
+  return `${prefix}${dots}`;
+};
 const getTeacherName = (teacher?: TeacherRow) => {
   if (!teacher) return "";
   return teacher.name || `${teacher.title || ""}${teacher.firstName || ""} ${teacher.lastName || ""}`.trim();
+};
+
+const ACADEMIC_STANDING_RANK: [string, number][] = [
+  ["เชี่ยวชาญพิเศษ", 5],
+  ["เชี่ยวชาญ", 4],
+  ["ชำนาญการพิเศษ", 3],
+  ["ชำนาญการ", 2],
+  ["ครู", 1],
+];
+
+const getAcademicRank = (teacher: TeacherRow): number => {
+  const text = `${teacher.academicStanding || ""} ${teacher.advisorRole || ""} ${teacher.position || ""}`;
+  for (const [keyword, rank] of ACADEMIC_STANDING_RANK) {
+    if (text.includes(keyword)) return rank;
+  }
+  return 0;
+};
+
+const findAdvisorTeachers = (allTeachers: TeacherRow[], classLevel: string, room: string): string[] => {
+  const normalized = normalizeClassValue(classLevel);
+  const candidates = [
+    room ? `${normalized.label}/${room}` : "",
+    room ? `${normalized.key}/${room}` : "",
+    normalized.label,
+    normalized.key,
+  ].filter(Boolean);
+
+  return allTeachers
+    .filter(teacher => {
+      const grade = String(teacher.homeroomGrade || "").trim();
+      const teacherRoom = String(teacher.homeroomRoom || "").trim();
+      return candidates.includes(grade) || (teacherRoom && teacherRoom === room && (grade === normalized.label || grade === normalized.key));
+    })
+    .sort((a, b) => getAcademicRank(b) - getAcademicRank(a))
+    .slice(0, 2)
+    .map(t => getTeacherName(t))
+    .filter(Boolean);
 };
 const getCourseTitle = (course?: CourseRow) => {
   if (!course) return "";
@@ -276,90 +321,104 @@ const getGroupKey = (student: StudentRow) => `${classLabel(student.classLevel)}_
 const pdfStyles = StyleSheet.create({
   page: {
     fontFamily: "TH Sarabun PSK",
-    fontSize: 14,
-    paddingTop: 42,
-    paddingHorizontal: 64,
+    fontSize: 12,
+    paddingTop: 28,
+    paddingBottom: 22,
+    paddingLeft: 42.52,
+    paddingRight: 42.52,
     color: "#111827",
   },
   header: {
-    position: "relative",
-    minHeight: 92,
+    marginTop: 0,
+    marginBottom: 4,
+    minHeight: 72,
+    flexDirection: "row",
     alignItems: "center",
   },
   logo: {
-    position: "absolute",
-    left: 8,
-    top: 0,
-    width: 62,
-    height: 62,
+    width: 42,
+    height: 42,
     objectFit: "contain",
+    marginRight: 10,
+    marginLeft: 18,
+  },
+  headerText: {
+    flex: 1,
+    paddingLeft: 0,
+    paddingRight: 24,
   },
   schoolName: {
     fontSize: 16,
     fontWeight: "bold",
-    lineHeight: 1.15,
+    lineHeight: 1.05,
+    textAlign: "center",
   },
   title: {
-    fontSize: 15,
-    fontWeight: "bold",
-    lineHeight: 1.15,
+    marginTop: 0,
+    fontSize: 12.8,
+    lineHeight: 1.02,
+    textAlign: "center",
   },
-  subjectLine: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 1.15,
+  subtitle: {
+    marginTop: 0,
+    fontSize: 12.8,
+    lineHeight: 1.02,
+    textAlign: "center",
   },
-  advisorLine: {
-    marginTop: 8,
-    marginLeft: 128,
-    alignSelf: "stretch",
-    fontSize: 14,
+  lineText: {
+    marginTop: 0,
+    fontSize: 12.4,
+    lineHeight: 1.02,
+  },
+  lineTextCentered: {
+    marginTop: 0,
+    fontSize: 12.4,
+    lineHeight: 1.02,
+    textAlign: "center",
   },
   table: {
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
+    borderWidth: 0.375,
     borderColor: "#111827",
-    alignSelf: "center",
-    width: 684,
+    width: "100%",
+    marginTop: 1,
   },
   row: {
     flexDirection: "row",
-    minHeight: 22,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    minHeight: 24,
+    minHeight: 18.9,
   },
   cell: {
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
+    borderRightWidth: 0.375,
+    borderBottomWidth: 0.375,
     borderColor: "#111827",
     justifyContent: "center",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2.8,
+    paddingVertical: 1.9,
   },
   headerCell: {
     fontWeight: "bold",
     textAlign: "center",
+    backgroundColor: "#d3d3d3",
   },
   center: {
     textAlign: "center",
   },
-  bold: {
+  orderCell: { width: 39 },
+  noCell: { width: 37.436 },
+  codeCell: { width: 74.802 },
+  nameCell: { width: 129.038 },
+  blankCell: { width: 28.699 },
+  headerLabelText: {
+    fontSize: 12,
     fontWeight: "bold",
+    textAlign: "center",
   },
-  noCell: { width: 36 },
-  codeCell: { width: 68 },
-  nameCell: { width: 252 },
-  blankCell: { width: 41 },
-  summaryCell: { width: 356 },
-  footer: {
-    position: "absolute",
-    bottom: 22,
-    left: 64,
-    right: 64,
-    textAlign: "right",
-    fontSize: 10,
-    color: "#4b5563",
+  bodyText: {
+    fontSize: 12.7,
+    lineHeight: 1.05,
+  },
+  summaryText: {
+    marginTop: 4,
+    fontSize: 12,
   },
 });
 
@@ -370,47 +429,71 @@ const StudentListPdfDocument: React.FC<{ data: PdfData }> = ({ data }) => {
     <PdfDocument>
       {data.sections.flatMap((section, sectionIndex) => {
         const chunks: StudentRow[][] = [];
-        for (let i = 0; i < section.students.length; i += ROWS_PER_PAGE) {
-          chunks.push(section.students.slice(i, i + ROWS_PER_PAGE));
+        if (section.students.length === 0) {
+          chunks.push([]);
+        } else {
+          for (let i = 0; i < section.students.length; i += PDF_ROWS_PER_PAGE) {
+            chunks.push(section.students.slice(i, i + PDF_ROWS_PER_PAGE));
+          }
         }
-        if (chunks.length === 0) chunks.push([]);
 
         const counts = getGenderCounts(section.students);
 
         return chunks.map((pageRows, pageIndex) => {
           const isLastPage = pageIndex === chunks.length - 1;
-          const emptyRows = Math.max(0, ROWS_PER_PAGE - pageRows.length);
+          const emptyRows = Math.max(0, PDF_ROWS_PER_PAGE - pageRows.length);
+          const absoluteOffset = pageIndex * PDF_ROWS_PER_PAGE;
+          const advisorText = section.advisorNames.length > 0 ? section.advisorNames.join(", ") : "";
+          const hasSubject = Boolean(data.subject.trim());
+
           return (
-            <Page key={`student-list-${sectionIndex}-${pageIndex}`} size="A4" orientation="landscape" style={pdfStyles.page}>
+            <Page key={`student-list-${sectionIndex}-${pageIndex}`} size="A4" orientation="portrait" style={pdfStyles.page}>
               <View style={pdfStyles.header}>
                 <PdfImage src={logoSrc} style={pdfStyles.logo} />
-                <Text style={pdfStyles.schoolName}>{data.schoolName || "โรงเรียน"}</Text>
-                <Text style={pdfStyles.title}>
-                  รายชื่อนักเรียน ปีการศึกษา {data.academicYear || "........"} ภาคเรียนที่ {data.semester || "...."} ชั้น {section.classLevel || "...."} ห้องที่ {section.room || "...."}
-                </Text>
-                <Text style={pdfStyles.subjectLine}>{data.subjectLabel || "วิชา"} {data.subject || "........................................................................"}</Text>
-                <Text style={pdfStyles.advisorLine}>ครูที่ปรึกษา : {section.advisorName || "........................................................"}</Text>
+                <View style={pdfStyles.headerText}>
+                  <Text style={pdfStyles.schoolName}>{data.schoolName || "โรงเรียน"}</Text>
+                  {!hasSubject ? (
+                    <>
+                      <Text style={pdfStyles.title}>รายชื่อนักเรียน</Text>
+                      <Text style={pdfStyles.subtitle}>ปีการศึกษา {data.academicYear || "...."} ภาคเรียนที่ {data.semester || "...."}</Text>
+                      <Text style={pdfStyles.subtitle}>
+                        ชั้น {classLabel(section.classLevel) || "...."} ห้องที่ {section.room || "...."}
+                        {`   ครูประจำชั้น : ${advisorText || "................................"}`}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={pdfStyles.title}>
+                        รายชื่อนักเรียน ปีการศึกษา {data.academicYear || "...."} ภาคเรียนที่ {data.semester || "...."} ชั้น {classLabel(section.classLevel) || "...."} ห้องที่ {section.room || "...."}
+                      </Text>
+                      <Text style={pdfStyles.lineTextCentered}>วิชา {data.subject}</Text>
+                      <Text style={pdfStyles.lineText}>{`ครูที่ปรึกษา : ${advisorText || "................................"}`}</Text>
+                    </>
+                  )}
+                </View>
               </View>
 
               <View style={pdfStyles.table}>
                 <View style={pdfStyles.row}>
-                  <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขที่</Text></View>
-                  <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={[pdfStyles.headerCell, pdfStyles.center]}>เลขประจำตัว</Text></View>
-                  <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text style={pdfStyles.headerCell}>ชื่อ นามสกุล</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.headerCell, pdfStyles.orderCell]}><Text style={pdfStyles.headerLabelText}>ลำดับ</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.headerCell, pdfStyles.noCell]}><Text style={pdfStyles.headerLabelText}>เลขที่</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.headerCell, pdfStyles.codeCell]}><Text style={pdfStyles.headerLabelText}>เลขประจำตัว</Text></View>
+                  <View style={[pdfStyles.cell, pdfStyles.headerCell, pdfStyles.nameCell]}><Text style={pdfStyles.headerLabelText}>ชื่อ นามสกุล</Text></View>
                   {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                    <View key={`blank-head-${sectionIndex}-${pageIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                    <View key={`blank-head-${sectionIndex}-${pageIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.headerCell, pdfStyles.blankCell]} />
                   ))}
                 </View>
 
                 {pageRows.map((student, rowIndex) => {
-                  const absoluteIndex = pageIndex * ROWS_PER_PAGE + rowIndex;
+                  const absoluteIndex = absoluteOffset + rowIndex;
                   return (
                     <View key={student.id} style={pdfStyles.row}>
-                      <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={pdfStyles.center}>{getStudentNumber(student, absoluteIndex)}</Text></View>
-                      <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={pdfStyles.center}>{getStudentCode(student)}</Text></View>
-                      <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text>{getStudentName(student)}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.orderCell]}><Text style={[pdfStyles.bodyText, pdfStyles.center]}>{absoluteOffset + rowIndex + 1}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text style={[pdfStyles.bodyText, pdfStyles.center]}>{getStudentNumber(student, absoluteIndex)}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text style={[pdfStyles.bodyText, pdfStyles.center]}>{getStudentCode(student)}</Text></View>
+                      <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text style={pdfStyles.bodyText}>{getStudentName(student)}</Text></View>
                       {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                        <View key={`${student.id}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                        <View key={`${student.id}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]} />
                       ))}
                     </View>
                   );
@@ -418,34 +501,22 @@ const StudentListPdfDocument: React.FC<{ data: PdfData }> = ({ data }) => {
 
                 {Array.from({ length: emptyRows }).map((_, emptyIndex) => (
                   <View key={`empty-row-${sectionIndex}-${pageIndex}-${emptyIndex}`} style={pdfStyles.row}>
-                    <View style={[pdfStyles.cell, pdfStyles.noCell]}><Text> </Text></View>
-                    <View style={[pdfStyles.cell, pdfStyles.codeCell]}><Text> </Text></View>
-                    <View style={[pdfStyles.cell, pdfStyles.nameCell]}><Text> </Text></View>
+                    <View style={[pdfStyles.cell, pdfStyles.orderCell]} />
+                    <View style={[pdfStyles.cell, pdfStyles.noCell]} />
+                    <View style={[pdfStyles.cell, pdfStyles.codeCell]} />
+                    <View style={[pdfStyles.cell, pdfStyles.nameCell]} />
                     {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                      <View key={`empty-row-${sectionIndex}-${pageIndex}-${emptyIndex}-blank-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
+                      <View key={`empty-${sectionIndex}-${pageIndex}-${emptyIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]} />
                     ))}
                   </View>
                 ))}
-
-                {isLastPage && (
-                  <View style={pdfStyles.summaryRow}>
-                    <View style={[pdfStyles.cell, pdfStyles.summaryCell]}>
-                      <Text style={pdfStyles.bold}>
-                        ห้องที่ {section.room || "-"} รวม {section.students.length} คน ( ช. {counts.male}, ญ. {counts.female} )
-                      </Text>
-                    </View>
-                    {Array.from({ length: BLANK_COLUMNS }).map((_, index) => (
-                      <View key={`summary-blank-${sectionIndex}-${pageIndex}-${index}`} style={[pdfStyles.cell, pdfStyles.blankCell]}><Text> </Text></View>
-                    ))}
-                  </View>
-                )}
               </View>
 
-              <Text
-                style={pdfStyles.footer}
-                render={({ pageNumber, totalPages }) => `หน้า ${pageNumber}/${totalPages}`}
-                fixed
-              />
+              {isLastPage && (
+                <Text style={pdfStyles.summaryText}>
+                  รวม {section.students.length} คน (ช,{counts.male},ญ,{counts.female})
+                </Text>
+              )}
             </Page>
           );
         });
@@ -465,7 +536,6 @@ const HomeroomStudentListPage: React.FC = () => {
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [learnerActivities, setLearnerActivities] = useState<LearnerActivityRow[]>([]);
-  const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [subjectStudentIds, setSubjectStudentIds] = useState<string[] | null>(null);
   const [subjectStudentsLoading, setSubjectStudentsLoading] = useState(false);
   const [selectedClassLevel, setSelectedClassLevel] = useState("");
@@ -475,18 +545,19 @@ const HomeroomStudentListPage: React.FC = () => {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE_UI = 30;
 
   const loadData = async () => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const [studentsSnap, teachersSnap, coursesSnap, clubsSnap, activitiesSnap, enrollmentsSnap] = await Promise.all([
+      const [studentsSnap, teachersSnap, coursesSnap, clubsSnap, activitiesSnap] = await Promise.all([
         getDocs(query(collection(db, "school-settings", schoolId, "students"), orderBy("classLevel", "asc"))),
         getDocs(collection(db, "school-settings", schoolId, "teachers")),
         getDocs(collection(db, "school-settings", schoolId, "courses")),
         getDocs(collection(db, "school-settings", schoolId, "clubs")),
         getDocs(collection(db, "school-settings", schoolId, "learner-activities")),
-        getDocs(collection(db, "school-settings", schoolId, "enrollments")),
       ]);
 
       const studentRows = studentsSnap.docs
@@ -505,7 +576,6 @@ const HomeroomStudentListPage: React.FC = () => {
       setCourses(coursesSnap.docs.map(courseDoc => ({ id: courseDoc.id, ...courseDoc.data() } as CourseRow)));
       setClubs(clubsSnap.docs.map(clubDoc => ({ id: clubDoc.id, ...clubDoc.data() } as ClubRow)));
       setLearnerActivities(activitiesSnap.docs.map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as LearnerActivityRow)));
-      setEnrollments(enrollmentsSnap.docs.map(enrollmentDoc => ({ id: enrollmentDoc.id, ...enrollmentDoc.data() } as EnrollmentRow)));
     } finally {
       setLoading(false);
     }
@@ -611,13 +681,13 @@ const HomeroomStudentListPage: React.FC = () => {
       setSubjectStudentsLoading(true);
       try {
         if (selectedSubjectOption.type === "course") {
-          const ids = enrollments
-            .filter(enrollment =>
-              String(enrollment.courseId || "") === selectedSubjectOption.id
-              && String(enrollment.academicYear || "").trim() === String(academicYear || "").trim()
-              && semesterOverlaps(enrollment.semester, selectedSemester)
-            )
-            .map(enrollment => String(enrollment.studentId || ""))
+          // Query fresh every time — course dropdown already filtered by year/semester so no need to double-filter
+          const snap = await getDocs(query(
+            collection(db, "school-settings", schoolId, "enrollments"),
+            where("courseId", "==", selectedSubjectOption.id),
+          ));
+          const ids = snap.docs
+            .map(d => String(d.data().studentId || ""))
             .filter(Boolean);
           setSubjectStudentIds(Array.from(new Set(ids)));
           return;
@@ -646,7 +716,7 @@ const HomeroomStudentListPage: React.FC = () => {
     };
 
     loadSubjectStudents();
-  }, [academicYear, enrollments, learnerActivities, schoolId, selectedSemester, selectedSubjectOption?.id, selectedSubjectOption?.type]);
+  }, [academicYear, learnerActivities, schoolId, selectedSemester, selectedSubjectOption?.id, selectedSubjectOption?.type]);
 
   const filteredStudents = useMemo(() => {
     const text = keyword.trim().toLowerCase();
@@ -664,25 +734,20 @@ const HomeroomStudentListPage: React.FC = () => {
       .sort(sortStudents);
   }, [keyword, selectedClassLevel, selectedRoom, students, subjectStudentIds]);
 
+  useEffect(() => { setCurrentPage(1); }, [filteredStudents]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE_UI));
+  const paginatedStudents = useMemo(
+    () => filteredStudents.slice((currentPage - 1) * PAGE_SIZE_UI, currentPage * PAGE_SIZE_UI),
+    [filteredStudents, currentPage, PAGE_SIZE_UI],
+  );
+
   const advisorName = useMemo(() => {
     if (!selectedClassLevel || !selectedRoom) {
       return filteredStudents.length > 0 ? "แยกตามห้องในไฟล์ PDF" : "";
     }
-    const selected = normalizeClassValue(selectedClassLevel);
-    const candidates = [
-      selectedRoom ? `${selected.label}/${selectedRoom}` : "",
-      selectedRoom ? `${selected.key}/${selectedRoom}` : "",
-      selected.label,
-      selected.key,
-    ].filter(Boolean);
-
-    const matched = teachers.find(teacher => {
-      const grade = String(teacher.homeroomGrade || "").trim();
-      const room = String(teacher.homeroomRoom || "").trim();
-      return candidates.includes(grade) || (room && room === selectedRoom && (grade === selected.label || grade === selected.key));
-    });
-
-    return getTeacherName(matched);
+    const names = findAdvisorTeachers(teachers, selectedClassLevel, selectedRoom);
+    return names.length > 0 ? names.join(" / ") : "";
   }, [filteredStudents.length, selectedClassLevel, selectedRoom, teachers]);
 
   const groupedSections = useMemo<PdfSection[]>(() => {
@@ -697,24 +762,10 @@ const HomeroomStudentListPage: React.FC = () => {
     return Array.from(grouped.entries())
       .map(([key, groupedStudents]) => {
         const [classLevel, room] = key.split("__");
-        const normalized = normalizeClassValue(classLevel);
-        const candidates = [
-          room ? `${normalized.label}/${room}` : "",
-          room ? `${normalized.key}/${room}` : "",
-          normalized.label,
-          normalized.key,
-        ].filter(Boolean);
-
-        const matchedTeacher = teachers.find(teacher => {
-          const grade = String(teacher.homeroomGrade || "").trim();
-          const teacherRoom = String(teacher.homeroomRoom || "").trim();
-          return candidates.includes(grade) || (teacherRoom && teacherRoom === room && (grade === normalized.label || grade === normalized.key));
-        });
-
         return {
           classLevel,
           room,
-          advisorName: getTeacherName(matchedTeacher),
+          advisorNames: findAdvisorTeachers(teachers, classLevel, room),
           students: [...groupedStudents].sort(sortStudents),
         };
       })
@@ -874,17 +925,76 @@ const HomeroomStudentListPage: React.FC = () => {
                       <tr>
                         <td colSpan={5} className="px-4 py-12 text-center text-gray-400">ไม่พบนักเรียนตามเงื่อนไข</td>
                       </tr>
-                    ) : filteredStudents.map((student, index) => (
-                      <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                        <td className="px-4 py-3 text-center font-bold text-gray-500">{getStudentNumber(student, index)}</td>
-                        <td className="px-4 py-3 font-mono text-gray-500">{getStudentCode(student) || "-"}</td>
-                        <td className="px-4 py-3 font-bold">{getStudentName(student) || "-"}</td>
-                        <td className="px-4 py-3 text-center">{classLabel(student.classLevel)}/{student.room || "-"}</td>
-                        <td className="px-4 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400">{getStudentStatus(student)}</td>
-                      </tr>
-                    ))}
+                    ) : paginatedStudents.map((student, index) => {
+                      const absoluteIndex = (currentPage - 1) * PAGE_SIZE_UI + index;
+                      return (
+                        <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                          <td className="px-4 py-3 text-center font-bold text-gray-500">{getStudentNumber(student, absoluteIndex)}</td>
+                          <td className="px-4 py-3 font-mono text-gray-500">{getStudentCode(student) || "-"}</td>
+                          <td className="px-4 py-3 font-bold">{getStudentName(student) || "-"}</td>
+                          <td className="px-4 py-3 text-center">{classLabel(student.classLevel)}/{student.room || "-"}</td>
+                          <td className="px-4 py-3 text-center text-xs font-bold text-emerald-600 dark:text-emerald-400">{getStudentStatus(student)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {!loading && !subjectStudentsLoading && totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 dark:border-gray-800">
+                <p className="text-xs text-gray-500">
+                  แสดง {(currentPage - 1) * PAGE_SIZE_UI + 1}–{Math.min(currentPage * PAGE_SIZE_UI, filteredStudents.length)} จาก {filteredStudents.length} คน
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/10"
+                  >«</button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => p - 1)}
+                    disabled={currentPage === 1}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/10"
+                  >‹</button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                    .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                      if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      p === "…" ? (
+                        <span key={`ellipsis-${i}`} className="px-1 text-xs text-gray-400">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setCurrentPage(p as number)}
+                          className={`min-w-[28px] rounded-lg px-2 py-1.5 text-xs font-bold transition ${
+                            currentPage === p
+                              ? "bg-indigo-600 text-white"
+                              : "text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10"
+                          }`}
+                        >{p}</button>
+                      )
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => p + 1)}
+                    disabled={currentPage === totalPages}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/10"
+                  >›</button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="rounded-lg px-2 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/10"
+                  >»</button>
+                </div>
               </div>
             )}
           </div>

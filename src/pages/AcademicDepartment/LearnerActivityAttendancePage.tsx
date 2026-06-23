@@ -21,6 +21,7 @@ import {
   formatTeacherScopeLabel,
   scopeIncludesTeacher,
 } from '@/utils/learnerActivityUtils';
+import { isActivityCourse } from './schedule/utils';
 
 interface LearnerActivity {
   id: string;
@@ -38,10 +39,16 @@ interface LearnerActivity {
   specialPeriodEndTime?: string;
   responsibleTeacherIds: string[];
   teacherScopes?: LearnerActivityTeacherScope[];
+  _isVirtual?: boolean;
 }
 
 interface Course {
   id: string;
+  code?: string;
+  name?: string;
+  type?: string;
+  subjectGroup?: string;
+  semester?: string | number;
   classId?: string | string[];
   teacherAssignments?: any[];
 }
@@ -157,8 +164,47 @@ const LearnerActivityAttendancePage: React.FC = () => {
         const activityList = snap.docs
           .map(activityDoc => ({ id: activityDoc.id, ...activityDoc.data() } as LearnerActivity))
           .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
-        setActivities(activityList);
-        setCourses(courseSnap.docs.map(courseDoc => ({ id: courseDoc.id, ...courseDoc.data() } as Course)));
+        const allCourses = courseSnap.docs.map(courseDoc => ({ id: courseDoc.id, ...courseDoc.data() } as Course));
+        setCourses(allCourses);
+
+        // Mode 2: build virtual activities from activity courses assigned to this teacher with no learner-activity record
+        const existingCourseIds = new Set(activityList.map(a => a.courseId));
+        const virtualActivities: LearnerActivity[] = allCourses
+          .filter(c => {
+            if (existingCourseIds.has(c.id)) return false;
+            if (!isActivityCourse(c)) return false;
+            return Array.isArray(c.teacherAssignments) && c.teacherAssignments.some((a: any) => {
+              const ids = [a.teacherId, ...(Array.isArray(a.teacherIds) ? a.teacherIds : [])].filter(Boolean);
+              return ids.includes(currentTeacherId);
+            });
+          })
+          .map(c => ({
+            id: c.id,
+            courseId: c.id,
+            courseCode: c.code || '',
+            name: c.name || c.code || c.id,
+            subjectGroup: c.subjectGroup || '',
+            semester: c.semester || '',
+            classId: c.classId,
+            responsibleTeacherIds: Array.from(new Set(
+              (c.teacherAssignments || []).flatMap((a: any) =>
+                [a.teacherId, ...(Array.isArray(a.teacherIds) ? a.teacherIds : [])].filter(Boolean)
+              )
+            )),
+            _isVirtual: true,
+          }));
+
+        // Load disabled activity IDs from school settings
+        let disabledActivityIds: string[] = [];
+        try {
+          const settingsSnap = await getDoc(doc(db, 'school-settings', schoolId));
+          disabledActivityIds = settingsSnap.data()?.activityHubSettings?.disabledActivityIds || [];
+        } catch { /* ignore */ }
+
+        const mergedActivities = [...activityList, ...virtualActivities]
+          .filter(a => !disabledActivityIds.includes(a.id))
+          .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+        setActivities(mergedActivities);
 
         const periodsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'special-periods'));
         const periods = periodsSnap.docs
@@ -264,9 +310,33 @@ const LearnerActivityAttendancePage: React.FC = () => {
           .map(member => String(member.studentId || ''))
           .filter(Boolean);
 
-        const memberIdSet = new Set(memberIds);
-        // Student list is strictly from members configured in learner-activity-students page
-        const activityStudents = allStudents.filter(student => memberIdSet.has(student.id));
+        let activityStudents: Student[];
+        if (memberIds.length > 0) {
+          const memberIdSet = new Set(memberIds);
+          activityStudents = allStudents.filter(student => memberIdSet.has(student.id));
+        } else if (selectedActivity._isVirtual) {
+          // Mode 2: no members yet — load students by class levels from teacher assignment
+          const mode2Scopes = deriveTeacherScopesFromCourse(selectedActivity, selectedCourse, teacherMap as any);
+          const relevantScope = mode2Scopes.find(scope => scopeIncludesTeacher(scope, currentTeacherId));
+          const classLevels = (relevantScope?.classLevels || []).map(l => l.toLowerCase());
+          const roomIds = relevantScope?.roomIds || [];
+          const courseClassIds = (Array.isArray(selectedActivity.classId)
+            ? selectedActivity.classId as string[]
+            : (selectedActivity.classId ? [selectedActivity.classId as string] : [])
+          ).map(l => l.toLowerCase());
+          activityStudents = allStudents.filter(s => {
+            const lvl = (s.classLevel || '').toLowerCase().replace(/\s/g, '');
+            const matchClass = classLevels.length > 0
+              ? classLevels.includes(lvl)
+              : courseClassIds.length > 0
+                ? courseClassIds.includes(lvl)
+                : true;
+            const matchRoom = roomIds.length > 0 ? roomIds.includes(String(s.room || '')) : true;
+            return matchClass && matchRoom;
+          });
+        } else {
+          activityStudents = [];
+        }
 
         const sortedStudents = activityStudents.sort(sortStudents);
         setStudents(sortedStudents);
@@ -372,17 +442,35 @@ const LearnerActivityAttendancePage: React.FC = () => {
       Swal.fire('ยังไม่ได้เลือกชุดครู/ห้อง', 'กรุณาเลือกชุดครูหรือห้องรับผิดชอบก่อนบันทึกการเช็คชื่อ', 'warning');
       return;
     }
-    if (!selectedSpecialPeriod) {
+    if (!selectedActivity._isVirtual && !selectedSpecialPeriod) {
       Swal.fire('ยังไม่ได้กำหนดคาบกิจกรรม', 'กรุณาเพิ่มคาบกิจกรรมพัฒนาผู้เรียนในหน้า “คาบเรียนพิเศษ” หรือเลือกวันที่ตรงกับคาบกิจกรรมก่อนบันทึก', 'warning');
       return;
     }
     setIsSaving(true);
     try {
       const dateStr = toIsoDate(currentDate);
-      const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'attendance', buildLearnerActivityAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod.id, selectedTeacherScope?.key));
+
+      // Mode 2: auto-create learner-activity document so future fetches find it
+      if (selectedActivity._isVirtual) {
+        const activityDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.courseId);
+        await setDoc(activityDocRef, {
+          courseId: selectedActivity.courseId,
+          courseCode: selectedActivity.courseCode || '',
+          name: selectedActivity.name,
+          subjectGroup: selectedActivity.subjectGroup || '',
+          semester: selectedActivity.semester || '0',
+          classId: selectedActivity.classId || [],
+          responsibleTeacherIds: selectedActivity.responsibleTeacherIds || [],
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        }, { merge: true });
+      }
+
+      const activityId = selectedActivity._isVirtual ? selectedActivity.courseId : selectedActivity.id;
+      const attDocRef = doc(db, 'school-settings', schoolId, 'learner-activities', activityId, 'attendance', buildLearnerActivityAttendanceDocId(activeAcademicYear, activeSemester, dateStr, selectedSpecialPeriod?.id, selectedTeacherScope?.key));
       await setDoc(attDocRef, {
         schoolId,
-        activityId: selectedActivity.id,
+        activityId,
         courseId: selectedActivity.courseId,
         courseCode: selectedActivity.courseCode || '',
         activityName: selectedActivity.name,
@@ -400,14 +488,23 @@ const LearnerActivityAttendancePage: React.FC = () => {
         academicYear: activeAcademicYear,
         semester: activeSemester,
         activitySemester: normalizeSemesterValue(selectedActivity.semester),
-        specialPeriodId: selectedSpecialPeriod.id,
-        specialPeriodTitle: selectedSpecialPeriod.title,
-        specialPeriodDay: selectedSpecialPeriod.day || 'all',
-        startTime: selectedSpecialPeriod.startTime,
-        endTime: selectedSpecialPeriod.endTime,
+        ...(selectedSpecialPeriod ? {
+          specialPeriodId: selectedSpecialPeriod.id,
+          specialPeriodTitle: selectedSpecialPeriod.title,
+          specialPeriodDay: selectedSpecialPeriod.day || 'all',
+          startTime: selectedSpecialPeriod.startTime,
+          endTime: selectedSpecialPeriod.endTime,
+        } : {}),
         updatedAt: Timestamp.now(),
         updatedBy: (currentUser as any)?.uid || '',
       }, { merge: true });
+
+      // After first Mode 2 save, promote virtual activity to real in local state
+      if (selectedActivity._isVirtual) {
+        const realId = selectedActivity.courseId;
+        setActivities(prev => prev.map(a => a.id === selectedActivity.id ? { ...a, id: realId, _isVirtual: false } : a));
+        setSelectedActivity(prev => prev ? { ...prev, id: realId, _isVirtual: false } : prev);
+      }
 
       Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1400, showConfirmButton: false });
       setIsSubmitted(true);

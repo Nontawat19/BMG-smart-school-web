@@ -38,7 +38,19 @@ export default defineConfig({
         ]
       },
       injectManifest: {
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15MB
+        // Exclude large lazy-loaded chunks from precache — they are fetched on demand.
+        // Without this, SW tries to precache 10MB on first visit, tanking performance.
+        globIgnores: [
+          '**/vendor-pdf-**',
+          '**/vendor-spreadsheet-**',
+          '**/vendor-charts-**',
+          '**/vendor-motion-**',
+          '**/vendor-dnd-**',
+          '**/vendor-swal-**',
+          '**/GradeBookPage**',
+          '**/CategoricalChart**',
+        ],
+        maximumFileSizeToCacheInBytes: 2 * 1024 * 1024, // 2MB max per file
       },
     }),
     {
@@ -132,9 +144,20 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
+          // Heavy lazy-only libraries — never on the critical path
           if (id.includes('@react-pdf') || id.includes('pdf-lib') || id.includes('pdfjs-dist') || id.includes('react-pdf')) return 'vendor-pdf';
           if (id.includes('xlsx') || id.includes('exceljs')) return 'vendor-spreadsheet';
           if (id.includes('@dnd-kit')) return 'vendor-dnd';
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) return 'vendor-charts';
+          // Firebase — large SDK, split out of the main entry chunk
+          if (id.includes('firebase/firestore') || id.includes('@firebase/firestore')) return 'vendor-firestore';
+          if (id.includes('firebase/auth') || id.includes('@firebase/auth')) return 'vendor-firebase-auth';
+          if (id.includes('firebase') || id.includes('@firebase')) return 'vendor-firebase-core';
+          // UI / animation
+          if (id.includes('framer-motion')) return 'vendor-motion';
+          if (id.includes('sweetalert2')) return 'vendor-swal';
+          // React core — tiny but separating helps browser cache
+          if (id.includes('react-dom') || id.includes('react-router')) return 'vendor-react';
           return undefined;
         }
       }

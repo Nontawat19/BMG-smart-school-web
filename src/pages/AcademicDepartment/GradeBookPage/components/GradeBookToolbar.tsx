@@ -7,7 +7,8 @@ import {
     Users,
     CheckSquare,
     Star,
-    FileText
+    FileText,
+    Trash2
 } from 'lucide-react';
 import { useSidebar } from "../../../../SidebarContext";
 import { useNavigate } from 'react-router-dom';
@@ -27,6 +28,7 @@ interface GradeBookToolbarProps {
     handleCreatePdf: () => void;
     isSaving: boolean;
     handleSave: () => void;
+    handleClearScores: () => void;
 }
 
 const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
@@ -43,6 +45,7 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
     handleCreatePdf,
     isSaving,
     handleSave,
+    handleClearScores,
 }) => {
     const { isCollapsed } = useSidebar();
     const navigate = useNavigate();
@@ -161,6 +164,15 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
                             {isPdfValidating ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
                             {isCollapsed && <span className="text-[10px] font-black hidden lg:inline">ดาวน์โหลด PDF</span>}
                             {!isCollapsed && <span className="text-[10px] font-black sm:inline hidden">PDF</span>}
+                        </button>
+
+                        <button
+                            onClick={handleClearScores}
+                            title="ล้างคะแนนทั้งหมด"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-gray-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all border border-gray-100 dark:border-gray-700"
+                        >
+                            <Trash2 size={14} />
+                            {isCollapsed && <span className="text-[10px] font-black hidden lg:inline">ล้าง</span>}
                         </button>
 
                         <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 mx-1" />

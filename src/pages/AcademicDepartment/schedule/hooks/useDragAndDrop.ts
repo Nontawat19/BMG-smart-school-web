@@ -588,7 +588,13 @@ export const useDragAndDrop = ({
                     movingItems.some(move => move.slot === slot && isSameAssignment(move.item, gItem.course as CourseInstance));
 
                 const isCoTeachingSameAssignment = isSameAssignment(activeItem, gItem.course as CourseInstance);
-                if ((isSameTeacher || isSameClass || isSameRoom) && !isSelf && !isCoTeachingSameAssignment) {
+                // Parallel groups of the same course (e.g. English Group 1 ป.3/1 + Group 2 ป.3/2)
+                // share the same classLevel but teach DIFFERENT student rooms — allow same slot.
+                const isParallelGroupSameCourse =
+                    gItem.course?.id === activeItem.id &&
+                    Number(activeItem.groupNumber || 1) > 0 &&
+                    Number(gItem.groupNumber || 1) !== Number(activeItem.groupNumber || 1);
+                if ((isSameTeacher || isSameClass || isSameRoom) && !isSelf && !isCoTeachingSameAssignment && !isParallelGroupSameCourse) {
                     addConflict(slot, gItem.course as CourseInstance, gItem.teacherId);
                 }
             });

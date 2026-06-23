@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import {
-  collection, collectionGroup, getDocs, query, where,
+  collection, collectionGroup, doc, getDoc, getDocs, query, where,
 } from "firebase/firestore";
 import {
   Document as PdfDocument, Font, Image, Page,
@@ -45,6 +45,12 @@ interface SpecialPeriod {
   periodType?: "recurring" | "oneTime";
   eventDate?: string;
   durationHours?: number;
+}
+
+interface LearnerActivityItem {
+  id: string;
+  name: string;
+  courseCode?: string;
 }
 
 interface AttendanceDoc {
@@ -391,6 +397,9 @@ const SpecialPeriodReportsPage: React.FC = () => {
   const calendarTerms = useSelector((state: RootState) => state.calendar.terms);
   const calendarAcademicYear = useSelector((state: RootState) => state.calendar.academicYear);
 
+  const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
+  const [learnerActivities, setLearnerActivities] = useState<LearnerActivityItem[]>([]);
+
   const [periods, setPeriods] = useState<SpecialPeriod[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [periodsLoading, setPeriodsLoading] = useState(true);
@@ -507,22 +516,69 @@ const SpecialPeriodReportsPage: React.FC = () => {
     return results;
   };
 
-  // ── Load periods ────────────────────────────────────────────────────────────
+  const loadCourseBasedActivityAttendance = async (activityId: string): Promise<AttendanceDoc[]> => {
+    const attSnap = await getDocs(collection(db, "school-settings", schoolId, "learner-activities", activityId, "attendance"));
+    const actData = learnerActivities.find((a) => a.id === activityId);
+    const results: AttendanceDoc[] = [];
+    attSnap.docs.forEach((d) => {
+      const data = d.data();
+      const records = (data.records || {}) as Record<string, AttendanceStatus>;
+      const dateStr = String(data.date || "");
+      if (!dateStr || Object.keys(records).length === 0) return;
+      const summary = { present: 0, late: 0, leave: 0, absent: 0 } as Record<AttendanceStatus, number>;
+      Object.values(records).forEach((s) => { summary[s as AttendanceStatus] = (summary[s as AttendanceStatus] || 0) + 1; });
+      results.push({
+        id: d.id,
+        periodId: activityId,
+        periodTitle: data.activityName || actData?.name || "กิจกรรม",
+        dateStr,
+        classId: activityId,
+        className: data.activityName || actData?.name || "กิจกรรม",
+        room: data.teacherScopeKey || "1",
+        topic: data.topic || "",
+        teacherName: data.teacherName || "",
+        records,
+        summary,
+        studentCount: Object.keys(records).length,
+        academicYear: data.academicYear || "",
+        semester: data.semester || "",
+      });
+    });
+    return results;
+  };
+
+  // ── Load mode + selectable items ────────────────────────────────────────────
   useEffect(() => {
     if (!schoolId) return;
-    getDocs(collection(db, "school-settings", schoolId, "special-periods")).then((snap) => {
-      const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as SpecialPeriod))
-        .sort((a, b) => {
-          if (a.periodType === "oneTime" && b.periodType === "oneTime")
-            return (b.eventDate || "") > (a.eventDate || "") ? 1 : -1;
-          if (a.periodType === "oneTime") return -1;
-          if (b.periodType === "oneTime") return 1;
-          return String(a.title).localeCompare(String(b.title), "th");
+    getDoc(doc(db, "school-settings", schoolId)).then((schoolSnap) => {
+      const mode: 'special-period' | 'course-based' =
+        schoolSnap.data()?.activityHubSettings?.activityMode ?? 'special-period';
+      setActivityMode(mode);
+
+      if (mode === 'course-based') {
+        getDocs(collection(db, "school-settings", schoolId, "learner-activities")).then((actSnap) => {
+          const list = actSnap.docs
+            .map((d) => ({ id: d.id, name: (d.data() as any).name || 'กิจกรรม', courseCode: (d.data() as any).courseCode } as LearnerActivityItem))
+            .sort((a, b) => a.name.localeCompare(b.name, "th"));
+          setLearnerActivities(list);
+          setPeriodsLoading(false);
         });
-      setPeriods(list);
-      setPeriodsLoading(false);
-    });
+      } else {
+        getDocs(collection(db, "school-settings", schoolId, "special-periods")).then((snap) => {
+          const list = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as SpecialPeriod))
+            .sort((a, b) => {
+              if (a.periodType === "oneTime" && b.periodType === "oneTime")
+                return (b.eventDate || "") > (a.eventDate || "") ? 1 : -1;
+              if (a.periodType === "oneTime") return -1;
+              if (b.periodType === "oneTime") return 1;
+              return String(a.title).localeCompare(String(b.title), "th");
+            });
+          setPeriods(list);
+          setPeriodsLoading(false);
+        });
+      }
+    }).catch(() => setPeriodsLoading(false));
   }, [schoolId]);
 
   useEffect(() => {
@@ -536,46 +592,50 @@ const SpecialPeriodReportsPage: React.FC = () => {
     });
   }, [schoolId]);
 
-  // ── Load attendance docs when period selected ────────────────────────────────
+  // ── Load attendance docs when period/activity selected ──────────────────────
   useEffect(() => {
     if (!schoolId || !selectedPeriodId) { setAttendanceDocs([]); return; }
     setDocsLoading(true);
     const load = async () => {
       try {
-        const periodTitle = periods.find((p) => p.id === selectedPeriodId)?.title || "";
-        const periodType = getPeriodType(periodTitle);
-
         let docs: AttendanceDoc[] = [];
 
-        if (periodType === "guidance") {
-          docs = await loadGuidanceAttendance(selectedPeriodId);
-        } else if (periodType === "club") {
-          docs = await loadClubAttendance(selectedPeriodId);
-        } else if (periodType === "learner") {
-          docs = await loadLearnerActivityAttendance(selectedPeriodId);
+        if (activityMode === 'course-based') {
+          docs = await loadCourseBasedActivityAttendance(selectedPeriodId);
         } else {
-          // custom: special-period-attendance + ClassroomAttendance fallback
-          const summarySnap = await getDocs(query(
-            collection(db, "school-settings", schoolId, "special-period-attendance"),
-            where("periodId", "==", selectedPeriodId)
-          ));
-          const summaryDocs = summarySnap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceDoc));
-          const needFallback = summaryDocs.length === 0
-            || summaryDocs.some((doc) => Object.keys(doc.records || {}).length === 0);
-          let studentDocs: StudentAttendanceDoc[] = [];
-          if (needFallback) {
-            try {
-              studentDocs = await loadCustomAttendanceFallback(selectedPeriodId);
-            } catch (fallbackErr) {
-              console.warn("[Reports] fallback failed:", fallbackErr);
+          const periodTitle = periods.find((p) => p.id === selectedPeriodId)?.title || "";
+          const periodType = getPeriodType(periodTitle);
+
+          if (periodType === "guidance") {
+            docs = await loadGuidanceAttendance(selectedPeriodId);
+          } else if (periodType === "club") {
+            docs = await loadClubAttendance(selectedPeriodId);
+          } else if (periodType === "learner") {
+            docs = await loadLearnerActivityAttendance(selectedPeriodId);
+          } else {
+            // custom: special-period-attendance + ClassroomAttendance fallback
+            const summarySnap = await getDocs(query(
+              collection(db, "school-settings", schoolId, "special-period-attendance"),
+              where("periodId", "==", selectedPeriodId)
+            ));
+            const summaryDocs = summarySnap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceDoc));
+            const needFallback = summaryDocs.length === 0
+              || summaryDocs.some((doc) => Object.keys(doc.records || {}).length === 0);
+            let studentDocs: StudentAttendanceDoc[] = [];
+            if (needFallback) {
+              try {
+                studentDocs = await loadCustomAttendanceFallback(selectedPeriodId);
+              } catch (fallbackErr) {
+                console.warn("[Reports] fallback failed:", fallbackErr);
+              }
             }
+            docs = mergeAttendanceSources(summaryDocs, studentDocs, selectedPeriodId);
           }
-          docs = mergeAttendanceSources(summaryDocs, studentDocs, selectedPeriodId);
         }
 
         setAttendanceDocs(docs);
       } catch (error) {
-        console.error("Error loading special period report data:", error);
+        console.error("Error loading report data:", error);
         setAttendanceDocs([]);
       } finally {
         setDocsLoading(false);
@@ -584,7 +644,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
 
     void load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schoolId, selectedPeriodId, periods]);
+  }, [schoolId, selectedPeriodId, periods, activityMode, learnerActivities]);
 
   useEffect(() => {
     if (selectedPeriodId && !reportType) {
@@ -593,6 +653,11 @@ const SpecialPeriodReportsPage: React.FC = () => {
   }, [selectedPeriodId, reportType]);
 
   const selectedPeriod = useMemo(() => periods.find((p) => p.id === selectedPeriodId) || null, [periods, selectedPeriodId]);
+
+  const selectedItemName = useMemo(() => {
+    if (activityMode === 'course-based') return learnerActivities.find((a) => a.id === selectedPeriodId)?.name || '';
+    return selectedPeriod?.title || '';
+  }, [activityMode, learnerActivities, selectedPeriodId, selectedPeriod]);
 
   // ── Date range from mode ──────────────────────────────────────────────────
   const effectiveDateRange = useMemo((): { start: string; end: string } | null => {
@@ -883,7 +948,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
 
   // ── Print PDF ────────────────────────────────────────────────────────────
   const handlePrint = async () => {
-    if (!previewData || !selectedPeriod || isPrinting) return;
+    if (!previewData || !selectedItemName || isPrinting) return;
     if (visiblePreviewRows.length === 0) {
       Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับสร้างรายงาน PDF", "info");
       return;
@@ -949,7 +1014,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
       }
 
       const pdfData: PdfReportData = {
-        title: `รายงานกิจกรรม${selectedPeriod.title}`,
+        title: `รายงานกิจกรรม${selectedItemName}`,
         subtitle: "",
         detail: filterLabel,
         schoolName: schoolName || "โรงเรียน",
@@ -960,7 +1025,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
       };
 
       const blob = await pdf(<ReportPdfDocument data={pdfData} />).toBlob();
-      saveAs(blob, `รายงาน_${sanitizeFileName(selectedPeriod.title)}_${reportType}_${Date.now()}.pdf`);
+      saveAs(blob, `รายงาน_${sanitizeFileName(selectedItemName)}_${reportType}_${Date.now()}.pdf`);
     } catch (err) {
       console.error("PDF error:", err);
       Swal.fire("สร้าง PDF ไม่สำเร็จ", "ไม่สามารถสร้างไฟล์รายงานได้ในขณะนี้", "error");
@@ -981,7 +1046,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
             <BackButton to="/academic/hub/attendance" />
             <ClipboardList className="text-indigo-500 shrink-0" size={20} />
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-extrabold leading-tight">รายงานการเข้าร่วมกิจกรรมพิเศษ</h1>
+              <h1 className="text-lg font-extrabold leading-tight">รายงานการเข้าร่วมกิจกรรม{activityMode === 'course-based' ? 'พัฒนาผู้เรียน' : 'พิเศษ'}</h1>
               <p className="text-xs text-gray-400 mt-0.5">เลือกข้อมูลจาก dropdown ด้านล่าง แล้วระบบจะแสดงตัวอย่างรายงานให้ทันที</p>
             </div>
           </div>
@@ -1015,11 +1080,18 @@ const SpecialPeriodReportsPage: React.FC = () => {
                       }}
                       className="w-full h-10 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] pl-9 pr-3 text-sm font-bold outline-none dark:text-white focus:ring-2 focus:ring-indigo-500/20">
                       <option value="">— เลือกกิจกรรม —</option>
-                      {periods.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title} • {p.periodType === "oneTime" ? thaiDate(p.eventDate) : "รายสัปดาห์"} • {p.startTime}–{p.endTime} น.
-                        </option>
-                      ))}
+                      {activityMode === 'course-based'
+                        ? learnerActivities.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name}{a.courseCode ? ` (${a.courseCode})` : ''}
+                            </option>
+                          ))
+                        : periods.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.title} • {p.periodType === "oneTime" ? thaiDate(p.eventDate) : "รายสัปดาห์"} • {p.startTime}–{p.endTime} น.
+                            </option>
+                          ))
+                      }
                     </select>
                   </div>
                 )}
@@ -1057,9 +1129,9 @@ const SpecialPeriodReportsPage: React.FC = () => {
             {selectedPeriodId && (
               <div className="flex flex-wrap gap-2">
                 <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-                  {selectedPeriod?.title || "กิจกรรม"}
+                  {selectedItemName || "กิจกรรม"}
                 </span>
-                {selectedPeriod && (
+                {selectedPeriod && activityMode === 'special-period' && (
                   <>
                     <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-[11px] font-bold text-gray-600 dark:bg-white/5 dark:text-gray-300">
                       {selectedPeriod.periodType === "oneTime" ? thaiDate(selectedPeriod.eventDate) : "รายสัปดาห์"}
@@ -1068,6 +1140,11 @@ const SpecialPeriodReportsPage: React.FC = () => {
                       {selectedPeriod.startTime}–{selectedPeriod.endTime} น.
                     </span>
                   </>
+                )}
+                {activityMode === 'course-based' && selectedPeriodId && (
+                  <span className="inline-flex items-center rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
+                    แบบรายวิชา
+                  </span>
                 )}
                 {reportType && (
                   <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-[11px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
@@ -1189,7 +1266,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
                 <div className="flex flex-col items-center justify-center py-10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-gray-400">
                   <FileText size={28} className="mb-2 opacity-30" />
                   <p className="text-sm font-bold">ไม่พบข้อมูลในเงื่อนไขที่เลือก</p>
-                  <p className="text-xs mt-1">กรุณาเช็คชื่อในหน้าเช็คชื่อกิจกรรมพิเศษก่อน</p>
+                  <p className="text-xs mt-1">กรุณาเช็คชื่อในหน้าเช็คชื่อกิจกรรมก่อน</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">

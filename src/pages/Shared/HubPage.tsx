@@ -44,7 +44,9 @@ import {
   Compass,
   CircleAlert,
   CalendarRange,
-  AlertTriangle
+  AlertTriangle,
+  CalendarClock,
+  Activity,
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
@@ -58,6 +60,7 @@ interface HubItem {
   colorClass: string;
   allowedRoles?: string[];
   featureKey?: string;
+  hideWhenCourseBased?: boolean;
 }
 
 interface HubConfig {
@@ -66,6 +69,13 @@ interface HubConfig {
   description: string;
   items: HubItem[];
 }
+
+const normalizeStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (value == null) return [];
+  const text = String(value).trim();
+  return text ? [text] : [];
+};
 
 const HubPage: React.FC = () => {
   const { hubType: paramHubType } = useParams<{ hubType: string }>();
@@ -93,6 +103,7 @@ const HubPage: React.FC = () => {
   );
 
   const [features, setFeatures] = React.useState<Record<string, any>>({});
+  const [activityMode, setActivityMode] = React.useState<'special-period' | 'course-based'>('special-period');
 
   React.useEffect(() => {
     if (!schoolId) return;
@@ -104,6 +115,7 @@ const HubPage: React.FC = () => {
           ...(data?.features || {}),
           ...(data?.academicSettings || {})
         });
+        setActivityMode(data?.activityHubSettings?.activityMode ?? 'special-period');
       }
     });
 
@@ -129,16 +141,53 @@ const HubPage: React.FC = () => {
   }, [schoolId]);
 
   const teachingLoadPeriods = React.useMemo(() => {
-    return specialPeriods.filter((sp: any) => sp.isTeachingLoad === true);
+    const now = new Date();
+    return specialPeriods.filter((sp: any) => {
+      if (sp.isTeachingLoad !== true) return false;
+      if (sp.periodType === 'oneTime') {
+        if (sp.attendanceCloseDate) {
+          // กรณีกำหนดวันหมดเขตเช็คชื่อเอง
+          const closeTime = sp.attendanceCloseTime || '23:59';
+          const deadline = new Date(`${sp.attendanceCloseDate}T${closeTime}:00`);
+          if (now > deadline) return false;
+        } else {
+          // ค่าเริ่มต้น: ปิดหลัง endTime ของวันสุดท้าย + 1 ชั่วโมงผ่อนผัน
+          const endDate = sp.eventEndDate || sp.eventDate;
+          if (endDate) {
+            const rawTime = (sp.endTime || '23:59').replace('.', ':');
+            const [h, m] = rawTime.split(':').map(Number);
+            const deadline = new Date(`${endDate}T${String(h || 23).padStart(2, '0')}:${String(m || 59).padStart(2, '0')}:00`);
+            deadline.setHours(deadline.getHours() + 1);
+            if (now > deadline) return false;
+          }
+        }
+      }
+      return true;
+    });
   }, [specialPeriods]);
+
+  const currentTeacherIdentityKeys = React.useMemo(() => {
+    const user = currentUser as any;
+    return Array.from(new Set([
+      user?.uid,
+      user?.id,
+      user?.teacherId,
+      user?.teacher?.id,
+      user?.teacher?.teacherId,
+    ].filter(Boolean).map(String)));
+  }, [currentUser]);
 
   const checkAccess = (item: HubItem) => {
     // 1. Role Check
     if (item.allowedRoles && !hasRole(item.allowedRoles)) return false;
 
     // 2. Feature Check
-    // If feature is explicitly set to false in settings, hide it
     if (item.featureKey && features[item.featureKey] === false) {
+      return false;
+    }
+
+    // 3. Activity mode check — hide special-period-only pages when mode is course-based
+    if (item.hideWhenCourseBased && activityMode === 'course-based') {
       return false;
     }
 
@@ -247,8 +296,8 @@ const HubPage: React.FC = () => {
       description: "จัดการตารางเรียนตารางสอนสำหรับครูและนักเรียน",
       items: [
         {
-          title: "จัดการคาบเรียนพิเศษ",
-          description: "กำหนดกิจกรรมพิเศษ เช่น โฮมรูม, พักเที่ยง",
+          title: "จัดการคาบเรียน / คาบกิจกรรม",
+          description: "กำหนดคาบเรียนพิเศษและกิจกรรม เช่น โฮมรูม, อบรม, ทัศนศึกษา",
           icon: <Clock size={24} />,
           path: "/academic/special-periods",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
@@ -613,6 +662,14 @@ const HubPage: React.FC = () => {
           allowedRoles: TEACHER_OPERATIONAL
         },
         {
+          title: "เช็คชื่อคาบกิจกรรมหลัก",
+          description: "หน้าหลักสำหรับเช็คชื่อกิจกรรมพิเศษ และเลือกกิจกรรมหลักที่ต้องการบันทึก",
+          icon: <CalendarClock size={24} />,
+          path: "/academic/special-period-attendance",
+          colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
           title: "สรุปการมาเรียนรายวิชา",
           description: "ดูสถิติการมาเรียนแยกตามวิชาและชั้นเรียน",
           icon: <BarChart3 size={24} />,
@@ -736,7 +793,8 @@ const HubPage: React.FC = () => {
           icon: <ClipboardList size={24} />,
           path: "/academic/learner-activities",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          hideWhenCourseBased: true
         },
         {
           title: "เพิ่มรายชื่อนักเรียนเข้ากิจกรรม",
@@ -744,7 +802,8 @@ const HubPage: React.FC = () => {
           icon: <Users size={24} />,
           path: "/academic/learner-activity-students",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          hideWhenCourseBased: true
         },
       ]
     },
@@ -823,6 +882,14 @@ const HubPage: React.FC = () => {
           icon: <Settings size={24} />,
           path: "/academic/settings",
           colorClass: "bg-gray-100 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ตั้งค่ากิจกรรมพัฒนาผู้เรียน",
+          description: "เลือกโหมดจัดการกิจกรรม และเปิด-ปิดการแสดงผลแต่ละกิจกรรม",
+          icon: <Activity size={24} />,
+          path: "/academic/activity-settings",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
@@ -1084,18 +1151,33 @@ const HubPage: React.FC = () => {
     };
   };
 
+  const periodMatchesCurrentTeacher = React.useCallback((period: any) => {
+    const responsibleTeacherIds = Array.from(new Set([
+      ...normalizeStringArray(period?.responsibleTeacherIds),
+      ...normalizeStringArray(period?.teacherIds),
+      ...normalizeStringArray(period?.teacherId),
+    ]));
+
+    if (responsibleTeacherIds.length === 0) return true;
+    return responsibleTeacherIds.some((teacherId) => currentTeacherIdentityKeys.includes(String(teacherId)));
+  }, [currentTeacherIdentityKeys]);
+
   const processedHubConfigs = React.useMemo(() => {
     if (!hubConfigs.attendance) return hubConfigs;
 
-    const dynamicItems = teachingLoadPeriods.map(period => getSpecialPeriodMenuItem(period));
+    const dynamicItems = teachingLoadPeriods
+      .filter(periodMatchesCurrentTeacher)
+      .map(period => getSpecialPeriodMenuItem(period));
+
     const baseItems = hubConfigs.attendance.items;
     const finalItems: HubItem[] = [];
 
     const hasDynamicHome = dynamicItems.some(item => item.path.includes('/academic/homeroom-attendance'));
     const hasDynamicGuidance = dynamicItems.some(item => item.path.includes('/academic/guidance-attendance'));
     const hasDynamicClub = dynamicItems.some(item => item.path.includes('/academic/club-attendance'));
+    // ตรวจแค่ learner-activity เท่านั้น
     const hasDynamicLearnerActivity = dynamicItems.some(item =>
-      item.path.includes('/academic/learner-activity-attendance') || item.path.includes('/academic/special-period-attendance')
+      item.path.includes('/academic/learner-activity-attendance')
     );
 
     baseItems.forEach(item => {
@@ -1106,8 +1188,8 @@ const HubPage: React.FC = () => {
       finalItems.push(item);
     });
 
-    const checkItems = finalItems.filter(item => !item.path.includes('summary') && !item.path.includes('audit'));
-    const reportItems = finalItems.filter(item => item.path.includes('summary') || item.path.includes('audit'));
+    const checkItems = finalItems.filter(item => !item.path.includes('summary') && !item.path.includes('audit') && !item.path.includes('reports'));
+    const reportItems = finalItems.filter(item => item.path.includes('summary') || item.path.includes('audit') || item.path.includes('reports'));
 
     return {
       ...hubConfigs,

@@ -803,6 +803,7 @@ const GradeBookPage: React.FC = () => {
             selectedSemester={effectiveSemester}
             isPdfValidating={isPdfValidating} handleCreatePdf={() => handleCreatePdf(GradeBookDocument, pdfProps)}
             isSaving={isSaving} handleSave={handleSave}
+            handleClearScores={handleClearScores}
           />
           <GradeBookActionButtons
             activeTab={activeTab} selectedCourse={selectedCourse}

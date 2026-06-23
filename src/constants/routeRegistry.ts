@@ -172,6 +172,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'line_oa_settings',         path: '/academic/settings/line-oa',      label: 'จัดการ LINE OA',          category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'telegram_settings',        path: '/academic/settings/telegram',     label: 'จัดการ Telegram',         category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'school_permission_mgmt',   path: '/academic/permission-management', label: 'จัดการสิทธิ์การเข้าถึง (โรงเรียน)', category: 'วิชาการ - ตั้งค่า', defaultRoles: ADMIN_ACCESS },
+  { key: 'activity_hub_settings',   path: '/academic/activity-settings',     label: 'ตั้งค่ากิจกรรมพัฒนาผู้เรียน',      category: 'วิชาการ - ตั้งค่า', defaultRoles: ACADEMIC_MANAGEMENT },
 
   // ──────────────────────────────── ผู้ดูแลระบบ ────────────────────────────────
   { key: 'owner_schools',             path: '/owner/schools',                    label: 'จัดการข้อมูลโรงเรียน',     category: 'ผู้ดูแลระบบ', defaultRoles: OWNER_ONLY },

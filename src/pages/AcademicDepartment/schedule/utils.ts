@@ -558,12 +558,21 @@ export const checkConstraints = (
         // B) Class Conflict: This class group already has another teacher in this slot
         const occClasses = Array.isArray(occ.classId) ? occ.classId : [occ.classId];
         const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
-        
+
         if (sharedClass) {
             const currentGroup = Number(course.groupNumber || 0);
             if (!currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
-                const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
-                return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                // Parallel groups of the same course (e.g. English Group 1 ป.3/1 and Group 2 ป.3/2)
+                // are taught simultaneously to DIFFERENT student rooms — allow them in the same slot.
+                // They share the same classLevel ("ป.3") because classLevels stores level only, not room.
+                const isParallelGroupSameCourse =
+                    occ.course?.id === course.id &&
+                    currentGroup > 0 &&
+                    Number(occ.groupNumber ?? occ.course?.groupNumber ?? 0) !== currentGroup;
+                if (!isParallelGroupSameCourse) {
+                    const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
+                    return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                }
             }
         }
 
@@ -727,6 +736,29 @@ export const findValidSlots = (
  * Excludes activities, clubs, and other extracurricular items.
  * IS courses (กลุ่มสาระค้นคว้า / Independent Study) are always considered academic.
  */
+
+/**
+ * ตรวจว่าเป็นวิชากิจกรรมพัฒนาผู้เรียน (ลส/ยุว/รด/ชุมนุม ฯลฯ)
+ * ใช้สำหรับแยก Mode 2 (ไม่มีคาบพิเศษ) ออกจาก isAcademicCourse
+ */
+export const isClubCourse = (course: { type?: string; title?: string; name?: string }): boolean => {
+    if (!course) return false;
+    const type = (course.type || '').toLowerCase();
+    const label = ((course.title || '') + ' ' + (course.name || '')).toLowerCase();
+    return type === 'ชุมนุม' || label.includes('ชุมนุม');
+};
+
+export const isActivityCourse = (course: { type?: string; code?: string; subjectGroup?: string }): boolean => {
+    if (!course) return false;
+    const sg = (course.subjectGroup || '').toLowerCase();
+    const type = (course.type || '').toLowerCase();
+    const code = (course.code || '');
+    return sg.includes('กิจกรรมพัฒนาผู้เรียน') || sg === '9' ||
+           type === 'กิจกรรม' || type.includes('กิจกรรมพัฒนาผู้เรียน') ||
+           type === 'ชุมนุม' ||
+           /^ก\d/.test(code);
+};
+
 export const isAcademicCourse = (course: { title?: string; code?: string; subjectGroup?: string; credits?: string | number }): boolean => {
     if (!course) return false;
     

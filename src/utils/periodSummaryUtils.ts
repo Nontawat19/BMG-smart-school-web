@@ -3,7 +3,7 @@ import { doc, increment, WriteBatch, serverTimestamp, collectionGroup, query, wh
 /**
  * Calculates the ISO week number for a given date.
  */
-const getWeekNumber = (date: Date): string => {
+export const getWeekNumber = (date: Date): string => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);

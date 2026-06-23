@@ -119,6 +119,7 @@ const TeacherScheduleViewPage: React.FC = () => {
   const [coursesMap, setCoursesMap] = useState<Record<string, any>>({});
 
   // Bulk Export State
+  const [learnerActivities, setLearnerActivities] = useState<any[]>([]);
   const [bulkData, setBulkData] = useState<any[] | null>(null);
   const [isPreparingBulk, setIsPreparingBulk] = useState(false);
 
@@ -248,6 +249,18 @@ const TeacherScheduleViewPage: React.FC = () => {
   };
 
   const selectedTeacherData = (teacherMap[selectedTeacher] as Teacher) || null;
+
+  // Special periods that belong to this teacher's learner activities (Mode 1)
+  const teacherSpecialPeriods = useMemo(() => {
+    if (!selectedTeacher) return specialPeriods;
+    const spIds = new Set(
+      learnerActivities
+        .filter(a => Array.isArray(a.responsibleTeacherIds) && a.responsibleTeacherIds.includes(selectedTeacher) && a.specialPeriodId)
+        .map(a => a.specialPeriodId)
+    );
+    if (spIds.size === 0) return specialPeriods;
+    return specialPeriods.filter(sp => spIds.has(sp.id));
+  }, [selectedTeacher, learnerActivities, specialPeriods]);
 
   const formatClassNames = (classIds: any, groupNum?: number, roomNum?: string | number): string => {
     const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
@@ -408,6 +421,15 @@ const TeacherScheduleViewPage: React.FC = () => {
       }
     };
 
+    const fetchLearnerActivities = async (currentSchoolId: string) => {
+      try {
+        const snap = await getDocs(collection(db, 'school-settings', currentSchoolId, 'learner-activities'));
+        setLearnerActivities(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (error) {
+        console.error('Error fetching learner activities:', error);
+      }
+    };
+
     fetchCalendarSettings();
     fetchSchoolInfo(schoolId);
     fetchSpecialPeriods(schoolId);
@@ -415,6 +437,7 @@ const TeacherScheduleViewPage: React.FC = () => {
     fetchClubs(schoolId);
     fetchPhysicalRooms(schoolId);
     fetchCourses(schoolId);
+    fetchLearnerActivities(schoolId);
   }, [schoolId, dispatch, teacherMapStatus]);
 
   /* ===================== FETCH SCHEDULE ===================== */
@@ -491,7 +514,32 @@ const TeacherScheduleViewPage: React.FC = () => {
         setSchedule(merged);
         const scheduleCount = Object.values(merged).filter(Boolean).length;
         const teacherClubsCount = clubs.filter(c => c.responsibleTeacherIds.includes(selectedTeacher)).length;
-        setTotalPeriods(scheduleCount + teacherClubsCount);
+
+        // Count special period teaching load for activities this teacher is responsible for
+        const teacherSpIds = new Set(
+          learnerActivities
+            .filter(a => Array.isArray(a.responsibleTeacherIds) && a.responsibleTeacherIds.includes(selectedTeacher) && a.specialPeriodId)
+            .map(a => a.specialPeriodId)
+        );
+        const teacherSpecialPeriods = specialPeriods.filter(sp => teacherSpIds.has(sp.id) && sp.countAsTeachingPeriod);
+        let specialPeriodsCount = 0;
+        const weekdays = ['mon', 'tue', 'wed', 'thu', 'fri'];
+        teacherSpecialPeriods.forEach(sp => {
+          if (sp.linkedPeriodId && periodSettings.length > 0) {
+            weekdays.forEach(day => {
+              if ((!sp.day || sp.day === day || sp.day === 'all') &&
+                  periodSettings.some(p => p.id === sp.linkedPeriodId)) {
+                specialPeriodsCount++;
+              }
+            });
+          } else {
+            specialPeriodsCount += (!sp.day || sp.day === 'all')
+              ? 5
+              : weekdays.includes(sp.day ?? '') ? 1 : 0;
+          }
+        });
+
+        setTotalPeriods(scheduleCount + teacherClubsCount + specialPeriodsCount);
       } catch {
         alert('ไม่สามารถดึงข้อมูลตารางสอนได้');
       } finally {
@@ -500,7 +548,7 @@ const TeacherScheduleViewPage: React.FC = () => {
     };
 
     fetchSchedule();
-  }, [selectedTeacher, schoolId, clubs, academicYear, currentTerm, coursesMap, roomMap]);
+  }, [selectedTeacher, schoolId, clubs, academicYear, currentTerm, coursesMap, roomMap, learnerActivities, specialPeriods, periodSettings]);
 
   const prepareBulkExport = async () => {
     if (!schoolId) return;
@@ -668,7 +716,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                         teacher={selectedTeacherData}
                         academicYear={academicYear}
                         currentTerm={currentTerm}
-                        specialPeriods={specialPeriods}
+                        specialPeriods={teacherSpecialPeriods}
                         totalPeriods={totalPeriods}
                         clubs={clubs}
                       />
@@ -740,7 +788,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                     teacher={selectedTeacherData}
                     academicYear={academicYear}
                     currentTerm={currentTerm}
-                    specialPeriods={specialPeriods}
+                    specialPeriods={teacherSpecialPeriods}
                     totalPeriods={totalPeriods}
                     clubs={clubs}
                   />

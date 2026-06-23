@@ -57,6 +57,7 @@ export interface SpecialPeriod {
     day?: string;
     linkedPeriodId?: string;
     isTeachingLoad?: boolean;
+    countAsTeachingPeriod?: boolean;
 }
 
 export interface PeriodSetting {
@@ -372,23 +373,29 @@ export const generateCourseSummary = (
         credits: item.periods / 2 
     })).sort((a, b) => a.code.localeCompare(b.code));
 
-    // Special Periods that count as teaching load
-    if (specialPeriods.length > 0 && periodSettings.length > 0) {
+    // Special Periods that count as teaching load — counted regardless of linkedPeriodId
+    if (specialPeriods.length > 0) {
         const specialLoadMap: Record<string, number> = {};
-        const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
-        
-        days.forEach(day => {
-            periodSettings.forEach(p => {
-                const special = specialPeriods.find(sp => 
-                    sp.isTeachingLoad && 
-                    (sp.linkedPeriodId === p.id || (!p.id.startsWith('period') && sp.id === p.id)) && 
-                    (!sp.day || sp.day === day || sp.day === 'all')
-                );
-                
-                if (special) {
-                    specialLoadMap[special.title] = (specialLoadMap[special.title] || 0) + 1;
+        const weekdays = ['mon', 'tue', 'wed', 'thu', 'fri'];
+
+        specialPeriods.filter(sp => sp.countAsTeachingPeriod).forEach(sp => {
+            if (sp.linkedPeriodId && periodSettings.length > 0) {
+                // Linked to a period slot: one count per matching weekday
+                weekdays.forEach(day => {
+                    if ((!sp.day || sp.day === day || sp.day === 'all') &&
+                        periodSettings.some(p => p.id === sp.linkedPeriodId)) {
+                        specialLoadMap[sp.title] = (specialLoadMap[sp.title] || 0) + 1;
+                    }
+                });
+            } else {
+                // Custom time (กำหนดเอง): count by day setting
+                const occurrences = (!sp.day || sp.day === 'all')
+                    ? 5
+                    : weekdays.includes(sp.day) ? 1 : 0;
+                if (occurrences > 0) {
+                    specialLoadMap[sp.title] = (specialLoadMap[sp.title] || 0) + occurrences;
                 }
-            });
+            }
         });
 
         Object.entries(specialLoadMap).forEach(([title, count]) => {
@@ -592,10 +599,9 @@ export const TeacherSchedulePDF = ({
                             const { slot, entry } = getScheduleEntry(schedule, dayKey, period, i);
                             
                             const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
-                                const { id, startTime, endTime } = periodSetting;
+                                const { id } = periodSetting;
                                 return specialPeriods.find(sp =>
-                                    (sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)) ||
-                                    (sp.startTime === startTime && sp.endTime === endTime && (!sp.day || sp.day === 'all' || sp.day === day))
+                                    sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)
                                 );
                             };
                             const special = getSpecialPeriod(dayKey, period);
@@ -828,10 +834,9 @@ export const BulkTeacherSchedulePDF = ({
                                         const { slot, entry } = getScheduleEntry(item.schedule, dayKey, period, i);
                                         
                                         const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
-                                            const { id, startTime, endTime } = periodSetting;
+                                            const { id } = periodSetting;
                                             return specialPeriods.find(sp =>
-                                                (sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)) ||
-                                                (sp.startTime === startTime && sp.endTime === endTime && (!sp.day || sp.day === 'all' || sp.day === day))
+                                                sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)
                                             );
                                         };
                                         const special = getSpecialPeriod(dayKey, period);

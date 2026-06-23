@@ -12,6 +12,7 @@ import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import defaultProfile from "@/assets/profile.png";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
+import { getWeekNumber } from "@/utils/periodSummaryUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
@@ -339,12 +340,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
   // Filter States
   const [filterType, setFilterType] = useState<"daily" | "weekly" | "monthly" | "term" | "yearly" | "custom">("daily");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedWeek, setSelectedWeek] = useState(() => {
-    const date = new Date();
-    const year = date.getFullYear();
-    const week = Math.ceil((((date.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + new Date(year, 0, 1).getDay() + 1) / 7);
-    return `${year}-W${String(week).padStart(2, '0')}`;
-  });
+  const [selectedWeek, setSelectedWeek] = useState(() => getWeekNumber(new Date()));
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [startDate, setStartDate] = useState("");

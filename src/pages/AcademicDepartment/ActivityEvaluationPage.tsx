@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import {
@@ -117,10 +117,11 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   const { availableClassOptions } = useSelector((state: RootState) => state.schoolSettings);
   const academicYear =
     useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
+  const schoolId = (currentUser as any)?.schoolId || "";
+  const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector(
     (state: RootState) => state.userMap
   );
-  const schoolId = (currentUser as any)?.schoolId || "";
   const currentTeacher = useMemo(
     () =>
       Object.values(teacherMap || {}).find(
@@ -144,6 +145,9 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   const [loading, setLoading] = useState(true);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activityModeReady, setActivityModeReady] = useState(false);
+  const [courseBasedEmptyWarning, setCourseBasedEmptyWarning] = useState(false);
+  const optionsLoadedForRef = useRef("");
 
   const selectedOption = useMemo(
     () => options.find((o) => o.id === selectedId) || null,
@@ -170,18 +174,29 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   }, [schoolId, teacherMapStatus, dispatch]);
 
   useEffect(() => {
+    if (!schoolId) return;
+    getDoc(doc(db, "school-settings", schoolId)).then((snap) => {
+      setActivityMode(snap.data()?.activityHubSettings?.activityMode ?? 'special-period');
+    }).catch(() => {}).finally(() => setActivityModeReady(true));
+  }, [schoolId]);
+
+  useEffect(() => {
     if (!teacherScopes.some((s) => s.key === selectedTeacherScopeKey)) {
       setSelectedTeacherScopeKey(teacherScopes[0]?.key || "");
     }
   }, [teacherScopes, selectedTeacherScopeKey]);
 
+  // Guidance mode: initialize class key from availableClassOptions
   useEffect(() => {
-    if (mode === "guidance") {
-      setLoading(false);
-      if (!selectedClassKey && availableClassOptions.length > 0)
-        setSelectedClassKey(availableClassOptions[0][0]);
-      return;
-    }
+    if (mode !== "guidance" || availableClassOptions.length === 0) return;
+    setLoading(false);
+    setSelectedClassKey((prev) => prev || availableClassOptions[0][0]);
+  }, [mode, availableClassOptions]);
+
+  // Learner/club mode: load options list
+  useEffect(() => {
+    if (mode === "guidance") return;
+    const cacheKey = `${schoolId}_${mode}`;
     const loadOptions = async () => {
       if (!schoolId || !config.collectionName) return;
       setLoading(true);
@@ -211,7 +226,11 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
         if (courseSnap)
           setCourses(courseSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
         setOptions(data);
-        if (!selectedId && data.length > 0) setSelectedId(data[0].id);
+        // Auto-select first item only when loading for a new school/mode combination
+        if (data.length > 0 && optionsLoadedForRef.current !== cacheKey) {
+          setSelectedId(data[0].id);
+          optionsLoadedForRef.current = cacheKey;
+        }
       } catch (err) {
         console.error(err);
         Swal.fire("เกิดข้อผิดพลาด", `ไม่สามารถโหลด${config.itemLabel}ได้`, "error");
@@ -220,16 +239,18 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
       }
     };
     loadOptions();
-  }, [schoolId, mode, config.collectionName, config.itemLabel, selectedId, availableClassOptions]);
+  }, [schoolId, mode, config.collectionName, config.itemLabel]);
 
   useEffect(() => {
     const load = async () => {
       if (!schoolId) return;
+      if (!activityModeReady) return;
       if (mode !== "guidance" && !selectedId) return;
       if (mode === "guidance" && (!selectedClassKey || !selectedRoom)) return;
       setStudentsLoading(true);
+      setCourseBasedEmptyWarning(false);
       try {
-        const roster =
+        let roster: StudentItem[] =
           mode === "guidance"
             ? await fetchGuidanceStudents(schoolId, selectedClassKey, selectedRoom)
             : await fetchActivityMembers(
@@ -238,6 +259,24 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
                 selectedId,
                 selectedTeacherScope
               );
+
+        // Mode 2 fallback: members subcollection is empty — derive students from class levels
+        if (roster.length === 0 && mode === "learner" && activityMode === 'course-based') {
+          const classLevels: string[] = selectedTeacherScope?.classLevels?.length
+            ? selectedTeacherScope.classLevels
+            : Array.isArray(selectedOption?.classId)
+              ? selectedOption!.classId as string[]
+              : selectedOption?.classId
+                ? [selectedOption.classId as string]
+                : [];
+          const roomIds: string[] = selectedTeacherScope?.roomIds || [];
+          if (classLevels.length > 0) {
+            roster = await fetchStudentsByClassLevels(schoolId, classLevels, roomIds);
+          } else {
+            setCourseBasedEmptyWarning(true);
+          }
+        }
+
         setStudents(roster);
         const initial = roster.reduce((acc, s) => {
           acc[s.id] = { status: "pending" };
@@ -256,7 +295,8 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
       }
     };
     load();
-  }, [schoolId, mode, selectedId, selectedClassKey, selectedRoom, semester, academicYear, selectedTeacherScope]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolId, mode, selectedId, selectedClassKey, selectedRoom, semester, academicYear, selectedTeacherScope, activityMode, activityModeReady]);
 
   const getEvaluationRef = () => {
     const baseId = `${academicYear}_${semester}`;
@@ -295,6 +335,18 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
     );
   }, [students, search]);
 
+  const displaySummary = useMemo(
+    () =>
+      filteredStudents.reduce(
+        (acc, s) => {
+          acc[results[s.id]?.status || "pending"] += 1;
+          return acc;
+        },
+        { pending: 0, passed: 0, failed: 0 } as Record<EvaluationStatus, number>
+      ),
+    [filteredStudents, results]
+  );
+
   const setAllStatus = (status: EvaluationStatus) => {
     const next = { ...results };
     students.forEach((s) => { next[s.id] = { ...(next[s.id] || {}), status }; });
@@ -313,6 +365,19 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
     if (mode === "learner" && teacherScopes.length > 0 && !selectedTeacherScope) {
       Swal.fire("กรุณาเลือกครู/ห้องรับผิดชอบ", "ต้องเลือกชุดครูก่อนบันทึก", "warning");
       return;
+    }
+    const allPending = students.every((s) => (results[s.id]?.status ?? "pending") === "pending");
+    if (allPending) {
+      const confirm = await Swal.fire({
+        icon: "warning",
+        title: "ยังไม่ได้ประเมินนักเรียน",
+        text: `นักเรียน ${students.length} คน ยังอยู่ในสถานะ "รอตรวจ" ทั้งหมด ต้องการบันทึกหรือไม่?`,
+        showCancelButton: true,
+        confirmButtonText: "บันทึกต่อ",
+        cancelButtonText: "ยกเลิก",
+        confirmButtonColor: "#6366f1",
+      });
+      if (!confirm.isConfirmed) return;
     }
     setSaving(true);
     try {
@@ -359,10 +424,10 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
     }
   };
 
-  const pendingCount = summary.pending;
-  const passedCount = summary.passed;
-  const failedCount = summary.failed;
-  const total = students.length;
+  const pendingCount = displaySummary.pending;
+  const passedCount = displaySummary.passed;
+  const failedCount = displaySummary.failed;
+  const total = filteredStudents.length;
 
   return (
     <MainLayout>
@@ -465,7 +530,7 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wide">ห้องเรียน</label>
                     <div className="relative">
                       <select value={selectedRoom} onChange={(e) => setSelectedRoom(e.target.value)} className="ctrl-select">
-                        {Array.from({ length: 15 }, (_, i) => String(i + 1)).map((r) => (
+                        {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((r) => (
                           <option key={r} value={r}>ห้อง {r}</option>
                         ))}
                       </select>
@@ -591,8 +656,14 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
                 <div className="w-14 h-14 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center mb-3">
                   <Users size={26} className="text-slate-300 dark:text-slate-600" />
                 </div>
-                <p className="font-bold text-sm">{config.emptyText}</p>
-                <p className="text-xs mt-1 text-slate-400/70">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</p>
+                <p className="font-bold text-sm">{search ? "ไม่พบนักเรียนที่ค้นหา" : config.emptyText}</p>
+                {courseBasedEmptyWarning ? (
+                  <p className="text-xs mt-2 text-amber-500 font-bold text-center max-w-xs">
+                    ไม่พบการกำหนดระดับชั้น (classId) สำหรับกิจกรรมนี้<br />กรุณาตั้งค่า ActivityHub ให้ครบก่อนประเมิน
+                  </p>
+                ) : (
+                  <p className="text-xs mt-1 text-slate-400/70">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</p>
+                )}
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
@@ -737,6 +808,7 @@ const StatusToggle: React.FC<{ value: EvaluationStatus; onChange: (v: Evaluation
 );
 
 /* ── Data fetchers ── */
+const BATCH_SIZE = 30;
 const fetchActivityMembers = async (
   schoolId: string,
   collectionName: string,
@@ -766,8 +838,8 @@ const fetchActivityMembers = async (
 
 const fetchStudentsByIds = async (schoolId: string, ids: string[]) => {
   const result: Record<string, StudentItem> = {};
-  for (let i = 0; i < ids.length; i += 30) {
-    const chunk = ids.slice(i, i + 30);
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const chunk = ids.slice(i, i + BATCH_SIZE);
     const snap = await getDocs(query(collection(db, "school-settings", schoolId, "students"), where("__name__", "in", chunk)));
     snap.docs.forEach((d) => { result[d.id] = { id: d.id, ...(d.data() as any) }; });
   }
@@ -781,6 +853,18 @@ const fetchGuidanceStudents = async (schoolId: string, classKey: string, room: s
   return snap.docs
     .map((d) => ({ ...(d.data() as any), id: d.id }))
     .filter((s: any) => classValues.has(String(s.classLevel || "")) && roomValues.has(String(s.room || "")))
+    .sort((a: any, b: any) => Number(a.studentNumber || a.number || 0) - Number(b.studentNumber || b.number || 0));
+};
+
+const fetchStudentsByClassLevels = async (schoolId: string, classLevels: string[], roomIds: string[]) => {
+  const snap = await getDocs(collection(db, "school-settings", schoolId, "students"));
+  return snap.docs
+    .map((d) => ({ ...(d.data() as any), id: d.id } as StudentItem))
+    .filter((s: any) => {
+      if (!classLevels.includes(String(s.classLevel || ""))) return false;
+      if (roomIds.length > 0 && !roomIds.some((r) => String(r) === String(s.room || ""))) return false;
+      return true;
+    })
     .sort((a: any, b: any) => Number(a.studentNumber || a.number || 0) - Number(b.studentNumber || b.number || 0));
 };
 

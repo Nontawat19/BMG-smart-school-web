@@ -16,7 +16,7 @@ import { processTemporaryPlacements } from './autoSchedule/temporaryPlacer';
 import { writeSchedulesToFirestore } from './autoSchedule/firestoreWriter';
 import { acquireSchedulingRunLock, forceReleaseSchedulingRunLock, getActiveSchedulingLock, releaseSchedulingRunLock } from '../scheduleRunLock';
 import { getAssignmentCompositeId, getScheduleDocId, getTaskTeacherIds, normalizeGroupNumber, resolveScheduleTeacherId } from '../scheduleSharedUtils';
-import { buildPreferredSessionDurations, checkConstraints, DAYS, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isAcademicCourse, isDoubleCapableConstraint, isProtectedSpecialPeriodSetting } from '../utils';
+import { buildPreferredSessionDurations, checkConstraints, DAYS, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isAcademicCourse, isActivityCourse, isClubCourse, isDoubleCapableConstraint, isProtectedSpecialPeriodSetting } from '../utils';
 import { isActiveTeacher } from '@/utils/teacherSortUtils';
 import type { CourseAssignmentDocData } from './autoSchedule/loadSchedulingData';
 
@@ -39,7 +39,6 @@ interface UseAutoScheduleActionProps {
     specialPeriods: SpecialPeriod[];
     dynamicUnavailableSlots: string[];
     fetchData: (schoolId: string) => Promise<void>;
-    loadTeacherMasterSchedule: () => Promise<void>;
     schoolSettings: SchoolSettings;
     scheduleSectionRef: React.RefObject<HTMLDivElement | null>;
     assignmentConstraints: AssignmentConstraintMap;
@@ -63,7 +62,6 @@ export const useAutoScheduleAction = ({
     specialPeriods,
     dynamicUnavailableSlots,
     fetchData,
-    loadTeacherMasterSchedule,
     schoolSettings,
     scheduleSectionRef,
     assignmentConstraints
@@ -371,7 +369,9 @@ export const useAutoScheduleAction = ({
                 const targetSem = String(selectedSemester || "1");
                 const isCorrectSemester = semStr === "0" || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/');
 
-                if (!isCorrectSemester || !isAcademicCourse(c)) return false;
+                if (!isCorrectSemester) return false;
+                if (isClubCourse(c)) return false;
+                if (!isAcademicCourse(c) && !isActivityCourse(c)) return false;
                 if (!assignmentByCourseId.has(c.id) || !hasUsableAssignment(c)) return false;
                 if (normalizedTargetTeacherId) {
                     return c.teacherAssignments?.some((a) => getAssignmentTeacherIds(a).includes(normalizedTargetTeacherId)) || false;
@@ -734,7 +734,9 @@ export const useAutoScheduleAction = ({
                         ? assign.roomIds 
                         : (course.room && course.room.length > 0 ? course.room : ['all']);
 
-                    const hoursPerWeek = getRequiredWeeklyPeriods(course);
+                    const rawHoursPerWeek = getRequiredWeeklyPeriods(course);
+                    // Activity courses use 1 period/week; cap prevents annual totals (e.g. 40h/yr) from being treated as weekly
+                    const hoursPerWeek = isActivityCourse(course) ? Math.min(rawHoursPerWeek, 2) : rawHoursPerWeek;
 
                     const lockedSlotsForThisAssignment = getExistingLockedSlotsForAssignment(
                         course.id,
@@ -1168,9 +1170,6 @@ export const useAutoScheduleAction = ({
                     setAvailableCourseInstances([]);
                 }
                 await fetchData(schoolId);
-                if (selectedTeacher || normalizedTargetTeacherId) {
-                    await loadTeacherMasterSchedule();
-                }
             }
 
         } catch (error) {

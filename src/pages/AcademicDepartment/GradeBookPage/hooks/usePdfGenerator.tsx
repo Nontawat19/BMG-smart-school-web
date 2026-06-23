@@ -90,7 +90,7 @@ export const usePdfGenerator = (
                         const lastAttendUpdate = attendSnap.docs[0].data()?.updatedAt?.toMillis() || 0;
                         latestUpdate = Math.max(latestUpdate, lastAttendUpdate);
                     }
-                } catch (e) { console.log("Skip attendance update check due to missing index or other error"); }
+                } catch (e) { latestUpdate = Date.now(); } // index missing or query failed → force regenerate
 
                 const pdfUpdateTime = new Date(existingMetadata.updated).getTime();
 

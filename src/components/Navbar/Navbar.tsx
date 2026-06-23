@@ -401,8 +401,13 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   };
 
   const iconClass = (name: string) =>
-    `w-[26px] h-[26px] cursor-pointer transition ${activeIcon === name ? "text-sky-500 dark:text-sky-400 scale-125" : "text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-gray-200"
+    `w-11 h-11 flex items-center justify-center rounded-full cursor-pointer transition-transform transition-colors ${
+      activeIcon === name
+        ? "text-sky-500 dark:text-sky-400 scale-110"
+        : "text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-gray-200"
     }`;
+
+  const navIconSizeClass = "w-7 h-7";
 
   /* -------------------- render -------------------- */
   return (
@@ -412,8 +417,10 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
           {/* Left */}
           <div className="flex items-center gap-4">
-            <div
-              className="flex items-center gap-2 cursor-pointer"
+            <button
+              type="button"
+              className="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0"
+              aria-label={`${schoolDisplayName || "BMG Smart School"} - กลับหน้าแรก`}
               onClick={() => {
                 if (isPwaMode) {
                   navigate(PWA_ATTENDANCE_HUB_PATH);
@@ -427,16 +434,17 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               {schoolLogoUrl ? (
                 <img
                   src={schoolLogoUrl}
-                  alt={schoolDisplayName || "School logo"}
+                  alt={schoolDisplayName || "โลโก้โรงเรียน"}
                   className="w-8 h-8 rounded-full object-cover bg-white"
+                  loading="eager"
                 />
               ) : (
-                <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" />
+                <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" aria-hidden="true" />
               )}
               <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
                 {schoolDisplayName || "BMG Smart School"}
               </span>
-            </div>
+            </button>
 
             {/* Search Icon Only */}
             {!isPwaMode && !isAttendanceEntryOnly(currentUser?.role) && (
@@ -458,30 +466,21 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
           {/* Center */}
           {isPwaMode ? (
             <div className="hidden md:flex items-center gap-6">
-              <FaUserCheck
-                className={iconClass("attendance")}
-                title="ระบบเช็คชื่อ"
-                onClick={() => navigate(PWA_ATTENDANCE_HUB_PATH)}
-              />
-              <FaChalkboardTeacher
-                className={iconClass("schedule")}
-                title="ตารางสอน"
-                onClick={() => navigate(PWA_MY_SCHEDULE_PATH)}
-              />
+              <button type="button" className={`${iconClass("attendance")} bg-transparent border-0 p-0`} title="ระบบเช็คชื่อ" aria-label="ระบบเช็คชื่อ" onClick={() => navigate(PWA_ATTENDANCE_HUB_PATH)}>
+                <FaUserCheck className={navIconSizeClass} aria-hidden="true" />
+              </button>
+              <button type="button" className={`${iconClass("schedule")} bg-transparent border-0 p-0`} title="ตารางสอน" aria-label="ตารางสอน" onClick={() => navigate(PWA_MY_SCHEDULE_PATH)}>
+                <FaChalkboardTeacher className={navIconSizeClass} aria-hidden="true" />
+              </button>
             </div>
           ) : !isAttendanceEntryOnly(currentUser?.role) && (
             <div className="hidden md:flex items-center gap-6">
-              <FaHome
-                className={iconClass("home")}
-                title="หน้าแรก"
-                onClick={() => navigate("/home")}
-              />
-
-              <FaUserCheck
-                className={iconClass("attendance")}
-                title="ระบบเช็คชื่อ"
-                onClick={() => navigate("/academic/hub/attendance")}
-              />
+              <button type="button" className={`${iconClass("home")} bg-transparent border-0 p-0`} title="หน้าแรก" aria-label="หน้าแรก" onClick={() => navigate("/home")}>
+                <FaHome className={navIconSizeClass} aria-hidden="true" />
+              </button>
+              <button type="button" className={`${iconClass("attendance")} bg-transparent border-0 p-0`} title="ระบบเช็คชื่อ" aria-label="ระบบเช็คชื่อ" onClick={() => navigate("/academic/hub/attendance")}>
+                <FaUserCheck className={navIconSizeClass} aria-hidden="true" />
+              </button>
             </div>
           )}
 
@@ -490,16 +489,19 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
             {/* Notification */}
             {!isAttendanceEntryOnly(currentUser?.role) && (
               <div className="relative" ref={notificationRef}>
-              <FaBell
-                className={iconClass('notify')}
+              <button
+                type="button"
+                className={`${iconClass('notify')} bg-transparent border-0 p-0`}
                 onClick={() => {
                   setIsOpenNoti((p) => !p);
-                  setIsMobileMenuOpen(false); // Close other panels
+                  setIsMobileMenuOpen(false);
                   setIsSearchOpen(false);
                 }}
-                aria-label={`การแจ้งเตือน (${unreadCount} รายการใหม่)`}
+                aria-label={`การแจ้งเตือน${unreadCount > 0 ? ` (${unreadCount} รายการใหม่)` : ''}`}
                 title="การแจ้งเตือน"
-              />
+              >
+                <FaBell className={navIconSizeClass} aria-hidden="true" />
+              </button>
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
                   {unreadCount}
@@ -639,24 +641,29 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
             {/* Theme Toggle */}
             <button
+              type="button"
               onClick={toggleTheme}
               className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+              aria-label={isDarkMode ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด"}
               title={isDarkMode ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด"}
             >
-              {isDarkMode ? <FaSun className="w-5 h-5 text-yellow-500" /> : <FaMoon className="w-5 h-5" />}
+              {isDarkMode ? <FaSun className="w-5 h-5 text-yellow-500" aria-hidden="true" /> : <FaMoon className="w-5 h-5" aria-hidden="true" />}
             </button>
 
             {/* Hamburger Menu (Mobile/Tablet) */}
-            <FaBars
-              className="lg:hidden w-6 h-6 text-gray-600 dark:text-gray-300 cursor-pointer hover:text-sky-500 transition-colors"
+            <button
+              type="button"
+              className="lg:hidden p-1 bg-transparent border-0"
               onClick={() => {
                 setIsMobileMenuOpen(true);
-                setIsOpenNoti(false); // Close other panels
+                setIsOpenNoti(false);
                 setIsSearchOpen(false);
               }}
               aria-label="เปิดเมนูนำทาง"
               title="เมนู"
-            />
+            >
+              <FaBars className="w-6 h-6 text-gray-600 dark:text-gray-300 hover:text-sky-500 transition-colors" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </nav>

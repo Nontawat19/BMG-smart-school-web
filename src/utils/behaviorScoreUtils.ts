@@ -257,6 +257,83 @@ export const applyClassroomBehaviorScore = ({
   return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
 };
 
+// ── Per-Activity Behavior Rules ──────────────────────────────────────────────
+
+export interface SpecialPeriodActivityRule {
+  statusKey: 'present' | 'late' | 'absent';
+  type: 'increase' | 'decrease';
+  points: number;
+  isActive: boolean;
+  label: string;
+}
+
+export const DEFAULT_ACTIVITY_BEHAVIOR_RULES: SpecialPeriodActivityRule[] = [
+  { statusKey: 'present', type: 'increase', points: 0, isActive: false, label: 'มาร่วมกิจกรรม' },
+  { statusKey: 'late',    type: 'decrease', points: 2, isActive: true,  label: 'มาสาย' },
+  { statusKey: 'absent',  type: 'decrease', points: 5, isActive: true,  label: 'ขาด' },
+];
+
+const getActivityStatusEffect = (
+  rules: SpecialPeriodActivityRule[],
+  status: string | null | undefined,
+): number => {
+  const s = String(status || '').toLowerCase().trim();
+  const key = (
+    s === 'present' ? 'present' :
+    s === 'late'    ? 'late'    :
+    s === 'absent'  ? 'absent'  : null
+  ) as 'present' | 'late' | 'absent' | null;
+  if (!key) return 0;
+  const rule = rules.find(r => r.statusKey === key);
+  if (!rule || !rule.isActive || rule.points <= 0) return 0;
+  return rule.type === 'increase' ? rule.points : -rule.points;
+};
+
+export const applySpecialPeriodBehaviorScoreWithRules = ({
+  batch,
+  studentRef,
+  currentScore,
+  oldStatus,
+  newStatus,
+  activityRules,
+  config,
+}: {
+  batch: WriteBatch;
+  studentRef: DocumentReference;
+  currentScore?: number | null;
+  oldStatus?: string | null;
+  newStatus?: string | null;
+  activityRules?: SpecialPeriodActivityRule[] | null;
+  config?: BehaviorScoreConfig | null;
+}) => {
+  const rules = activityRules && activityRules.length > 0 ? activityRules : DEFAULT_ACTIVITY_BEHAVIOR_RULES;
+  const oldEffect = getActivityStatusEffect(rules, oldStatus);
+  const newEffect = getActivityStatusEffect(rules, newStatus);
+  const delta = newEffect - oldEffect;
+  if (delta === 0) return null;
+
+  const startingScore = Number(config?.startingScore ?? 100);
+  const minScore = Number(config?.minScore ?? 0);
+  const maxScore = Number(config?.maxScore ?? 100);
+  const baseScore = Number.isFinite(Number(currentScore)) ? Number(currentScore) : startingScore;
+  const nextScore = Math.min(maxScore, Math.max(minScore, baseScore + delta));
+
+  const update = {
+    behaviorScore: nextScore,
+    behaviorScoreUpdatedAt: serverTimestamp(),
+    lastBehaviorScoreChange: {
+      delta: nextScore - baseScore,
+      oldStatus: oldStatus || null,
+      newStatus: newStatus || null,
+      updatedAt: serverTimestamp(),
+      source: 'special_period',
+    },
+  };
+
+  batch.set(studentRef, update, { merge: true });
+  return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
+};
+
 const DEFAULT_SPECIAL_PERIOD_RULES: ClassroomAttendanceScoreRule[] = [
   { statusKey: "present", points: 0, isActive: false },
   { statusKey: "late", points: 2, isActive: true },

@@ -435,12 +435,17 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
                 const suffix = slot.replace(`${scheduleDayKey}-`, '');
                 const legacyIndex = Number(suffix);
-                if (Number.isFinite(legacyIndex) && legacyIndex >= 0 && teachingPeriods[legacyIndex]) {
-                    const setting = teachingPeriods[legacyIndex];
-                    return {
-                        setting,
-                        periodNum: getPeriodNumber(setting, legacyIndex)
-                    };
+                if (Number.isFinite(legacyIndex) && legacyIndex >= 0) {
+                    // First: match by period id (handles old format where numeric suffix = period NUMBER)
+                    const byPeriodId = normalizedPeriods.find(p => p.id === `period-${legacyIndex}`);
+                    if (byPeriodId && byPeriodId.isTeachingPeriod !== false) {
+                        return { setting: byPeriodId, periodNum: getPeriodNumber(byPeriodId, legacyIndex) };
+                    }
+                    // Fallback: use as position in the filtered teaching-periods array
+                    if (teachingPeriods[legacyIndex]) {
+                        const setting = teachingPeriods[legacyIndex];
+                        return { setting, periodNum: getPeriodNumber(setting, legacyIndex) };
+                    }
                 }
 
                 return null;

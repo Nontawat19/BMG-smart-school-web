@@ -394,7 +394,21 @@ const ClassroomAttendancePage: React.FC = () => {
         if (Number.isFinite(index) && activePeriods.length > 0) {
             const setting = activePeriods.find((p: any) => p.index === index);
             if (setting) {
-                if (setting.id === 'homeroom' || setting.id === 'lunch') return null;
+                const isTeachingSlot =
+                    setting.isTeachingPeriod === true ||
+                    setting.isTeaching === true ||
+                    String(setting.id || '').startsWith('period-');
+                if (!isTeachingSlot) {
+                    // The numeric suffix may be a period NUMBER stored in old schedule format
+                    // (before a non-teaching slot was inserted, shifting array indices).
+                    // Try to find the corresponding period-N entry by id.
+                    const candidate = `period-${index}`;
+                    const alt = activePeriods.find((p: any) => p.id === candidate);
+                    if (alt && alt.isTeachingPeriod !== false && alt.isTeaching !== false) {
+                        return index;
+                    }
+                    return null;
+                }
                 const match = String(setting.id || '').match(/^period-(\d+)$/);
                 if (match) return Number(match[1]);
             }

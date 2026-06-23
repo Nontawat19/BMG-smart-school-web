@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
-import { collection, doc, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, getDocsFromServer, writeBatch, deleteDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { Course, CourseInstance, Schedule, Teacher, PeriodSetting, SpecialPeriod, SchedulingMetrics, SchoolSettings, AssignmentConstraintMap } from '../types';
 import { useAutoScheduleAction } from '../actions/useAutoScheduleAction';
@@ -37,7 +37,6 @@ interface UseScheduleActionsProps {
     setDynamicUnavailableSlots?: Dispatch<SetStateAction<string[]>>;
     setLocalUnavailableSlotsMap?: Dispatch<SetStateAction<Record<string, string[]>>>;
     fetchData: (schoolId: string) => Promise<void>;
-    loadTeacherMasterSchedule: () => Promise<void>;
     schoolSettings: SchoolSettings;
     scheduleSectionRef: React.RefObject<HTMLDivElement | null>;
     assignmentConstraints: AssignmentConstraintMap;
@@ -62,7 +61,6 @@ export const useScheduleActions = ({
     setDynamicUnavailableSlots,
     setLocalUnavailableSlotsMap,
     fetchData,
-    loadTeacherMasterSchedule,
     schoolSettings,
     scheduleSectionRef,
     assignmentConstraints
@@ -97,12 +95,9 @@ const getFirebaseErrorMessage = (error: unknown): string => {
         if (!(await ensureScheduleNotLocked())) return;
         setIsSaving(true);
         try {
-            const batch = writeBatch(db);
-
             // 1. Prepare the consolidated schedule to save
-            // We save the entire schedule in one document per teacher to ensure consistency and avoid duplication.
             const scheduleToSave: Record<string, Omit<CourseInstance, 'instanceId' | 'className'>[]> = {};
-            
+
             Object.entries(schedule).forEach(([slotId, courses]) => {
                 if (courses && courses.length > 0) {
                     scheduleToSave[slotId] = courses.map(course => {
@@ -120,8 +115,19 @@ const getFirebaseErrorMessage = (error: unknown): string => {
                 });
             });
 
-            // 2. Save to Firestore
             const scheduleDocId = getScheduleDocId(selectedTeacher, selectedYear, selectedSemester);
+
+            // 2. Read existing docs BEFORE queuing any batch writes, forcing a server fetch
+            //    to bypass Firestore's local cache.  Using getDocs() here would serve the
+            //    cached collection snapshot which may not include docs created by the
+            //    auto-scheduler after the page loaded, leaving stale docs un-deleted and
+            //    causing courses to appear in both the old and new slot after save.
+            const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
+            const existingSchedules = await getDocsFromServer(schedulesRef);
+
+            // 3. Build and commit batch
+            const batch = writeBatch(db);
+
             const scheduleRef = doc(db, "school-settings", schoolId, "schedules", scheduleDocId);
             batch.set(scheduleRef, {
                 teacherId: selectedTeacher,
@@ -129,7 +135,7 @@ const getFirebaseErrorMessage = (error: unknown): string => {
                 semester: selectedSemester,
                 schedule: scheduleToSave,
                 updatedAt: new Date(),
-                classId: Array.from(teacherClasses), 
+                classId: Array.from(teacherClasses),
             });
 
             const teacherRef = doc(db, 'school-settings', schoolId, 'teachers', selectedTeacher);
@@ -137,15 +143,12 @@ const getFirebaseErrorMessage = (error: unknown): string => {
                 preferences: { unavailableSlots: dynamicUnavailableSlots }
             }, { merge: true });
 
-            const schedulesRef = collection(db, 'school-settings', schoolId, 'schedules');
-            const existingSchedules = await getDocs(schedulesRef);
             const knownTeacherIds = teachers.map(t => t.id);
             existingSchedules.docs.forEach(scheduleDoc => {
                 if (scheduleDoc.id === scheduleDocId) return;
                 const data = scheduleDoc.data();
                 if (!matchesScheduleTeacher(scheduleDoc.id, data.teacherId, knownTeacherIds, selectedTeacher)) return;
                 if (!matchesScheduleTerm(data, selectedYear, selectedSemester)) return;
-
                 batch.delete(scheduleDoc.ref);
             });
 
@@ -160,7 +163,6 @@ const getFirebaseErrorMessage = (error: unknown): string => {
                 timer: 3000,
                 timerProgressBar: true,
             });
-            await loadTeacherMasterSchedule();
             await fetchData(schoolId);
         } catch (error) {
             console.error("Error saving schedule: ", error);
@@ -259,7 +261,6 @@ const getFirebaseErrorMessage = (error: unknown): string => {
         specialPeriods,
         dynamicUnavailableSlots,
         fetchData,
-        loadTeacherMasterSchedule,
         schoolSettings,
         scheduleSectionRef,
         assignmentConstraints

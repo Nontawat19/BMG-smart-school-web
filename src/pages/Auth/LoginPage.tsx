@@ -391,35 +391,41 @@ const LoginPage: React.FC = () => {
           </div>
 
           {/* Custom Tabs */}
-          <div className="grid grid-cols-3 gap-2 mb-6">
+          <div role="tablist" aria-label="ประเภทการเข้าสู่ระบบ" className="grid grid-cols-3 gap-2 mb-6">
             <button
+              role="tab"
+              aria-selected={loginType === 'teacher'}
               onClick={() => setLoginType('teacher')}
               className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${loginType === 'teacher'
                 ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 shadow-sm'
                 : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
             >
-              <FaUserTie className="text-xl mb-1" />
+              <FaUserTie className="text-xl mb-1" aria-hidden="true" />
               <span className="font-semibold text-xs">สำหรับครู</span>
             </button>
             <button
+              role="tab"
+              aria-selected={loginType === 'student'}
               onClick={() => setLoginType('student')}
               className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${loginType === 'student'
                 ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 shadow-sm'
                 : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
             >
-              <FaUserGraduate className="text-xl mb-1" />
+              <FaUserGraduate className="text-xl mb-1" aria-hidden="true" />
               <span className="font-semibold text-xs">นักเรียน</span>
             </button>
             <button
+              role="tab"
+              aria-selected={loginType === 'parent'}
               onClick={() => setLoginType('parent')}
               className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all duration-200 ${loginType === 'parent'
                 ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 shadow-sm'
                 : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-emerald-200 dark:hover:border-emerald-800 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
             >
-              <FaUsers className="text-xl mb-1" />
+              <FaUsers className="text-xl mb-1" aria-hidden="true" />
               <span className="font-semibold text-xs">ผู้ปกครอง</span>
             </button>
           </div>
@@ -429,35 +435,39 @@ const LoginPage: React.FC = () => {
             {loginType === 'parent' ? (
               <form onSubmit={handleParentLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เบอร์โทรผู้ปกครอง</label>
+                  <label htmlFor="parent-phone" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เบอร์โทรผู้ปกครอง</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaPhone className="text-gray-400" />
+                      <FaPhone className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="parent-phone"
                       type="tel"
                       value={parentPhone}
                       onChange={(e) => setParentPhone(e.target.value.replace(/[^0-9]/g, ''))}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="เบอร์โทรที่ลงทะเบียนไว้กับโรงเรียน"
                       maxLength={10}
+                      autoComplete="tel"
                       required
                     />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชนผู้ปกครอง (รหัสผ่าน)</label>
+                  <label htmlFor="parent-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชนผู้ปกครอง (รหัสผ่าน)</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaIdCard className="text-gray-400" />
+                      <FaIdCard className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="parent-national-id"
                       type="password"
                       value={parentNationalId}
                       onChange={(e) => setParentNationalId(e.target.value.replace(/[^0-9]/g, ''))}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="เลขบัตรประชาชน 13 หลัก"
                       maxLength={13}
+                      autoComplete="current-password"
                       required
                     />
                   </div>
@@ -480,41 +490,46 @@ const LoginPage: React.FC = () => {
             ) : loginType === 'teacher' ? (
               <form onSubmit={handleLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">อีเมล</label>
+                  <label htmlFor="teacher-email" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">อีเมล</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaEnvelope className="text-gray-400" />
+                      <FaEnvelope className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="teacher-email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="name@school.ac.th"
+                      autoComplete="email"
                       required
                     />
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center ml-1">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">รหัสผ่าน</label>
-                    <span
+                    <label htmlFor="teacher-password" className="text-sm font-medium text-gray-700 dark:text-gray-300">รหัสผ่าน</label>
+                    <button
+                      type="button"
                       onClick={() => navigate("/forgot-password")}
-                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer bg-transparent border-0 p-0"
                     >
                       ลืมรหัสผ่าน?
-                    </span>
+                    </button>
                   </div>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaLock className="text-gray-400" />
+                      <FaLock className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="teacher-password"
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="••••••••"
+                      autoComplete="current-password"
                       required
                     />
                   </div>
@@ -534,33 +549,37 @@ const LoginPage: React.FC = () => {
             ) : (
               <form onSubmit={handleStudentLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสนักเรียน</label>
+                  <label htmlFor="student-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสนักเรียน</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaUserGraduate className="text-gray-400" />
+                      <FaUserGraduate className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="student-id"
                       type="text"
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="ระบุรหัสนักเรียน"
+                      autoComplete="username"
                       required
                     />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชน (ปปช.)</label>
+                  <label htmlFor="student-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชน (ปปช.)</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <FaIdCard className="text-gray-400" />
+                      <FaIdCard className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
+                      id="student-national-id"
                       type="password"
                       value={nationalId}
                       onChange={(e) => setNationalId(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
                       placeholder="เลขบัตรประชาชน 13 หลัก"
+                      autoComplete="current-password"
                       required
                     />
                   </div>

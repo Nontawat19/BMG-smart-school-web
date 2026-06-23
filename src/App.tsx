@@ -6,6 +6,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PullToRefresh from "@/components/PullToRefresh";
 
 import ProtectedRoute from "./components/ProtectedRoute";
+import ActivityModeGuard from "./components/ActivityModeGuard";
 import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from "@/constants/permissions";
 
 import PublicRoute from "./components/PublicRoute";
@@ -117,6 +118,7 @@ const ClubViewPage = lazy(() => import("./pages/AcademicDepartment/ClubViewPage"
 const LearnerActivityAttendancePage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityAttendancePage"));
 const LearnerActivityManagementPage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityManagementPage"));
 const LearnerActivityStudentManagementPage = lazy(() => import("./pages/AcademicDepartment/LearnerActivityStudentManagementPage"));
+const ActivityHubSettingsPage = lazy(() => import("./pages/AcademicDepartment/ActivityHubSettingsPage"));
 const ActivityEvaluationPage = lazy(() => import("./pages/AcademicDepartment/ActivityEvaluationPage"));
 const SchoolInfoPage = lazy(() => import("./pages/owner/SchoolInfoPage"));
 const SchoolListPage = lazy(() => import("./pages/owner/SchoolListPage"));
@@ -340,8 +342,9 @@ function App() {
           <Route path="/academic/club-list" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ClubListPage /></ProtectedRoute>} />
           <Route path="/academic/club-list/:clubId" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ClubViewPage /></ProtectedRoute>} />
           <Route path="/academic/learner-activity-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><LearnerActivityAttendancePage /></ProtectedRoute>} />
-          <Route path="/academic/learner-activities" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityManagementPage /></ProtectedRoute>} />
-          <Route path="/academic/learner-activity-students" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LearnerActivityStudentManagementPage /></ProtectedRoute>} />
+          <Route path="/academic/learner-activities" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityModeGuard><LearnerActivityManagementPage /></ActivityModeGuard></ProtectedRoute>} />
+          <Route path="/academic/activity-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityHubSettingsPage /></ProtectedRoute>} />
+          <Route path="/academic/learner-activity-students" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityModeGuard><LearnerActivityStudentManagementPage /></ActivityModeGuard></ProtectedRoute>} />
           <Route path="/academic/flag-ceremony" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FlagCeremonyPage /></ProtectedRoute>} />
           <Route path="/academic/homeroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HomeroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/guidance-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GuidanceAttendancePage /></ProtectedRoute>} />

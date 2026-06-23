@@ -2,12 +2,14 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { collection, addDoc, getDocs, deleteDoc, doc, getDoc, updateDoc } from "firebase/firestore";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
+import { fetchTeachersMap } from "@/store/slices/userMapSlice";
+import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import MainLayout from "@/layouts/MainLayout";
 import Swal from "sweetalert2";
 import BackButton from "@/components/Shared/BackButton";
-import { CalendarDays, CalendarClock, Clock, Shield, BarChart2, Plus, Pencil, Trash2 } from "lucide-react";
+import { CalendarDays, CalendarClock, Clock, Shield, BarChart2, Plus, Pencil, Trash2, Users, Search, ChevronDown, BookOpen } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -22,9 +24,14 @@ interface SpecialPeriod {
   periodType?: PeriodType;
   day?: string;            // for recurring
   eventDate?: string;      // for oneTime (YYYY-MM-DD)
+  eventEndDate?: string;   // for oneTime range end (YYYY-MM-DD, optional)
   linkedPeriodId?: string;
   isTeachingLoad?: boolean;
+  attendanceCloseDate?: string;  // YYYY-MM-DD วันสุดท้ายที่ให้เช็คชื่อในเมนู (oneTime)
+  attendanceCloseTime?: string;  // HH:MM เวลาสุดท้ายในวันนั้น (ถ้าไม่กำหนด = 23:59)
+  countAsTeachingPeriod?: boolean;
   deductBehaviorDefault?: boolean;
+  responsibleTeacherIds?: string[];
 }
 
 interface PeriodSetting {
@@ -73,8 +80,10 @@ const formatThaiDate = (dateStr?: string) => {
 // ─── Page ──────────────────────────────────────────────────────────────────
 
 const SpecialPeriodManagementPage: React.FC = () => {
+  const dispatch = useDispatch();
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
+  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
 
   const [specialPeriods, setSpecialPeriods] = useState<SpecialPeriod[]>([]);
   const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
@@ -91,9 +100,33 @@ const SpecialPeriodManagementPage: React.FC = () => {
   const [newPeriodDurationHours, setNewPeriodDurationHours] = useState<string>('');
   const [newPeriodDay, setNewPeriodDay] = useState('all');
   const [newPeriodEventDate, setNewPeriodEventDate] = useState('');
+  const [newPeriodEventEndDate, setNewPeriodEventEndDate] = useState('');
   const [selectedPeriodOption, setSelectedPeriodOption] = useState('custom');
   const [newPeriodIsTeachingLoad, setNewPeriodIsTeachingLoad] = useState(false);
-  const [newPeriodDeductBehaviorDefault, setNewPeriodDeductBehaviorDefault] = useState(false);
+  const [newPeriodAttendanceCloseDate, setNewPeriodAttendanceCloseDate] = useState('');
+  const [newPeriodAttendanceCloseTime, setNewPeriodAttendanceCloseTime] = useState('');
+  const [newPeriodCountAsTeachingPeriod, setNewPeriodCountAsTeachingPeriod] = useState(false);
+  const [newPeriodBehaviorEnabled, setNewPeriodBehaviorEnabled] = useState(false);
+  const [newPeriodResponsibleTeacherIds, setNewPeriodResponsibleTeacherIds] = useState<string[]>([]);
+  const [showTeacherPicker, setShowTeacherPicker] = useState(false);
+  const [teacherSearch, setTeacherSearch] = useState('');
+
+  // ── Teacher helpers ───────────────────────────────────────────────────────
+  const sortedTeachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})), [teacherMap]);
+  const filteredTeachers = useMemo(() => {
+    if (!teacherSearch) return sortedTeachers;
+    const q = teacherSearch.toLowerCase();
+    return sortedTeachers.filter(t =>
+      (t.name || '').toLowerCase().includes(q) ||
+      ((t as any).teacherId || '').toLowerCase().includes(q)
+    );
+  }, [sortedTeachers, teacherSearch]);
+
+  const toggleTeacher = (id: string) => {
+    setNewPeriodResponsibleTeacherIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
 
   // Auto-calculate duration when times change
   const autoDuration = useMemo(() =>
@@ -135,6 +168,10 @@ const SpecialPeriodManagementPage: React.FC = () => {
     });
   }, [schoolId]);
 
+  useEffect(() => {
+    if (schoolId && teacherMapStatus === 'idle') dispatch(fetchTeachersMap(schoolId) as any);
+  }, [schoolId, teacherMapStatus, dispatch]);
+
   // ── Form helpers ──────────────────────────────────────────────────────────
   const resetForm = () => {
     setEditingPeriodId(null);
@@ -145,9 +182,16 @@ const SpecialPeriodManagementPage: React.FC = () => {
     setNewPeriodDurationHours('');
     setNewPeriodDay('all');
     setNewPeriodEventDate('');
+    setNewPeriodEventEndDate('');
     setSelectedPeriodOption(PERIOD_OPTIONS.length > 0 ? PERIOD_OPTIONS[0].value : 'custom');
     setNewPeriodIsTeachingLoad(false);
-    setNewPeriodDeductBehaviorDefault(false);
+    setNewPeriodAttendanceCloseDate('');
+    setNewPeriodAttendanceCloseTime('');
+    setNewPeriodCountAsTeachingPeriod(false);
+    setNewPeriodBehaviorEnabled(false);
+    setNewPeriodResponsibleTeacherIds([]);
+    setShowTeacherPicker(false);
+    setTeacherSearch('');
   };
 
   const handleEditClick = (period: SpecialPeriod) => {
@@ -159,9 +203,16 @@ const SpecialPeriodManagementPage: React.FC = () => {
     setNewPeriodDurationHours(period.durationHours != null ? String(period.durationHours) : '');
     setNewPeriodDay(period.day || 'all');
     setNewPeriodEventDate(period.eventDate || '');
+    setNewPeriodEventEndDate(period.eventEndDate || '');
     setSelectedPeriodOption(period.linkedPeriodId || 'custom');
     setNewPeriodIsTeachingLoad(period.isTeachingLoad || false);
-    setNewPeriodDeductBehaviorDefault(period.deductBehaviorDefault || false);
+    setNewPeriodAttendanceCloseDate(period.attendanceCloseDate || '');
+    setNewPeriodAttendanceCloseTime(period.attendanceCloseTime || '');
+    setNewPeriodCountAsTeachingPeriod(period.countAsTeachingPeriod || false);
+    setNewPeriodBehaviorEnabled(period.deductBehaviorDefault || false);
+    setNewPeriodResponsibleTeacherIds(period.responsibleTeacherIds || []);
+    setShowTeacherPicker(false);
+    setTeacherSearch('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -189,10 +240,14 @@ const SpecialPeriodManagementPage: React.FC = () => {
       durationHours,
       periodType: newPeriodType,
       isTeachingLoad: newPeriodIsTeachingLoad,
-      deductBehaviorDefault: newPeriodDeductBehaviorDefault,
+      ...(newPeriodType === 'oneTime' && newPeriodAttendanceCloseDate ? { attendanceCloseDate: newPeriodAttendanceCloseDate } : {}),
+      ...(newPeriodType === 'oneTime' && newPeriodAttendanceCloseDate && newPeriodAttendanceCloseTime ? { attendanceCloseTime: newPeriodAttendanceCloseTime } : {}),
+      countAsTeachingPeriod: newPeriodCountAsTeachingPeriod,
+      deductBehaviorDefault: newPeriodBehaviorEnabled,
+      responsibleTeacherIds: newPeriodResponsibleTeacherIds,
       ...(newPeriodType === 'recurring'
-        ? { day: newPeriodDay, linkedPeriodId: selectedPeriodOption !== 'custom' ? selectedPeriodOption : undefined }
-        : { eventDate: newPeriodEventDate }),
+        ? { day: newPeriodDay, ...(selectedPeriodOption !== 'custom' ? { linkedPeriodId: selectedPeriodOption } : {}) }
+        : { eventDate: newPeriodEventDate, ...(newPeriodEventEndDate ? { eventEndDate: newPeriodEventEndDate } : {}) }),
     };
 
     try {
@@ -317,11 +372,24 @@ const SpecialPeriodManagementPage: React.FC = () => {
                     </select>
                   </div>
                 ) : (
-                  <div>
-                    <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">วันที่จัดกิจกรรม</label>
-                    <input type="date" value={newPeriodEventDate} onChange={e => setNewPeriodEventDate(e.target.value)}
-                      className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">วันที่เริ่มกิจกรรม</label>
+                      <input type="date" value={newPeriodEventDate} onChange={e => {
+                        setNewPeriodEventDate(e.target.value);
+                        if (newPeriodEventEndDate && e.target.value > newPeriodEventEndDate) setNewPeriodEventEndDate('');
+                      }}
+                        className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                        วันที่สิ้นสุด <span className="text-gray-400 font-normal normal-case">(ถ้ากิจกรรมหลายวัน)</span>
+                      </label>
+                      <input type="date" value={newPeriodEventEndDate} min={newPeriodEventDate || undefined}
+                        onChange={e => setNewPeriodEventEndDate(e.target.value)}
+                        className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                    </div>
+                  </>
                 )}
 
                 {/* Period slot (recurring only) */}
@@ -333,6 +401,11 @@ const SpecialPeriodManagementPage: React.FC = () => {
                       <option value="custom">กำหนดเอง</option>
                       {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
+                    {selectedPeriodOption === 'custom' && (
+                      <p className="mt-1 text-[10px] text-amber-500 dark:text-amber-400 font-bold">
+                        ⚠ "กำหนดเอง" จะไม่แสดงในตารางสอนครู — ต้องผูกคาบเรียนเพื่อให้แสดงในตาราง PDF
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -351,39 +424,149 @@ const SpecialPeriodManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Duration hours + Toggles in one row */}
-              <div className="flex flex-col sm:flex-row gap-2">
+              {/* Duration + แสดงในเมนูเช็คชื่อ + นับเป็นคาบสอน + คะแนนพฤติกรรม + ครูรับผิดชอบ (single row) */}
+              <div className="grid grid-cols-5 gap-2">
                 {/* Duration */}
-                <div className="flex items-center gap-2 rounded-xl bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 px-3 py-2 flex-1">
+                <div className="flex items-center gap-2 rounded-xl bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 px-3 py-2 h-full">
                   <Clock size={15} className="text-gray-400 shrink-0" />
                   <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">ชม.</label>
                   <input type="number" min="0" step="0.5" max="24"
                     value={newPeriodDurationHours}
                     onChange={e => setNewPeriodDurationHours(e.target.value)}
                     placeholder={autoDuration > 0 ? `${autoDuration}` : '0'}
-                    className="w-20 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  {autoDuration > 0 && (
-                    <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold">อัตโนมัติ {autoDuration} ชม.</span>
+                    className="w-16 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                {/* Toggle: isTeachingLoad + close deadline (absolute dropdown) */}
+                <div className="relative h-full">
+                  <label className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 cursor-pointer transition-all h-full ${newPeriodIsTeachingLoad ? 'border-indigo-400 dark:border-indigo-600 bg-indigo-50/30 dark:bg-indigo-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] hover:border-indigo-300'}`}>
+                    <input type="checkbox" checked={newPeriodIsTeachingLoad}
+                      onChange={e => { setNewPeriodIsTeachingLoad(e.target.checked); if (!e.target.checked) { setNewPeriodAttendanceCloseDate(''); setNewPeriodAttendanceCloseTime(''); } }}
+                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0" />
+                    <BarChart2 size={13} className="text-indigo-500 shrink-0" />
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate">แสดงในเมนูเช็คชื่อ</span>
+                    {newPeriodIsTeachingLoad && newPeriodType === 'oneTime' && newPeriodAttendanceCloseDate && (
+                      <span className="text-[9px] font-black text-indigo-500 bg-indigo-100 dark:bg-indigo-900/40 px-1 py-0.5 rounded shrink-0">
+                        ถึง {newPeriodAttendanceCloseDate}
+                      </span>
+                    )}
+                  </label>
+                  {newPeriodIsTeachingLoad && newPeriodType === 'oneTime' && (
+                    <div className="absolute left-0 top-full mt-1 z-50 w-72 bg-white dark:bg-[#1e1f21] border-2 border-indigo-400 dark:border-indigo-600 rounded-xl shadow-xl px-3 py-2.5 space-y-2">
+                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-wider">ปิดรับเช็คชื่อถึง</p>
+                      <div className="flex gap-1.5">
+                        <input type="date" value={newPeriodAttendanceCloseDate}
+                          min={newPeriodEventDate || undefined}
+                          onChange={e => setNewPeriodAttendanceCloseDate(e.target.value)}
+                          className="flex-1 min-w-0 bg-gray-50 dark:bg-[#2a2b2f] border border-indigo-200 dark:border-indigo-700 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                        <input type="time" value={newPeriodAttendanceCloseTime}
+                          onChange={e => setNewPeriodAttendanceCloseTime(e.target.value)}
+                          disabled={!newPeriodAttendanceCloseDate}
+                          className="w-24 bg-gray-50 dark:bg-[#2a2b2f] border border-indigo-200 dark:border-indigo-700 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed" />
+                      </div>
+                      {!newPeriodAttendanceCloseDate ? (
+                        <p className="text-[10px] text-gray-400">ไม่กำหนด = ปิดหลังกิจกรรมสิ้นสุด +1 ชม. อัตโนมัติ</p>
+                      ) : (
+                        <button type="button" onClick={() => { setNewPeriodAttendanceCloseDate(''); setNewPeriodAttendanceCloseTime(''); }}
+                          className="text-[10px] font-black text-red-400 hover:text-red-600 transition-colors">
+                          ✕ ล้างค่า (ใช้ค่าอัตโนมัติ)
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {/* Toggle: isTeachingLoad */}
-                <label className="flex items-center gap-2 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] px-3 py-2 cursor-pointer hover:border-indigo-300 transition-colors">
-                  <input type="checkbox" checked={newPeriodIsTeachingLoad}
-                    onChange={e => setNewPeriodIsTeachingLoad(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                  <BarChart2 size={13} className="text-indigo-500 shrink-0" />
-                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">แสดงในเมนูเช็คชื่อ</span>
+                {/* Toggle: countAsTeachingPeriod */}
+                <label className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 cursor-pointer transition-all h-full ${newPeriodCountAsTeachingPeriod ? 'border-emerald-400 dark:border-emerald-600 bg-emerald-50/40 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] hover:border-emerald-300'}`}>
+                  <input type="checkbox" checked={newPeriodCountAsTeachingPeriod}
+                    onChange={e => setNewPeriodCountAsTeachingPeriod(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0" />
+                  <BookOpen size={13} className={`shrink-0 ${newPeriodCountAsTeachingPeriod ? 'text-emerald-500' : 'text-gray-400'}`} />
+                  <span className={`text-xs font-bold truncate ${newPeriodCountAsTeachingPeriod ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-700 dark:text-gray-300'}`}>ภาระงานกิจกรรมพิเศษ</span>
                 </label>
 
-                {/* Toggle: deductBehaviorDefault */}
-                <label className="flex items-center gap-2 flex-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] px-3 py-2 cursor-pointer hover:border-violet-300 transition-colors">
-                  <input type="checkbox" checked={newPeriodDeductBehaviorDefault}
-                    onChange={e => setNewPeriodDeductBehaviorDefault(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500" />
-                  <Shield size={13} className="text-violet-500 shrink-0" />
-                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">หักคะแนนอัตโนมัติ</span>
+                {/* คะแนนพฤติกรรม */}
+                <label className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer select-none transition-all ${newPeriodBehaviorEnabled ? 'border-violet-400 dark:border-violet-600 bg-violet-50/40 dark:bg-violet-900/10' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21]'} h-full`}>
+                  <input type="checkbox" checked={newPeriodBehaviorEnabled}
+                    onChange={e => setNewPeriodBehaviorEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500 shrink-0" />
+                  <Shield size={13} className={`shrink-0 ${newPeriodBehaviorEnabled ? 'text-violet-500' : 'text-gray-400'}`} />
+                  <span className={`text-xs font-bold flex-1 min-w-0 truncate ${newPeriodBehaviorEnabled ? 'text-violet-700 dark:text-violet-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                    คะแนนพฤติกรรม
+                  </span>
+                  {newPeriodBehaviorEnabled && (
+                    <span className="text-[9px] font-black text-violet-500 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded-full shrink-0">เปิด</span>
+                  )}
+                  <Link to="/academic/behavior-score-config" onClick={e => e.stopPropagation()}
+                    className="text-[10px] font-black text-gray-400 hover:text-violet-500 hover:underline shrink-0">
+                    ตั้งค่า
+                  </Link>
                 </label>
+
+                {/* ครูรับผิดชอบ */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherPicker(v => !v)}
+                    className={`w-full h-full flex items-center gap-2 px-3 py-2 text-left rounded-xl border-2 transition-all ${showTeacherPicker ? 'border-blue-400 dark:border-blue-600' : 'border-gray-200 dark:border-gray-700'} bg-white dark:bg-[#1e1f21]`}
+                  >
+                    <Users size={13} className="text-blue-500 shrink-0" />
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 flex-1 min-w-0 truncate">ครูรับผิดชอบ</span>
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${newPeriodResponsibleTeacherIds.length > 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'text-gray-400'}`}>
+                      {newPeriodResponsibleTeacherIds.length === 0 ? 'ทุกครู' : `${newPeriodResponsibleTeacherIds.length} คน`}
+                    </span>
+                    <ChevronDown size={13} className={`text-gray-400 transition-transform shrink-0 ${showTeacherPicker ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showTeacherPicker && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-white dark:bg-[#1e1f21] border-2 border-blue-400 dark:border-blue-600 rounded-xl shadow-xl px-3 pb-3 pt-2.5 space-y-2">
+                      <p className="text-[10px] text-gray-400 font-bold">ถ้าไม่เลือกครู = ทุกคนเห็นกิจกรรมนี้ในเมนูเช็คชื่อ</p>
+                      <div className="relative">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="ค้นหาครู..."
+                          value={teacherSearch}
+                          onChange={e => setTeacherSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 text-xs font-bold bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                        {filteredTeachers.length === 0 ? (
+                          <p className="text-xs text-gray-400 text-center py-2">ไม่พบครู</p>
+                        ) : filteredTeachers.map(teacher => {
+                          const id = (teacher as any).id || (teacher as any).uid || '';
+                          const checked = newPeriodResponsibleTeacherIds.includes(id);
+                          return (
+                            <label key={id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleTeacher(id)}
+                                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+                              />
+                              <span className={`text-xs font-bold flex-1 ${checked ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                                {(teacher as any).name || id}
+                              </span>
+                              {(teacher as any).teacherId && (
+                                <span className="text-[10px] text-gray-400">{(teacher as any).teacherId}</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {newPeriodResponsibleTeacherIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setNewPeriodResponsibleTeacherIds([])}
+                          className="text-[10px] font-black text-red-400 hover:text-red-600 transition-colors"
+                        >
+                          ล้างการเลือกทั้งหมด
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Submit */}
@@ -474,7 +657,7 @@ const SpecialPeriodManagementPage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-1.5 min-w-0">
                           {isOneTime ? (
-                            <><CalendarClock size={12} className="shrink-0" /><span className="truncate">{formatThaiDate(period.eventDate)}</span></>
+                            <><CalendarClock size={12} className="shrink-0" /><span className="truncate">{formatThaiDate(period.eventDate)}{period.eventEndDate ? ` – ${formatThaiDate(period.eventEndDate)}` : ''}</span></>
                           ) : (
                             <><CalendarDays size={12} className="shrink-0" /><span>{DAY_LABEL[period.day || 'all'] || 'ทุกวัน'}</span></>
                           )}
@@ -486,11 +669,27 @@ const SpecialPeriodManagementPage: React.FC = () => {
                         {period.isTeachingLoad && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
                             <BarChart2 size={10} /> แสดงในเมนูเช็คชื่อ
+                            {period.periodType === 'oneTime' && period.attendanceCloseDate && (
+                              <span className="font-normal opacity-75">
+                                {' '}ถึง {period.attendanceCloseDate}{period.attendanceCloseTime ? ` ${period.attendanceCloseTime}` : ''}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        {period.countAsTeachingPeriod && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            <BookOpen size={10} /> ภาระงานกิจกรรมพิเศษ
                           </span>
                         )}
                         {period.deductBehaviorDefault && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
-                            <Shield size={10} /> หักคะแนนอัตโนมัติ
+                            <Shield size={10} /> คะแนนพฤติกรรม
+                          </span>
+                        )}
+                        {period.responsibleTeacherIds && period.responsibleTeacherIds.length > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            <Users size={10} />
+                            {period.responsibleTeacherIds.length} ครู: {period.responsibleTeacherIds.slice(0, 2).map(id => teacherMap?.[id]?.name || id).join(', ')}{period.responsibleTeacherIds.length > 2 ? ` +${period.responsibleTeacherIds.length - 2}` : ''}
                           </span>
                         )}
                       </div>

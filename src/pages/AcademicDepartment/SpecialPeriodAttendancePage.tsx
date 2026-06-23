@@ -12,15 +12,17 @@ import { fetchSchoolSettings } from '@/store/slices/schoolSettingsSlice';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
-import { applySpecialPeriodBehaviorScore } from '@/utils/behaviorScoreUtils';
+import {
+  applySpecialPeriodBehaviorScore,
+} from '@/utils/behaviorScoreUtils';
 import {
   collection, doc, getDoc, getDocs, query,
   Timestamp, where, writeBatch,
 } from 'firebase/firestore';
 import {
-  AlertCircle, Calendar, CheckCircle2, ChevronLeft, ChevronRight,
+  AlertCircle, BarChart2, Calendar, CheckCircle2, ChevronLeft, ChevronRight,
   ClipboardCheck, Info, RefreshCw, Save, Search,
-  Settings, Users,
+  Users,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
@@ -35,6 +37,7 @@ interface SpecialPeriod {
   day?: string;
   periodType?: 'recurring' | 'oneTime';
   eventDate?: string;
+  eventEndDate?: string;
   durationHours?: number;
   isTeachingLoad?: boolean;
   deductBehaviorDefault?: boolean;
@@ -197,7 +200,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
     if (schoolId && schoolSettings.status === 'idle') dispatch(fetchSchoolSettings(schoolId) as any);
   }, [schoolId, schoolSettings.status, dispatch]);
 
-  // ── Load behavior config ─────────────────────────────────────────────────
+  // ── Load behavior config (global — used for min/max/starting bounds) ─────
   useEffect(() => {
     if (!schoolId) return;
     getDoc(doc(db, 'school-settings', schoolId)).then(snap => {
@@ -214,7 +217,6 @@ const SpecialPeriodAttendancePage: React.FC = () => {
         .map(d => ({ id: d.id, ...d.data() } as SpecialPeriod))
         .filter(p => !EXCLUDED.some(kw => p.title.toLowerCase().includes(kw)))
         .sort((a, b) => {
-          // one-time events sorted by eventDate desc, recurring by title
           if (a.periodType === 'oneTime' && b.periodType === 'oneTime')
             return (b.eventDate || '') > (a.eventDate || '') ? 1 : -1;
           if (a.periodType === 'oneTime') return -1;
@@ -227,7 +229,14 @@ const SpecialPeriodAttendancePage: React.FC = () => {
       if (initPeriod) {
         setDeductBehavior(initPeriod.deductBehaviorDefault || false);
         if (initPeriod.periodType === 'oneTime' && initPeriod.eventDate) {
-          setCurrentDate(new Date(initPeriod.eventDate + 'T00:00:00'));
+          const todayStr = toIsoDate(new Date());
+          const startDate = initPeriod.eventDate;
+          const endDate = initPeriod.eventEndDate || startDate;
+          if (todayStr >= startDate && todayStr <= endDate) {
+            setCurrentDate(new Date(todayStr + 'T00:00:00'));
+          } else {
+            setCurrentDate(new Date(startDate + 'T00:00:00'));
+          }
         }
       }
       setPeriodsLoading(false);
@@ -241,7 +250,14 @@ const SpecialPeriodAttendancePage: React.FC = () => {
     if (!period) return;
     setDeductBehavior(period.deductBehaviorDefault || false);
     if (period.periodType === 'oneTime' && period.eventDate) {
-      setCurrentDate(new Date(period.eventDate + 'T00:00:00'));
+      const todayStr = toIsoDate(new Date());
+      const startDate = period.eventDate;
+      const endDate = period.eventEndDate || startDate;
+      if (todayStr >= startDate && todayStr <= endDate) {
+        setCurrentDate(new Date(todayStr + 'T00:00:00'));
+      } else {
+        setCurrentDate(new Date(startDate + 'T00:00:00'));
+      }
     }
   }, [selectedPeriodId, allPeriods]);
 
@@ -450,7 +466,6 @@ const SpecialPeriodAttendancePage: React.FC = () => {
           updatedAt: Timestamp.now(),
         }, { merge: true });
 
-        // Behavior deduction
         if (deductBehavior) {
           const studentDocRef = doc(db, 'school-settings', schoolId, 'students', student.id);
           applySpecialPeriodBehaviorScore({
@@ -524,7 +539,13 @@ const SpecialPeriodAttendancePage: React.FC = () => {
               {selectedPeriod && (
                 <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">
                   {selectedPeriod.periodType === 'oneTime'
-                    ? new Date((selectedPeriod.eventDate || '') + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+                    ? (() => {
+                        const start = new Date((selectedPeriod.eventDate || '') + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+                        const end = selectedPeriod.eventEndDate
+                          ? new Date(selectedPeriod.eventEndDate + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+                          : null;
+                        return end ? `${start} – ${end}` : start;
+                      })()
                     : `${formatDay(selectedPeriod.day)}`} • {selectedPeriod.startTime}–{selectedPeriod.endTime}
                 </p>
               )}
@@ -534,30 +555,51 @@ const SpecialPeriodAttendancePage: React.FC = () => {
               <span>/</span>
               <span className="font-bold">เทอม {activeSemester || '…'}</span>
             </div>
+            <Link
+              to="/academic/special-period-reports"
+              className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-[10px] font-black text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
+            >
+              <BarChart2 size={11} />
+              รายงาน
+            </Link>
             {/* Date picker */}
-            <div className="flex items-center bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
-              <button
-                onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; })}
-                className="px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500 transition-all">
-                <ChevronLeft size={14} />
-              </button>
-              <div className="relative flex items-center gap-1 px-2">
-                <Calendar size={11} className="text-indigo-400 shrink-0" />
-                <span className="text-[11px] font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                  {currentDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-                </span>
-                <input
-                  type="date"
-                  value={toIsoDate(currentDate)}
-                  onChange={e => { const d = new Date(e.target.value + 'T00:00:00'); if (!isNaN(d.getTime())) setCurrentDate(d); }}
-                  className="absolute inset-0 opacity-0 cursor-pointer" />
-              </div>
-              <button
-                onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; })}
-                className="px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500 transition-all">
-                <ChevronRight size={14} />
-              </button>
-            </div>
+            {(() => {
+              const isOneTimeRange = selectedPeriod?.periodType === 'oneTime' && !!selectedPeriod.eventDate;
+              const minDate = isOneTimeRange ? selectedPeriod!.eventDate! : undefined;
+              const maxDate = isOneTimeRange ? (selectedPeriod!.eventEndDate || selectedPeriod!.eventDate!) : undefined;
+              const curStr = toIsoDate(currentDate);
+              const canPrev = !isOneTimeRange || curStr > minDate!;
+              const canNext = !isOneTimeRange || curStr < maxDate!;
+              return (
+                <div className="flex items-center bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+                  <button
+                    disabled={!canPrev}
+                    onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; })}
+                    className={`px-2 py-1.5 transition-all ${canPrev ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
+                    <ChevronLeft size={14} />
+                  </button>
+                  <div className="relative flex items-center gap-1 px-2">
+                    <Calendar size={11} className="text-indigo-400 shrink-0" />
+                    <span className="text-[11px] font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                      {currentDate.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    </span>
+                    <input
+                      type="date"
+                      value={curStr}
+                      min={minDate}
+                      max={maxDate}
+                      onChange={e => { const d = new Date(e.target.value + 'T00:00:00'); if (!isNaN(d.getTime())) setCurrentDate(d); }}
+                      className="absolute inset-0 opacity-0 cursor-pointer" />
+                  </div>
+                  <button
+                    disabled={!canNext}
+                    onClick={() => setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; })}
+                    className={`px-2 py-1.5 transition-all ${canNext ? 'hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-indigo-500' : 'text-gray-200 dark:text-gray-700 cursor-not-allowed'}`}>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              );
+            })()}
           </div>
 
           {periodsLoading ? (
@@ -718,18 +760,14 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setDeductBehavior(v => !v)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${deductBehavior ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-600'}`}>
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${deductBehavior ? 'bg-violet-600' : 'bg-gray-200 dark:bg-gray-600'}`}>
                           <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${deductBehavior ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
                         </button>
-                        <span className={`text-[11px] font-black shrink-0 ${deductBehavior ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+                        <span className={`text-[11px] font-black shrink-0 ${deductBehavior ? 'text-violet-600 dark:text-violet-400' : 'text-gray-400'}`}>
                           {deductBehavior
-                            ? `หักคะแนน: สาย −${getBehaviorPoints(behaviorConfig, 'late')} / ขาด −${getBehaviorPoints(behaviorConfig, 'absent')}`
-                            : 'หักคะแนน: ปิดอยู่'}
+                            ? getActivityBehaviorLabel(behaviorConfig)
+                            : 'คะแนนพฤติกรรม: ปิดอยู่'}
                         </span>
-                        <Link to="/academic/behavior-score-config"
-                          className="shrink-0 text-indigo-400 hover:text-indigo-600 flex items-center">
-                          <Settings size={11} />
-                        </Link>
 
                         {/* Summary pills */}
                         {students.length > 0 && (
@@ -885,22 +923,23 @@ const SpecialPeriodAttendancePage: React.FC = () => {
   );
 };
 
-// ─── Behavior helper ────────────────────────────────────────────────────────
+// ─── Behavior helpers ───────────────────────────────────────────────────────
 
-const DEFAULT_SPECIAL_PERIOD_DISPLAY_RULES = [
-  { statusKey: 'late', points: 2, isActive: true },
-  { statusKey: 'absent', points: 5, isActive: true },
-];
-
-const getBehaviorPoints = (config: any, statusKey: 'late' | 'absent') => {
-  const rules = config?.specialPeriodRules;
-  if (Array.isArray(rules) && rules.length > 0) {
-    const rule = rules.find((r: any) => r.statusKey === statusKey);
-    if (rule && rule.isActive !== false) return rule.points ?? 0;
-    return 0;
-  }
-  const def = DEFAULT_SPECIAL_PERIOD_DISPLAY_RULES.find(r => r.statusKey === statusKey);
-  return def?.points ?? 0;
+const getActivityBehaviorLabel = (globalConfig: any): string => {
+  const rules = globalConfig?.specialPeriodRules;
+  const getGlobal = (key: string): number => {
+    if (Array.isArray(rules) && rules.length > 0) {
+      const r = rules.find((r: any) => r.statusKey === key);
+      return r?.isActive !== false ? (r?.points ?? 0) : 0;
+    }
+    return key === 'late' ? 2 : key === 'absent' ? 5 : 0;
+  };
+  const late = getGlobal('late');
+  const absent = getGlobal('absent');
+  const parts: string[] = [];
+  if (late > 0) parts.push(`สาย −${late}`);
+  if (absent > 0) parts.push(`ขาด −${absent}`);
+  return parts.length > 0 ? `คะแนน: ${parts.join(' / ')}` : 'คะแนนพฤติกรรม: เปิดอยู่';
 };
 
 // ─── Misc helpers ───────────────────────────────────────────────────────────
