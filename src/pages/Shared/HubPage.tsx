@@ -374,6 +374,14 @@ const HubPage: React.FC = () => {
           path: "/academic/substitute-report",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ตารางสอนแทน",
+          description: "พิมพ์ตารางสอนแทนรายวัน แยกตามครูผู้ลา พร้อมส่งออก PDF",
+          icon: <CalendarDays size={24} />,
+          path: "/academic/substitute-schedule-print",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
         }
       ]
     },

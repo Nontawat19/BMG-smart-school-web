@@ -1878,7 +1878,7 @@ const FlagCeremonyPage: React.FC = () => {
                       const leaveData = (student as any)._leaveData;
                       const hasGateScan = !!(gateData?.checkinTime);
                       const isLeaveStudent = !!(leaveData) || student.flagAction === "sickLeave" || student.flagAction === "personalLeave" || student.attendanceStatus === ATTENDANCE_STATUS.LEAVE;
-                      const canSelectCard = hasGateScan || isLeaveStudent;
+                      const canSelectCard = true;
 
                       return (
                       <div

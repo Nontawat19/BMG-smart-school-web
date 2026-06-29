@@ -176,7 +176,7 @@ const SubstituteReportPage: React.FC = () => {
         .sort((a, b) => {
           const dateA = toDateKey(a.date);
           const dateB = toDateKey(b.date);
-          if (dateA !== dateB) return dateA.localeCompare(dateB);
+          if (dateA !== dateB) return dateB.localeCompare(dateA);
           return (a.period ?? 0) - (b.period ?? 0);
         });
 
@@ -344,7 +344,7 @@ const SubstituteReportPage: React.FC = () => {
       formatClassId(r.classId),
       r.originalTeacherName || "-",
       r.substituteTeacherName || "-",
-      r.roomName || "-",
+      (r.roomName && r.roomName !== "all") ? r.roomName : "",
     ]),
   });
 
@@ -491,7 +491,7 @@ const SubstituteReportPage: React.FC = () => {
                             <ReportTd className="text-center">{formatClassId(r.classId)}</ReportTd>
                             <ReportTd>{r.originalTeacherName || "-"}</ReportTd>
                             <ReportTd className="font-semibold text-teal-700 dark:text-teal-400">{r.substituteTeacherName || "-"}</ReportTd>
-                            <ReportTd className="text-center">{r.roomName || "-"}</ReportTd>
+                            <ReportTd className="text-center">{(r.roomName && r.roomName !== "all") ? r.roomName : "-"}</ReportTd>
                           </tr>
                         ))
                       ) : (
@@ -518,7 +518,7 @@ const SubstituteReportPage: React.FC = () => {
                                 <ReportTd className="text-center">{formatClassId(r.classId)}</ReportTd>
                                 <ReportTd>{r.originalTeacherName || "-"}</ReportTd>
                                 <ReportTd className="font-semibold text-teal-700 dark:text-teal-400">{r.substituteTeacherName || "-"}</ReportTd>
-                                <ReportTd className="text-center">{r.roomName || "-"}</ReportTd>
+                                <ReportTd className="text-center">{(r.roomName && r.roomName !== "all") ? r.roomName : "-"}</ReportTd>
                               </tr>
                             ))}
                           </React.Fragment>

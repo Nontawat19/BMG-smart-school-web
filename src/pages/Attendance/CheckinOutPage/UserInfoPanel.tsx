@@ -6,6 +6,7 @@ interface UserInfoPanelProps {
   displayUser: FoundUser | null;
   checkinTime?: string | null;
   checkoutTime?: string | null;
+  isCompact?: boolean;
 }
 
 const AutoFitSingleLineText: React.FC<{
@@ -54,11 +55,11 @@ const AutoFitSingleLineText: React.FC<{
   );
 };
 
-const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime, checkoutTime }) => {
+const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime, checkoutTime, isCompact = false }) => {
   const isStudent = displayUser?.type === "student";
 
   return (
-    <div className="lg:col-span-2 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative border border-gray-200/50 dark:border-none">
+    <div className={`col-span-2 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isCompact ? 'p-4' : 'p-10'} text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative border border-gray-200/50 dark:border-none`}>
       <AnimatePresence mode="wait">
         {displayUser ? (
           <motion.div
@@ -69,7 +70,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="w-full h-full flex flex-col items-center justify-center"
           >
-            <div className="w-72 h-72 2xl:w-80 2xl:h-80 rounded-[1.75rem] border-[6px] border-[#fafbfc] dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto mb-8">
+            <div className={`${isCompact ? 'w-40 h-40' : 'w-72 h-72 2xl:w-80 2xl:h-80'} rounded-[1.75rem] border-[6px] border-[#fafbfc] dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto ${isCompact ? 'mb-3' : 'mb-8'}`}>
               <img
                 src={displayUser.profileImageUrl || `https://ui-avatars.com/api/?name=${displayUser.name}&background=random&color=fff`}
                 alt={displayUser.name}
@@ -103,7 +104,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
                 </span>
               </div>
             )}
-            <div className="mt-8 space-y-4 text-xl">
+            <div className={`${isCompact ? 'mt-3 space-y-2 text-base' : 'mt-8 space-y-4 text-xl'}`}>
               {checkinTime && (
                 <motion.div
                   initial={{ x: -20, opacity: 0 }}
@@ -136,8 +137,8 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             exit={{ opacity: 0 }}
             className="flex flex-col items-center"
           >
-            <div className="w-72 h-72 2xl:w-80 2xl:h-80 rounded-[1.75rem] border-[6px] border-dashed border-gray-300 dark:border-gray-700 bg-[#f0f2f6] dark:bg-gray-800/50 flex items-center justify-center mb-8 mx-auto">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className={`${isCompact ? 'w-40 h-40' : 'w-72 h-72 2xl:w-80 2xl:h-80'} rounded-[1.75rem] border-[6px] border-dashed border-gray-300 dark:border-gray-700 bg-[#f0f2f6] dark:bg-gray-800/50 flex items-center justify-center ${isCompact ? 'mb-3' : 'mb-8'} mx-auto`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className={`${isCompact ? 'h-14 w-14' : 'h-24 w-24'} text-gray-400 dark:text-gray-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>

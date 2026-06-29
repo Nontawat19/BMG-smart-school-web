@@ -79,6 +79,7 @@ interface Teacher {
 }
 
 const WEEKS_PER_SEMESTER = 20;
+const ACTIVITY_CREDITS = 0.5; // กิจกรรมพัฒนาผู้เรียนนับ 0.5 หน่วยกิต = 1 คาบ/สัปดาห์
 
 const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): string[] => {
     const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
@@ -87,17 +88,27 @@ const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): st
     return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
 };
 
-const getCourseTeachingHours = (course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null) => {
+const isActivityCourse = (course?: Partial<Pick<Course, 'type' | 'code' | 'subjectGroup'>> | null): boolean => {
+    if (!course) return false;
+    const cType = (course.type || "").trim();
+    const cCode = (course.code || "").trim();
+    const cSG = (course.subjectGroup || "").toLowerCase();
+    return cType.includes("กิจกรรม") ||
+           cCode.startsWith("ก") ||
+           cSG.includes("กิจกรรมพัฒนาผู้เรียน");
+};
+
+const getCourseTeachingHours = (course?: Partial<Course> | null) => {
     if (!course) return 0;
-    const creditsNum = Number(course.credits || 0);
-    const weeklyPeriods = creditsNum > 0 ? Math.round(creditsNum * 2) : Number(course.hoursPerWeek || 0);
+    const creditsNum = isActivityCourse(course) ? ACTIVITY_CREDITS : Number(course.credits || 0);
+    const weeklyPeriods = creditsNum > 0 ? creditsNum * 2 : Number(course.hoursPerWeek || 0);
     return Math.max(0, Math.round(weeklyPeriods * WEEKS_PER_SEMESTER));
 };
 
-const getCourseWeeklyTeachingPeriods = (course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null) => {
+const getCourseWeeklyTeachingPeriods = (course?: Partial<Course> | null) => {
     if (!course) return 0;
-    const creditsNum = Number(course.credits || 0);
-    const weeklyPeriods = creditsNum > 0 ? Math.round(creditsNum * 2) : Number(course.hoursPerWeek || 0);
+    const creditsNum = isActivityCourse(course) ? ACTIVITY_CREDITS : Number(course.credits || 0);
+    const weeklyPeriods = creditsNum > 0 ? creditsNum * 2 : Number(course.hoursPerWeek || 0);
     return Math.max(0, Number.isFinite(weeklyPeriods) ? weeklyPeriods : 0);
 };
 
@@ -120,7 +131,7 @@ const distributeTeacherHours = (teacherIds: string[], totalHours: number) => {
 
 const resolveTeacherHours = (
     assignment: Partial<GroupAssignment> | any,
-    course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null
+    course?: Partial<Course> | null
 ) => {
     const teacherIds = getAssignmentTeacherIds(assignment);
     const totalHours = getCourseTeachingHours(course);
@@ -156,7 +167,7 @@ const resolveTeacherHours = (
 
 const resolveTeacherPeriodRanges = (
     assignment: Partial<GroupAssignment> | any,
-    course?: Pick<Course, 'credits' | 'hoursPerWeek'> | null
+    course?: Partial<Course> | null
 ) => {
     const teacherIds = getAssignmentTeacherIds(assignment);
     const totalHours = Math.max(0, getCourseTeachingHours(course));
@@ -829,11 +840,14 @@ const CourseAssignmentPage: React.FC = () => {
 
     // --- Enterprise Feature: Teacher Load Calculation ---
     const teacherLoadMap = useMemo(() => {
-        const load: Record<string, number> = {};
+        const regularLoad: Record<string, number> = {};
+        const activityLoad: Record<string, number> = {};
+
         const addAssignmentLoad = (
             assignment: Partial<GroupAssignment> | any,
             weeklyPeriods: number,
-            semesterPeriods: number
+            semesterPeriods: number,
+            isActivity: boolean
         ) => {
             const normalizedTeacherIds = Array.from(new Set(
                 getAssignmentTeacherIds(assignment).map(normalizeTeacherIdForLoad)
@@ -847,29 +861,34 @@ const CourseAssignmentPage: React.FC = () => {
                 const assignedWeeklyPeriods = semesterPeriods > 0
                     ? (assignedSemesterHours / semesterPeriods) * weeklyPeriods
                     : weeklyPeriods;
-                load[teacherId] = (load[teacherId] || 0) + assignedWeeklyPeriods;
+                if (isActivity) {
+                    activityLoad[teacherId] = (activityLoad[teacherId] || 0) + assignedWeeklyPeriods;
+                } else {
+                    regularLoad[teacherId] = (regularLoad[teacherId] || 0) + assignedWeeklyPeriods;
+                }
             });
         };
 
         coursesWithAssignments.forEach(c => {
+            const activity = isActivityCourse(c);
             const weeklyPeriods = getCourseWeeklyTeachingPeriods(c);
             const semesterPeriods = getCourseTeachingHours(c);
-            
             c.teacherAssignments?.forEach((asgn: GroupAssignment) => {
-                addAssignmentLoad(asgn, weeklyPeriods, semesterPeriods);
+                addAssignmentLoad(asgn, weeklyPeriods, semesterPeriods, activity);
             });
         });
 
-        // Add Pending Queue to the load
         pendingQueue.forEach(p => {
             const course = coursesWithAssignments.find(c => c.id === p.courseId);
             if (course) {
+                const activity = isActivityCourse(course);
                 const weeklyPeriods = getCourseWeeklyTeachingPeriods(course);
                 const semesterPeriods = getCourseTeachingHours(course);
-                addAssignmentLoad(p, weeklyPeriods, semesterPeriods);
+                addAssignmentLoad(p, weeklyPeriods, semesterPeriods, activity);
             }
         });
-        return load;
+
+        return { regularLoad, activityLoad };
     }, [coursesWithAssignments, pendingQueue, teacherMap]);
 
     const roomUsageCounts = useMemo(() => {
@@ -2265,26 +2284,29 @@ const CourseAssignmentPage: React.FC = () => {
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1 space-y-0.5">
                                     {paginatedTeachers.map(teacher => {
-                                        const currentLoad = teacherLoadMap[teacher.id] || 0;
+                                        const regularLoad = teacherLoadMap.regularLoad[teacher.id] || 0;
+                                        const activityLoad = teacherLoadMap.activityLoad[teacher.id] || 0;
+                                        const totalLoad = regularLoad + activityLoad;
+                                        const isSelected = selectedTeacherIds.includes(teacher.id);
                                         return (
-                                            <div 
-                                                key={teacher.id} 
-                                                onClick={() => setSelectedTeacherIds(prev => prev.includes(teacher.id) ? prev.filter(id => id !== teacher.id) : [...prev, teacher.id])} 
-                                                className={`px-3 py-1.5 rounded-xl cursor-pointer flex items-center justify-between gap-3 border transition-all ${selectedTeacherIds.includes(teacher.id) ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'border-transparent bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05]'}`}
+                                            <div
+                                                key={teacher.id}
+                                                onClick={() => setSelectedTeacherIds(prev => prev.includes(teacher.id) ? prev.filter(id => id !== teacher.id) : [...prev, teacher.id])}
+                                                className={`px-3 py-1.5 rounded-xl cursor-pointer flex items-center justify-between gap-3 border transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'border-transparent bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05]'}`}
                                             >
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <div className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${selectedTeacherIds.includes(teacher.id) ? 'bg-white border-white' : 'bg-transparent border-slate-300 dark:border-white/20'}`}>
-                                                        {selectedTeacherIds.includes(teacher.id) && <Check size={10} className="text-indigo-600" strokeWidth={4} />}
+                                                    <div className={`w-3.5 h-3.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${isSelected ? 'bg-white border-white' : 'bg-transparent border-slate-300 dark:border-white/20'}`}>
+                                                        {isSelected && <Check size={10} className="text-indigo-600" strokeWidth={4} />}
                                                     </div>
-                                                    <span className={`text-[9px] font-black shrink-0 px-1.5 py-0.5 rounded-md ${selectedTeacherIds.includes(teacher.id) ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}>
+                                                    <span className={`text-[9px] font-black shrink-0 px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}>
                                                         {teacher.teacherId || "—"}
                                                     </span>
-                                                    <h4 className={`text-[11px] font-bold truncate whitespace-nowrap ${selectedTeacherIds.includes(teacher.id) ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                    <h4 className={`text-[11px] font-bold truncate whitespace-nowrap ${isSelected ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>
                                                         {teacher.name}
                                                     </h4>
                                                 </div>
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${selectedTeacherIds.includes(teacher.id) ? 'bg-white/20 text-white' : (currentLoad > 20 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500')}`}>
-                                                    {formatWeeklyLoad(currentLoad)} คาบ
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isSelected ? 'bg-white/20 text-white' : (totalLoad > 20 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500')}`}>
+                                                    {formatWeeklyLoad(totalLoad)} คาบ
                                                 </span>
                                             </div>
                                         );

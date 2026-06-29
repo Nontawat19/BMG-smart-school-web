@@ -7,6 +7,7 @@ import {
   collection,
   getDocs,
   doc,
+  documentId,
   query,
   where,
   orderBy,
@@ -241,6 +242,19 @@ const LeaveApprovalPage: React.FC = () => {
       const loopDate = new Date(sDate);
       let leaveDaysCount = 0;
 
+      // Pre-fetch teacher attendance to check existing status before decrementing absent
+      const teacherStartStr = sDate.toLocaleDateString("en-CA");
+      const teacherEndStr = eDate.toLocaleDateString("en-CA");
+      const existingTeacherAttSnap = await getDocs(
+        query(
+          collection(firestore, "school-settings", schoolId!, "teachers", r.teacherDocId, "attendance"),
+          where(documentId(), ">=", teacherStartStr),
+          where(documentId(), "<=", teacherEndStr)
+        )
+      );
+      const teacherAttStatus = new Map<string, string>();
+      existingTeacherAttSnap.forEach(d => teacherAttStatus.set(d.id, d.data().status || ""));
+
       while (loopDate <= eDate) {
         const dateStr = loopDate.toLocaleDateString("en-CA");
         const { isHoliday } = checkIsHoliday(dateStr);
@@ -277,10 +291,11 @@ const LeaveApprovalPage: React.FC = () => {
         );
 
         // Daily Summary
+        const wasTeacherAbsent = teacherAttStatus.get(dateStr) === 'ขาด' || teacherAttStatus.get(dateStr) === 'Absent';
         const summaryRef = doc(firestore, "school-settings", schoolId!, "summaries", "attendance", "days", dateStr);
         batch.set(summaryRef, {
           teacherStats: {
-            absent: increment(-1),
+            ...(wasTeacherAbsent && { absent: increment(-1) }),
             leave: increment(1),
           },
           updatedAt: serverTimestamp(),
@@ -294,7 +309,7 @@ const LeaveApprovalPage: React.FC = () => {
           r.teacherDocId,
           "teachers",
           dateStr,
-          "absent",
+          wasTeacherAbsent ? "absent" : null,
           "leave",
           undefined,
           r.academicYear
@@ -366,6 +381,39 @@ const LeaveApprovalPage: React.FC = () => {
       const start = new Date(r.startDate.toDate());
       const end = new Date(r.endDate.toDate());
 
+      // Pre-fetch existing attendance for all participants to avoid incorrect absent decrements
+      const travelStartStr = start.toISOString().split("T")[0];
+      const travelEndStr = end.toISOString().split("T")[0];
+
+      const preFetchAttendance = async (userType: 'teachers' | 'students', userId: string): Promise<Map<string, string>> => {
+        const snap = await getDocs(
+          query(
+            collection(firestore, "school-settings", schoolId!, userType, userId, "attendance"),
+            where(documentId(), ">=", travelStartStr),
+            where(documentId(), "<=", travelEndStr)
+          )
+        );
+        const map = new Map<string, string>();
+        snap.forEach(d => map.set(d.id, d.data().status || ""));
+        return map;
+      };
+
+      const travelAttStatus = new Map<string, Map<string, string>>();
+      if (r.requesterType === "teacher") {
+        travelAttStatus.set(`teachers_${r.requesterId}`, await preFetchAttendance("teachers", r.requesterId));
+      }
+      if (r.coAdventurers?.length) {
+        await Promise.all(r.coAdventurers.map(async adv => {
+          const userType = adv.type === "student" ? "students" : "teachers";
+          travelAttStatus.set(`${userType}_${adv.id}`, await preFetchAttendance(userType, adv.id));
+        }));
+      }
+
+      const wasAbsentForTravel = (userType: 'teachers' | 'students', userId: string, dateStr: string) => {
+        const status = travelAttStatus.get(`${userType}_${userId}`)?.get(dateStr) || "";
+        return status === 'ขาด' || status === 'Absent';
+      };
+
       // Write attendance, summaries, period summaries for requester & co-adventurers
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         const dateStr = d.toISOString().split("T")[0];
@@ -383,9 +431,10 @@ const LeaveApprovalPage: React.FC = () => {
           }, { merge: true });
 
           // Teacher school-wide stats
+          const requesterWasAbsent = wasAbsentForTravel("teachers", r.requesterId, dateStr);
           const oldSummaryRef = doc(firestore, "school-settings", schoolId!, "summaries", "attendance", "days", dateStr);
           batch.set(oldSummaryRef, {
-            [`teacherStats.absent`]: increment(-1),
+            ...(requesterWasAbsent && { [`teacherStats.absent`]: increment(-1) }),
             [`teacherStats.officialTravel`]: increment(1),
             updatedAt: serverTimestamp(),
           }, { merge: true });
@@ -397,7 +446,7 @@ const LeaveApprovalPage: React.FC = () => {
             r.requesterId,
             "teachers",
             dateStr,
-            "absent",
+            requesterWasAbsent ? "absent" : null,
             "officialTravel",
             undefined,
             r.academicYear
@@ -417,6 +466,7 @@ const LeaveApprovalPage: React.FC = () => {
                   timestamp: Timestamp.now(),
                 }, { merge: true });
 
+                const advTeacherWasAbsent = wasAbsentForTravel("teachers", adv.id, dateStr);
                 updatePeriodSummaries(
                   firestore,
                   batch,
@@ -424,7 +474,7 @@ const LeaveApprovalPage: React.FC = () => {
                   adv.id,
                   "teachers",
                   dateStr,
-                  "absent",
+                  advTeacherWasAbsent ? "absent" : null,
                   "officialTravel",
                   undefined,
                   r.academicYear
@@ -444,11 +494,11 @@ const LeaveApprovalPage: React.FC = () => {
                 }, { merge: true });
 
                 // Student school-wide stats
+                const advStudentWasAbsent = wasAbsentForTravel("students", adv.id, dateStr);
                 const summaryRef = doc(firestore, "school-settings", schoolId!, "students", "Attendance", "daysummary", dateStr);
                 batch.set(summaryRef, {
-                  absent: increment(-1),
+                  ...(advStudentWasAbsent && { absent: increment(-1), [`classes.${advCls}.absent`]: increment(-1) }),
                   officialTravel: increment(1),
-                  [`classes.${advCls}.absent`]: increment(-1),
                   [`classes.${advCls}.officialTravel`]: increment(1),
                   updatedAt: serverTimestamp(),
                 }, { merge: true });
@@ -460,7 +510,7 @@ const LeaveApprovalPage: React.FC = () => {
                   adv.id,
                   "students",
                   dateStr,
-                  "absent",
+                  advStudentWasAbsent ? "absent" : null,
                   "officialTravel",
                   advCls,
                   r.academicYear

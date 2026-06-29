@@ -204,13 +204,13 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
   const [lastConfidence, setLastConfidence] = useState<number | null>(null);
   const [faceRects, setFaceRects] = useState<{ x: number; y: number; width: number; height: number }[]>([]);
   const [detector, setDetector] = useState<any>(null);
-  const [keypoints, setKeypoints] = useState<{ x: number; y: number; label: string }[]>([]);
+  const keypointsRef = useRef<{ x: number; y: number; label: string }[]>([]);
   const [ipFaceUsers, setIpFaceUsers] = useState<(FoundUser | null)[]>([]);
   const [ipFaceFakes, setIpFaceFakes] = useState<boolean[]>([]);
 
   const clearDetectionOverlays = () => {
     setFaceRects((prev) => (prev.length > 0 ? [] : prev));
-    setKeypoints((prev) => (prev.length > 0 ? [] : prev));
+    keypointsRef.current = [];
     setIpFaceUsers((prev) => (prev.length > 0 ? [] : prev));
     setIpFaceFakes((prev) => (prev.length > 0 ? [] : prev));
   };
@@ -225,6 +225,11 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
   const lastIdleProbeAtRef = useRef<number>(0);
   const lastIpFaceBoxesAtRef = useRef<number>(0);
   const lastIdentifiedIpBlobUrlRef = useRef<string>("");
+  const prevFaceRectsRef = useRef<{ x: number; y: number; width: number; height: number }[]>([]);
+  // Adaptive throttle: วัดความเร็วเครื่องแล้วปรับอัตราการ detect อัตโนมัติ
+  const detectionFrameCountRef = useRef(0);
+  const detectionSkipRef = useRef(0);     // 0=ทุก frame(60fps), 1=ทุก 2 frames(30fps), 2=ทุก 3(20fps), 3=ทุก 4(15fps)
+  const detectionTimeEmaRef = useRef(16); // EMA ของเวลา detect (ms), เริ่มต้นสมมุติว่าเร็ว
   const [livenessMessage, setLivenessMessage] = useState<string>("");
 
   // Hybrid client-side liveness and anti-spoofing analyzer (Disabled)
@@ -637,7 +642,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
     if (!enabled || cameraError || !detector || cameraSource === "ipcamera") {
       if (cameraSource !== "ipcamera") {
         setFaceRects([]);
-        setKeypoints([]);
+        keypointsRef.current = [];
         hasFaceRef.current = false;
       }
       return;
@@ -656,90 +661,119 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
       }
 
       if (video.readyState >= 2 && video.videoWidth > 0) {
-        try {
-          const timestamp = performance.now();
-          const results = detector.detectForVideo(video, timestamp);
+        detectionFrameCountRef.current++;
 
-          if (results.detections && results.detections.length > 0) {
-            hasFaceRef.current = true;
-            const cw = video.clientWidth;
-            const ch = video.clientHeight;
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
+        // Adaptive Throttle: ข้าม frame ถ้าเครื่องช้า
+        const skip = detectionSkipRef.current;
+        const shouldDetect = detectionFrameCountRef.current % (skip + 1) === 0;
 
-            if (vw && vh) {
-              const scale = Math.max(cw / vw, ch / vh);
-              const xOffset = (cw - vw * scale) / 2;
-              const yOffset = (ch - vh * scale) / 2;
+        if (shouldDetect) {
+          try {
+            const t0 = performance.now();
+            const results = detector.detectForVideo(video, t0);
+            const elapsed = performance.now() - t0;
 
-              const detectedRects = results.detections.slice(0, 15).map((detection: any) => {
-                const originX = detection.boundingBox.originX ?? detection.boundingBox.origin_x ?? 0;
-                const originY = detection.boundingBox.originY ?? detection.boundingBox.origin_y ?? 0;
-                const width = detection.boundingBox.width ?? 0;
-                const height = detection.boundingBox.height ?? 0;
+            // EMA α=0.25 → ตอบสนองเร็วพอแต่ไม่กระตุก
+            detectionTimeEmaRef.current = detectionTimeEmaRef.current * 0.75 + elapsed * 0.25;
+            const ema = detectionTimeEmaRef.current;
 
-                const clientX = originX * scale + xOffset;
-                const clientY = originY * scale + yOffset;
-                const clientWidth = width * scale;
-                const clientHeight = height * scale;
+            // ปรับ skip ด้วย hysteresis ป้องกัน oscillation
+            // เพิ่ม skip (ช้าลง) เมื่อ detect นาน, ลด skip (เร็วขึ้น) เมื่อเครื่องโล่ง
+            if      (ema > 45 && skip < 3) detectionSkipRef.current = 3; // >45ms → 15fps
+            else if (ema > 28 && skip < 2) detectionSkipRef.current = 2; // >28ms → 20fps
+            else if (ema > 18 && skip < 1) detectionSkipRef.current = 1; // >18ms → 30fps
+            else if (ema < 12 && skip > 0) detectionSkipRef.current = skip - 1; // โล่งแล้ว เร็วขึ้น
 
-                const displayX = mirrorFeed ? (cw - clientX - clientWidth) : clientX;
+            if (results.detections && results.detections.length > 0) {
+              hasFaceRef.current = true;
+              const cw = video.clientWidth;
+              const ch = video.clientHeight;
+              const vw = video.videoWidth;
+              const vh = video.videoHeight;
 
-                const padW = clientWidth * 0.15;
-                const padH = clientHeight * 0.15;
+              if (vw && vh) {
+                const scale = Math.max(cw / vw, ch / vh);
+                const xOffset = (cw - vw * scale) / 2;
+                const yOffset = (ch - vh * scale) / 2;
 
-                return {
-                  x: displayX - padW / 2,
-                  y: clientY - padH / 2,
-                  width: clientWidth + padW,
-                  height: clientHeight + padH,
-                };
-              });
+                const detectedRects = results.detections.slice(0, 15).map((detection: any) => {
+                  const originX = detection.boundingBox.originX ?? detection.boundingBox.origin_x ?? 0;
+                  const originY = detection.boundingBox.originY ?? detection.boundingBox.origin_y ?? 0;
+                  const width = detection.boundingBox.width ?? 0;
+                  const height = detection.boundingBox.height ?? 0;
 
-              setFaceRects(detectedRects);
+                  const clientX = originX * scale + xOffset;
+                  const clientY = originY * scale + yOffset;
+                  const clientWidth = width * scale;
+                  const clientHeight = height * scale;
 
-              const firstDetection = results.detections[0];
-              if (firstDetection.keypoints && firstDetection.keypoints.length >= 6) {
-                const landmarkLabels = ["ตาขวา", "ตาซ้าย", "จมูก", "ปาก", "หูขวา", "หูซ้าย"];
-                const mappedKps = firstDetection.keypoints.map((kp: any, idx: number) => {
-                  const kpX = kp.x * vw;
-                  const kpY = kp.y * vh;
-                  const kpClientX = kpX * scale + xOffset;
-                  const kpClientY = kpY * scale + yOffset;
-                  const displayKpX = mirrorFeed ? (cw - kpClientX) : kpClientX;
-                  return { x: displayKpX, y: kpClientY, label: landmarkLabels[idx] || "" };
+                  const displayX = mirrorFeed ? (cw - clientX - clientWidth) : clientX;
+
+                  const padW = clientWidth * 0.15;
+                  const padTop = clientHeight * 0.38;
+                  const padBottom = clientHeight * 0.05;
+
+                  return {
+                    x: displayX - padW / 2,
+                    y: clientY - padTop,
+                    width: clientWidth + padW,
+                    height: clientHeight + padTop + padBottom,
+                  };
                 });
-                setKeypoints(mappedKps);
 
-                const originX = firstDetection.boundingBox.originX ?? firstDetection.boundingBox.origin_x ?? 0;
-                const originY = firstDetection.boundingBox.originY ?? firstDetection.boundingBox.origin_y ?? 0;
-                const width = firstDetection.boundingBox.width ?? 0;
-                const height = firstDetection.boundingBox.height ?? 0;
-
-                // Run hybrid liveness analysis
-                const res = performLivenessAnalysis(
-                  video,
-                  { originX, originY, width, height },
-                  firstDetection.keypoints
+                const prev = prevFaceRectsRef.current;
+                const moved = detectedRects.length !== prev.length || detectedRects.some((r: { x: number; y: number; width: number; height: number }, i: number) =>
+                  !prev[i] || Math.abs(r.x - prev[i].x) > 1 || Math.abs(r.y - prev[i].y) > 1 ||
+                  Math.abs(r.width - prev[i].width) > 1 || Math.abs(r.height - prev[i].height) > 1
                 );
-                isFakeRef.current = res.isFake;
-              } else {
-                setKeypoints([]);
-                keypointsHistoryRef.current = [];
-                isFakeRef.current = false;
-                setLivenessMessage("");
+                if (moved) {
+                  prevFaceRectsRef.current = detectedRects;
+                  setFaceRects(detectedRects);
+                }
+
+                const firstDetection = results.detections[0];
+                if (firstDetection.keypoints && firstDetection.keypoints.length >= 6) {
+                  const landmarkLabels = ["ตาขวา", "ตาซ้าย", "จมูก", "ปาก", "หูขวา", "หูซ้าย"];
+                  const mappedKps = firstDetection.keypoints.map((kp: any, idx: number) => {
+                    const kpX = kp.x * vw;
+                    const kpY = kp.y * vh;
+                    const kpClientX = kpX * scale + xOffset;
+                    const kpClientY = kpY * scale + yOffset;
+                    const displayKpX = mirrorFeed ? (cw - kpClientX) : kpClientX;
+                    return { x: displayKpX, y: kpClientY, label: landmarkLabels[idx] || "" };
+                  });
+                  keypointsRef.current = mappedKps;
+
+                  const originX = firstDetection.boundingBox.originX ?? firstDetection.boundingBox.origin_x ?? 0;
+                  const originY = firstDetection.boundingBox.originY ?? firstDetection.boundingBox.origin_y ?? 0;
+                  const width = firstDetection.boundingBox.width ?? 0;
+                  const height = firstDetection.boundingBox.height ?? 0;
+
+                  // Run hybrid liveness analysis
+                  const res = performLivenessAnalysis(
+                    video,
+                    { originX, originY, width, height },
+                    firstDetection.keypoints
+                  );
+                  isFakeRef.current = res.isFake;
+                } else {
+                  keypointsRef.current = [];
+                  keypointsHistoryRef.current = [];
+                  isFakeRef.current = false;
+                  setLivenessMessage("");
+                }
               }
+            } else {
+              hasFaceRef.current = false;
+              setFaceRects((prev) => (prev.length > 0 ? [] : prev));
+              keypointsRef.current = [];
+              keypointsHistoryRef.current = [];
+              isFakeRef.current = false;
+              setLivenessMessage("");
             }
-          } else {
-            hasFaceRef.current = false;
-            setFaceRects([]);
-            setKeypoints([]);
-            keypointsHistoryRef.current = [];
-            isFakeRef.current = false;
-            setLivenessMessage("");
+          } catch (err) {
+            // Skip frame silently
           }
-        } catch (err) {
-          // Skip frame silently
         }
       }
 
@@ -763,7 +797,10 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
       hasFaceRef.current = false;
       setFaceRects([]);
-      setKeypoints([]);
+      keypointsRef.current = [];
+      detectionFrameCountRef.current = 0;
+      detectionSkipRef.current = 0;
+      detectionTimeEmaRef.current = 16;
     };
   }, [enabled, cameraError, detector, cameraSource]);
 
@@ -952,12 +989,13 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
               const rawH = box.height * nh * scale;
               const dx = mirrorFeed ? (cw - rawX - rawW) : rawX;
               const padW = rawW * 0.15;
-              const padH = rawH * 0.15;
+              const padTop = rawH * 0.38;
+              const padBottom = rawH * 0.05;
               return {
                 x: dx - padW / 2,
-                y: rawY - padH / 2,
+                y: rawY - padTop,
                 width: rawW + padW,
-                height: rawH + padH,
+                height: rawH + padTop + padBottom,
               };
             });
 
@@ -1043,16 +1081,18 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
           return (
             <div
               key={idx}
-              className={`absolute border-2 transition-all duration-75 pointer-events-none rounded-lg z-10 ${
-                isIdentified 
-                  ? "border-emerald-400 bg-emerald-400/5" 
+              className={`absolute border-2 pointer-events-none rounded-lg z-10 ${
+                isIdentified
+                  ? "border-emerald-400 bg-emerald-400/5"
                   : "border-rose-400 bg-rose-400/5"
               }`}
               style={{
-                left: `${rect.x}px`,
-                top: `${rect.y}px`,
+                left: 0,
+                top: 0,
                 width: `${rect.width}px`,
                 height: `${rect.height}px`,
+                transform: `translate3d(${rect.x}px, ${rect.y}px, 0)`,
+                willChange: "transform",
               }}
             >
               {/* Corner Brackets */}

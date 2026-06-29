@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Navigate, useLocation, matchPath } from "react-router-dom";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -79,7 +79,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
           try {
             const { schoolId, studentId } = JSON.parse(studentSessionRaw);
             if (schoolId && studentId) {
-              try { await signInAnonymously(auth); } catch (_) {}
               setIsAuthenticated(true);
             } else {
               setIsAuthenticated(false);

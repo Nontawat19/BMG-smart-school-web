@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getToken, onMessage } from 'firebase/messaging';
+import { getToken, deleteToken, onMessage } from 'firebase/messaging';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseMessaging } from '@/firebase';
 import { firestore } from '@/firebase';
@@ -54,10 +54,30 @@ export function useFcmNotification(uid: string | null | undefined) {
         const swReg = await navigator.serviceWorker.ready;
         console.log('[FCM] SW พร้อมแล้ว:', swReg.scope);
 
-        const token = await getToken(messaging, {
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: swReg,
-        });
+        let token: string | null = null;
+        try {
+          token = await getToken(messaging, {
+            vapidKey: VAPID_KEY,
+            serviceWorkerRegistration: swReg,
+          });
+        } catch (tokenErr: any) {
+          // CORS block เมื่อ Firebase พยายาม PATCH token เดิม — ลบ token แล้ว register ใหม่
+          if (tokenErr?.code === 'messaging/token-update-failed') {
+            console.warn('[FCM] ⚠️ token update ล้มเหลว (CORS) — ลบ token เดิมแล้ว register ใหม่');
+            try {
+              await deleteToken(messaging);
+              token = await getToken(messaging, {
+                vapidKey: VAPID_KEY,
+                serviceWorkerRegistration: swReg,
+              });
+            } catch (retryErr) {
+              console.warn('[FCM] ⚠️ register token ใหม่ไม่สำเร็จ:', retryErr);
+              return;
+            }
+          } else {
+            throw tokenErr;
+          }
+        }
 
         if (!token) {
           console.error('[FCM] ❌ ไม่ได้รับ token — ตรวจสอบ VAPID key และ Firebase Console');

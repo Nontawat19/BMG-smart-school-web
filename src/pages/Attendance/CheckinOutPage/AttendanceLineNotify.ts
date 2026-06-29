@@ -299,11 +299,18 @@ export const sendLineAttendanceNotification = async (
                                     width: "70px",
                                     height: "70px",
                                     cornerRadius: "100px",
+                                    paddingAll: "0px",
                                     contents: [
                                         {
                                             type: "image",
                                             url: profileUrl,
-                                            size: "full",
+                                            position: "absolute",
+                                            offsetTop: "-10px",
+                                            offsetStart: "0px",
+                                            width: "70px",
+                                            height: "90px",
+                                            size: "xxl",
+                                            aspectRatio: "1:1",
                                             aspectMode: "cover"
                                         }
                                     ]

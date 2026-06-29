@@ -7,12 +7,14 @@ import {
     collection, doc, getDoc, getDocs, query, where,
     Timestamp, onSnapshot, limit, runTransaction
 } from "firebase/firestore";
+import { ROLES } from "@/constants/roles";
 import Swal from "sweetalert2";
 import { useTheme } from "../../ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ThaiDatePicker from "../../components/Common/ThaiDatePicker";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
@@ -166,6 +168,11 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
+    const [onBehalfTeacherOption, setOnBehalfTeacherOption] = useState<UserOption | null>(null);
+
+    const isTeacherRole = Array.isArray(user?.role)
+        ? user.role.includes(ROLES.TEACHER)
+        : (user as any)?.role === ROLES.TEACHER;
 
     useEffect(() => {
         if (!schoolId || !user) return;
@@ -187,8 +194,10 @@ const OfficialTravelRequestPage: React.FC = () => {
         (async () => {
             try {
                 const opts: UserOption[] = [];
-                const tSnap = await getDocs(query(collection(firestore, 'school-settings', schoolId, 'teachers'), limit(100)));
-                tSnap.forEach(d => opts.push({ value: d.id, label: `${d.data().title || ''}${d.data().firstName || ''} ${d.data().lastName || ''}`, type: 'teacher', data: d.data() }));
+                const tSnap = await getDocs(collection(firestore, 'school-settings', schoolId, 'teachers'));
+                tSnap.docs
+                    .filter(d => (!d.data().status || String(d.data().status).trim() === 'อยู่') && !isAttendanceEntryOnly(d.data().role))
+                    .forEach(d => opts.push({ value: d.id, label: `${d.data().title || ''}${d.data().firstName || ''} ${d.data().lastName || ''}`, type: 'teacher', data: d.data() }));
                 const sSnap = await getDocs(collection(firestore, 'school-settings', schoolId, 'students'));
                 sSnap.docs.filter(d => isStudyingStudent({ id: d.id, ...d.data() })).forEach(d => opts.push({ value: d.id, label: `${d.data().title || ''}${d.data().firstName || ''} ${d.data().lastName || ''}`, type: 'student', data: d.data() }));
                 setUserOptions(opts);
@@ -235,14 +244,32 @@ const OfficialTravelRequestPage: React.FC = () => {
             Swal.fire({ icon: "warning", title: "ข้อมูลไม่ครบ", text: "กรุณากรอกเหตุผล สถานที่ และวันที่", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
             return;
         }
+        if (!isTeacherRole && !onBehalfTeacherOption) {
+            Swal.fire({ icon: "warning", title: "ข้อมูลไม่ครบ", text: "กรุณาเลือกครูที่ต้องการยื่นคำขอแทน", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
+            return;
+        }
         if (!schoolId || !user) return;
         setIsLoading(true);
         try {
-            const col = requesterType === 'teacher' ? 'teachers' : 'students';
-            const snap = await getDocs(query(collection(firestore, 'school-settings', schoolId, col), where('uid', '==', user.uid)));
-            if (snap.empty) throw new Error("ไม่พบข้อมูลผู้ใช้");
-            const requesterRef = snap.docs[0].ref;
-            const finalRequesterId = snap.docs[0].id;
+            let requesterRef: any;
+            let finalRequesterId: string;
+            let teacherUid: string;
+
+            if (isTeacherRole) {
+                // ครูยื่นเอง — ค้นหาจาก uid ของตัวเอง
+                const col = requesterType === 'teacher' ? 'teachers' : 'students';
+                const snap = await getDocs(query(collection(firestore, 'school-settings', schoolId, col), where('uid', '==', user.uid)));
+                if (snap.empty) throw new Error("ไม่พบข้อมูลผู้ใช้");
+                requesterRef = snap.docs[0].ref;
+                finalRequesterId = snap.docs[0].id;
+                teacherUid = user.uid;
+            } else {
+                // admin/บุคคล ยื่นแทนครู — ใช้ teacher doc ID จาก dropdown
+                finalRequesterId = onBehalfTeacherOption!.value;
+                requesterRef = doc(firestore, 'school-settings', schoolId, 'teachers', finalRequesterId);
+                teacherUid = onBehalfTeacherOption!.data?.uid || '';
+            }
+
             const coAdventurersList = selectedUsers.map(o => ({ id: o.value, name: o.label, position: o.data.position || (o.type === 'student' ? 'นักเรียน' : 'ครู'), type: o.type }));
             let finalDocNo = docNo;
             const counterRef = doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${academicYear}`);
@@ -257,8 +284,10 @@ const OfficialTravelRequestPage: React.FC = () => {
                     budgetType, budgetDetail: budgetType === 'other' ? budgetOther : "",
                     specificExpenses: budgetType === 'specific' ? specificExpenses : null,
                     transportType, transportDetail, requiresSubstitute, status: 'pending', createdAt: Timestamp.now(),
-                    requesterId: finalRequesterId, requesterType, uid: user.uid, coAdventurers: coAdventurersList,
-                    docNo: finalDocNo, academicYear, schoolId, schoolAffiliation, teacherDocId: requesterType === 'teacher' ? finalRequesterId : null,
+                    requesterId: finalRequesterId, requesterType: 'teacher', uid: teacherUid,
+                    coAdventurers: coAdventurersList,
+                    docNo: finalDocNo, academicYear, schoolId, schoolAffiliation, teacherDocId: finalRequesterId,
+                    ...(isTeacherRole ? {} : { submittedByUid: user.uid }),
                 };
                 tx.set(doc(collection(requesterRef, "travel_summary")), data);
                 setSavedData(data);
@@ -334,8 +363,8 @@ const OfficialTravelRequestPage: React.FC = () => {
                 </div>
 
                 {/* ── Body ── */}
-                <div className="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-950 p-3 lg:px-12">
-                    <div className="h-full bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 flex flex-col">
+                <div className="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-950 p-3 lg:px-12 pb-6">
+                    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 flex flex-col">
 
                         {/* ── R1: เลขที่ | เรื่อง | เรียน ── */}
                         <div className="shrink-0 px-5 pt-3 pb-2.5 rounded-t-xl">
@@ -359,6 +388,30 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                         {/* ── R2: ผู้ขออนุญาต ── */}
                         <div className="shrink-0 px-5 py-2.5">
+                            {!isTeacherRole && (
+                                <div className="mb-2.5 p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg">
+                                    <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 mb-1.5">
+                                        <BookUser size={9} className="inline mr-1" />ยื่นแทนครู *
+                                    </label>
+                                    <Select
+                                        options={userOptions.filter(o => o.type === 'teacher')}
+                                        value={onBehalfTeacherOption}
+                                        onChange={(opt: any) => {
+                                            setOnBehalfTeacherOption(opt);
+                                            if (opt) {
+                                                const d = opt.data;
+                                                setRequesterName(`${d.title || ''}${d.firstName || ''} ${d.lastName || ''}`);
+                                                setPosition(d.position || 'ครู');
+                                                setDepartment(d.department || d.learningArea || '');
+                                            }
+                                        }}
+                                        styles={selectStyles}
+                                        placeholder="ค้นหาและเลือกครูที่ต้องการยื่นคำขอแทน..."
+                                        noOptionsMessage={() => "ไม่พบครู"}
+                                        isClearable
+                                    />
+                                </div>
+                            )}
                             <div className="grid grid-cols-12 gap-3">
                                 <div className="col-span-4">
                                     <label className={fl}><BookUser size={9} className="inline mr-1 text-sky-400" />ชื่อ-สกุล *</label>
@@ -416,29 +469,25 @@ const OfficialTravelRequestPage: React.FC = () => {
                         <div className={div} />
 
                         {/* ── R4: สถานที่ | วันที่ | อ้างอิง ── */}
-                        <div className="flex-1 flex flex-col px-5 py-2.5 gap-2.5 min-h-0">
-                            {/* Sub-row 1: สถานที่ + ช่วงวันที่ */}
+                        <div className="shrink-0 px-5 py-2.5">
                             <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-5">
-                                    <label className={fl}><MapPin size={9} className="inline mr-1 text-rose-400" />สถานที่ ณ *</label>
-                                    <textarea value={location} onChange={e => setLocation(e.target.value)} className={`${fi} resize-none`} rows={2} placeholder="ระบุสถานที่..." />
-                                </div>
                                 <div className="col-span-3">
+                                    <label className={fl}><MapPin size={9} className="inline mr-1 text-rose-400" />สถานที่ ณ *</label>
+                                    <input value={location} onChange={e => setLocation(e.target.value)} className={fi} placeholder="ระบุสถานที่..." />
+                                </div>
+                                <div className="col-span-2">
                                     <label className={fl}><CalendarDays size={9} className="inline mr-1 text-amber-400" />ตั้งแต่วันที่ *</label>
                                     <ThaiDatePicker value={startDate} onChange={setStartDate} events={calendarEvents} />
                                 </div>
-                                <div className="col-span-4">
+                                <div className="col-span-2">
                                     <label className={fl}>ถึงวันที่ *</label>
                                     <ThaiDatePicker value={endDate} onChange={setEndDate} events={calendarEvents} />
                                 </div>
-                            </div>
-                            {/* Sub-row 2: อ้างอิง + ลงวันที่ */}
-                            <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-8">
+                                <div className="col-span-3">
                                     <label className={fl}>ตามหนังสือ / คำสั่งที่</label>
                                     <input value={refDocument} onChange={e => setRefDocument(e.target.value)} className={fi} placeholder="เลขที่อ้างอิง..." />
                                 </div>
-                                <div className="col-span-4">
+                                <div className="col-span-2">
                                     <label className={fl}>ลงวันที่</label>
                                     <ThaiDatePicker value={refDate} onChange={setRefDate} placeholder="วันที่..." />
                                 </div>
@@ -449,10 +498,10 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                         {/* ── R5: งบประมาณ | การเดินทาง | สอนแทน ── */}
                         <div className="shrink-0 px-5 py-3">
-                            <div className="grid grid-cols-12 gap-3">
+                            <div className="grid grid-cols-3 gap-3">
 
                                 {/* งบประมาณ */}
-                                <div className="col-span-5 bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
+                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
                                     <div className="flex items-center gap-1.5 mb-2">
                                         <Wallet size={9} className="text-violet-400" />
                                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">งบประมาณ</span>
@@ -487,7 +536,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                                 </div>
 
                                 {/* การเดินทาง */}
-                                <div className="col-span-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
+                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
                                     <div className="flex items-center gap-1.5 mb-2">
                                         <Car size={9} className="text-rose-400" />
                                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">การเดินทาง</span>
@@ -506,7 +555,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                                 </div>
 
                                 {/* สอนแทน */}
-                                <div className="col-span-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5 flex flex-col items-center justify-center gap-2">
+                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5 flex flex-col items-center justify-center gap-2">
                                     <div className="flex items-center gap-1.5">
                                         <UserCheck size={9} className="text-teal-500" />
                                         <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">สอนแทน</span>

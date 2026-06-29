@@ -10,7 +10,7 @@ import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -19,7 +19,9 @@ import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { formatStudentBirthDateThai } from "@/utils/birthDateUtils";
-import { formatClassLevelRange, isClassLevelInRange } from "@/utils/schoolUtils";
+import { formatClassLevelRange, isClassLevelInRange, CLASSES } from "@/utils/schoolUtils";
+import StudentScheduleEmbed from "./StudentScheduleEmbed";
+import StudentBehaviorHistoryEmbed from "./StudentBehaviorHistoryEmbed";
 
 // --- Type Definition ---
 interface StudentData {
@@ -366,6 +368,8 @@ export default function ViewStudentPage() {
     { id: "academic", label: "การศึกษา", icon: <FaGraduationCap /> },
     { id: "attendance", label: "สถาติการมาเรียน", icon: <FaClock /> },
     { id: "courses", label: "รายวิชาที่เรียน", icon: <FaBook /> },
+    { id: "schedule", label: "ตารางเรียน", icon: <FaChalkboard /> },
+    { id: "behavior", label: "คะแนนพฤติกรรม", icon: <FaShieldAlt /> },
     { id: "official_travel", label: "การลาของนักเรียน", icon: <FaHourglassHalf /> },
     { id: "club", label: "กิจกรรมชุมนุม", icon: <FaUsers /> },
   ];
@@ -386,10 +390,11 @@ export default function ViewStudentPage() {
   const completedClubRequestIdsRef = useRef<Set<string>>(new Set());
   const isSubmittingClubRequestRef = useRef(false);
   const [clubPage, setClubPage] = useState(1);
-  const validTabs = ["general", "academic", "attendance", "courses", "official_travel", "club"];
+  const validTabs = ["general", "academic", "attendance", "courses", "schedule", "behavior", "official_travel", "club"];
   const [activeTab, setActiveTab] = useState(() => {
     const t = searchParams.get("tab");
-    return t && validTabs.includes(t) ? t : "general";
+    if (t && validTabs.includes(t)) return t;
+    return localStorage.getItem('currentUserType') === 'parent' ? "schedule" : "general";
   });
   const [generalStep, setGeneralStep] = useState(() => {
     const s = parseInt(searchParams.get("step") || "0", 10);
@@ -1896,6 +1901,49 @@ export default function ViewStudentPage() {
                       ) : (
                         <div className="text-center py-6 text-gray-500">ยังไม่มีข้อมูลรายวิชา</div>
                       )}
+                    </InfoCard>
+                  </div>
+                )}
+
+                {activeTab === "schedule" && student && (
+                  <div className="animate-fade-in">
+                    <InfoCard title="ตารางสอนของชั้นเรียน">
+                      {(() => {
+                        const classKey = Object.entries(CLASSES).find(([, v]) => v === student.classLevel)?.[0] || '';
+                        const term = calendarState.terms?.find((t: any) => {
+                          const today = new Date().toISOString().split('T')[0];
+                          return today >= (t.startDate || '') && today <= (t.endDate || '');
+                        });
+                        const currentTerm = term
+                          ? (String(term.id || term.name).includes('2') ? '2' : '1')
+                          : '1';
+                        if (!classKey) return (
+                          <div className="text-center py-10 text-gray-400">ไม่พบชั้นเรียน ({student.classLevel})</div>
+                        );
+                        return (
+                          <StudentScheduleEmbed
+                            schoolId={schoolId!}
+                            classKey={classKey}
+                            room={student.room || '1'}
+                            academicYear={academicYear}
+                            currentTerm={currentTerm}
+                            className={student.classLevel}
+                          />
+                        );
+                      })()}
+                    </InfoCard>
+                  </div>
+                )}
+
+                {activeTab === "behavior" && student && (
+                  <div className="animate-fade-in">
+                    <InfoCard title="ประวัติคะแนนพฤติกรรม">
+                      <StudentBehaviorHistoryEmbed
+                        schoolId={schoolId!}
+                        studentId={studentId!}
+                        studentName={`${student.firstName} ${student.lastName}`}
+                        currentScore={student.behaviorScore ?? 100}
+                      />
                     </InfoCard>
                   </div>
                 )}

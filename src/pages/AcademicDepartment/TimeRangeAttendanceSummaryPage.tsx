@@ -225,9 +225,9 @@ const summarizeAttendance = (
 
 const pdfStyles = StyleSheet.create({
     page: {
-        paddingTop: 34,
+        paddingTop: 28,
         paddingHorizontal: 44,
-        paddingBottom: 26,
+        paddingBottom: 14,
         fontFamily: 'TH Sarabun PSK',
         fontSize: 12,
         color: '#000',
@@ -238,8 +238,8 @@ const pdfStyles = StyleSheet.create({
         justifyContent: 'space-between',
         borderBottomWidth: 0.8,
         borderBottomColor: '#5f5f5f',
-        paddingBottom: 2,
-        marginBottom: 8,
+        paddingBottom: 1,
+        marginBottom: 4,
     },
     topText: {
         fontSize: 12.5,
@@ -247,26 +247,26 @@ const pdfStyles = StyleSheet.create({
     },
     logo: {
         position: 'absolute',
-        top: 55,
+        top: 46,
         left: 48,
-        width: 45,
-        height: 52,
+        width: 42,
+        height: 48,
         objectFit: 'contain',
     },
     titleBlock: {
         alignItems: 'center',
-        marginTop: 26,
-        marginBottom: 24,
-        lineHeight: 1.2,
+        marginTop: 6,
+        marginBottom: 10,
+        lineHeight: 1.1,
     },
     reportTitle: {
         fontSize: 19,
         fontWeight: 'bold',
-        marginBottom: 5,
+        marginBottom: 2,
     },
     reportSubtitle: {
         fontSize: 14.5,
-        marginBottom: 2,
+        marginBottom: 0,
     },
     table: {
         borderTopWidth: 0.9,
@@ -275,10 +275,10 @@ const pdfStyles = StyleSheet.create({
     },
     row: {
         flexDirection: 'row',
-        minHeight: 18.4,
+        minHeight: 16,
     },
     headerRow: {
-        minHeight: 78,
+        minHeight: 64,
         backgroundColor: '#cfcfcf',
     },
     cell: {
@@ -310,7 +310,7 @@ const pdfStyles = StyleSheet.create({
         fontWeight: 'bold',
     },
     rotatedText: {
-        width: 74,
+        width: 60,
         fontSize: 10.5,
         fontWeight: 'bold',
         textAlign: 'center',

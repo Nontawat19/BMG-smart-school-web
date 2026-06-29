@@ -429,12 +429,12 @@ const SpecialPeriodManagementPage: React.FC = () => {
                 {/* Duration */}
                 <div className="flex items-center gap-2 rounded-xl bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 px-3 py-2 h-full">
                   <Clock size={15} className="text-gray-400 shrink-0" />
-                  <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">ชม.</label>
                   <input type="number" min="0" step="0.5" max="24"
                     value={newPeriodDurationHours}
                     onChange={e => setNewPeriodDurationHours(e.target.value)}
                     placeholder={autoDuration > 0 ? `${autoDuration}` : '0'}
                     className="w-16 bg-white dark:bg-[#2a2b2f] border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <label className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider shrink-0">ชม.</label>
                 </div>
 
                 {/* Toggle: isTeachingLoad + close deadline (absolute dropdown) */}

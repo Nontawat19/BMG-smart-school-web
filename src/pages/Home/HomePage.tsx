@@ -1279,7 +1279,7 @@ const HomePage = () => {
     const sLate = stSummary.late || 0;
     const sLeave = stSummary.leave || 0;
     const sOfficial = stSummary.officialTravel || 0;
-    const sAbsent = stSummary.absent || 0;
+    const sAbsent = Math.max(0, stSummary.absent || 0);
     
     // Total scans recorded
     const sTotalScans = sPresent + sLate + sLeave + sOfficial + sAbsent;
@@ -1299,7 +1299,7 @@ const HomePage = () => {
     const tLate = tSummary.late || 0;
     const tLeave = Math.max(tSummary.leave || 0, (leaveReport.teacherSick || 0) + (leaveReport.teacherPersonal || 0));
     const tOfficial = Math.max(tSummary.officialTravel || 0, leaveReport.teacherOfficial || 0);
-    const tAbsent = tSummary.absent || 0;
+    const tAbsent = Math.max(0, tSummary.absent || 0);
     
     const tTotalScans = tPresent + tLate + tLeave + tOfficial + tAbsent;
     

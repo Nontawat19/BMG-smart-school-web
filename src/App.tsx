@@ -103,6 +103,7 @@ const GradeBookPage = lazy(() => import("./pages/AcademicDepartment/GradeBookPag
 const SchoolCalendarPage = lazy(() => import("./pages/AcademicDepartment/SchoolCalendarPage"));
 const SubstituteManagementPage = lazy(() => import("./pages/AcademicDepartment/SubstituteManagementPage"));
 const SubstituteReportPage = lazy(() => import("./pages/AcademicDepartment/SubstituteReportPage"));
+const SubstituteSchedulePrintPage = lazy(() => import("./pages/AcademicDepartment/SubstituteSchedulePrintPage"));
 const TeacherScheduleViewPage = lazy(() => import("./pages/AcademicDepartment/TeacherScheduleViewPage"));
 const ViewCoursesPage = lazy(() => import("./pages/AcademicDepartment/ViewCoursesPage"));
 const DocumentVerificationPage = lazy(() => import("./pages/Public/DocumentVerificationPage"));
@@ -307,6 +308,7 @@ function App() {
           <Route path="/academic/school-calendar" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><SchoolCalendarPage /></ProtectedRoute>} />
           <Route path="/academic/substitute-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubstituteManagementPage /></ProtectedRoute>} />
           <Route path="/academic/substitute-report" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubstituteReportPage /></ProtectedRoute>} />
+          <Route path="/academic/substitute-schedule-print" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SubstituteSchedulePrintPage /></ProtectedRoute>} />
           <Route path="/academic/period-constraints" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodConstraintPage /></ProtectedRoute>} />
           <Route path="/academic/period-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PeriodSettingsPage /></ProtectedRoute>} />
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />

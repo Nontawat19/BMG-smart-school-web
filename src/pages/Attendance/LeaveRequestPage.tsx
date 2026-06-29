@@ -10,6 +10,7 @@ import {
   getDocs,
   writeBatch,
   doc,
+  documentId,
   Timestamp,
   onSnapshot,
   increment,
@@ -480,6 +481,18 @@ const LeaveRequestPage: React.FC = () => {
 
     try {
       const batch = writeBatch(firestore);
+
+      // Pre-fetch existing attendance to know if student was already marked absent before leave
+      const existingAttSnap = await getDocs(
+        query(
+          collection(firestore, "school-settings", schoolId, "students", selectedStudent.value, "attendance"),
+          where(documentId(), ">=", startDate),
+          where(documentId(), "<=", endDate)
+        )
+      );
+      const existingAttStatus = new Map<string, string>();
+      existingAttSnap.forEach(d => existingAttStatus.set(d.id, d.data().status || ""));
+
       // 1. บันทึกคำขอลาหลัก
       // 📌 Path: students/{id}/leave_summary (same level as Weeksummary, Monthsummary, etc.)
       const leaveRequestRef = doc(collection(
@@ -585,23 +598,16 @@ const LeaveRequestPage: React.FC = () => {
 
         // **Daily Summary (School-wide)**
         const cls = selectedStudent.class?.split('/')[0] || "ไม่ระบุชั้น";
+        const wasAbsent = existingAttStatus.get(dateStr) === 'ขาด' || existingAttStatus.get(dateStr) === 'Absent';
         const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", dateStr);
         batch.set(summaryRef, {
-          absent: increment(-1),
+          ...(wasAbsent && { absent: increment(-1), [`classes.${cls}.absent`]: increment(-1) }),
           leave: increment(1),
-          [`classes.${cls}.absent`]: increment(-1),
           [`classes.${cls}.leave`]: increment(1),
           updatedAt: serverTimestamp()
         }, { merge: true });
 
-        // Update Period Summaries (Week, Month, Year, Semester)
-        // From 'absent' to 'leave' (assuming default is absent if not present, but here we are marking leave explicitly)
-        // If the student was already marked absent, we decrement absent and increment leave.
-        // If they were not marked anything, we just increment leave?
-        // Usually, if they request leave, they might not have scanned in suitable time, so they might be 'absent' by default or 'unknown'.
-        // However, `dyasummary` logic above decrements `absent` and increments `leave`.
-        // So we should reflect that in period summaries too: transition from 'absent' to 'leave'.
-        updatePeriodSummaries(firestore, batch, schoolId, selectedStudent.value, 'students', dateStr, 'absent', 'leave', cls, currentAcademicYear);
+        updatePeriodSummaries(firestore, batch, schoolId, selectedStudent.value, 'students', dateStr, wasAbsent ? 'absent' : null, 'leave', cls, currentAcademicYear);
       }
 
       // 3. อัปเดตยอดรวมการลาในโปรไฟล์นักเรียน (Aggregation)

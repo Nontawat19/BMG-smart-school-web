@@ -435,30 +435,33 @@ const StudentSchedulePage: React.FC = () => {
                       ...(latestCourse?.teacherAssignments || []),
                     ];
                     const hasAssignments = allAssignments.length > 0;
-                    
-                    // Room matching: check if course is for this specific room
-                    // A course matches if its classId is 'selectedClass/selectedRoom' or if it's assigned to this room
+                    const courseGroupNumber = String((course as any).groupNumber || 1);
+
+                    // Only use assignments for this course's specific group to avoid cross-room contamination
+                    // (e.g. group1→m1/1, group2→m1/2 must not bleed into each other's room check)
+                    const relevantGroupAssignments = hasAssignments
+                      ? allAssignments.filter((a: any) => String(a.groupNumber || 1) === courseGroupNumber)
+                      : [];
+
                     const classSources = [
                       ...courseClassIds(course),
-                      ...allAssignments.flatMap((a: any) => assignmentClassLevels(a)),
-                      ...classIds,
+                      ...relevantGroupAssignments.flatMap((a: any) => assignmentClassLevels(a)),
+                      ...(relevantGroupAssignments.length === 0 ? classIds : []),
                     ];
                     const matchesRoom = !selectedRoom || selectedRoom === 'all' || matchesSelectedClassRoom(classSources, selectedClass, selectedRoom);
 
-                    // Group matching
-                    const matchesGroup = !selectedGroup || selectedGroup === 'all' || 
-                      (hasAssignments 
-                        ? allAssignments.some((a: any) => String(a.groupNumber || 1) === selectedGroup)
-                        : String(course.groupNumber || 1) === selectedGroup
-                      );
+                    // Group matching: compare against the course instance's own groupNumber
+                    const matchesGroup = !selectedGroup || selectedGroup === 'all' ||
+                      String(course.groupNumber || 1) === selectedGroup;
 
                     if (matchesRoom && matchesGroup) {
-                      // Final validation against teacherAssignments for specific room/group pairing if exists
-                        const isStrictMatch = !hasAssignments || allAssignments.some((a: any) => {
+                      // Strict match: assignment must correspond to this course's groupNumber AND the selected room
+                      const isStrictMatch = !hasAssignments || allAssignments.some((a: any) => {
                         const teacherMatch = assignmentIncludesTeacher(a, teacherId);
                         const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
                         const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
-                        return teacherMatch && roomMatch && groupMatch;
+                        const courseGroupMatch = String(a.groupNumber || 1) === courseGroupNumber;
+                        return teacherMatch && roomMatch && groupMatch && courseGroupMatch;
                       });
 
                       if (isStrictMatch) {
@@ -466,7 +469,8 @@ const StudentSchedulePage: React.FC = () => {
                           const teacherMatch = assignmentIncludesTeacher(a, teacherId);
                           const roomMatch = !selectedRoom || selectedRoom === 'all' || assignmentMatchesClassRoom(a, selectedClass, selectedRoom);
                           const groupMatch = !selectedGroup || selectedGroup === 'all' || String(a.groupNumber || 1) === selectedGroup;
-                          return teacherMatch && roomMatch && groupMatch;
+                          const courseGroupMatch = String(a.groupNumber || 1) === courseGroupNumber;
+                          return teacherMatch && roomMatch && groupMatch && courseGroupMatch;
                         });
 
                         const roomIds = assignment?.roomIds || (course.room?.includes('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
@@ -513,26 +517,33 @@ const StudentSchedulePage: React.FC = () => {
                     ...(latestCourse?.teacherAssignments || []),
                   ];
                   const hasAssignments = allAssignments.length > 0;
-                  
-                  // For "All Rooms" view, we need to know which rooms this course belongs to
+                  const courseGroupNumber = String((course as any).groupNumber || 1);
+
+                  // Only resolve rooms from assignments that match this course's group
+                  // to prevent a group-2 course from appearing in group-1 (room-1) schedule
+                  const relevantGroupAssignments = hasAssignments
+                    ? allAssignments.filter((a: any) => String(a.groupNumber || 1) === courseGroupNumber)
+                    : [];
+                  const assignmentsForRoomDetection = relevantGroupAssignments.length > 0
+                    ? relevantGroupAssignments
+                    : allAssignments;
+
                   const targetRooms = new Set<string>();
                   const classSources = [...courseClassIds(course), ...classIds];
                   getRoomsForClass(classSources, selectedClass).forEach(room => targetRooms.add(room));
 
-                  if (hasAssignments) {
-                    allAssignments.forEach((a: any) => {
-                      const levels = assignmentClassLevels(a);
-                      const matchesGrade = levels.some((cl: string) => classMatchesSelection(cl, selectedClass));
-                      if (matchesGrade) {
-                        getRoomsForClass(levels, selectedClass).forEach(room => targetRooms.add(room));
-                      }
-                    });
-                  }
+                  assignmentsForRoomDetection.forEach((a: any) => {
+                    const levels = assignmentClassLevels(a);
+                    const matchesGrade = levels.some((cl: string) => classMatchesSelection(cl, selectedClass));
+                    if (matchesGrade) {
+                      getRoomsForClass(levels, selectedClass).forEach(room => targetRooms.add(room));
+                    }
+                  });
 
                   if (targetRooms.size === 0) targetRooms.add('1');
 
                   targetRooms.forEach((room: string) => {
-                    const assignment = allAssignments.find((a: any) => {
+                    const assignment = (relevantGroupAssignments.length > 0 ? relevantGroupAssignments : allAssignments).find((a: any) => {
                       const roomMatch = room === 'all' || assignmentMatchesClassRoom(a, selectedClass, room);
                       return roomMatch;
                     });

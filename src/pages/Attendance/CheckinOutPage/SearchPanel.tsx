@@ -8,6 +8,7 @@ interface SearchPanelProps {
   currentTime: string;
   hideInput?: boolean;
   className?: string;
+  isCompact?: boolean;
 }
 
 const SearchPanel: React.FC<SearchPanelProps> = ({
@@ -18,6 +19,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
   currentTime,
   hideInput = false,
   className = "lg:col-span-3",
+  isCompact = false,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,7 +49,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
 
   return (
     <div
-      className={`${className} bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none`}
+      className={`${className} bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isCompact ? 'p-5' : 'p-10'} text-gray-900 dark:text-white flex flex-col justify-center shadow-sm dark:shadow-none h-full border border-gray-200/50 dark:border-none`}
       onClick={refocus}
     >
       <div className="flex-grow flex flex-col justify-evenly gap-8">
@@ -68,7 +70,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
 
         {!hideInput && (
           <div className="text-center">
-            <p className="text-6xl 2xl:text-7xl font-black text-gray-900 dark:text-white tracking-tight">{currentTime}</p>
+            <p className={`${isCompact ? 'text-5xl' : 'text-6xl 2xl:text-7xl'} font-black text-gray-900 dark:text-white tracking-tight`}>{currentTime}</p>
           </div>
         )}
       </div>

@@ -69,6 +69,10 @@ const getAttendanceCategory = (status?: string, hasAttendance?: boolean) => {
   return "ปกติ";
 };
 
+const getTeacherPosition = (teacher: any) => {
+  return teacher?.position || "ครู";
+};
+
 const TeacherAttendanceDateSelectionPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolId = currentUser?.schoolId;
@@ -142,7 +146,7 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
             schoolName: currentSchoolName,
             date: formatDateDisplay(selectedDate),
             fullName: `${teacher.title || ""}${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.name || "-",
-            position: teacher.position || teacher.department || "-",
+            position: getTeacherPosition(teacher),
             checkInTime: formatTime(attendance?.checkinTime || attendance?.time),
             checkOutTime: formatTime(attendance?.checkoutTime),
             lateText: attendance?.status === "สาย" || attendance?.status === "Late" ? "สาย" : "-",
@@ -318,7 +322,7 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">สาย</th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">ประเภท</th>
                     <th className="border-b border-r border-slate-200 px-3 py-3 dark:border-slate-700">หมายเหตุ</th>
-                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">type</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">ประเภทการลงเวลา</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-[#1e1f21]">

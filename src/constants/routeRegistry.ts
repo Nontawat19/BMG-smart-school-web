@@ -56,8 +56,8 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'teacher_leave_history',      path: '/attendance/teacher-leave-history',      label: 'ประวัติใบลาครู',                 category: 'ลางานและเวลา', defaultRoles: TEACHER_LEAVE_HISTORY_ACCESS },
   { key: 'leave_approval',             path: '/attendance/leave-approval',             label: 'อนุมัติใบลา',                   category: 'ลางานและเวลา', defaultRoles: [ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
   { key: 'checkin_out',                path: '/attendance/checkin-out',                label: 'เช็คอิน/เช็คเอาท์',             category: 'ลางานและเวลา', defaultRoles: [ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
-  { key: 'official_travel_request',    path: '/school/:schoolId/official-travel-request',  label: 'ใบขอไปราชการ',             category: 'ลางานและเวลา', defaultRoles: STAFF_ACCESS },
-  { key: 'official_travel_history',    path: '/school/:schoolId/official-travel-history',  label: 'ประวัติใบไปราชการ',         category: 'ลางานและเวลา', defaultRoles: STAFF_ACCESS },
+  { key: 'official_travel_request',    path: '/school/:schoolId/official-travel-request',  label: 'ใบขอไปราชการ',             category: 'ลางานและเวลา', defaultRoles: [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
+  { key: 'official_travel_history',    path: '/school/:schoolId/official-travel-history',  label: 'ประวัติใบไปราชการ',         category: 'ลางานและเวลา', defaultRoles: [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
 
   // ──────────────────────────────── ข้อมูลนักเรียน ────────────────────────────────
   { key: 'student_list',        path: '/school/:schoolId/students',                    label: 'รายชื่อนักเรียน',               category: 'ข้อมูลนักเรียน', defaultRoles: STAFF_ACCESS },
@@ -117,8 +117,9 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'teacher_schedule_view', path: '/academic/teacher-schedule-view',  label: 'ตารางสอน (ครู)',             category: 'วิชาการ - ตารางสอน', defaultRoles: TEACHER_OPERATIONAL },
   { key: 'student_schedule',      path: '/academic/student-schedule',       label: 'ตารางเรียน (นักเรียน)',      category: 'วิชาการ - ตารางสอน', defaultRoles: [...TEACHER_OPERATIONAL, ROLES.STUDENT] },
   { key: 'academic_my_schedule',  path: '/academic/my-schedule',            label: 'ตารางของฉัน',                category: 'วิชาการ - ตารางสอน', defaultRoles: [...STAFF_ACCESS, ROLES.STUDENT] },
-  { key: 'substitute_mgmt',       path: '/academic/substitute-management',  label: 'จัดการสอนแทน',              category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
-  { key: 'substitute_report',     path: '/academic/substitute-report',       label: 'รายงานการสอนแทน',            category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'substitute_mgmt',            path: '/academic/substitute-management',       label: 'จัดการสอนแทน',              category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'substitute_report',         path: '/academic/substitute-report',            label: 'รายงานการสอนแทน',            category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
+  { key: 'substitute_schedule_print', path: '/academic/substitute-schedule-print',    label: 'ตารางสอนแทน',               category: 'วิชาการ - ตารางสอน', defaultRoles: ACADEMIC_MANAGEMENT },
 
   // ──────────────────────────────── วิชาการ - เช็คชื่อ ────────────────────────────────
   { key: 'flag_ceremony',             path: '/academic/flag-ceremony',                label: 'เช็คชื่อเข้าแถว',             category: 'วิชาการ - เช็คชื่อ', defaultRoles: TEACHER_OPERATIONAL },

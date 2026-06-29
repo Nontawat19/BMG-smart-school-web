@@ -39,7 +39,7 @@ import {
   LeaveRecord
 } from "../../../utils/attendanceLogic";
 import { ROLES } from "../../../constants/roles";
-import { applyAttendanceBehaviorScore } from "../../../utils/behaviorScoreUtils";
+import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
 import { isStudyingStudent } from "../../../utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
@@ -202,7 +202,11 @@ const isSameHomeroom = (teacherData: any, studentGrade?: string, studentRoom?: s
 };
 
 const isSameLineRegistrationContext = (context: any, studentGrade?: string, studentRoom?: string, lineConfig?: any) => {
-  if (!context) return false;
+  // ไม่มี context = ลงทะเบียนแบบเก่าหรือไม่ได้เก็บข้อมูลห้อง → ส่งแจ้งเตือนทุกชั้น
+  if (!context) return true;
+  // context มีอยู่แต่ไม่ระบุห้องเรียน → ถือว่าผ่าน (สมัครแบบไม่ระบุชั้น)
+  if (!context.classLevel && !context.room) return true;
+
   const student = splitHomeroom(studentGrade, studentRoom);
   const registered = splitHomeroom(context.classLevel, context.room);
 
@@ -226,6 +230,10 @@ const CheckinOutPage: React.FC = () => {
   const schoolId = currentUser?.schoolId;
   const { isDarkMode, toggleTheme } = useTheme();
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
+  const [isSquareScreen, setIsSquareScreen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth / window.innerHeight <= 1.15;
+  });
   const [schoolName, setSchoolName] = useState<string | null>(null);
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
   const [isAttendanceAdmin, setIsAttendanceAdmin] = useState(false);
@@ -295,6 +303,9 @@ const CheckinOutPage: React.FC = () => {
   const faceScanFailSpeechAtRef = useRef<number>(0);
   const attendanceFetchCacheRef = useRef<Map<string, { data: any; cachedAt: number }>>(new Map());
   const adminTeacherLineIdsRef = useRef<string[]>([]);
+  // Consecutive accumulator: สะสมการจับคู่ที่ confidence ต่ำกว่า threshold เล็กน้อย
+  // ถ้า cardId เดิมปรากฏซ้ำ ≥3 ครั้งติดกันในช่วง 3 วินาที → ถือว่าผ่าน
+  const lowConfAccRef = useRef<Map<string, { count: number; totalConf: number; lastSeenAt: number }>>(new Map());
 
   // Use the imported getTodayString from dateUtils
 
@@ -688,6 +699,14 @@ const CheckinOutPage: React.FC = () => {
       clearInterval(ipInterval);
       window.removeEventListener("online", handleOnline);
     };
+  }, []);
+
+  useEffect(() => {
+    const updateAspect = () => {
+      setIsSquareScreen(window.innerWidth / window.innerHeight <= 1.15);
+    };
+    window.addEventListener('resize', updateAspect);
+    return () => window.removeEventListener('resize', updateAspect);
   }, []);
 
   // Location Background Sync (Keep tracking to avoid delay when scanning)
@@ -1258,7 +1277,8 @@ const CheckinOutPage: React.FC = () => {
     user: FoundUser,
     confidence?: number
   ): Promise<string | null> => {
-    if (schoolSettings?.faceScanConfig?.saveSnapshots !== true) return null;
+    // Default to saving snapshots unless the school explicitly disables it.
+    if (schoolSettings?.faceScanConfig?.saveSnapshots === false) return null;
     if (!schoolId || !image || image.size === 0) return null;
 
     try {
@@ -1332,7 +1352,6 @@ const CheckinOutPage: React.FC = () => {
       const liveBehaviorScore = studentSnap.exists()
         ? (studentSnap.data().behaviorScore ?? user.behaviorScore ?? 100)
         : (user.behaviorScore ?? 100);
-
       // สร้าง User object ใหม่พร้อมข้อมูลสถิติภาคเรียนและคะแนนพฤติกรรมล่าสุด
       const userWithSemesterStats: FoundUser = {
         ...user,
@@ -1370,6 +1389,25 @@ const CheckinOutPage: React.FC = () => {
             }
           });
         });
+
+        // Fallback: ถ้าหาครูด้วย isHomeroomTeacher=true ไม่เจอ
+        // ให้ค้นหาด้วย homeroomGrade อย่างเดียว (รองรับโรงเรียนที่ยังไม่ได้ set field นี้)
+        if (homeroomTeachers.size === 0) {
+          const fallbackSnaps = await Promise.all(
+            gradeCandidates.map((gradeCandidate) =>
+              getDocs(query(teacherRef, where("homeroomGrade", "==", gradeCandidate), limit(10)))
+            )
+          );
+          fallbackSnaps.forEach((snap) => {
+            snap.docs.forEach((teacherDoc) => {
+              if (homeroomTeachers.has(teacherDoc.id)) return;
+              const teacherData = teacherDoc.data();
+              if (isSameHomeroom(teacherData, user.grade, user.room)) {
+                homeroomTeachers.set(teacherDoc.id, teacherData);
+              }
+            });
+          });
+        }
 
         homeroomTeachers.forEach((teacherData) => {
           // ดึง lineUserId ของครูประจำชั้นทุกคนในห้องมาใส่ร่วมกับกลุ่มรับข้อความแจ้งเตือน
@@ -1410,16 +1448,22 @@ const CheckinOutPage: React.FC = () => {
       console.log(`[LINE] finalConfig resolved: ${finalConfig ? "YES (token:" + Boolean(finalConfig.lineChannelAccessToken) + ")" : "NULL — notification will be skipped"}`);
       if (finalConfig) {
         const parentRecipientUserIds = getEligibleParentLineRecipients(user, finalConfig);
-        const recipientUserIds = uniq([...parentRecipientUserIds, ...teacherRecipientUserIds]);
 
-        if (parentRecipientUserIds.length < (user.parentLineUserIds || []).filter(Boolean).length) {
-          console.warn("[LINE] Parent LINE recipients skipped because classroom registration needs refresh:", {
+        // Safety net: ถ้ากรองแล้วไม่เหลือผู้ปกครองเลย แต่มี parentLineUserIds อยู่จริง
+        // → ส่งให้ parentLineUserIds ทั้งหมดตรงๆ โดยไม่กรอง context (รองรับผู้ปกครองลูกหลายคน)
+        const rawParentIds = uniq((user.parentLineUserIds || []).filter(Boolean));
+        const finalParentIds = parentRecipientUserIds.length > 0
+          ? parentRecipientUserIds
+          : rawParentIds;
+
+        const recipientUserIds = uniq([...finalParentIds, ...teacherRecipientUserIds]);
+
+        if (parentRecipientUserIds.length === 0 && rawParentIds.length > 0) {
+          console.warn("[LINE] Context filter removed all parents — falling back to raw parentLineUserIds:", {
             studentId: user.displayId,
             classLevel: user.grade,
             room: user.room,
-            originalParentRecipientCount: (user.parentLineUserIds || []).length,
-            eligibleParentRecipientCount: parentRecipientUserIds.length,
-            reviewRequired: Boolean(user.lineRegistrationReviewRequired),
+            rawParentCount: rawParentIds.length,
           });
         }
 
@@ -2210,6 +2254,21 @@ const CheckinOutPage: React.FC = () => {
         });
         if (isFaceScan) {
           setSpeechTrigger({ user, type: null, timestamp: Date.now(), status: 'success' });
+          // Update latestUsers so the checkout appears in the panel even if processed earlier
+          setLatestUsers(prev => {
+            const existing = prev.find(u => u.id === user.id);
+            const alreadyCheckout = existing?.lastAction === 'checkout' || existing?.lastAction === 'checkin_and_checkout';
+            if (alreadyCheckout) return prev;
+            const entry: FoundUser = {
+              ...(existing || user),
+              latestActionTime: attData.checkoutTime!,
+              status: attData.status || existing?.status || user.status,
+              lastAction: 'checkout',
+            };
+            const next = [entry, ...prev.filter(u => u.id !== user.id)].slice(0, 8);
+            try { localStorage.setItem("latestUsers", JSON.stringify(next)); } catch { /* quota */ }
+            return next;
+          });
         } else {
           Swal.fire({
             icon: "info",
@@ -2554,6 +2613,79 @@ const CheckinOutPage: React.FC = () => {
     }
   };
 
+  const processNoCheckout = async () => {
+    if (!schoolId) return;
+    const todayStr = getTodayString();
+    try {
+      const snap = await getDocs(
+        collection(firestore, "school-settings", schoolId, "students")
+      );
+      const batch = writeBatch(firestore);
+      let count = 0;
+
+      for (const uDoc of snap.docs) {
+        const userData = uDoc.data();
+        const attRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id, "attendance", todayStr);
+        const attSnap = await getDoc(attRef);
+        if (!attSnap.exists()) continue;
+
+        const attData = attSnap.data();
+        if (
+          attData.checkinTime &&
+          !attData.checkoutTime &&
+          attData.status !== "ลา" &&
+          attData.status !== "ขาด" &&
+          attData.status !== "ไม่ลงเวลาออก"
+        ) {
+          const oldStatus = attData.status as string;
+          const newStatus = "ไม่ลงเวลาออก";
+
+          batch.update(attRef, { status: newStatus, remark: "Auto: ไม่ลงเวลาออก" });
+
+          const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
+          const oldKey = getStatusKey(oldStatus);
+          const newKey = getStatusKey(newStatus);
+          const statsUpdate: Record<string, any> = {};
+          if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
+          if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
+
+          const scoreChange = calculateAttendanceBehaviorScoreChange({
+            currentScore: userData.behaviorScore,
+            oldStatus,
+            newStatus,
+            config: schoolSettings?.behaviorScoreConfig,
+          });
+          if (scoreChange) Object.assign(statsUpdate, scoreChange.update);
+          if (Object.keys(statsUpdate).length > 0) batch.update(studentRef, statsUpdate);
+
+          const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
+          const classKey = userData.classLevel?.trim() || "ไม่ระบุชั้น";
+          const oldSummaryKey = getStatusKey(oldStatus);
+          const newSummaryKey = getStatusKey(newStatus);
+          if (oldSummaryKey !== newSummaryKey) {
+            const summaryUpdates: Record<string, any> = { updatedAt: serverTimestamp() };
+            if (oldSummaryKey) {
+              summaryUpdates[oldSummaryKey] = increment(-1);
+              summaryUpdates[`classes.${classKey}.${oldSummaryKey}`] = increment(-1);
+            }
+            if (newSummaryKey) {
+              summaryUpdates[newSummaryKey] = increment(1);
+              summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
+            }
+            batch.set(summaryRef, summaryUpdates, { merge: true });
+          }
+
+          updatePeriodSummaries(firestore, batch, schoolId, uDoc.id, "students", todayStr, oldStatus, newStatus, classKey, currentAcademicYear);
+          count++;
+        }
+      }
+
+      if (count > 0) await batch.commit();
+    } catch (err) {
+      console.error("No-checkout processing error:", err);
+    }
+  };
+
   useEffect(() => {
     if (!schoolSettings || !calendarEvents || !isCalendarLoaded || isHoliday)
       return;
@@ -2568,11 +2700,14 @@ const CheckinOutPage: React.FC = () => {
       if (timeStr === studentCheckinEnd) {
         processAbsencesByType("student");
       }
+      if (timeStr === studentCheckoutEnd) {
+        processNoCheckout();
+      }
     };
 
     const timer = setInterval(checkTime, 60 * 1000);
     return () => clearInterval(timer);
-  }, [schoolSettings, calendarEvents, isCalendarLoaded, isHoliday, timeOffset]);
+  }, [schoolSettings, calendarEvents, isCalendarLoaded, isHoliday, timeOffset, studentCheckinEnd, studentCheckoutEnd]);
 
   const userName = (currentUser as any)?.displayName || "ผู้ดูแลระบบ";
   const currentUserIdForCamera = (currentUser as any)?.uid || (currentUser as any)?.id || "";
@@ -2796,9 +2931,48 @@ const CheckinOutPage: React.FC = () => {
               );
               console.log(`⚙️ [FaceScan] ใบหน้า #${faceIdx}: cardId=${matchedCard.id}, name="${matchedCard.name || "-"}", ความมั่นใจ=${(confidence * 100).toFixed(1)}%, เกณฑ์=${(effectiveFaceScanThreshold * 100).toFixed(1)}%`);
 
+              // Consecutive Accumulator: นักเรียนบางคน confidence ต่ำกว่า threshold เล็กน้อยแต่สม่ำเสมอ
+              // ถ้า cardId เดิมปรากฏซ้ำกัน ≥3 ครั้งใน 3 วินาที → ถือว่าผ่านด้วยค่าเฉลี่ย
+              const LOW_CONF_FLOOR = Math.max(0, effectiveFaceScanThreshold - 0.12); // ต่ำสุดที่ยอมรับ (threshold - 12%)
+              const LOW_CONF_HITS  = 3;   // ต้องเจอซ้ำกี่ครั้ง
+              const LOW_CONF_WIN   = 3000; // ภายในกี่ ms
+
+              let effectiveConfidence = confidence;
+
               if (confidence < effectiveFaceScanThreshold) {
-                console.warn(`[FaceScan] ⚠️ ความมั่นใจต่ำเกินไป: ${(confidence * 100).toFixed(1)}% < ${(effectiveFaceScanThreshold * 100).toFixed(1)}% — ข้ามการจับคู่`);
-                return;
+                if (confidence >= LOW_CONF_FLOOR) {
+                  const acc   = lowConfAccRef.current;
+                  const key   = String(matchedCard.id);
+                  const now   = Date.now();
+                  const entry = acc.get(key);
+
+                  if (entry && now - entry.lastSeenAt < LOW_CONF_WIN) {
+                    entry.count++;
+                    entry.totalConf += confidence;
+                    entry.lastSeenAt = now;
+                  } else {
+                    acc.clear(); // ล้าง card อื่นที่ค้างอยู่
+                    acc.set(key, { count: 1, totalConf: confidence, lastSeenAt: now });
+                  }
+
+                  const current = acc.get(key)!;
+                  if (current.count < LOW_CONF_HITS) {
+                    console.warn(`[FaceScan] 🔄 สะสม: ${(confidence * 100).toFixed(1)}% (${current.count}/${LOW_CONF_HITS} ครั้ง, cardId=${key})`);
+                    return;
+                  }
+
+                  // ผ่านด้วยการสะสม → ใช้ค่าเฉลี่ย
+                  effectiveConfidence = current.totalConf / current.count;
+                  console.log(`[FaceScan] ✅ สะสมครบ ${LOW_CONF_HITS} ครั้ง → avg ${(effectiveConfidence * 100).toFixed(1)}% ผ่าน (cardId=${key})`);
+                  acc.clear();
+                } else {
+                  lowConfAccRef.current.clear();
+                  console.warn(`[FaceScan] ⚠️ ความมั่นใจต่ำเกินไป: ${(confidence * 100).toFixed(1)}% < ${(LOW_CONF_FLOOR * 100).toFixed(1)}% — ข้ามการจับคู่`);
+                  return;
+                }
+              } else {
+                // ผ่าน threshold ปกติ → ล้าง accumulator ทิ้ง
+                lowConfAccRef.current.delete(String(matchedCard.id));
               }
 
               const matchedMeta = matchedCard.meta || {};
@@ -2815,8 +2989,8 @@ const CheckinOutPage: React.FC = () => {
 
               const facePayload = {
                 matched: true,
-                looks_like_confidence: confidence,
-                confidence: confidence,
+                looks_like_confidence: effectiveConfidence,
+                confidence: effectiveConfidence,
                 id: matchedCard.id,
                 findfaceCardId: matchedCard.id,
                 cardId: matchedCard.id,
@@ -2834,7 +3008,7 @@ const CheckinOutPage: React.FC = () => {
 
               const user = await resolveFaceMatchedUser(facePayload);
               if (user) {
-                faceResults[faceIdx].user = { ...user, faceConfidence: confidence };
+                faceResults[faceIdx].user = { ...user, faceConfidence: effectiveConfidence };
               } else {
                 console.warn("[FaceScan] ⚠️ FindFace จับคู่ card ได้แต่ไม่พบข้อมูลใน Firestore:", {
                   cardId: facePayload.findfaceCardId,
@@ -2902,6 +3076,23 @@ const CheckinOutPage: React.FC = () => {
                 checkinTime: attData.checkinTime || undefined,
                 checkoutTime: attData.checkoutTime || undefined,
               });
+              // Sync latestUsers if checkout already happened but panel not updated yet
+              if (attData.checkoutTime) {
+                setLatestUsers(prev => {
+                  const existing = prev.find(u => u.id === user.id);
+                  const alreadyCheckout = existing?.lastAction === 'checkout' || existing?.lastAction === 'checkin_and_checkout';
+                  if (alreadyCheckout) return prev;
+                  const entry: FoundUser = {
+                    ...(existing || user),
+                    latestActionTime: attData.checkoutTime!,
+                    status: attData.status || existing?.status || user.status,
+                    lastAction: 'checkout',
+                  };
+                  const next = [entry, ...prev.filter(u => u.id !== user.id)].slice(0, 8);
+                  try { localStorage.setItem("latestUsers", JSON.stringify(next)); } catch { /* quota */ }
+                  return next;
+                });
+              }
             } catch (err) {
               updatedUsers.push(user);
             }
@@ -3067,25 +3258,25 @@ const CheckinOutPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
-      <main className="flex-grow flex items-center justify-center p-6">
-        <div className="w-full max-w-screen-2xl">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
-            <div className="xl:col-span-8 flex flex-col gap-10 h-full">
-              <div className="bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl p-10 text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col">
-                <div className="flex items-center gap-5 mb-8">
+      <main className={`flex-grow flex items-center justify-center ${isSquareScreen ? 'p-2' : 'p-6'}`}>
+        <div className={isSquareScreen ? 'w-full' : 'w-full max-w-screen-2xl'}>
+          <div className={`grid grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-10'}`}>
+            <div className={`col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-10'} h-full`}>
+              <div className={`bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-5' : 'p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col`}>
+                <div className={`flex items-center gap-5 ${isSquareScreen ? 'mb-3' : 'mb-8'}`}>
                   {schoolSettings?.logoUrl && (
-                    <img 
-                      src={schoolSettings.logoUrl} 
-                      alt="School Logo" 
-                      className="w-16 h-16 object-cover rounded-full bg-white p-1 shadow-sm border border-gray-200 dark:border-white/10"
+                    <img
+                      src={schoolSettings.logoUrl}
+                      alt="School Logo"
+                      className={`${isSquareScreen ? 'w-10 h-10' : 'w-16 h-16'} object-cover rounded-full bg-white p-1 shadow-sm border border-gray-200 dark:border-white/10`}
                     />
                   )}
                   <div className="flex flex-col">
-                    <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white">
+                    <h1 className={`${isSquareScreen ? 'text-2xl' : 'text-4xl'} font-extrabold text-gray-900 dark:text-white`}>
                       ระบบลงเวลา{schoolName ? ` | ${schoolName}` : ""}
                     </h1>
                     {schoolSettings?.affiliation && (
-                      <p className="text-lg text-gray-900 dark:text-white font-bold mt-1">
+                      <p className={`${isSquareScreen ? 'text-sm' : 'text-lg'} text-gray-900 dark:text-white font-bold mt-1`}>
                         สังกัด: {schoolSettings.affiliation}
                       </p>
                     )}
@@ -3097,7 +3288,7 @@ const CheckinOutPage: React.FC = () => {
                 />
 
                 <div className="flex-1 flex">
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-10 flex-1">
+                  <div className={`grid grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-10'} flex-1`}>
                     {isFaceScanModeEnabled ? (
                       <FaceScanPanel
                         enabled={isFaceScanModeEnabled}
@@ -3107,7 +3298,7 @@ const CheckinOutPage: React.FC = () => {
                         checkinTime={checkinTime}
                         checkoutTime={checkoutTime}
                         onIdentifyFrame={handleIdentifyFaceFrame}
-                        className="lg:col-span-5"
+                        className="col-span-5"
                         currentTime={currentTime}
                         isHoliday={isHoliday}
                         studentLateTime={studentLateTime}
@@ -3125,6 +3316,7 @@ const CheckinOutPage: React.FC = () => {
                           displayUser={displayUser}
                           checkinTime={checkinTime}
                           checkoutTime={checkoutTime}
+                          isCompact={isSquareScreen}
                         />
                         <SearchPanel
                           handleSearch={handleSearch}
@@ -3133,7 +3325,8 @@ const CheckinOutPage: React.FC = () => {
                           error={error}
                           currentTime={currentTime}
                           hideInput={isFaceScanModeEnabled}
-                          className="lg:col-span-3"
+                          className="col-span-3"
+                          isCompact={isSquareScreen}
                         />
                       </>
                     )}
@@ -3141,7 +3334,7 @@ const CheckinOutPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="xl:col-span-4 h-full">
+            <div className="col-span-4 h-full">
               <LatestUsers 
                 latestUsers={latestUsers.filter(u => 
                   (u.type === 'student' && canScanStudents) || 

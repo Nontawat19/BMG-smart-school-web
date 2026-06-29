@@ -46,6 +46,7 @@ import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { useTheme } from "@/ThemeContext";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey, getSpecialPeriodRulePoints } from "@/utils/behaviorScoreUtils";
 
 interface Student {
   id: string;
@@ -75,6 +76,7 @@ interface BehaviorLog {
   createdBy: string;
   createdAt: any;
   academicYear: string;
+  behaviorStatus?: string;
 }
 
 interface BehaviorScoreRule {
@@ -112,11 +114,16 @@ export default function BehaviorScorePage() {
   // Multi-Selection State
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
+  // Behavior Score Config (for auto-deduction lookup)
+  const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
+
   // Modal States
   const [activeAdjustStudent, setActiveAdjustStudent] = useState<Student | null>(null);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
   const [studentHistoryLogs, setStudentHistoryLogs] = useState<BehaviorLog[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | 'manual' | 'attendance' | 'flag' | 'classroom' | 'special'>('all');
+  const [historyPage, setHistoryPage] = useState(1);
 
   // Form States for Modal
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('deduct');
@@ -162,6 +169,7 @@ export default function BehaviorScorePage() {
           const data = schoolSnap.data();
           const levels = getLevelsByRange(data.opportunityExpansionLevel);
           setAvailableLevels(levels);
+          setBehaviorScoreConfig(data.behaviorScoreConfig || null);
           const savedRules = data.behaviorScoreConfig?.rules;
           if (Array.isArray(savedRules) && savedRules.length > 0) {
             const normalizedRules = savedRules
@@ -193,6 +201,22 @@ export default function BehaviorScorePage() {
   const activeBulkRules = useMemo(
     () => behaviorRules.filter((rule) => rule.type === (bulkType === "add" ? "increase" : "decrease")),
     [behaviorRules, bulkType]
+  );
+  const filteredHistoryLogs = useMemo(() => {
+    setHistoryPage(1);
+    if (historyTypeFilter === 'manual')     return studentHistoryLogs.filter(l => l.type === 'activity_adjust');
+    if (historyTypeFilter === 'attendance') return studentHistoryLogs.filter(l => l.type === 'attendance');
+    if (historyTypeFilter === 'flag')       return studentHistoryLogs.filter(l => l.type === 'flag_ceremony');
+    if (historyTypeFilter === 'classroom')  return studentHistoryLogs.filter(l => l.type === 'classroom');
+    if (historyTypeFilter === 'special')    return studentHistoryLogs.filter(l => l.type === 'special_period');
+    return studentHistoryLogs;
+  }, [studentHistoryLogs, historyTypeFilter]);
+
+  const historyPageSize = 20;
+  const historyTotalPages = Math.ceil(filteredHistoryLogs.length / historyPageSize);
+  const pagedHistoryLogs = filteredHistoryLogs.slice(
+    (historyPage - 1) * historyPageSize,
+    historyPage * historyPageSize,
   );
 
   useEffect(() => {
@@ -251,20 +275,169 @@ export default function BehaviorScorePage() {
     setCurrentPage(1);
   }, [searchTerm, selectedClassLevel, selectedRoom, scoreFilter]);
 
-  // Fetch Logs for selected student
+  // Fetch Logs for selected student (manual + attendance + flag ceremony)
   const fetchStudentLogs = async (student: Student) => {
     if (!schoolId) return;
     setIsLoadingHistory(true);
     setStudentHistoryLogs([]);
     try {
+      // 1. Manual behavior logs
       const logsRef = collection(firestore, "school-settings", schoolId, "students", student.id, "behavior_logs");
-      const q = query(logsRef, orderBy("createdAt", "desc"), limit(50));
-      const querySnapshot = await getDocs(q);
-      const logs = querySnapshot.docs.map(doc => ({
+      const logsQuery = query(logsRef, orderBy("createdAt", "desc"), limit(200));
+      const logsSnapshot = await getDocs(logsQuery);
+      const manualLogs = logsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       } as BehaviorLog));
-      setStudentHistoryLogs(logs);
+
+      // 2. Attendance records → gate + flag ceremony auto-deductions
+      const attRef = collection(firestore, "school-settings", schoolId, "students", student.id, "attendance");
+      const attSnapshot = await getDocs(attRef);
+      const autoLogs: BehaviorLog[] = [];
+
+      attSnapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        const logDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
+
+        // Gate attendance (สาย / ขาด / กลับก่อน / ไม่ลงเวลาออก)
+        if (data.status) {
+          const attPoints = getRulePoints(behaviorScoreConfig, data.status);
+          if (attPoints > 0) {
+            const statusKey = getBehaviorAttendanceStatusKey(data.status);
+            const attTitle =
+              statusKey === 'late'       ? 'มาสาย' :
+              statusKey === 'absent'     ? 'ขาดเรียน (ไม่ลงเวลาเข้า)' :
+              statusKey === 'early'      ? 'กลับก่อนกำหนด' :
+              statusKey === 'noCheckout' ? 'ไม่ลงเวลาออก' : data.status;
+            const attNote =
+              statusKey === 'late'       ? 'ลงเวลาเข้าหลังเวลากำหนด' :
+              statusKey === 'absent'     ? 'ไม่มีการลงเวลาเข้าภายในเวลาที่กำหนด' :
+              statusKey === 'early'      ? 'ลงเวลาออกก่อนเวลาเลิกเรียน' :
+              statusKey === 'noCheckout' ? 'ลงเวลาเข้าแต่ไม่มีเวลาออกเมื่อสิ้นวัน' : '';
+
+            autoLogs.push({
+              id: `att_${docSnap.id}`,
+              type: "attendance",
+              title: attTitle,
+              category: "ลงเวลา",
+              action: 'deduct',
+              points: -attPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: attNote,
+              createdBy: "ระบบอัตโนมัติ",
+              createdAt: { toDate: () => logDate },
+              academicYear: "",
+              behaviorStatus: data.status,
+            });
+          }
+        }
+
+        // Flag ceremony (เช็คแถว)
+        const metadata = data.metadata || {};
+        const flagStatus = metadata.flagBehaviorScoreStatus || metadata.flag;
+        if (flagStatus && String(flagStatus).startsWith('flag:')) {
+          const flagPoints = getRulePoints(behaviorScoreConfig, flagStatus);
+          if (flagPoints > 0) {
+            const flagStatusKey = getBehaviorFlagCeremonyStatusKey(flagStatus);
+            const flagTitle =
+              flagStatusKey === 'noScanPresentDeduct' ? 'ไม่สแกนบัตรเข้าแถว' :
+              flagStatusKey === 'scannedAbsentDeduct' ? 'ไม่เข้าแถว' :
+              String(flagStatus).replace('flag:', '');
+            const flagNote =
+              flagStatusKey === 'noScanPresentDeduct' ? 'ครูยืนยันว่ามาเข้าแถว แต่ไม่ได้สแกนบัตร/บัตร Lock' :
+              flagStatusKey === 'scannedAbsentDeduct' ? 'มีเวลาสแกนบัตรเข้า แต่ไม่ได้เข้าร่วมกิจกรรมเข้าแถว' : '';
+
+            autoLogs.push({
+              id: `flag_${docSnap.id}`,
+              type: "flag_ceremony",
+              title: flagTitle,
+              category: "เข้าแถว",
+              action: 'deduct',
+              points: -flagPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: flagNote,
+              createdBy: "ระบบอัตโนมัติ",
+              createdAt: { toDate: () => logDate },
+              academicYear: "",
+              behaviorStatus: flagStatus,
+            });
+          }
+        }
+      });
+
+      // 3. ClassroomAttendance → เช็คชื่อรายวิชา + กิจกรรมพิเศษ
+      const classRef = collection(firestore, "school-settings", schoolId, "students", student.id, "ClassroomAttendance");
+      const classSnapshot = await getDocs(classRef);
+
+      classSnapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        const logDate = data.date?.toDate ? data.date.toDate() : new Date();
+
+        if (data.attendanceType === 'special_period') {
+          // กิจกรรมพิเศษ — เฉพาะที่เปิดหักคะแนน
+          if (!data.deductBehavior) return;
+          const spPoints = getSpecialPeriodRulePoints(behaviorScoreConfig, data.status);
+          if (spPoints > 0) {
+            const spTitle =
+              data.status === 'late'   ? 'เข้าร่วมสาย' :
+              data.status === 'absent' ? 'ไม่เข้าร่วมกิจกรรม' :
+              data.status === 'escape' ? 'หลีกเลี่ยงกิจกรรม' : data.status;
+            autoLogs.push({
+              id: `sp_${docSnap.id}`,
+              type: "special_period",
+              title: spTitle,
+              category: "กิจกรรมพิเศษ",
+              action: 'deduct',
+              points: -spPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: [data.specialPeriodTitle || data.subjectName, data.className ? `ชั้น ${data.className}` : ''].filter(Boolean).join(' · '),
+              createdBy: data.teacherName || "ระบบอัตโนมัติ",
+              createdAt: { toDate: () => logDate },
+              academicYear: data.academicYear || "",
+              behaviorStatus: data.status,
+            });
+          }
+        } else {
+          // เช็คชื่อรายวิชาปกติ
+          const classStatus = `class:${data.status}`;
+          const classPoints = getRulePoints(behaviorScoreConfig, classStatus);
+          if (classPoints > 0) {
+            const classTitle =
+              data.status === 'late'   ? 'เข้าเรียนสาย' :
+              data.status === 'absent' ? 'ขาดเรียน' :
+              data.status === 'escape' ? 'หนีเรียน' : data.status;
+            autoLogs.push({
+              id: `cls_${docSnap.id}`,
+              type: "classroom",
+              title: classTitle,
+              category: "เช็คชื่อรายวิชา",
+              action: 'deduct',
+              points: -classPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: [data.subjectName, data.period ? `คาบที่ ${data.period}` : ''].filter(Boolean).join(' · '),
+              createdBy: data.teacherName || "ระบบอัตโนมัติ",
+              createdAt: { toDate: () => logDate },
+              academicYear: data.academicYear || "",
+              behaviorStatus: data.status,
+            });
+          }
+        }
+      });
+
+      // 4. Merge and sort by date descending
+      const getTime = (log: BehaviorLog) => {
+        if (!log.createdAt) return 0;
+        if (log.createdAt.toDate) return log.createdAt.toDate().getTime();
+        if (log.createdAt.seconds) return log.createdAt.seconds * 1000;
+        return new Date(log.createdAt).getTime();
+      };
+      const allLogs = [...manualLogs, ...autoLogs].sort((a, b) => getTime(b) - getTime(a));
+
+      setStudentHistoryLogs(allLogs);
     } catch (err) {
       console.error("Error fetching student history logs:", err);
       toast.error("ไม่สามารถดึงข้อมูลประวัติได้");
@@ -275,6 +448,8 @@ export default function BehaviorScorePage() {
 
   const openHistoryModal = (student: Student) => {
     setHistoryStudent(student);
+    setHistoryTypeFilter('all');
+    setHistoryPage(1);
     fetchStudentLogs(student);
   };
 
@@ -1205,17 +1380,17 @@ export default function BehaviorScorePage() {
 
       {/* -------------------- View History Modal -------------------- */}
       {historyStudent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all">
-            
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center px-4 pt-16 pb-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col max-h-[calc(100vh-80px)]">
+
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d]">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d] shrink-0">
               <h3 className="font-extrabold text-gray-900 dark:text-white text-base flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-500" />
                 ประวัติพฤติกรรมและความประพฤติ
               </h3>
-              <button 
-                onClick={() => setHistoryStudent(null)} 
+              <button
+                onClick={() => setHistoryStudent(null)}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -1223,83 +1398,152 @@ export default function BehaviorScorePage() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
-              
-              {/* Student Summary */}
-              <div className="bg-slate-50 dark:bg-[#141519] p-3.5 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
+            <div className="px-4 py-3 overflow-y-auto flex-1 space-y-3">
+
+              {/* Student Summary — compact inline */}
+              <div className="bg-slate-50 dark:bg-[#141519] px-3 py-2.5 rounded-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <ProfileAvatar
-                    className="w-10 h-10 rounded-full"
+                    className="w-8 h-8 rounded-full shrink-0"
                     src={historyStudent.profileImageUrl || `https://ui-avatars.com/api/?name=${historyStudent.firstName}+${historyStudent.lastName}&background=random`}
                     alt=""
                   />
-                  <div>
-                    <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm">
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-gray-800 dark:text-gray-200 text-xs truncate">
                       {`${historyStudent.title}${historyStudent.firstName} ${historyStudent.lastName}`}
                     </h4>
-                    <p className="text-gray-400 text-xs mt-0.5">
-                      เลขประจำตัว: {historyStudent.studentId} | ชั้น {historyStudent.classLevel}/{historyStudent.room}
+                    <p className="text-gray-400 text-[10px] truncate">
+                      {historyStudent.studentId} · ชั้น {historyStudent.classLevel}/{historyStudent.room}
                     </p>
                   </div>
                 </div>
-                <div>
-                  {renderScoreBadge(historyStudent.behaviorScore)}
-                </div>
+                {renderScoreBadge(historyStudent.behaviorScore)}
               </div>
+
+              {/* Stats + Filter — single compact row */}
+              {!isLoadingHistory && studentHistoryLogs.length > 0 && (
+                <div className="flex items-center gap-2">
+                  {/* Stats pills */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-bold text-gray-400 bg-slate-100 dark:bg-[#141519] px-2 py-1 rounded-lg">
+                      {studentHistoryLogs.length} รายการ
+                    </span>
+                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">
+                      +{studentHistoryLogs.filter(l => l.points > 0).reduce((s, l) => s + l.points, 0)}
+                    </span>
+                    <span className="text-[10px] font-black text-rose-500 bg-rose-500/10 px-2 py-1 rounded-lg">
+                      {studentHistoryLogs.filter(l => l.points < 0).reduce((s, l) => s + l.points, 0)}
+                    </span>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="w-px h-5 bg-slate-200 dark:bg-gray-700 shrink-0" />
+
+                  {/* Type filter tabs */}
+                  <div className="flex gap-1 overflow-x-auto">
+                    {([
+                      { key: 'all',        label: 'ทั้งหมด',      count: studentHistoryLogs.length },
+                      { key: 'manual',     label: 'ครู',           count: studentHistoryLogs.filter(l => l.type === 'activity_adjust').length },
+                      { key: 'attendance', label: 'ลงเวลา',        count: studentHistoryLogs.filter(l => l.type === 'attendance').length },
+                      { key: 'flag',       label: 'เข้าแถว',       count: studentHistoryLogs.filter(l => l.type === 'flag_ceremony').length },
+                      { key: 'classroom',  label: 'รายวิชา',       count: studentHistoryLogs.filter(l => l.type === 'classroom').length },
+                      { key: 'special',    label: 'กิจกรรมพิเศษ',  count: studentHistoryLogs.filter(l => l.type === 'special_period').length },
+                    ] as const).map(tab => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setHistoryTypeFilter(tab.key)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap flex items-center gap-1 ${
+                          historyTypeFilter === tab.key
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 dark:bg-[#141519] text-gray-500 dark:text-gray-400'
+                        }`}
+                      >
+                        {tab.label}
+                        <span className={`font-black ${historyTypeFilter === tab.key ? 'opacity-70' : 'opacity-50'}`}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Logs Timeline */}
               {isLoadingHistory ? (
-                <div className="py-12 flex flex-col items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mb-2"></div>
+                <div className="py-10 flex flex-col items-center justify-center">
+                  <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-500 mb-2"></div>
                   <p className="text-gray-400 text-xs">กำลังโหลดประวัติ...</p>
                 </div>
-              ) : studentHistoryLogs.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 text-xs">
-                  <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                  ยังไม่มีประวัติคะแนนความประพฤติสำหรับนักเรียนคนนี้
+              ) : filteredHistoryLogs.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 text-xs">
+                  <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  {studentHistoryLogs.length === 0
+                    ? 'ยังไม่มีประวัติคะแนนความประพฤติสำหรับนักเรียนคนนี้'
+                    : 'ไม่มีรายการในหมวดหมู่นี้'}
                 </div>
               ) : (
-                <div className="relative border-l border-slate-200 dark:border-gray-800 ml-3.5 space-y-5 py-2">
-                  {studentHistoryLogs.map((log) => {
+                <div className="relative border-l border-slate-200 dark:border-gray-800 ml-3 space-y-2 pb-1">
+                  {pagedHistoryLogs.map((log) => {
                     const isDeduct = log.points < 0 || log.action === 'deduct';
-                    const pointText = log.points > 0 ? `+${log.points}` : log.points;
-                    
-                    return (
-                      <div key={log.id} className="relative pl-6">
-                        {/* Circle dot on line */}
-                        <span className={`absolute -left-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full ring-4 ring-white dark:ring-[#1e1f24] ${
-                          isDeduct ? 'bg-rose-500' : 'bg-emerald-500'
-                        }`} />
+                    const pointText = log.points > 0 ? `+${log.points}` : `${log.points}`;
+                    const dotColor =
+                      log.points > 0             ? 'bg-emerald-500' :
+                      log.type === 'attendance'  ? 'bg-amber-500' :
+                      log.type === 'flag_ceremony' ? 'bg-orange-500' :
+                      log.type === 'classroom'   ? 'bg-teal-500' :
+                      log.type === 'special_period' ? 'bg-violet-500' :
+                      'bg-rose-500';
+                    const typeBadgeClass =
+                      log.type === 'activity_adjust' ? 'bg-indigo-500/10 text-indigo-500' :
+                      log.type === 'attendance'      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                      log.type === 'flag_ceremony'   ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' :
+                      log.type === 'classroom'       ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400' :
+                      log.type === 'special_period'  ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' :
+                      'bg-gray-500/10 text-gray-500';
+                    const typeLabel =
+                      log.type === 'activity_adjust' ? 'ครู' :
+                      log.type === 'attendance'      ? 'ลงเวลา' :
+                      log.type === 'flag_ceremony'   ? 'เข้าแถว' :
+                      log.type === 'classroom'       ? 'รายวิชา' :
+                      log.type === 'special_period'  ? 'กิจกรรมพิเศษ' :
+                      log.category || 'ระบบ';
 
-                        {/* Log Item Content */}
-                        <div className="bg-slate-50 dark:bg-[#1a1b1f] p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                          <div className="flex justify-between items-start gap-2">
-                            <div>
-                              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-450 dark:text-gray-500">
-                                {log.category || "ระบบ"}
-                              </span>
-                              <h5 className="font-bold text-xs text-gray-800 dark:text-gray-200 mt-0.5">
-                                {log.title || "แก้ไขคะแนนความประพฤติ"}
-                              </h5>
-                            </div>
-                            <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                    return (
+                      <div key={log.id} className="relative pl-5">
+                        {/* Dot */}
+                        <span className={`absolute -left-[5px] top-[7px] h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-[#1e1f24] ${dotColor}`} />
+
+                        {/* Compact card */}
+                        <div className="bg-slate-50 dark:bg-[#1a1b1f] px-2.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                          {/* Row 1: badge + title + points */}
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${typeBadgeClass}`}>
+                              {typeLabel}
+                            </span>
+                            <span className="text-[11px] font-semibold text-gray-800 dark:text-gray-200 flex-1 truncate">
+                              {log.title || "แก้ไขคะแนนความประพฤติ"}
+                            </span>
+                            <span className={`text-[11px] font-black px-1.5 py-0.5 rounded shrink-0 ${
                               isDeduct ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'
                             }`}>
-                              {pointText} คะแนน
+                              {pointText}
                             </span>
                           </div>
 
+                          {/* Row 2: notes (if any) */}
                           {log.notes && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 bg-white dark:bg-[#141519]/40 p-2 rounded-lg border border-slate-100 dark:border-slate-850">
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 pl-0 truncate">
                               {log.notes}
                             </p>
                           )}
 
-                          <div className="mt-2.5 flex items-center justify-between text-[10px] text-gray-400">
-                            <span>โดย: {log.createdBy || "ผู้ใช้ระบบ"}</span>
+                          {/* Row 3: by + date */}
+                          <div className="flex items-center justify-between mt-1 text-[9px] text-gray-400">
+                            <span>{log.createdBy || "ผู้ใช้ระบบ"}</span>
                             <span>
-                              {log.createdAt && log.createdAt.toDate 
-                                ? log.createdAt.toDate().toLocaleString('th-TH') 
+                              {log.createdAt?.toDate
+                                ? log.createdAt.toDate().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+                                  + ' ' + log.createdAt.toDate().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
                                 : '-'}
                             </span>
                           </div>
@@ -1312,10 +1556,47 @@ export default function BehaviorScorePage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 bg-slate-50 dark:bg-[#18191d] border-t border-slate-100 dark:border-gray-800 text-right">
+            <div className="px-4 py-3 bg-slate-50 dark:bg-[#18191d] border-t border-slate-100 dark:border-gray-800 flex items-center justify-between gap-3 shrink-0">
+              {historyTotalPages > 1 ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setHistoryPage(1)}
+                    disabled={historyPage === 1}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <ChevronsLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                    disabled={historyPage === 1}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 px-2">
+                    {historyPage} / {historyTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+                    disabled={historyPage === historyTotalPages}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setHistoryPage(historyTotalPages)}
+                    disabled={historyPage === historyTotalPages}
+                    className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <ChevronsRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div />
+              )}
               <button
                 onClick={() => setHistoryStudent(null)}
-                className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"
+                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold"
               >
                 ปิดหน้าต่าง
               </button>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { firestore } from "@/firebase";
-import { collection, query, where, getDocs, documentId, doc, getDoc, Timestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, documentId, doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { RootState, AppDispatch } from "../../store";
 import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import Navbar from "../../components/Navbar/Navbar";
@@ -11,10 +11,10 @@ import { FaFilePdf, FaSearch, FaUsers, FaAngleLeft, FaAngleRight, FaAngleDoubleL
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import defaultProfile from "@/assets/profile.png";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
+import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { isActiveStudentStatus } from "@/utils/studentStatusUtils";
 
 Font.register({
@@ -57,6 +57,37 @@ interface StudentInfo {
   [key: string]: any;
 }
 
+interface CachedClassSummaryRow {
+  id: string;
+  fullName: string;
+  profileUrl?: string;
+  present: number;
+  late: number;
+  leave: number;
+  absent: number;
+  noCheckout: number;
+  official_travel: number;
+  total: number;
+  percentage: string;
+}
+
+interface CachedClassSummaryDocument {
+  rows?: CachedClassSummaryRow[];
+  meta?: {
+    classLevel?: string;
+    room?: string;
+    specialProgram?: string;
+    filterType?: string;
+    periodKey?: string;
+    academicYear?: string;
+    term?: string;
+    startDate?: string;
+    endDate?: string;
+    studentCount?: number;
+    generatedAt?: any;
+  };
+}
+
 interface StudentAttendancePdfDocumentProps {
   chunks: StudentStats[][];
   rowsPerPage: number;
@@ -73,6 +104,225 @@ interface StudentAttendancePdfDocumentProps {
   specialProgram: string;
   homeroomTeacherName: string;
 }
+
+const toFullClassLabel = (classLevel: string, room: string, specialProgram?: string) => {
+  const mapping: Record<string, string> = {
+    'ป.1': 'ประถมศึกษาปีที่ 1', 'ป.2': 'ประถมศึกษาปีที่ 2', 'ป.3': 'ประถมศึกษาปีที่ 3',
+    'ป.4': 'ประถมศึกษาปีที่ 4', 'ป.5': 'ประถมศึกษาปีที่ 5', 'ป.6': 'ประถมศึกษาปีที่ 6',
+    'ม.1': 'มัธยมศึกษาปีที่ 1', 'ม.2': 'มัธยมศึกษาปีที่ 2', 'ม.3': 'มัธยมศึกษาปีที่ 3',
+    'ม.4': 'มัธยมศึกษาปีที่ 4', 'ม.5': 'มัธยมศึกษาปีที่ 5', 'ม.6': 'มัธยมศึกษาปีที่ 6',
+    'อ.1': 'อนุบาลปีที่ 1', 'อ.2': 'อนุบาลปีที่ 2', 'อ.3': 'อนุบาลปีที่ 3',
+  };
+  const base = mapping[classLevel] || classLevel;
+  const label = room ? `${base}/${room}` : base;
+  return specialProgram ? `${label} (${specialProgram})` : label;
+};
+
+const formatThaiDateShort = (isoDate: string) => {
+  if (!isoDate) return '';
+  const date = new Date(`${isoDate}T12:00:00`);
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const normalizeSummaryRow = (row: any): CachedClassSummaryRow => ({
+  id: String(row?.id || ""),
+  fullName: String(row?.fullName || "-"),
+  profileUrl: row?.profileUrl || "",
+  present: Number(row?.present || 0),
+  late: Number(row?.late || 0),
+  leave: Number(row?.leave || 0),
+  absent: Number(row?.absent || 0),
+  noCheckout: Number(row?.noCheckout || 0),
+  official_travel: Number(row?.official_travel || row?.officialTravel || 0),
+  total: Number(row?.total || 0),
+  percentage: String(row?.percentage || "0.00"),
+});
+
+const buildClassSummaryCacheKey = ({
+  filterType,
+  periodKey,
+  classLevel,
+  room,
+  specialProgram,
+}: {
+  filterType: "daily" | "weekly" | "monthly" | "term" | "yearly";
+  periodKey: string;
+  classLevel: string;
+  room: string;
+  specialProgram?: string;
+}) => {
+  const normalizedRoom = room || "all";
+  const normalizedProgram = specialProgram?.trim() ? specialProgram.trim() : "general";
+  return [filterType, periodKey, classLevel || "all", normalizedRoom, normalizedProgram]
+    .map((part) => String(part).replace(/[^\w-]+/g, "_"))
+    .join("__");
+};
+
+const landscapePdfStyles = StyleSheet.create({
+  page: {
+    paddingTop: 34,
+    paddingHorizontal: 44,
+    paddingBottom: 26,
+    fontFamily: 'TH Sarabun PSK',
+    fontSize: 12,
+    color: '#000',
+    backgroundColor: '#fff',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderBottomWidth: 0.8,
+    borderBottomColor: '#5f5f5f',
+    paddingBottom: 2,
+    marginBottom: 8,
+  },
+  topText: { fontSize: 12.5, fontWeight: 'bold' },
+  logo: { position: 'absolute', top: 55, left: 48, width: 45, height: 52, objectFit: 'contain' },
+  titleBlock: { alignItems: 'center', marginTop: 26, marginBottom: 24, lineHeight: 1.2 },
+  reportTitle: { fontSize: 19, fontWeight: 'bold', marginBottom: 5 },
+  reportSubtitle: { fontSize: 14.5, marginBottom: 2 },
+  table: { borderTopWidth: 0.9, borderLeftWidth: 0.9, borderColor: '#111' },
+  row: { flexDirection: 'row', minHeight: 18.4 },
+  headerRow: { minHeight: 78, backgroundColor: '#cfcfcf' },
+  cell: { borderRightWidth: 0.75, borderBottomWidth: 0.75, borderColor: '#111', justifyContent: 'center', paddingHorizontal: 2 },
+  centerCell: { alignItems: 'center', textAlign: 'center' },
+  leftCell: { alignItems: 'flex-start', textAlign: 'left', paddingLeft: 5 },
+  headerText: { fontSize: 13, fontWeight: 'bold' },
+  bodyText: { fontSize: 11.6, lineHeight: 1.1 },
+  boldText: { fontSize: 12.8, fontWeight: 'bold' },
+  rotatedText: { width: 74, fontSize: 10.5, fontWeight: 'bold', textAlign: 'center', transform: 'rotate(-90deg)' },
+  nameBodyText: { fontSize: 11.8, lineHeight: 1.1, textAlign: 'center' },
+  pageNumber: { position: 'absolute', bottom: 15, right: 30, fontSize: 9 },
+});
+
+const summaryHeaderLabels = ['ยอดรวมปกติ', 'ยอดรวมขาดเรียน', 'ยอดรวมสาย', 'ยอดรวมลา', 'ยอดรวมทั้งหมด'];
+
+interface LandscapePdfProps {
+  schoolName: string;
+  schoolLogo?: string;
+  classLevel: string;
+  room: string;
+  specialProgram?: string;
+  startDate: string;
+  endDate: string;
+  semester: string;
+  academicYear: string;
+  students: StudentInfo[];
+  workingDates: string[];
+  attendanceMap: Record<string, Record<string, string>>;
+}
+
+const LANDSCAPE_ROWS_PER_PAGE = 20;
+
+const LandscapeClassAttendancePdfDocument: React.FC<LandscapePdfProps> = ({
+  schoolName, schoolLogo, classLevel, room, specialProgram,
+  startDate, endDate, semester, academicYear,
+  students, workingDates, attendanceMap,
+}) => {
+  const pageContentWidth = 754;
+  const indexWidth = 25;
+  const codeWidth = 58;
+  const summaryColWidth = 34;
+  const staticWidth = indexWidth + codeWidth + (summaryColWidth * 5);
+  const dateColWidth = Math.max(16, Math.min(26, (pageContentWidth - staticWidth - 160) / Math.max(workingDates.length, 1)));
+  const nameWidth = pageContentWidth - indexWidth - codeWidth - (dateColWidth * workingDates.length) - (summaryColWidth * 5);
+  const classLabel = toFullClassLabel(classLevel, room, specialProgram);
+  const totalPages = Math.ceil(students.length / LANDSCAPE_ROWS_PER_PAGE);
+
+  const chunks: StudentInfo[][] = [];
+  for (let i = 0; i < students.length; i += LANDSCAPE_ROWS_PER_PAGE) {
+    chunks.push(students.slice(i, i + LANDSCAPE_ROWS_PER_PAGE));
+  }
+
+  const renderHeaderRow = () => (
+    <View style={[landscapePdfStyles.row, landscapePdfStyles.headerRow]}>
+      <View style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: indexWidth }]}>
+        <Text style={landscapePdfStyles.headerText}>#</Text>
+      </View>
+      <View style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: codeWidth }]}>
+        <Text style={landscapePdfStyles.rotatedText}>รหัสนักเรียน</Text>
+      </View>
+      <View style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: nameWidth }]}>
+        <Text style={landscapePdfStyles.headerText}>ชื่อ-นามสกุล</Text>
+      </View>
+      {workingDates.map(date => (
+        <View key={date} style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: dateColWidth }]}>
+          <Text style={landscapePdfStyles.rotatedText}>{formatThaiDateShort(date)}</Text>
+        </View>
+      ))}
+      {summaryHeaderLabels.map(label => (
+        <View key={label} style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: summaryColWidth }]}>
+          <Text style={landscapePdfStyles.rotatedText}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <Document>
+      {chunks.map((chunk, pageIdx) => (
+        <Page key={pageIdx} size="A4" orientation="landscape" style={landscapePdfStyles.page}>
+          <View style={landscapePdfStyles.topBar}>
+            <Text style={landscapePdfStyles.topText}>{schoolName}</Text>
+            <Text style={landscapePdfStyles.topText}>รายงานเช็คมาเรียนรายห้อง</Text>
+          </View>
+
+          {pageIdx === 0 && schoolLogo && <Image src={schoolLogo} style={landscapePdfStyles.logo} />}
+
+          {pageIdx === 0 && (
+            <View style={landscapePdfStyles.titleBlock}>
+              <Text style={landscapePdfStyles.reportTitle}>รายงานเช็คมาเรียนรายห้อง</Text>
+              <Text style={landscapePdfStyles.reportSubtitle}>{schoolName}</Text>
+              <Text style={landscapePdfStyles.reportSubtitle}>ปีการศึกษา {semester}/{academicYear}{'     '}ระดับชั้น {classLabel}</Text>
+              <Text style={landscapePdfStyles.reportSubtitle}>ช่วงระหว่างวันที่ {formatThaiDateShort(startDate)} - {formatThaiDateShort(endDate)}</Text>
+            </View>
+          )}
+
+          <View style={landscapePdfStyles.table}>
+            {renderHeaderRow()}
+            {chunk.map((student, rowIdx) => {
+              const globalIdx = pageIdx * LANDSCAPE_ROWS_PER_PAGE + rowIdx;
+              const att = attendanceMap[student.id] || {};
+              let present = 0, absent = 0, late = 0, leave = 0;
+              workingDates.forEach(date => {
+                const sym = att[date] || 'ข';
+                if (sym === 'ป') present++;
+                else if (sym === 'ข') absent++;
+                else if (sym === 'ส') late++;
+                else if (sym === 'ล') leave++;
+              });
+              return (
+                <View key={student.id} style={landscapePdfStyles.row}>
+                  <View style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: indexWidth }]}>
+                    <Text style={landscapePdfStyles.bodyText}>{globalIdx + 1}</Text>
+                  </View>
+                  <View style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: codeWidth }]}>
+                    <Text style={landscapePdfStyles.bodyText}>{student.studentNumber || '-'}</Text>
+                  </View>
+                  <View style={[landscapePdfStyles.cell, landscapePdfStyles.leftCell, { width: nameWidth }]}>
+                    <Text style={landscapePdfStyles.nameBodyText}>{student.fullName}</Text>
+                  </View>
+                  {workingDates.map(date => (
+                    <View key={date} style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: dateColWidth }]}>
+                      <Text style={landscapePdfStyles.bodyText}>{att[date] || 'ข'}</Text>
+                    </View>
+                  ))}
+                  {[present, absent, late, leave, workingDates.length].map((val, i) => (
+                    <View key={i} style={[landscapePdfStyles.cell, landscapePdfStyles.centerCell, { width: summaryColWidth }]}>
+                      <Text style={landscapePdfStyles.boldText}>{val}</Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+
+          <Text style={landscapePdfStyles.pageNumber}>{`หน้า ${pageIdx + 1} / ${totalPages}`}</Text>
+        </Page>
+      ))}
+    </Document>
+  );
+};
 
 const pdfStyles = StyleSheet.create({
   page: {
@@ -317,6 +567,8 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
 
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
   const [excludedDates, setExcludedDates] = useState<{ date: string, reason: string }[]>([]);
+  const [dailyWorkingDates, setDailyWorkingDates] = useState<string[]>([]);
+  const [dailyAttMap, setDailyAttMap] = useState<Record<string, Record<string, string>>>({});
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [termCounts, setTermCounts] = useState<{ term1: number, term2: number }>({ term1: 0, term2: 0 });
@@ -571,8 +823,81 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
       }
 
       let newStats: StudentStats[] = [];
+      let cacheDocId = "";
+      let cachePeriodKey = "";
+
+      const tryLoadClassSummaryCache = async () => {
+        if (!cacheDocId) return null;
+        const cacheRef = doc(firestore, "school-settings", schoolId, "class_attendance_summary", cacheDocId);
+        const cacheSnap = await getDoc(cacheRef);
+        if (!cacheSnap.exists()) return null;
+        const cacheData = cacheSnap.data() as CachedClassSummaryDocument;
+        if (!Array.isArray(cacheData.rows)) return null;
+        const rows = cacheData.rows.map(normalizeSummaryRow);
+        const currentStudentIds = new Set(students.map((student) => student.id));
+        if (rows.length !== currentStudentIds.size) return null;
+        if (rows.some((row) => !currentStudentIds.has(row.id))) return null;
+        return rows;
+      };
+
+      const saveClassSummaryCache = async (rows: StudentStats[]) => {
+        if (!cacheDocId) return;
+        try {
+          const cacheRef = doc(firestore, "school-settings", schoolId, "class_attendance_summary", cacheDocId);
+          await setDoc(cacheRef, {
+            rows: rows.map((row) => ({
+              id: row.id,
+              fullName: row.fullName,
+              profileUrl: row.profileUrl || "",
+              present: row.present,
+              late: row.late,
+              leave: row.leave,
+              absent: row.absent,
+              noCheckout: row.noCheckout,
+              official_travel: row.official_travel,
+              total: row.total,
+              percentage: row.percentage,
+            })),
+            meta: {
+              classLevel: selectedClassLevel || "",
+              room: selectedRoom || "",
+              specialProgram: selectedSpecialProgram || "",
+              filterType,
+              periodKey: cachePeriodKey,
+              academicYear: currentAcademicYear || "",
+              term: filterType === "term" ? selectedTerm : "",
+              startDate: startStr,
+              endDate: endStr,
+              studentCount: students.length,
+              generatedAt: Timestamp.now(),
+            },
+          }, { merge: true });
+        } catch (cacheError) {
+          console.warn("Unable to write class attendance summary cache:", cacheError);
+        }
+      };
 
       if (filterType === 'custom' || filterType === 'daily') {
+        if (filterType === "daily") {
+          cachePeriodKey = selectedDate;
+          cacheDocId = buildClassSummaryCacheKey({
+            filterType: "daily",
+            periodKey: cachePeriodKey,
+            classLevel: selectedClassLevel,
+            room: selectedRoom,
+            specialProgram: selectedSpecialProgram,
+          });
+          const cachedRows = await tryLoadClassSummaryCache();
+          if (cachedRows) {
+            setDailyWorkingDates([]);
+            setDailyAttMap({});
+            setExcludedDates([]);
+            setSummaryData(cachedRows);
+            setLoading(false);
+            return;
+          }
+        }
+
         const promises = students.map(async (student) => {
           const ref = collection(firestore, "school-settings", schoolId, "students", student.id, "attendance");
           const q = query(ref, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
@@ -639,8 +964,31 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
             total: workingDates.length, percentage
           };
         });
+        // Build per-student daily attendance map for landscape PDF
+        const attMap: Record<string, Record<string, string>> = {};
+        students.forEach(student => {
+          attMap[student.id] = {};
+          const studentRecs = records.filter(r => r.userId === student.id);
+          workingDates.forEach(date => {
+            const rec = studentRecs.find(r => r.date === date);
+            const s = rec?.status || '';
+            if (['มา', 'OnTime', 'กลับก่อน', 'ไม่ลงเวลาออก', 'NoCheckout'].includes(s)) attMap[student.id][date] = 'ป';
+            else if (['สาย', 'Late'].includes(s)) attMap[student.id][date] = 'ส';
+            else if (['ลา', 'ล', 'Leave'].includes(s)) attMap[student.id][date] = 'ล';
+            else if (['ไปราชการ', 'official_travel', 'OfficialTravel'].includes(s)) attMap[student.id][date] = 'ร';
+            else attMap[student.id][date] = 'ข';
+          });
+        });
+        setDailyWorkingDates([...workingDates]);
+        setDailyAttMap(attMap);
         setExcludedDates(excluded);
+
+        if (filterType === "daily") {
+          await saveClassSummaryCache(newStats);
+        }
       } else {
+        setDailyWorkingDates([]);
+        setDailyAttMap({});
         let collectionName = "", docId = "";
         if (filterType === 'weekly') { collectionName = 'Weeksummary'; docId = selectedWeek; }
         else if (filterType === 'monthly') { collectionName = 'Monthsummary'; docId = selectedMonth; }
@@ -648,6 +996,23 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
         else if (filterType === 'term') {
           collectionName = 'Semestersummary';
           docId = getSemesterKey(currentAcademicYear, selectedTerm);
+        }
+        cachePeriodKey = docId;
+
+        cacheDocId = buildClassSummaryCacheKey({
+          filterType: filterType as "weekly" | "monthly" | "term" | "yearly",
+          periodKey: cachePeriodKey,
+          classLevel: selectedClassLevel,
+          room: selectedRoom,
+          specialProgram: selectedSpecialProgram,
+        });
+
+        const cachedRows = await tryLoadClassSummaryCache();
+        if (cachedRows) {
+          setExcludedDates([]);
+          setSummaryData(cachedRows);
+          setLoading(false);
+          return;
         }
 
         const promises = students.map(async (student) => {
@@ -661,7 +1026,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           const present = data.present || 0;
           const late = data.late || 0;
           const leave = data.leave || 0;
-          const absent = data.absent || 0;
+          const absent = Math.max(0, data.absent || 0);
           const officialTravel = data.officialTravel || 0;
           const noCheckout = data.noCheckout || 0;
           const total = present + late + leave + absent + officialTravel + noCheckout;
@@ -675,6 +1040,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           };
         });
         setExcludedDates([]);
+        await saveClassSummaryCache(newStats);
       }
 
       setSummaryData(newStats);
@@ -769,32 +1135,56 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
       dateText = `ช่วงวันที่ ${s} - ${e}`;
     }
 
-    const rowsPerPage = 20;
-    const chunks: StudentStats[][] = [];
-    for (let i = 0; i < filteredData.length; i += rowsPerPage) {
-      chunks.push(filteredData.slice(i, i + rowsPerPage));
+    const useLandscape = (filterType === 'daily' || filterType === 'custom') && dailyWorkingDates.length > 0;
+
+    let blob: Blob;
+    if (useLandscape) {
+      const pdfStartDate = filterType === 'daily' ? selectedDate : startDate;
+      const pdfEndDate = filterType === 'daily' ? selectedDate : endDate;
+      const landscapeDoc = (
+        <LandscapeClassAttendancePdfDocument
+          schoolName={schoolName}
+          schoolLogo={logoBase64}
+          classLevel={selectedClassLevel}
+          room={selectedRoom}
+          specialProgram={selectedSpecialProgram}
+          startDate={pdfStartDate}
+          endDate={pdfEndDate}
+          semester={selectedTerm}
+          academicYear={currentAcademicYear}
+          students={students}
+          workingDates={dailyWorkingDates}
+          attendanceMap={dailyAttMap}
+        />
+      );
+      blob = await pdf(landscapeDoc).toBlob();
+    } else {
+      const rowsPerPage = 20;
+      const chunks: StudentStats[][] = [];
+      for (let i = 0; i < filteredData.length; i += rowsPerPage) {
+        chunks.push(filteredData.slice(i, i + rowsPerPage));
+      }
+      const portraitDoc = (
+        <StudentAttendancePdfDocument
+          chunks={chunks}
+          rowsPerPage={rowsPerPage}
+          schoolName={schoolName}
+          schoolAffiliation={schoolAffiliation}
+          schoolLogo={logoBase64}
+          directorName={directorName}
+          dateText={dateText}
+          filterType={filterType}
+          totalItems={filteredData.length}
+          reportPrintedAt={new Date().toLocaleString('th-TH')}
+          classLevel={selectedClassLevel}
+          room={selectedRoom}
+          specialProgram={selectedSpecialProgram}
+          homeroomTeacherName={homeroomTeacherName}
+        />
+      );
+      blob = await pdf(portraitDoc).toBlob();
     }
 
-    const doc = (
-      <StudentAttendancePdfDocument
-        chunks={chunks}
-        rowsPerPage={rowsPerPage}
-        schoolName={schoolName}
-        schoolAffiliation={schoolAffiliation}
-        schoolLogo={logoBase64}
-        directorName={directorName}
-        dateText={dateText}
-        filterType={filterType}
-        totalItems={filteredData.length}
-        reportPrintedAt={new Date().toLocaleString('th-TH')}
-        classLevel={selectedClassLevel}
-        room={selectedRoom}
-        specialProgram={selectedSpecialProgram}
-        homeroomTeacherName={homeroomTeacherName}
-      />
-    );
-
-    const blob = await pdf(doc).toBlob();
     saveAs(blob, `รายงานการมาเรียนนักเรียน_${selectedClassLevel}-${selectedRoom}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -804,7 +1194,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
           <div className="space-y-1 text-left">
             <div className="flex items-center gap-3">
-              <BackButton to="/academic/hub/personnel_info" />
+              <BackButton to="/academic/hub/attendance" />
               <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
                 <FaUsers className="text-indigo-600 dark:text-indigo-400" size={24} />
               </div>
@@ -1049,14 +1439,11 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
                     <tr key={record.id} className="hover:bg-gray-50/50 dark:hover:bg-[#323338]/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <div className="relative">
-                            <img
-                              src={record.profileUrl || defaultProfile}
-                              alt={record.fullName}
-                              className="w-11 h-11 rounded-xl object-cover ring-2 ring-gray-100 dark:ring-gray-700 shadow-sm"
-                              onError={(e) => { (e.target as HTMLImageElement).src = defaultProfile; }}
-                            />
-                          </div>
+                          <ProfileAvatar
+                            className="h-11 w-11"
+                            src={record.profileUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(record.fullName)}&background=random`}
+                            alt={record.fullName}
+                          />
                           <div>
                             <p className="font-bold text-gray-900 dark:text-white text-[15px] leading-tight">{record.fullName}</p>
                             <p className="text-[11px] text-gray-400 dark:text-gray-500 uppercase tracking-tighter mt-1 font-semibold">นักเรียน</p>

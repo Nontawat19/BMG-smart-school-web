@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BackButton from '@/components/Shared/BackButton';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore as db } from '@/firebase';
@@ -11,7 +11,7 @@ import { CLASS_MAPPING, getClassOptionsBySchoolSettings } from '@/utils/schoolUt
 import { isStudyingStudent } from '@/utils/studentStatusUtils';
 import {
   BookOpenCheck, Check, ChevronLeft, ChevronRight, ClipboardList,
-  RefreshCw, Save, Search, Trash2, Users, X,
+  RefreshCw, Search, Trash2, Users, X,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import Swal from 'sweetalert2';
@@ -60,6 +60,18 @@ interface SchoolSettings {
   schoolType?: string;
   opportunityExpansionLevel?: string;
 }
+
+const PREFIX_MAP: Record<string, string> = {
+  'ด.ช.': 'เด็กชาย', 'ดช.': 'เด็กชาย', 'ด.ช': 'เด็กชาย',
+  'ด.ญ.': 'เด็กหญิง', 'ดญ.': 'เด็กหญิง', 'ด.ญ': 'เด็กหญิง',
+  'น.ส.': 'นางสาว', 'นส.': 'นางสาว', 'น.ส': 'นางสาว',
+};
+
+const normalizePrefix = (raw?: string): string => {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  return PREFIX_MAP[trimmed] ?? trimmed;
+};
 
 const getLevelLabel = (id?: string): string => {
   const map: Record<string, string> = {
@@ -140,6 +152,10 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [membersLoading, setMembersLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle');
+
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLoadingMembersRef = useRef(false);
 
   useEffect(() => {
     if (schoolId && calendarState.status === 'idle') dispatch(fetchCalendar(schoolId) as any);
@@ -287,7 +303,9 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
     scope: LearnerActivityTeacherScope | null = selectedTeacherScope
   ) => {
     if (!schoolId || !activity) { setSelectedStudents([]); return; }
+    isLoadingMembersRef.current = true;
     setMembersLoading(true);
+    setAutoSaveStatus('idle');
     try {
       const snap = await getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', activity.id, 'members'));
       const ids = snap.docs
@@ -309,6 +327,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
       Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดรายชื่อนักเรียนในกิจกรรมได้', 'error');
     } finally {
       setMembersLoading(false);
+      setTimeout(() => { isLoadingMembersRef.current = false; }, 100);
     }
   };
 
@@ -324,6 +343,17 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
   useEffect(() => {
     if (selectedActivity) loadMembers(selectedActivity, activeYear, selectedTeacherScope);
   }, [activeYear, selectedActivity, selectedTeacherScope]);
+
+  // Auto-save: triggers 1.5s after selectedStudents changes (user actions only, not loads)
+  useEffect(() => {
+    if (isLoadingMembersRef.current || !selectedActivity || saving) return;
+    setAutoSaveStatus('pending');
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave(true);
+    }, 1500);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  }, [selectedStudents]);
 
   const enrollSelected = () => {
     if (!selectedActivity || selectedSourceIds.length === 0) return;
@@ -353,13 +383,10 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (silent = false) => {
     if (!schoolId || !selectedActivity || saving) return;
-    if (teacherScopes.length > 0 && !selectedTeacherScope) {
-      Swal.fire('กรุณาเลือกครูผู้รับผิดชอบ', 'เลือกครูด้านซ้ายก่อนบันทึก', 'warning');
-      return;
-    }
     setSaving(true);
+    setAutoSaveStatus('saving');
     try {
       const membersRef = collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members');
       const existingSnap = await getDocs(membersRef);
@@ -411,9 +438,14 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
         updatedAt: serverTimestamp(),
       });
       await batch.commit();
-      Swal.fire({ icon: 'success', title: 'บันทึกรายชื่อนักเรียนสำเร็จ', timer: 1400, showConfirmButton: false });
+      setAutoSaveStatus('saved');
+      if (!silent) {
+        Swal.fire({ icon: 'success', title: 'บันทึกรายชื่อนักเรียนสำเร็จ', timer: 1400, showConfirmButton: false });
+      }
+      setTimeout(() => setAutoSaveStatus('idle'), 2500);
     } catch {
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกรายชื่อนักเรียนได้', 'error');
+      setAutoSaveStatus('idle');
+      if (!silent) Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกรายชื่อนักเรียนได้', 'error');
     } finally {
       setSaving(false);
     }
@@ -443,7 +475,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               <div>
                 <h1 className="text-base font-black leading-none">จัดรายชื่อนักเรียนกิจกรรมพัฒนาผู้เรียน</h1>
                 <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-black/50 dark:text-white/50">
-                  เลือกกิจกรรม → กำหนดนักเรียน → บันทึก
+                  เลือกกิจกรรม → กำหนดนักเรียน → บันทึกอัตโนมัติ
                 </p>
               </div>
             </div>
@@ -472,19 +504,21 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Save button */}
-            <button
-              onClick={handleSave}
-              disabled={!selectedActivity || saving}
-              className={`flex h-10 items-center gap-2 rounded-xl border px-5 text-sm font-black transition-all ${
-                selectedActivity
-                  ? 'border-emerald-500/30 bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 hover:-translate-y-0.5 hover:bg-emerald-500'
-                  : 'border-slate-200 bg-slate-200 text-slate-400 dark:border-white/5 dark:bg-white/5 dark:text-slate-500'
-              } disabled:opacity-50`}
-            >
-              {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} className={selectedActivity ? 'animate-bounce' : ''} />}
-              {selectedActivity ? `บันทึก (${selectedStudents.length} คน)` : 'บันทึก'}
-            </button>
+            {/* Auto-save status indicator */}
+            <div className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[11px] font-black dark:border-white/5 dark:bg-white/5">
+              {autoSaveStatus === 'saving' && (
+                <><RefreshCw size={13} className="animate-spin text-indigo-400" /><span className="text-indigo-400">กำลังบันทึก...</span></>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <><Check size={13} className="text-emerald-500" /><span className="text-emerald-500">บันทึกแล้ว</span></>
+              )}
+              {autoSaveStatus === 'pending' && (
+                <><div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /><span className="text-amber-400">รอบันทึก...</span></>
+              )}
+              {autoSaveStatus === 'idle' && (
+                <span className="text-slate-300 dark:text-white/20">บันทึกอัตโนมัติ</span>
+              )}
+            </div>
           </div>
         </header>
 
@@ -646,73 +680,109 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               )}
             </div>
 
-            {/* Table header */}
-            <div className="grid grid-cols-12 gap-1 shrink-0 border-b border-slate-200 bg-slate-100 px-4 py-2 text-[9px] font-black uppercase tracking-tighter text-slate-500 dark:border-white/5 dark:bg-white/[0.03] dark:text-white/60 sticky top-0 z-10 shadow-sm">
-              <div
-                className="col-span-1 flex cursor-pointer items-center gap-1 hover:text-emerald-500 transition-colors group"
-                onClick={toggleSelectAllEnrolled}
-              >
-                <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
-                  selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0
-                    ? 'border-emerald-500 bg-white dark:bg-[#161a27]'
-                    : 'border-slate-500 group-hover:border-emerald-500'
-                }`}>
-                  {selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0 && (
-                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                  )}
-                </div>
-              </div>
-              <div className="col-span-2">ชั้น/ห้อง</div>
-              <div className="col-span-1">เลขที่</div>
-              <div className="col-span-2">รหัส</div>
-              <div className="col-span-6">ชื่อ-นามสกุล</div>
-            </div>
+            {/* Table + Group sidebar */}
+            <div className="flex flex-1 overflow-hidden">
 
-            {/* Table body */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-              {!selectedActivity ? (
-                <div className="flex flex-col items-center justify-center h-full opacity-10">
-                  <ClipboardList size={40} className="mb-2" />
-                  <p className="text-xs font-black uppercase">เลือกกิจกรรมก่อน</p>
-                </div>
-              ) : membersLoading ? (
-                <div className="flex items-center justify-center h-32 text-slate-400">
-                  <RefreshCw size={18} className="animate-spin mr-2" />
-                  <span className="text-xs font-bold">กำลังโหลด...</span>
-                </div>
-              ) : enrolledStudents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full opacity-10">
-                  <Users size={40} className="mb-2" />
-                  <p className="text-xs font-black uppercase">ยังไม่มีนักเรียน</p>
-                </div>
-              ) : enrolledStudents.map(s => {
-                const isSel = selectedEnrolledIds.includes(s.id);
-                return (
+              {/* Table content */}
+              <div className="flex flex-1 flex-col overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-12 gap-1 shrink-0 border-b border-slate-200 bg-slate-100 px-4 py-2 text-[9px] font-black uppercase tracking-tighter text-slate-500 dark:border-white/5 dark:bg-white/[0.03] dark:text-white/60 sticky top-0 z-10 shadow-sm">
                   <div
-                    key={s.id}
-                    onClick={() => setSelectedEnrolledIds(prev => isSel ? prev.filter(x => x !== s.id) : [...prev, s.id])}
-                    className={`grid cursor-pointer grid-cols-12 gap-1 items-center border-b px-4 py-1.5 text-[11px] transition-all hover:bg-slate-50 dark:border-white/[0.02] dark:hover:bg-white/[0.03] ${
-                      isSel ? 'bg-emerald-600/10 dark:bg-emerald-500/10' : ''
-                    }`}
+                    className="col-span-1 flex cursor-pointer items-center gap-1 hover:text-emerald-500 transition-colors group"
+                    onClick={toggleSelectAllEnrolled}
                   >
-                    <div className="col-span-1 flex justify-center">
-                      <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
-                        isSel ? 'border-emerald-500 bg-white dark:bg-[#161a27]' : 'border-slate-600'
-                      }`}>
-                        {isSel && <div className="h-2 w-2 rounded-full bg-emerald-500" />}
-                      </div>
-                    </div>
-                    <div className="col-span-2 font-bold text-slate-700 dark:text-white/80">
-                      {getLevelLabel(s.classLevel)}/{s.room || '-'}
-                    </div>
-                    <div className="col-span-1 font-black">{s.studentNumber || s.number || '-'}</div>
-                    <div className="col-span-2 font-mono font-bold text-slate-500 dark:text-white/60">{s.studentId || '-'}</div>
-                    <div className="col-span-6 font-bold">
-                      {s.title || s.prefix || ''}{s.firstName || ''} {s.lastName || ''}
+                    <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                      selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0
+                        ? 'border-emerald-500 bg-white dark:bg-[#161a27]'
+                        : 'border-slate-500 group-hover:border-emerald-500'
+                    }`}>
+                      {selectedEnrolledIds.length === enrolledStudents.length && enrolledStudents.length > 0 && (
+                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                      )}
                     </div>
                   </div>
-                );
-              })}
+                  <div className="col-span-2">ชั้น/ห้อง</div>
+                  <div className="col-span-1">เลขที่</div>
+                  <div className="col-span-2">รหัส</div>
+                  <div className="col-span-6">ชื่อ-นามสกุล</div>
+                </div>
+
+                {/* Table body */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  {!selectedActivity ? (
+                    <div className="flex flex-col items-center justify-center h-full opacity-10">
+                      <ClipboardList size={40} className="mb-2" />
+                      <p className="text-xs font-black uppercase">เลือกกิจกรรมก่อน</p>
+                    </div>
+                  ) : membersLoading ? (
+                    <div className="flex items-center justify-center h-32 text-slate-400">
+                      <RefreshCw size={18} className="animate-spin mr-2" />
+                      <span className="text-xs font-bold">กำลังโหลด...</span>
+                    </div>
+                  ) : enrolledStudents.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full opacity-10">
+                      <Users size={40} className="mb-2" />
+                      <p className="text-xs font-black uppercase">ยังไม่มีนักเรียน</p>
+                    </div>
+                  ) : enrolledStudents.map(s => {
+                    const isSel = selectedEnrolledIds.includes(s.id);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => setSelectedEnrolledIds(prev => isSel ? prev.filter(x => x !== s.id) : [...prev, s.id])}
+                        className={`grid cursor-pointer grid-cols-12 gap-1 items-center border-b px-4 py-1.5 text-[11px] transition-all hover:bg-slate-50 dark:border-white/[0.02] dark:hover:bg-white/[0.03] ${
+                          isSel ? 'bg-emerald-600/10 dark:bg-emerald-500/10' : ''
+                        }`}
+                      >
+                        <div className="col-span-1 flex justify-center">
+                          <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                            isSel ? 'border-emerald-500 bg-white dark:bg-[#161a27]' : 'border-slate-600'
+                          }`}>
+                            {isSel && <div className="h-2 w-2 rounded-full bg-emerald-500" />}
+                          </div>
+                        </div>
+                        <div className="col-span-2 font-bold text-slate-700 dark:text-white/80">
+                          {getLevelLabel(s.classLevel)}/{s.room || '-'}
+                        </div>
+                        <div className="col-span-1 font-black">{s.studentNumber || s.number || '-'}</div>
+                        <div className="col-span-2 font-mono font-bold text-slate-500 dark:text-white/60">{s.studentId || '-'}</div>
+                        <div className="col-span-6 font-bold">
+                          {normalizePrefix(s.title || s.prefix)}{s.firstName || ''} {s.lastName || ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Group sidebar — right side of enrolled column */}
+              <div className="w-16 shrink-0 flex flex-col border-l border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                <div className="py-2 text-center border-b border-slate-200 dark:border-white/5 font-black text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</div>
+                <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar no-scrollbar">
+                  {Array.from({ length: 20 }, (_, i) => {
+                    const groupNum = i + 1;
+                    const scope = teacherScopes[i];
+                    const isActive = !!scope && selectedTeacherScopeKey === scope.key;
+                    return (
+                      <button
+                        key={groupNum}
+                        onClick={() => { if (scope) { setSelectedTeacherScopeKey(scope.key); setActiveRoom('ALL'); } }}
+                        title={scope?.teacherName || `กลุ่ม ${groupNum}`}
+                        className={`flex-1 w-full py-1 text-[10px] font-black transition-all border-b border-slate-100 dark:border-white/5 ${
+                          isActive
+                            ? 'bg-indigo-600 text-white shadow-inner'
+                            : scope
+                            ? 'text-slate-400 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer'
+                            : 'text-slate-200 dark:text-slate-800 cursor-default'
+                        }`}
+                      >
+                        {groupNum}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -880,7 +950,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
                         <div className="col-span-1 font-black">{s.studentNumber || s.number || '-'}</div>
                         <div className="col-span-8 font-bold">
                           <span className="mr-1 font-mono text-[9px] text-slate-400 dark:text-white/40">[{s.studentId}]</span>
-                          {s.title || s.prefix || ''}{s.firstName || ''} {s.lastName || ''}
+                          {normalizePrefix(s.title || s.prefix)}{s.firstName || ''} {s.lastName || ''}
                         </div>
                       </div>
                     );
