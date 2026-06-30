@@ -1,11 +1,6 @@
 @echo off
 chcp 65001 >nul
 title BMG SmartSchool - CCTV Local Bridge
-echo ===================================================
-echo   BMG SmartSchool - CCTV Local Bridge
-echo   ติดตั้งครั้งเดียว หลังจากนี้รันอัตโนมัติทุกครั้ง
-echo ===================================================
-echo.
 
 cd /d "%~dp0"
 
@@ -17,11 +12,14 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-python install_autostart.py
-if %errorlevel% neq 0 (
-    echo.
-    echo [ERROR] ติดตั้งไม่สำเร็จ ลองคลิกขวาแล้วเลือก "Run as administrator"
-)
+echo ====================================================
+echo   BMG SmartSchool - CCTV Local Bridge
+echo   อย่าปิดหน้าต่างนี้ขณะใช้งานระบบสแกนหน้า
+echo ====================================================
+echo.
+
+python local_camera_proxy.py
 
 echo.
+echo [หยุดทำงานแล้ว]
 pause

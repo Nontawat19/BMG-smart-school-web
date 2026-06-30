@@ -12,9 +12,18 @@ import re
 import sys
 import os
 
+# Fix: pythonw.exe (Windows background) sets sys.stdout/stderr = None -> print() crashes
+# Redirect to log files so the proxy can run silently without a console window
+if getattr(sys, 'stdout', None) is None or getattr(sys, 'stderr', None) is None:
+    _log_dir = os.path.dirname(os.path.abspath(__file__))
+    if getattr(sys, 'stdout', None) is None:
+        sys.stdout = open(os.path.join(_log_dir, 'camera_proxy_stdout.log'), 'a', encoding='utf-8', buffering=1)
+    if getattr(sys, 'stderr', None) is None:
+        sys.stderr = open(os.path.join(_log_dir, 'camera_proxy_stderr.log'), 'a', encoding='utf-8', buffering=1)
+
 PORT = 18188
 HOST = "127.0.0.1"
-BRIDGE_VERSION = "2026.06.01-rtsp-pipe-fix"
+BRIDGE_VERSION = "2026.06.30-windows-fix"
 ALLOWED_ORIGINS = {
     "https://bmg-smartschool.web.app",
     "https://bmg-smartschool.firebaseapp.com",
@@ -132,6 +141,10 @@ class RtspFrameWorker:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         stdin=subprocess.DEVNULL,
+                        **(
+                            {"creationflags": subprocess.CREATE_NO_WINDOW}
+                            if sys.platform == "win32" else {}
+                        ),
                     )
 
                     # Make stdout non-blocking if possible (Unix/macOS)
@@ -170,6 +183,30 @@ class RtspFrameWorker:
                     ).start()
 
                     buffer = b""
+                    # Windows: ใช้ queue + thread แยก เพราะ os.read() block ไม่มี timeout
+                    if not is_nonblocking and process.stdout:
+                        import queue as _queue
+                        pipe_queue = _queue.Queue()
+
+                        def _pipe_reader(pipe, q, n):
+                            try:
+                                while True:
+                                    data = pipe.read(n)
+                                    if not data:
+                                        break
+                                    q.put(data)
+                            except Exception:
+                                pass
+                            finally:
+                                q.put(None)
+
+                        _reader_thread = threading.Thread(
+                            target=_pipe_reader,
+                            args=(process.stdout, pipe_queue, RTSP_PIPE_READ_BYTES),
+                            daemon=True,
+                        )
+                        _reader_thread.start()
+
                     while not self.stop_event.is_set() and process.poll() is None:
                         if is_nonblocking:
                             try:
@@ -182,8 +219,11 @@ class RtspFrameWorker:
                             except OSError:
                                 break
                         else:
-                            chunk = os.read(process.stdout.fileno(), RTSP_PIPE_READ_BYTES) if process.stdout else b""
-                            if not chunk:
+                            try:
+                                chunk = pipe_queue.get(timeout=0.1)
+                            except Exception:
+                                continue
+                            if chunk is None:
                                 break
 
                         buffer += chunk

@@ -53,29 +53,35 @@ export const getTeacherSubjectGroupOrder = (teacher: any) => {
   return index === -1 ? 999 : index + 1;
 };
 
+const ATTENDANCE_ONLY_ROLES = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+
 export const isActiveTeacher = (teacher: any) => {
   const status = String(teacher?.status || 'อยู่').trim();
   if (status && status !== 'อยู่') return false;
 
-  // Exclude accounts meant for registration/attendance tools
+  // Exclude if ALL roles are attendance-only (device/kiosk accounts, not real teachers)
+  const roleArray: string[] = Array.isArray(teacher?.role)
+    ? teacher.role
+    : teacher?.role ? [String(teacher.role)] : [];
+  if (roleArray.length > 0 && roleArray.every(r => ATTENDANCE_ONLY_ROLES.includes(r))) return false;
+
+  // Exclude device/kiosk accounts identified by name patterns (CAM, RFID, ลงเวลา, etc.)
   const name = String(teacher?.name || '').toLowerCase();
   const firstName = String(teacher?.firstName || '').toLowerCase();
   const lastName = String(teacher?.lastName || '').toLowerCase();
   const id = String(teacher?.id || '').toLowerCase();
   const teacherId = String(teacher?.teacherId || '').toLowerCase();
   const email = String(teacher?.email || '').toLowerCase();
-  const role = String(teacher?.role || '').toLowerCase();
 
-  const isAttendanceAccount = 
-    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(name) ||
-    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(firstName) ||
-    /attendance|atthendance|athemdance|athendance|ลงเวลา/.test(lastName) ||
-    /attendance|atthendance|athemdance|athendance/.test(id) ||
-    /attendance|atthendance|athemdance|athendance/.test(teacherId) ||
-    /attendance|atthendance|athemdance|athendance/.test(email) ||
-    /attendance|atthendance|athemdance|athendance/.test(role);
+  const isDeviceAccount =
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(name) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(firstName) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(lastName) ||
+    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(id) ||
+    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(teacherId) ||
+    /attendance|atthendance|athemdance|athendance/.test(email);
 
-  return !isAttendanceAccount;
+  return !isDeviceAccount;
 };
 
 export const compareTeacherIds = (first: unknown, second: unknown) => {

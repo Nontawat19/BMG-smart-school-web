@@ -501,6 +501,14 @@ const HubPage: React.FC = () => {
           path: "/academic/time-range-attendance-summary",
           colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
           allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "ดาวน์โหลดรูปภาพนักเรียน",
+          description: "ดาวน์โหลดรูปภาพนักเรียนรายบุคคล หรือทั้งห้อง/ทั้งโรงเรียน (ZIP) ตามสิทธิ์การเข้าถึง",
+          icon: <Image size={24} />,
+          path: "/academic/student-photo-download",
+          colorClass: "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
+          allowedRoles: STAFF_ACCESS
         }
       ]
     },

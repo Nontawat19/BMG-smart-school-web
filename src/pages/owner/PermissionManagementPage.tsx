@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import MainLayout from '@/layouts/MainLayout';
+import BackButton from '@/components/Shared/BackButton';
 import { usePermissionContext, RoutePermissionEntry } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY, ROUTE_CATEGORIES } from '@/constants/routeRegistry';
 import { ROLES, ROLE_LABELS } from '@/constants/roles';
@@ -246,33 +247,20 @@ const PermissionManagementPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-50/50 dark:bg-[#14141b] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
-        <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
+        <div className="max-w-7xl mx-auto px-3 py-4 sm:px-4 md:px-6 lg:px-8 lg:py-8">
 
           {/* ── Header ── */}
-          <div className="relative overflow-hidden bg-white dark:bg-[#1c1c24] rounded-2xl p-6 sm:p-10 mb-8 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -mr-20 -mt-20" />
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-violet-500/5 blur-[60px] rounded-full -ml-16 -mb-16" />
-            <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest">
-                  <FaShieldAlt size={10} /> Permission Management
-                </div>
-                <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
-                  จัดการสิทธิ์ <span className="text-indigo-500">การเข้าถึงหน้า</span>
-                </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md font-medium">
-                  กำหนดการเข้าถึงด้วย 3 วิธี: ตามสิทธิ์ (Role) / ตามฝ่ายงาน / ตามบทบาทพิเศษ
-                </p>
-              </div>
-              <Link to="/owner/hub" className="group inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-sm font-black transition-all hover:bg-gray-200 dark:hover:bg-white/10 active:scale-95 border border-transparent dark:border-white/5">
-                <FaArrowLeft className="text-[10px] transition-transform group-hover:-translate-x-1" /> กลับ Owner Hub
-              </Link>
+          <div className="mb-8 flex items-center gap-4">
+            <BackButton to="/owner/hub" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">จัดการสิทธิ์การเข้าถึงหน้า</h1>
+              <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">กำหนดการเข้าถึงด้วย 3 วิธี: ตามสิทธิ์ (Role) / ตามฝ่ายงาน / ตามบทบาทพิเศษ</p>
             </div>
           </div>
 
           {/* ── Mode Toggle ── */}
-          <div className="flex items-center gap-2 mb-6 bg-white dark:bg-[#1c1c24] rounded-2xl p-2 border border-gray-100 dark:border-white/5 shadow-sm w-fit">
+          <div className="flex items-center gap-2 mb-6 bg-white dark:bg-[#2a2b2f] rounded-2xl p-2 border border-gray-100 dark:border-white/5 shadow-sm w-fit">
             {([
               { id: 'roles',           label: 'สิทธิ์ (Role)',       icon: <FaShieldAlt size={12} />, active: 'bg-indigo-600' },
               { id: 'departments',     label: 'ฝ่ายงาน',             icon: <FaBriefcase size={12} />, active: 'bg-blue-600' },
@@ -298,7 +286,7 @@ const PermissionManagementPage: React.FC = () => {
 
             {/* ── Left Panel ── */}
             <div className="lg:col-span-4 lg:sticky lg:top-6 space-y-4">
-              <div className="bg-white dark:bg-[#1c1c24] rounded-3xl p-6 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
+              <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 border border-gray-100 dark:border-white/5 shadow-sm dark:shadow-none">
 
                 {/* Roles mode */}
                 {mode === 'roles' && (
@@ -469,7 +457,7 @@ const PermissionManagementPage: React.FC = () => {
               </div>
 
               {/* Search */}
-              <div className="bg-white dark:bg-[#1c1c24] rounded-2xl px-4 border border-gray-200 dark:border-white/5 shadow-sm">
+              <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl px-4 border border-gray-100 dark:border-white/5 shadow-sm">
                 <div className="relative flex items-center h-12">
                   <FaSearch className="absolute left-0 text-gray-400 dark:text-gray-500 text-sm" />
                   <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -489,7 +477,7 @@ const PermissionManagementPage: React.FC = () => {
                   const noneOn  = routes.every(r => !isRouteChecked(r.key));
                   const isCollapsed = collapsed.has(category);
                   return (
-                    <div key={category} className="bg-white dark:bg-[#1c1c24] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
+                    <div key={category} className="bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden">
                       <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-white/5">
                         <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(category) ? n.delete(category) : n.add(category); return n; })}
                           className="flex items-center gap-3 flex-1 text-left group">
@@ -560,7 +548,7 @@ const PermissionManagementPage: React.FC = () => {
                 })}
 
                 {!Object.keys(filteredGrouped).length && (
-                  <div className="bg-white dark:bg-[#1c1c24] rounded-2xl p-12 text-center border border-gray-100 dark:border-white/5 shadow-sm">
+                  <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-12 text-center border border-gray-100 dark:border-white/5 shadow-sm">
                     <FaSearch className="mx-auto text-3xl text-gray-300 dark:text-gray-600 mb-3" />
                     <p className="text-gray-500 dark:text-gray-400 font-bold">ไม่พบหน้าที่ตรงกับคำค้นหา</p>
                   </div>
@@ -568,7 +556,7 @@ const PermissionManagementPage: React.FC = () => {
               </div>
 
               {/* Sticky bottom save bar */}
-              <div className="sticky bottom-4 bg-white/90 dark:bg-[#1c1c24]/90 backdrop-blur-md rounded-2xl px-6 py-4 border border-gray-200 dark:border-white/10 shadow-xl flex items-center justify-between gap-4">
+              <div className="sticky bottom-4 bg-white/90 dark:bg-[#2a2b2f]/90 backdrop-blur-md rounded-2xl px-6 py-4 border border-gray-200 dark:border-white/10 shadow-xl flex items-center justify-between gap-4">
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400 truncate">
                   <span className="font-black text-gray-900 dark:text-white">{activeLabel}</span> เข้าถึงได้{' '}
                   <span className={`font-black ${mode === 'roles' ? roleConfig.text : mode === 'departments' ? 'text-blue-600 dark:text-blue-400' : mode === 'special_roles' ? 'text-violet-600 dark:text-violet-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{accessCount}</span> / {ROUTE_REGISTRY.length} หน้า

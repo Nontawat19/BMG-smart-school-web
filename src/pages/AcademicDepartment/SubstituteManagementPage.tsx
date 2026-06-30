@@ -429,6 +429,29 @@ const SubstituteManagementPage: React.FC = () => {
     homeroomGrade: t.homeroomGrade || '',
     preferences: t.preferences || {}
   })), [teacherMap]);
+  // Map of dateKey → Set<teacherDocId> for ALL absent teachers across all leave requests.
+  // Used to cross-filter the substitute picker so absent teachers are never selectable.
+  const absentTeacherIdsByDate = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    leaveRequests.forEach(lr => {
+      try {
+        const startMs = (lr.startDate as any)?.toDate ? (lr.startDate as any).toDate().getTime() : new Date(lr.startDate as any).getTime();
+        const endMs = (lr.endDate as any)?.toDate ? (lr.endDate as any).toDate().getTime() : new Date(lr.endDate as any).getTime();
+        let cur = new Date(startMs);
+        cur.setHours(0, 0, 0, 0);
+        const endDay = new Date(endMs);
+        endDay.setHours(0, 0, 0, 0);
+        while (cur <= endDay) {
+          const dk = formatDateKey(cur);
+          if (!map.has(dk)) map.set(dk, new Set());
+          map.get(dk)!.add(lr.teacherDocId);
+          cur.setDate(cur.getDate() + 1);
+        }
+      } catch {}
+    });
+    return map;
+  }, [leaveRequests]);
+
   const schoolId = (currentUser as any)?.schoolId;
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('filter') || 'current'; // 'current', 'upcoming', 'past'
@@ -439,6 +462,12 @@ const SubstituteManagementPage: React.FC = () => {
   const [filterMissing, setFilterMissing] = useState<string>('all');
   const [sortCondition, setSortCondition] = useState<'recommended' | 'workload_day' | 'workload_week' | 'missing_stats'>('recommended');
   const [teacherAbsenceCounts, setTeacherAbsenceCounts] = useState<Record<string, number>>({});
+  // Period conflict maps — populated when a leave is selected
+  const [busyMap, setBusyMap] = useState<Record<string, Set<string>>>({});
+  const [dayLoadMap, setDayLoadMap] = useState<Record<string, Record<string, number>>>({});
+  const [weekLoadMap, setWeekLoadMap] = useState<Record<string, number>>({});
+  // Entry IDs that the arranger has unlocked for force (unchecked) selection
+  const [forceSelectEntries, setForceSelectEntries] = useState<Set<string>>(new Set());
   const [showManualAddForm, setShowManualAddForm] = useState(false);
   const [manualTeacherId, setManualTeacherId] = useState('');
   const [manualStartDate, setManualStartDate] = useState('');
@@ -859,6 +888,7 @@ const SubstituteManagementPage: React.FC = () => {
   const handleSelectLeave = async (leave: LeaveRequest) => {
     setSelectedLeave(leave);
     setSchedules([]);
+    setForceSelectEntries(new Set());
     setIsScheduleLoading(true);
     if (!schoolId) {
       setIsScheduleLoading(false);
@@ -1020,26 +1050,39 @@ const SubstituteManagementPage: React.FC = () => {
         });
       });
 
-      const findAvailableTeachers = (date: Date, periodNumber: number) => {
-        const checkDayKey = getEffectiveScheduleDay(date).scheduleDayKey;
-        const normalizedKey = `${checkDayKey}-${periodNumber}`;
-        const busyTeacherIds = periodBusyMap[normalizedKey] || new Set<string>();
+      // ── Critical: augment periodBusyMap with already-saved substitute assignments in the
+      // date range. This prevents double-booking the same substitute across multiple absent
+      // teachers (e.g. Teacher X assigned period 3 for Teacher A must not appear as available
+      // for Teacher B's period 3 when the arranger switches cards).
+      try {
+        const rangeStart = Timestamp.fromDate(
+          new Date(leaveStartDate.getFullYear(), leaveStartDate.getMonth(), leaveStartDate.getDate())
+        );
+        const rangeEnd = Timestamp.fromDate(
+          new Date(leaveEndDate.getFullYear(), leaveEndDate.getMonth(), leaveEndDate.getDate(), 23, 59, 59)
+        );
+        const savedSubsSnap = await getDocs(query(
+          collection(firestore, "school-settings", schoolId, "substitutions"),
+          where("date", ">=", rangeStart),
+          where("date", "<=", rangeEnd)
+        ));
+        savedSubsSnap.forEach(subDoc => {
+          const subData = subDoc.data();
+          if (!subData.substituteTeacherId || !subData.period) return;
+          const subDate = toSafeDate(subData.date);
+          const subDayKey = getEffectiveScheduleDay(subDate).scheduleDayKey;
+          const nKey = `${subDayKey}-${subData.period}`;
+          if (!periodBusyMap[nKey]) periodBusyMap[nKey] = new Set();
+          periodBusyMap[nKey].add(subData.substituteTeacherId);
+        });
+      } catch (e) {
+        console.warn('[SubstituteManagement] โหลด substitutions สำหรับตรวจคาบชนไม่สำเร็จ:', e);
+      }
 
-        return teachers
-          .filter(t => {
-            if (busyTeacherIds.has(t.value)) return false;
-            if (t.value === leave.teacherDocId) return false;
-            const prefs = (t as any).preferences;
-            if (prefs?.unavailableDays?.includes(checkDayKey)) return false;
-            if (prefs?.unavailableSlots?.includes(normalizedKey)) return false;
-            return true;
-          })
-          .map(t => ({
-            ...t,
-            loadDay: preComputedDayLoads[checkDayKey]?.[t.value] || 0,
-            loadWeek: preComputedWeekLoad[t.value] || 0,
-          }));
-      };
+      // Snapshot computed maps into state so the dynamic teacher lookup can read them after render
+      setBusyMap({ ...periodBusyMap });
+      setDayLoadMap({ ...preComputedDayLoads });
+      setWeekLoadMap({ ...preComputedWeekLoad });
 
       let currentDate = new Date(leaveStartDate);
       while (currentDate <= leaveEndDate) {
@@ -1151,7 +1194,6 @@ const SubstituteManagementPage: React.FC = () => {
                   substituteTeacherId: existingSub?.substituteTeacherId,
                   substituteTeacherName: existingSub?.substituteTeacherName,
                   substitutionDocId: existingSub?.id,
-                  availableTeachers: findAvailableTeachers(currentDate, periodNumber),
                   roomName: (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])))
                     .map((id: string) => roomMap[id] || id)
                     .join(', ') || 'ไม่ระบุสถานที่',
@@ -1212,6 +1254,83 @@ const SubstituteManagementPage: React.FC = () => {
           entry.substituteTeacherId = entry.autoHandledByTeacherId;
           entry.substituteTeacherName = entry.autoHandledByTeacherName;
         }));
+      }
+
+      // Auto-assign: สำหรับคาบที่ยังไม่มีครูสอนแทน ให้ระบบเลือกครูที่เหมาะสมที่สุดอัตโนมัติ
+      const unassignedEntries = allSchedules.filter(s => !s.substituteTeacherId && (!s.isCoTeaching || s.allCoTeachersAbsent));
+      if (unassignedEntries.length > 0) {
+        const autoSubsCollRef = collection(firestore, "school-settings", schoolId, "substitutions");
+        const tentativeSlotMap = new Map<string, string>(); // normalizedKey → teacherId (prevent double-booking within this batch)
+
+        for (const entry of unassignedEntries) {
+          const effectiveDay = getEffectiveScheduleDay(entry.originalDate);
+          const checkDayKey = effectiveDay.scheduleDayKey;
+          const normalizedKey = `${checkDayKey}-${entry.period}`;
+          const dateKey = formatDateKey(entry.originalDate);
+          const busyTeacherIds = periodBusyMap[normalizedKey] || new Set<string>();
+          const absentOnDate = absentTeacherIdsByDate.get(dateKey) || new Set<string>();
+
+          const available = teachers
+            .filter(t => {
+              if (busyTeacherIds.has(t.value)) return false;
+              if (absentOnDate.has(t.value)) return false;
+              if (tentativeSlotMap.get(normalizedKey) === t.value) return false;
+              const prefs = (t as any).preferences;
+              if (prefs?.unavailableDays?.includes(checkDayKey)) return false;
+              if (prefs?.unavailableSlots?.includes(normalizedKey)) return false;
+              return true;
+            })
+            .map(t => ({
+              ...t,
+              loadDay: preComputedDayLoads[checkDayKey]?.[t.value] || 0,
+              loadWeek: preComputedWeekLoad[t.value] || 0,
+            }))
+            .sort((a: any, b: any) => a.loadDay - b.loadDay || a.loadWeek - b.loadWeek);
+
+          if (available.length === 0) continue;
+
+          const best = available[0] as any;
+          const deterministicId = `${leave.teacherDocId}_${formatDateKey(entry.originalDate)}_${entry.period}`;
+
+          tentativeSlotMap.set(normalizedKey, best.value);
+          if (!periodBusyMap[normalizedKey]) periodBusyMap[normalizedKey] = new Set();
+          periodBusyMap[normalizedKey].add(best.value);
+
+          entry.substituteTeacherId = best.value;
+          entry.substituteTeacherName = best.label.replace(/^\[.*?\]\s*/, '');
+          entry.substitutionDocId = deterministicId;
+
+          try {
+            await setDoc(doc(autoSubsCollRef, deterministicId), {
+              id: deterministicId,
+              originalTeacherId: leave.teacherDocId,
+              originalTeacherName: leave.teacherName,
+              substituteTeacherId: best.value,
+              substituteTeacherName: best.label.replace(/^\[.*?\]\s*/, ''),
+              date: Timestamp.fromDate(entry.originalDate),
+              academicYear: getScheduleYearTerm(entry.originalDate).academicYear,
+              period: entry.period,
+              classId: entry.classId ?? null,
+              groupNumber: entry.groupNumber ?? null,
+              courseId: entry.courseId || null,
+              subjectName: entry.subjectName,
+              subjectCode: entry.subjectCode || '',
+              roomName: entry.roomName || '',
+              startTime: entry.startTime || '',
+              endTime: entry.endTime || '',
+              leaveRequestId: leave.id,
+              isAutoAssigned: true,
+              createdAt: Timestamp.now(),
+            });
+          } catch (autoErr) {
+            console.warn('[autoAssign] บันทึกคาบ', entry.period, 'ไม่สำเร็จ:', autoErr);
+            entry.substituteTeacherId = undefined;
+            entry.substituteTeacherName = undefined;
+            entry.substitutionDocId = undefined;
+          }
+        }
+        // Update busyMap state to reflect auto-assigned teachers
+        setBusyMap({ ...periodBusyMap });
       }
 
       // ถ้าทุกคาบมีครูสอนแทนแล้ว (รวม auto-assign จากครูสอนร่วม) → อัปเดตสถานะให้แสดง ✓ ในแผงซ้าย
@@ -1301,6 +1420,81 @@ const SubstituteManagementPage: React.FC = () => {
     return processed;
   };
 
+  // Dynamic available-teacher list for a single schedule entry.
+  // Re-evaluates on every render so cross-slot assignments are always reflected.
+  const getAvailableTeachersForEntry = (entry: ScheduleEntry): any[] => {
+    const dateKey = formatDateKey(entry.originalDate);
+    const effectiveDay = getEffectiveScheduleDay(entry.originalDate);
+    const checkDayKey = effectiveDay.scheduleDayKey;
+    const normalizedKey = `${checkDayKey}-${entry.period}`;
+    const busyTeacherIds = busyMap[normalizedKey] || new Set<string>();
+
+    // Substitutes already assigned to the SAME slot (same date + period) in other entries
+    const alreadyAssignedSameSlot = new Set<string>();
+    schedules.forEach(s => {
+      if (
+        s.id !== entry.id &&
+        formatDateKey(s.originalDate) === dateKey &&
+        s.period === entry.period &&
+        s.substituteTeacherId
+      ) {
+        alreadyAssignedSameSlot.add(s.substituteTeacherId);
+      }
+    });
+
+    // ALL absent teachers on this date (covers every leave request, not just the selected one)
+    const absentOnDate = absentTeacherIdsByDate.get(dateKey) || new Set<string>();
+
+    return teachers
+      .filter(t => {
+        if (busyTeacherIds.has(t.value)) return false;      // has a regular class this slot
+        if (absentOnDate.has(t.value)) return false;         // is absent today
+        if (alreadyAssignedSameSlot.has(t.value)) return false; // already subbing same slot
+        const prefs = (t as any).preferences;
+        if (prefs?.unavailableDays?.includes(checkDayKey)) return false;
+        if (prefs?.unavailableSlots?.includes(normalizedKey)) return false;
+        return true;
+      })
+      .map(t => ({
+        ...t,
+        loadDay: dayLoadMap[checkDayKey]?.[t.value] || 0,
+        loadWeek: weekLoadMap[t.value] || 0,
+      }));
+  };
+
+  // Force-mode: all teachers without restrictions (emergency / no-one-available scenario).
+  // Returns conflict flags so the UI can show annotations.
+  const getAllTeachersUnrestricted = (entry: ScheduleEntry): any[] => {
+    const dateKey = formatDateKey(entry.originalDate);
+    const effectiveDay = getEffectiveScheduleDay(entry.originalDate);
+    const checkDayKey = effectiveDay.scheduleDayKey;
+    const normalizedKey = `${checkDayKey}-${entry.period}`;
+    const busyTeacherIds = busyMap[normalizedKey] || new Set<string>();
+
+    const alreadyAssignedSameSlot = new Set<string>();
+    schedules.forEach(s => {
+      if (
+        s.id !== entry.id &&
+        formatDateKey(s.originalDate) === dateKey &&
+        s.period === entry.period &&
+        s.substituteTeacherId
+      ) {
+        alreadyAssignedSameSlot.add(s.substituteTeacherId);
+      }
+    });
+
+    const absentOnDate = absentTeacherIdsByDate.get(dateKey) || new Set<string>();
+
+    return teachers.map(t => ({
+      ...t,
+      loadDay: dayLoadMap[checkDayKey]?.[t.value] || 0,
+      loadWeek: weekLoadMap[t.value] || 0,
+      _isAbsent: absentOnDate.has(t.value),
+      _isBusy: busyTeacherIds.has(t.value),
+      _hasConflict: alreadyAssignedSameSlot.has(t.value),
+    }));
+  };
+
   const handleAssignSubstitute = async (scheduleEntry: ScheduleEntry, substituteTeacherId: string | undefined) => {
     if (!selectedLeave || !schoolId) return;
 
@@ -1387,7 +1581,19 @@ const SubstituteManagementPage: React.FC = () => {
 
       // 📌 เพิ่ม: สร้างการแจ้งเตือนสำหรับครูที่ได้รับมอบหมาย
       const substitutionDate = scheduleEntry.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-      const newTeacherNotificationMessage = `คุณได้รับมอบหมายให้สอนแทนวิชา ${scheduleEntry.subjectName} (${scheduleEntry.className}) ในวันที่ ${substitutionDate} คาบที่ ${scheduleEntry.period} เนื่องจากคุณครู ${selectedLeave.teacherName} ${selectedLeave.leaveType}`;
+
+      // Check if this teacher is already handling other substitute slots the same day
+      const dateKey = formatDateKey(scheduleEntry.originalDate);
+      const existingSubsForTeacher = schedules.filter(s =>
+        s.id !== scheduleEntry.id &&
+        s.substituteTeacherId === substituteTeacherId &&
+        formatDateKey(s.originalDate) === dateKey
+      );
+      const multiSubNote = existingSubsForTeacher.length > 0
+        ? ` (หมายเหตุ: คุณมีการสอนแทนอีก ${existingSubsForTeacher.length} วิชาในวันเดียวกัน ได้แก่ ${existingSubsForTeacher.map(s => `${s.subjectName} คาบ${s.period}`).join(', ')})`
+        : '';
+
+      const newTeacherNotificationMessage = `คุณได้รับมอบหมายให้สอนแทนวิชา ${scheduleEntry.subjectName} (${scheduleEntry.className}) ในวันที่ ${substitutionDate} คาบที่ ${scheduleEntry.period} เนื่องจากคุณครู ${selectedLeave.teacherName} ${selectedLeave.leaveType}${multiSubNote}`;
 
       const dateYear = scheduleEntry.originalDate.getFullYear();
       const dateMonth = String(scheduleEntry.originalDate.getMonth() + 1).padStart(2, '0');
@@ -1743,6 +1949,37 @@ const SubstituteManagementPage: React.FC = () => {
                   </h2>
                 </div>
 
+                {/* Stats bar — fixed at top, not inside scrollable area */}
+                {selectedLeave && schedules.length > 0 && !isScheduleLoading && (() => {
+                  const manualEntries = schedules.filter(s => !s.isCoTeaching || s.allCoTeachersAbsent);
+                  const totalNeedSub = manualEntries.length;
+                  const assigned = manualEntries.filter(s => !!s.substituteTeacherId).length;
+                  const autoHandled = schedules.filter(s => s.isCoTeaching && !s.allCoTeachersAbsent).length;
+                  const remaining = totalNeedSub - assigned;
+                  const coverable = manualEntries.filter(s => getAvailableTeachersForEntry(s).length > 0 || !!s.substituteTeacherId).length;
+                  const notCoverable = totalNeedSub - coverable;
+                  const assignedPct = totalNeedSub > 0 ? Math.round((assigned / totalNeedSub) * 100) : 0;
+                  return (
+                    <div className="rounded-xl border border-indigo-100/60 dark:border-indigo-900/40 overflow-hidden">
+                      <div className="flex items-center gap-3 px-3 py-2 bg-indigo-50/80 dark:bg-indigo-950/30">
+                        <span className="text-[9px] font-black text-indigo-400 uppercase tracking-wider shrink-0">สอนแทน</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-700 ${assignedPct === 100 ? 'bg-emerald-400' : assignedPct > 50 ? 'bg-indigo-400' : 'bg-amber-400'}`}
+                            style={{ width: `${assignedPct}%` }} />
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-black shrink-0">
+                          <span className="text-indigo-500 dark:text-indigo-300">{totalNeedSub} คาบ</span>
+                          <span className="text-emerald-500">{assigned} จัดแล้ว</span>
+                          {remaining > 0 && <span className="text-amber-500">{remaining} รอ</span>}
+                          {notCoverable > 0 && <span className="text-rose-500">{notCoverable} ไม่มีครู</span>}
+                          {autoHandled > 0 && <span className="text-blue-400">{autoHandled} auto</span>}
+                          <span className={`font-black ${assignedPct === 100 ? 'text-emerald-500' : assignedPct > 50 ? 'text-indigo-400' : 'text-amber-500'}`}>{assignedPct}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {selectedLeave && (
                   <div className="bg-white dark:bg-[#1e1f21] p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 relative group z-10">
                     <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 rounded-l-2xl"></div>
@@ -1853,95 +2090,150 @@ const SubstituteManagementPage: React.FC = () => {
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                   {isScheduleLoading && <p className="text-center py-10 text-gray-500">กำลังโหลดตารางสอน...</p>}
                   {!isScheduleLoading && schedules.length === 0 && <p className="text-center py-10 text-gray-500">ไม่พบตารางสอนสำหรับครูท่านนี้ในช่วงเวลาที่ลา</p>}
-                  {schedules.map((schedule) => (
-                    <div key={schedule.id} className="bg-gray-50 dark:bg-[#1e1f21] p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between border border-gray-100 dark:border-gray-800 hover:border-indigo-500/30 transition-all group">
-                      <div className="mb-4 md:mb-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
-                            <Clock size={10} />
-                            {schedule.periodLabel}
-                          </span>
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400">
-                            {schedule.day}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <Clock size={10} />
-                            {schedule.startTime || '--:--'} - {schedule.endTime || '--:--'}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                            <MapPin size={10} />
-                            สถานที่: {schedule.roomName}
-                          </span>
-                        </div>
-                        <p className="font-bold text-lg text-gray-900 dark:text-white">
-                          {schedule.subjectName} {schedule.subjectCode ? <span className="text-xs font-normal text-gray-400">({schedule.subjectCode})</span> : null}
-                        </p>
-                        <p className="text-sm text-indigo-500 font-medium">ชั้น {schedule.className}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <p className="text-xs text-gray-500">
-                            {schedule.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
-                          </p>
-                        </div>
-                        {schedule.substituteTeacherName && (
-                          <div className={`mt-2 flex items-center text-xs font-bold w-fit px-2 py-1 rounded-lg ${schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? 'text-blue-400 bg-blue-500/10' : 'text-green-500 bg-green-500/10'}`}>
-                            {schedule.isCoTeaching && !schedule.allCoTeachersAbsent
-                              ? <Users size={12} className="mr-1" />
-                              : <CheckCircle size={12} className="mr-1" />}
-                            {schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? 'สอนร่วม (ดูแลแทนอัตโนมัติ): ' : 'สอนแทนโดย: '}
-                            {schedule.substituteTeacherName?.replace(/^\[.*?\]\s*/, '') || schedule.substituteTeacherName}
+
+
+                  {schedules.map((schedule) => {
+                    // Compute available teachers dynamically (reflects cross-slot assignments)
+                    const dynamicAvailable = getAvailableTeachersForEntry(schedule);
+                    const isForceMode = forceSelectEntries.has(schedule.id);
+                    let teacherPool = isForceMode ? getAllTeachersUnrestricted(schedule) : dynamicAvailable;
+
+                    // Ensure the currently-assigned substitute is always in the pool so the
+                    // dropdown can display the selected value even if they're now "busy"
+                    if (schedule.substituteTeacherId && !teacherPool.find((t: any) => t.value === schedule.substituteTeacherId)) {
+                      const currentSub = teachers.find(t => t.value === schedule.substituteTeacherId);
+                      if (currentSub) teacherPool = [{ ...currentSub, loadDay: 0, loadWeek: 0 }, ...teacherPool];
+                    }
+
+                    const leaveLearningArea = (teacherMap[selectedLeave.teacherDocId] as any)?.learningArea || '';
+
+                    const buildOptions = (pool: any[]) => pool.map((teacher: any) => {
+                      const isSameArea = teacher.learningArea === leaveLearningArea;
+                      const conflictTag = teacher._isAbsent ? ' ⚠️ลา/ไปราชการ' : teacher._hasConflict ? ' 🔄สอนแทนคาบนี้อยู่' : teacher._isBusy ? ' 📚มีคาบสอน' : '';
+                      let suffix = conflictTag;
+                      if (!conflictTag && isSameArea) suffix += ' (กลุ่มสาระเดียวกัน)';
+                      suffix += ` [วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}]`;
+                      return {
+                        ...teacher,
+                        teacherId: teacher.teacherId || (teacherMap[teacher.value] as any)?.teacherId || 'N/A',
+                        profileImageUrl: (teacherMap[teacher.value] as any)?.profileImageUrl || (teacherMap[teacher.value] as any)?.profileImage || '',
+                        firstName: (teacherMap[teacher.value] as any)?.firstName || '',
+                        lastName: (teacherMap[teacher.value] as any)?.lastName || '',
+                        displayLabel: `${teacher.label}${suffix}`,
+                        metaLabel: `${teacher.learningArea || 'ไม่ระบุกลุ่มสาระ'}${teacher.homeroomGrade ? ` • ประจำชั้น ${teacher.homeroomGrade}` : ''} • วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}${isSameArea && !conflictTag ? ' • กลุ่มสาระเดียวกัน' : ''}`,
+                      };
+                    });
+
+                    return (
+                      <div key={schedule.id} className="bg-gray-50 dark:bg-[#1e1f21] p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between border border-gray-100 dark:border-gray-800 hover:border-indigo-500/30 transition-all group">
+                        <div className="mb-4 md:mb-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                              <Clock size={10} />
+                              {schedule.periodLabel}
+                            </span>
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400">
+                              {schedule.day}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                              <Clock size={10} />
+                              {schedule.startTime || '--:--'} - {schedule.endTime || '--:--'}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                              <MapPin size={10} />
+                              สถานที่: {schedule.roomName}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-2 w-full md:w-[320px] lg:w-[380px] flex-shrink-0">
-                        {schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? (
-                          <div className="flex items-start gap-2 text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-2.5 rounded-xl border border-blue-500/20">
-                            <Users size={14} className="shrink-0 mt-0.5" />
-                            <div className="flex flex-col gap-0.5">
-                              <div className="text-[10px] font-black uppercase tracking-wider">มอบหมายอัตโนมัติ (สอนร่วม)</div>
-                              <div className="text-blue-200 font-black">{schedule.autoHandledByTeacherName} รับช่วงต่อ</div>
-                              {(schedule.absentCoTeacherIds?.length ?? 0) > 0 && (
-                                <div className="text-[10px] text-amber-400/90 mt-0.5">
-                                  ครูสอนร่วมที่ลา/ไปราชการ: {schedule.absentCoTeacherIds!.map(id => (teacherMap[id] as any)?.name || id).join(', ')}
+                          <p className="font-bold text-lg text-gray-900 dark:text-white">
+                            {schedule.subjectName} {schedule.subjectCode ? <span className="text-xs font-normal text-gray-400">({schedule.subjectCode})</span> : null}
+                          </p>
+                          <p className="text-sm text-indigo-500 font-medium">ชั้น {schedule.className}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <p className="text-xs text-gray-500">
+                              {schedule.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </p>
+                          </div>
+                          {schedule.substituteTeacherName && (
+                            <div className={`mt-2 flex items-center text-xs font-bold w-fit px-2 py-1 rounded-lg ${schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? 'text-blue-400 bg-blue-500/10' : 'text-green-500 bg-green-500/10'}`}>
+                              {schedule.isCoTeaching && !schedule.allCoTeachersAbsent
+                                ? <Users size={12} className="mr-1" />
+                                : <CheckCircle size={12} className="mr-1" />}
+                              {schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? 'สอนร่วม (ดูแลแทนอัตโนมัติ): ' : 'สอนแทนโดย: '}
+                              {schedule.substituteTeacherName?.replace(/^\[.*?\]\s*/, '') || schedule.substituteTeacherName}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2 w-full md:w-[320px] lg:w-[380px] flex-shrink-0">
+                          {schedule.isCoTeaching && !schedule.allCoTeachersAbsent ? (
+                            <div className="flex items-start gap-2 text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-2.5 rounded-xl border border-blue-500/20">
+                              <Users size={14} className="shrink-0 mt-0.5" />
+                              <div className="flex flex-col gap-0.5">
+                                <div className="text-[10px] font-black uppercase tracking-wider">มอบหมายอัตโนมัติ (สอนร่วม)</div>
+                                <div className="text-blue-200 font-black">{schedule.autoHandledByTeacherName} รับช่วงต่อ</div>
+                                {(schedule.absentCoTeacherIds?.length ?? 0) > 0 && (
+                                  <div className="text-[10px] text-amber-400/90 mt-0.5">
+                                    ครูสอนร่วมที่ลา/ไปราชการ: {schedule.absentCoTeacherIds!.map(id => (teacherMap[id] as any)?.name || id).join(', ')}
+                                  </div>
+                                )}
+                                <div className="text-[10px] text-blue-400/60">
+                                  ไล่ลำดับอัตโนมัติ ({(schedule.absentCoTeacherIds?.length ?? 0) + 1}/{(schedule.coTeacherIds?.length ?? 0) + 1} คนลา)
                                 </div>
-                              )}
-                              <div className="text-[10px] text-blue-400/60">
-                                ไล่ลำดับอัตโนมัติ ({(schedule.absentCoTeacherIds?.length ?? 0) + 1}/{(schedule.coTeacherIds?.length ?? 0) + 1} คนลา)
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          <>
-                            {schedule.isCoTeaching && schedule.allCoTeachersAbsent && (
-                              <div className="flex items-center gap-1.5 text-[10px] font-black text-red-400 bg-red-500/10 px-2.5 py-1.5 rounded-lg border border-red-500/20">
-                                <AlertTriangle size={10} />
-                                ครูสอนร่วมทุกคนลา/ไปราชการ ({(schedule.coTeacherIds?.length ?? 0) + 1}/{(schedule.coTeacherIds?.length ?? 0) + 1} คน) — ต้องหาครูสอนแทนจากภายนอก
-                              </div>
-                            )}
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">มอบหมายครูสอนแทน</label>
-                            <SubstituteTeacherSelect
-                              value={schedule.substituteTeacherId || ""}
-                              onChange={(teacherId: string) => handleAssignSubstitute(schedule, teacherId)}
-                              options={getProcessedTeachers(schedule.availableTeachers).map((teacher: any) => {
-                                const isSameArea = teacher.learningArea === (teacherMap[selectedLeave.teacherDocId] as any)?.learningArea;
-                                let suffix = "";
-                                if (isSameArea) suffix += " (กลุ่มสาระเดียวกัน)";
-                                suffix += ` [วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}]`;
-                                return {
-                                  ...teacher,
-                                  teacherId: teacher.teacherId || (teacherMap[teacher.value] as any)?.teacherId || 'N/A',
-                                  profileImageUrl: (teacherMap[teacher.value] as any)?.profileImageUrl || (teacherMap[teacher.value] as any)?.profileImage || '',
-                                  firstName: (teacherMap[teacher.value] as any)?.firstName || '',
-                                  lastName: (teacherMap[teacher.value] as any)?.lastName || '',
-                                  displayLabel: `${teacher.label}${suffix}`,
-                                  metaLabel: `${teacher.learningArea || 'ไม่ระบุกลุ่มสาระ'}${teacher.homeroomGrade ? ` • ประจำชั้น ${teacher.homeroomGrade}` : ''} • วัน:${teacher.loadDay}/วีค:${teacher.loadWeek}${isSameArea ? ' • กลุ่มสาระเดียวกัน' : ''}`,
-                                };
-                              })}
-                            />
-                          </>
-                        )}
+                          ) : (
+                            <>
+                              {schedule.isCoTeaching && schedule.allCoTeachersAbsent && (
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-red-400 bg-red-500/10 px-2.5 py-1.5 rounded-lg border border-red-500/20">
+                                  <AlertTriangle size={10} />
+                                  ครูสอนร่วมทุกคนลา/ไปราชการ ({(schedule.coTeacherIds?.length ?? 0) + 1}/{(schedule.coTeacherIds?.length ?? 0) + 1} คน) — ต้องหาครูสอนแทนจากภายนอก
+                                </div>
+                              )}
+
+                              {/* No available teachers → show warning + force-select button */}
+                              {dynamicAvailable.length === 0 && !isForceMode && !schedule.substituteTeacherId && (
+                                <div className="flex flex-col gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30">
+                                  <div className="flex items-center gap-2 text-[11px] font-black text-rose-400">
+                                    <AlertTriangle size={13} />
+                                    ไม่มีครูว่างในคาบนี้ (ครูทุกคนติดคาบหรือลา)
+                                  </div>
+                                  <p className="text-[10px] text-rose-300/80 leading-relaxed">
+                                    ผู้จัดสามารถเลือกครูฉุกเฉินได้โดยไม่ตรวจสอบเงื่อนไข รวมถึงครูที่รับสอนแทนอยู่แล้วหรือจัดตัวเองได้
+                                  </p>
+                                  <button
+                                    onClick={() => setForceSelectEntries(prev => new Set([...prev, schedule.id]))}
+                                    className="flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-black transition-all"
+                                  >
+                                    <UserPlus size={12} />
+                                    เลือกครูฉุกเฉิน (ไม่ตรวจเงื่อนไข)
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Force-mode banner */}
+                              {isForceMode && (
+                                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] font-black text-amber-400">
+                                  <AlertTriangle size={11} />
+                                  โหมดฉุกเฉิน — แสดงครูทั้งหมด (⚠️=ลา, 🔄=สอนแทนคาบนี้อยู่, 📚=มีคาบ)
+                                  <button onClick={() => setForceSelectEntries(prev => { const n = new Set(prev); n.delete(schedule.id); return n; })} className="ml-auto text-gray-400 hover:text-red-400 transition"><X size={11} /></button>
+                                </div>
+                              )}
+
+                              {(dynamicAvailable.length > 0 || isForceMode || !!schedule.substituteTeacherId) && (
+                                <>
+                                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">มอบหมายครูสอนแทน</label>
+                                  <SubstituteTeacherSelect
+                                    value={schedule.substituteTeacherId || ""}
+                                    onChange={(teacherId: string) => handleAssignSubstitute(schedule, teacherId)}
+                                    options={buildOptions(isForceMode ? teacherPool : getProcessedTeachers(teacherPool))}
+                                  />
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

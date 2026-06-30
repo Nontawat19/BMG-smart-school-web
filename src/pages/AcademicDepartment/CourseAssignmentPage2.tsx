@@ -738,6 +738,9 @@ const CourseAssignmentPage2: React.FC = () => {
     const [assignPhysicalRoomId, setAssignPhysicalRoomId] = useState<string>("");
     const [assignCoTeacherIds, setAssignCoTeacherIds] = useState<string[]>([]);
 
+    // Activity mode setting (from school-settings)
+    const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
+
     // --- DND States & Handlers ---
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const sensors = useSensors(
@@ -1145,10 +1148,16 @@ const CourseAssignmentPage2: React.FC = () => {
             setSubjectGroupsList(data);
         });
 
+        const unsubSettings = onSnapshot(doc(db, 'school-settings', schoolId), (snap) => {
+            const mode = snap.data()?.activityHubSettings?.activityMode ?? 'special-period';
+            setActivityMode(mode);
+        });
+
         return () => {
             unsubCourses();
             unsubRooms();
             unsubGroups();
+            unsubSettings();
         };
     }, [schoolId]);
 
@@ -1343,14 +1352,17 @@ const CourseAssignmentPage2: React.FC = () => {
     }, [teachersData, filteredTeachersData]);
 
     const assignableCourses = useMemo(() => {
-        const excludedTypes = ['กิจกรรม', 'ชุมนุม'];
         return coursesWithAssignments
             .filter(course => {
                 const t = String(course.type || '').trim();
-                return !excludedTypes.includes(t) && courseMatchesActiveFilters(course);
+                // ชุมนุม uses its own dedicated system — always excluded
+                if (t === 'ชุมนุม') return false;
+                // กิจกรรม (ลูกเสือ/รด/ยุวกาชาด) is assignable only in course-based mode
+                if (t === 'กิจกรรม' && activityMode !== 'course-based') return false;
+                return courseMatchesActiveFilters(course);
             })
             .sort((a, b) => (a.code || "").localeCompare(b.code || "", "th", { numeric: true }));
-    }, [coursesWithAssignments, courseSearch, subjectGroupFilter, categoryFilter, selectedLevel, selectedSemester, subjectGroupsList]);
+    }, [coursesWithAssignments, courseSearch, subjectGroupFilter, categoryFilter, selectedLevel, selectedSemester, subjectGroupsList, activityMode]);
 
     const getCoTeacherOptions = useCallback((excludedTeacherId?: string): TeacherSelectOption[] => {
         return teacherList

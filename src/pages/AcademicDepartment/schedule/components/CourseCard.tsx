@@ -15,7 +15,7 @@ export interface CourseCardProps {
     };
 }
 
-export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [], onHover, periodSummary }) => {
+export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewType = 'teacher', teachers = [], onHover }) => {
     const isLocked = course.locked || (course.constraints?.lockedSlots && course.constraints.lockedSlots.length > 0);
     const isTemporary = Boolean(course.isTemporarySchedule);
     const isRelaxed = Boolean(course.isRelaxedSchedule);
@@ -45,30 +45,6 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
     const mainLabel = viewType === 'teacher' ? classDisplay : teacherDisplay;
     
-    // Improved labeling for Groups/Rooms
-    const getGroupLabel = (cDisplay: string, gNum: number) => {
-        if (!cDisplay) return `ก.${gNum}`;
-        
-        const hasSlash = cDisplay.includes('/');
-        
-        // If it already has a slash (e.g. ม.1/1), just append group if not all-groups
-        if (hasSlash) {
-            return gNum > 0 ? `${cDisplay} ก.${gNum}` : cDisplay;
-        }
-        
-        // If it's just a level (e.g. ม.1), and we have a group but no room info in display
-        // We'll show as ม.1 ก.{gNum}
-        return gNum > 0 ? `${cDisplay} ก.${gNum}` : cDisplay;
-    };
-
-    const secondaryLabel = getGroupLabel(classDisplay, course.groupNumber || 1);
-    const roomDisplay = course.roomDisplay || '';
-    const tertiaryLabel = viewType === 'room' && roomDisplay
-        ? roomDisplay
-        : (viewType === 'teacher'
-            ? secondaryLabel
-            : getGroupLabel(classDisplay, course.groupNumber || 1)
-        );
 
     return (
         <div 
@@ -93,13 +69,17 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
                 e.stopPropagation();
                 onHover?.(null);
             }}
+            onPointerLeave={(e) => {
+                e.stopPropagation();
+                onHover?.(null);
+            }}
         >
             {/* Main Content Container - Ultra Compact */}
             <div className="relative z-10 w-full h-full flex flex-col items-center justify-center px-0.5 py-0.5 text-center min-w-0 gap-0 overflow-hidden">
                 
                 {/* Subject Code */}
                 <span className={`
-                    text-[10px] md:text-[11px] font-black uppercase tabular-nums leading-[1.1] truncate w-full px-0.5 shrink-0 max-w-full
+                    text-[12px] md:text-[13px] font-black uppercase tabular-nums leading-[1.1] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-white' : isTemporary ? 'text-amber-800 dark:text-amber-200' : isRelaxed ? 'text-orange-800 dark:text-orange-300' : course.isElective ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}
                 `}>
                     {course.code}{isTemporary && <span className="text-[8px] font-black text-amber-600/90 ml-0.5">รอตรวจ</span>}{isRelaxed && <span className="text-[7.5px] font-black text-orange-600/90 ml-0.5">(เงื่อนไขไม่ตรง)</span>}{course.isElective && <span className="text-[8px] font-black text-rose-500/80 ml-0.5">(เลือก)</span>}
@@ -107,32 +87,19 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
                 {/* Subject Name */}
                 <span className={`
-                    text-[6.5px] md:text-[7.5px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
+                    text-[8px] md:text-[9px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-700 dark:text-slate-200'}
                 `}>
                     {course.title}
                 </span>
-                
+
                 {/* Secondary Info Line (Teacher/Class) */}
                 <span className={`
-                    text-[6.5px] md:text-[7.5px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
+                    text-[8px] md:text-[9px] font-bold leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
                     ${isOverlay ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'}
                 `}>
                     {mainLabel}
                 </span>
-
-                {/* Tertiary Info (Group/Class) */}
-                {viewType === 'teacher' && (
-                    <span className={`
-                        text-[6px] md:text-[7px] font-black leading-[1.05] truncate w-full px-0.5 shrink-0 max-w-full
-                        ${isOverlay ? 'text-indigo-100' : (periodSummary && periodSummary.total > 0 && periodSummary.scheduled > periodSummary.total) ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}
-                    `}>
-                        {periodSummary
-                            ? `${periodSummary.scheduled}/${periodSummary.total || '-'} คาบ`
-                            : tertiaryLabel
-                        }
-                    </span>
-                )}
             </div>
 
             {/* Lock Indicator */}

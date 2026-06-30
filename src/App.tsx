@@ -77,6 +77,7 @@ const ImportTeacherPage = lazy(() => import("./pages/Teachers/ImportTeacherPage"
 const ImportStudentPage = lazy(() => import("./pages/Students/ImportStudentPage"));
 const StudentAttendanceDateSelectionPage = lazy(() => import("./pages/Students/StudentAttendanceDateSelectionPage"));
 const StudentBK14ReportPage = lazy(() => import("./pages/Students/StudentBK14ReportPage"));
+const StudentPhotoDownloadPage = lazy(() => import("./pages/Students/StudentPhotoDownloadPage"));
 const BulkUploadTeacherImagesPage = lazy(() => import("./pages/Administrator/BulkUploadTeacherImagesPage"));
 const AdvisorManagementPage = lazy(() => import("./pages/Teachers/AdvisorManagementPage"));
 const CourseManagementPage = lazy(() => import("./pages/AcademicDepartment/CourseManagementPage"));
@@ -326,6 +327,7 @@ function App() {
           <Route path="/academic/student-attendance-date-selection" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentAttendanceDateSelectionPage /></ProtectedRoute>} />
           <Route path="/academic/student-bk14-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBK14ReportPage /></ProtectedRoute>} />
           <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/student-photo-download" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentPhotoDownloadPage /></ProtectedRoute>} />
 
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
           <Route path="/academic/graduation-pending" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationPendingPage /></ProtectedRoute>} />

@@ -310,26 +310,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                           <span>การตั้งค่าระบบ</span>
                         </NavLink>
                       </CanAccess>
+                      <CanAccess roles={[ROLES.STUDENT_AFFAIRS]}>
+                        {isEnabled('studentAffairs') && (
+                          <NavLink to="/academic/hub/settings" className={navLinkClasses}>
+                            <FaCog className="text-lg min-w-[18px]" />
+                            <span>ตั้งค่าคะแนนพฤติกรรม</span>
+                          </NavLink>
+                        )}
+                      </CanAccess>
                     </div>
                   </CanAccess>
                 )}
-
-                <CanAccess roles={STUDENT_AFFAIRS_MANAGEMENT}>
-                  <div className="flex flex-col gap-1">
-                    {isEnabled('studentAffairs') && (
-                      <>
-                        <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
-                          <FaChartBar className="text-lg min-w-[18px]" />
-                          <span>รายงานกิจการนักเรียน</span>
-                        </NavLink>
-                        <NavLink to="/academic/hub/settings" className={navLinkClasses}>
-                          <FaCog className="text-lg min-w-[18px]" />
-                          <span>ตั้งค่าคะแนนพฤติกรรม</span>
-                        </NavLink>
-                      </>
-                    )}
-                  </div>
-                </CanAccess>
               </>
             )}
           </nav>

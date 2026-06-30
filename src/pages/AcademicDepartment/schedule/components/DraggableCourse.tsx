@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Trash2, Lock, Unlock } from 'lucide-react';
@@ -39,6 +39,10 @@ export const DraggableCourse: React.FC<DraggableCourseProps> = ({
             course: course
         }
     });
+
+    useEffect(() => {
+        if (isDragging) onHover?.(null);
+    }, [isDragging]);
 
     const style = {
         transform: CSS.Translate.toString(transform),

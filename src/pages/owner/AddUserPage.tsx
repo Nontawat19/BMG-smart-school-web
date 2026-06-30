@@ -8,6 +8,7 @@ import { doc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/fire
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import MainLayout from '@/layouts/MainLayout';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
+import BackButton from '@/components/Shared/BackButton';
 import Swal from 'sweetalert2';
 import { FaSave, FaTimes, FaUserPlus, FaEnvelope, FaUser, FaShieldAlt, FaArrowLeft, FaCamera, FaChevronDown, FaCheck, FaLock, FaSchool, FaSearch } from 'react-icons/fa';
 import { compressImage } from '@/utils/imageUtils';
@@ -44,6 +45,12 @@ const STAFF_ROLES: string[] = [
     ROLES.SCHOOL_ATTENDANCE,
 ];
 
+const ATTENDANCE_ONLY_ROLES: string[] = [
+    ROLES.STUDENT_ATTENDANCE,
+    ROLES.TEACHER_ATTENDANCE,
+    ROLES.SCHOOL_ATTENDANCE,
+];
+
 const AddUserPage = () => {
     const navigate = useNavigate();
     const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
@@ -56,7 +63,7 @@ const AddUserPage = () => {
         confirmPassword: '',
         role: ['teacher'] as string[],
         schoolId: '',
-        department: 'งานบริหารทั่วไป',
+        department: '',
     });
     const [customTitle, setCustomTitle] = useState("");
     const [schools, setSchools] = useState<School[]>([]);
@@ -124,7 +131,8 @@ const AddUserPage = () => {
         const updatedRoles = currentRoles.includes(roleValue)
             ? currentRoles.filter(r => r !== roleValue)
             : [...currentRoles, roleValue];
-        setFormData({ ...formData, role: updatedRoles });
+        const isAttendanceOnly = updatedRoles.length > 0 && updatedRoles.every(r => ATTENDANCE_ONLY_ROLES.includes(r));
+        setFormData({ ...formData, role: updatedRoles, department: isAttendanceOnly ? '' : formData.department });
     };
 
     const selectedSchool = useMemo(() => {
@@ -423,40 +431,21 @@ const AddUserPage = () => {
 
     return (
         <MainLayout>
-            <div className="min-h-screen bg-gray-50/50 dark:bg-[#14141b] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
-                <div className="max-w-5xl mx-auto px-4 py-8">
+            <div className="min-h-screen bg-gray-50 dark:bg-[#1c1c24] text-gray-900 dark:text-white transition-colors duration-300 pb-12">
+                <div className="max-w-5xl mx-auto px-3 py-4 sm:px-4 md:px-6 lg:px-8 lg:py-8">
                     {/* Header Section */}
-                    <div className="relative overflow-hidden bg-white dark:bg-[#1c1c24] rounded-2xl p-6 sm:p-10 mb-8 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none transition-all">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -mr-20 -mt-20"></div>
-                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-500/5 blur-[60px] rounded-full -ml-16 -mb-16"></div>
-
-                        <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                            <div className="space-y-2">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest">
-                                    <FaUserPlus size={10} />
-                                    Account Creation
-                                </div>
-                                <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-gray-900 dark:text-white">
-                                    เพิ่มผู้ใช้ <span className="text-indigo-500">ใหม่</span>
-                                </h1>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md font-medium">
-                                    สร้างบัญชีผู้ใช้งานระบบ พร้อมกำหนดบทบาทและสิทธิ์การเข้าถึงอย่างแม่นยำ
-                                </p>
-                            </div>
-                            <Link
-                                to="/owner/users"
-                                className="group inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-sm font-black transition-all hover:bg-gray-200 dark:hover:bg-white/10 active:scale-95 border border-transparent dark:border-white/5"
-                            >
-                                <FaArrowLeft className="text-[10px] transition-transform group-hover:-translate-x-1" />
-                                กลับหน้ารายการ
-                            </Link>
+                    <div className="mb-8 flex items-center gap-4">
+                        <BackButton to="/owner/users" />
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">เพิ่มผู้ใช้ใหม่</h1>
+                            <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">สร้างบัญชีผู้ใช้งานระบบ พร้อมกำหนดบทบาทและสิทธิ์การเข้าถึง</p>
                         </div>
                     </div>
 
                     <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                         {/* Profile Card */}
                         <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24">
-                            <div className="bg-white dark:bg-[#1c1c24] rounded-3xl p-8 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none text-center">
+                            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-8 border border-gray-100 dark:border-white/5 shadow-sm dark:shadow-none text-center">
                                 <div className="relative w-40 h-40 mx-auto group">
                                     <div className="absolute inset-0 bg-indigo-500 rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity"></div>
                                     <ProfileAvatar
@@ -490,7 +479,7 @@ const AddUserPage = () => {
 
                         {/* Form Card */}
                         <div className="lg:col-span-8 space-y-8">
-                            <div className="bg-white dark:bg-[#1c1c24] rounded-3xl p-8 sm:p-10 border border-white dark:border-white/5 shadow-xl shadow-gray-200/50 dark:shadow-none">
+                            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 sm:p-8 border border-gray-100 dark:border-white/5 shadow-sm dark:shadow-none">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     {/* Name Row */}
                                     <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -802,8 +791,8 @@ const AddUserPage = () => {
                                             </div>
                                         </div>
 
-                                    {/* Department Select - Show if teacher or school admin role is selected */}
-                                    {formData.role.some(r => STAFF_ROLES.includes(r)) && (
+                                    {/* Department Select - Hide when only attendance roles selected */}
+                                    {formData.role.some(r => STAFF_ROLES.includes(r)) && !formData.role.every(r => ATTENDANCE_ONLY_ROLES.includes(r)) && (
                                         <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
                                             <label className={labelClasses}>ฝ่ายงาน (Department)</label>
                                             <select
@@ -812,6 +801,7 @@ const AddUserPage = () => {
                                                 onChange={handleInputChange}
                                                 className="w-full px-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
                                             >
+                                                <option value="">-- เลือกฝ่ายงาน --</option>
                                                 {departmentOptions.map(dept => (
                                                     <option key={dept} value={dept}>{dept}</option>
                                                 ))}

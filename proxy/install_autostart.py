@@ -119,45 +119,107 @@ def uninstall_macos():
 # ─────────────────────────────────────────────
 
 def install_windows(python_path):
-    import winreg
-
-    # ใช้ pythonw.exe (ไม่มี console window) แทน python.exe
+    # ใช้ pythonw.exe (ไม่มี console window)
+    # local_camera_proxy.py จัดการ sys.stdout=None เองแล้ว จึงทำงานได้กับ pythonw
     pythonw = os.path.join(os.path.dirname(python_path), "pythonw.exe")
     if not os.path.exists(pythonw):
-        pythonw = python_path  # fallback
+        pythonw = python_path  # fallback: ใช้ python.exe แทน
 
-    # ลงทะเบียนใน Registry HKCU Run — ไม่ต้อง Admin, รองรับ path มีช่องว่างสมบูรณ์
-    run_value = f'"{pythonw}" "{PROXY_SCRIPT}"'
+    log_out = os.path.join(SCRIPT_DIR, "camera_proxy_stdout.log")
+    log_err = os.path.join(SCRIPT_DIR, "camera_proxy_stderr.log")
+    task_cmd = f'"{pythonw}" "{PROXY_SCRIPT}"'
+
+    # ลบ entry เก่าจากทุก method ก่อน (ป้องกัน duplicate)
     try:
+        import winreg
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
             0, winreg.KEY_SET_VALUE
         )
-        winreg.SetValueEx(key, TASK_NAME, 0, winreg.REG_SZ, run_value)
+        try:
+            winreg.DeleteValue(key, TASK_NAME)
+        except FileNotFoundError:
+            pass
         winreg.CloseKey(key)
-    except Exception as exc:
-        print(f"[ERROR] ลงทะเบียน Registry ไม่สำเร็จ: {exc}")
-        sys.exit(1)
+    except Exception:
+        pass
+    subprocess.run(f'schtasks /delete /tn "{TASK_NAME}" /f', capture_output=True, shell=True)
+    for old_file in ["start_proxy_hidden.vbs", "run_proxy_hidden.vbs"]:
+        p = os.path.join(SCRIPT_DIR, old_file)
+        if os.path.exists(p):
+            os.remove(p)
 
-    # ลบ Task Scheduler เก่าและ VBS เก่า (ถ้ามีจากเวอร์ชันก่อน)
-    subprocess.run(f'schtasks /delete /tn "{TASK_NAME}" /f',
-                   capture_output=True, shell=True)
-    vbs_old = os.path.join(SCRIPT_DIR, "start_proxy_hidden.vbs")
-    if os.path.exists(vbs_old):
-        os.remove(vbs_old)
+    # ── ลงทะเบียน Task Scheduler (ดีกว่า Registry: รองรับ restart อัตโนมัติ) ──
+    # สร้าง XML task definition เพื่อตั้ง RestartOnFailure ได้
+    task_xml = f'''<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>
+  </Triggers>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>99</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions>
+    <Exec>
+      <Command>{pythonw}</Command>
+      <Arguments>"{PROXY_SCRIPT}"</Arguments>
+      <WorkingDirectory>{SCRIPT_DIR}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>'''
 
-    # เริ่มทำงานทันทีโดยไม่ต้องรอ reboot
+    import tempfile
+    xml_file = os.path.join(tempfile.gettempdir(), f"{TASK_NAME}.xml")
+    with open(xml_file, "w", encoding="utf-16") as f:
+        f.write(task_xml)
+
+    result = subprocess.run(
+        f'schtasks /create /tn "{TASK_NAME}" /xml "{xml_file}" /f',
+        capture_output=True, text=True, shell=True
+    )
+    os.remove(xml_file)
+
+    if result.returncode != 0:
+        # Fallback: Registry HKCU\Run (ถ้า schtasks ไม่ทำงาน)
+        print(f"[WARN] Task Scheduler ล้มเหลว ({result.stderr.strip()}) → ใช้ Registry แทน")
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0, winreg.KEY_SET_VALUE
+            )
+            winreg.SetValueEx(key, TASK_NAME, 0, winreg.REG_SZ, task_cmd)
+            winreg.CloseKey(key)
+            print("[INFO]    ลงทะเบียน Registry startup สำเร็จ (ไม่มี auto-restart)")
+        except Exception as exc:
+            print(f"[ERROR] ลงทะเบียน auto-start ไม่สำเร็จ: {exc}")
+            sys.exit(1)
+    else:
+        print("[INFO]    Task Scheduler: รันอัตโนมัติตอน login + restart เมื่อ crash")
+
+    # หยุด process เก่า แล้วเริ่มทันที (ไม่ต้อง reboot)
+    _kill_port_windows(18188)
+    import time as _time
+    _time.sleep(1)
+
     subprocess.Popen(
         [pythonw, PROXY_SCRIPT],
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
-        cwd=SCRIPT_DIR
+        cwd=SCRIPT_DIR,
     )
 
-    print("[SUCCESS] ติดตั้งสำเร็จ!")
-    print("[INFO]    Proxy กำลังทำงานอยู่แล้วตอนนี้ (ทำงานเบื้องหลัง ไม่มี window)")
-    print("[INFO]    จะรันอัตโนมัติทุกครั้งที่ login เข้า Windows")
-    print(f"[INFO]    Startup key: HKCU\\...\\Run\\{TASK_NAME}")
+    print("[SUCCESS] ติดตั้งสำเร็จ! Proxy กำลังทำงานเบื้องหลังแล้ว")
+    print("[INFO]    จะรันอัตโนมัติทุกครั้งที่เปิดเครื่อง + restart เมื่อ crash")
+    print(f"[INFO]    Log: {log_out}")
 
 
 def _kill_port_windows(port):

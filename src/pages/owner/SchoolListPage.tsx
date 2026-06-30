@@ -5,6 +5,7 @@ import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import Swal from 'sweetalert2';
 import { FaPlus, FaEdit, FaTrash, FaSchool, FaUserTie, FaSearch, FaChalkboardTeacher, FaUserGraduate, FaDatabase, FaHdd, FaServer } from 'react-icons/fa';
+import { List, LayoutGrid } from 'lucide-react';
 import MainLayout from "@/layouts/MainLayout";
 import {
   fetchSchoolDashboardSummary,
@@ -74,6 +75,9 @@ const SchoolListPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshingSummary, setIsRefreshingSummary] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('schoolListViewMode') as 'grid' | 'list') || 'grid';
+  });
 
   const collectionName = 'school-settings';
 
@@ -269,6 +273,23 @@ const SchoolListPage: React.FC = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-xl p-1 shadow-sm self-start sm:self-auto">
+                <button
+                  onClick={() => { setViewMode('list'); localStorage.setItem('schoolListViewMode', 'list'); }}
+                  className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  title="แสดงผลแบบรายการ (List)"
+                >
+                  <List size={14} />
+                </button>
+                <button
+                  onClick={() => { setViewMode('grid'); localStorage.setItem('schoolListViewMode', 'grid'); }}
+                  className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  title="แสดงผลแบบการ์ด (Grid)"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+              </div>
               <Link
                 to="/owner/school-info"
                 className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95 text-[11px] whitespace-nowrap"
@@ -331,110 +352,156 @@ const SchoolListPage: React.FC = () => {
             {isLoading ? (
               <SkeletonLoader />
             ) : filteredSchools.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredSchools.map((school) => (
-                  <div key={school.id} className="bg-gray-50 dark:bg-[#1e1f21] rounded-xl p-2.5 shadow-lg flex flex-col border border-gray-200 dark:border-gray-700/50 hover:border-sky-500/50 transition-all duration-300">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className="w-12 h-12 rounded-xl bg-white dark:bg-gray-800 flex items-center justify-center overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
-                          {school.logoUrl ? (
-                            <img src={school.logoUrl} alt="School Logo" className="w-full h-full object-cover" />
-                          ) : (
-                            <FaSchool className="text-gray-400 dark:text-gray-500 text-xl" />
-                          )}
-                        </div>
-
-                        <div className="flex-1">
-                          <Link to={`/owner/schools/${school.id}`} className="text-sm font-bold text-gray-900 dark:text-white hover:text-sky-500 dark:hover:text-sky-400 transition-colors leading-tight block" title={school.schoolName}>
-                            {school.schoolName || 'ยังไม่มีชื่อโรงเรียน'} {school.schoolAbbreviation && `(${school.schoolAbbreviation})`}
+              viewMode === 'list' ? (
+                <div className="flex flex-col gap-2">
+                  {filteredSchools.map((school) => (
+                    <div key={school.id} className="group relative bg-gray-50 dark:bg-[#1e1f21] rounded-xl px-3 py-2.5 border border-gray-200 dark:border-gray-700/50 hover:border-sky-500/40 hover:shadow-md transition-all duration-200 flex items-center gap-3">
+                      <div className="absolute top-0 left-0 h-full w-1 bg-sky-500 rounded-l-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="w-9 h-9 rounded-lg bg-white dark:bg-gray-800 flex items-center justify-center overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+                        {school.logoUrl ? (
+                          <img src={school.logoUrl} alt="School Logo" className="w-full h-full object-cover" />
+                        ) : (
+                          <FaSchool className="text-gray-400 dark:text-gray-500 text-sm" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 items-center">
+                        <div className="min-w-0">
+                          <Link to={`/owner/schools/${school.id}`} className="text-xs font-bold text-gray-900 dark:text-white hover:text-sky-500 dark:hover:text-sky-400 transition-colors truncate block">
+                            {school.schoolName || 'ยังไม่มีชื่อ'} {school.schoolAbbreviation && `(${school.schoolAbbreviation})`}
                           </Link>
-                          <p className="text-gray-500 dark:text-gray-400 text-[9px] mt-0.5">{school.affiliation || 'ยังไม่มีสังกัด'}</p>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {school.schoolType && (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                                {school.schoolType}
-                              </span>
-                            )}
-                            {school.opportunityExpansionLevel && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                {school.opportunityExpansionLevel}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-gray-600 dark:text-gray-300 text-xs mt-2">
-                            {[
-                              school.subDistrict ? `ต.${school.subDistrict}` : '',
-                              school.district ? `อ.${school.district}` : '',
-                              school.province ? `จ.${school.province}` : '',
-                            ].filter(Boolean).join(' ') || 'ไม่มีข้อมูลที่อยู่'}
-                          </p>
+                          <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">{school.affiliation || 'ยังไม่มีสังกัด'}</p>
+                        </div>
+                        <div className="flex items-center gap-1 text-[9px] text-gray-500 dark:text-gray-400">
+                          <FaUserTie size={9} className="flex-shrink-0" />
+                          <span className="truncate">{[school.directorPrefix, school.directorName].filter(Boolean).join(' ') || '-'}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                            <FaChalkboardTeacher size={9} /> {school.teacherCount || 0}
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <FaUserGraduate size={9} /> {school.studentCount || 0}
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-orange-600 dark:text-orange-400">
+                            <FaDatabase size={9} /> {school.firestoreUsage || '0 MB'}
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 dark:text-red-400">
+                            <FaHdd size={9} /> {school.storageUsage || '0 GB'}
+                          </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
                         <Link to={`/owner/school-info/${school.id}`} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="แก้ไข">
-                          <FaEdit size={12} />
+                          <FaEdit size={11} />
                         </Link>
-                        <button
-                          onClick={() => handleDeleteSchool(school.id, school.logoUrl)}
-                          className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                          title="ลบ"
-                        >
-                          <FaTrash size={11} />
+                        <button onClick={() => handleDeleteSchool(school.id, school.logoUrl)} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="ลบ">
+                          <FaTrash size={10} />
                         </button>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 gap-1.5 mb-3">
-                      <div className="flex items-center gap-1.5 p-1 rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/30">
-                        <div className="p-1 rounded bg-white dark:bg-indigo-900/30 shadow-sm text-indigo-600 dark:text-indigo-400">
-                          <FaChalkboardTeacher size={9} />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredSchools.map((school) => (
+                    <div key={school.id} className="bg-gray-50 dark:bg-[#1e1f21] rounded-xl p-2.5 shadow-lg flex flex-col border border-gray-200 dark:border-gray-700/50 hover:border-sky-500/50 transition-all duration-300">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-start gap-3 flex-1">
+                          <div className="w-12 h-12 rounded-xl bg-white dark:bg-gray-800 flex items-center justify-center overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
+                            {school.logoUrl ? (
+                              <img src={school.logoUrl} alt="School Logo" className="w-full h-full object-cover" />
+                            ) : (
+                              <FaSchool className="text-gray-400 dark:text-gray-500 text-xl" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <Link to={`/owner/schools/${school.id}`} className="text-sm font-bold text-gray-900 dark:text-white hover:text-sky-500 dark:hover:text-sky-400 transition-colors leading-tight block" title={school.schoolName}>
+                              {school.schoolName || 'ยังไม่มีชื่อโรงเรียน'} {school.schoolAbbreviation && `(${school.schoolAbbreviation})`}
+                            </Link>
+                            <p className="text-gray-500 dark:text-gray-400 text-[9px] mt-0.5">{school.affiliation || 'ยังไม่มีสังกัด'}</p>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {school.schoolType && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                  {school.schoolType}
+                                </span>
+                              )}
+                              {school.opportunityExpansionLevel && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                  {school.opportunityExpansionLevel}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-gray-600 dark:text-gray-300 text-xs mt-2">
+                              {[
+                                school.subDistrict ? `ต.${school.subDistrict}` : '',
+                                school.district ? `อ.${school.district}` : '',
+                                school.province ? `จ.${school.province}` : '',
+                              ].filter(Boolean).join(' ') || 'ไม่มีข้อมูลที่อยู่'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">ครู</span>
-                          <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.teacherCount || 0}</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Link to={`/owner/school-info/${school.id}`} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="แก้ไข">
+                            <FaEdit size={12} />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteSchool(school.id, school.logoUrl)}
+                            className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                            title="ลบ"
+                          >
+                            <FaTrash size={11} />
+                          </button>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 p-1 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30">
-                        <div className="p-1 rounded bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-400">
-                          <FaUserGraduate size={9} />
+                      <div className="grid grid-cols-2 gap-1.5 mb-3">
+                        <div className="flex items-center gap-1.5 p-1 rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/30">
+                          <div className="p-1 rounded bg-white dark:bg-indigo-900/30 shadow-sm text-indigo-600 dark:text-indigo-400">
+                            <FaChalkboardTeacher size={9} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">ครู</span>
+                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.teacherCount || 0}</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">นักเรียน</span>
-                          <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.studentCount || 0}</span>
+                        <div className="flex items-center gap-1.5 p-1 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30">
+                          <div className="p-1 rounded bg-white dark:bg-emerald-900/30 shadow-sm text-emerald-600 dark:text-emerald-400">
+                            <FaUserGraduate size={9} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">นักเรียน</span>
+                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.studentCount || 0}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 p-1 rounded-lg bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30">
+                          <div className="p-1 rounded bg-white dark:bg-orange-900/30 shadow-sm text-orange-600 dark:text-orange-400">
+                            <FaDatabase size={9} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">Data</span>
+                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.firestoreUsage || '0 MB'}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 p-1 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/30">
+                          <div className="p-1 rounded bg-white dark:bg-red-900/30 shadow-sm text-red-600 dark:text-red-400">
+                            <FaHdd size={9} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">Storage</span>
+                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.storageUsage || '0 GB'}</span>
+                          </div>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 p-1 rounded-lg bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30">
-                        <div className="p-1 rounded bg-white dark:bg-orange-900/30 shadow-sm text-orange-600 dark:text-orange-400">
-                          <FaDatabase size={9} />
-                        </div>
+                      <div className="mt-auto pt-2 border-t border-gray-200 dark:border-gray-700/50 flex items-center gap-2">
+                        <FaUserTie className="text-gray-400 dark:text-gray-500 text-xs" />
                         <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">Data</span>
-                          <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.firestoreUsage || '0 MB'}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 p-1 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/30">
-                        <div className="p-1 rounded bg-white dark:bg-red-900/30 shadow-sm text-red-600 dark:text-red-400">
-                          <FaHdd size={9} />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-500 dark:text-gray-400 leading-none mb-0.5">Storage</span>
-                          <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200 leading-none">{school.storageUsage || '0 GB'}</span>
+                          <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{[school.directorPrefix, school.directorName].filter(Boolean).join(' ') || '-'}</span>
+                          <span className="text-[9px] text-gray-500 dark:text-gray-400">ผู้อำนวยการ{school.schoolName}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="mt-auto pt-2 border-t border-gray-200 dark:border-gray-700/50 flex items-center gap-2">
-                      <FaUserTie className="text-gray-400 dark:text-gray-500 text-xs" />
-                      <div className="flex flex-col">
-                        <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{[school.directorPrefix, school.directorName].filter(Boolean).join(' ') || '-'}</span>
-                        <span className="text-[9px] text-gray-500 dark:text-gray-400">ผู้อำนวยการ{school.schoolName}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             ) : (
               <div className="text-center py-10">
                 <p className="text-gray-500 dark:text-gray-400">ยังไม่มีข้อมูลโรงเรียนในระบบ</p>

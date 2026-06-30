@@ -1,5 +1,5 @@
 import React from 'react';
-import { DAYS, checkConstraints, getClassDisplayName, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isProtectedSpecialPeriodSetting } from '../utils';
+import { DAYS, checkConstraints, getClassDisplayName, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isActivityCourse, isProtectedSpecialPeriodSetting } from '../utils';
 import { DroppableCell } from './DroppableCell';
 import { CourseInstance, PeriodSetting, SpecialPeriod, Teacher, Schedule, AssignmentConstraintMap, MasterScheduleEntry } from '../types';
 import { getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
@@ -177,7 +177,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
         const key = getCourseKey(course);
         return {
             scheduled: key ? scheduledPeriodCountByCourse.get(key) || 0 : 0,
-            total: getRequiredWeeklyPeriods(course),
+            total: isActivityCourse(course) ? Math.min(getRequiredWeeklyPeriods(course), 2) : getRequiredWeeklyPeriods(course),
         };
     }, [scheduledPeriodCountByCourse]);
 

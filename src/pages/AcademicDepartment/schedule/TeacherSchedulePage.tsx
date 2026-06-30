@@ -244,42 +244,47 @@ const TeacherSchedulePageContent: React.FC = () => {
         }
 
         const targetSem = String(selectedSemester || "1");
-        const total = allCourses.reduce((sum, course: Course) => {
+        let total = 0;
+        let scheduled = 0;
+
+        // Iterate assignments (same source as total) so both sides use semester-filtered data
+        allCourses.forEach((course: Course) => {
             const semStr = String(course.semester || "");
             const isCorrectSemester = !course.semester ||
                 semStr === targetSem ||
                 semStr.startsWith(targetSem + '/') ||
                 targetSem.startsWith(semStr + '/');
 
-            if (!isCorrectSemester) return sum;
-            if (isClubCourse(course)) return sum;
-            if (!isAcademicCourse(course) && !isActivityCourse(course)) return sum;
+            if (!isCorrectSemester) return;
+            if (isClubCourse(course)) return;
+            if (!isAcademicCourse(course) && !isActivityCourse(course)) return;
 
-            const assignments = course.teacherAssignments || [];
-            const relevantAssignments = assignments.filter((assignment) => {
+            const relevantAssignments = (course.teacherAssignments || []).filter((assignment) => {
                 const teacherIds = getAssignmentTeacherIds(assignment);
                 const groupNumber = assignment.groupNumber || 1;
                 return teacherIds.includes(selectedTeacher) &&
                     isCourseAllowedInScheduleViews(course.id, selectedTeacher, groupNumber);
             });
 
-            if (relevantAssignments.length > 0) {
-                return sum + relevantAssignments.length * getRequiredWeeklyPeriods(course);
-            }
+            relevantAssignments.forEach((assign) => {
+                const groupNum = assign.groupNumber || 1;
+                const rawPeriods = getRequiredWeeklyPeriods(course);
+                // Activity courses (ลูกเสือ/รด/ยุวกาชาด) may store annual hours in hoursPerWeek
+                // Cap at 2 to match the auto-scheduler's behavior (same logic as useAutoScheduleAction.ts)
+                const requiredPeriods = isActivityCourse(course) ? Math.min(rawPeriods, 2) : rawPeriods;
+                total += requiredPeriods;
 
-            return sum;
-        }, 0);
-
-        const scheduled = Object.values(schedule).reduce((sum, coursesInSlot) => {
-            const uniqueAssignmentsInSlot = new Set<string>();
-
-            coursesInSlot.forEach(course => {
-                if (!isCourseAllowedInScheduleViews(course.id, selectedTeacher, course.groupNumber)) return;
-                uniqueAssignmentsInSlot.add(course.compositeId || `${course.id}_${course.groupNumber || 1}`);
+                // Count actual scheduled slots for this specific course+group
+                let slotCount = 0;
+                Object.values(schedule).forEach(slots => {
+                    slotCount += slots.filter(inst =>
+                        inst.id === course.id &&
+                        (inst.groupNumber === groupNum || (!inst.groupNumber && groupNum === 1))
+                    ).length;
+                });
+                scheduled += slotCount;
             });
-
-            return sum + uniqueAssignmentsInSlot.size;
-        }, 0);
+        });
 
         return { scheduled, total };
     }, [selectedTeacher, selectedSemester, allCourses, schedule, isCourseAllowedInScheduleViews]);
@@ -477,7 +482,6 @@ const TeacherSchedulePageContent: React.FC = () => {
 
         const bank: CourseInstance[] = [];
         teacherCourses.forEach((course: Course) => {
-            const totalHours = getRequiredWeeklyPeriods(course);
             const relevantAssignments = course.teacherAssignments?.filter((a) => getAssignmentTeacherIds(a).includes(selectedTeacher)) || [];
 
             relevantAssignments.forEach((assign) => {
@@ -511,7 +515,8 @@ const TeacherSchedulePageContent: React.FC = () => {
                     ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
                     : '';
 
-                const totalHours = getRequiredWeeklyPeriods(course);
+                const rawHours = getRequiredWeeklyPeriods(course);
+                const totalHours = isActivityCourse(course) ? Math.min(rawHours, 2) : rawHours;
 
                 const remaining = Math.max(0, totalHours - scheduledCount);
                 for (let i = 0; i < remaining; i++) {
@@ -959,7 +964,7 @@ const TeacherSchedulePageContent: React.FC = () => {
     return (
         <DndContext
             sensors={sensors}
-            onDragStart={handleDragStart}
+            onDragStart={(event) => { setHoveredSlot(null); handleDragStart(event); }}
             onDragEnd={handleDragEnd}
             collisionDetection={collisionDetectionStrategy}
             modifiers={[restrictToWindowEdges]}

@@ -70,6 +70,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'student_import_dmc',  path: '/school/:schoolId/students/import-dmc',         label: 'นำเข้าข้อมูลจาก DMC',          category: 'ข้อมูลนักเรียน', defaultRoles: ACADEMIC_ACCESS },
   { key: 'student_bulk_upload', path: '/school/:schoolId/students/bulk-upload',        label: 'อัปโหลดรูปนักเรียน (Bulk)',     category: 'ข้อมูลนักเรียน', defaultRoles: ACADEMIC_ACCESS },
   { key: 'map_rfid',            path: '/school/:schoolId/map-rfid/:type',              label: 'ลงทะเบียนบัตร RFID',            category: 'ข้อมูลนักเรียน', defaultRoles: ACADEMIC_ACCESS },
+  { key: 'student_photo_download', path: '/academic/student-photo-download',           label: 'ดาวน์โหลดรูปภาพนักเรียน',       category: 'ข้อมูลนักเรียน', defaultRoles: STAFF_ACCESS },
 
   // ──────────────────────────────── ข้อมูลบุคลากร ────────────────────────────────
   { key: 'teacher_list',             path: '/school/:schoolId/teachers',                         label: 'รายชื่อครู',                    category: 'ข้อมูลบุคลากร', defaultRoles: [...ADMIN_ACCESS, ...ACADEMIC_ACCESS] },

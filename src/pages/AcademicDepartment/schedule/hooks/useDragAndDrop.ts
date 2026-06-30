@@ -2,7 +2,7 @@ import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { CourseInstance, MasterScheduleEntry, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
-import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
+import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isActivityCourse, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
 
 const MySwal = withReactContent(Swal);
 
@@ -101,7 +101,8 @@ export const useDragAndDrop = ({
     ) => {
         if (forceExistingPair) return true;
         const constraint = assignmentConstraints[item.compositeId];
-        const totalPeriods = getRequiredWeeklyPeriods(item);
+        const rawPeriods = getRequiredWeeklyPeriods(item);
+        const totalPeriods = isActivityCourse(item) ? Math.min(rawPeriods, 2) : rawPeriods;
         const remainingPeriods = Math.max(0, totalPeriods - alreadyPlacedPeriods);
         if (remainingPeriods < 2) return false;
         if (!isDoubleCapableConstraint(constraint)) {

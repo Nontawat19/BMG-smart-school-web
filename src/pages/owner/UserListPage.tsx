@@ -151,10 +151,13 @@ const UserListPage: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('userListViewMode') as 'grid' | 'list') || 'grid';
+  });
 
   // --- Pagination State ---
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 21;
+  const itemsPerPage = viewMode === 'list' ? 30 : 21;
 
   const functions = getFunctions();
 
@@ -285,6 +288,117 @@ const UserListPage: React.FC = () => {
     }
   };
 
+  const renderGridCard = (user: User) => (
+    <div key={user.id} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-lg border border-gray-100 dark:border-gray-700/50 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col">
+      <div className="flex items-start gap-4">
+        <ProfileAvatar
+          className="h-16 w-16 border-2 border-gray-200 dark:border-gray-600"
+          src={user.profileUrl || `https://ui-avatars.com/api/?name=${user.fullName}&background=random`}
+          alt={user.fullName}
+        />
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-lg text-gray-900 dark:text-white truncate" title={user.fullName}>{user.fullName || 'N/A'}</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate" title={user.email}>{user.email}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {user.position && (
+              <Badge
+                icon={<FaBriefcase />}
+                text={user.position}
+                className="bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20"
+              />
+            )}
+            <RoleBadges roles={user.role} email={user.email} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-2 text-sm">
+        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+          {user.role.includes('super_admin') ? (
+            <>
+              <FaShieldAlt className="flex-shrink-0 text-red-500 dark:text-red-400" />
+              <span className="font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap">ผู้ดูแลระบบสูงสุด</span>
+            </>
+          ) : (
+            <>
+              <FaSchool className="flex-shrink-0 text-indigo-400 dark:text-gray-400" />
+              {user.schoolId ? (
+                <Link to={`/owner/schools/${user.schoolId}`} className="truncate font-semibold text-indigo-700/80 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors">
+                  {user.schoolName || 'ไม่ได้กำหนดโรงเรียน'}
+                </Link>
+              ) : (
+                <span className="truncate font-semibold text-gray-600 dark:text-gray-400">{user.schoolName || 'ไม่ได้กำหนดโรงเรียน'}</span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+          <span className="text-xs">สร้างเมื่อ: {user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleDateString('th-TH') : '-'}</span>
+        </div>
+      </div>
+
+      <div className="mt-auto pt-4 flex items-center justify-end gap-2">
+        <Link to={`/owner/users/edit/${user.id}`} className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-400/10 py-2 px-4 rounded-xl transition-all active:scale-95 border border-transparent hover:border-amber-100 dark:hover:border-amber-400/20">
+          <FaPencilAlt size={11} />
+          <span>แก้ไข</span>
+        </Link>
+        <button onClick={() => handleDeleteUser(user.id, user.fullName)} className="flex items-center gap-2 text-xs font-black text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-400/10 py-2 px-4 rounded-xl transition-all active:scale-95 border border-transparent hover:border-rose-100 dark:hover:border-rose-400/20">
+          <FaTrash size={11} />
+          <span>ลบ</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderListRow = (user: User) => (
+    <div key={user.id} className="group relative bg-white dark:bg-[#2a2b2f] rounded-2xl px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-700/50 hover:border-indigo-500/30 hover:shadow-md transition-all duration-200 flex items-center gap-4">
+      <div className="absolute top-0 left-0 h-full w-1 bg-indigo-500 rounded-l-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+      <ProfileAvatar
+        className="h-10 w-10 flex-shrink-0 border-2 border-gray-200 dark:border-gray-600"
+        src={user.profileUrl || `https://ui-avatars.com/api/?name=${user.fullName}&background=random`}
+        alt={user.fullName}
+      />
+      <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 items-center">
+        <div className="min-w-0">
+          <p className="font-bold text-sm text-gray-900 dark:text-white truncate">{user.fullName || 'N/A'}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
+        </div>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <RoleBadges roles={user.role} email={user.email} />
+        </div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {user.role.includes('super_admin') ? (
+            <>
+              <FaShieldAlt className="flex-shrink-0 text-red-500 dark:text-red-400 text-xs" />
+              <span className="text-xs font-bold text-red-600 dark:text-red-400 truncate">ผู้ดูแลระบบสูงสุด</span>
+            </>
+          ) : (
+            <>
+              <FaSchool className="flex-shrink-0 text-indigo-400 text-xs" />
+              {user.schoolId ? (
+                <Link to={`/owner/schools/${user.schoolId}`} className="text-xs font-semibold text-indigo-700/80 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 truncate transition-colors">
+                  {user.schoolName || 'ไม่ได้กำหนดโรงเรียน'}
+                </Link>
+              ) : (
+                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 truncate">ไม่ได้กำหนดโรงเรียน</span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Link to={`/owner/users/edit/${user.id}`} className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-400/10 py-1.5 px-3 rounded-xl transition-all active:scale-95">
+          <FaPencilAlt size={10} />
+          <span className="hidden sm:inline">แก้ไข</span>
+        </Link>
+        <button onClick={() => handleDeleteUser(user.id, user.fullName)} className="flex items-center gap-1.5 text-xs font-black text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-400/10 py-1.5 px-3 rounded-xl transition-all active:scale-95">
+          <FaTrash size={10} />
+          <span className="hidden sm:inline">ลบ</span>
+        </button>
+      </div>
+    </div>
+  );
+
   const renderContent = () => {
     if (isLoading) {
       return <SkeletonLoader />;
@@ -298,69 +412,15 @@ const UserListPage: React.FC = () => {
 
     return (
       <div className="space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {currentItems.map((user) => (
-            <div key={user.id} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-lg border border-gray-100 dark:border-gray-700/50 hover:border-indigo-500/30 hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col">
-              <div className="flex items-start gap-4">
-                <ProfileAvatar
-                  className="h-16 w-16 border-2 border-gray-200 dark:border-gray-600"
-                  src={user.profileUrl || `https://ui-avatars.com/api/?name=${user.fullName}&background=random`}
-                  alt={user.fullName}
-                />
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-lg text-gray-900 dark:text-white truncate" title={user.fullName}>{user.fullName || 'N/A'}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate" title={user.email}>{user.email}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {user.position && (
-                      <Badge
-                        icon={<FaBriefcase />}
-                        text={user.position}
-                        className="bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20"
-                      />
-                    )}
-                    <RoleBadges roles={user.role} email={user.email} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  {user.role.includes('super_admin') ? (
-                    <>
-                      <FaShieldAlt className="flex-shrink-0 text-red-500 dark:text-red-400" />
-                      <span className="font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap">ผู้ดูแลระบบสูงสุด</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaSchool className="flex-shrink-0 text-indigo-400 dark:text-gray-400" />
-                      {user.schoolId ? (
-                        <Link to={`/owner/schools/${user.schoolId}`} className="truncate font-semibold text-indigo-700/80 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors">
-                          {user.schoolName || 'ไม่ได้กำหนดโรงเรียน'}
-                        </Link>
-                      ) : (
-                        <span className="truncate font-semibold text-gray-600 dark:text-gray-400">{user.schoolName || 'ไม่ได้กำหนดโรงเรียน'}</span>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                  <span className="text-xs">สร้างเมื่อ: {user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleDateString('th-TH') : '-'}</span>
-                </div>
-              </div>
-
-              <div className="mt-auto pt-4 flex items-center justify-end gap-2">
-                <Link to={`/owner/users/edit/${user.id}`} className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-400/10 py-2 px-4 rounded-xl transition-all active:scale-95 border border-transparent hover:border-amber-100 dark:hover:border-amber-400/20">
-                  <FaPencilAlt size={11} />
-                  <span>แก้ไข</span>
-                </Link>
-                <button onClick={() => handleDeleteUser(user.id, user.fullName)} className="flex items-center gap-2 text-xs font-black text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-400/10 py-2 px-4 rounded-xl transition-all active:scale-95 border border-transparent hover:border-rose-100 dark:hover:border-rose-400/20">
-                  <FaTrash size={11} />
-                  <span>ลบ</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+        {viewMode === 'list' ? (
+          <div className="flex flex-col gap-2">
+            {currentItems.map(renderListRow)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {currentItems.map(renderGridCard)}
+          </div>
+        )}
 
         {/* --- Pagination Footer --- */}
         {totalPages > 1 && (
@@ -472,6 +532,23 @@ const UserListPage: React.FC = () => {
                   <option value={ROLES.TEACHER_ATTENDANCE}>ลงเวลาครู (Teacher Attendance)</option>
                   <option value={ROLES.STUDENT}>นักเรียน (Student)</option>
                 </select>
+              </div>
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-xl p-1 shadow-sm self-start sm:self-auto">
+                <button
+                  onClick={() => { setViewMode('list'); localStorage.setItem('userListViewMode', 'list'); }}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  title="แสดงผลแบบรายการ (List)"
+                >
+                  <List size={16} />
+                </button>
+                <button
+                  onClick={() => { setViewMode('grid'); localStorage.setItem('userListViewMode', 'grid'); }}
+                  className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  title="แสดงผลแบบการ์ด (Grid)"
+                >
+                  <LayoutGrid size={16} />
+                </button>
               </div>
               <Link
                 to="/owner/users/add"
