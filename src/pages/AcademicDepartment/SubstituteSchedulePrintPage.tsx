@@ -76,12 +76,13 @@ const formatClassId = (classId: string | string[] | null | undefined): string =>
 const formatThaiDate = (dateStr: string): string => {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("th-TH", {
+  const raw = d.toLocaleDateString("th-TH", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+  return raw.replace(/([^\s])ที่/, "$1 ที่");
 };
 
 const sanitizeFileName = (v: string) =>
@@ -98,7 +99,7 @@ const pdfStyles = StyleSheet.create({
   page: {
     fontFamily: "TH Sarabun PSK",
     fontSize: 14,
-    paddingHorizontal: 35,
+    paddingHorizontal: 60,
     paddingTop: 24,
     paddingBottom: 50,
     backgroundColor: "#ffffff",
@@ -155,16 +156,32 @@ const pdfStyles = StyleSheet.create({
   mainTitle: { fontSize: 18, fontWeight: "bold", textAlign: "center" },
   mainSubtitle: { fontSize: 13, textAlign: "center", marginTop: 1 },
   signSection: {
-    marginTop: 30,
+    marginTop: 40,
+    width: "100%",
     alignItems: "center",
+  },
+  signWrapper: {
+    width: 360,
+    marginLeft: "auto",
+    marginRight: "auto",
   },
   signBlock: {
-    alignItems: "center",
-    width: "80%",
-    marginBottom: 22,
+    marginBottom: 28,
   },
-  signLine: { fontSize: 14, marginBottom: 8 },
-  signName: { fontSize: 14 },
+  signRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  signPrefix: { fontSize: 14 },
+  signDotsCol: { flex: 1 },
+  signDotsLine: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#000",
+    borderBottomStyle: "dotted",
+    height: 14,
+  },
+  signName: { fontSize: 14, marginTop: 3, marginLeft: 38, marginRight: 148, textAlign: "center" },
+  signRole: { fontSize: 14, width: 148, textAlign: "left" },
 });
 
 const SubstituteSchedulePdf: React.FC<{
@@ -196,7 +213,7 @@ const SubstituteSchedulePdf: React.FC<{
           {/* title + column headers stay together — won't be left orphaned at page bottom */}
           <View wrap={false}>
             <Text style={pdfStyles.tableTitle}>
-              {`ตารางสอนแทน ครู${group.teacherName} วันที่ ${dateLabel}`}
+              {`ตารางสอนแทน ครู ${group.teacherName} ${dateLabel}`}
             </Text>
             <View style={pdfStyles.rowHeader}>
               <Text style={[pdfStyles.cell, pdfStyles.cellPeriod, { fontWeight: "bold" }]}>คาบที่</Text>
@@ -219,13 +236,27 @@ const SubstituteSchedulePdf: React.FC<{
       ))}
 
       <View style={pdfStyles.signSection}>
-        <View style={pdfStyles.signBlock}>
-          <Text style={pdfStyles.signLine}>ลงชื่อ.......................................งานจัดสอนแทน</Text>
-          <Text style={pdfStyles.signName}>{`(${signerName || "........................................"})`}</Text>
-        </View>
-        <View style={pdfStyles.signBlock}>
-          <Text style={pdfStyles.signLine}>ลงชื่อ.......................................หัวหน้ากลุ่มบริหารวิชาการ</Text>
-          <Text style={pdfStyles.signName}>{`(${academicHeadName || "........................................"})`}</Text>
+        <View style={pdfStyles.signWrapper}>
+          <View style={pdfStyles.signBlock}>
+            <View style={pdfStyles.signRow}>
+              <Text style={pdfStyles.signPrefix}>ลงชื่อ</Text>
+              <View style={pdfStyles.signDotsCol}>
+                <View style={pdfStyles.signDotsLine} />
+              </View>
+              <Text style={pdfStyles.signRole}>งานจัดสอนแทน</Text>
+            </View>
+            <Text style={pdfStyles.signName}>{`(${signerName || "........................................"})`}</Text>
+          </View>
+          <View style={pdfStyles.signBlock}>
+            <View style={pdfStyles.signRow}>
+              <Text style={pdfStyles.signPrefix}>ลงชื่อ</Text>
+              <View style={pdfStyles.signDotsCol}>
+                <View style={pdfStyles.signDotsLine} />
+              </View>
+              <Text style={pdfStyles.signRole}>หัวหน้ากลุ่มบริหารวิชาการ</Text>
+            </View>
+            <Text style={pdfStyles.signName}>{`(${academicHeadName || "........................................"})`}</Text>
+          </View>
         </View>
       </View>
     </Page>

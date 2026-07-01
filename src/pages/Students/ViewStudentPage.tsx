@@ -8,16 +8,16 @@ import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
+import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc, collectionGroup, writeBatch } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
-import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { getCurrentThaiYear, formatNotificationTime } from "@/utils/dateUtils";
 import { formatStudentBirthDateThai } from "@/utils/birthDateUtils";
 import { formatClassLevelRange, isClassLevelInRange, CLASSES } from "@/utils/schoolUtils";
 import StudentScheduleEmbed from "./StudentScheduleEmbed";
@@ -472,12 +472,58 @@ export default function ViewStudentPage() {
   const isParentLogin = localStorage.getItem('currentUserType') === 'parent';
   const isStudentLogin = ['student', 'parent'].includes(localStorage.getItem('currentUserType') ?? '');
 
+  // Notification state
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const [isOpenNoti, setIsOpenNoti] = useState(false);
+  const [studentNotifications, setStudentNotifications] = useState<{ id: string; path: string; message: string; isRead: boolean; createdAt: Timestamp; link?: string }[]>([]);
+  const [isLoadingNoti, setIsLoadingNoti] = useState(false);
+
   const handleLogout = async () => {
     await signOut(auth);
     localStorage.removeItem('currentUserType');
     localStorage.removeItem('studentSession');
     localStorage.removeItem('parentSession');
     navigate('/login');
+  };
+
+  // Subscribe to notifications for student/parent
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !isStudentLogin) return;
+    setIsLoadingNoti(true);
+    const q = query(
+      collectionGroup(firestore, 'notifications'),
+      where('userId', '==', uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setStudentNotifications(snap.docs.map(d => ({ id: d.id, path: d.ref.path, ...(d.data() as any) })));
+      setIsLoadingNoti(false);
+    }, () => setIsLoadingNoti(false));
+    return () => unsub();
+  }, [isStudentLogin]);
+
+  // Close notification panel on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) setIsOpenNoti(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const notiUnreadCount = studentNotifications.filter(n => !n.isRead).length;
+
+  const handleNotiReadOne = async (n: { id: string; path: string; isRead: boolean; link?: string }) => {
+    if (!n.isRead && n.path) await updateDoc(doc(firestore, n.path), { isRead: true });
+    if (n.link) navigate(n.link);
+    setIsOpenNoti(false);
+  };
+
+  const handleNotiReadAll = async () => {
+    const batch = writeBatch(firestore);
+    studentNotifications.forEach(n => { if (!n.isRead && n.path) batch.update(doc(firestore, n.path), { isRead: true }); });
+    await batch.commit();
   };
 
   const getClubStatus = (_club: any): { text: string; color: string; isOpen: boolean; } => {
@@ -1230,6 +1276,74 @@ export default function ViewStudentPage() {
             {isDarkMode ? <FaSun size={20} /> : <FaMoon size={20} />}
           </button>
 
+          {/* Notification Bell */}
+          <div className="relative" ref={notificationRef}>
+            <button
+              type="button"
+              onClick={() => setIsOpenNoti(p => !p)}
+              className="relative p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors"
+              aria-label={`การแจ้งเตือน${notiUnreadCount > 0 ? ` (${notiUnreadCount} รายการใหม่)` : ''}`}
+              title="การแจ้งเตือน"
+            >
+              <FaBell size={20} />
+              {notiUnreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center leading-none">
+                  {notiUnreadCount > 9 ? '9+' : notiUnreadCount}
+                </span>
+              )}
+            </button>
+
+            {isOpenNoti && (
+              <div className="absolute top-full right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col z-[9999]">
+                {/* Header */}
+                <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white">การแจ้งเตือน</h3>
+                  {notiUnreadCount > 0 && (
+                    <button onClick={handleNotiReadAll} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                      อ่านทั้งหมด
+                    </button>
+                  )}
+                </div>
+                {/* Body */}
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {isLoadingNoti ? (
+                    <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">กำลังโหลด...</div>
+                  ) : studentNotifications.length === 0 ? (
+                    <div className="text-center py-12 px-6">
+                      <FaBell className="mx-auto mb-3 text-gray-300 dark:text-gray-600" size={36} />
+                      <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">ไม่มีการแจ้งเตือน</p>
+                      <p className="text-xs text-gray-400 mt-1">ทุกอย่างเรียบร้อยดี</p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {studentNotifications.map(n => (
+                        <li
+                          key={n.id}
+                          onClick={() => handleNotiReadOne(n)}
+                          className={`flex gap-3 p-4 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${!n.isRead ? 'bg-indigo-50/60 dark:bg-indigo-950/30' : ''}`}
+                        >
+                          <div className="flex-shrink-0 mt-1">
+                            {!n.isRead
+                              ? <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full block" />
+                              : <span className="w-2.5 h-2.5 rounded-full block" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm leading-5 ${!n.isRead ? 'font-semibold text-gray-800 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
+                              {n.message}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-400">
+                              {n.createdAt?.toDate ? formatNotificationTime(n.createdAt.toDate()) : ''}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* นักเรียนธรรมดา: แสดงปุ่ม logout + ชื่อ + badge + avatar */}
           {!isParentLogin && (
             <>
@@ -1356,9 +1470,64 @@ export default function ViewStudentPage() {
           )}
         </div>
 
-        {/* Mobile Hamburger */}
-        <div className="lg:hidden">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-600 dark:text-gray-300">
+        {/* Mobile: Notification Bell + Hamburger */}
+        <div className="lg:hidden flex items-center gap-1">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => { setIsOpenNoti(p => !p); setIsSidebarOpen(false); }}
+              className="relative p-2 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label="การแจ้งเตือน"
+            >
+              <FaBell size={20} />
+              {notiUnreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center leading-none">
+                  {notiUnreadCount > 9 ? '9+' : notiUnreadCount}
+                </span>
+              )}
+            </button>
+            {isOpenNoti && (
+              <div className="fixed left-4 right-4 top-[65px] z-[9999] bg-white dark:bg-[#242526] rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700/80 overflow-hidden flex flex-col">
+                <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="font-bold text-base text-gray-900 dark:text-white">การแจ้งเตือน</h3>
+                  {notiUnreadCount > 0 && (
+                    <button onClick={handleNotiReadAll} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                      อ่านทั้งหมด
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {isLoadingNoti ? (
+                    <div className="p-6 text-center text-sm text-gray-500">กำลังโหลด...</div>
+                  ) : studentNotifications.length === 0 ? (
+                    <div className="text-center py-10 px-6">
+                      <FaBell className="mx-auto mb-3 text-gray-300 dark:text-gray-600" size={32} />
+                      <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">ไม่มีการแจ้งเตือน</p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {studentNotifications.map(n => (
+                        <li
+                          key={n.id}
+                          onClick={() => handleNotiReadOne(n)}
+                          className={`flex gap-3 p-4 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${!n.isRead ? 'bg-indigo-50/60 dark:bg-indigo-950/30' : ''}`}
+                        >
+                          <div className="flex-shrink-0 mt-1">
+                            {!n.isRead ? <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full block" /> : <span className="w-2.5 h-2.5 rounded-full block" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm leading-5 ${!n.isRead ? 'font-semibold text-gray-800 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>{n.message}</p>
+                            <p className="mt-1 text-xs text-gray-400">{n.createdAt?.toDate ? formatNotificationTime(n.createdAt.toDate()) : ''}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <button onClick={() => { setIsSidebarOpen(true); setIsOpenNoti(false); }} className="p-2 text-gray-600 dark:text-gray-300">
             <FaBars size={24} />
           </button>
         </div>

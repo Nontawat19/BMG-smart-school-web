@@ -488,7 +488,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               <select
                 value={activeYear}
                 onChange={e => setActiveYear(e.target.value)}
-                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white"
+                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white [color-scheme:light] dark:[color-scheme:dark]"
               >
                 {academicYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
@@ -497,7 +497,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
               <select
                 value={selectedClassLevel}
                 onChange={e => { setSelectedClassLevel(e.target.value); setActiveRoom('ALL'); }}
-                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white"
+                className="h-7 bg-transparent px-1 text-sm font-black outline-none dark:text-white [color-scheme:light] dark:[color-scheme:dark]"
               >
                 <option value="ALL">ทั้งหมด</option>
                 {classOptions.map(l => <option key={l} value={l}>{l}</option>)}
@@ -550,7 +550,7 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
                 <select
                   value={activityClassFilter}
                   onChange={e => setActivityClassFilter(e.target.value)}
-                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-[#1e2333] dark:text-white [color-scheme:light] dark:[color-scheme:dark]"
                 >
                   <option value="ALL">ทุกชั้น</option>
                   {availableActivityClassLevels.map(level => (

@@ -12,13 +12,14 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import Swal from "sweetalert2";
 import { useSearchParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
-import { Users, Calendar, AlertTriangle, CheckCircle, Clock, Search, MapPin, Plus, X, UserPlus, Trash2 } from "lucide-react";
+import { Users, Calendar, AlertTriangle, CheckCircle, Clock, Search, MapPin, Plus, X, UserPlus, Trash2, Info } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import Select from "react-select";
@@ -81,6 +82,8 @@ interface PeriodSetting {
   endTime: string;
   isTeachingPeriod: boolean;
 }
+
+const EXCLUDED_POSITIONS = ['ผู้อำนวยการ', 'รองผู้อำนวยการ', 'ผู้ช่วยผู้อำนวยการ'];
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const THAI_DAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -410,6 +413,7 @@ const SubstituteManagementPage: React.FC = () => {
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [allClassSchedules, setAllClassSchedules] = useState<any[]>([]); // 📌 State ใหม่สำหรับเก็บตารางสอนทั้งหมด
   const [isScheduleLoading, setIsScheduleLoading] = useState(false);
+  const [hasAutoAssigned, setHasAutoAssigned] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
   const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
   const [roomMap, setRoomMap] = useState<Record<string, string>>({}); // 📌 สำหรับเก็บข้อมูลห้องเรียน
@@ -417,18 +421,20 @@ const SubstituteManagementPage: React.FC = () => {
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const calendarState = useSelector((state: RootState) => state.calendar);
   const calendarRawData = calendarState.rawData;
-  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})).map((t: any) => ({
-    value: t.id,
-    label: `[${t.teacherId || 'N/A'}] ${t.name}`,
-    teacherId: t.teacherId || 'N/A',
-    profileImageUrl: t.profileImageUrl || t.profileImage || '',
-    firstName: t.firstName || '',
-    lastName: t.lastName || '',
-    uid: t.uid || '',
-    learningArea: t.learningArea || '',
-    homeroomGrade: t.homeroomGrade || '',
-    preferences: t.preferences || {}
-  })), [teacherMap]);
+  const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {}))
+    .filter((t: any) => !EXCLUDED_POSITIONS.some(pos => (t.position || '').startsWith(pos)))
+    .map((t: any) => ({
+      value: t.id,
+      label: `[${t.teacherId || 'N/A'}] ${t.name}`,
+      teacherId: t.teacherId || 'N/A',
+      profileImageUrl: t.profileImageUrl || t.profileImage || '',
+      firstName: t.firstName || '',
+      lastName: t.lastName || '',
+      uid: t.uid || '',
+      learningArea: t.learningArea || '',
+      homeroomGrade: t.homeroomGrade || '',
+      preferences: t.preferences || {}
+    })), [teacherMap]);
   // Map of dateKey → Set<teacherDocId> for ALL absent teachers across all leave requests.
   // Used to cross-filter the substitute picker so absent teachers are never selectable.
   const absentTeacherIdsByDate = useMemo(() => {
@@ -889,6 +895,7 @@ const SubstituteManagementPage: React.FC = () => {
     setSelectedLeave(leave);
     setSchedules([]);
     setForceSelectEntries(new Set());
+    setHasAutoAssigned(false);
     setIsScheduleLoading(true);
     if (!schoolId) {
       setIsScheduleLoading(false);
@@ -1253,6 +1260,10 @@ const SubstituteManagementPage: React.FC = () => {
           entry.substitutionDocId = subRef.id;
           entry.substituteTeacherId = entry.autoHandledByTeacherId;
           entry.substituteTeacherName = entry.autoHandledByTeacherName;
+          sendSubstituteStudentNotifications(
+            entry.classId, entry.period, entry.subjectName, entry.subjectCode,
+            entry.originalDate, entry.autoHandledByTeacherName || '', leave.teacherName,
+          );
         }));
       }
 
@@ -1322,6 +1333,10 @@ const SubstituteManagementPage: React.FC = () => {
               isAutoAssigned: true,
               createdAt: Timestamp.now(),
             });
+            sendSubstituteStudentNotifications(
+              entry.classId, entry.period, entry.subjectName, entry.subjectCode,
+              entry.originalDate, best.label.replace(/^\[.*?\]\s*/, ''), leave.teacherName,
+            );
           } catch (autoErr) {
             console.warn('[autoAssign] บันทึกคาบ', entry.period, 'ไม่สำเร็จ:', autoErr);
             entry.substituteTeacherId = undefined;
@@ -1331,6 +1346,7 @@ const SubstituteManagementPage: React.FC = () => {
         }
         // Update busyMap state to reflect auto-assigned teachers
         setBusyMap({ ...periodBusyMap });
+        setHasAutoAssigned(true);
       }
 
       // ถ้าทุกคาบมีครูสอนแทนแล้ว (รวม auto-assign จากครูสอนร่วม) → อัปเดตสถานะให้แสดง ✓ ในแผงซ้าย
@@ -1579,6 +1595,12 @@ const SubstituteManagementPage: React.FC = () => {
         });
       }
 
+      // แจ้งเตือนนักเรียนในชั้นที่ได้รับผลกระทบ (fire-and-forget)
+      sendSubstituteStudentNotifications(
+        scheduleEntry.classId, scheduleEntry.period, scheduleEntry.subjectName, scheduleEntry.subjectCode,
+        scheduleEntry.originalDate, substitute.label.replace(/^\[.*?\]\s*/, ''), selectedLeave.teacherName,
+      );
+
       // 📌 เพิ่ม: สร้างการแจ้งเตือนสำหรับครูที่ได้รับมอบหมาย
       const substitutionDate = scheduleEntry.originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -1769,6 +1791,63 @@ const SubstituteManagementPage: React.FC = () => {
     setManualStartDate('');
     setManualEndDate('');
     setManualLeaveType('ลา');
+  };
+
+  // ส่งแจ้งเตือนไปยังนักเรียนในชั้น/ห้องที่ได้รับผลกระทบจากการจัดสอนแทน
+  const sendSubstituteStudentNotifications = async (
+    classId: string | string[] | null,
+    period: number,
+    subjectName: string,
+    subjectCode: string | undefined,
+    originalDate: Date,
+    substituteTeacherName: string,
+    originalTeacherName: string,
+  ) => {
+    if (!schoolId || !classId) return;
+    const classIds = (Array.isArray(classId) ? classId : [classId]).filter(Boolean) as string[];
+    if (classIds.length === 0) return;
+
+    const dateStr = originalDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+    const cleanSubName = substituteTeacherName.replace(/^\[.*?\]\s*/, '');
+    const message = `คาบที่ ${period} วิชา ${subjectName}${subjectCode ? ` (${subjectCode})` : ''} วันที่ ${dateStr} สอนแทนโดย ${cleanSubName} (แทน ${originalTeacherName})`;
+
+    try {
+      const studentsRef = collection(firestore, 'school-settings', schoolId, 'students');
+      const notifsRef = collection(firestore, 'school-settings', schoolId, 'notifications');
+      const seen = new Set<string>();
+      const uids: string[] = [];
+
+      for (const cid of classIds) {
+        const slashIdx = cid.indexOf('/');
+        const level = slashIdx >= 0 ? cid.substring(0, slashIdx) : cid;
+        const room = slashIdx >= 0 ? cid.substring(slashIdx + 1) : null;
+
+        const studentSnap = await getDocs(query(studentsRef, where('classLevel', '==', level)));
+        studentSnap.forEach(studentDoc => {
+          const data = studentDoc.data();
+          if (!data.uid || seen.has(data.uid)) return;
+          if (room && String(data.room ?? '') !== room) return;
+          seen.add(data.uid);
+          uids.push(data.uid);
+        });
+      }
+
+      for (let i = 0; i < uids.length; i += 490) {
+        const batch = writeBatch(firestore);
+        uids.slice(i, i + 490).forEach(uid => {
+          batch.set(doc(notifsRef), {
+            userId: uid,
+            message,
+            createdAt: Timestamp.now(),
+            isRead: false,
+            source: 'substitute',
+          });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('[SubstituteManagement] ส่งแจ้งเตือนนักเรียนไม่สำเร็จ:', e);
+    }
   };
 
   return (
@@ -1979,6 +2058,19 @@ const SubstituteManagementPage: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {/* Auto-assign status banner */}
+                {hasAutoAssigned && !isScheduleLoading && schedules.length > 0 && (
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60">
+                    <Info size={15} className="shrink-0 mt-0.5 text-sky-500 dark:text-sky-400" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[11px] font-black text-sky-700 dark:text-sky-300">จัดสอนแทนอัตโนมัติแล้ว</span>
+                      <span className="text-[10px] font-medium text-sky-600/80 dark:text-sky-400/80 leading-relaxed">
+                        ระบบเลือกครูที่มีภาระน้อยที่สุดให้เบื้องต้น — สามารถเปลี่ยนแปลงได้ตามความเหมาะสม
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {selectedLeave && (
                   <div className="bg-white dark:bg-[#1e1f21] p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 relative group z-10">

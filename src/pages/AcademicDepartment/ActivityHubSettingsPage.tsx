@@ -6,6 +6,7 @@ import { RootState } from '@/store';
 import MainLayout from '@/layouts/MainLayout';
 import BackButton from '@/components/Shared/BackButton';
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -13,7 +14,6 @@ import {
   Loader2,
   Lock,
   Sparkles,
-  X,
   Zap,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -45,7 +45,7 @@ const MODES = [
     hoverBorder: 'hover:border-violet-300 dark:hover:border-violet-600',
     checkColor: 'text-violet-500',
     pros: [
-      'กำหนดเวลาคาบกิจกรรมตายตัวทุกสัปดาห์',
+      'กำหนดเวลาคาบกิจกรรมแบบระบุคาบทุกสัปดาห์',
       'นับชั่วโมงสอนของครูและแสดงใน PDF ตารางสอน',
       'จัดกลุ่มนักเรียนตามรายกิจกรรมได้',
     ],
@@ -237,8 +237,8 @@ const ActivityHubSettingsPage: React.FC = () => {
                   {mode.cons.length > 0 && (
                     <ul className="space-y-1.5">
                       {mode.cons.map((c) => (
-                        <li key={c} className="flex items-start gap-2 text-xs text-gray-400">
-                          <X size={13} strokeWidth={2.5} className="mt-0.5 shrink-0 text-gray-300 dark:text-gray-600" />
+                        <li key={c} className="flex items-start gap-2 text-xs text-amber-500 dark:text-amber-400">
+                          <AlertTriangle size={13} strokeWidth={2.5} className="mt-0.5 shrink-0 text-amber-400 dark:text-amber-400" />
                           {c}
                         </li>
                       ))}

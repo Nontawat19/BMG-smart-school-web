@@ -956,7 +956,30 @@ const ClassroomAttendancePage: React.FC = () => {
 
             try {
                 const enrollmentsRef = collection(db, 'school-settings', schoolId, 'enrollments');
-                const groupNumber = selectedClass.groupNumber || (!selectedClass.isSubstitute ? (Number(selectedClass.room) || 1) : undefined);
+                const groupNumber = (() => {
+                    if (selectedClass.groupNumber) return selectedClass.groupNumber;
+                    if (selectedClass.isSubstitute) {
+                        // Derive room from className (e.g., "ม.4/1" → 1) when groupNumber not stored
+                        const clsName = selectedClass.className || '';
+                        if (clsName.includes('/')) {
+                            const part = clsName.split('/').pop();
+                            const num = Number(part);
+                            if (Number.isFinite(num) && num > 0) return num;
+                            if (part && part.toLowerCase() !== 'all') return part;
+                        }
+                        const classIdStr = Array.isArray(selectedClass.classId)
+                            ? (selectedClass.classId[0] || '')
+                            : String(selectedClass.classId || '');
+                        if (classIdStr.includes('/')) {
+                            const part = classIdStr.split('/').pop();
+                            const num = Number(part);
+                            if (Number.isFinite(num) && num > 0) return num;
+                            if (part && part.toLowerCase() !== 'all') return part;
+                        }
+                        return undefined;
+                    }
+                    return Number(selectedClass.room) || 1;
+                })();
                 const enrollmentQueries = [];
                 const subjectCodeVariants = Array.from(new Set([
                     selectedClass.subjectCode,
@@ -999,15 +1022,64 @@ const ClassroomAttendancePage: React.FC = () => {
                 let studentList: Student[] = [];
                 const enrollmentDocs = Array.from(enrollmentDocMap.values());
 
+                if (selectedClass.isSubstitute) {
+                    console.log('[DEBUG substitute]', {
+                        classId: selectedClass.classId,
+                        className: selectedClass.className,
+                        groupNumber: selectedClass.groupNumber,
+                        courseId: selectedClass.courseId,
+                        subjectCode: selectedClass.subjectCode,
+                        enrollmentCount: enrollmentDocs.length,
+                        sampleEnrollments: enrollmentDocs.slice(0, 5).map(d => {
+                            const dd = d.data();
+                            return { classLevel: dd.classLevel, room: dd.room, groupName: dd.groupName, studentId: dd.studentId };
+                        }),
+                    });
+                }
+
                 if (enrollmentDocs.length > 0) {
-                    // Substitute classes use strict matching to avoid pulling students from
-                    // multiple rooms when classId is a broad grade-level or multi-room array.
-                    const classFilter = (data: any) =>
-                        !data.classLevel || (
-                            selectedClass.isSubstitute
-                                ? matchesClassValueStrict(data.classLevel, selectedClass.classId)
-                                : (matchesClassValue(data.classLevel, selectedClass.classId) || matchesClassValue(data.classLevel, selectedClass.className))
-                        );
+                    // Enrollment records store grade and room separately (classLevel="m4", room="1").
+                    // When substitution's classId has a room component (e.g. "m4/1"), we must also
+                    // attempt a composite match on the two separate fields — otherwise strict matching
+                    // against classLevel alone always fails and falls through to the last-resort
+                    // which returns ALL enrolled students across every room.
+                    const compositeMatchesSubstituteClass = (data: any): boolean => {
+                        const classIds = Array.isArray(selectedClass.classId)
+                            ? selectedClass.classId.filter(Boolean).map(String)
+                            : [selectedClass.classId].filter(Boolean).map(String);
+                        for (const cid of classIds) {
+                            if (!cid.includes('/')) continue;
+                            const slashIdx = cid.indexOf('/');
+                            const levelPart = cid.substring(0, slashIdx);
+                            const roomPart = cid.substring(slashIdx + 1);
+                            if (!levelPart || !roomPart || roomPart.toLowerCase() === 'all') continue;
+                            const levelVariants = getClassVariants(levelPart)
+                                .map(v => v.toLowerCase().replace(/\s/g, ''));
+                            const normalizedLevel = String(data.classLevel || '').toLowerCase().replace(/\s/g, '');
+                            if (!levelVariants.some(v => v === normalizedLevel)) continue;
+                            // Grade part matches — verify room from enrollment's room or groupName
+                            if (normalizeRoom(data.room) === normalizeRoom(roomPart)) return true;
+                            const gName = String(data.groupName || '')
+                                .replace(/^กลุ่ม\s*/i, '').replace(/^ก\.\s*/i, '');
+                            if (normalizeRoom(gName) === normalizeRoom(roomPart)) return true;
+                        }
+                        return false;
+                    };
+
+                    const classFilter = (data: any) => {
+                        if (!data.classLevel) return true;
+                        if (!selectedClass.isSubstitute) {
+                            return matchesClassValue(data.classLevel, selectedClass.classId) ||
+                                matchesClassValue(data.classLevel, selectedClass.className);
+                        }
+                        // 1. Strict class match (both sides store class the same way)
+                        if (matchesClassValueStrict(data.classLevel, selectedClass.classId)) return true;
+                        if (selectedClass.className &&
+                            matchesClassValueStrict(data.classLevel, selectedClass.className)) return true;
+                        // 2. Composite match: classId="m4/1" but enrollment stores classLevel="m4" + room="1"
+                        if (compositeMatchesSubstituteClass(data)) return true;
+                        return false;
+                    };
 
                     let filteredDocs = enrollmentDocs.filter(d => {
                         const data = d.data();
@@ -1020,7 +1092,7 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
 
                     if (filteredDocs.length === 0 && selectedClass.isSubstitute) {
-                        const canRelaxClassMatch = !selectedClass.groupNumber && !hasRoomSpecificClass(selectedClass.classId);
+                        const canRelaxClassMatch = !groupNumber && !hasRoomSpecificClass(selectedClass.classId);
                         if (canRelaxClassMatch) {
                             // Some substitute records are saved with grade-level classId such as "m1"
                             // while enrollments store room-level values such as "m1/1". In that case
@@ -1036,10 +1108,17 @@ const ClassroomAttendancePage: React.FC = () => {
                     }
 
                     if (filteredDocs.length === 0 && selectedClass.isSubstitute) {
-                        // Last resort for substitute classes: if enrollment records were found for the
-                        // course but class metadata on the substitution is incomplete, prefer showing
-                        // the enrolled students over an empty attendance sheet.
-                        filteredDocs = enrollmentDocs;
+                        // Last resort for substitute classes: apply at least the group filter to
+                        // avoid returning students from unrelated rooms. Only fall back to all
+                        // enrolled students if there is genuinely no group/room info available.
+                        if (groupNumber) {
+                            filteredDocs = enrollmentDocs.filter(d =>
+                                matchesEnrollmentGroup(d.data(), groupNumber)
+                            );
+                        }
+                        if (filteredDocs.length === 0) {
+                            filteredDocs = enrollmentDocs;
+                        }
                     }
 
                     // For non-substitute: additional fallbacks to avoid empty list
