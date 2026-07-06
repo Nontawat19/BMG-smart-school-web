@@ -18,7 +18,8 @@ import {
     addDoc,
     deleteDoc,
     arrayUnion,
-    arrayRemove
+    arrayRemove,
+    increment
 } from "firebase/firestore";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
@@ -255,6 +256,26 @@ interface Enrollment {
     academicYear?: string;
 }
 
+const isClubCourse = (course?: Partial<Pick<Course, 'type' | 'title'>> | null): boolean => {
+    if (!course) return false;
+    const cType = String(course.type || '').trim().toLowerCase();
+    const cTitle = String(course.title || '').trim();
+    return cType === 'ชุมนุม' || cTitle.includes('ชุมนุม');
+};
+
+const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'title'>> | null, category: string) => {
+    if (!course) return false;
+    if (category === "ทั้งหมด") return true;
+
+    const rawType = String(course.type || "").trim().toLowerCase();
+    if (category === "ชุมนุม") return isClubCourse(course);
+    if (category === "กิจกรรม") return rawType.includes("กิจกรรม");
+    if (category === "พื้นฐาน") return rawType.includes("พื้นฐาน");
+    if (category === "เพิ่มเติม") return rawType.includes("เพิ่มเติม");
+
+    return rawType === category.trim().toLowerCase();
+};
+
 const CourseEnrollmentPage: React.FC = () => {
     const navigate = useNavigate();
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
@@ -425,6 +446,7 @@ const CourseEnrollmentPage: React.FC = () => {
 
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
     const [semesterAssignments, setSemesterAssignments] = useState<any[]>([]);
+    const clubMode = schoolInfo?.activityHubSettings?.clubMode === 'course-based' ? 'course-based' : 'legacy';
 
     // Sync assignments for active year/semester
     useEffect(() => {
@@ -466,6 +488,12 @@ const CourseEnrollmentPage: React.FC = () => {
         setSelectedCourseIds([]);
         setActiveGroupNum(1);
     }, [subjectGroupFilter, categoryFilter, showOnlyEnrolled, activeClassLevel, activeSemester]);
+
+    useEffect(() => {
+        if (clubMode !== 'course-based' && categoryFilter === 'ชุมนุม') {
+            setCategoryFilter('ทั้งหมด');
+        }
+    }, [clubMode, categoryFilter]);
 
     // Computed courses with merged assignments
     const coursesWithAssignments = useMemo(() => {
@@ -567,7 +595,8 @@ const CourseEnrollmentPage: React.FC = () => {
                 const groupsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'subject_groups'));
                 const groupsData = groupsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as { name: string, code: string }) }));
                 groupsData.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
-                setSubjectGroupsList(groupsData);
+                const seenNames = new Set<string>();
+                setSubjectGroupsList(groupsData.filter(group => group.name && !seenNames.has(group.name) && seenNames.add(group.name)));
 
                 setIsLoading(false);
             } catch (error) {
@@ -582,13 +611,28 @@ const CourseEnrollmentPage: React.FC = () => {
     }, [schoolId]);
 
     // Computed
+    const categoryOptions = useMemo(() => {
+        const baseOptions = [
+            { value: 'ทั้งหมด', label: 'ทุกประเภทวิชา' },
+            { value: 'พื้นฐาน', label: 'พื้นฐาน' },
+            { value: 'เพิ่มเติม', label: 'เพิ่มเติม' },
+            { value: 'กิจกรรม', label: 'กิจกรรม' },
+        ];
+        if (clubMode === 'course-based') {
+            baseOptions.push({ value: 'ชุมนุม', label: 'ชุมนุม' });
+        }
+        return baseOptions;
+    }, [clubMode]);
+
     const filteredCourses = useMemo(() => {
         return coursesWithAssignments.filter(c => {
             const isAssigned = c.teacherAssignments && c.teacherAssignments.length > 0;
+            const clubCourse = isClubCourse(c);
+            if (clubCourse && clubMode !== 'course-based') return false;
             const matchesSearch = (c.title || "").toLowerCase().includes(courseSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(courseSearch.toLowerCase());
             const matchesGroup = isSubjectGroupMatch(c.subjectGroup, subjectGroupFilter);
             const matchesLevelFilter = matchesLevel(c.classId, activeClassLevel);
-            const matchesCategory = categoryFilter === "ทั้งหมด" || c.type === categoryFilter;
+            const matchesCategory = matchesCourseCategory(c, categoryFilter);
             
             let matchesSemester = true;
             if (activeSemester !== "0") {
@@ -617,7 +661,7 @@ const CourseEnrollmentPage: React.FC = () => {
             }
             return (a.code || "").localeCompare(b.code || "");
         });
-    }, [coursesWithAssignments, courseSearch, subjectGroupFilter, subjectGroupsList, activeClassLevel, activeSemester]);
+    }, [coursesWithAssignments, courseSearch, subjectGroupFilter, activeClassLevel, activeSemester, categoryFilter, showOnlyEnrolled, enrollments, activeYear, clubMode]);
 
     // All selected courses data
     const activeCourses = useMemo(() => {
@@ -929,16 +973,15 @@ const CourseEnrollmentPage: React.FC = () => {
         setIsSaving(true);
         try {
             const batch = writeBatch(db);
-            
             changesSnapshot.forEach(change => {
                 const normCId = String(change.courseId);
                 const normG = String(change.groupName).trim();
                 const normY = String(change.academicYear).trim();
                 const normS = String(change.semester).trim();
+                const course = courses.find(c => c.id === change.courseId);
 
                 if (change.type === 'add') {
                     const student = allStudents.find(s => s.id === change.studentId);
-                    const course = courses.find(c => c.id === change.courseId);
 
                     const enrollRef = doc(collection(db, 'school-settings', schoolId, 'enrollments'));
                     batch.set(enrollRef, {
@@ -957,6 +1000,17 @@ const CourseEnrollmentPage: React.FC = () => {
                     batch.update(doc(db, 'school-settings', schoolId, 'students', change.studentId), {
                         enrolledCourseIds: arrayUnion(change.courseId)
                     });
+
+                    // ซิงก์ลงคอลเลกชันชุมนุมเดิม เพื่อให้หน้าประเมิน/เช็คชื่อชุมนุมเห็นนักเรียนคนนี้ด้วย
+                    if (clubMode === 'course-based' && isClubCourse(course)) {
+                        const memberRef = doc(db, 'school-settings', schoolId, 'clubs', change.courseId, 'members', change.studentId);
+                        batch.set(memberRef, { joinedAt: new Date().toISOString(), status: 'confirmed' }, { merge: true });
+                        batch.set(doc(db, 'school-settings', schoolId, 'clubs', change.courseId), {
+                            name: course?.title || course?.code || '',
+                            linkedCourseId: change.courseId,
+                            memberCount: increment(1)
+                        }, { merge: true });
+                    }
                 } else {
                     const toDelete = enrollments.find(e =>
                         String(e.courseId) === normCId &&
@@ -970,6 +1024,13 @@ const CourseEnrollmentPage: React.FC = () => {
                         batch.update(doc(db, 'school-settings', schoolId, 'students', change.studentId), {
                             enrolledCourseIds: arrayRemove(change.courseId)
                         });
+
+                        if (clubMode === 'course-based' && isClubCourse(course)) {
+                            batch.delete(doc(db, 'school-settings', schoolId, 'clubs', change.courseId, 'members', change.studentId));
+                            batch.set(doc(db, 'school-settings', schoolId, 'clubs', change.courseId), {
+                                memberCount: increment(-1)
+                            }, { merge: true });
+                        }
                     }
                 }
             });
@@ -988,7 +1049,7 @@ const CourseEnrollmentPage: React.FC = () => {
             saveInFlightRef.current = false;
             setIsSaving(false);
         }
-    }, [allStudents, courses, enrollments, pendingChanges, schoolId]);
+    }, [allStudents, clubMode, courses, enrollments, pendingChanges, schoolId]);
 
     const handleCommitAll = useCallback(async () => {
         if (autoSaveTimerRef.current) {
@@ -1181,11 +1242,7 @@ const CourseEnrollmentPage: React.FC = () => {
 
                                         <div className="relative">
                                             <Select
-                                                options={[
-                                                    { value: 'ทั้งหมด', label: 'ทุกประเภทวิชา' },
-                                                    { value: 'พื้นฐาน', label: 'พื้นฐาน' },
-                                                    { value: 'เพิ่มเติม', label: 'เพิ่มเติม' }
-                                                ]}
+                                                options={categoryOptions}
                                                 value={{ value: categoryFilter, label: categoryFilter === 'ทั้งหมด' ? 'ทุกประเภทวิชา' : categoryFilter }}
                                                 onChange={(val: any) => setCategoryFilter(val.value)}
                                                 styles={filterSelectStyles}

@@ -32,6 +32,10 @@ export function useFcmNotification(uid: string | null | undefined) {
       console.warn('[FCM] ⚠️ browser ไม่รองรับ push notification');
       return;
     }
+    if (Notification.permission === 'denied') {
+      console.warn('[FCM] ⚠️ browser บล็อก notification ไว้แล้ว');
+      return;
+    }
 
     let unsubForeground: (() => void) | undefined;
 

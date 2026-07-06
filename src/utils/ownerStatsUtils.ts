@@ -15,6 +15,10 @@ import {
 import type { Firestore } from "firebase/firestore";
 import { isAttendanceEntryOnly } from "./attendanceRoles";
 import { ACTIVE_STUDENT_STATUS, isActiveStudentStatus } from "./studentStatusUtils";
+import packageJson from "../../package.json";
+
+// เวอร์ชันระบบรวม (ค่าเดียวกันทุกโรงเรียน เพราะเป็น SPA ที่ deploy ครั้งเดียว)
+export const SYSTEM_VERSION: string = packageJson.version;
 
 export interface OwnerDashboardSummary {
   totalSchools: number;
@@ -207,6 +211,24 @@ export const getCurrentUsageMonth = () => {
   return new Date().toISOString().slice(0, 7);
 };
 
+const isPermissionDeniedError = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: string }).code === "permission-denied";
+
+const safeGetCollectionCount = async (ref: Parameters<typeof getCountFromServer>[0], fallback = 0) => {
+  try {
+    const snapshot = await getCountFromServer(ref);
+    return snapshot.data().count || fallback;
+  } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      return fallback;
+    }
+    throw error;
+  }
+};
+
 const daysInUsageMonth = (month: string) => {
   const [year, monthNumber] = month.split("-").map(Number);
   if (!year || !monthNumber) return 30;
@@ -351,13 +373,6 @@ export const writeOwnerDashboardSummaryFromSchools = async (
   db: Firestore,
   schools: SchoolDashboardSummary[]
 ) => {
-  const schoolsCountSnapshot = await getCountFromServer(collection(db, "school-settings"));
-  const rootCountSnapshots = await Promise.all(
-    rootCollectionsForUsageEstimate.map((collectionName) =>
-      getCountFromServer(collection(db, collectionName))
-    )
-  );
-
   const schoolTotals = schools.reduce((totals, school) => {
     totals.totalTeachers += school.teacherCount || 0;
     totals.totalStudents += school.studentCount || 0;
@@ -373,9 +388,7 @@ export const writeOwnerDashboardSummaryFromSchools = async (
     firestoreDocumentCount: 0,
   });
 
-  const rootDocumentCount = rootCountSnapshots.reduce((total, snapshot) => {
-    return total + (snapshot.data().count || 0);
-  }, 0);
+  const rootDocumentCount = 0;
   const firestoreDocumentCount = schoolTotals.firestoreDocumentCount + rootDocumentCount;
   const firestoreUsageBytes = schoolTotals.firestoreUsageBytes + rootDocumentCount * ESTIMATED_FIRESTORE_DOC_BYTES;
   const storageUsageBytes = schoolTotals.storageUsageBytes;
@@ -389,7 +402,7 @@ export const writeOwnerDashboardSummaryFromSchools = async (
     hostingStorageBytes: ESTIMATED_HOSTING_STORAGE_BYTES,
   });
   const summary: OwnerDashboardSummary = {
-    totalSchools: schoolsCountSnapshot.data().count || schools.length,
+    totalSchools: schools.length,
     totalTeachers: schoolTotals.totalTeachers,
     totalStudents: schoolTotals.totalStudents,
     firestoreUsage: formatBytes(firestoreUsageBytes, "MB"),
@@ -755,22 +768,22 @@ export const updateOwnerAndSchoolCounts = async (
 export const refreshOwnerDashboardSummaryFromCounts = async (db: Firestore) => {
   const month = getCurrentUsageMonth();
   const schoolsRef = collection(db, "school-settings");
-  const [schoolsSnapshot, schoolsCountSnapshot] = await Promise.all([
+  const [schoolsSnapshot, schoolsCount] = await Promise.all([
     getDocs(schoolsRef),
-    getCountFromServer(schoolsRef),
+    safeGetCollectionCount(schoolsRef, 0),
   ]);
-  const rootCountSnapshots = await Promise.all(
+  const rootCounts = await Promise.all(
     rootCollectionsForUsageEstimate.map((collectionName) =>
-      getCountFromServer(collection(db, collectionName))
+      safeGetCollectionCount(collection(db, collectionName), 0)
     )
   );
 
   let totalTeachers = 0;
   let totalStudents = 0;
-  let firestoreDocumentCount = schoolsCountSnapshot.data().count || schoolsSnapshot.size;
+  let firestoreDocumentCount = schoolsCount || schoolsSnapshot.size;
   firestoreDocumentCount += schoolsSnapshot.size;
-  rootCountSnapshots.forEach((snapshot) => {
-    firestoreDocumentCount += snapshot.data().count || 0;
+  rootCounts.forEach((count) => {
+    firestoreDocumentCount += count || 0;
   });
 
   const schoolCounts = await Promise.all(
@@ -907,7 +920,7 @@ export const refreshOwnerDashboardSummaryFromCounts = async (db: Firestore) => {
     totalStudents * ESTIMATED_STUDENT_STORAGE_BYTES;
 
   const summary: OwnerDashboardSummary = {
-    totalSchools: schoolsCountSnapshot.data().count || schoolsSnapshot.size,
+    totalSchools: schoolsCount || schoolsSnapshot.size,
     totalTeachers,
     totalStudents,
     firestoreUsage: formatBytes(firestoreUsageBytes, "MB"),
@@ -953,4 +966,73 @@ const estimateSchoolStorageBytes = (teacherCount: number, studentCount: number) 
   return ESTIMATED_SCHOOL_LOGO_BYTES +
     teacherCount * ESTIMATED_TEACHER_STORAGE_BYTES +
     studentCount * ESTIMATED_STUDENT_STORAGE_BYTES;
+};
+
+// ข้อมูล License/MA/สัญญา แยกจาก school-settings/{schoolId} หลักโดยตั้งใจ
+// เพื่อให้ Firestore rules จำกัดสิทธิ์อ่านเฉพาะ SUPER_ADMIN ได้ (School Admin ไม่ควรเห็นข้อมูลสัญญา)
+export type LicenseStatus = "active" | "trial" | "expired";
+
+export interface SchoolLicenseInfo {
+  licenseStatus?: LicenseStatus;
+  maExpiryDate?: string; // ISO date string (YYYY-MM-DD)
+  contractExpiryDate?: string; // ISO date string (YYYY-MM-DD)
+  lastBackupAt?: string; // ISO date string, กรอกด้วยมือ
+  maNotifiedForDate?: string; // เขียนโดย Cloud Function notifyMaExpiringSoon เพื่อกันแจ้งเตือนซ้ำ
+  updatedAt?: any;
+}
+
+export const LICENSE_SUMMARY_PATH = ["summaries", "license"] as const;
+
+export const getSchoolLicenseRef = (db: Firestore, schoolId: string) => {
+  return doc(db, "school-settings", schoolId, ...LICENSE_SUMMARY_PATH);
+};
+
+export const fetchSchoolLicenseInfo = async (
+  db: Firestore,
+  schoolId: string
+): Promise<SchoolLicenseInfo | null> => {
+  const snap = await getDoc(getSchoolLicenseRef(db, schoolId));
+  return snap.exists() ? (snap.data() as SchoolLicenseInfo) : null;
+};
+
+export const saveSchoolLicenseInfo = async (
+  db: Firestore,
+  schoolId: string,
+  info: SchoolLicenseInfo
+) => {
+  await setDoc(getSchoolLicenseRef(db, schoolId), {
+    ...info,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+};
+
+const daysUntil = (isoDate?: string) => {
+  if (!isoDate) return null;
+  const target = new Date(isoDate);
+  if (Number.isNaN(target.getTime())) return null;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+export const getDaysUntilMaExpiry = (maExpiryDate?: string) => daysUntil(maExpiryDate);
+
+// แจ้งเตือนเมื่อเหลือ 30 วันก่อนหมด MA (หรือหมดแล้ว) - ใช้แสดง badge ในหน้า UI
+export const isMaExpiringSoon = (maExpiryDate?: string, thresholdDays = 30) => {
+  const days = daysUntil(maExpiryDate);
+  return days !== null && days <= thresholdDays;
+};
+
+export const LICENSE_STATUS_LABELS: Record<LicenseStatus, string> = {
+  active: "ใช้งานปกติ",
+  trial: "ทดลองใช้",
+  expired: "หมดอายุ",
+};
+
+// รับ Firestore Timestamp, ISO string, หรือ undefined แล้วคืนข้อความแสดงผล Last Sync
+export const formatLastSyncTimestamp = (value: any) => {
+  const date = value?.toDate ? value.toDate() : (value ? new Date(value) : null);
+  if (!date || Number.isNaN(date.getTime())) return "ไม่มีข้อมูล";
+  return date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 };

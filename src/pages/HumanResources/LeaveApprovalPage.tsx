@@ -10,8 +10,6 @@ import {
   documentId,
   query,
   where,
-  orderBy,
-  collectionGroup,
   Timestamp,
   writeBatch,
   increment,
@@ -108,46 +106,46 @@ const LeaveApprovalPage: React.FC = () => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      // Fetch leave summaries
-      const leaveQuery = query(
-        collectionGroup(firestore, "leave_summary"),
-        where("schoolId", "==", schoolId)
-      );
-      const leaveSnap = await getDocs(leaveQuery);
-      const leaves: LeaveRequest[] = [];
-      leaveSnap.forEach((d) => {
-        const data = d.data();
-        // Distinguish teacher requests
-        if (d.ref.path.includes("/teachers/")) {
-          leaves.push({
-            id: d.id,
-            docPath: d.ref.path,
-            ...data,
-          } as LeaveRequest);
-        }
-      });
-      // Sort by startDate desc
-      leaves.sort((a, b) => b.startDate.toMillis() - a.startDate.toMillis());
-      setLeaveRequests(leaves);
+      // Query inside the current school scope to stay compatible with Firestore rules.
+      const teachersSnap = await getDocs(collection(firestore, "school-settings", schoolId, "teachers"));
+      const teacherRequestSnapshots = await Promise.all(
+        teachersSnap.docs.map(async (teacherDoc) => {
+          const teacherBasePath = ["school-settings", schoolId, "teachers", teacherDoc.id] as const;
+          const [leaveSnap, travelSnap] = await Promise.all([
+            getDocs(collection(firestore, ...teacherBasePath, "leave_summary")),
+            getDocs(collection(firestore, ...teacherBasePath, "travel_summary")),
+          ]);
 
-      // Fetch travel summaries
-      const travelQuery = query(
-        collectionGroup(firestore, "travel_summary"),
-        where("schoolId", "==", schoolId)
+          return { teacherDocId: teacherDoc.id, leaveSnap, travelSnap };
+        })
       );
-      const travelSnap = await getDocs(travelQuery);
+
+      const leaves: LeaveRequest[] = [];
       const travels: TravelRequest[] = [];
-      travelSnap.forEach((d) => {
-        const data = d.data();
-        if (d.ref.path.includes("/teachers/")) {
+
+      teacherRequestSnapshots.forEach(({ teacherDocId, leaveSnap, travelSnap }) => {
+        leaveSnap.forEach((requestDoc) => {
+          leaves.push({
+            id: requestDoc.id,
+            docPath: requestDoc.ref.path,
+            teacherDocId,
+            ...requestDoc.data(),
+          } as LeaveRequest);
+        });
+
+        travelSnap.forEach((requestDoc) => {
           travels.push({
-            id: d.id,
-            docPath: d.ref.path,
-            ...data,
+            id: requestDoc.id,
+            docPath: requestDoc.ref.path,
+            ...requestDoc.data(),
           } as TravelRequest);
-        }
+        });
       });
+
+      leaves.sort((a, b) => b.startDate.toMillis() - a.startDate.toMillis());
       travels.sort((a, b) => b.startDate.toMillis() - a.startDate.toMillis());
+
+      setLeaveRequests(leaves);
       setTravelRequests(travels);
     } catch (err) {
       console.error("Error fetching requests:", err);
@@ -243,8 +241,10 @@ const LeaveApprovalPage: React.FC = () => {
       let leaveDaysCount = 0;
 
       // Pre-fetch teacher attendance to check existing status before decrementing absent
-      const teacherStartStr = sDate.toLocaleDateString("en-CA");
-      const teacherEndStr = eDate.toLocaleDateString("en-CA");
+      // ใช้ toISOString (UTC) ให้ตรงกับหน้ารายงาน (TeacherAttendanceIndividualPage) เสมอ
+      // ไม่ใช้ toLocaleDateString เพราะขึ้นกับ timezone ของเครื่องที่กดอนุมัติ อาจทำให้วันที่เพี้ยนไม่ตรงกับที่รายงานอ่าน
+      const teacherStartStr = sDate.toISOString().split("T")[0];
+      const teacherEndStr = eDate.toISOString().split("T")[0];
       const existingTeacherAttSnap = await getDocs(
         query(
           collection(firestore, "school-settings", schoolId!, "teachers", r.teacherDocId, "attendance"),
@@ -256,7 +256,7 @@ const LeaveApprovalPage: React.FC = () => {
       existingTeacherAttSnap.forEach(d => teacherAttStatus.set(d.id, d.data().status || ""));
 
       while (loopDate <= eDate) {
-        const dateStr = loopDate.toLocaleDateString("en-CA");
+        const dateStr = loopDate.toISOString().split("T")[0];
         const { isHoliday } = checkIsHoliday(dateStr);
 
         if (isHoliday) {

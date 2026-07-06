@@ -92,6 +92,18 @@ const getDailySummaryField = (status: string): string | null => {
 };
 
 /**
+ * แยกประเภทวันลาจากข้อความ leaveType (เช่น "ลาป่วย" / "ลากิจ") ให้เป็น sub-type เดียวกัน
+ * ทุกจุดที่ต้องแยกลาป่วย/ลากิจ ต้องเรียกใช้ฟังก์ชันนี้ตัวเดียว ห้ามเขียน substring check ซ้ำที่อื่น
+ * เพื่อกันไม่ให้การนับเพี้ยนไม่ตรงกันระหว่างจุดที่แสดงผลต่างๆ
+ */
+export const classifyLeaveSubType = (leaveTypeText: string | null | undefined): 'sick' | 'personal' | 'other' => {
+    const text = leaveTypeText || "";
+    if (text.includes("ป่วย")) return 'sick';
+    if (text.includes("กิจ")) return 'personal';
+    return 'other';
+};
+
+/**
  * Updates period summaries (Week, Month, Year, Semester) for a student or teacher.
  */
 export const updatePeriodSummaries = (
@@ -262,3 +274,4 @@ export const syncDailySummary = async (firestore: any, schoolId: string, dateStr
         throw error;
     }
 };
+

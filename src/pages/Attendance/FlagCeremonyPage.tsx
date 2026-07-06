@@ -999,6 +999,44 @@ const FlagCeremonyPage: React.FC = () => {
     );
   };
 
+  const applyActionToAllStudents = (action: FlagAction = selectedFlagAction) => {
+    if (students.length === 0 || !action) return;
+
+    setSelectionSnapshots((prev) => {
+      const next = new Map(prev);
+      students.forEach((student) => {
+        if (!selectedStudentIds.has(student.id)) {
+          next.set(student.id, {
+            flagAction: student.flagAction,
+            attendanceStatus: student.attendanceStatus,
+          });
+        }
+      });
+      return next;
+    });
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      students.forEach((student) => next.add(student.id));
+      return next;
+    });
+    setStudents((prevStudents) =>
+      prevStudents.map((student) => {
+        const gateData = (student as any)._gateData;
+        const hasGateScan = !!(gateData?.checkinTime);
+        const isNoScanAction = action === "noScanPresentNoDeduct" || action === "noScanPresentDeduct";
+
+        // หากนักเรียนมีการสแกนบัตรที่ประตูแล้ว จะไม่สามารถใช้คำสั่งช่วยเหลือแบบไม่สแกนบัตรได้ ให้เป็น เข้าแถวปกติ แทน
+        const targetAction = (hasGateScan && isNoScanAction) ? "normal" : action;
+
+        return {
+          ...student,
+          flagAction: targetAction,
+          attendanceStatus: getStatusFromAction(targetAction, student),
+        };
+      })
+    );
+  };
+
   const handleIndividualActionChange = (studentId: string, action: FlagAction) => {
     const currentStudent = students.find((student) => student.id === studentId);
     if (!currentStudent) return;
@@ -1842,20 +1880,34 @@ const FlagCeremonyPage: React.FC = () => {
                         <label className={`block font-semibold text-gray-500 dark:text-gray-400 mb-2 ${isPwaMode ? 'text-xs' : 'text-sm'}`}>
                           คำสั่งรวมสำหรับเช็คแถว
                         </label>
-                        <select
-                          value={selectedFlagAction}
-                          onChange={(e) => setSelectedFlagAction(e.target.value as FlagAction)}
-                          className={`w-full lg:max-w-2xl bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-900 dark:text-white ${isPwaMode ? 'px-3 py-3 text-sm' : 'px-4 py-3 text-base'}`}
-                        >
-                          <option value="" disabled>กรุณาเลือกสถานะ</option>
-                          {FLAG_ACTION_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {getDynamicFlagActionLabel(option.value, behaviorScoreConfig)}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex gap-2 w-full lg:max-w-2xl">
+                          <select
+                            value={selectedFlagAction}
+                            onChange={(e) => {
+                              const value = e.target.value as FlagAction;
+                              setSelectedFlagAction(value);
+                              applyActionToAllStudents(value);
+                            }}
+                            className={`flex-1 min-w-0 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-900 dark:text-white ${isPwaMode ? 'px-3 py-3 text-sm' : 'px-4 py-3 text-base'}`}
+                          >
+                            <option value="" disabled>กรุณาเลือกสถานะ</option>
+                            {FLAG_ACTION_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>
+                                {getDynamicFlagActionLabel(option.value, behaviorScoreConfig)}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => applyActionToAllStudents()}
+                            disabled={!selectedFlagAction}
+                            className={`shrink-0 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-bold hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isPwaMode ? 'px-3 py-3 text-xs' : 'px-4 py-3 text-sm'}`}
+                          >
+                            ใช้กับทุกคน
+                          </button>
+                        </div>
                         <p className={`${isPwaMode ? 'text-[11px]' : 'text-xs'} text-gray-400 dark:text-gray-500 mt-2`}>
-                          เลือกคำสั่งด้านบน แล้วคลิกการ์ดนักเรียนเพื่อกำหนดสถานะ
+                          เลือกคำสั่งด้านบนจะใช้กับนักเรียนทั้งชั้นทันที หรือคลิกการ์ดนักเรียนเป็นรายคนเพื่อปรับเฉพาะคนนั้น
                         </p>
                       </div>
 

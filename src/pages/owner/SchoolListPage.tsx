@@ -16,6 +16,13 @@ import {
   refreshOwnerDashboardSummaryFromCounts,
   updateOwnerDashboardSummary,
   writeOwnerDashboardSummaryFromSchools,
+  fetchSchoolLicenseInfo,
+  getDaysUntilMaExpiry,
+  isMaExpiringSoon,
+  LICENSE_STATUS_LABELS,
+  SYSTEM_VERSION,
+  formatLastSyncTimestamp,
+  type LicenseStatus,
 } from '@/utils/ownerStatsUtils';
 
 interface SchoolInfo {
@@ -39,7 +46,45 @@ interface SchoolInfo {
   firestoreDocumentCount?: number;
   schoolType?: string;
   opportunityExpansionLevel?: string;
+  licenseStatus?: LicenseStatus;
+  maExpiryDate?: string;
+  contractExpiryDate?: string;
+  lastBackupAt?: string;
+  lastSyncAt?: any;
 }
+
+const LICENSE_BADGE_STYLES: Record<LicenseStatus, string> = {
+  active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+  trial: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+  expired: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800',
+};
+
+const LICENSE_BADGE_DOT: Record<LicenseStatus, string> = {
+  active: '🟢',
+  trial: '🟡',
+  expired: '🔴',
+};
+
+const LicenseBadges: React.FC<{ school: SchoolInfo }> = ({ school }) => {
+  if (!school.licenseStatus && !school.maExpiryDate) return null;
+  const maDaysLeft = getDaysUntilMaExpiry(school.maExpiryDate);
+  const expiringSoon = isMaExpiringSoon(school.maExpiryDate);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {school.licenseStatus && (
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium border ${LICENSE_BADGE_STYLES[school.licenseStatus]}`}>
+          {LICENSE_BADGE_DOT[school.licenseStatus]} {LICENSE_STATUS_LABELS[school.licenseStatus]}
+        </span>
+      )}
+      {school.maExpiryDate && (
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium border ${expiringSoon ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}>
+          {expiringSoon && '🔔 '}💳 MA: {school.maExpiryDate}{maDaysLeft !== null && maDaysLeft < 0 ? ' (หมดอายุ)' : ''}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const SkeletonLoader: React.FC = () => (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
@@ -91,7 +136,10 @@ const SchoolListPage: React.FC = () => {
 
       const schoolsData = await Promise.all(querySnapshot.docs.map(async (schoolDoc) => {
         const data = schoolDoc.data() as Omit<SchoolInfo, 'id'> & Record<string, any>;
-        const summary = await fetchSchoolDashboardSummary(db, schoolDoc.id, data);
+        const [summary, license] = await Promise.all([
+          fetchSchoolDashboardSummary(db, schoolDoc.id, data),
+          fetchSchoolLicenseInfo(db, schoolDoc.id),
+        ]);
         return {
           ...data,
           id: schoolDoc.id,
@@ -102,6 +150,11 @@ const SchoolListPage: React.FC = () => {
           firestoreUsageBytes: summary.firestoreUsageBytes,
           storageUsageBytes: summary.storageUsageBytes,
           firestoreDocumentCount: summary.firestoreDocumentCount,
+          licenseStatus: license?.licenseStatus,
+          maExpiryDate: license?.maExpiryDate,
+          contractExpiryDate: license?.contractExpiryDate,
+          lastBackupAt: license?.lastBackupAt,
+          lastSyncAt: data.updatedAt,
         };
       }));
 
@@ -257,7 +310,7 @@ const SchoolListPage: React.FC = () => {
             <div>
               <h1 className="text-xl font-bold tracking-tight">รายการโรงเรียน</h1>
               <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                จัดการข้อมูลโรงเรียนทั้งหมดในระบบ
+                จัดการข้อมูลโรงเรียนทั้งหมดในระบบ · 📈 เวอร์ชันระบบ {SYSTEM_VERSION}
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
@@ -370,6 +423,7 @@ const SchoolListPage: React.FC = () => {
                             {school.schoolName || 'ยังไม่มีชื่อ'} {school.schoolAbbreviation && `(${school.schoolAbbreviation})`}
                           </Link>
                           <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">{school.affiliation || 'ยังไม่มีสังกัด'}</p>
+                          <div className="mt-1"><LicenseBadges school={school} /></div>
                         </div>
                         <div className="flex items-center gap-1 text-[9px] text-gray-500 dark:text-gray-400">
                           <FaUserTie size={9} className="flex-shrink-0" />
@@ -431,6 +485,7 @@ const SchoolListPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
+                            <div className="mt-1.5"><LicenseBadges school={school} /></div>
                             <p className="text-gray-600 dark:text-gray-300 text-xs mt-2">
                               {[
                                 school.subDistrict ? `ต.${school.subDistrict}` : '',
@@ -497,6 +552,11 @@ const SchoolListPage: React.FC = () => {
                           <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{[school.directorPrefix, school.directorName].filter(Boolean).join(' ') || '-'}</span>
                           <span className="text-[9px] text-gray-500 dark:text-gray-400">ผู้อำนวยการ{school.schoolName}</span>
                         </div>
+                      </div>
+                      <div className="mt-1 flex flex-col gap-0.5 text-[9px] text-gray-400 dark:text-gray-500">
+                        <span>❤️ Last Sync: {formatLastSyncTimestamp(school.lastSyncAt)}</span>
+                        {school.lastBackupAt && <span>📦 Backup ล่าสุด: {school.lastBackupAt}</span>}
+                        {school.contractExpiryDate && <span>📅 หมดอายุสัญญา: {school.contractExpiryDate}</span>}
                       </div>
                     </div>
                   ))}

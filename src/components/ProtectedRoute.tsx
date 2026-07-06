@@ -159,6 +159,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     const rawRoles = Array.isArray(user.role) ? user.role : [user.role];
     const userRoles = rawRoles.map(normalizeRole).filter(Boolean);
 
+    // Super Admin must never be locked out by custom route_permissions.
+    if (userRoles.includes('super_admin')) {
+      return <>{children}</>;
+    }
+
     const hasRoleAccess = !effectiveRoles || effectiveRoles.length === 0 ||
       effectiveRoles.some(r => userRoles.includes(normalizeRole(r)));
 

@@ -130,6 +130,7 @@ const EditUserPage = lazy(() => import("./pages/owner/EditUserPage"));
 const AddUserPage = lazy(() => import("./pages/owner/AddUserPage"));
 const PermissionManagementPage = lazy(() => import("./pages/owner/PermissionManagementPage"));
 const SchoolPermissionManagementPage = lazy(() => import("./pages/AcademicDepartment/SchoolPermissionManagementPage"));
+const SchoolDataExplorerPage = lazy(() => import("./pages/owner/SchoolDataExplorerPage"));
 const ImportCoursePage = lazy(() => import("./pages/AcademicDepartment/ImportCoursePage"));
 const EnrollmentListPage = lazy(() => import("./pages/AcademicDepartment/EnrollmentListPage"));
 const SubjectGroupManagementPage = lazy(() => import("@/pages/AcademicDepartment/SubjectGroupManagementPage"));
@@ -207,7 +208,7 @@ function App() {
   // Permission groups are imported from @/constants/permissions
 
   return (
-    <PermissionProvider schoolId={user?.schoolId}>
+    <PermissionProvider schoolId={user?.schoolId} userRoles={user?.role}>
     <PullToRefresh>
       <Router>
         <Suspense fallback={<LoadingScreen />}><Routes>
@@ -272,7 +273,7 @@ function App() {
 
           {/* Teacher Management */}
           <Route path="/school/:schoolId/teachers" element={<ProtectedRoute allowedRoles={[...ADMIN_ACCESS, ...ACADEMIC_ACCESS]}><TeacherListPage /></ProtectedRoute>} />
-          <Route path="/school/:schoolId/teachers/edit/:teacherId" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><EditTeacherPage /></ProtectedRoute>} />
+          <Route path="/school/:schoolId/teachers/edit/:teacherId" element={<ProtectedRoute allowedRoles={[...ADMIN_ACCESS, ...STAFF_ACCESS]}><EditTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/view/:teacherId" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><ViewTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><AddTeacherPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/teachers/quick-add" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><QuickAddTeacherPage /></ProtectedRoute>} />
@@ -373,6 +374,7 @@ function App() {
           <Route path="/owner/school-info/:schoolId?" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN]}><SchoolInfoPage /></ProtectedRoute>} />
           <Route path="/owner/schools" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolListPage /></ProtectedRoute>} />
           <Route path="/owner/schools/:schoolId" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolDetailsPage /></ProtectedRoute>} />
+          <Route path="/owner/schools/:schoolId/data" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><SchoolDataExplorerPage /></ProtectedRoute>} />
           <Route path="/owner/users" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><UserListPage /></ProtectedRoute>} />
           <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><EditUserPage /></ProtectedRoute>} />
           <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><AddUserPage /></ProtectedRoute>} />

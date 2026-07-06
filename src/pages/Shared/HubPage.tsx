@@ -61,6 +61,7 @@ interface HubItem {
   allowedRoles?: string[];
   featureKey?: string;
   hideWhenCourseBased?: boolean;
+  showOnlyWhenClubCourseBased?: boolean;
 }
 
 interface HubConfig {
@@ -104,6 +105,7 @@ const HubPage: React.FC = () => {
 
   const [features, setFeatures] = React.useState<Record<string, any>>({});
   const [activityMode, setActivityMode] = React.useState<'special-period' | 'course-based'>('special-period');
+  const [clubMode, setClubMode] = React.useState<'legacy' | 'course-based'>('legacy');
 
   React.useEffect(() => {
     if (!schoolId) return;
@@ -116,6 +118,7 @@ const HubPage: React.FC = () => {
           ...(data?.academicSettings || {})
         });
         setActivityMode(data?.activityHubSettings?.activityMode ?? 'special-period');
+        setClubMode(data?.activityHubSettings?.clubMode ?? 'legacy');
       }
     });
 
@@ -188,6 +191,11 @@ const HubPage: React.FC = () => {
 
     // 3. Activity mode check — hide special-period-only pages when mode is course-based
     if (item.hideWhenCourseBased && activityMode === 'course-based') {
+      return false;
+    }
+
+    // 4. Club mode check — only show course-based club pages when clubMode is course-based
+    if (item.showOnlyWhenClubCourseBased && clubMode !== 'course-based') {
       return false;
     }
 
@@ -566,6 +574,14 @@ const HubPage: React.FC = () => {
           allowedRoles: STAFF_ACCESS
         },
         {
+          title: "ประวัติการไปราชการ",
+          description: "ดูประวัติการขอไปราชการและสถานะการอนุมัติ",
+          icon: <History size={24} />,
+          path: schoolId ? `/school/${schoolId}/official-travel-history` : "#",
+          colorClass: "bg-lime-100 text-lime-600 dark:bg-lime-500/20 dark:text-lime-400",
+          allowedRoles: STAFF_ACCESS
+        },
+        {
           title: "อนุมัติใบลา & ไปราชการ",
           description: "อนุมัติคำขอลาและใบไปราชการของบุคลากร",
           icon: <ClipboardCheck size={24} />,
@@ -802,6 +818,24 @@ const HubPage: React.FC = () => {
           path: "/academic/club-reports",
           colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "มอบหมายครูชุมนุม",
+          description: "มอบหมายครูดูแลชุมนุมผ่านหน้ามอบหมายครูรายวิชา เหมือนวิชาปกติ",
+          icon: <GraduationCap size={24} />,
+          path: "/academic/course-assignment",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          showOnlyWhenClubCourseBased: true
+        },
+        {
+          title: "ลงทะเบียนนักเรียนเข้าชุมนุม",
+          description: "ลงทะเบียนนักเรียนเข้าชุมนุมผ่านหน้าลงทะเบียนรายวิชา เหมือนวิชาปกติ",
+          icon: <UserPlus size={24} />,
+          path: "/academic/course-enrollment",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          showOnlyWhenClubCourseBased: true
         },
         {
           title: "มอบหมายครูกิจกรรมพัฒนาผู้เรียน",

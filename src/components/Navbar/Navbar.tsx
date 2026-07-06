@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { firestore } from "@/firebase";
@@ -60,6 +60,7 @@ interface NavbarProps {
 
 const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const notificationRef = useRef<HTMLDivElement>(null);
   const { isDarkMode, toggleTheme } = useTheme();
 
@@ -78,12 +79,14 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const [processingNotificationId, setProcessingNotificationId] = useState<string | null>(null);
 
   const resolvedSchoolId = schoolId || (currentUser as any)?.schoolId || null;
+  const isOwnerRoute = location.pathname.startsWith("/owner/");
   const schoolDisplayName = settingsSchoolId === resolvedSchoolId ? schoolName : "";
   const schoolLogoUrl = settingsSchoolId === resolvedSchoolId ? logoUrl : "";
 
   /* -------------------- realtime notification ----โ---------------- */
   useEffect(() => {
-    if (!currentUser?.uid) {
+    if (!currentUser?.uid || isOwnerRoute) {
+      setNotifications([]);
       setIsLoadingNoti(false);
       return;
     }
@@ -96,23 +99,31 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
       orderBy("createdAt", "desc")
     );
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => {
-        return {
-          id: doc.id,
-          path: doc.ref.path, // 📌 เก็บ path ของเอกสารไว้
-          ...(doc.data() as Omit<Notification, 'id' | 'path'>),
-        } as Notification;
-      });
-      setNotifications(data);
-      setIsLoadingNoti(false);
-    });
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((doc) => {
+          return {
+            id: doc.id,
+            path: doc.ref.path,
+            ...(doc.data() as Omit<Notification, 'id' | 'path'>),
+          } as Notification;
+        });
+        setNotifications(data);
+        setIsLoadingNoti(false);
+      },
+      (error) => {
+        console.error("Error listening to notifications:", error);
+        setNotifications([]);
+        setIsLoadingNoti(false);
+      }
+    );
 
     return () => unsub();
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, isOwnerRoute]);
 
   useEffect(() => {
-    if (!currentUser?.uid || !resolvedSchoolId) {
+    if (!currentUser?.uid || !resolvedSchoolId || isOwnerRoute) {
       setClubRequestNotifications([]);
       return;
     }
@@ -248,7 +259,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
       if (unsubRequests) unsubRequests();
       if (unsubClubs) unsubClubs();
     };
-  }, [currentUser, resolvedSchoolId]);
+  }, [currentUser, resolvedSchoolId, isOwnerRoute]);
 
   /* -------------------- click outside -------------------- */
   useEffect(() => {

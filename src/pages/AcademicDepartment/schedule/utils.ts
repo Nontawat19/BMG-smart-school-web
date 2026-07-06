@@ -434,10 +434,8 @@ export const checkConstraints = (
             const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
             
             if (sharedClass) {
-                const currentGroup = Number(course.groupNumber || 0);
                 if (!currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
-                    const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
-                    return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                    return { forbidden: true, message: `นักเรียนชั้น ${getClassDisplayName(sharedClass)} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
                 }
             }
 
@@ -570,8 +568,7 @@ export const checkConstraints = (
                     currentGroup > 0 &&
                     Number(occ.groupNumber ?? occ.course?.groupNumber ?? 0) !== currentGroup;
                 if (!isParallelGroupSameCourse) {
-                    const groupSuffix = currentGroup > 0 ? ` (กลุ่ม ${currentGroup})` : '';
-                    return { forbidden: true, message: `นักเรียนชั้น ${CLASSES[sharedClass as ClassKey] || sharedClass}${groupSuffix} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                    return { forbidden: true, message: `นักเรียนชั้น ${getClassDisplayName(sharedClass)} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
                 }
             }
         }

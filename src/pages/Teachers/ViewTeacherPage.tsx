@@ -821,7 +821,7 @@ export default function ViewTeacherPage() {
                           </div>
                           <div className="h-80 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
                             <h3 className="text-center text-sm font-medium mb-4 text-gray-500 dark:text-gray-400">จำนวนครั้งการลงเวลา</h3>
-                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                               <BarChart data={attendanceChartData}>
                                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                                 <XAxis dataKey="name" fontSize={12} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} />
@@ -843,7 +843,7 @@ export default function ViewTeacherPage() {
                           {attendanceTrendData.length > 0 && (
                             <div className="col-span-1 lg:col-span-2 h-96 mt-2 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
                               <h3 className="text-center text-sm font-medium mb-4 text-gray-500 dark:text-gray-400">แนวโน้มเวลาการมาทำงาน (30 วันล่าสุด)</h3>
-                              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                                 <LineChart data={attendanceTrendData}>
                                   <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                                   <XAxis dataKey="date" fontSize={12} tickFormatter={(val) => val.split('-').slice(1).join('/')} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} />
@@ -878,7 +878,7 @@ export default function ViewTeacherPage() {
                     {monthlyStats.length > 0 && (
                       <InfoCard title="สถิติการมาทำงานรายเดือน">
                         <div className="h-96 w-full">
-                          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                          <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                             <BarChart data={monthlyStats} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                               <XAxis dataKey="name" fontSize={12} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} />

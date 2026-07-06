@@ -381,6 +381,7 @@ const ProfilePage: React.FC = () => {
   }, [courses, teachingSemester]);
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [attendanceFetched, setAttendanceFetched] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
   const [attendanceCurrentPage, setAttendanceCurrentPage] = useState(1);
@@ -723,6 +724,7 @@ const ProfilePage: React.FC = () => {
           console.error("Error fetching attendance records:", err);
         } finally {
           setIsAttendanceLoading(false);
+          setAttendanceFetched(true);
         }
       };
       fetchAttendance();
@@ -1076,8 +1078,33 @@ const ProfilePage: React.FC = () => {
   ];
 
   // Prepare Chart Data
-  // ใช้ข้อมูลจาก Aggregation ในโปรไฟล์โดยตรง
-  const stats = profile?.attendanceStats || { present: 0, late: 0, leave: 0, absent: 0, early: 0, noCheckout: 0 };
+  // คำนวณสถิติจากข้อมูลจริงในชุด attendance records (เหมือนระบบนักเรียน) ถ้ายังไม่ได้โหลด ใช้ข้อมูล pre-aggregated จาก profile
+  const stats = (() => {
+    if (attendanceFetched) {
+      const result = { present: 0, late: 0, leave: 0, absent: 0, early: 0, noCheckout: 0, official_travel_days: 0 };
+      for (const record of attendanceRecords) {
+        const s = record.status;
+        if (s === 'มา' || s === 'OnTime') result.present++;
+        else if (s === 'สาย' || s === 'Late') result.late++;
+        else if (s === 'ลา' || s === 'Leave' || s === 'ล') result.leave++;
+        else if (s === 'ขาด' || s === 'Absent') result.absent++;
+        else if (s === 'กลับก่อน' || s === 'Early') result.early++;
+        else if (s === 'ไม่ลงเวลาออก' || s === 'NoCheckout') result.noCheckout++;
+        else if (s === 'ไปราชการ' || s === 'OfficialTravel') result.official_travel_days++;
+      }
+      return result;
+    }
+    const p = (profile?.attendanceStats || {}) as any;
+    return {
+      present: p.present || 0,
+      late: p.late || 0,
+      leave: p.leave || 0,
+      absent: p.absent || 0,
+      early: p.early || 0,
+      noCheckout: p.noCheckout || 0,
+      official_travel_days: p.official_travel_days || 0,
+    };
+  })();
   const attendanceChartData = [
     { name: 'มาปกติ', value: stats.present || 0, color: '#22c55e' },
     { name: 'สาย', value: stats.late || 0, color: '#eab308' },
@@ -1110,7 +1137,8 @@ const ProfilePage: React.FC = () => {
       'leave': ['ลา', 'Leave', 'ล'],
       'absent': ['ขาด', 'Absent'],
       'early': ['กลับก่อน', 'Early'],
-      'noCheckout': ['ไม่ลงเวลาออก', 'NoCheckout']
+      'noCheckout': ['ไม่ลงเวลาออก', 'NoCheckout'],
+      'officialTravel': ['ไปราชการ', 'OfficialTravel'],
     };
 
     const targetStatuses = statusMap[selectedStatus] || [];
@@ -2392,8 +2420,25 @@ const ProfilePage: React.FC = () => {
               {activeTab === "attendance" && userRole === 'teacher' && (
                 <div className="animate-fade-in space-y-6">
                   <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || getCurrentThaiYear()})`}>
+                    {attendanceFetched && (
+                      <div className="flex items-center gap-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg border border-green-100 dark:border-green-800 font-medium">
+                          ✓ คำนวณจากข้อมูลจริง ({attendanceRecords.length} รายการ)
+                        </span>
+                      </div>
+                    )}
+                    {isAttendanceLoading ? (
+                      <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 pb-4">
+                        {Array.from({ length: 7 }).map((_, i) => (
+                          <div key={i} className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (
                     <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 table-responsive pb-4 scrollbar-hide -mx-2 px-2 lg:mx-0 lg:px-0">
-                      <div className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800">
+                      <div
+                        onClick={() => { setSelectedStatus(selectedStatus === 'present' ? null : 'present'); setAttendanceCurrentPage(1); }}
+                        className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'present' ? 'ring-2 ring-green-500 bg-green-100 dark:bg-green-900/40 border-green-500' : 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30'}`}
+                      >
                         <div className="text-lg sm:text-xl font-bold text-green-600 dark:text-green-400">{stats.present || 0}</div>
                         <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">มาปกติ</div>
                       </div>
@@ -2433,15 +2478,17 @@ const ProfilePage: React.FC = () => {
                         <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">ไม่ลงเวลาออก</div>
                       </div>
                       <div
-                        className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800"
+                        onClick={() => { setSelectedStatus(selectedStatus === 'officialTravel' ? null : 'officialTravel'); setAttendanceCurrentPage(1); }}
+                        className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'officialTravel' ? 'ring-2 ring-indigo-500 bg-indigo-100 dark:bg-indigo-900/40 border-indigo-500' : 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30'}`}
                       >
                         <div className="text-lg sm:text-xl font-bold text-indigo-600 dark:text-indigo-400">{stats.official_travel_days || 0}</div>
                         <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">ไปราชการ</div>
                       </div>
                     </div>
+                    )}
                   </InfoCard>
 
-                  {attendanceChartData.length > 0 && (
+                  {attendanceFetched && attendanceChartData.some(d => d.value > 0) && (
                     <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="h-80 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center overflow-hidden">
                         <h3 className="text-center text-sm font-medium mb-4 text-gray-500 dark:text-gray-400 w-full">สัดส่วนการลงเวลา</h3>
@@ -2463,7 +2510,7 @@ const ProfilePage: React.FC = () => {
                       </div>
                       <div className="h-80 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
                         <h3 className="text-center text-sm font-medium mb-4 text-gray-500 dark:text-gray-400">จำนวนครั้งการลงเวลา</h3>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250} initialDimension={{ width: 1, height: 1 }}>
                           <BarChart data={attendanceChartData}>
                             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                             <XAxis dataKey="name" fontSize={12} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} />
@@ -2492,7 +2539,8 @@ const ProfilePage: React.FC = () => {
                               selectedStatus === 'leave' ? 'ลา' :
                                 selectedStatus === 'absent' ? 'ขาด' :
                                   selectedStatus === 'early' ? 'กลับก่อน' :
-                                    'ไม่ลงเวลาออก'
+                                    selectedStatus === 'noCheckout' ? 'ไม่ลงเวลาออก' :
+                                      'ไปราชการ'
                         }
                       </h3>
 

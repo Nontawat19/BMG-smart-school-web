@@ -3,14 +3,21 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { firestore as db } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit } from 'react-icons/fa';
+import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit, FaTable, FaCertificate, FaHeartbeat, FaBoxOpen, FaCodeBranch, FaCalendarTimes } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import {
   buildFirebaseMonthlyUsageSummary,
   fetchSchoolDashboardSummary,
+  fetchSchoolLicenseInfo,
   formatOps,
   formatTHB,
   getCurrentUsageMonth,
+  getDaysUntilMaExpiry,
+  isMaExpiringSoon,
+  LICENSE_STATUS_LABELS,
+  SYSTEM_VERSION,
+  formatLastSyncTimestamp,
+  type SchoolLicenseInfo,
 } from '@/utils/ownerStatsUtils';
 
 interface SchoolInfo {
@@ -47,6 +54,7 @@ interface SchoolInfo {
   usageMonth?: string;
   schoolType?: string;
   opportunityExpansionLevel?: string;
+  lastSyncAt?: any;
 }
 
 const SkeletonLoader: React.FC = () => (
@@ -86,6 +94,7 @@ const SchoolDetailsPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId: string }>();
   const navigate = useNavigate();
   const [info, setInfo] = useState<SchoolInfo | null>(null);
+  const [licenseInfo, setLicenseInfo] = useState<SchoolLicenseInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const collectionName = 'school-settings';
@@ -103,7 +112,11 @@ const SchoolDetailsPage: React.FC = () => {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as SchoolInfo;
-        const summary = await fetchSchoolDashboardSummary(db, schoolId, data);
+        const [summary, license] = await Promise.all([
+          fetchSchoolDashboardSummary(db, schoolId, data),
+          fetchSchoolLicenseInfo(db, schoolId),
+        ]);
+        setLicenseInfo(license);
         const usageMonth = getCurrentUsageMonth();
         const monthlyUsage = summary.monthlyUsage?.[usageMonth] || buildFirebaseMonthlyUsageSummary({
           month: usageMonth,
@@ -131,6 +144,7 @@ const SchoolDetailsPage: React.FC = () => {
             `Hosting storage ${formatTHB(monthlyUsage.cost.hostingStorageTHB)}`,
           ].join(' / '),
           usageMonth,
+          lastSyncAt: (data as any).updatedAt,
         });
       } else {
         setInfo(null); // No data found
@@ -180,9 +194,18 @@ const SchoolDetailsPage: React.FC = () => {
               &larr; กลับหน้ารายการโรงเรียน
             </Link>
             {info && (
-              <Link to={`/owner/school-info/${schoolId}`} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">
-                แก้ไขข้อมูล
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/owner/schools/${schoolId}/data`}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  <FaTable size={14} />
+                  ดูข้อมูลทั้งหมดในโรงเรียน
+                </Link>
+                <Link to={`/owner/school-info/${schoolId}`} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                  แก้ไขข้อมูล
+                </Link>
+              </div>
             )}
           </div>
 
@@ -247,6 +270,25 @@ const SchoolDetailsPage: React.FC = () => {
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
                       * ops = operations สรุปรายเดือนจาก summaries; ต้นทุนเป็นค่าประมาณหลังหัก free tier และรวม Firestore, Storage, Hosting storage ({info.firebaseCostBreakdown || '-'})
                     </p>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">License / MA / สัญญา</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                      <InfoRow
+                        icon={<FaCertificate size={20} />}
+                        label="สถานะ License"
+                        value={licenseInfo?.licenseStatus ? LICENSE_STATUS_LABELS[licenseInfo.licenseStatus] : undefined}
+                      />
+                      <InfoRow
+                        icon={<FaCalendarTimes size={20} />}
+                        label="MA ถึงวันที่"
+                        value={licenseInfo?.maExpiryDate ? `${licenseInfo.maExpiryDate}${isMaExpiringSoon(licenseInfo.maExpiryDate) ? ` (🔔 เหลือ ${getDaysUntilMaExpiry(licenseInfo.maExpiryDate)} วัน)` : ''}` : undefined}
+                      />
+                      <InfoRow icon={<FaCalendarTimes size={20} />} label="วันหมดอายุสัญญา" value={licenseInfo?.contractExpiryDate} />
+                      <InfoRow icon={<FaBoxOpen size={20} />} label="Backup ล่าสุด" value={licenseInfo?.lastBackupAt} />
+                      <InfoRow icon={<FaHeartbeat size={20} />} label="Last Sync" value={formatLastSyncTimestamp(info.lastSyncAt)} />
+                      <InfoRow icon={<FaCodeBranch size={20} />} label="เวอร์ชันระบบ" value={SYSTEM_VERSION} />
+                    </div>
                   </div>
                 </div>
               </div>

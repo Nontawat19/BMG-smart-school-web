@@ -1171,7 +1171,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
         )}
         {!cameraError && !endpointConfigured && (
           <div className="absolute inset-x-4 bottom-28 rounded-2xl bg-black/70 px-4 py-3 text-sm font-bold text-amber-200 backdrop-blur z-10">
-            ยังไม่ได้ตั้งค่า endpoint สำหรับส่งภาพไป FindFace
+            ยังไม่ได้ตั้งค่า endpoint สำหรับส่งภาพไป Face Recognition
           </div>
         )}
         <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-2xl bg-black/60 px-3 py-2 text-xs font-black text-white backdrop-blur z-10">

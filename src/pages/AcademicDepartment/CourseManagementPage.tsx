@@ -209,7 +209,8 @@ const CourseManagementPage: React.FC = () => {
   );
   const courseTypeOptions = [
     { value: 'พื้นฐาน', label: 'วิชาพื้นฐาน' },
-    { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' }
+    { value: 'เพิ่มเติม', label: 'วิชาเพิ่มเติม' },
+    { value: 'ชุมนุม', label: 'ชุมนุม' }
   ];
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const teachers = useMemo(() => getActiveSortedTeachers(Object.values(teacherMap || {})), [teacherMap]);

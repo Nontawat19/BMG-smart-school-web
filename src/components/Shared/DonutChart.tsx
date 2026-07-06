@@ -40,7 +40,7 @@ interface DonutChartProps {
 }
 
 const DonutChart: React.FC<DonutChartProps> = ({ data }) => (
-  <ResponsiveContainer width="100%" height="100%" minHeight={80}>
+  <ResponsiveContainer width="100%" height="100%" minHeight={80} initialDimension={{ width: 1, height: 1 }}>
     <PieChart>
       <Pie
         data={data}

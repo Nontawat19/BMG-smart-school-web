@@ -22,7 +22,7 @@ setLogLevel("silent");
 
 export const auth = getAuth(app);
 export const firestore = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true,
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
   }),

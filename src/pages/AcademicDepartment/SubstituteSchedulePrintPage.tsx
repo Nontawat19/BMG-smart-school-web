@@ -204,7 +204,7 @@ const SubstituteSchedulePdf: React.FC<{
         {logoUrl ? <Image src={logoUrl} style={pdfStyles.logo} /> : null}
         <View style={pdfStyles.titleWrap}>
           <Text style={pdfStyles.mainTitle}>ตารางสอนแทน</Text>
-          <Text style={pdfStyles.mainSubtitle}>วันที่ {dateLabel}</Text>
+          <Text style={pdfStyles.mainSubtitle}>{dateLabel}</Text>
         </View>
       </View>
 
@@ -213,7 +213,7 @@ const SubstituteSchedulePdf: React.FC<{
           {/* title + column headers stay together — won't be left orphaned at page bottom */}
           <View wrap={false}>
             <Text style={pdfStyles.tableTitle}>
-              {`ตารางสอนแทน ครู ${group.teacherName} ${dateLabel}`}
+              {`ตารางสอนแทน ${group.teacherName} ${dateLabel}`}
             </Text>
             <View style={pdfStyles.rowHeader}>
               <Text style={[pdfStyles.cell, pdfStyles.cellPeriod, { fontWeight: "bold" }]}>คาบที่</Text>

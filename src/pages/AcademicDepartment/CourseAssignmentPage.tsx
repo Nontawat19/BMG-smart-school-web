@@ -98,6 +98,29 @@ const isActivityCourse = (course?: Partial<Pick<Course, 'type' | 'code' | 'subje
            cSG.includes("กิจกรรมพัฒนาผู้เรียน");
 };
 
+const isClubCourse = (course?: Partial<Pick<Course, 'type' | 'title'>> | null): boolean => {
+    if (!course) return false;
+    const cType = (course.type || "").trim().toLowerCase();
+    const cTitle = (course.title || "").trim();
+    return cType === "ชุมนุม" || cTitle.includes("ชุมนุม");
+};
+
+const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'isElective' | 'title'>> | null, category: string) => {
+    if (!course) return false;
+    if (category === "ประเภท" || category === "ทั้งหมด") return true;
+    if (category === "วิชาเลือกเสรี") return course.isElective === true;
+
+    const rawType = String(course.type || "").trim().toLowerCase();
+    if (!rawType) return false;
+
+    if (category === "ชุมนุม") return isClubCourse(course);
+    if (category === "กิจกรรม") return rawType.includes("กิจกรรม");
+    if (category === "พื้นฐาน") return rawType.includes("พื้นฐาน");
+    if (category === "เพิ่มเติม") return rawType.includes("เพิ่มเติม");
+
+    return rawType === category.trim().toLowerCase();
+};
+
 const getCourseTeachingHours = (course?: Partial<Course> | null) => {
     if (!course) return 0;
     const creditsNum = isActivityCourse(course) ? ACTIVITY_CREDITS : Number(course.credits || 0);
@@ -471,6 +494,7 @@ const CourseAssignmentPage: React.FC = () => {
     const [courses, setCourses] = useState<Course[]>([]);
     const [activityCoursesWithPeriod, setActivityCoursesWithPeriod] = useState<Set<string>>(new Set());
     const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('course-based');
+    const [clubMode, setClubMode] = useState<'legacy' | 'course-based'>('legacy');
     const [rooms, setRooms] = useState<Room[]>([]);
     const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -483,7 +507,7 @@ const CourseAssignmentPage: React.FC = () => {
     const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
     const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
     const [activeGroupNumbers, setActiveGroupNumbers] = useState<number[]>([1]);
-    const [activeRoomNumber, setActiveRoomNumber] = useState<string>("1");
+    const [activeRoomNumber, setActiveRoomNumber] = useState<string>("");
     const [selectedAssignments, setSelectedAssignments] = useState<{ courseId: string, groupNumber: number, isPending?: boolean }[]>([]);
     const [pendingQueue, setPendingQueue] = useState<{ courseId: string, teacherId: string, teacherIds?: string[], teacherHours?: Record<string, number>, teacherPeriods?: Record<string, { start: number; end: number }>, roomIds: string[], groupNumber: number, room?: string, title: string, code: string, classId: any }[]>([]);
 
@@ -1027,6 +1051,8 @@ const CourseAssignmentPage: React.FC = () => {
         getDoc(doc(db, 'school-settings', schoolId)).then(snap => {
             const mode = snap.data()?.activityHubSettings?.activityMode;
             if (mode === 'special-period' || mode === 'course-based') setActivityMode(mode);
+            const cMode = snap.data()?.activityHubSettings?.clubMode;
+            if (cMode === 'legacy' || cMode === 'course-based') setClubMode(cMode);
         });
         getDocs(collection(db, 'school-settings', schoolId, 'learner-activities')).then(snap => {
             const withPeriod = new Set<string>();
@@ -1061,6 +1087,28 @@ const CourseAssignmentPage: React.FC = () => {
         return () => unsub();
     }, [schoolId, selectedYear, selectedSemester]);
 
+    // Sync teacher assignments of club-type courses into the `clubs` collection so the
+    // existing club attendance/evaluation pages (which only read `clubs/{clubId}`) stay in sync
+    // whenever "ลงทะเบียนแบบรายวิชา" club mode is enabled from ActivityHubSettingsPage.
+    useEffect(() => {
+        if (!schoolId || clubMode !== 'course-based') return;
+        semesterAssignments.forEach((a: any) => {
+            const course = courses.find(c => c.id === a.courseId);
+            if (!course) return;
+            const isClub = isClubCourse(course);
+            if (!isClub) return;
+            const teacherIds = new Set<string>();
+            (a.teacherAssignments || []).forEach((ta: any) => {
+                (ta.teacherIds?.length ? ta.teacherIds : [ta.teacherId]).forEach((id: string) => { if (id) teacherIds.add(id); });
+            });
+            setDoc(doc(db, 'school-settings', schoolId, 'clubs', course.id), {
+                name: course.title || course.code || '',
+                responsibleTeacherIds: Array.from(teacherIds),
+                linkedCourseId: course.id,
+            }, { merge: true }).catch(err => console.error('Failed to sync club teacher assignment:', err));
+        });
+    }, [schoolId, clubMode, semesterAssignments, courses]);
+
     // Handlers
     const handleAddToQueue = async () => {
         if (!selectedCourses.length || selectedTeacherIds.length === 0 || !schoolId) return;
@@ -1073,6 +1121,38 @@ const CourseAssignmentPage: React.FC = () => {
                 confirmButtonColor: '#3b82f6'
             });
             return;
+        }
+
+        if (!activeRoomNumber) {
+            const confirmResult = await Swal.fire({
+                icon: 'warning',
+                title: 'ยังไม่ได้เลือกห้อง',
+                text: `วิชาที่เลือกไว้ ${selectedCourses.length} รายการยังไม่ได้เลือกเลขห้อง (คอลัมน์ "ห้อง") ต้องการมอบหมายต่อโดยไม่ระบุห้องหรือไม่?`,
+                showCancelButton: true,
+                confirmButtonText: 'มอบหมายต่อ (ไม่ระบุห้อง)',
+                cancelButtonText: 'กลับไปเลือกห้อง',
+                confirmButtonColor: '#f59e0b',
+                cancelButtonColor: '#64748b',
+                background: getSwalBg(),
+                color: getSwalColor()
+            });
+            if (!confirmResult.isConfirmed) return;
+        }
+
+        if (!selectedRoomId) {
+            const confirmResult = await Swal.fire({
+                icon: 'warning',
+                title: 'ยังไม่ได้เลือกห้องเรียน',
+                text: `วิชาที่เลือกไว้ ${selectedCourses.length} รายการยังไม่ได้ระบุห้องเรียน ต้องการมอบหมายต่อโดยไม่ระบุห้องหรือไม่?`,
+                showCancelButton: true,
+                confirmButtonText: 'มอบหมายต่อ (ไม่ระบุห้อง)',
+                cancelButtonText: 'กลับไปเลือกห้อง',
+                confirmButtonColor: '#f59e0b',
+                cancelButtonColor: '#64748b',
+                background: getSwalBg(),
+                color: getSwalColor()
+            });
+            if (!confirmResult.isConfirmed) return;
         }
 
         const newItems: any[] = [];
@@ -1256,7 +1336,7 @@ const CourseAssignmentPage: React.FC = () => {
         setSelectedTeacherIds([]);
         setSelectedRoomId(null);
         setActiveGroupNumbers([1]);
-        setActiveRoomNumber("1");
+        setActiveRoomNumber("");
         setSelectedAssignments([]);
     };
 
@@ -1859,14 +1939,15 @@ const CourseAssignmentPage: React.FC = () => {
             .map(g => g.name)
             .filter(name => {
                 // โหมดคาบเรียนพิเศษ: ซ่อนกลุ่มสาระกิจกรรมพัฒนาผู้เรียนออกจาก dropdown
-                if (activityMode === 'special-period') {
+                // เว้นแต่เปิดโหมดชุมนุมแบบรายวิชา ซึ่งวิชาชุมนุมยังต้องกรองด้วยกลุ่มสาระนี้ได้
+                if (activityMode === 'special-period' && clubMode !== 'course-based') {
                     const lower = name.toLowerCase();
                     return !lower.includes('กิจกรรมพัฒนาผู้เรียน');
                 }
                 return true;
             });
         return ["กลุ่มสาระทั้งหมด", ...names];
-    }, [subjectGroupsList, activityMode]);
+    }, [subjectGroupsList, activityMode, clubMode]);
 
     if (isLoading) {
         return (
@@ -1881,27 +1962,15 @@ const CourseAssignmentPage: React.FC = () => {
     
     // 1. Filter for Left Panel (Source Courses)
     const filteredCourses = coursesWithAssignments.filter(c => {
-        const cType = c.type?.trim() || "";
-        const cCode = c.code?.trim() || "";
-        const cSG = (c.subjectGroup || "").toLowerCase();
-        // ชุมนุม → ใช้หน้าชุมนุมเท่านั้น ซ่อนออกจาก CourseAssignment เสมอ
-        const isClubCourse = cType.toLowerCase() === 'ชุมนุม' || (c.title || '').includes('ชุมนุม');
-        if (isClubCourse) return false;
-        const isActivityCourse = cType.includes("กิจกรรม") ||
-            cCode.startsWith("ก") || cSG.includes("กิจกรรมพัฒนาผู้เรียน");
-        // โหมดคาบเรียนพิเศษ → ซ่อนกิจกรรมทั้งหมดจาก CourseAssignment
-        if (isActivityCourse && activityMode === 'special-period') return false;
-        // โหมดรายวิชา → ซ่อนเฉพาะที่ผูก specialPeriod แล้ว (Mode 1)
-        if (isActivityCourse && activityCoursesWithPeriod.has(c.id)) return false;
+        const clubCourse = isClubCourse(c);
+        const activityCourse = isActivityCourse(c);
+        // กิจกรรมแบบคาบพิเศษยังไปจัดการในหน้าคาบพิเศษ ไม่ควรแสดงในหน้ามอบหมายรายวิชา
+        if (activityCourse && !clubCourse && activityMode === 'special-period') return false;
 
         // Core Logic: Checks if matches all active filters
         const matchesSearch = (c.title?.toLowerCase() || "").includes(courseSearch.toLowerCase()) || (c.code?.toLowerCase() || "").includes(courseSearch.toLowerCase());
         const matchesGroup = isSubjectGroupMatch(c.subjectGroup, subjectGroupFilter);
-        const matchesType = (() => {
-            if (categoryFilter === "ประเภท" || categoryFilter === "ทั้งหมด") return true;
-            if (categoryFilter === "วิชาเลือกเสรี") return c.isElective === true;
-            return c.type?.trim().toLowerCase() === categoryFilter.trim().toLowerCase();
-        })();
+        const matchesType = matchesCourseCategory(c, categoryFilter);
         const matchesLevelFilter = matchesLevel(c.classId);
 
         let matchesSemester = true;
@@ -2535,6 +2604,9 @@ const CourseAssignmentPage: React.FC = () => {
                                                                                         </div>
                                                                                     ) : null;
                                                                                 })}
+                                                                                {(!item.roomIds || item.roomIds.length === 0) && (
+                                                                                    <div className="text-[8px] font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">ไม่ระบุห้อง</div>
+                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                         
@@ -2758,6 +2830,9 @@ const CourseAssignmentPage: React.FC = () => {
                                                                                 <div key={rid} className="text-[8px] font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">ไม่ระบุสถานที่</div>
                                                                             );
                                                                         })}
+                                                                        {(!assign.roomIds || assign.roomIds.length === 0) && (
+                                                                            <div className="text-[8px] font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">ไม่ระบุห้อง</div>
+                                                                        )}
                                                                         {getAssignmentTeacherIds(assign).length >= 2 && (
                                                                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${isSelected ? 'bg-white/80 text-indigo-700' : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300'}`}>
                                                                                 {getAssignmentTeacherIds(assign).map(id => {

@@ -21,12 +21,29 @@ import Swal from 'sweetalert2';
 interface ActivityHubSettings {
   activityMode: 'special-period' | 'course-based';
   disabledActivityIds: string[];
+  clubMode: 'legacy' | 'course-based';
 }
 
 const DEFAULT_SETTINGS: ActivityHubSettings = {
   activityMode: 'course-based',
   disabledActivityIds: [],
+  clubMode: 'legacy',
 };
+
+const CLUB_MODES = [
+  {
+    id: 'legacy' as const,
+    label: 'ระบบหน้าชุมนุมเท่านั้น',
+    sublabel: 'Club Hub Mode',
+    pros: ['สมัครสมาชิก/เช็คชื่อ/รายงานผ่านหน้าชุมนุมโดยเฉพาะ'],
+  },
+  {
+    id: 'course-based' as const,
+    label: 'ลงทะเบียนแบบรายวิชา',
+    sublabel: 'Course-Based Mode',
+    pros: ['มอบหมายครูดูแลชุมนุมผ่านหน้ามอบหมายครูรายวิชา', 'ลงทะเบียนนักเรียนเข้าชุมนุมผ่านหน้าลงทะเบียนรายวิชา'],
+  },
+];
 
 const SETTINGS_FIELD = 'activityHubSettings';
 
@@ -249,21 +266,48 @@ const ActivityHubSettingsPage: React.FC = () => {
             })}
           </div>
 
-          {/* Info row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Club lock notice */}
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 px-4 py-3.5">
+          {/* Club Mode Section */}
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f23] p-5">
+            <div className="flex items-center gap-2 mb-3">
               <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-500/20 shrink-0">
                 <Lock size={15} className="text-amber-500" />
               </div>
               <div>
-                <div className="text-sm font-bold text-amber-700 dark:text-amber-400">ชุมนุม</div>
-                <div className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-0.5 leading-relaxed">
-                  ใช้ระบบหน้าชุมนุมเท่านั้น ไม่ขึ้นกับโหมดนี้
-                </div>
+                <div className="text-sm font-black">โหมดชุมนุม</div>
+                <div className="text-xs text-gray-400">เลือกวิธีที่โรงเรียนจัดการมอบหมายครู/ลงทะเบียนนักเรียนเข้าชุมนุม</div>
               </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {CLUB_MODES.map((mode) => {
+                const isActive = settings.clubMode === mode.id;
+                return (
+                  <button
+                    key={mode.id}
+                    onClick={() => saveSettings({ ...settings, clubMode: mode.id })}
+                    disabled={saving}
+                    className={`text-left rounded-xl border-2 p-3.5 transition-all duration-200 disabled:opacity-60 ${
+                      isActive
+                        ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10 shadow-md'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-amber-300 dark:hover:border-amber-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-sm font-bold ${isActive ? 'text-amber-600 dark:text-amber-400' : ''}`}>{mode.label}</span>
+                      {isActive && <Check size={14} strokeWidth={3} className="text-amber-500" />}
+                    </div>
+                    <ul className="space-y-1">
+                      {mode.pros.map((p) => (
+                        <li key={p} className="text-xs text-gray-500 dark:text-gray-400">{p}</li>
+                      ))}
+                    </ul>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
+          {/* Info row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Current mode summary */}
             <div className={`flex items-start gap-3 rounded-2xl border px-4 py-3.5 ${activeMode.activeBorder} ${activeMode.activeBg}`}>
               <div className={`flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br ${activeMode.gradient} shrink-0 shadow`}>

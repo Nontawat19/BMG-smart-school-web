@@ -13,6 +13,7 @@ import BackButton from "@/components/Shared/BackButton";
 import Select from "react-select";
 import { useTheme } from "@/ThemeContext";
 import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
+import { classifyLeaveSubType } from "@/utils/periodSummaryUtils";
 
 // Register TH Sarabun Font for PDF
 Font.register({
@@ -196,7 +197,23 @@ const pdfStyles = StyleSheet.create({
   }
 });
 
-const PDF_RECORDS_PER_PAGE = 25;
+// แบ่งหน้าตามเดือน: แต่ละหน้าแสดงวันทั้งหมดของเดือนนั้นให้ครบ ขึ้นหน้าใหม่ทันทีเมื่อข้ามเดือน
+// (ใช้ร่วมกันทั้งตารางบนหน้าจอและ PDF export เพื่อไม่ให้ค่าเพี้ยนไม่ตรงกัน)
+const chunkRecordsByMonth = <T extends { date: string }>(records: T[]): T[][] => {
+  const pages: T[][] = [];
+  let current: T[] = [];
+  for (const rec of records) {
+    const monthKey = rec.date.slice(0, 7);
+    const currentMonthKey = current[0]?.date.slice(0, 7);
+    if (current.length > 0 && monthKey !== currentMonthKey) {
+      pages.push(current);
+      current = [];
+    }
+    current.push(rec);
+  }
+  if (current.length > 0) pages.push(current);
+  return pages.length > 0 ? pages : [[]];
+};
 
 interface Teacher {
   id: string;
@@ -244,6 +261,42 @@ interface DailyRecord {
   lateMinutes?: string;
 }
 
+// ยอดสรุปสถานะของช่วงวันที่หนึ่งๆ (คำนวณสดจากข้อมูลลงเวลาจริงเสมอ ไม่ใช้ cache เพื่อความถูกต้อง 100%)
+interface PeriodSummaryTotals {
+  present: number;
+  late: number;
+  leave: number;
+  leaveSick: number;
+  leavePersonal: number;
+  leaveOther: number;
+  officialTravel: number;
+  absent: number;
+  noCheckout: number;
+}
+
+// นับจำนวนแต่ละสถานะจากรายการ DailyRecord — จุดเดียวที่ใช้ทั้งสรุปช่วงวันที่เลือกและสรุปรายปี/ภาคเรียน
+const aggregateDailyRecords = (records: DailyRecord[]): PeriodSummaryTotals => {
+  const totals: PeriodSummaryTotals = {
+    present: 0, late: 0, leave: 0, leaveSick: 0, leavePersonal: 0, leaveOther: 0,
+    officialTravel: 0, absent: 0, noCheckout: 0,
+  };
+  records.forEach(r => {
+    if (r.status === "Normal") totals.present++;
+    else if (r.status === "Late") totals.late++;
+    else if (r.status === "Leave") {
+      totals.leave++;
+      const subType = classifyLeaveSubType(r.note);
+      if (subType === "sick") totals.leaveSick++;
+      else if (subType === "personal") totals.leavePersonal++;
+      else totals.leaveOther++;
+    }
+    else if (r.status === "Absent") totals.absent++;
+    else if (r.status === "NoCheckout") totals.noCheckout++;
+    else if (r.status === "OfficialTravel") totals.officialTravel++;
+  });
+  return totals;
+};
+
 // Individual PDF Report Component
 interface PDFProps {
   records: DailyRecord[];
@@ -260,6 +313,10 @@ interface PDFProps {
     officialTravel: number;
     total: number;
     percentage: string;
+    // จำนวนวันลา/ไปราชการที่ "อนุมัติแล้ว" จริง นับจากคำขอใน leave_summary/travel_summary
+    // (ตรงกับหน้าประวัติการลา/ไปราชการ) แทนการอนุมานจากสถานะรายวันใน attendance
+    leaveDaysFromRequests: number;
+    travelDaysFromRequests: number;
   };
   schoolName: string;
   schoolAffiliation: string;
@@ -286,12 +343,7 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
   reportPrintedAt,
   academicYearTerm
 }) => {
-  const chunks: DailyRecord[][] = records.length > 0
-    ? Array.from(
-      { length: Math.ceil(records.length / PDF_RECORDS_PER_PAGE) },
-      (_, index) => records.slice(index * PDF_RECORDS_PER_PAGE, (index + 1) * PDF_RECORDS_PER_PAGE)
-    )
-    : [[]];
+  const chunks: DailyRecord[][] = chunkRecordsByMonth(records);
 
   const getStatusText = (status: string, note?: string) => {
     switch (status) {
@@ -372,7 +424,8 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
 
             {/* Table 1 Rows */}
             {chunk.map((rec, rowIndex) => {
-              const recordIndex = pageIndex * PDF_RECORDS_PER_PAGE + rowIndex + 1;
+              const recordsBeforeThisPage = chunks.slice(0, pageIndex).reduce((sum, c) => sum + c.length, 0);
+              const recordIndex = recordsBeforeThisPage + rowIndex + 1;
               const isLastRow = rowIndex === chunk.length - 1;
               return (
                 <View key={rec.date} style={pageIndex === 0 ? pdfStyles.firstPageTableDataRow : pdfStyles.tableDataRow} wrap={false}>
@@ -406,25 +459,21 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
               <View style={pdfStyles.table}>
                 {/* Table 2 Headers */}
                 <View style={pdfStyles.row}>
-                  <View style={[pdfStyles.th, { width: "12%" }]}><Text style={pdfStyles.headerText}>จำนวนวันทั้งหมด</Text></View>
-                  <View style={[pdfStyles.th, { width: "15%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่สแกนเข้า</Text></View>
-                  <View style={[pdfStyles.th, { width: "16%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่ไม่สแกนเข้า</Text></View>
-                  <View style={[pdfStyles.th, { width: "11%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่สาย</Text></View>
-                  <View style={[pdfStyles.th, { width: "12%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่ลาป่วย</Text></View>
-                  <View style={[pdfStyles.th, { width: "12%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่ลากิจ</Text></View>
-                  <View style={[pdfStyles.th, { width: "14%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่ลาราชการ</Text></View>
-                  <View style={[pdfStyles.th, { width: "8%", borderRightWidth: 0 }]}><Text style={pdfStyles.headerText}>อื่นๆ</Text></View>
+                  <View style={[pdfStyles.th, { width: "14%" }]}><Text style={pdfStyles.headerText}>จำนวนวันทั้งหมด</Text></View>
+                  <View style={[pdfStyles.th, { width: "17%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่สแกนเข้า</Text></View>
+                  <View style={[pdfStyles.th, { width: "17%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่ไม่สแกนเข้า</Text></View>
+                  <View style={[pdfStyles.th, { width: "13%" }]}><Text style={pdfStyles.headerText}>จำนวนวันที่สาย</Text></View>
+                  <View style={[pdfStyles.th, { width: "20%" }]}><Text style={pdfStyles.headerText}>การลา</Text></View>
+                  <View style={[pdfStyles.th, { width: "19%", borderRightWidth: 0 }]}><Text style={pdfStyles.headerText}>ไปราชการ</Text></View>
                 </View>
-                {/* Table 2 Row values */}
+                {/* Table 2 Row values — จำนวนวันลา/ไปราชการนับจากคำขอที่ "อนุมัติแล้ว" จริง (leave_summary/travel_summary) */}
                 <View style={pdfStyles.row}>
-                  <View style={[pdfStyles.td, { width: "12%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.total}</Text></View>
-                  <View style={[pdfStyles.td, { width: "15%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.present + stats.late + stats.noCheckout}</Text></View>
-                  <View style={[pdfStyles.td, { width: "16%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.absent}</Text></View>
-                  <View style={[pdfStyles.td, { width: "11%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.late}</Text></View>
-                  <View style={[pdfStyles.td, { width: "12%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.leaveSick}</Text></View>
-                  <View style={[pdfStyles.td, { width: "12%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.leavePersonal}</Text></View>
-                  <View style={[pdfStyles.td, { width: "14%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.officialTravel}</Text></View>
-                  <View style={[pdfStyles.td, { width: "8%", borderRightWidth: 0, borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.leaveOther + stats.noCheckout}</Text></View>
+                  <View style={[pdfStyles.td, { width: "14%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.total}</Text></View>
+                  <View style={[pdfStyles.td, { width: "17%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.present + stats.late + stats.noCheckout}</Text></View>
+                  <View style={[pdfStyles.td, { width: "17%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.absent}</Text></View>
+                  <View style={[pdfStyles.td, { width: "13%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.late}</Text></View>
+                  <View style={[pdfStyles.td, { width: "20%", borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.leaveDaysFromRequests}</Text></View>
+                  <View style={[pdfStyles.td, { width: "19%", borderRightWidth: 0, borderBottomWidth: 0 }]}><Text style={pdfStyles.cellText}>{stats.travelDaysFromRequests}</Text></View>
                 </View>
               </View>
             </>
@@ -481,9 +530,8 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
   // Ledger Data
   const [ledgerData, setLedgerData] = useState<DailyRecord[]>([]);
 
-  // Pagination
+  // Pagination — แต่ละหน้าคือข้อมูล 1 เดือนเต็ม (ดู chunkRecordsByMonth)
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
 
   // Format Helper for React-Select Option
   const teacherOptions = useMemo(() => {
@@ -665,31 +713,32 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
   };
 
   // Query and compute attendance logs
-  const fetchIndividualAttendance = async () => {
-    if (!schoolId || !selectedTeacherId || !startDate || !endDate) return;
-    setLoading(true);
-    try {
-      // Fetch teacher attendance collection sub-collection
-      const ref = collection(firestore, "school-settings", schoolId, "teachers", selectedTeacherId, "attendance");
-      const q = query(ref, where(documentId(), ">=", startDate), where(documentId(), "<=", endDate));
-      const snap = await getDocs(q);
+  // สร้างรายการ DailyRecord (สถานะรายวัน) ของครูคนหนึ่งในช่วงวันที่ที่กำหนด
+  // ใช้ตรรกะเดียวกันทั้งตารางรายวัน (ช่วงวันที่เลือก) และตารางสรุปรายปี/ภาคเรียน (ทุกปี)
+  // เพื่อไม่ให้ตัวเลขสองตารางนี้เพี้ยนไม่ตรงกัน
+  const computeDailyRecords = async (teacherId: string, rangeStart: string, rangeEnd: string): Promise<DailyRecord[]> => {
+    if (!schoolId) return [];
+    const ref = collection(firestore, "school-settings", schoolId, "teachers", teacherId, "attendance");
+    const q = query(ref, where(documentId(), ">=", rangeStart), where(documentId(), "<=", rangeEnd));
+    const snap = await getDocs(q);
 
-      const rawRecords: Record<string, any> = {};
-      snap.docs.forEach(doc => {
-        rawRecords[doc.id] = doc.data();
-      });
+    const rawRecords: Record<string, any> = {};
+    snap.docs.forEach(doc => {
+      rawRecords[doc.id] = doc.data();
+    });
 
-      // Construct dates in range
-      const list: DailyRecord[] = [];
-      const cur = new Date(startDate);
-      const last = new Date(endDate);
+    const list: DailyRecord[] = [];
+    const cur = new Date(rangeStart);
+    const last = new Date(rangeEnd);
 
-      while (cur <= last) {
+    while (cur <= last) {
         const dateStr = cur.toISOString().split("T")[0];
-        const isWorking = isSchoolWorkingDay(dateStr);
+        const raw = rawRecords[dateStr];
+        // นับวันนี้เข้ารายงานถ้าเป็นวันทำงานตามปฏิทิน "หรือ" มีบันทึกลงเวลา/ลา/ไปราชการจริงอยู่แล้ว
+        // (กันกรณีวันเสาร์-อาทิตย์ที่เป็นวันเรียนชดเชยแต่ยังไม่ได้ตั้งค่าในปฏิทิน ไม่ให้ข้อมูลลาหายไปเงียบๆ)
+        const isWorking = isSchoolWorkingDay(dateStr) || !!raw;
 
         if (isWorking) {
-          const raw = rawRecords[dateStr];
           let checkInTime = undefined;
           let checkOutTime = undefined;
           let status: DailyRecord["status"] = "Absent";
@@ -717,7 +766,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
               status = "Leave";
               statusThai = "ลา";
               note = raw.leaveType || "ลากิจ/ลาป่วย";
-            } else if (s === "ไปราชการ" || s === "OfficialTravel" || s === "officialTravel") {
+            } else if (s === "ไปราชการ" || s === "OfficialTravel" || s === "officialTravel" || s === "official_travel") {
               status = "OfficialTravel";
               statusThai = "ไปราชการ";
               note = raw.travelLocation || "ปฏิบัติงานนอกสถานที่";
@@ -769,10 +818,18 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
           });
         }
 
-        // Increment day
-        cur.setDate(cur.getDate() + 1);
-      }
+      // Increment day
+      cur.setDate(cur.getDate() + 1);
+    }
 
+    return list;
+  };
+
+  const fetchIndividualAttendance = async () => {
+    if (!schoolId || !selectedTeacherId || !startDate || !endDate) return;
+    setLoading(true);
+    try {
+      const list = await computeDailyRecords(selectedTeacherId, startDate, endDate);
       // Sort descending by date (newest first) for visual feed
       list.sort((a, b) => b.date.localeCompare(a.date));
       setLedgerData(list);
@@ -792,61 +849,74 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
     }
   }, [selectedTeacherId, startDate, endDate]);
 
+  // นับจำนวนวันลา/ไปราชการที่ "อนุมัติแล้ว" โดยอิงจากคำขอจริงใน leave_summary/travel_summary
+  // (หน้าประวัติการลา/ไปราชการ) แทนการอนุมานจากสถานะรายวันใน attendance — ตรงกับสิ่งที่เห็นในหน้าประวัติเป๊ะ
+  const countApprovedDaysInRange = async (
+    collectionName: "leave_summary" | "travel_summary",
+    teacherId: string,
+    rangeStart: string,
+    rangeEnd: string
+  ): Promise<number> => {
+    if (!schoolId) return 0;
+    const ref = collection(firestore, "school-settings", schoolId, "teachers", teacherId, collectionName);
+    const snap = await getDocs(query(ref, where("status", "==", "approved")));
+    let totalDays = 0;
+    snap.docs.forEach((d) => {
+      const data: any = d.data();
+      const reqStart = data.startDate?.toDate ? data.startDate.toDate().toISOString().split("T")[0] : null;
+      const reqEnd = data.endDate?.toDate ? data.endDate.toDate().toISOString().split("T")[0] : null;
+      if (!reqStart || !reqEnd) return;
+      // หาช่วงที่ซ้อนทับกันระหว่างคำขอกับช่วงวันที่ที่เลือกดูรายงาน
+      const overlapStart = reqStart > rangeStart ? reqStart : rangeStart;
+      const overlapEnd = reqEnd < rangeEnd ? reqEnd : rangeEnd;
+      if (overlapStart > overlapEnd) return; // ไม่ซ้อนทับกันเลย
+      const days = Math.round((new Date(overlapEnd).getTime() - new Date(overlapStart).getTime()) / 86400000) + 1;
+      totalDays += days;
+    });
+    return totalDays;
+  };
+
+  const [requestBasedStats, setRequestBasedStats] = useState<{ leaveDays: number; travelDays: number }>({ leaveDays: 0, travelDays: 0 });
+
+  useEffect(() => {
+    if (!schoolId || !selectedTeacherId || !startDate || !endDate) {
+      setRequestBasedStats({ leaveDays: 0, travelDays: 0 });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [leaveDays, travelDays] = await Promise.all([
+          countApprovedDaysInRange("leave_summary", selectedTeacherId, startDate, endDate),
+          countApprovedDaysInRange("travel_summary", selectedTeacherId, startDate, endDate),
+        ]);
+        if (!cancelled) setRequestBasedStats({ leaveDays, travelDays });
+      } catch (err) {
+        console.warn("Error counting approved leave/travel days:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [schoolId, selectedTeacherId, startDate, endDate]);
+
   // Compute Statistics
   const computedStats = useMemo(() => {
-    let present = 0;
-    let late = 0;
-    let leave = 0;
-    let leaveSick = 0;
-    let leavePersonal = 0;
-    let leaveOther = 0;
-    let absent = 0;
-    let noCheckout = 0;
-    let officialTravel = 0;
-
-    ledgerData.forEach(r => {
-      if (r.status === "Normal") present++;
-      else if (r.status === "Late") late++;
-      else if (r.status === "Leave") {
-        leave++;
-        const noteText = r.note || "";
-        if (noteText.includes("ป่วย")) {
-          leaveSick++;
-        } else if (noteText.includes("กิจ")) {
-          leavePersonal++;
-        } else {
-          leaveOther++;
-        }
-      }
-      else if (r.status === "Absent") absent++;
-      else if (r.status === "NoCheckout") noCheckout++;
-      else if (r.status === "OfficialTravel") officialTravel++;
-    });
-
+    const totals = aggregateDailyRecords(ledgerData);
     const total = ledgerData.length;
-    const attended = present + late + noCheckout + officialTravel;
+    const attended = totals.present + totals.late + totals.noCheckout + totals.officialTravel;
     const percentage = total > 0 ? ((attended / total) * 100).toFixed(2) : "0.00";
 
     return {
-      present,
-      late,
-      leave,
-      leaveSick,
-      leavePersonal,
-      leaveOther,
-      absent,
-      noCheckout,
-      officialTravel,
+      ...totals,
       total,
       percentage
     };
   }, [ledgerData]);
 
-  // Pagination calculation
-  const totalPages = Math.ceil(ledgerData.length / itemsPerPage);
-  const paginatedData = useMemo(() => {
-    return ledgerData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  }, [ledgerData, currentPage]);
+  // Pagination calculation — แต่ละหน้าคือ 1 เดือนเต็ม ขึ้นหน้าใหม่ทันทีเมื่อข้ามเดือน
+  const ledgerPages = useMemo(() => chunkRecordsByMonth(ledgerData), [ledgerData]);
+  const totalPages = ledgerData.length > 0 ? ledgerPages.length : 0;
+  const paginatedData = ledgerPages[currentPage - 1] || [];
+  const recordsBeforeCurrentPage = ledgerPages.slice(0, currentPage - 1).reduce((sum, p) => sum + p.length, 0);
 
   const getPageNumbers = () => {
     const pages = [];
@@ -871,6 +941,12 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
       Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสถิติสำหรับการลงเวลาในช่วงนี้", "info");
       return;
     }
+
+    // คำนวณจำนวนวันลา/ไปราชการที่อนุมัติแล้วใหม่สดๆ ตอน export เสมอ (ไม่พึ่ง state ที่อาจยังโหลดไม่เสร็จ)
+    const [freshLeaveDays, freshTravelDays] = await Promise.all([
+      countApprovedDaysInRange("leave_summary", selectedTeacherId, startDate, endDate),
+      countApprovedDaysInRange("travel_summary", selectedTeacherId, startDate, endDate),
+    ]);
 
     const getImageDataUrl = async (url: string): Promise<string> => {
       try {
@@ -970,7 +1046,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
         <IndividualAttendancePdfDocument
           records={sortedAscRecords}
           teacher={selectedTeacher}
-          stats={computedStats}
+          stats={{ ...computedStats, leaveDaysFromRequests: freshLeaveDays, travelDaysFromRequests: freshTravelDays }}
           schoolName={displaySchoolName}
           schoolAffiliation={affiliation}
           schoolLogo={schoolLogo}
@@ -1180,7 +1256,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
 
             <div className="bg-white dark:bg-[#2a2b2f] p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 text-center">
               <span className="text-gray-400 dark:text-gray-500 text-xs font-semibold block mb-1">การลา</span>
-              <span className="text-2xl font-black text-purple-600 dark:text-purple-400 block">{computedStats.leave}</span>
+              <span className="text-2xl font-black text-purple-600 dark:text-purple-400 block">{requestBasedStats.leaveDays}</span>
               <span className="text-gray-400 text-[10px] font-medium block">วัน</span>
             </div>
 
@@ -1229,7 +1305,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
                     </tr>
                   ) : (
                     paginatedData.map((rec, idx) => {
-                      const absoluteIdx = (currentPage - 1) * itemsPerPage + idx + 1;
+                      const absoluteIdx = recordsBeforeCurrentPage + idx + 1;
                       return (
                         <tr key={rec.date} className="hover:bg-gray-50/50 dark:hover:bg-[#323338]/30 transition-colors">
                           <td className="px-6 py-3 text-center text-sm font-semibold text-gray-400 dark:text-gray-500">
@@ -1314,7 +1390,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
             {!loading && totalPages > 1 && (
               <div className="px-6 py-4 bg-gray-50/50 dark:bg-[#323338]/30 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, ledgerData.length)} จาก {ledgerData.length} วันทำการ
+                  แสดง {recordsBeforeCurrentPage + 1} ถึง {recordsBeforeCurrentPage + paginatedData.length} จาก {ledgerData.length} วันทำการ
                 </div>
                 <div className="flex items-center gap-1">
                   <button

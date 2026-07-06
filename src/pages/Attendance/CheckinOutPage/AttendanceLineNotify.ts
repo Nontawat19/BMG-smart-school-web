@@ -176,11 +176,20 @@ export const sendLineAttendanceNotification = async (
     }
 
     try {
-        const stats = user.attendanceStats || { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
+        const rawStats = user.attendanceStats || { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
+        // Guard against negative values caused by Firestore increment(-1) going below 0 due to data inconsistency
+        const stats = {
+            present: Math.max(0, rawStats.present || 0),
+            late: Math.max(0, rawStats.late || 0),
+            leave: Math.max(0, rawStats.leave || 0),
+            absent: Math.max(0, rawStats.absent || 0),
+            noCheckout: Math.max(0, rawStats.noCheckout || 0),
+            officialTravel: Math.max(0, rawStats.officialTravel || 0),
+        };
         const score = user.behaviorScore ?? 100;
 
         // คำนวณ totalDays รวม 6 สถานะ (เหมือน Gateway)
-        const totalDays = (stats.present || 0) + (stats.late || 0) + (stats.absent || 0) + (stats.leave || 0) + (stats.noCheckout || 0) + (stats.officialTravel || 0);
+        const totalDays = stats.present + stats.late + stats.absent + stats.leave + stats.noCheckout + stats.officialTravel;
 
         // LINE ต้องการ HTTPS URL ที่เข้าถึงได้สาธารณะ (เหมือน Gateway)
         const profileUrl = (user.profileImageUrl && user.profileImageUrl.startsWith('https://'))
@@ -195,10 +204,10 @@ export const sendLineAttendanceNotification = async (
             data: {
                 datasets: [{
                     data: [
-                        totalDays === 0 ? 1 : (stats.present || 0),
-                        stats.late || 0,
-                        stats.absent || 0,
-                        stats.leave || 0
+                        totalDays === 0 ? 1 : stats.present,
+                        stats.late,
+                        stats.absent,
+                        stats.leave
                     ],
                     backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4'],
                     borderWidth: 2,
@@ -307,10 +316,8 @@ export const sendLineAttendanceNotification = async (
                                             position: "absolute",
                                             offsetTop: "-10px",
                                             offsetStart: "0px",
-                                            width: "70px",
-                                            height: "90px",
-                                            size: "xxl",
-                                            aspectRatio: "1:1",
+                                            size: "70px",
+                                            aspectRatio: "7:9",
                                             aspectMode: "cover"
                                         }
                                     ]

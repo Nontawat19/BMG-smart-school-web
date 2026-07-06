@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { firestore as db } from "../../firebase";
 import LogoutButton from "@/components/LogoutButton";
@@ -59,9 +59,11 @@ import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
+  const location = useLocation();
   const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS } = usePermissions();
   const isLoading = useSelector((state: RootState) => state.auth.loading);
   const schoolId = currentUser?.schoolId;
+  const isOwnerRoute = location.pathname.startsWith("/owner/");
   const isPwaMode = usePwaMode();
 
   // ฟังก์ชันสำหรับสร้าง className ของ NavLink
@@ -80,7 +82,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   const [features, setFeatures] = useState<any>({});
 
   React.useEffect(() => {
-    if (schoolId) {
+    if (schoolId && !isOwnerRoute) {
       const unsub = onSnapshot(doc(db, 'school-settings', schoolId), (doc) => {
         if (doc.exists()) {
           const data = doc.data();
@@ -92,7 +94,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
       });
       return () => unsub();
     }
-  }, [schoolId]);
+    setFeatures({});
+  }, [isOwnerRoute, schoolId]);
 
   const isEnabled = (key: string) => features[key] ?? true;
 

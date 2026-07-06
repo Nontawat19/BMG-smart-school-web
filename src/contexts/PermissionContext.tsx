@@ -3,6 +3,7 @@ import { collection, getDocs, setDoc, doc, writeBatch } from 'firebase/firestore
 import { onAuthStateChanged } from 'firebase/auth';
 import { firestore as db, auth } from '@/firebase';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
+import { ROLES } from '@/constants/roles';
 
 export interface RoutePermissionEntry {
   allowedRoles: string[];
@@ -40,6 +41,12 @@ const parseEntry = (raw: Record<string, unknown>): RoutePermissionEntry => ({
   allowedPersonnelTypes: (raw.allowedPersonnelTypes as string[]) ?? [],
 });
 
+const isPermissionDeniedError = (err: unknown): boolean =>
+  typeof err === 'object' &&
+  err !== null &&
+  'code' in err &&
+  (err as { code?: string }).code === 'permission-denied';
+
 // Union merge: school admin can only ADD to what Super Admin allows, never remove
 const unionEntry = (
   global: RoutePermissionEntry | undefined,
@@ -55,13 +62,28 @@ const unionEntry = (
   };
 };
 
-export const PermissionProvider: React.FC<{ children: React.ReactNode; schoolId?: string | null }> = ({ children, schoolId }) => {
+export const PermissionProvider: React.FC<{
+  children: React.ReactNode;
+  schoolId?: string | null;
+  userRoles?: string[] | null;
+}> = ({ children, schoolId, userRoles }) => {
   const [globalPerms, setGlobalPerms]   = useState<Record<string, RoutePermissionEntry>>({});
   const [schoolSpecificPerms, setSchoolSpecificPerms] = useState<Record<string, RoutePermissionEntry>>({});
   const [globalLoaded, setGlobalLoaded] = useState(false);
   const [schoolLoaded, setSchoolLoaded] = useState(false);
 
   const isLoaded = globalLoaded && schoolLoaded;
+  const normalizedRoles = useMemo(
+    () => (userRoles ?? []).map(role => role.toLowerCase()),
+    [userRoles]
+  );
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  const shouldLoadRemotePermissions =
+    pathname.startsWith('/owner/permission-management') ||
+    pathname.startsWith('/academic/permission-management');
+  const canReadGlobalPermissions = normalizedRoles.includes(ROLES.SUPER_ADMIN) || normalizedRoles.includes(ROLES.SCHOOL_ADMIN);
+  const canReadSchoolPermissions = canReadGlobalPermissions && shouldLoadRemotePermissions;
+  const canReadGlobalPermissionDocument = canReadGlobalPermissions && shouldLoadRemotePermissions;
 
   // Union merge: global is the floor, school adds on top
   const routePermissions = useMemo(() => {
@@ -75,6 +97,13 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode; schoolId?
 
   // Load global route_permissions
   useEffect(() => {
+    if (!canReadGlobalPermissionDocument) {
+      setGlobalPerms({});
+      setGlobalLoaded(true);
+      return;
+    }
+
+    setGlobalLoaded(false);
     const load = async () => {
       try {
         const snapshot = await getDocs(collection(db, 'route_permissions'));
@@ -82,7 +111,12 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode; schoolId?
         snapshot.forEach(d => { data[d.id] = parseEntry(d.data() as Record<string, unknown>); });
         setGlobalPerms(data);
       } catch (err) {
-        console.error('PermissionContext: failed to load global route_permissions', err);
+        if (isPermissionDeniedError(err)) {
+          console.warn('PermissionContext: fallback to default global route permissions because access was denied.');
+          setGlobalPerms({});
+        } else {
+          console.error('PermissionContext: failed to load global route_permissions', err);
+        }
       } finally {
         setGlobalLoaded(true);
       }
@@ -96,11 +130,11 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode; schoolId?
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [canReadGlobalPermissionDocument]);
 
   // Load school-specific permissions
   useEffect(() => {
-    if (!schoolId) {
+    if (!schoolId || !canReadSchoolPermissions) {
       setSchoolSpecificPerms({});
       setSchoolLoaded(true);
       return;
@@ -114,12 +148,17 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode; schoolId?
         snapshot.forEach(d => { data[d.id] = parseEntry(d.data() as Record<string, unknown>); });
         setSchoolSpecificPerms(data);
       } catch (err) {
-        console.error('PermissionContext: failed to load school route_permissions', err);
+        if (isPermissionDeniedError(err)) {
+          console.warn('PermissionContext: fallback to default school route permissions because access was denied.');
+          setSchoolSpecificPerms({});
+        } else {
+          console.error('PermissionContext: failed to load school route_permissions', err);
+        }
       } finally {
         setSchoolLoaded(true);
       }
     })();
-  }, [schoolId]);
+  }, [canReadSchoolPermissions, schoolId]);
 
   const updateRoutePermission = async (routeKey: string, entry: RoutePermissionEntry) => {
     await setDoc(doc(db, 'route_permissions', routeKey), {

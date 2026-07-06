@@ -3256,6 +3256,23 @@ const CheckinOutPage: React.FC = () => {
     return { matched: true, user: returnUser, users: [returnUser], confidence, message: "สแกนผ่าน" };
   }, [calendarEvents, faceScanEndpoint, faceScanThreshold, schoolId, schoolSettings, resolveFaceMatchedUser, processAttendanceForUser, uploadFaceScanSnapshot]);
 
+  // เมื่อ super_admin ตั้งค่าเปิดใช้ระบบนี้แล้วปิดสวิตช์ "เปิดโหมดการลงเวลา" (useFaceScanMode === false)
+  // ให้บล็อกหน้าจอลงเวลาทั้งหมด ไม่ว่าจะเป็นสแกนหน้า, RFID, หรือกรอกรหัส
+  // ค่า undefined (โรงเรียนยังไม่เคยตั้งค่าฟีเจอร์นี้เลย) ไม่ถือว่าปิด — ให้ลงเวลาได้ตามปกติ
+  if (schoolSettings?.useFaceScanMode === false) {
+    return (
+      <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col items-center justify-center gap-4 p-6 text-center transition-colors duration-300">
+        <div className="w-20 h-20 rounded-3xl bg-red-100 dark:bg-red-500/10 flex items-center justify-center text-4xl">
+          🔒
+        </div>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">ระบบลงเวลาปิดใช้งาน</h1>
+        <p className="text-gray-500 dark:text-gray-400 max-w-md">
+          โรงเรียนนี้ปิดโหมดการลงเวลาไว้ชั่วคราว กรุณาติดต่อผู้ดูแลระบบเพื่อเปิดใช้งานอีกครั้ง
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
       <main className={`flex-grow flex items-center justify-center ${isSquareScreen ? 'p-2' : 'p-6'}`}>

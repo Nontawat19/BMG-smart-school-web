@@ -108,6 +108,12 @@ export default function EditTeacherPage() {
     const { user: currentUser, isSchoolAdmin, isSuperAdmin } = usePermissions();
     const isEditingSelf = currentUser?.uid === teacherId;
     const canEditSpecialRoles = !isEditingSelf || isSchoolAdmin || isSuperAdmin;
+
+    // Non-admins can only edit their own profile
+    if (currentUser && !isSchoolAdmin && !isSuperAdmin && !isEditingSelf) {
+        navigate('/profile', { replace: true });
+        return null;
+    }
     const [form, setForm] = useState<TeacherFormState>(initialState);
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);

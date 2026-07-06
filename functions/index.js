@@ -302,3 +302,108 @@ exports.cleanupFaceScanSnapshots = functions
         console.log(`Face scan snapshot cleanup checked ${checkedCount} files, deleted ${deletedCount} files.`);
         return { checkedCount, deletedCount };
     });
+
+// ─── MA Expiry Notification ──────────────────────────────────────────────────
+// แจ้งเตือนผู้ดูแลระบบสูงสุด (super_admin) เมื่อเหลือ <= 30 วันก่อนหมด MA ของแต่ละโรงเรียน
+// ข้อมูล MA เก็บแยกที่ school-settings/{schoolId}/summaries/license (อ่านได้เฉพาะ SUPER_ADMIN)
+exports.notifyMaExpiringSoon = functions
+    .region("us-central1")
+    .pubsub.schedule("every 24 hours")
+    .timeZone("Asia/Bangkok")
+    .onRun(async () => {
+        const MA_WARNING_DAYS = 30;
+        const db = admin.firestore();
+
+        const schoolsSnap = await db.collection("school-settings").get();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const expiringSchools = [];
+        for (const schoolDoc of schoolsSnap.docs) {
+            const licenseSnap = await db
+                .doc(`school-settings/${schoolDoc.id}/summaries/license`)
+                .get();
+            if (!licenseSnap.exists) continue;
+
+            const license = licenseSnap.data();
+            if (!license.maExpiryDate) continue;
+
+            const expiry = new Date(license.maExpiryDate);
+            if (Number.isNaN(expiry.getTime())) continue;
+            expiry.setHours(0, 0, 0, 0);
+            const daysLeft = Math.round((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+            const alreadyNotified = license.maNotifiedForDate === license.maExpiryDate;
+            if (daysLeft >= 0 && daysLeft <= MA_WARNING_DAYS && !alreadyNotified) {
+                expiringSchools.push({
+                    schoolId: schoolDoc.id,
+                    schoolName: schoolDoc.data().schoolName || schoolDoc.id,
+                    maExpiryDate: license.maExpiryDate,
+                    daysLeft,
+                    licenseRef: licenseSnap.ref,
+                });
+            }
+        }
+
+        if (expiringSchools.length === 0) {
+            console.log("[MA Notify] ไม่มีโรงเรียนที่ MA ใกล้หมดอายุวันนี้");
+            return { notifiedSchools: 0 };
+        }
+
+        // หา user ที่เป็น super_admin ทั้งแบบ role เป็น string และ array
+        const [stringRoleSnap, arrayRoleSnap] = await Promise.all([
+            db.collection("users").where("role", "==", "super_admin").get(),
+            db.collection("users").where("role", "array-contains", "super_admin").get(),
+        ]);
+        const superAdminIds = new Set([
+            ...stringRoleSnap.docs.map((d) => d.id),
+            ...arrayRoleSnap.docs.map((d) => d.id),
+        ]);
+
+        if (superAdminIds.size === 0) {
+            console.warn("[MA Notify] ไม่พบผู้ใช้ role super_admin ที่จะแจ้งเตือน");
+            return { notifiedSchools: 0, notifiedUsers: 0 };
+        }
+
+        const message = `🔔 แจ้งเตือน MA ใกล้หมดอายุ:\n${expiringSchools
+            .map((s) => `- ${s.schoolName}: เหลือ ${s.daysLeft} วัน (ถึง ${s.maExpiryDate})`)
+            .join("\n")}`;
+
+        let sentCount = 0;
+        for (const userId of superAdminIds) {
+            const tokensSnap = await db
+                .collection("users")
+                .doc(userId)
+                .collection("fcm_tokens")
+                .get();
+            const tokens = tokensSnap.docs.map((d) => d.data().token).filter(Boolean);
+            if (tokens.length === 0) continue;
+
+            try {
+                const response = await admin.messaging().sendEachForMulticast({
+                    tokens,
+                    webpush: {
+                        notification: {
+                            title: "MA ใกล้หมดอายุ",
+                            body: message,
+                            requireInteraction: true,
+                        },
+                        data: { link: "/owner/schools" },
+                    },
+                });
+                sentCount += response.successCount;
+            } catch (error) {
+                console.error(`[MA Notify] ส่งแจ้งเตือนไปยัง ${userId} ล้มเหลว:`, error);
+            }
+        }
+
+        // มาร์คว่าแจ้งเตือนแล้วสำหรับวันหมดอายุนี้ ป้องกันแจ้งซ้ำทุกวันจนกว่า MA จะถูกต่ออายุ (maExpiryDate เปลี่ยน)
+        await Promise.all(
+            expiringSchools.map((s) =>
+                s.licenseRef.set({ maNotifiedForDate: s.maExpiryDate }, { merge: true })
+            )
+        );
+
+        console.log(`[MA Notify] แจ้งเตือน ${expiringSchools.length} โรงเรียน ส่งถึง ${sentCount} อุปกรณ์`);
+        return { notifiedSchools: expiringSchools.length, notifiedDevices: sentCount };
+    });

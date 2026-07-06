@@ -16,6 +16,12 @@ import {
   DEFAULT_SCHOOL_SUMMARY,
   getSchoolDashboardSummaryRef,
   updateOwnerDashboardSummary,
+  fetchSchoolLicenseInfo,
+  saveSchoolLicenseInfo,
+  getDaysUntilMaExpiry,
+  LICENSE_STATUS_LABELS,
+  type SchoolLicenseInfo,
+  type LicenseStatus,
 } from "@/utils/ownerStatsUtils";
 
 // Import Leaflet components
@@ -128,6 +134,7 @@ const SchoolInfoPage: React.FC = () => {
   const { user: currentUser, isSchoolAdmin, isSuperAdmin } = usePermissions();
 
   const [info, setInfo] = useState<SchoolInfo>({});
+  const [licenseInfo, setLicenseInfo] = useState<SchoolLicenseInfo>({});
   const [customPrefixModes, setCustomPrefixModes] = useState<Record<string, boolean>>({});
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -163,6 +170,12 @@ const SchoolInfoPage: React.FC = () => {
           Swal.fire('ไม่พบข้อมูล', 'ไม่พบข้อมูลโรงเรียนที่ต้องการแก้ไข', 'error');
           navigate('/owner/schools');
         }
+
+        // License/MA/สัญญา เก็บแยกจากเอกสารหลัก อ่านได้เฉพาะ SUPER_ADMIN (บังคับด้วย Firestore rules)
+        if (isSuperAdmin) {
+          const license = await fetchSchoolLicenseInfo(db, schoolId);
+          if (license) setLicenseInfo(license);
+        }
       } catch (error) {
         console.error("Error fetching school info:", error);
         Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลโรงเรียนได้', 'error');
@@ -170,7 +183,7 @@ const SchoolInfoPage: React.FC = () => {
         setIsLoading(false);
       }
     }
-  }, [schoolId, navigate]);
+  }, [schoolId, navigate, isSuperAdmin]);
 
   useEffect(() => {
     // Security check for school admins
@@ -564,13 +577,19 @@ const SchoolInfoPage: React.FC = () => {
         ...info,
         logoUrl: finalLogoUrl,
         useEnrollmentSystem: info.useEnrollmentSystem === true,
-        useFaceScanMode: info.useFaceScanMode === true,
+        // เก็บ tri-state ไว้: undefined (ยังไม่เคยตั้งค่า) ต้องไม่ถูกบังคับเป็น false
+        // เพราะหน้าลงเวลาใช้ค่า false (ตั้งค่าแล้วปิดจริง) เพื่อบล็อกการลงเวลาทั้งหมด
+        // ต่างจาก undefined (โรงเรียนยังไม่เคยใช้ฟีเจอร์นี้ ให้ลงเวลาแบบเดิมได้ปกติ)
       };
+      const dataToSaveWithSync = { ...dataToSave, updatedAt: serverTimestamp() };
 
       if (currentSchoolId) {
         // Editing existing school or updating a newly created one
         const docRef = doc(db, collectionName, currentSchoolId);
-        await setDoc(docRef, dataToSave, { merge: true });
+        await setDoc(docRef, dataToSaveWithSync, { merge: true });
+        if (isSuperAdmin) {
+          await saveSchoolLicenseInfo(db, currentSchoolId, licenseInfo);
+        }
         if (isCreatingSchool) {
           await setDoc(getSchoolDashboardSummaryRef(db, currentSchoolId), {
             ...DEFAULT_SCHOOL_SUMMARY,
@@ -612,13 +631,16 @@ const SchoolInfoPage: React.FC = () => {
           });
       } else {
         // 📌 Create the new school first to get the ID
-        const newDocRef = await addDoc(collection(db, collectionName), dataToSave);
+        const newDocRef = await addDoc(collection(db, collectionName), dataToSaveWithSync);
         const newId = newDocRef.id;
         await setDoc(getSchoolDashboardSummaryRef(db, newId), {
           ...DEFAULT_SCHOOL_SUMMARY,
           updatedAt: serverTimestamp(),
         }, { merge: true });
         await updateOwnerDashboardSummary(db, { schools: 1 });
+        if (isSuperAdmin) {
+          await saveSchoolLicenseInfo(db, newId, licenseInfo);
+        }
 
         // 📌 Create Slug for the School
         if (dataToSave.schoolCode) {
@@ -676,11 +698,12 @@ const SchoolInfoPage: React.FC = () => {
     { id: 3, title: 'ตั้งค่าจุดเช็คอิน', icon: <FaCrosshairs /> },
     { id: 4, title: 'บุคลากรหลัก', icon: <FaUserTie /> },
     { id: 5, title: 'ตั้งค่าระบบงาน', icon: <FaLayerGroup /> },
+    ...(isSuperAdmin ? [{ id: 6, title: 'License / สัญญา', icon: <FaShieldAlt /> }] : []),
   ];
 
   const handleNext = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, 5));
+      setCurrentStep(prev => Math.min(prev + 1, steps.length));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -973,8 +996,8 @@ const SchoolInfoPage: React.FC = () => {
                               <FaCamera size={20} />
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-gray-900 dark:text-white">โหมดสแกนใบหน้า</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">แสดงแผงรีวิวการสแกนใบหน้าในหน้าลงเวลา เพื่อรองรับ FindFace/Webhook</p>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white">เปิดโหมดการลงเวลา</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">เปิดใช้งานระบบกล้องสำหรับลงเวลา (รองรับ Face Recognition/Webhook) ส่วนแต่ละกล้องจะใช้สแกนใบหน้าหรือไม่ ตั้งค่าได้ที่รายการอุปกรณ์กล้องด้านล่าง</p>
                             </div>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
@@ -995,7 +1018,7 @@ const SchoolInfoPage: React.FC = () => {
                             <>
                               <div>
                                 <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                  Endpoint สำหรับส่งภาพไป FindFace/Proxy
+                                  Endpoint สำหรับส่งภาพไป Face Recognition/Proxy
                                 </label>
                                 <input
                                   type="text"
@@ -1761,6 +1784,78 @@ const SchoolInfoPage: React.FC = () => {
                     ))}
                   </div>
 
+                </div>
+              )}
+
+              {/* Step 6: License / MA / Contract (SUPER_ADMIN only) */}
+              {currentStep === 6 && isSuperAdmin && (
+                <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 sm:p-8 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 pb-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-emerald-500 rounded-full mr-1"></span>
+                    License / MA / สัญญา
+                  </h3>
+                  <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm">
+                    ข้อมูลส่วนนี้เห็นได้เฉพาะ Owner (SUPER_ADMIN) เท่านั้น ไม่แสดงกับผู้ดูแลของโรงเรียน
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        สถานะ License
+                      </label>
+                      <select
+                        value={licenseInfo.licenseStatus || ''}
+                        onChange={(e) => setLicenseInfo(prev => ({ ...prev, licenseStatus: (e.target.value || undefined) as LicenseStatus | undefined }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white"
+                      >
+                        <option value="">-- ยังไม่ระบุ --</option>
+                        {(Object.keys(LICENSE_STATUS_LABELS) as LicenseStatus[]).map((status) => (
+                          <option key={status} value={status}>{LICENSE_STATUS_LABELS[status]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        MA ถึงวันที่
+                      </label>
+                      <input
+                        type="date"
+                        value={licenseInfo.maExpiryDate || ''}
+                        onChange={(e) => setLicenseInfo(prev => ({ ...prev, maExpiryDate: e.target.value || undefined }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white"
+                      />
+                      {licenseInfo.maExpiryDate && (() => {
+                        const days = getDaysUntilMaExpiry(licenseInfo.maExpiryDate);
+                        if (days === null) return null;
+                        if (days < 0) return <p className="mt-1 text-[11px] text-red-500">หมดอายุแล้ว {Math.abs(days)} วันก่อน</p>;
+                        if (days <= 30) return <p className="mt-1 text-[11px] text-amber-500">🔔 เหลืออีก {days} วันก่อนหมด MA</p>;
+                        return <p className="mt-1 text-[11px] text-gray-400">เหลืออีก {days} วัน</p>;
+                      })()}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        วันหมดอายุสัญญา
+                      </label>
+                      <input
+                        type="date"
+                        value={licenseInfo.contractExpiryDate || ''}
+                        onChange={(e) => setLicenseInfo(prev => ({ ...prev, contractExpiryDate: e.target.value || undefined }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Backup ล่าสุด
+                      </label>
+                      <input
+                        type="date"
+                        value={licenseInfo.lastBackupAt || ''}
+                        onChange={(e) => setLicenseInfo(prev => ({ ...prev, lastBackupAt: e.target.value || undefined }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all text-xs text-gray-900 dark:text-white"
+                      />
+                      <p className="mt-1 text-[11px] text-gray-400">กรอกด้วยมือ (ยังไม่มีระบบ backup อัตโนมัติ)</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
