@@ -162,11 +162,17 @@ export const useAutoScheduleAction = ({
                 return yearMatches && semesterMatches;
             });
             const assignmentByCourseId = new Map(relevantAssignmentsData.map((assignment) => [assignment.courseId, assignment]));
+            // Mirrors the classLevels -> course.classId fallback used below when building tasks
+            // (line ~717) — without it, a course whose assignment predates classLevels being
+            // saved would fail this check and vanish from scheduling with no warning at all.
             const hasUsableAssignment = (course: Course) => (
-                (course.teacherAssignments || []).some((assignment) =>
-                    getAssignmentTeacherIds(assignment).length > 0 &&
-                    (assignment.classLevels || []).filter(Boolean).length > 0
-                )
+                (course.teacherAssignments || []).some((assignment) => {
+                    if (getAssignmentTeacherIds(assignment).length === 0) return false;
+                    const classLevels = (assignment.classLevels || []).filter(Boolean);
+                    if (classLevels.length > 0) return true;
+                    const courseClassIds = Array.isArray(course.classId) ? course.classId : (course.classId ? [course.classId] : []);
+                    return courseClassIds.filter(Boolean).length > 0;
+                })
             );
 
             const allCoursesData = rawCoursesData.map(course => {
@@ -946,9 +952,13 @@ export const useAutoScheduleAction = ({
                 skippedCourseIssues
             });
 
-            if (fatalPrecheckIssues.length > 0) {
+            if (fatalPrecheckIssues.length > 0 || warningPrecheckIssues.length > 0) {
+                // Courses skipped for non-fatal reasons (e.g. inactive teacher, missing class
+                // level — see skippedCourseIssues above) never become tasks, so they'd otherwise
+                // vanish from scheduling with no trace. Surface them here even though scheduling
+                // can still proceed, so "30 assigned but only 29 scheduled" is visible up front.
                 await showPrecheckReport(fatalPrecheckIssues, warningPrecheckIssues);
-                return;
+                if (fatalPrecheckIssues.length > 0) return;
             }
 
             // --- IMPROVED SORTING: Most Constrained First ---
@@ -1183,12 +1193,15 @@ export const useAutoScheduleAction = ({
 
             if (error instanceof Error) {
                 errorDetails = error.message;
+                const lowerErrorDetails = errorDetails.toLowerCase();
 
-                if (errorDetails.includes('permission')) {
+                if (lowerErrorDetails.includes('permission')) {
                     errorMessage = 'ไม่มีสิทธิ์เข้าถึงข้อมูล กรุณาตรวจสอบการเข้าสู่ระบบ';
-                } else if (errorDetails.includes('quota')) {
-                    errorMessage = 'เกินโควต้าการใช้งาน Firestore กรุณาลองใหม่ภายหลัง';
-                } else if (errorDetails.includes('network')) {
+                } else if (lowerErrorDetails.includes('quota')) {
+                    // "Quota exceeded." แบบนี้ (ตัวพิมพ์ใหญ่ ไม่มีรายละเอียดยาว) มักมาจากพื้นที่เก็บข้อมูล
+                    // ของเบราว์เซอร์ (IndexedDB) เต็ม ไม่ใช่โควต้าฝั่งเซิร์ฟเวอร์ของ Firestore
+                    errorMessage = 'พื้นที่จัดเก็บข้อมูลของเบราว์เซอร์เต็ม กรุณาลบข้อมูลเว็บไซต์บางส่วน (Clear browsing data) หรือเพิ่มพื้นที่ว่างของเครื่อง แล้วลองใหม่';
+                } else if (lowerErrorDetails.includes('network')) {
                     errorMessage = 'เกิดปัญหาการเชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อ';
                 }
             }

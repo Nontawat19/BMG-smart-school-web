@@ -38,6 +38,7 @@ import Swal from "sweetalert2";
 import Select from "react-select";
 import { compareTeachersByGroupAndId, getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import BackButton from "@/components/Shared/BackButton";
+import { isActivityCourse, isClubCourse } from "./schedule/utils";
 
 // --- Types ---
 interface GroupAssignment {
@@ -88,23 +89,6 @@ const getAssignmentTeacherIds = (assignment: Partial<GroupAssignment> | any): st
     return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
 };
 
-const isActivityCourse = (course?: Partial<Pick<Course, 'type' | 'code' | 'subjectGroup'>> | null): boolean => {
-    if (!course) return false;
-    const cType = (course.type || "").trim();
-    const cCode = (course.code || "").trim();
-    const cSG = (course.subjectGroup || "").toLowerCase();
-    return cType.includes("กิจกรรม") ||
-           cCode.startsWith("ก") ||
-           cSG.includes("กิจกรรมพัฒนาผู้เรียน");
-};
-
-const isClubCourse = (course?: Partial<Pick<Course, 'type' | 'title'>> | null): boolean => {
-    if (!course) return false;
-    const cType = (course.type || "").trim().toLowerCase();
-    const cTitle = (course.title || "").trim();
-    return cType === "ชุมนุม" || cTitle.includes("ชุมนุม");
-};
-
 const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'isElective' | 'title'>> | null, category: string) => {
     if (!course) return false;
     if (category === "ประเภท" || category === "ทั้งหมด") return true;
@@ -121,17 +105,35 @@ const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'isElective
     return rawType === category.trim().toLowerCase();
 };
 
+// ไม่มีวิชาใดในตารางสอนจริงที่ควรมีคาบ/สัปดาห์เกินค่านี้ (สัปดาห์หนึ่งมีคาบรวมทุกวิชาราว 35-40 คาบ)
+// ใช้ดักข้อมูล credits ที่กรอกผิดหน่วย (เช่น กรอก "20" ทั้งที่หมายถึงชั่วโมง/ภาคเรียน ไม่ใช่หน่วยกิต)
+const MAX_REASONABLE_WEEKLY_PERIODS = 10;
+
+// ใช้ credits/hoursPerWeek ที่ตั้งไว้จริงก่อนเสมอ ไม่ว่าจะเป็นวิชาปกติหรือกิจกรรม
+// จะ fallback เป็นค่ามาตรฐานกิจกรรม (0.5 หน่วยกิต = 1 คาบ/สัปดาห์) เฉพาะตอนที่ยังไม่ได้ตั้งค่าใดๆ ไว้เท่านั้น
+const resolveWeeklyPeriodsFromCourse = (course: Partial<Course>): number => {
+    const creditsNum = Number(course.credits || 0);
+    if (creditsNum > 0 && creditsNum * 2 <= MAX_REASONABLE_WEEKLY_PERIODS) return creditsNum * 2;
+
+    const hoursPerWeekNum = Number(course.hoursPerWeek || 0);
+    if (hoursPerWeekNum > 0 && hoursPerWeekNum <= MAX_REASONABLE_WEEKLY_PERIODS) return hoursPerWeekNum;
+
+    if (isActivityCourse(course)) return ACTIVITY_CREDITS * 2;
+
+    // credits ผิดปกติแต่ไม่มี hoursPerWeek สำรอง: ใช้ credits ต่อแม้จะเกินเกณฑ์ ดีกว่าได้ 0 คาบ
+    if (creditsNum > 0) return creditsNum * 2;
+    return hoursPerWeekNum;
+};
+
 const getCourseTeachingHours = (course?: Partial<Course> | null) => {
     if (!course) return 0;
-    const creditsNum = isActivityCourse(course) ? ACTIVITY_CREDITS : Number(course.credits || 0);
-    const weeklyPeriods = creditsNum > 0 ? creditsNum * 2 : Number(course.hoursPerWeek || 0);
+    const weeklyPeriods = resolveWeeklyPeriodsFromCourse(course);
     return Math.max(0, Math.round(weeklyPeriods * WEEKS_PER_SEMESTER));
 };
 
 const getCourseWeeklyTeachingPeriods = (course?: Partial<Course> | null) => {
     if (!course) return 0;
-    const creditsNum = isActivityCourse(course) ? ACTIVITY_CREDITS : Number(course.credits || 0);
-    const weeklyPeriods = creditsNum > 0 ? creditsNum * 2 : Number(course.hoursPerWeek || 0);
+    const weeklyPeriods = resolveWeeklyPeriodsFromCourse(course);
     return Math.max(0, Number.isFinite(weeklyPeriods) ? weeklyPeriods : 0);
 };
 
