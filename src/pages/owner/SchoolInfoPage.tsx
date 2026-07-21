@@ -9,7 +9,7 @@ import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
-import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera } from 'react-icons/fa';
+import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
 import {
@@ -72,6 +72,16 @@ interface SchoolInfo {
   generalHeadName?: string;
   deputyPrefix?: string;
   deputyName?: string;
+  deputyAcademicPrefix?: string;
+  deputyAcademicName?: string;
+  deputyBudgetPrefix?: string;
+  deputyBudgetName?: string;
+  deputyPersonnelPrefix?: string;
+  deputyPersonnelName?: string;
+  deputyGeneralPrefix?: string;
+  deputyGeneralName?: string;
+  studentSupportOfficerPrefix?: string;
+  studentSupportOfficerName?: string;
   logoUrl?: string;
   latitude?: number;
   longitude?: number;
@@ -82,6 +92,7 @@ interface SchoolInfo {
   opportunityExpansionLevel?: string;
   useEnrollmentSystem?: boolean;
   useFaceScanMode?: boolean;
+  allowTeacherSelfCheckin?: boolean;
   faceScanConfig?: {
     endpoint?: string;
     confidenceThreshold?: number;
@@ -989,6 +1000,27 @@ const SchoolInfoPage: React.FC = () => {
                           <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
                         </label>
                       </div>
+                      <div className="flex items-center justify-between p-4 bg-teal-50 dark:bg-teal-500/10 rounded-2xl border border-teal-100 dark:border-teal-500/20">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-teal-600 shadow-sm">
+                            <FaUserClock size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">อนุญาตให้ครูลงเวลาเอง</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">เปิดให้ครู (role ครู) ลงเวลาเข้า-ออกงานด้วยตนเองผ่านอุปกรณ์ของตัวเองได้ที่หน้า "งานบุคลากร" ระบบจะตรวจสอบตำแหน่ง/เครือข่ายเช่นเดียวกับจุดคีออสก์</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="allowTeacherSelfCheckin"
+                            checked={info.allowTeacherSelfCheckin || false}
+                            onChange={handleInputChange}
+                            className="sr-only peer"
+                          />
+                          <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-teal-600"></div>
+                        </label>
+                      </div>
                       {isSuperAdmin && (
                         <div className="flex items-center justify-between p-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl border border-indigo-100 dark:border-indigo-500/20">
                           <div className="flex items-center gap-3">
@@ -1722,10 +1754,37 @@ const SchoolInfoPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {renderPersonnelField('ผู้อำนวยการ', 'directorPrefix', 'directorName')}
                     {renderPersonnelField('รองผู้อำนวยการ', 'deputyPrefix', 'deputyName')}
-                    {renderPersonnelField('หัวหน้าฝ่ายวิชาการ', 'academicHeadPrefix', 'academicHeadName')}
-                    {renderPersonnelField('หัวหน้าฝ่ายบริหารงานงบประมาณ', 'budgetHeadPrefix', 'budgetHeadName')}
-                    {renderPersonnelField('หัวหน้าฝ่ายบริหารงานบุคคล', 'personnelHeadPrefix', 'personnelHeadName')}
-                    {renderPersonnelField('หัวหน้าฝ่ายบริหารงานทั่วไป', 'generalHeadPrefix', 'generalHeadName')}
+                  </div>
+
+                  <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                      สำหรับโรงเรียนขนาดใหญ่ที่มีรองผู้อำนวยการประจำ 4 กลุ่มบริหารงาน ให้กรอกช่อง "รองผู้อำนวยการกลุ่ม..." ส่วนโรงเรียนที่ไม่มีตำแหน่งรองผู้อำนวยการระดับกลุ่มงาน ให้กรอกเฉพาะช่อง "หัวหน้าฝ่าย..." แทน (กรอกเพียงช่องใดช่องหนึ่งต่อกลุ่มงานก็ได้)
+                    </p>
+
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {renderPersonnelField('รองผู้อำนวยการกลุ่มบริหารงานวิชาการ', 'deputyAcademicPrefix', 'deputyAcademicName')}
+                        {renderPersonnelField('หัวหน้าฝ่ายวิชาการ', 'academicHeadPrefix', 'academicHeadName')}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {renderPersonnelField('รองผู้อำนวยการกลุ่มบริหารงานงบประมาณ', 'deputyBudgetPrefix', 'deputyBudgetName')}
+                        {renderPersonnelField('หัวหน้าฝ่ายบริหารงานงบประมาณ', 'budgetHeadPrefix', 'budgetHeadName')}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {renderPersonnelField('รองผู้อำนวยการกลุ่มบริหารงานบุคคล', 'deputyPersonnelPrefix', 'deputyPersonnelName')}
+                        {renderPersonnelField('หัวหน้าฝ่ายบริหารงานบุคคล', 'personnelHeadPrefix', 'personnelHeadName')}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {renderPersonnelField('รองผู้อำนวยการกลุ่มบริหารงานทั่วไป', 'deputyGeneralPrefix', 'deputyGeneralName')}
+                        {renderPersonnelField('หัวหน้าฝ่ายบริหารงานทั่วไป', 'generalHeadPrefix', 'generalHeadName')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {renderPersonnelField('เจ้าหน้าที่ระบบดูแลช่วยเหลือนักเรียน', 'studentSupportOfficerPrefix', 'studentSupportOfficerName')}
+                    </div>
                   </div>
                 </div>
               )}

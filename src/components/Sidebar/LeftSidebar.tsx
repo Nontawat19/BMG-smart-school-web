@@ -231,6 +231,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <FaChalkboardTeacher className="text-lg min-w-[18px]" />
                   <span>ตารางสอน</span>
                 </NavLink>
+                <CanAccess roles={[ROLES.TEACHER, ROLES.SCHOOL_ADMIN]}>
+                  <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
+                    <FaUserClock className="text-lg min-w-[18px]" />
+                    <span>ลงเวลา</span>
+                  </NavLink>
+                </CanAccess>
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
@@ -324,6 +330,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                     </div>
                   </CanAccess>
                 )}
+
+                {/* --- ลงเวลาของฉัน (ครู/แอดมินโรงเรียน ลงเวลาเข้า-ออกด้วยตนเอง) --- */}
+                <CanAccess roles={[ROLES.TEACHER, ROLES.SCHOOL_ADMIN]}>
+                  <div className="flex flex-col gap-1">
+                    <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
+                      <FaUserClock className="text-lg min-w-[18px]" />
+                      <span>ลงเวลา</span>
+                    </NavLink>
+                  </div>
+                </CanAccess>
               </>
             )}
           </nav>

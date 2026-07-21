@@ -59,7 +59,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
   const isStudent = displayUser?.type === "student";
 
   return (
-    <div className={`col-span-2 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isCompact ? 'p-4' : 'p-10'} text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative border border-gray-200/50 dark:border-none`}>
+    <div className={`sm:col-span-2 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isCompact ? 'p-4' : 'p-10'} text-gray-900 dark:text-white flex flex-col items-center justify-center text-center shadow-sm dark:shadow-none h-full overflow-hidden relative border border-gray-200/50 dark:border-none`}>
       <AnimatePresence mode="wait">
         {displayUser ? (
           <motion.div

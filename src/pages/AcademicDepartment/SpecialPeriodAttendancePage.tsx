@@ -13,11 +13,11 @@ import { CLASSES } from '@/utils/schoolUtils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
 import {
-  applySpecialPeriodBehaviorScore,
+  calculateSpecialPeriodBehaviorScoreChange,
 } from '@/utils/behaviorScoreUtils';
 import {
   collection, doc, getDoc, getDocs, query,
-  Timestamp, where, writeBatch,
+  Timestamp, where, writeBatch, runTransaction,
 } from 'firebase/firestore';
 import {
   AlertCircle, BarChart2, Calendar, CheckCircle2, ChevronLeft, ChevronRight,
@@ -468,13 +468,21 @@ const SpecialPeriodAttendancePage: React.FC = () => {
 
         if (deductBehavior) {
           const studentDocRef = doc(db, 'school-settings', schoolId, 'students', student.id);
-          applySpecialPeriodBehaviorScore({
-            batch,
-            studentRef: studentDocRef,
-            currentScore: student.behaviorScore,
-            oldStatus: oldStatus || null,
-            newStatus,
-            config: behaviorConfig,
+          // Read the live score fresh inside a transaction so a concurrent write
+          // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+          // silently overwritten by this special-period attendance save.
+          await runTransaction(db, async (transaction) => {
+            const studentSnap = await transaction.get(studentDocRef);
+            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? student.behaviorScore ?? 100) : (student.behaviorScore ?? 100);
+            const result = calculateSpecialPeriodBehaviorScoreChange({
+              currentScore: freshScore,
+              oldStatus: oldStatus || null,
+              newStatus,
+              config: behaviorConfig,
+            });
+            if (result) {
+              transaction.set(studentDocRef, result.update, { merge: true });
+            }
           });
         }
       }

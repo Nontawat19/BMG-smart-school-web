@@ -44,6 +44,7 @@ interface LeaveRequest {
   substituteStatus?: "pending" | "completed"; // UI state, not from DB
   collection?: string; // 'leave_summary' | 'travel_summary'
   isManual?: boolean; // เพิ่มด้วยตนเอง (ไม่มีใบลา/ไปราชการ)
+  dayPortion?: "full" | "morning" | "afternoon"; // ช่วงเวลาที่ต้องจัดสอนแทน (เต็มวัน/เช้า/บ่าย)
 }
 
 interface ScheduleEntry {
@@ -417,6 +418,9 @@ const SubstituteManagementPage: React.FC = () => {
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
   const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
   const [roomMap, setRoomMap] = useState<Record<string, string>>({}); // 📌 สำหรับเก็บข้อมูลห้องเรียน
+  const [dayPortion, setDayPortion] = useState<'full' | 'morning' | 'afternoon'>('full'); // ช่วงเวลาที่กำลังจัดสอนแทนอยู่ (ของ selectedLeave)
+  const lunchIdx = useMemo(() => periodSettings.findIndex(p => p.id === 'lunch'), [periodSettings]);
+  const canFilterByPortion = lunchIdx >= 0; // ต้องมีคาบ 'lunch' ตั้งค่าไว้ ถึงจะรู้ว่าคาบไหนเป็นเช้า/บ่าย
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const calendarState = useSelector((state: RootState) => state.calendar);
@@ -479,6 +483,7 @@ const SubstituteManagementPage: React.FC = () => {
   const [manualStartDate, setManualStartDate] = useState('');
   const [manualEndDate, setManualEndDate] = useState('');
   const [manualLeaveType, setManualLeaveType] = useState<'ลา' | 'ไปราชการ'>('ลา');
+  const [manualDayPortion, setManualDayPortion] = useState<'full' | 'morning' | 'afternoon'>('full');
   const dispatch = useDispatch();
 
   const getScheduleYearTerm = (date?: Date) => {
@@ -722,6 +727,7 @@ const SubstituteManagementPage: React.FC = () => {
           reason: data.reason,
           collection: data.collection,
           isManual: data.isManual || false,
+          dayPortion: data.dayPortion || 'full',
           substituteStatus: data.status === "substitution_assigned" ? "completed" : "pending",
         } as any;
       });
@@ -891,7 +897,10 @@ const SubstituteManagementPage: React.FC = () => {
     }).join(', ');
   };
 
-  const handleSelectLeave = async (leave: LeaveRequest) => {
+  const handleSelectLeave = async (leave: LeaveRequest, portionOverride?: 'full' | 'morning' | 'afternoon') => {
+    // ช่วงเวลาที่จะจัดสอนแทน: ใช้ค่าที่ผู้ใช้เพิ่งเลือก > ค่าที่บันทึกไว้กับใบลานี้ (เช่น รายการเพิ่มด้วยตนเอง) > เต็มวัน
+    const portion = portionOverride ?? (leave.dayPortion || 'full');
+    setDayPortion(portion);
     setSelectedLeave(leave);
     setSchedules([]);
     setForceSelectEntries(new Set());
@@ -1116,6 +1125,14 @@ const SubstituteManagementPage: React.FC = () => {
               if (!resolved) continue; // skip homeroom, lunch, and unknown slots
 
               const { periodNumber, pIdx, setting } = resolved;
+
+              // กรองตามช่วงเวลาที่เลือก (เต็มวัน/เช้า/บ่าย) โดยใช้ตำแหน่งคาบ 'lunch' เป็นจุดแบ่ง
+              if (portion !== 'full' && lunchIdx >= 0 && pIdx >= 0) {
+                const isMorningPeriod = pIdx < lunchIdx;
+                if (portion === 'morning' && !isMorningPeriod) continue;
+                if (portion === 'afternoon' && isMorningPeriod) continue;
+              }
+
               const substitutionKey = `${dateString}-${periodNumber}`;
               const existingSub = existingSubstitutions.get(substitutionKey);
 
@@ -1255,6 +1272,7 @@ const SubstituteManagementPage: React.FC = () => {
             leaveRequestId: leave.id,
             isAutoAssigned: true,
             isCoTeaching: true,
+            dayPortion: portion,
             createdAt: Timestamp.now(),
           });
           entry.substitutionDocId = subRef.id;
@@ -1331,6 +1349,7 @@ const SubstituteManagementPage: React.FC = () => {
               endTime: entry.endTime || '',
               leaveRequestId: leave.id,
               isAutoAssigned: true,
+              dayPortion: portion,
               createdAt: Timestamp.now(),
             });
             sendSubstituteStudentNotifications(
@@ -1591,6 +1610,7 @@ const SubstituteManagementPage: React.FC = () => {
           startTime: scheduleEntry.startTime || "",
           endTime: scheduleEntry.endTime || "",
           leaveRequestId: selectedLeave.id,
+          dayPortion,
           createdAt: Timestamp.now(),
         });
       }
@@ -1764,6 +1784,7 @@ const SubstituteManagementPage: React.FC = () => {
       status: 'approved',
       requiresSubstitute: true,
       isManual: true,
+      dayPortion: manualDayPortion,
       reason: '',
       createdAt: Timestamp.now(),
     });
@@ -1782,6 +1803,7 @@ const SubstituteManagementPage: React.FC = () => {
       substituteStatus: 'pending',
       isManual: true,
       collection: undefined,
+      dayPortion: manualDayPortion,
     };
 
     // เพิ่มเข้าลิสต์ รอให้ผู้ใช้คลิกเลือกเองเพื่อจัดสอนแทน (เหมือนครูที่ยื่นผ่านระบบ)
@@ -1791,6 +1813,7 @@ const SubstituteManagementPage: React.FC = () => {
     setManualStartDate('');
     setManualEndDate('');
     setManualLeaveType('ลา');
+    setManualDayPortion('full');
   };
 
   // ส่งแจ้งเตือนไปยังนักเรียนในชั้น/ห้องที่ได้รับผลกระทบจากการจัดสอนแทน
@@ -1899,6 +1922,11 @@ const SubstituteManagementPage: React.FC = () => {
                             ด้วยตนเอง
                           </span>
                         )}
+                        {leave.dayPortion && leave.dayPortion !== 'full' && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${selectedLeave?.id === leave.id ? 'bg-white/20 text-white' : 'bg-sky-500/15 text-sky-500 border border-sky-500/20'}`}>
+                            {leave.dayPortion === 'morning' ? '🌅 เช้า' : '🌇 บ่าย'}
+                          </span>
+                        )}
                         {!leave.isManual && !leave.approvedBy && (leave.status === "pending" || leave.status === "substitution_assigned") && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${selectedLeave?.id === leave.id ? 'bg-white/20 text-white animate-pulse' : 'bg-amber-500/15 text-amber-500 border border-amber-500/20'}`}>
                             รออนุมัติ
@@ -1947,7 +1975,7 @@ const SubstituteManagementPage: React.FC = () => {
                         <Plus size={11} /> เพิ่มด้วยตนเอง
                       </span>
                       <button
-                        onClick={() => { setShowManualAddForm(false); setManualTeacherId(''); setManualStartDate(''); setManualEndDate(''); setManualLeaveType('ลา'); }}
+                        onClick={() => { setShowManualAddForm(false); setManualTeacherId(''); setManualStartDate(''); setManualEndDate(''); setManualLeaveType('ลา'); setManualDayPortion('full'); }}
                         className="text-gray-400 hover:text-red-400 transition p-0.5 rounded"
                       >
                         <X size={14} />
@@ -1981,6 +2009,31 @@ const SubstituteManagementPage: React.FC = () => {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Day portion toggle */}
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider ml-1">ช่วงเวลาที่ต้องจัดสอนแทน</label>
+                      <div className="mt-1 flex gap-2">
+                        {([
+                          { value: 'full', label: '🗓️ เต็มวัน' },
+                          { value: 'morning', label: '🌅 เช้า' },
+                          { value: 'afternoon', label: '🌇 บ่าย' },
+                        ] as const).map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setManualDayPortion(opt.value)}
+                            disabled={opt.value !== 'full' && !canFilterByPortion}
+                            title={opt.value !== 'full' && !canFilterByPortion ? 'ต้องตั้งค่าคาบพักเที่ยงในหน้าตั้งค่าคาบเรียนก่อน จึงจะแบ่งเช้า/บ่ายได้' : undefined}
+                            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all border disabled:opacity-30 disabled:cursor-not-allowed ${manualDayPortion === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-[#1e1f21] text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-indigo-400'}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {!canFilterByPortion && (
+                        <p className="text-[10px] text-amber-500 mt-1 ml-1">ยังไม่ได้ตั้งค่า "คาบพักเที่ยง" ในหน้าตั้งค่าคาบเรียน จึงเลือกได้เฉพาะเต็มวัน</p>
+                      )}
                     </div>
 
                     {/* Date range */}
@@ -2082,6 +2135,31 @@ const SubstituteManagementPage: React.FC = () => {
                           <Calendar size={18} className="text-indigo-500" />
                           ตัวกรองการค้นหา
                         </h3>
+                      </div>
+
+                      {/* ช่วงเวลาที่ต้องจัดสอนแทน (เต็มวัน/เช้า/บ่าย) */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider ml-1">ช่วงเวลาที่ต้องจัดสอนแทน</label>
+                        <div className="flex gap-2">
+                          {([
+                            { value: 'full', label: '🗓️ เต็มวัน' },
+                            { value: 'morning', label: '🌅 เฉพาะเช้า' },
+                            { value: 'afternoon', label: '🌇 เฉพาะบ่าย' },
+                          ] as const).map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => selectedLeave && dayPortion !== opt.value && handleSelectLeave(selectedLeave, opt.value)}
+                              disabled={opt.value !== 'full' && !canFilterByPortion}
+                              title={opt.value !== 'full' && !canFilterByPortion ? 'ต้องตั้งค่าคาบพักเที่ยงในหน้าตั้งค่าคาบเรียนก่อน จึงจะแบ่งเช้า/บ่ายได้' : undefined}
+                              className={`flex-1 py-2 rounded-xl text-xs font-black transition-all border disabled:opacity-30 disabled:cursor-not-allowed ${dayPortion === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-[#1e1f21] text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-indigo-400'}`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        {dayPortion !== 'full' && (
+                          <p className="text-[10px] text-sky-500 ml-1">แสดงและจัดสอนแทนเฉพาะคาบช่วง{dayPortion === 'morning' ? 'เช้า (ก่อนพักเที่ยง)' : 'บ่าย (หลังพักเที่ยง)'}เท่านั้น</p>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

@@ -47,6 +47,7 @@ import {
   AlertTriangle,
   CalendarClock,
   Activity,
+  FileWarning,
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
@@ -295,6 +296,14 @@ const HubPage: React.FC = () => {
           path: "/academic/porbor-7",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "รายงาน มส.",
+          description: "สรุปการเช็คขาดคาบตามรายวิชารายชั้นเรียน และประเมินผล มส. ตามเกณฑ์เวลาเรียน 80%",
+          icon: <FileWarning size={24} />,
+          path: "/academic/ms-report",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
         }
       ]
     },
@@ -487,27 +496,19 @@ const HubPage: React.FC = () => {
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
-          title: "คะแนนพฤติกรรมนักเรียน",
-          description: "จัดการและแก้ไขคะแนนพฤติกรรมของนักเรียนโดยตรง",
-          icon: <Award size={24} />,
-          path: schoolId ? `/school/${schoolId}/students/behavior` : "#",
-          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
-          allowedRoles: STUDENT_AFFAIRS_ACCESS
-        },
-        {
-          title: "รายงานคะแนนความประพฤติ",
-          description: "รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน พร้อมรายละเอียดและพิมพ์รายคน",
-          icon: <ShieldAlert size={24} />,
-          path: schoolId ? `/school/${schoolId}/academic/student-behavior-class-report` : "/academic/student-behavior-class-report",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: STUDENT_AFFAIRS_ACCESS
-        },
-        {
           title: "สรุปมาเรียนตามช่วงเวลา",
           description: "รายงานการมาเรียนรายห้องตามช่วงวันที่ พร้อมสรุป มา สาย ลา ขาด",
           icon: <CalendarRange size={24} />,
           path: "/academic/time-range-attendance-summary",
           colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "รายงานยอดรวมรายวัน รายห้องเรียน",
+          description: "สรุปยอดนักเรียนมาเรียน/ขาด/สาย/ลา แยกตามห้องเรียนทั้งโรงเรียนในแต่ละวัน พร้อมส่งออก PDF",
+          icon: <ClipboardCheck size={24} />,
+          path: "/academic/daily-classroom-attendance-summary",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         },
         {
@@ -779,6 +780,22 @@ const HubPage: React.FC = () => {
           path: "/student-support/home-visit",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
           allowedRoles: STUDENT_SUPPORT_OPERATIONAL_ACCESS
+        },
+        {
+          title: "คะแนนพฤติกรรมนักเรียน",
+          description: "จัดการและแก้ไขคะแนนพฤติกรรมของนักเรียนโดยตรง",
+          icon: <Award size={24} />,
+          path: schoolId ? `/school/${schoolId}/students/behavior` : "#",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "รายงานคะแนนความประพฤติ",
+          description: "รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน พร้อมรายละเอียดและพิมพ์รายคน",
+          icon: <ShieldAlert size={24} />,
+          path: schoolId ? `/school/${schoolId}/academic/student-behavior-class-report` : "/academic/student-behavior-class-report",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },

@@ -98,7 +98,7 @@ const HomeVisitSummaryClassroom: React.FC = () => {
 
                 const roles = Array.isArray(userData?.role) ? userData.role : [userData?.role || ""];
                 const isPower = roles.some((r: string) =>
-                    ["admin", "school_admin", "super_admin", "academic", "academic_admin", "director"].includes(r)
+                    ["admin", "school_admin", "super_admin", "academic", "academic_admin", "director", "student_affairs"].includes(r)
                 );
                 setIsPowerUser(isPower);
 

@@ -8,7 +8,7 @@ import { collection, getDocs, query, orderBy, doc, getDoc, where } from "firebas
 import { getBlob, ref as storageRef } from "firebase/storage";
 import { FaSearch, FaFilter, FaFileAlt, FaPrint } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText } from "lucide-react";
-import { getLevelsByRange } from "@/utils/schoolUtils";
+import { getLevelsByRange, getGroupPersonnel } from "@/utils/schoolUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { pdf } from "@react-pdf/renderer";
@@ -305,9 +305,8 @@ const PorBor7Page: React.FC = () => {
 
   const handleIssueCertificate = async (student: Student) => {
     const directorFullName = [schoolInfo?.directorPrefix, schoolInfo?.directorName].filter(Boolean).join(' ');
-    const generalHeadFullName = [schoolInfo?.generalHeadPrefix, schoolInfo?.generalHeadName].filter(Boolean).join(' ');
     const defaultPrincipal = directorFullName || "นายศัตราวุธ ศรีชนะ";
-    const defaultHead = generalHeadFullName || "นางรุ่งทิพย์ นามมีฤทธิ์";
+    const defaultHead = getGroupPersonnel(schoolInfo, 'general').name;
 
     const result = await Swal.fire({
       title: 'ออกใบรับรอง (ปพ.7)',
@@ -356,9 +355,8 @@ const PorBor7Page: React.FC = () => {
 
   const handleIssueGradeCertificate = async (student: Student) => {
     const directorFullName = [schoolInfo?.directorPrefix, schoolInfo?.directorName].filter(Boolean).join(' ');
-    const generalHeadFullName = [schoolInfo?.generalHeadPrefix, schoolInfo?.generalHeadName].filter(Boolean).join(' ');
     const defaultPrincipal = directorFullName || "นายศัตราวุธ ศรีชนะ";
-    const defaultHead = generalHeadFullName || "นางรุ่งทิพย์ นามมีฤทธิ์";
+    const defaultHead = getGroupPersonnel(schoolInfo, 'general').name;
 
     const result = await Swal.fire({
       title: 'ออกใบรับรองที่มีเกรด (ปพ.7)',
@@ -507,7 +505,7 @@ const PorBor7Page: React.FC = () => {
       };
 
       const principalPosition = schoolInfo.principalPosition || "ผู้อำนวยการโรงเรียน";
-      const headOfDeptPosition = schoolInfo.headOfDeptPosition || "หัวหน้าฝ่ายงานบริหารทั่วไป";
+      const headOfDeptPosition = schoolInfo.headOfDeptPosition || getGroupPersonnel(schoolInfo, 'general').label;
       const studentForPdf = await prepareStudentPhotoForPdf(student);
 
       const blob = await pdf(
@@ -571,7 +569,7 @@ const PorBor7Page: React.FC = () => {
 
       const academicYear = schoolInfo.currentAcademicYear || getThaiYear(today).toString();
       const principalPosition = schoolInfo.principalPosition || "ผู้อำนวยการโรงเรียน";
-      const headOfDeptPosition = schoolInfo.headOfDeptPosition || "หัวหน้าฝ่ายงานบริหารทั่วไป";
+      const headOfDeptPosition = schoolInfo.headOfDeptPosition || getGroupPersonnel(schoolInfo, 'general').label;
       const studentForPdf = await prepareStudentPhotoForPdf(student);
 
       const docToRender = (

@@ -10,7 +10,7 @@ import { firestore, auth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, Timestamp, collection, query, where, getDocs, documentId, runTransaction, arrayUnion, increment, arrayRemove, addDoc, serverTimestamp, deleteDoc, orderBy, onSnapshot, updateDoc, collectionGroup, writeBatch } from "firebase/firestore";
 import Swal from 'sweetalert2';
-import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell } from "react-icons/fa";
+import { FaPen, FaArrowLeft, FaChalkboard, FaUser, FaUsers, FaBook, FaBookOpen, FaChevronRight, FaChevronLeft, FaChevronDown, FaClock, FaFlag, FaSignOutAlt, FaSun, FaMoon, FaBars, FaTimes, FaUserPlus, FaExchangeAlt, FaHourglassHalf, FaPlane, FaIdCard, FaMapMarkerAlt, FaHeartbeat, FaBus, FaGraduationCap, FaEye, FaEyeSlash, FaFilePdf, FaCheckCircle, FaCheck, FaShieldAlt, FaBell, FaClipboardList } from "react-icons/fa";
 import { pdf } from '@react-pdf/renderer';
 import LeaveRequestPdfDocument from '@/components/Pdf/leave/LeaveRequestPdfDocument';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -19,9 +19,10 @@ import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { getCurrentThaiYear, formatNotificationTime } from "@/utils/dateUtils";
 import { formatStudentBirthDateThai } from "@/utils/birthDateUtils";
-import { formatClassLevelRange, isClassLevelInRange, CLASSES } from "@/utils/schoolUtils";
+import { formatClassLevelRange, isClassLevelInRange, CLASSES, getGroupPersonnel } from "@/utils/schoolUtils";
 import StudentScheduleEmbed from "./StudentScheduleEmbed";
 import StudentBehaviorHistoryEmbed from "./StudentBehaviorHistoryEmbed";
+import StudentSDQParentEmbed from "./StudentSDQParentEmbed";
 
 // --- Type Definition ---
 interface StudentData {
@@ -363,17 +364,6 @@ const SkeletonLoader = () => (
 );
 
 export default function ViewStudentPage() {
-  const tabs = [
-    { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
-    { id: "academic", label: "การศึกษา", icon: <FaGraduationCap /> },
-    { id: "attendance", label: "สถาติการมาเรียน", icon: <FaClock /> },
-    { id: "courses", label: "รายวิชาที่เรียน", icon: <FaBook /> },
-    { id: "schedule", label: "ตารางเรียน", icon: <FaChalkboard /> },
-    { id: "behavior", label: "คะแนนพฤติกรรม", icon: <FaShieldAlt /> },
-    { id: "official_travel", label: "การลาของนักเรียน", icon: <FaHourglassHalf /> },
-    { id: "club", label: "กิจกรรมชุมนุม", icon: <FaUsers /> },
-  ];
-
   const { schoolId, studentId } = useParams<{ schoolId: string, studentId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -390,7 +380,7 @@ export default function ViewStudentPage() {
   const completedClubRequestIdsRef = useRef<Set<string>>(new Set());
   const isSubmittingClubRequestRef = useRef(false);
   const [clubPage, setClubPage] = useState(1);
-  const validTabs = ["general", "academic", "attendance", "courses", "schedule", "behavior", "official_travel", "club"];
+  const validTabs = ["general", "academic", "attendance", "courses", "schedule", "behavior", "official_travel", "club", "sdq"];
   const [activeTab, setActiveTab] = useState(() => {
     const t = searchParams.get("tab");
     if (t && validTabs.includes(t)) return t;
@@ -431,11 +421,12 @@ export default function ViewStudentPage() {
   const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
   const [studentLeaveRequests, setStudentLeaveRequests] = useState<any[]>([]);
   const [exportingLeaveId, setExportingLeaveId] = useState<string | null>(null);
-  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
+  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; personnelHeadRoleLabel: string; affiliation: string }>({
     schoolName: "",
     directorName: "",
     deputyName: "",
     personnelHeadName: "",
+    personnelHeadRoleLabel: "",
     affiliation: ""
   });
   
@@ -448,6 +439,7 @@ export default function ViewStudentPage() {
   useEffect(() => {
     const fetchAllIds = async () => {
       if (!schoolId || !student) return;
+      if (localStorage.getItem('currentUserType') === 'parent') return; // ผู้ปกครองดูได้เฉพาะบุตรหลานตัวเอง ไม่เปิดให้เลื่อนดูนักเรียนคนอื่น
       try {
         const q = query(
           collection(firestore, "school-settings", schoolId, "students"),
@@ -471,6 +463,18 @@ export default function ViewStudentPage() {
   const profile = useSelector((state: RootState) => state.profile);
   const isParentLogin = localStorage.getItem('currentUserType') === 'parent';
   const isStudentLogin = ['student', 'parent'].includes(localStorage.getItem('currentUserType') ?? '');
+
+  const tabs = [
+    { id: "general", label: "ข้อมูลทั่วไป", icon: <FaIdCard /> },
+    { id: "academic", label: "การศึกษา", icon: <FaGraduationCap /> },
+    { id: "attendance", label: "สถาติการมาเรียน", icon: <FaClock /> },
+    { id: "courses", label: "รายวิชาที่เรียน", icon: <FaBook /> },
+    { id: "schedule", label: "ตารางเรียน", icon: <FaChalkboard /> },
+    { id: "behavior", label: "คะแนนพฤติกรรม", icon: <FaShieldAlt /> },
+    { id: "official_travel", label: "การลาของนักเรียน", icon: <FaHourglassHalf /> },
+    { id: "club", label: "กิจกรรมชุมนุม", icon: <FaUsers /> },
+    ...(isParentLogin ? [{ id: "sdq", label: "แบบประเมิน SDQ", icon: <FaClipboardList /> }] : []),
+  ];
 
   // Notification state
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -619,11 +623,13 @@ export default function ViewStudentPage() {
           const schoolSnap = await getDoc(schoolRef);
           if (schoolSnap.exists()) {
             const sData = schoolSnap.data();
+            const personnelPersonnel = getGroupPersonnel(sData, 'personnel');
             setSchoolInfo({
               schoolName: sData.schoolName || "",
               directorName: sData.directorName || "",
               deputyName: (sData.deputyPrefix || "") + (sData.deputyName || ""),
-              personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
+              personnelHeadName: personnelPersonnel.name,
+              personnelHeadRoleLabel: personnelPersonnel.label,
               affiliation: sData.affiliation || ""
             });
             // Logic handled by calendarSlice
@@ -945,6 +951,21 @@ export default function ViewStudentPage() {
       Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่พบรหัสนักเรียน', background: '#2a2b2f', color: '#ffffff' });
       navigate(-1); // Go back
       return;
+    }
+
+    // ผู้ปกครองดูข้อมูลได้เฉพาะบุตร/หลานของตัวเองเท่านั้น กันไม่ให้แก้ studentId ใน URL แล้วเห็นข้อมูลนักเรียนคนอื่น
+    if (localStorage.getItem('currentUserType') === 'parent') {
+      let children: { schoolId: string; studentDocId: string }[] = [];
+      try {
+        children = JSON.parse(localStorage.getItem('parentSession') || '{}').children || [];
+      } catch { /* session เสีย ถือว่าไม่มีสิทธิ์ */ }
+      const owns = children.some(c => c.studentDocId === studentId && c.schoolId === schoolId);
+      if (!owns) {
+        const fallback = children[0];
+        Swal.fire({ icon: 'error', title: 'ไม่มีสิทธิ์เข้าถึง', text: 'คุณสามารถดูข้อมูลได้เฉพาะบุตร/หลานของตัวเองเท่านั้น', background: '#2a2b2f', color: '#ffffff' })
+          .then(() => navigate(fallback ? `/school/${fallback.schoolId}/students/view/${fallback.studentDocId}` : '/login', { replace: true }));
+        return;
+      }
     }
 
     const fetchStudentData = async () => {
@@ -2502,6 +2523,27 @@ export default function ViewStudentPage() {
                           <p>ยังไม่มีประวัติการลา</p>
                         </div>
                       )}
+                    </InfoCard>
+                  </div>
+                )}
+
+                {activeTab === "sdq" && student && isParentLogin && (
+                  <div className="animate-fade-in">
+                    <InfoCard title="แบบประเมิน SDQ (มุมมองผู้ปกครอง)">
+                      <StudentSDQParentEmbed
+                        schoolId={schoolId!}
+                        studentId={studentId!}
+                        student={{
+                          title: student.title,
+                          firstName: student.firstName,
+                          lastName: student.lastName,
+                          studentNumber: student.studentNumber,
+                          classLevel: student.classLevel,
+                          room: student.room,
+                        }}
+                        academicYear={academicYear}
+                        canAssess={parentChildren.some(c => c.studentDocId === studentId)}
+                      />
                     </InfoCard>
                   </div>
                 )}

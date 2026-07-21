@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { firestore } from "@/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp, increment, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp, increment, serverTimestamp, runTransaction } from "firebase/firestore";
 import { updatePeriodSummaries, getStatusKey as getPeriodStatusKey } from "@/utils/periodSummaryUtils";
 import Swal from "sweetalert2";
 import { RootState } from "../../store";
@@ -13,7 +13,7 @@ import { syncDailySummary } from "@/utils/periodSummaryUtils";
 import { getTodayString } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
-import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
+import { calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
@@ -271,13 +271,22 @@ const AttendanceConfigPage: React.FC = () => {
                 [`classes.${classKey}.absent`]: increment(1),
                 updatedAt: serverTimestamp()
               }, { merge: true });
-              applyAttendanceBehaviorScore({
-                batch,
-                studentRef: doc(firestore, "school-settings", schoolId, "students", docSnap.id),
-                currentScore: data.behaviorScore,
-                oldStatus: null,
-                newStatus: "ขาด",
-                config: behaviorScoreConfig,
+              // Read the live score fresh inside a transaction so a concurrent write
+              // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+              // silently overwritten by this end-of-day absence sweep.
+              const studentRefForScore = doc(firestore, "school-settings", schoolId, "students", docSnap.id);
+              await runTransaction(firestore, async (transaction) => {
+                const studentSnap = await transaction.get(studentRefForScore);
+                const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
+                const result = calculateAttendanceBehaviorScoreChange({
+                  currentScore: freshScore,
+                  oldStatus: null,
+                  newStatus: "ขาด",
+                  config: behaviorScoreConfig,
+                });
+                if (result) {
+                  transaction.set(studentRefForScore, result.update, { merge: true });
+                }
               });
             }
 
@@ -309,20 +318,27 @@ const AttendanceConfigPage: React.FC = () => {
               if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
               if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
 
-              if (collectionName === "students") {
-                const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
-                  currentScore: data.behaviorScore,
-                  oldStatus,
-                  newStatus,
-                  config: behaviorScoreConfig,
-                });
-                if (behaviorScoreChange) {
-                  Object.assign(statsUpdate, behaviorScoreChange.update);
-                }
-              }
-
               if (Object.keys(statsUpdate).length > 0) {
                 batch.update(userRef, statsUpdate);
+              }
+
+              if (collectionName === "students") {
+                // Read the live score fresh inside a transaction so a concurrent write
+                // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+                // silently overwritten by this end-of-day no-checkout sweep.
+                await runTransaction(firestore, async (transaction) => {
+                  const studentSnap = await transaction.get(userRef);
+                  const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
+                  const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
+                    currentScore: freshScore,
+                    oldStatus,
+                    newStatus,
+                    config: behaviorScoreConfig,
+                  });
+                  if (behaviorScoreChange) {
+                    transaction.set(userRef, behaviorScoreChange.update, { merge: true });
+                  }
+                });
               }
 
               // อัปเดต dyasummary (เฉพาะนักเรียน)

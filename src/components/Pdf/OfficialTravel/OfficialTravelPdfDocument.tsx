@@ -1,6 +1,7 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { TH_SARABUN_ADVANCE_WIDTHS, TH_SARABUN_FALLBACK_WIDTH } from './thSarabunMetrics';
 
 // Register Thai Font
 Font.register({
@@ -15,25 +16,28 @@ Font.register({
     fontWeight: 'bold',
 });
 
+// ปิดการตัดคำด้วยเครื่องหมาย "-" ทั้งเอกสาร (ป้องกันข้อความ/จุดไข่ปลายาวๆ ถูกแบ่งกลางคำ)
+Font.registerHyphenationCallback((word) => [word]);
+
 const styles = StyleSheet.create({
     page: {
-        paddingTop: 13,
-        paddingBottom: 25,
-        paddingLeft: 85,
-        paddingRight: 56,
+        paddingTop: 42, // 1.5 ซม. ตามระเบียบงานสารบรรณ (บันทึกข้อความ)
+        paddingBottom: 56, // 2 ซม.
+        paddingLeft: 85, // 3 ซม.
+        paddingRight: 56, // 2 ซม.
         fontFamily: 'TH Sarabun PSK',
         fontSize: 16,
         lineHeight: 1.0,
     },
     headerContainer: {
         flexDirection: 'row',
-        height: 73,
+        height: 45,
         marginBottom: 5,
         alignItems: 'flex-end',
     },
     garuda: {
-        width: 77.22,
-        height: 77.22,
+        width: 42.5, // ครุฑสูง 1.5 ซม. สำหรับบันทึกข้อความ (หนังสือภายนอกใช้ 3 ซม.)
+        height: 42.5,
         position: 'absolute',
         top: 0,
         left: 0,
@@ -61,10 +65,15 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     paragraph: {
-        textAlign: 'justify',
+        textAlign: 'left',
         lineHeight: 1.15,
-        marginBottom: 2,
+        marginBottom: 0,
         textIndent: 40,
+    },
+    paragraphContinued: {
+        textAlign: 'left',
+        lineHeight: 1.15,
+        marginBottom: 0,
     },
     checkboxRow: {
         flexDirection: 'row',
@@ -73,14 +82,14 @@ const styles = StyleSheet.create({
         marginBottom: 1,
     },
     signatureBlock: {
-        marginTop: 42,
+        marginTop: 20,
         alignItems: 'center',
         alignSelf: 'flex-end',
         width: 250,
         marginRight: 20,
     },
     footerContainer: {
-        marginTop: 27,
+        marginTop: 10,
         flexDirection: 'row',
         justifyContent: 'space-between',
         height: 100,
@@ -106,6 +115,7 @@ interface Props {
         directorName?: string;
         deputyName?: string;
         personnelHeadName?: string;
+        personnelHeadRoleLabel?: string;
         requesterName?: string;
         position?: string;
         department?: string;
@@ -140,6 +150,10 @@ const toThaiNumerals = (num: any) => {
     return num.toString().replace(/[0-9]/g, (digit: string) => thaiDigits[parseInt(digit)]);
 };
 
+// ป้องกันคำว่า "โรงเรียน" ซ้ำติดกัน (เช่น ชื่อโรงเรียนในฐานข้อมูลมีคำว่า "โรงเรียน" นำหน้าอยู่แล้ว
+// แล้วโค้ดไปเติม "โรงเรียน" นำหน้าซ้ำอีกที เช่น "โรงเรียนโรงเรียนบ้านแก้วปัดโป่ง")
+const dedupeSchoolWord = (text: string) => text.replace(/(โรงเรียน)(?:\1)+/g, '$1');
+
 const formatThaiDate = (dateStr?: any, useThaiNumerals: boolean = true) => {
     if (!dateStr || dateStr === 'undefined') return "................................";
     let date: Date;
@@ -161,27 +175,108 @@ const formatThaiDate = (dateStr?: any, useThaiNumerals: boolean = true) => {
     return `${day} ${months[date.getMonth()]} ${year}`;
 };
 
-// 📌 ฟังก์ชันช่วยจัดการช่องว่างในภาษาไทยสำหรับการจัดชิดขอบ (Justify)
-// แก้ไข: ใช้ Intl.Segmenter (ถ้ามี) เพื่อตัดคำที่ถูกต้อง หรือ fallback เป็น char split
-const thaiJustify = (text: string) => {
-    if (!text) return "";
+// 📌 จัดบรรทัดของย่อหน้าภาษาไทยเอง (แทนการปล่อยให้ @react-pdf/renderer ตัดบรรทัดอัตโนมัติ)
+// เหตุผล: @react-pdf/renderer ตัดคำได้เฉพาะที่ช่องว่างจริง (' ') เท่านั้น ถ้าไม่มีช่องว่างพอ (คำไทยส่วนใหญ่ไม่มี
+// ช่องว่างระหว่างคำ) มันจะบังคับตัดกลางคำและแทรกเครื่องหมาย "-" ให้เสมอ — เราจึงคำนวณเองว่าแต่ละบรรทัดควร
+// ตัดตรงไหนโดยใช้ Intl.Segmenter หาขอบเขตคำที่ถูกต้อง แล้ววัดความกว้างจริงของข้อความด้วยค่า advance width
+// ของฟอนต์ TH Sarabun (ดู thSarabunMetrics.ts) เพื่อบรรจุให้แต่ละบรรทัดเต็มพื้นที่ที่สุดโดยไม่ล้น
+// ข้อดี: ไม่ต้องแทรกช่องว่างเพิ่มเลย (ตัดที่ตำแหน่งเดิมของข้อความ) จึงไม่เว้นวรรคผิดธรรมชาติ และไม่มี "-"
+const measureTextWidth = (text: string, fontSize: number): number => {
+    let widthPer1000 = 0;
+    for (const ch of text) {
+        const code = ch.codePointAt(0) ?? 0;
+        widthPer1000 += TH_SARABUN_ADVANCE_WIDTHS[code] ?? TH_SARABUN_FALLBACK_WIDTH;
+    }
+    return (widthPer1000 / 1000) * fontSize;
+};
+
+// เผื่อ margin ของความคลาดเคลื่อนในการวัดความกว้าง (kerning/การจัดวางจริงอาจต่างเล็กน้อย)
+const WRAP_SAFETY_FACTOR = 0.97;
+
+const wrapParagraphLines = (
+    text: string,
+    maxWidthPt: number,
+    firstLineIndentPt: number,
+    fontSize: number,
+): string[] => {
+    if (!text) return [];
 
     // @ts-ignore
-    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-        try {
-            // @ts-ignore
-            const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
-            // @ts-ignore
-            const segments = Array.from(segmenter.segment(text));
-            // @ts-ignore
-            return segments.map(s => s.segment).join('\u200B');
-        } catch (e) {
-            console.warn("Intl.Segmenter error:", e);
+    if (typeof Intl === 'undefined' || !Intl.Segmenter) return [text];
+
+    let segments: string[];
+    try {
+        // @ts-ignore
+        const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
+        // @ts-ignore
+        segments = Array.from(segmenter.segment(text)).map((s) => s.segment);
+    } catch (e) {
+        console.warn("Intl.Segmenter error:", e);
+        return [text];
+    }
+
+    const safeMaxWidth = maxWidthPt * WRAP_SAFETY_FACTOR;
+    const widthForLine = (lineIndex: number) => (lineIndex === 0 ? safeMaxWidth - firstLineIndentPt : safeMaxWidth);
+
+    // เครื่องหมายเปิด (เช่น " ' ( [ ) ต้องไม่ค้างอยู่ท้ายบรรทัดตามลำพัง — ให้ย้ายไปอยู่ต้นบรรทัดถัดไปแทน
+    const OPENING_PUNCTUATION = new Set(['"', "'", '(', '[', '“', '‘']);
+
+    const lines: string[] = [];
+    let current = "";
+
+    // คืนค่าอักขระเปิดวงเล็บ/อัญประกาศที่ค้างท้ายบรรทัด เพื่อนำไปต่อกับบรรทัดถัดไป
+    const pushLine = (): string => {
+        let finalized = current.replace(/\s+$/, '');
+        let carry = '';
+        while (finalized.length > 0 && OPENING_PUNCTUATION.has(finalized[finalized.length - 1])) {
+            carry = finalized[finalized.length - 1] + carry;
+            finalized = finalized.slice(0, -1).replace(/\s+$/, '');
+        }
+        lines.push(finalized);
+        current = "";
+        return carry;
+    };
+
+    for (const seg of segments) {
+        const isSpace = seg.trim() === '';
+        const candidate = current + seg;
+
+        if (current.length > 0 && measureTextWidth(candidate, fontSize) > widthForLine(lines.length)) {
+            const carry = pushLine();
+            current = isSpace ? carry : carry + seg;
+            continue;
+        }
+
+        current = candidate;
+
+        // คำเดี่ยวยาวเกินกว่าจะอยู่ได้แม้ขึ้นบรรทัดใหม่ (กรณีสุดโต่ง) — บรรจุให้เต็มบรรทัดเท่าที่จะทำได้
+        if (measureTextWidth(current, fontSize) > widthForLine(lines.length) && current.length > 1) {
+            // ถอยกลับทีละตัวอักษรจนกว่าจะพอดี แล้วดันส่วนที่เหลือไปบรรทัดถัดไป
+            let cut = current.length;
+            while (cut > 1 && measureTextWidth(current.slice(0, cut), fontSize) > widthForLine(lines.length)) {
+                cut--;
+            }
+            const remainder = current.slice(cut);
+            current = current.slice(0, cut);
+            const carry = pushLine();
+            current = carry + remainder;
         }
     }
 
-    // Fallback: เดิม (ตัดทุกตัวอักษร)
-    return text.split('').join('\u200B');
+    if (current.trim().length > 0 || lines.length === 0) {
+        lines.push(current.replace(/\s+$/, ''));
+    }
+
+    return lines;
+};
+
+// 📌 คำนวณ letterSpacing ให้แต่ละบรรทัด (ยกเว้นบรรทัดสุดท้ายของย่อหน้า) "ยืด" ตัวอักษรให้เต็มเสมอกับ
+// ระยะขอบกระดาษที่ตั้งไว้พอดี (แบบเดียวกับ "การกระจายแบบไทย" ใน Word) แทนการเว้นวรรคระหว่างคำเพิ่ม
+const justifyLetterSpacing = (line: string, targetWidthPt: number, fontSize: number): number => {
+    if (line.length <= 1) return 0;
+    const extra = targetWidthPt - measureTextWidth(line, fontSize);
+    if (extra <= 0) return 0;
+    return extra / (line.length - 1);
 };
 
 const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
@@ -206,24 +301,35 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
     const requesterName = data.requesterName || "....................................";
     const position = toThaiNumerals(data.position || ".......................");
     const department = toThaiNumerals(data.department || ".......................");
-    const schoolAffiliation = data.schoolAffiliation || "";
+    const schoolAffiliation = toThaiNumerals(data.schoolAffiliation || "");
     const subject = data.subject || "ขออนุญาตไปราชการ";
-    const rawTo = data.to || `ผู้อำนวยการโรงเรียน${schoolName}`;
+    const rawTo = dedupeSchoolWord(data.to || `ผู้อำนวยการโรงเรียน${schoolName}`);
     const to = rawTo.startsWith("เรียน") ? rawTo.replace("เรียน", "").trim() : rawTo;
 
-    const specificSubject = data.reason || "..........................................................................";
-    const location = data.location || "...................................";
+    const specificSubject = toThaiNumerals(data.reason || "..........................................................................");
+    const location = toThaiNumerals(data.location || "...................................");
     const refDoc = data.refDocument ? toThaiNumerals(data.refDocument) : " - ";
     const refDate = data.refDate ? formatThaiDate(data.refDate) : " - ";
+    const coAdventurerNames = data.coAdventurers && data.coAdventurers.length > 0
+        ? toThaiNumerals(data.coAdventurers.map(p => p.name).join(', '))
+        : "";
 
-    // 📌 จัดเตรียมข้อความย่อหน้าหลัก และใช้ thaiJustify เพื่อความสวยงาม 100%
-    const mainContent = thaiJustify(
+    // 📌 จัดเตรียมข้อความย่อหน้าหลัก แล้วตัดบรรทัดเอง (ดูเหตุผลที่ wrapParagraphLines ด้านบน)
+    const mainContentRaw =
         `ด้วย ข้าพเจ้า ${requesterName} ตำแหน่ง ${position} ` +
-        `สังกัด ${department}${data.coAdventurers && data.coAdventurers.length > 0 ? ` พร้อมด้วย ${data.coAdventurers.map(p => p.name).join(', ')}` : ""} ` +
+        `สังกัด ${department}${coAdventurerNames ? ` พร้อมด้วย ${coAdventurerNames}` : ""} ` +
         `มีความประสงค์จะขออนุญาตไปราชการ เรื่อง ${specificSubject} ` +
         `สถานที่ ณ ${location} ตามหนังสือ/คำสั่งที่ ${refDoc} ลว. ${refDate} ` +
-        `ตั้งแต่วันที่ ${formatThaiDate(data.startDate)} ถึงวันที่ ${formatThaiDate(data.endDate)}`
-    );
+        `ตั้งแต่วันที่ ${formatThaiDate(data.startDate)} ถึงวันที่ ${formatThaiDate(data.endDate)}`;
+
+    const paragraphWidthPt = 595.28 - styles.page.paddingLeft - styles.page.paddingRight;
+    const mainContentLines = wrapParagraphLines(mainContentRaw, paragraphWidthPt, styles.paragraph.textIndent, styles.page.fontSize);
+    const mainContentRows = mainContentLines.map((line, idx) => {
+        const isLast = idx === mainContentLines.length - 1;
+        const lineMaxWidth = idx === 0 ? paragraphWidthPt - styles.paragraph.textIndent : paragraphWidthPt;
+        const letterSpacing = isLast ? 0 : justifyLetterSpacing(line, lineMaxWidth, styles.page.fontSize);
+        return { line, letterSpacing };
+    });
 
     return (
         <Document>
@@ -243,7 +349,7 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
                     {/* Yellow: Static Label */}
                     <Text style={styles.label}>ส่วนราชการ   </Text>
                     {/* Red: Dynamic School Name and Affiliation */}
-                    <Text style={{ fontSize: 16, top: 1 }}>โรงเรียน{schoolName} {schoolAffiliation && `สังกัด${schoolAffiliation}`}</Text>
+                    <Text style={{ fontSize: 16, top: 1 }}>{dedupeSchoolWord(`โรงเรียน${schoolName}`)} {schoolAffiliation && `สังกัด${schoolAffiliation}`}</Text>
                 </View>
 
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3, alignItems: 'flex-end' }}>
@@ -277,9 +383,18 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
 
                 {/* Body Paragraphs */}
                 <View style={styles.content}>
-                    <Text style={styles.paragraph} hyphenationCallback={(word) => [word]}>
-                        {mainContent}
-                    </Text>
+                    {mainContentRows.map(({ line, letterSpacing }, idx) => (
+                        <Text
+                            key={idx}
+                            wrap={false}
+                            style={[
+                                idx === 0 ? styles.paragraph : styles.paragraphContinued,
+                                letterSpacing > 0 ? { letterSpacing } : {},
+                            ]}
+                        >
+                            {line}
+                        </Text>
+                    ))}
                 </View>
 
                 <View style={{ marginTop: 2 }}>
@@ -315,7 +430,7 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
 
                         <View style={styles.checkboxRow}>
                             <Text style={{ width: 20 }}>{isBudgetOther ? '[ / ]' : '[   ]'}</Text>
-                            <Text>อื่น ๆ {isBudgetOther ? data.budgetDetail : '.....................................................................................................................................'}</Text>
+                            <Text>อื่น ๆ {isBudgetOther ? toThaiNumerals(data.budgetDetail || '') : '.....................................................................................................................................'}</Text>
                         </View>
 
                         <View style={[styles.checkboxRow, { marginTop: 4 }]}>
@@ -341,33 +456,34 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
                     </View>
 
                     {/* Yellow: Standard Closing */}
-                    <Text style={{ marginTop: 10 }}>จึงเรียนมาเพื่อโปรดทราบ</Text>
-                    <Text>1. อนุมัติการเดินทางไปราชการตามที่เสนอ</Text>
-                    <Text>2. ...................................................................................................................................................</Text>
+                    <Text style={{ marginTop: 6 }}>จึงเรียนมาเพื่อโปรดทราบ</Text>
                 </View>
 
+                {/* 📌 ตัวถ่วงยืดหยุ่น: ดันส่วนลงชื่อ/ความเห็นลงไปให้สมดุลกับพื้นที่หน้ากระดาษที่เหลือ
+                    ไม่ว่าเนื้อหาด้านบนจะสั้นหรือยาว (ถ้าเนื้อหายาวจนไม่เหลือพื้นที่ ตัวถ่วงนี้จะยุบเหลือ 0 อัตโนมัติ) */}
+                <View style={{ flexGrow: 1, maxHeight: 90 }} />
+
                 {/* Requester Signature */}
-                <View style={styles.signatureBlock}>
+                <View style={styles.signatureBlock} wrap={false}>
                     <View style={{ alignItems: 'center' }}>
                         <Text>(ลงชื่อ)...........................................................</Text>
-                        <Text style={{ marginTop: 8 }}>( {requesterName} )</Text>
+                        <Text style={{ marginTop: 6 }}>( {requesterName} )</Text>
                         <Text style={{ marginTop: 4 }}>ตำแหน่ง {position}</Text>
                     </View>
                 </View>
 
                 {/* Footer Columns */}
-                <View style={[styles.footerContainer, { height: 'auto', alignItems: 'stretch', justifyContent: 'space-between', marginTop: 15 }]}>
+                <View style={[styles.footerContainer, { height: 'auto', alignItems: 'stretch', justifyContent: 'space-between' }]} wrap={false}>
                     {/* Col 1: Admin Head */}
                     <View style={[styles.footerColumn, { width: '33%', borderRightWidth: 1, borderColor: '#000', paddingHorizontal: 5 }]}>
-                        <Text style={{ textDecoration: 'underline', fontWeight: 'bold', marginBottom: 4, fontSize: 13, textAlign: 'center' }}>ความเห็นหัวหน้ากลุ่มบริหารงาน</Text>
-                        <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
+                        <Text style={{ textDecoration: 'underline', fontWeight: 'bold', marginBottom: 4, fontSize: 13, textAlign: 'center' }}>ความเห็น{data.personnelHeadRoleLabel || "หัวหน้ากลุ่มบริหารงานบุคคล"}</Text>
                         <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
                         <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
 
-                        <View style={{ marginTop: 15, alignItems: 'center' }}>
+                        <View style={{ marginTop: 8, alignItems: 'center' }}>
                             <Text style={{ fontSize: 13 }}>(ลงชื่อ)...........................................</Text>
-                            <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.personnelHeadName || "..........................................."} )</Text>
-                            <Text style={{ marginTop: 4, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>หัวหน้ากลุ่มบริหารงานบุคคล</Text>
+                            <Text style={{ marginTop: 4, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.personnelHeadName || "..........................................."} )</Text>
+                            <Text style={{ marginTop: 4, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>{data.personnelHeadRoleLabel || "หัวหน้ากลุ่มบริหารงานบุคคล"}</Text>
                         </View>
                     </View>
 
@@ -376,12 +492,14 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
                         <Text style={{ textDecoration: 'underline', fontWeight: 'bold', marginBottom: 4, fontSize: 13, textAlign: 'center' }}>ความเห็นรองผู้อำนวยการ</Text>
                         <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
                         <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
-                        <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
 
-                        <View style={{ marginTop: 15, alignItems: 'center' }}>
+                        <View style={{ marginTop: 8, alignItems: 'center' }}>
                             <Text style={{ fontSize: 13 }}>(ลงชื่อ)...........................................</Text>
-                            <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.deputyName || "..........................................."} )</Text>
-                            <Text style={{ marginTop: 4, textAlign: 'center', fontSize: 13, lineHeight: 1.2 }}>รองผู้อำนวยการ{schoolName}</Text>
+                            {/* ถ้าโรงเรียนไม่มีรองผู้อำนวยการ ให้เว้นว่างไว้ ไม่ต้องใส่จุดไข่ปลาแทนชื่อ */}
+                            {data.deputyName && (
+                                <Text style={{ marginTop: 4, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.deputyName} )</Text>
+                            )}
+                            <Text style={{ marginTop: 4, textAlign: 'center', fontSize: 13, lineHeight: 1.2 }}>{dedupeSchoolWord(`รองผู้อำนวยการ${schoolName}`)}</Text>
                         </View>
                     </View>
 
@@ -393,12 +511,11 @@ const OfficialTravelPdfDocument: React.FC<Props> = ({ data }) => {
                             <Text style={{ fontSize: 13 }}>[   ] ไม่อนุมัติ</Text>
                         </View>
                         <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
-                        <Text style={{ fontSize: 13, marginTop: 4, textAlign: 'center', lineHeight: 0.8 }}>......................................................</Text>
 
-                        <View style={{ marginTop: 15, alignItems: 'center' }}>
+                        <View style={{ marginTop: 8, alignItems: 'center' }}>
                             <Text style={{ fontSize: 13 }}>(ลงชื่อ)...........................................</Text>
-                            <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.directorName || "..........................................."} )</Text>
-                            <Text style={{ marginTop: 4, textAlign: 'center', fontSize: 13, lineHeight: 1.2 }}>ผู้อำนวยการ{schoolName}</Text>
+                            <Text style={{ marginTop: 4, fontSize: 13, lineHeight: 1.2, textAlign: 'center' }}>( {data.directorName || "..........................................."} )</Text>
+                            <Text style={{ marginTop: 4, textAlign: 'center', fontSize: 13, lineHeight: 1.2 }}>{dedupeSchoolWord(`ผู้อำนวยการ${schoolName}`)}</Text>
                         </View>
                     </View>
                 </View>

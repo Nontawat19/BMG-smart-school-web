@@ -331,15 +331,6 @@ export const useDragAndDrop = ({
             ? over.data.current.forbiddenMessage
             : '';
 
-        if (overIsForbidden) {
-            MySwal.fire({
-                icon: 'warning',
-                title: 'ไม่สามารถย้ายได้',
-                text: overForbiddenMessage || 'คาบนี้ไม่สามารถวางวิชาได้'
-            });
-            return;
-        }
-
         // Resolve card ID to slot ID
         if (!overId.includes('-') && !['course-bank', 'mon', 'tue', 'wed', 'thu', 'fri'].some(p => overId.startsWith(p))) {
             for (const slotKey in schedule) {
@@ -351,6 +342,23 @@ export const useDragAndDrop = ({
         }
 
         if (activeId === overId) return;
+
+        // Only hard-block here when the target slot has no existing occupant to
+        // displace (e.g. teacher unavailable, disallowed day, locked slot). When
+        // the slot is occupied, defer to the comprehensive check below, which can
+        // resolve the conflict by relocating the occupant instead of refusing the
+        // move outright — otherwise every displaceable conflict (e.g. "class
+        // already has another subject") got rejected before ever reaching that
+        // resolution logic.
+        const overHasOccupancy = (schoolMasterSchedule[overId] || []).length > 0;
+        if (overIsForbidden && !overHasOccupancy) {
+            MySwal.fire({
+                icon: 'warning',
+                title: 'ไม่สามารถย้ายได้',
+                text: overForbiddenMessage || 'คาบนี้ไม่สามารถวางวิชาได้'
+            });
+            return;
+        }
 
         // Return to bank logic
         if (overId === 'course-bank') {
@@ -400,6 +408,11 @@ export const useDragAndDrop = ({
         const targetItemsInCurrentSchedule = schedule[overId] || [];
         const movingItems = isFromBank ? [{ slot: originalCellKey || '', item: activeItem }] : getPairedGridMove(activeItem, originalCellKey);
         const movingInstanceIds = new Set(movingItems.map(move => move.item.instanceId));
+        // Slots being vacated by this exact move — passed to checkConstraints so Constraint 11
+        // (max 2 consecutive periods) doesn't count the course's own old slot(s) as still occupied.
+        // instanceId alone can't identify them once a schedule has been saved/reloaded from
+        // Firestore, since instanceId is stripped on save.
+        const movingSlots = movingItems.map(move => move.slot).filter(Boolean) as string[];
         const isLockedUnavailableSlot = dynamicUnavailableSlots.includes(overId);
 
         // 1. Locked Checks
@@ -435,9 +448,11 @@ export const useDragAndDrop = ({
                     tId === selectedTeacher ? dynamicUnavailableSlots : (tData?.preferences?.unavailableSlots || []),
                     schoolMasterSchedule,
                     duration,
-                    Array.from(movingInstanceIds)
+                    Array.from(movingInstanceIds),
+                    false,
+                    movingSlots
                 );
-                
+
                 if (check.forbidden) {
                     const globalConflicts = schoolMasterSchedule[slot] || [];
                     if (globalConflicts.length === 0) return false; // hard constraint
@@ -516,9 +531,11 @@ export const useDragAndDrop = ({
                     tId === selectedTeacher ? dynamicUnavailableSlots : (tData?.preferences?.unavailableSlots || []),
                     schoolMasterSchedule, // check against everyone
                     isDoubleStartSlot ? 2 : 1,
-                    Array.from(movingInstanceIds)
+                    Array.from(movingInstanceIds),
+                    false,
+                    movingSlots
                 );
-                
+
                 if (check.forbidden) {
                     const globalConflicts = schoolMasterSchedule[slot] || [];
                     const hasHardConflict = globalConflicts.length === 0;

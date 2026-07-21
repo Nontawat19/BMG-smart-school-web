@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSelector } from "react-redux";
+import { useLocation } from "react-router-dom";
 import { firestore, storage } from "../../../firebase";
 import { getTodayString } from "../../../utils/dateUtils";
 import { updatePeriodSummaries, getPeriodKeys } from "../../../utils/periodSummaryUtils";
@@ -39,7 +40,7 @@ import {
   LeaveRecord
 } from "../../../utils/attendanceLogic";
 import { ROLES } from "../../../constants/roles";
-import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorScoreUtils";
+import { calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
 import { isStudyingStudent } from "../../../utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "../../../utils/ownerStatsUtils";
@@ -49,6 +50,7 @@ import { createPortal } from "react-dom";
 import { Settings, Sun, Moon, ChevronsLeft, ChevronsRight, ScanFace, ShieldCheck, Radio } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import { useTheme } from "@/ThemeContext";
+import MainLayout from "@/layouts/MainLayout";
 
 const LOCAL_FACE_BRIDGE_URL = "http://127.0.0.1:18188/findface";
 const FACE_SCAN_DEBUG = import.meta.env.VITE_FACE_SCAN_DEBUG === "true";
@@ -225,18 +227,25 @@ const getEligibleParentLineRecipients = (user: FoundUser, lineConfig?: any) => {
   );
 };
 
+const SELF_CHECKIN_DEVICE_LOCK_PREFIX = "selfCheckinDeviceLock_";
+
 const CheckinOutPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolId = currentUser?.schoolId;
+  const location = useLocation();
+  // โหมดลงเวลาด้วยตนเอง (เข้าจากเมนู "ลงเวลา" ของครู/แอดมิน): บังคับใช้รหัสเท่านั้น ไม่มีสแกนใบหน้า
+  // และจำกัด 1 คนต่ออุปกรณ์ต่อวัน (คนเดิมยังเข้า-ออกได้ตามปกติ)
+  const isSelfServiceMode = new URLSearchParams(location.search).get("mode") === "self";
   const { isDarkMode, toggleTheme } = useTheme();
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
+  // ใช้ layout แบบกระชับ (compact) เมื่อจอเป็นสี่เหลี่ยมจัตุรัส/แนวนอนแบบคีออสก์ (aspect ratio)
+  // หรือเมื่อจอแคบแบบมือถือ (portrait) ซึ่ง aspect ratio อย่างเดียวตรวจไม่เจอ
   const [isSquareScreen, setIsSquareScreen] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.innerWidth / window.innerHeight <= 1.15;
+    return window.innerWidth <= 768 || window.innerWidth / window.innerHeight <= 1.15;
   });
   const [schoolName, setSchoolName] = useState<string | null>(null);
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
-  const [isAttendanceAdmin, setIsAttendanceAdmin] = useState(false);
   const [canScanStudents, setCanScanStudents] = useState(false);
   const [canScanTeachers, setCanScanTeachers] = useState(false);
 
@@ -554,19 +563,29 @@ const CheckinOutPage: React.FC = () => {
 
   useEffect(() => {
     const checkUserRole = async () => {
-      setIsAttendanceAdmin(false);
       setCanScanStudents(false);
       setCanScanTeachers(false);
 
       if (currentUser) {
         const roles = normalizeRoleList((currentUser as any).role);
-        
+
+        // โหมดลงเวลาด้วยตนเอง (mode=self): ไม่ว่า role จะเป็นครูหรือแอดมินโรงเรียน
+        // ก็ลงเวลาได้เฉพาะบัญชีตัวเองเท่านั้น (บังคับที่ performSearch อีกชั้น) — ไม่ให้สิทธิ์คีออสก์เต็มรูปแบบ
+        // แม้แอดมินโรงเรียนก็ตาม เพื่อไม่ให้ bypass การเช็ค IP/ตำแหน่ง และไม่ให้ค้นหา/ลงเวลาแทนคนอื่นได้
+        // หมายเหตุ: ไม่ผูกกับสวิตช์ allowTeacherSelfCheckin อีกต่อไป เพราะโหมดนี้จำกัดแค่บัญชีตัวเองอยู่แล้วจึงปลอดภัยพอที่จะเปิดให้เสมอ
+        if (isSelfServiceMode) {
+          const isEligibleForSelfCheckin = roles.includes(ROLES.TEACHER) || roles.includes(ROLES.SCHOOL_ADMIN);
+          if (isEligibleForSelfCheckin) {
+            setCanScanTeachers(true);
+          }
+          return;
+        }
+
         const isFullAdmin = roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN);
         const isStudentAdmin = roles.includes(ROLES.STUDENT_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE);
         const isTeacherAdmin = roles.includes(ROLES.TEACHER_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE) || roles.includes(ROLES.STUDENT_ATTENDANCE);
 
         if (isFullAdmin || isStudentAdmin || isTeacherAdmin) {
-          setIsAttendanceAdmin(true);
           setCanScanStudents(isFullAdmin || isStudentAdmin);
           setCanScanTeachers(isFullAdmin || isTeacherAdmin);
           return;
@@ -588,7 +607,6 @@ const CheckinOutPage: React.FC = () => {
               const isTeacherAdminT = teacherRoles.includes(ROLES.TEACHER_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE) || teacherRoles.includes(ROLES.STUDENT_ATTENDANCE);
 
               if (isFullAdminT || isStudentAdminT || isTeacherAdminT) {
-                setIsAttendanceAdmin(true);
                 setCanScanStudents(isFullAdminT || isStudentAdminT);
                 setCanScanTeachers(isFullAdminT || isTeacherAdminT);
               }
@@ -600,7 +618,7 @@ const CheckinOutPage: React.FC = () => {
       }
     };
     checkUserRole();
-  }, [currentUser, schoolId]);
+  }, [currentUser, schoolId, isSelfServiceMode]);
 
   useEffect(() => {
     setSearchedUser(null);
@@ -703,7 +721,7 @@ const CheckinOutPage: React.FC = () => {
 
   useEffect(() => {
     const updateAspect = () => {
-      setIsSquareScreen(window.innerWidth / window.innerHeight <= 1.15);
+      setIsSquareScreen(window.innerWidth <= 768 || window.innerWidth / window.innerHeight <= 1.15);
     };
     window.addEventListener('resize', updateAspect);
     return () => window.removeEventListener('resize', updateAspect);
@@ -982,13 +1000,57 @@ const CheckinOutPage: React.FC = () => {
     }
   }, [calendarEvents]);
 
+  // แอดมินโรงเรียนก็เป็นครูคนหนึ่งในโรงเรียน: ตอน "ลงเวลาให้ตัวเอง" ต้องผ่านการเช็ค GPS/IP
+  // เหมือนครูทั่วไป ไม่ bypass พิเศษ — แต่ตอนสแกน/ค้นหาให้ "คนอื่น" ที่หน้าคีออสก์ ยัง bypass ตามเดิม
+  const isSelfCheckinTarget = useCallback((targetUserId?: string) => {
+    if (!targetUserId) return false;
+    const myOwnId = (currentUser as any)?.uid || (currentUser as any)?.id;
+    return Boolean(myOwnId) && targetUserId === myOwnId;
+  }, [currentUser]);
+
+  const getSecurityBypass = useCallback((targetUserId?: string) => {
+    const roles = normalizeRoleList((currentUser as any)?.role);
+    const isSuperAdminRole = roles.includes(ROLES.SUPER_ADMIN);
+    const isAttendanceClerkRole =
+      roles.includes(ROLES.STUDENT_ATTENDANCE) ||
+      roles.includes(ROLES.TEACHER_ATTENDANCE) ||
+      roles.includes(ROLES.SCHOOL_ATTENDANCE);
+    const isSchoolAdminRole = roles.includes(ROLES.SCHOOL_ADMIN);
+    const isSelf = isSelfCheckinTarget(targetUserId);
+
+    return isSuperAdminRole || isAttendanceClerkRole || (isSchoolAdminRole && !isSelf);
+  }, [currentUser, isSelfCheckinTarget]);
+
+  // โหมดลงเวลาด้วยตนเอง: 1 คนต่ออุปกรณ์ต่อวัน (คนเดิมลงเวลาเข้า/ออกซ้ำได้ตามปกติ)
+  // คนละคนบนอุปกรณ์เดียวกันในวันเดียวกัน จะถูกกันไว้ ต้องให้แต่ละคนใช้อุปกรณ์ของตัวเอง
+  const checkSelfCheckinDeviceLock = useCallback((targetUserId: string): { valid: boolean; reason?: string } => {
+    if (!isSelfServiceMode || !schoolId) return { valid: true };
+
+    const key = `${SELF_CHECKIN_DEVICE_LOCK_PREFIX}${schoolId}_${getTodayString()}`;
+    const lockedUserId = localStorage.getItem(key);
+
+    if (lockedUserId && lockedUserId !== targetUserId) {
+      return {
+        valid: false,
+        reason: "อุปกรณ์นี้ถูกใช้ลงเวลาแทนบุคคลอื่นไปแล้ววันนี้ กรุณาใช้อุปกรณ์ส่วนตัวของคุณเองในการลงเวลา",
+      };
+    }
+
+    return { valid: true };
+  }, [isSelfServiceMode, schoolId]);
+
+  const lockSelfCheckinDevice = useCallback((targetUserId: string) => {
+    if (!isSelfServiceMode || !schoolId) return;
+    const key = `${SELF_CHECKIN_DEVICE_LOCK_PREFIX}${schoolId}_${getTodayString()}`;
+    localStorage.setItem(key, targetUserId);
+  }, [isSelfServiceMode, schoolId]);
+
   const checkIpSecurity = async (
     currentUserId: string,
     currentIp: string | undefined
   ): Promise<{ valid: boolean; reason?: string; ip?: string }> => {
-    const roles = normalizeRoleList((currentUser as any)?.role);
-    // Speed Optimization: Bypass for Attendance / Admin
-    if (isAttendanceAdmin || roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN)) {
+    // Speed Optimization: Bypass for Attendance / Admin (ยกเว้นแอดมินลงเวลาให้ตัวเอง)
+    if (getSecurityBypass(currentUserId)) {
       return { valid: true, ip: currentIp };
     }
 
@@ -1014,11 +1076,11 @@ const CheckinOutPage: React.FC = () => {
   };
 
   const validateLocationAndIp = async (
-    currentIp: string | undefined
+    currentIp: string | undefined,
+    targetUserId?: string
   ): Promise<{ valid: boolean; reason?: string }> => {
-    const roles = normalizeRoleList((currentUser as any)?.role);
-    // Speed Optimization: Bypass for Attendance / Admin
-    if (isAttendanceAdmin || roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN))
+    // Speed Optimization: Bypass for Attendance / Admin (ยกเว้นแอดมินลงเวลาให้ตัวเอง)
+    if (getSecurityBypass(targetUserId))
       return { valid: true };
 
     if (!schoolSettings) return { valid: true };
@@ -1692,6 +1754,10 @@ const CheckinOutPage: React.FC = () => {
       return;
     }
 
+    if (user.type === "teacher") {
+      lockSelfCheckinDevice(user.id);
+    }
+
     const batch = writeBatch(firestore);
     console.log("[Attendance] Saving attendance:", {
       userId: user.id,
@@ -1713,16 +1779,25 @@ const CheckinOutPage: React.FC = () => {
         "students",
         user.id
       );
-      const behaviorScoreResult = applyAttendanceBehaviorScore({
-        batch,
-        studentRef,
-        currentScore: user.behaviorScore,
-        oldStatus,
-        newStatus: status,
-        config: schoolSettings?.behaviorScoreConfig,
+      // Read the live score fresh inside a transaction so a concurrent write
+      // (another gate scanner, manual adjustment, flag ceremony, etc.) can never
+      // be silently overwritten by this check-in/out update.
+      const behaviorScoreResult = await runTransaction(firestore, async (transaction) => {
+        const snap = await transaction.get(studentRef);
+        const freshScore = snap.exists() ? Number(snap.data().behaviorScore ?? user.behaviorScore ?? 100) : (user.behaviorScore ?? 100);
+        const result = calculateAttendanceBehaviorScoreChange({
+          currentScore: freshScore,
+          oldStatus,
+          newStatus: status,
+          config: schoolSettings?.behaviorScoreConfig,
+        });
+        if (result) {
+          transaction.set(studentRef, result.update, { merge: true });
+        }
+        return result;
       });
       if (behaviorScoreResult) {
-        behaviorScoreAfterUpdate = behaviorScoreResult.nextScore;
+        behaviorScoreAfterUpdate = behaviorScoreResult.summary.nextScore;
       }
 
       updatePeriodSummaries(
@@ -1804,7 +1879,7 @@ const CheckinOutPage: React.FC = () => {
       console.log(`[LINE] Triggering ${type} notification for teacher`, user.displayId, user.name, "status:", status);
       await sendTeacherLineNotification(user, status, timeStr, type);
     }
-  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification]);
+  }, [schoolId, timeOffset, studentLateTime, teacherLateTime, studentCheckoutTime, teacherCheckoutTime, schoolSettings, currentAcademicYear, sendLineNotification, sendTeacherLineNotification, lockSelfCheckinDevice]);
 
   const resolveFaceMatchedUser = useCallback(async (payload: any): Promise<FoundUser | null> => {
     if (!schoolId) return null;
@@ -2080,19 +2155,24 @@ const CheckinOutPage: React.FC = () => {
         : checkIpSecurity(user.id, currentIp),
       isIpCameraScan
         ? Promise.resolve<{ valid: boolean; reason?: string }>({ valid: true })
-        : validateLocationAndIp(currentIp),
+        : validateLocationAndIp(currentIp, user.id),
       fetchAttendance(user),
       ]);
 
-    if (!ipSecurity.valid || !validation.valid) {
-      console.warn("[Attendance] Blocked by IP/location validation:", {
+    const deviceLock = isIpCameraScan
+      ? { valid: true }
+      : checkSelfCheckinDeviceLock(user.id);
+
+    if (!ipSecurity.valid || !validation.valid || !deviceLock.valid) {
+      console.warn("[Attendance] Blocked by IP/location/device validation:", {
         userId: user.id,
         displayId: user.displayId,
         name: user.name,
         ipSecurity,
         validation,
+        deviceLock,
       });
-      setError(ipSecurity.reason || validation.reason || "ไม่สามารถลงเวลาได้");
+      setError(ipSecurity.reason || validation.reason || deviceLock.reason || "ไม่สามารถลงเวลาได้");
       setSpeechTrigger(prev => ({ ...prev, timestamp: Date.now(), status: 'error' }));
       return;
     }
@@ -2519,6 +2599,15 @@ const CheckinOutPage: React.FC = () => {
       }
 
       if (user) {
+        // โหมดลงเวลาด้วยตนเอง: ลงเวลาได้เฉพาะบัญชีของตัวเองเท่านั้น ห้ามค้นหา/ลงเวลาแทนคนอื่น
+        if (isSelfServiceMode) {
+          const myOwnId = (currentUser as any)?.uid || (currentUser as any)?.id;
+          if (user.type !== "teacher" || !myOwnId || user.id !== myOwnId) {
+            setError("คุณสามารถลงเวลาให้ตัวเองได้เท่านั้น กรุณากรอกรหัสของคุณเอง");
+            setSpeechTrigger(prev => ({ ...prev, timestamp: Date.now(), status: 'error' }));
+            return;
+          }
+        }
         await processAttendanceForUser(user);
       } else {
         setError("ไม่พบข้อมูล");
@@ -2594,13 +2683,22 @@ const CheckinOutPage: React.FC = () => {
             updatedAt: serverTimestamp(),
           });
           if (targetType === "student") {
-            applyAttendanceBehaviorScore({
-              batch,
-              studentRef: doc(firestore, "school-settings", schoolId, "students", uDoc.id),
-              currentScore: userData.behaviorScore,
-              oldStatus: null,
-              newStatus: "ขาด",
-              config: schoolSettings?.behaviorScoreConfig,
+            const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
+            // Read the live score fresh inside a transaction so a concurrent write
+            // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+            // silently overwritten by this end-of-day absence sweep.
+            await runTransaction(firestore, async (transaction) => {
+              const studentSnap = await transaction.get(studentRef);
+              const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
+              const result = calculateAttendanceBehaviorScoreChange({
+                currentScore: freshScore,
+                oldStatus: null,
+                newStatus: "ขาด",
+                config: schoolSettings?.behaviorScoreConfig,
+              });
+              if (result) {
+                transaction.set(studentRef, result.update, { merge: true });
+              }
             });
           }
           count++;
@@ -2648,15 +2746,24 @@ const CheckinOutPage: React.FC = () => {
           const statsUpdate: Record<string, any> = {};
           if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
           if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
-
-          const scoreChange = calculateAttendanceBehaviorScoreChange({
-            currentScore: userData.behaviorScore,
-            oldStatus,
-            newStatus,
-            config: schoolSettings?.behaviorScoreConfig,
-          });
-          if (scoreChange) Object.assign(statsUpdate, scoreChange.update);
           if (Object.keys(statsUpdate).length > 0) batch.update(studentRef, statsUpdate);
+
+          // Read the live score fresh inside a transaction so a concurrent write
+          // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+          // silently overwritten by this end-of-day no-checkout sweep.
+          await runTransaction(firestore, async (transaction) => {
+            const studentSnap = await transaction.get(studentRef);
+            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
+            const scoreChange = calculateAttendanceBehaviorScoreChange({
+              currentScore: freshScore,
+              oldStatus,
+              newStatus,
+              config: schoolSettings?.behaviorScoreConfig,
+            });
+            if (scoreChange) {
+              transaction.set(studentRef, scoreChange.update, { merge: true });
+            }
+          });
 
           const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
           const classKey = userData.classLevel?.trim() || "ไม่ระบุชั้น";
@@ -2717,9 +2824,13 @@ const CheckinOutPage: React.FC = () => {
   const pairedCamera = currentUserIdForCamera
     ? configuredCameras.find((c: any) => c.pairedUserId === currentUserIdForCamera) ?? null
     : null;
-  const isFaceScanModeEnabled = pairedCamera !== null
-    ? pairedCamera.enableFaceScan === true
-    : schoolSettings?.useFaceScanMode === true;
+  // โหมดลงเวลาด้วยตนเอง (ครู/แอดมินลงเวลาให้ตัวเองผ่านเมนู "ลงเวลา"): บังคับใช้รหัสเท่านั้น
+  // เจ้าหน้าที่ลงเวลา (student_attendance/teacher_attendance/school_attendance) ที่คีออสก์ยังใช้สแกนหน้า/RFID ตามปกติ ไม่กระทบ
+  const isFaceScanModeEnabled = isSelfServiceMode
+    ? false
+    : pairedCamera !== null
+      ? pairedCamera.enableFaceScan === true
+      : schoolSettings?.useFaceScanMode === true;
   const recommendedVoiceURI = getPreferredThaiVoice(availableVoices)?.voiceURI || null;
   let faceScanEndpoint =
     schoolSettings?.faceScanConfig?.endpoint ||
@@ -3261,7 +3372,7 @@ const CheckinOutPage: React.FC = () => {
   // ค่า undefined (โรงเรียนยังไม่เคยตั้งค่าฟีเจอร์นี้เลย) ไม่ถือว่าปิด — ให้ลงเวลาได้ตามปกติ
   if (schoolSettings?.useFaceScanMode === false) {
     return (
-      <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col items-center justify-center gap-4 p-6 text-center transition-colors duration-300">
+      <div className="min-h-dvh bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col items-center justify-center gap-4 p-6 text-center transition-colors duration-300">
         <div className="w-20 h-20 rounded-3xl bg-red-100 dark:bg-red-500/10 flex items-center justify-center text-4xl">
           🔒
         </div>
@@ -3273,27 +3384,27 @@ const CheckinOutPage: React.FC = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
-      <main className={`flex-grow flex items-center justify-center ${isSquareScreen ? 'p-2' : 'p-6'}`}>
-        <div className={isSquareScreen ? 'w-full' : 'w-full max-w-screen-2xl'}>
-          <div className={`grid grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-10'}`}>
-            <div className={`col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-10'} h-full`}>
-              <div className={`bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-5' : 'p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col`}>
-                <div className={`flex items-center gap-5 ${isSquareScreen ? 'mb-3' : 'mb-8'}`}>
+  const content = (
+    <div className="min-h-dvh bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
+      <main className={`flex-grow flex overflow-x-hidden ${isSelfServiceMode ? 'items-start' : 'items-center'} justify-center ${isSquareScreen ? 'p-2' : 'p-3 sm:p-6'}`}>
+        <div className={`w-full min-w-0 ${isSquareScreen ? '' : 'lg:max-w-screen-2xl'}`}>
+          <div className={`grid grid-cols-1 lg:grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'}`}>
+            <div className={`min-w-0 lg:col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} h-full`}>
+              <div className={`min-w-0 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-4' : 'p-4 sm:p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col`}>
+                <div className={`flex items-center gap-3 sm:gap-5 min-w-0 ${isSquareScreen ? 'mb-3' : 'mb-4 sm:mb-8'}`}>
                   {schoolSettings?.logoUrl && (
                     <img
                       src={schoolSettings.logoUrl}
                       alt="School Logo"
-                      className={`${isSquareScreen ? 'w-10 h-10' : 'w-16 h-16'} object-cover rounded-full bg-white p-1 shadow-sm border border-gray-200 dark:border-white/10`}
+                      className={`shrink-0 ${isSquareScreen ? 'w-10 h-10' : 'w-10 h-10 sm:w-16 sm:h-16'} object-cover rounded-full bg-white p-1 shadow-sm border border-gray-200 dark:border-white/10`}
                     />
                   )}
-                  <div className="flex flex-col">
-                    <h1 className={`${isSquareScreen ? 'text-2xl' : 'text-4xl'} font-extrabold text-gray-900 dark:text-white`}>
+                  <div className="flex flex-col min-w-0">
+                    <h1 className={`truncate ${isSquareScreen ? 'text-xl' : 'text-xl sm:text-4xl'} font-extrabold text-gray-900 dark:text-white`}>
                       ระบบลงเวลา{schoolName ? ` | ${schoolName}` : ""}
                     </h1>
                     {schoolSettings?.affiliation && (
-                      <p className={`${isSquareScreen ? 'text-sm' : 'text-lg'} text-gray-900 dark:text-white font-bold mt-1`}>
+                      <p className={`truncate ${isSquareScreen ? 'text-xs' : 'text-xs sm:text-lg'} text-gray-900 dark:text-white font-bold mt-1`}>
                         สังกัด: {schoolSettings.affiliation}
                       </p>
                     )}
@@ -3304,8 +3415,8 @@ const CheckinOutPage: React.FC = () => {
                   getTodayString={getTodayString}
                 />
 
-                <div className="flex-1 flex">
-                  <div className={`grid grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-10'} flex-1`}>
+                <div className="flex-1 flex min-w-0">
+                  <div className={`grid grid-cols-1 sm:grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-4 lg:gap-10'} flex-1 min-w-0`}>
                     {isFaceScanModeEnabled ? (
                       <FaceScanPanel
                         enabled={isFaceScanModeEnabled}
@@ -3315,7 +3426,7 @@ const CheckinOutPage: React.FC = () => {
                         checkinTime={checkinTime}
                         checkoutTime={checkoutTime}
                         onIdentifyFrame={handleIdentifyFaceFrame}
-                        className="col-span-5"
+                        className="sm:col-span-5"
                         currentTime={currentTime}
                         isHoliday={isHoliday}
                         studentLateTime={studentLateTime}
@@ -3342,7 +3453,7 @@ const CheckinOutPage: React.FC = () => {
                           error={error}
                           currentTime={currentTime}
                           hideInput={isFaceScanModeEnabled}
-                          className="col-span-3"
+                          className="sm:col-span-3"
                           isCompact={isSquareScreen}
                         />
                       </>
@@ -3351,13 +3462,13 @@ const CheckinOutPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="col-span-4 h-full">
-              <LatestUsers 
-                latestUsers={latestUsers.filter(u => 
-                  (u.type === 'student' && canScanStudents) || 
+            <div className="min-w-0 lg:col-span-4 h-full">
+              <LatestUsers
+                latestUsers={latestUsers.filter(u =>
+                  (u.type === 'student' && canScanStudents) ||
                   (u.type !== 'student' && canScanTeachers)
-                )} 
-                vertical={true} 
+                )}
+                vertical={true}
               />
             </div>
           </div>
@@ -3373,6 +3484,9 @@ const CheckinOutPage: React.FC = () => {
         status={speechTrigger.status}
       />
 
+      {/* ปุ่มตั้งค่าเสียงพูด/กล้อง: ซ่อนในโหมดลงเวลาด้วยตนเอง (mode=self) เพราะไม่เกี่ยวกับผู้ใช้ทั่วไป
+          และอาจซ้อนทับกับคีย์บอร์ดบนหน้าจอมือถือ */}
+      {!isSelfServiceMode && (
       <div className="fixed bottom-6 right-6 z-50">
         <button
           onClick={() => setShowVoiceSelect(!showVoiceSelect)}
@@ -3450,9 +3564,10 @@ const CheckinOutPage: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
-      {/* ส่วนควบคุมแบบพับเก็บได้ด้านขวา (Collapsible Right Panel) */}
-      {createPortal(
+      {/* ส่วนควบคุมแบบพับเก็บได้ด้านขวา (Collapsible Right Panel): ซ่อนในโหมดลงเวลาด้วยตนเอง เช่นกัน */}
+      {!isSelfServiceMode && createPortal(
         <div 
           className={`fixed z-[9999] flex items-start transition-transform duration-300 ${
             isThemePanelOpen ? 'translate-x-0' : 'translate-x-[256px]'
@@ -3537,6 +3652,8 @@ const CheckinOutPage: React.FC = () => {
       )}
     </div>
   );
+
+  return isSelfServiceMode ? <MainLayout>{content}</MainLayout> : content;
 };
 
 export default CheckinOutPage;

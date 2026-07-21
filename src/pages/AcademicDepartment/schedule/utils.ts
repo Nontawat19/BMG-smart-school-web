@@ -400,7 +400,8 @@ export const checkConstraints = (
     schoolMasterSchedule: Record<string, { teacherId: string; classId: string | string[]; course: Course | null; groupNumber: number }[]> = {},
     duration: number = 1,
     ignoredInstanceIds: string[] = [],
-    isExplicitlyLocked: boolean = false
+    isExplicitlyLocked: boolean = false,
+    ignoredSlots: string[] = []
 ): { forbidden: boolean; message: string } => {
     const [dayKey, periodNumberStr] = targetSlotId.split('-');
     const periodIndex = parseInt(periodNumberStr);
@@ -610,6 +611,14 @@ export const checkConstraints = (
                         const occGroup = Number(occ.groupNumber || occ.course.groupNumber || 0);
                         const isSameGroup = occGroup === currentGroup;
                         const isEitherAllGroups = occGroup === 0 || currentGroup === 0;
+
+                        // instanceId is stripped on save (see useScheduleActions), so once a
+                        // schedule is reloaded from Firestore, occInstanceId above is always
+                        // undefined and can never match ignoredInstanceIds. Without this,
+                        // the slot(s) this exact move is vacating still count toward the
+                        // "3 consecutive periods" total, producing false positives.
+                        const isVacatedByThisMove = ignoredSlots.includes(slotId) && (isSameGroup || isEitherAllGroups);
+                        if (isVacatedByThisMove) continue;
 
                         if (isSameGroup || isEitherAllGroups) {
                             relevantPeriods.add(pIdx);

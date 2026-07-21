@@ -202,8 +202,10 @@ const getScoreBadgeClass = (score: number) => {
   return "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20";
 };
 
+// Deduction rules shown/counted in this report come ONLY from what the school
+// explicitly saved on /academic/behavior-score-config — no hardcoded fallback.
 const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
-  rules: Array.isArray(rawConfig?.rules) && rawConfig.rules.length > 0
+  rules: Array.isArray(rawConfig?.rules)
     ? rawConfig.rules
         .map((rule: Partial<BehaviorScoreRule>, index: number) => ({
           id: rule.id || `rule-${index + 1}`,
@@ -214,8 +216,8 @@ const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
           isActive: rule.isActive !== false,
         }))
         .filter((rule: BehaviorScoreRule) => rule.title)
-    : DEFAULT_BEHAVIOR_RULES,
-  attendanceRules: Array.isArray(rawConfig?.attendanceRules) && rawConfig.attendanceRules.length > 0
+    : [],
+  attendanceRules: Array.isArray(rawConfig?.attendanceRules)
     ? rawConfig.attendanceRules.map((rule: Partial<AttendanceScoreRule>) => ({
         statusKey: String(rule.statusKey || ""),
         statusLabel: String(rule.statusLabel || rule.statusKey || ""),
@@ -223,8 +225,8 @@ const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
         points: Math.max(0, Number(rule.points) || 0),
         isActive: rule.isActive !== false,
       }))
-    : DEFAULT_ATTENDANCE_RULES,
-  flagCeremonyRules: Array.isArray(rawConfig?.flagCeremonyRules) && rawConfig.flagCeremonyRules.length > 0
+    : [],
+  flagCeremonyRules: Array.isArray(rawConfig?.flagCeremonyRules)
     ? rawConfig.flagCeremonyRules.map((rule: Partial<FlagCeremonyScoreRule>) => ({
         statusKey: String(rule.statusKey || ""),
         statusLabel: String(rule.statusLabel || rule.statusKey || ""),
@@ -232,8 +234,8 @@ const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
         points: Math.max(0, Number(rule.points) || 0),
         isActive: rule.isActive !== false,
       }))
-    : DEFAULT_FLAG_CEREMONY_RULES,
-  classroomAttendanceRules: Array.isArray(rawConfig?.classroomAttendanceRules) && rawConfig.classroomAttendanceRules.length > 0
+    : [],
+  classroomAttendanceRules: Array.isArray(rawConfig?.classroomAttendanceRules)
     ? rawConfig.classroomAttendanceRules.map((rule: Partial<ClassroomAttendanceScoreRule>) => ({
         statusKey: String(rule.statusKey || ""),
         statusLabel: String(rule.statusLabel || rule.statusKey || ""),
@@ -241,7 +243,7 @@ const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
         points: Math.max(0, Number(rule.points) || 0),
         isActive: rule.isActive !== false,
       }))
-    : DEFAULT_CLASSROOM_ATTENDANCE_RULES,
+    : [],
 });
 
 const getLogStatusKey = (log: BehaviorLog) => {
@@ -865,18 +867,22 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           const logDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
           const academicYearStr = academicYear || String(getCurrentThaiYear());
 
-          if (data.status) {
-            const attPoints = getRulePoints(behaviorScoreConfig as any, data.status);
+          // Use the reconciled status when the flag-ceremony flow has already
+          // voided this day's gate penalty (e.g. noScanPresentDeduct) so we
+          // don't double-count it alongside the flag-ceremony deduction below.
+          const effectiveAttendanceStatus = data.metadata?.attendanceBehaviorScoreStatus || data.status;
+          if (effectiveAttendanceStatus) {
+            const attPoints = getRulePoints(behaviorScoreConfig as any, effectiveAttendanceStatus);
             if (attPoints > 0) {
-              const mappedStatus = getBehaviorAttendanceStatusKey(data.status);
+              const mappedStatus = getBehaviorAttendanceStatusKey(effectiveAttendanceStatus);
               attendanceLogs.push({
                 id: `att_${docSnap.id}`,
                 type: "attendance",
                 title: "ระบบเช็คชื่อ",
                 category: "การลงเวลา",
                 points: -attPoints,
-                behaviorStatus: data.status,
-                statusKey: mappedStatus || data.status,
+                behaviorStatus: effectiveAttendanceStatus,
+                statusKey: mappedStatus || effectiveAttendanceStatus,
                 createdAt: { toDate: () => logDate },
                 academicYear: academicYearStr,
               });

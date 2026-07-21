@@ -5,7 +5,7 @@ import { RootState } from "../../store";
 import { firestore } from "@/firebase";
 import {
     collection, doc, getDoc, getDocs, query, where,
-    Timestamp, onSnapshot, limit, runTransaction
+    Timestamp, onSnapshot, limit, runTransaction, updateDoc
 } from "firebase/firestore";
 import { ROLES } from "@/constants/roles";
 import Swal from "sweetalert2";
@@ -16,6 +16,7 @@ import ThaiDatePicker from "../../components/Common/ThaiDatePicker";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import BackButton from "@/components/Shared/BackButton";
@@ -132,6 +133,8 @@ const OfficialTravelRequestPage: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const requesterType = (searchParams.get("type") as 'teacher' | 'student') || 'teacher';
+    const editPath = searchParams.get("editPath");
+    const isEditMode = !!editPath;
     const { user } = useSelector((state: RootState) => state.auth);
     const schoolId = user?.schoolId;
     const { isDarkMode } = useTheme();
@@ -164,7 +167,7 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [selectedUsers, setSelectedUsers] = useState<UserOption[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
-    const [schoolInfo, setSchoolInfo] = useState({ schoolName: "", directorName: "", deputyName: "", personnelHeadName: "", affiliation: "" });
+    const [schoolInfo, setSchoolInfo] = useState({ schoolName: "", directorName: "", deputyName: "", personnelHeadName: "", personnelHeadRoleLabel: "", affiliation: "" });
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
@@ -175,7 +178,7 @@ const OfficialTravelRequestPage: React.FC = () => {
         : (user as any)?.role === ROLES.TEACHER;
 
     useEffect(() => {
-        if (!schoolId || !user) return;
+        if (!schoolId || !user || isEditMode) return;
         (async () => {
             try {
                 const col = requesterType === 'teacher' ? 'teachers' : 'students';
@@ -187,7 +190,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                 }
             } catch { }
         })();
-    }, [schoolId, user, requesterType]);
+    }, [schoolId, user, requesterType, isEditMode]);
 
     useEffect(() => {
         if (!schoolId) return;
@@ -212,12 +215,15 @@ const OfficialTravelRequestPage: React.FC = () => {
                 const snap = await getDoc(doc(firestore, 'school-settings', schoolId));
                 if (snap.exists()) {
                     const d = snap.data();
-                    setTo(`ผู้อำนวยการโรงเรียน${d.schoolName || ""}`);
-                    setSchoolInfo({ schoolName: d.schoolName || "", directorName: d.directorName || "", deputyName: `${d.deputyPrefix || ""}${d.deputyName || ""}`, personnelHeadName: `${d.personnelHeadPrefix || ""}${d.personnelHeadName || ""}`, affiliation: d.affiliation || "" });
+                    const rawSchoolName = (d.schoolName || "").trim();
+                    const schoolNameWithPrefix = rawSchoolName.startsWith("โรงเรียน") ? rawSchoolName : `โรงเรียน${rawSchoolName}`;
+                    if (!isEditMode) setTo(`ผู้อำนวยการ${schoolNameWithPrefix}`);
+                    const personnelPersonnel = getGroupPersonnel(d, 'personnel');
+                    setSchoolInfo({ schoolName: d.schoolName || "", directorName: `${d.directorPrefix || ""}${d.directorName || ""}`, deputyName: `${d.deputyPrefix || ""}${d.deputyName || ""}`, personnelHeadName: personnelPersonnel.name, personnelHeadRoleLabel: personnelPersonnel.label, affiliation: d.affiliation || "" });
                 }
             } catch { }
         })();
-    }, [schoolId]);
+    }, [schoolId, isEditMode]);
 
     useEffect(() => {
         if (!schoolId) return;
@@ -233,22 +239,98 @@ const OfficialTravelRequestPage: React.FC = () => {
                 const calSnap = await getDoc(doc(firestore, 'school-settings', schoolId, 'main_calendar', 'default'));
                 if (calSnap.exists() && calSnap.data().affiliation) setSchoolAffiliation(calSnap.data().affiliation);
                 else { const s = await getDoc(doc(firestore, 'school-settings', schoolId)); if (s.exists()) setSchoolAffiliation(s.data().affiliation || ""); }
-                const cSnap = await getDoc(doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${academicYear}`));
-                setDocNo(cSnap.exists() ? `${(cSnap.data().lastNumber || 0) + 1}/${academicYear}` : `1/${academicYear}`);
-            } catch { setDocNo(`1/${academicYear}`); }
+                if (!isEditMode) {
+                    const cSnap = await getDoc(doc(firestore, 'school-settings', schoolId, 'counters', `official_travel_${academicYear}`));
+                    setDocNo(cSnap.exists() ? `${(cSnap.data().lastNumber || 0) + 1}/${academicYear}` : `1/${academicYear}`);
+                }
+            } catch { if (!isEditMode) setDocNo(`1/${academicYear}`); }
         })();
-    }, [schoolId, academicYear]);
+    }, [schoolId, academicYear, isEditMode]);
+
+    // 📌 โหมดแก้ไข: โหลดข้อมูลคำขอเดิมมาเติมในฟอร์ม (แทนค่า default ทั้งหมดด้านบน)
+    const [isEditLoading, setIsEditLoading] = useState(false);
+    useEffect(() => {
+        if (!editPath) return;
+        setIsEditLoading(true);
+        (async () => {
+            try {
+                const snap = await getDoc(doc(firestore, editPath));
+                if (!snap.exists()) {
+                    Swal.fire({ icon: "error", title: "ไม่พบคำขอที่ต้องการแก้ไข", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
+                    return;
+                }
+                const d = snap.data() as any;
+                const toDateInput = (value: any) => {
+                    if (!value) return new Date().toISOString().split("T")[0];
+                    const dt = value?.toDate && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+                    return isNaN(dt.getTime()) ? new Date().toISOString().split("T")[0] : dt.toISOString().split("T")[0];
+                };
+                setSubject(d.subject || "");
+                setTo(d.to || "");
+                setRequesterName(d.requesterName || "");
+                setPosition(d.position || "");
+                setDepartment(d.department || "");
+                setReason(d.reason || "");
+                setLocation(d.location || "");
+                setRefDocument(d.refDocument || "");
+                setRefDate(d.refDate || "");
+                setStartDate(toDateInput(d.startDate));
+                setEndDate(toDateInput(d.endDate));
+                setBudgetType(d.budgetType || 'school');
+                setBudgetOther(d.budgetDetail || "");
+                setSpecificExpenses(d.specificExpenses || { vehicle: false, fuel: false, allowance: false, accommodation: false });
+                setTransportType(d.transportType || 'school_vehicle');
+                setTransportDetail(d.transportDetail || "");
+                setRequiresSubstitute(!!d.requiresSubstitute);
+                setDocNo(d.docNo || "");
+                if (Array.isArray(d.coAdventurers)) {
+                    setSelectedUsers(d.coAdventurers.map((c: any) => ({
+                        value: c.id, label: c.name, type: c.type || 'teacher', data: { position: c.position },
+                    })));
+                }
+            } catch (e) {
+                console.error("Error loading travel request for edit:", e);
+                Swal.fire({ icon: "error", title: "โหลดข้อมูลไม่สำเร็จ", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
+            } finally {
+                setIsEditLoading(false);
+            }
+        })();
+    }, [editPath]);
 
     const handleSubmit = async () => {
         if (!reason || !location || !startDate || !endDate) {
             Swal.fire({ icon: "warning", title: "ข้อมูลไม่ครบ", text: "กรุณากรอกเหตุผล สถานที่ และวันที่", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
             return;
         }
-        if (!isTeacherRole && !onBehalfTeacherOption) {
+        if (!isEditMode && !isTeacherRole && !onBehalfTeacherOption) {
             Swal.fire({ icon: "warning", title: "ข้อมูลไม่ครบ", text: "กรุณาเลือกครูที่ต้องการยื่นคำขอแทน", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
             return;
         }
         if (!schoolId || !user) return;
+
+        if (isEditMode && editPath) {
+            setIsLoading(true);
+            try {
+                const coAdventurersList = selectedUsers.map(o => ({ id: o.value, name: o.label, position: o.data?.position || (o.type === 'student' ? 'นักเรียน' : 'ครู'), type: o.type }));
+                const data = {
+                    subject, to, requesterName, position, department, reason, location, refDocument, refDate,
+                    startDate: Timestamp.fromDate(new Date(startDate)), endDate: Timestamp.fromDate(new Date(endDate)),
+                    budgetType, budgetDetail: budgetType === 'other' ? budgetOther : "",
+                    specificExpenses: budgetType === 'specific' ? specificExpenses : null,
+                    transportType, transportDetail, requiresSubstitute,
+                    coAdventurers: coAdventurersList,
+                    docNo,
+                };
+                await updateDoc(doc(firestore, editPath), { ...data, updatedAt: Timestamp.now(), updatedBy: user.uid });
+                setSavedData(data);
+                setIsSaved(true);
+                Swal.fire({ icon: "success", title: "บันทึกการแก้ไขสำเร็จ", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827", confirmButtonColor: "#4f46e5", timer: 2000, showConfirmButton: false });
+            } catch (error) {
+                Swal.fire({ icon: "error", title: "เกิดข้อผิดพลาด", text: (error as Error).message, background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827" });
+            } finally { setIsLoading(false); }
+            return;
+        }
+
         setIsLoading(true);
         try {
             let requesterRef: any;
@@ -349,7 +431,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                     <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center shrink-0">
                         <Plane size={11} className="text-white" />
                     </div>
-                    <h1 className="text-sm font-bold text-gray-900 dark:text-white flex-1">ขออนุญาตไปราชการ</h1>
+                    <h1 className="text-sm font-bold text-gray-900 dark:text-white flex-1">{isEditMode ? "แก้ไขคำขอไปราชการ" : "ขออนุญาตไปราชการ"}</h1>
                     {docNo && (
                         <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded-full">
                             <Hash size={9} className="text-gray-400" />
@@ -388,7 +470,7 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                         {/* ── R2: ผู้ขออนุญาต ── */}
                         <div className="shrink-0 px-5 py-2.5">
-                            {!isTeacherRole && (
+                            {!isTeacherRole && !isEditMode && (
                                 <div className="mb-2.5 p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg">
                                     <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 mb-1.5">
                                         <BookUser size={9} className="inline mr-1" />ยื่นแทนครู *
@@ -583,7 +665,8 @@ const OfficialTravelRequestPage: React.FC = () => {
                                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">บันทึกสำเร็จ · เลขที่ {savedData.docNo}</span>
                                     <OfficialTravelPdfButton data={savedData} schoolName={schoolInfo.schoolName}
                                         schoolAffiliation={schoolInfo.affiliation} directorName={schoolInfo.directorName}
-                                        deputyName={schoolInfo.deputyName} personnelHeadName={schoolInfo.personnelHeadName} />
+                                        deputyName={schoolInfo.deputyName} personnelHeadName={schoolInfo.personnelHeadName}
+                                        personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel} />
                                 </div>
                             </>
                         )}
@@ -601,9 +684,13 @@ const OfficialTravelRequestPage: React.FC = () => {
                                     </p>
                                 </>
                             ) : (
-                                <button type="button" onClick={handleSubmit} disabled={isLoading}
+                                <button type="button" onClick={handleSubmit} disabled={isLoading || isEditLoading}
                                     className="flex items-center gap-2 px-7 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white rounded-lg text-sm font-semibold shadow-md shadow-indigo-500/20 transition-all disabled:opacity-50">
-                                    {isLoading ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</> : <><Send size={14} /> บันทึกและส่งคำขอ</>}
+                                    {isLoading
+                                        ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</>
+                                        : isEditLoading
+                                            ? <><Loader2 size={14} className="animate-spin" /> กำลังโหลดข้อมูล...</>
+                                            : <><Send size={14} /> {isEditMode ? "บันทึกการแก้ไข" : "บันทึกและส่งคำขอ"}</>}
                                 </button>
                             )}
                         </div>

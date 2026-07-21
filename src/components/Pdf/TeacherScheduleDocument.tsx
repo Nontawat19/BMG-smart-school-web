@@ -1,6 +1,7 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Font, Image } from '@react-pdf/renderer';
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods } from '@/utils/scheduleDisplayUtils';
+import { getGroupPersonnel } from '@/utils/schoolUtils';
 
 /* ===================== TYPES ===================== */
 export interface Teacher {
@@ -46,6 +47,11 @@ export interface SchoolInfo {
     affiliation?: string;
     directorName?: string;
     academicHeadName?: string;
+    academicHeadPrefix?: string;
+    deputyAcademicName?: string;
+    deputyAcademicPrefix?: string;
+    deputyName?: string;
+    deputyPrefix?: string;
     logoUrl?: string;
 }
 
@@ -497,8 +503,8 @@ const CourseSummaryPage = ({
                     </View>
                 <View style={styles.signatureBlock}>
                     <View style={styles.signatureLine} />
-                    <Text style={styles.signatureText}>({schoolInfo.academicHeadName || '........................................'})</Text>
-                    <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 12 }]}>หัวหน้าวิชาการ</Text>
+                    <Text style={styles.signatureText}>({getGroupPersonnel(schoolInfo, 'academic').name || '........................................'})</Text>
+                    <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 12 }]}>{getGroupPersonnel(schoolInfo, 'academic').label}</Text>
                 </View>
                 <View style={styles.signatureBlock}>
                     <View style={styles.signatureLine} />
@@ -731,8 +737,8 @@ export const TeacherSchedulePDF = ({
                     </View>
                     <View style={styles.signatureBlock}>
                         <View style={styles.signatureLine} />
-                        <Text style={styles.signatureText}>({schoolInfo.academicHeadName || '........................................'})</Text>
-                        <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 12 }]}>หัวหน้าวิชาการ</Text>
+                        <Text style={styles.signatureText}>({getGroupPersonnel(schoolInfo, 'academic').name || '........................................'})</Text>
+                        <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 12 }]}>{getGroupPersonnel(schoolInfo, 'academic').label}</Text>
                     </View>
                     <View style={styles.signatureBlock}>
                         <View style={styles.signatureLine} />
@@ -957,8 +963,8 @@ export const BulkTeacherSchedulePDF = ({
                                 </View>
                                 <View style={styles.signatureBlock}>
                                     <View style={styles.signatureLine} />
-                                    <Text style={styles.signatureText}>({schoolInfo.academicHeadName || '........................................'})</Text>
-                                    <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 14 }]}>หัวหน้าวิชาการ</Text>
+                                    <Text style={styles.signatureText}>({getGroupPersonnel(schoolInfo, 'academic').name || '........................................'})</Text>
+                                    <Text style={[styles.signatureText, { fontWeight: 'bold', fontSize: 14 }]}>{getGroupPersonnel(schoolInfo, 'academic').label}</Text>
                                 </View>
                                 <View style={styles.signatureBlock}>
                                     <View style={styles.signatureLine} />

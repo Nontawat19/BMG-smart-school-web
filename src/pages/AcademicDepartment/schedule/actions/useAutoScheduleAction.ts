@@ -947,6 +947,7 @@ export const useAutoScheduleAction = ({
                 teachersMap,
                 dynamicUnavailableSlots,
                 selectedTeacher,
+                assignmentConstraints: effectiveAssignmentConstraints,
                 validSlotsByTask: validSlotsCache,
                 dataReadinessWarnings,
                 skippedCourseIssues

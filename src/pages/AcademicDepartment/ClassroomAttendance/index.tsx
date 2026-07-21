@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
-import { doc, getDoc, collection, query, where, getDocs, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, Timestamp, writeBatch, runTransaction } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { Calendar } from 'lucide-react';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
@@ -22,7 +22,7 @@ import AttendanceHeader from './components/AttendanceHeader';
 import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
-import { applyClassroomBehaviorScore } from '@/utils/behaviorScoreUtils';
+import { calculateClassroomBehaviorScoreChange } from '@/utils/behaviorScoreUtils';
 
 interface PeriodSetting {
     id: string;
@@ -1152,6 +1152,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                 nickname: data.nickname || '',
                                 status: data.status || '',
                                 studentStatus: data.studentStatus || '',
+                                behaviorScore: data.behaviorScore,
                             } as Student);
                         });
                     }
@@ -1371,11 +1372,12 @@ const ClassroomAttendancePage: React.FC = () => {
                 : [periodNum];
 
             const batch = writeBatch(db);
+            const behaviorScoreUpdates: Promise<void>[] = [];
             students.forEach(student => {
                 periodsToSave.forEach((pNum: number) => {
                     const attendanceId = `${dateStr}_${stableSubjectCode}_${classKey}_P${pNum}`.replace(/\//g, '-');
                     const studentRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
-                    
+
                     batch.set(studentRef, {
                         schoolId,
                         studentId: student.id,
@@ -1400,26 +1402,35 @@ const ClassroomAttendancePage: React.FC = () => {
                         semester,
                         updatedAt: Timestamp.now(),
                     }, { merge: true });
+                });
 
-                    // Apply behavior score if changed
-                    const newStatus = `class:${attendance[student.id] || 'present'}`;
-                    // If no record exists yet, we assume the previous state was neutral (no penalty applied yet).
-                    // Or we could compare against "present". Usually, unrecorded defaults to "present" anyway.
-                    const originalStatusStr = originalAttendance[student.id];
-                    const oldStatus = originalStatusStr ? `class:${originalStatusStr}` : "class:present";
+                // Apply behavior score if changed (once per student, not once per period —
+                // the status is the same across periodsToSave for a given save action)
+                const newStatus = `class:${attendance[student.id] || 'present'}`;
+                // If no record exists yet, we assume the previous state was neutral (no penalty applied yet).
+                // Or we could compare against "present". Usually, unrecorded defaults to "present" anyway.
+                const originalStatusStr = originalAttendance[student.id];
+                const oldStatus = originalStatusStr ? `class:${originalStatusStr}` : "class:present";
 
-                    if (newStatus !== oldStatus && behaviorConfig) {
-                        const studentMainRef = doc(db, 'school-settings', schoolId, 'students', student.id);
-                        applyClassroomBehaviorScore({
-                            batch,
-                            studentRef: studentMainRef,
-                            currentScore: student.behaviorScore,
+                if (newStatus !== oldStatus && behaviorConfig) {
+                    const studentMainRef = doc(db, 'school-settings', schoolId, 'students', student.id);
+                    // Read the live score fresh inside a transaction so a concurrent write
+                    // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+                    // silently overwritten by this classroom attendance save.
+                    behaviorScoreUpdates.push(runTransaction(db, async (transaction) => {
+                        const studentSnap = await transaction.get(studentMainRef);
+                        const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? student.behaviorScore ?? 100) : (student.behaviorScore ?? 100);
+                        const result = calculateClassroomBehaviorScoreChange({
+                            currentScore: freshScore,
                             oldStatus,
                             newStatus,
-                            config: behaviorConfig
+                            config: behaviorConfig,
                         });
-                    }
-                });
+                        if (result) {
+                            transaction.set(studentMainRef, result.update, { merge: true });
+                        }
+                    }));
+                }
 
                 // Deletes for legacy format or older periods in case they exist
                 periodsToSave.forEach((pNum: number) => {
@@ -1438,6 +1449,7 @@ const ClassroomAttendancePage: React.FC = () => {
                 if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
             });
 
+            await Promise.all(behaviorScoreUpdates);
             await batch.commit();
 
             Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: 'บันทึกการเช็คชื่อเรียบร้อยแล้ว', timer: 1500, showConfirmButton: false });

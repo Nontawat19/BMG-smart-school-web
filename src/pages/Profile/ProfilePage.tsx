@@ -25,7 +25,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
-import { CLASSES } from "@/utils/schoolUtils";
+import { CLASSES, getGroupPersonnel } from "@/utils/schoolUtils";
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
 
 // 1. สร้าง Interface สำหรับข้อมูลโปรไฟล์
@@ -387,11 +387,12 @@ const ProfilePage: React.FC = () => {
   const [attendanceCurrentPage, setAttendanceCurrentPage] = useState(1);
   const [attendanceItemsPerPage, setAttendanceItemsPerPage] = useState(10);
   const [officialTravelRequests, setOfficialTravelRequests] = useState<any[]>([]);
-  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
+  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; personnelHeadRoleLabel: string; affiliation: string }>({
     schoolName: "",
     directorName: "",
     deputyName: "",
     personnelHeadName: "",
+    personnelHeadRoleLabel: "",
     affiliation: ""
   });
 
@@ -625,11 +626,13 @@ const ProfilePage: React.FC = () => {
           const schoolSnap = await getDoc(schoolRef);
           if (schoolSnap.exists()) {
             const sData = schoolSnap.data();
+            const personnelPersonnel = getGroupPersonnel(sData, 'personnel');
             setSchoolInfo({
               schoolName: sData.schoolName || "",
               directorName: sData.directorName || "",
               deputyName: (sData.deputyPrefix || "") + (sData.deputyName || ""),
-              personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
+              personnelHeadName: personnelPersonnel.name,
+              personnelHeadRoleLabel: personnelPersonnel.label,
               affiliation: sData.affiliation || ""
             });
             // Logic handled by calendarSlice
@@ -2400,6 +2403,7 @@ const ProfilePage: React.FC = () => {
                                     directorName={schoolInfo.directorName}
                                     deputyName={schoolInfo.deputyName}
                                     personnelHeadName={schoolInfo.personnelHeadName}
+                                    personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
                                   />
                                 </div>
                               </td>

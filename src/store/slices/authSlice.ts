@@ -1,7 +1,7 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, firestore } from '@/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collectionGroup, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 
 interface UserProfile {
   uid: string;
@@ -90,6 +90,62 @@ export const listenToAuthChanges = createAsyncThunk(
                 thunkAPI.dispatch(setUser(profile));
                 resolve(profile);
               } else {
+                // Fallback: บัญชีเก่าที่ไม่มี users/{uid} แต่มีข้อมูลอยู่ใน school-settings/*/teachers
+                // (เช่นเดียวกับ fallback ตอน login ใน LoginPage.tsx)
+                try {
+                  const teachersQuery = query(
+                    collectionGroup(firestore, 'teachers'),
+                    where('uid', '==', user.uid),
+                    limit(1)
+                  );
+                  const teacherSnapshots = await getDocs(teachersQuery);
+
+                  if (!teacherSnapshots.empty) {
+                    const teacherDoc = teacherSnapshots.docs[0];
+                    const td = teacherDoc.data();
+                    const schoolId = teacherDoc.ref.parent.parent?.id || null;
+
+                    let roles: string[] = [];
+                    if (Array.isArray(td.role)) {
+                      roles = td.role.map((r: any) => typeof r === 'string' ? r.toLowerCase() : '');
+                    } else if (typeof td.role === 'string') {
+                      roles = [td.role.toLowerCase()];
+                    } else {
+                      roles = ['user'];
+                    }
+
+                    const resolvedFullName = td.fullName
+                      || `${td.title || ''}${td.firstName || ''} ${td.lastName || ''}`.trim()
+                      || user.email
+                      || '';
+
+                    const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+                    const personnelType: 'teacher' | 'user' =
+                      roles.length > 0 && roles.every((r) => attendanceOnly.includes(r)) ? 'user' : 'teacher';
+
+                    const profile: UserProfile = {
+                      uid: user.uid,
+                      email: user.email,
+                      fullName: resolvedFullName,
+                      profileUrl: td.profileImageUrl || '',
+                      schoolId,
+                      role: roles,
+                      ...(td.department ? { department: td.department } : {}),
+                      personnelType,
+                      isHeadOfLearningArea: !!td.isHeadOfLearningArea,
+                      isHeadOfAssessment: !!td.isHeadOfAssessment,
+                      isGuidanceTeacher: !!td.isGuidanceTeacher,
+                      isHomeroomTeacher: !!td.isHomeroomTeacher,
+                    };
+
+                    thunkAPI.dispatch(setUser(profile));
+                    resolve(profile);
+                    return;
+                  }
+                } catch (fallbackError) {
+                  console.error('Error in teachers collectionGroup fallback:', fallbackError);
+                }
+
                 thunkAPI.dispatch(setUser(null));
                 resolve(null);
               }

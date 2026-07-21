@@ -4,18 +4,17 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth } from "@/firebase";
-import { 
-  collection, 
-  getDocs, 
-  query, 
-  orderBy, 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  addDoc, 
+import {
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  doc,
+  getDoc,
   serverTimestamp,
   where,
-  limit
+  limit,
+  runTransaction
 } from "firebase/firestore";
 import { 
   Search, 
@@ -300,15 +299,19 @@ export default function BehaviorScorePage() {
         const logDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
 
         // Gate attendance (สาย / ขาด / กลับก่อน / ไม่ลงเวลาออก)
-        if (data.status) {
-          const attPoints = getRulePoints(behaviorScoreConfig, data.status);
+        // Use the reconciled status when the flag-ceremony flow has already
+        // voided this day's gate penalty (e.g. noScanPresentDeduct) to avoid
+        // double-counting it alongside the flag-ceremony deduction below.
+        const effectiveAttendanceStatus = data.metadata?.attendanceBehaviorScoreStatus || data.status;
+        if (effectiveAttendanceStatus) {
+          const attPoints = getRulePoints(behaviorScoreConfig, effectiveAttendanceStatus);
           if (attPoints > 0) {
-            const statusKey = getBehaviorAttendanceStatusKey(data.status);
+            const statusKey = getBehaviorAttendanceStatusKey(effectiveAttendanceStatus);
             const attTitle =
               statusKey === 'late'       ? 'มาสาย' :
               statusKey === 'absent'     ? 'ขาดเรียน (ไม่ลงเวลาเข้า)' :
               statusKey === 'early'      ? 'กลับก่อนกำหนด' :
-              statusKey === 'noCheckout' ? 'ไม่ลงเวลาออก' : data.status;
+              statusKey === 'noCheckout' ? 'ไม่ลงเวลาออก' : effectiveAttendanceStatus;
             const attNote =
               statusKey === 'late'       ? 'ลงเวลาเข้าหลังเวลากำหนด' :
               statusKey === 'absent'     ? 'ไม่มีการลงเวลาเข้าภายในเวลาที่กำหนด' :
@@ -328,7 +331,7 @@ export default function BehaviorScorePage() {
               createdBy: "ระบบอัตโนมัติ",
               createdAt: { toDate: () => logDate },
               academicYear: "",
-              behaviorStatus: data.status,
+              behaviorStatus: effectiveAttendanceStatus,
             });
           }
         }
@@ -481,34 +484,44 @@ export default function BehaviorScorePage() {
     try {
       const selectedRule = activeAdjustRules.find((rule) => rule.id === adjustRuleId);
       const finalPoints = adjustType === 'add' ? pointsToApply : -pointsToApply;
-      const currentScore = activeAdjustStudent.behaviorScore ?? 100;
-      const nextScore = Math.max(0, currentScore + finalPoints);
+      const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
+      const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
+      const startingScore = Number(behaviorScoreConfig?.startingScore ?? 100);
 
-      // 1. Write Log
-      const logsRef = collection(firestore, "school-settings", schoolId, "students", activeAdjustStudent.id, "behavior_logs");
-      await addDoc(logsRef, {
-        type: "activity_adjust",
-        title: selectedRule?.title || (adjustType === 'add' ? `เพิ่มคะแนนความประพฤติ (${adjustCategory})` : `หักคะแนนความประพฤติ (${adjustCategory})`),
-        category: selectedRule?.category || adjustCategory,
-        ruleId: selectedRule?.id || null,
-        ruleType: selectedRule?.type || (adjustType === "add" ? "increase" : "decrease"),
-        action: adjustType,
-        points: finalPoints,
-        previousScore: currentScore,
-        nextScore: nextScore,
-        notes: adjustNotes || (adjustType === 'add' ? "บันทึกพฤติกรรมเชิงบวก" : "บันทึกพฤติกรรมเชิงลบ"),
-        createdBy: auth.currentUser?.email || auth.currentUser?.displayName || "ผู้ใช้ทั่วไป",
-        createdAt: serverTimestamp(),
-        academicYear: String(getCurrentThaiYear()),
-      });
-
-      // 2. Update Student Doc
       const studentDocRef = doc(firestore, "school-settings", schoolId, "students", activeAdjustStudent.id);
-      await updateDoc(studentDocRef, {
-        behaviorScore: nextScore
+      const logsRef = collection(firestore, "school-settings", schoolId, "students", activeAdjustStudent.id, "behavior_logs");
+      const newLogRef = doc(logsRef);
+
+      // Read the current score and write both the log and the student doc inside a
+      // single transaction so a concurrent write (auto attendance/flag deduction,
+      // or another staff member) can never silently overwrite this adjustment.
+      const nextScore = await runTransaction(firestore, async (transaction) => {
+        const studentSnap = await transaction.get(studentDocRef);
+        const currentScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? startingScore) : startingScore;
+        const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + finalPoints));
+
+        transaction.set(newLogRef, {
+          type: "activity_adjust",
+          title: selectedRule?.title || (adjustType === 'add' ? `เพิ่มคะแนนความประพฤติ (${adjustCategory})` : `หักคะแนนความประพฤติ (${adjustCategory})`),
+          category: selectedRule?.category || adjustCategory,
+          ruleId: selectedRule?.id || null,
+          ruleType: selectedRule?.type || (adjustType === "add" ? "increase" : "decrease"),
+          action: adjustType,
+          points: finalPoints,
+          previousScore: currentScore,
+          nextScore: computedNextScore,
+          notes: adjustNotes || (adjustType === 'add' ? "บันทึกพฤติกรรมเชิงบวก" : "บันทึกพฤติกรรมเชิงลบ"),
+          createdBy: auth.currentUser?.email || auth.currentUser?.displayName || "ผู้ใช้ทั่วไป",
+          createdAt: serverTimestamp(),
+          academicYear: String(getCurrentThaiYear()),
+        });
+
+        transaction.set(studentDocRef, { behaviorScore: computedNextScore }, { merge: true });
+
+        return computedNextScore;
       });
 
-      // 3. Update local state
+      // Update local state
       setStudents(prev => prev.map(s => s.id === activeAdjustStudent.id ? { ...s, behaviorScore: nextScore } : s));
 
       toast.success("บันทึกพฤติกรรมเรียบร้อยแล้ว", { theme: "dark" });
@@ -563,48 +576,53 @@ export default function BehaviorScorePage() {
         });
 
         try {
+          const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
+          const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
+          const startingScore = Number(behaviorScoreConfig?.startingScore ?? 100);
+
           const promises = selectedStudentIds.map(async (studentId) => {
-            const student = students.find(s => s.id === studentId);
-            if (!student) return;
-
-            const currentScore = student.behaviorScore ?? 100;
-            const nextScore = Math.max(0, currentScore + finalPoints);
-
-            // 1. Write Log
-            const logsRef = collection(firestore, "school-settings", schoolId, "students", studentId, "behavior_logs");
-            await addDoc(logsRef, {
-              type: "activity_adjust",
-              title: selectedBulkRule?.title || (bulkType === 'add' ? `เพิ่มคะแนนความประพฤติกลุ่ม (${bulkCategory})` : `หักคะแนนความประพฤติกลุ่ม (${bulkCategory})`),
-              category: selectedBulkRule?.category || bulkCategory,
-              ruleId: selectedBulkRule?.id || null,
-              ruleType: selectedBulkRule?.type || (bulkType === "add" ? "increase" : "decrease"),
-              action: bulkType,
-              points: finalPoints,
-              previousScore: currentScore,
-              nextScore: nextScore,
-              notes: bulkNotes || (bulkType === 'add' ? "บันทึกพฤติกรรมกลุ่มเชิงบวก" : "บันทึกพฤติกรรมกลุ่มเชิงลบ"),
-              createdBy: auth.currentUser?.email || auth.currentUser?.displayName || "ผู้ใช้ทั่วไป",
-              createdAt: serverTimestamp(),
-              academicYear: String(getCurrentThaiYear()),
-            });
-
-            // 2. Update Doc
             const studentDocRef = doc(firestore, "school-settings", schoolId, "students", studentId);
-            return updateDoc(studentDocRef, {
-              behaviorScore: nextScore
+            const logsRef = collection(firestore, "school-settings", schoolId, "students", studentId, "behavior_logs");
+            const newLogRef = doc(logsRef);
+
+            // Read + write per student inside a transaction so a concurrent write
+            // (auto attendance/flag deduction, or another staff member) can never
+            // silently overwrite this bulk adjustment.
+            const nextScore = await runTransaction(firestore, async (transaction) => {
+              const studentSnap = await transaction.get(studentDocRef);
+              const currentScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? startingScore) : startingScore;
+              const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + finalPoints));
+
+              transaction.set(newLogRef, {
+                type: "activity_adjust",
+                title: selectedBulkRule?.title || (bulkType === 'add' ? `เพิ่มคะแนนความประพฤติกลุ่ม (${bulkCategory})` : `หักคะแนนความประพฤติกลุ่ม (${bulkCategory})`),
+                category: selectedBulkRule?.category || bulkCategory,
+                ruleId: selectedBulkRule?.id || null,
+                ruleType: selectedBulkRule?.type || (bulkType === "add" ? "increase" : "decrease"),
+                action: bulkType,
+                points: finalPoints,
+                previousScore: currentScore,
+                nextScore: computedNextScore,
+                notes: bulkNotes || (bulkType === 'add' ? "บันทึกพฤติกรรมกลุ่มเชิงบวก" : "บันทึกพฤติกรรมกลุ่มเชิงลบ"),
+                createdBy: auth.currentUser?.email || auth.currentUser?.displayName || "ผู้ใช้ทั่วไป",
+                createdAt: serverTimestamp(),
+                academicYear: String(getCurrentThaiYear()),
+              });
+
+              transaction.set(studentDocRef, { behaviorScore: computedNextScore }, { merge: true });
+
+              return computedNextScore;
             });
+
+            return { studentId, nextScore };
           });
 
-          await Promise.all(promises);
+          const results = await Promise.all(promises);
 
           // Update local state
           setStudents(prev => prev.map(s => {
-            if (selectedStudentIds.includes(s.id)) {
-              const currentScore = s.behaviorScore ?? 100;
-              const nextScore = Math.max(0, currentScore + finalPoints);
-              return { ...s, behaviorScore: nextScore };
-            }
-            return s;
+            const result = results.find(r => r.studentId === s.id);
+            return result ? { ...s, behaviorScore: result.nextScore } : s;
           }));
 
           Swal.fire({

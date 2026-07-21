@@ -1,0 +1,244 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // NEW: อ่าน role ของผู้ใช้ที่ล็อกอินอยู่ จาก users/{uid} (role อาจเป็น string หรือ array)
+    function hasRole(role) {
+      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return userRole == role || (userRole is list && role in userRole);
+    }
+
+    // NEW
+    function isSuperAdmin() {
+      return isAuthenticated() && hasRole('super_admin');
+    }
+
+    // NEW
+    function isSchoolAdmin() {
+      return isAuthenticated() && hasRole('school_admin');
+    }
+
+    // 1. School Settings - Root Access
+    match /school-settings/{schoolId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+
+      // NEW: License/MA/สัญญา - อ่าน/เขียนได้เฉพาะ Owner (super_admin) เท่านั้น
+      match /summaries/license {
+        allow read, write: if isSuperAdmin();
+      }
+
+      match /students/{studentDocId} {
+        allow get: if true;
+        allow list: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+
+        match /{studentSubPath=**} {
+          allow read: if true;
+          allow write: if isAuthenticated();
+        }
+      }
+
+      match /main_calendar/{calendarId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      match /courses/{courseId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+
+        match /{courseSubPath=**} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      match /schedules/{scheduleId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      match /course_assignments/{assignmentId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      match /special-periods/{periodId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+
+      match /configs/{configId} {
+        allow get: if configId == "club_settings" || configId == "schedule_settings" || isAuthenticated();
+        allow list: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
+      match /clubs/{clubId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+
+        match /members/{studentDocId} {
+          allow get: if true;
+          allow list: if isAuthenticated();
+          allow write: if isAuthenticated();
+        }
+      }
+
+      match /club_requests/{requestId} {
+        allow create: if true;
+        allow get, list, update, delete: if isAuthenticated();
+      }
+
+      // FIX: recursive wildcard catch-all below only grants `get`, never `list`.
+      // Any collection queried via getDocs/onSnapshot(query)/collectionGroup needs
+      // its own explicit match here to support `list`.
+      match /activities/{activityId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /subject_groups/{groupId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /director_assignments/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /enrollments/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /learner-activities/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /manual_substitute_requests/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /news/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /notifications/{notificationId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /physical-rooms/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /special-period-attendance/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /special_programs/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /substitutions/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /leave_summary/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /desired-characteristics/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /reading-thinking-writing/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /screening_assessments/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /sdq-assessments/{docId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // FIX: teachers/{teacherId}/{attendance,leave_summary,travel_summary} are
+      // queried via getDocs(collection(...)) elsewhere in the app (ViewTeacherPage,
+      // HomePage, TeacherAttendanceSummaryPage, LeaveApprovalPage, etc.) — same
+      // list-vs-get issue as above, one level deeper under `teachers`.
+      match /teachers/{teacherId} {
+        match /attendance/{attendanceId} {
+          allow read, write: if isAuthenticated();
+        }
+        match /leave_summary/{leaveId} {
+          allow read, write: if isAuthenticated();
+        }
+        match /travel_summary/{travelId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // NEW: ยกเว้น summaries/license ออกจาก catch-all นี้ (ไม่งั้นจะ OR ทับ rule เฉพาะด้านบน)
+      match /{allSubcollections=**} {
+        allow read, write: if isAuthenticated()
+          && !(allSubcollections.size() >= 2 && allSubcollections[0] == 'summaries' && allSubcollections[1] == 'license');
+      }
+    }
+
+    // 2. Student Hashed Lookups
+    match /student-lookups/{hashedId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAuthenticated();
+    }
+
+    // 3. Teachers Collection Group
+    match /{path=**}/teachers/{teacherId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // 3.5 FIX: collectionGroup() queries (across all schools) need their own
+    // top-level match — the nested school-settings/{schoolId}/notifications
+    // rule above only covers single-school-scoped queries, not collectionGroup.
+    match /{path=**}/notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    match /{path=**}/leave_summary/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    // FIX: ClassroomAttendanceAuditPage and several other pages (AttendanceSummaryPage,
+    // HistoricalClassroomAttendancePage, GuidanceAttendancePage, SpecialPeriodAttendancePage,
+    // etc.) run collectionGroup(db, 'ClassroomAttendance') queries — same list-vs-collectionGroup
+    // gap as notifications/leave_summary above.
+    match /{path=**}/ClassroomAttendance/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // 4. Slugs
+    match /slugs/{slug} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // NEW: 4.5 Users - ป้องกัน privilege escalation
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId && request.resource.data.role == 'teacher')
+        || isSuperAdmin()
+        || isSchoolAdmin()
+      );
+
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+        || isSuperAdmin()
+        || isSchoolAdmin()
+      );
+
+      allow delete: if isSuperAdmin();
+
+      match /{userSubPath=**} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      }
+    }
+
+    // 5. Global fallback
+    // NEW: กัน users/** ออก เพราะข้อ 4.5 คุมเองแล้ว
+    match /{document=**} {
+      allow read, write: if isAuthenticated() && document[0] != 'users';
+    }
+  }
+}

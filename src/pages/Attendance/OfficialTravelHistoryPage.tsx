@@ -4,14 +4,17 @@ import { useParams, useNavigate } from "react-router-dom";
 import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import { firestore } from "@/firebase";
-import { collection, query, where, getDocs, orderBy, collectionGroup, doc, getDoc, limit } from "firebase/firestore";
-import { FaPlane, FaSearch, FaFilePdf, FaPlus } from "react-icons/fa";
+import { collection, query, where, getDocs, orderBy, doc, getDoc, limit } from "firebase/firestore";
+import { FaPlane, FaSearch, FaPlus, FaEdit } from "react-icons/fa";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import { useTheme } from "../../ThemeContext";
 import BackButton from "@/components/Shared/BackButton";
+import { usePermissions } from "@/hooks/usePermissions";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 
 interface TravelRequest {
     id: string;
+    docPath: string;
     startDate: string;
     endDate: string;
     subject: string;
@@ -27,6 +30,7 @@ const OfficialTravelHistoryPage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useSelector((state: RootState) => state.auth);
     const { isDarkMode } = useTheme();
+    const { isSchoolAdmin } = usePermissions();
 
     const [requests, setRequests] = useState<TravelRequest[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,11 +54,12 @@ const OfficialTravelHistoryPage: React.FC = () => {
         });
     };
 
-    const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
+    const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; personnelHeadRoleLabel: string; affiliation: string }>({
         schoolName: "",
         directorName: "",
         deputyName: "",
         personnelHeadName: "",
+        personnelHeadRoleLabel: "",
         affiliation: ""
     });
 
@@ -74,11 +79,13 @@ const OfficialTravelHistoryPage: React.FC = () => {
             // Set School Info
             if (schoolSnap.exists()) {
                 const sData = schoolSnap.data();
+                const personnelPersonnel = getGroupPersonnel(sData, 'personnel');
                 setSchoolInfo({
                     schoolName: sData.schoolName || "",
-                    directorName: sData.directorName || "",
+                    directorName: (sData.directorPrefix || "") + (sData.directorName || ""),
                     deputyName: (sData.deputyPrefix || "") + (sData.deputyName || ""),
-                    personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
+                    personnelHeadName: personnelPersonnel.name,
+                    personnelHeadRoleLabel: personnelPersonnel.label,
                     affiliation: sData.affiliation || ""
                 });
             }
@@ -100,7 +107,7 @@ const OfficialTravelHistoryPage: React.FC = () => {
                 // 🚀 Optimize query with order and limit
                 const q = query(reqRef, orderBy("createdAt", "desc"), limit(50));
                 const snapshot = await getDocs(q);
-                const fetchedRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TravelRequest));
+                const fetchedRequests = snapshot.docs.map(d => ({ id: d.id, docPath: d.ref.path, ...d.data() } as TravelRequest));
                 setRequests(fetchedRequests);
             }
 
@@ -207,14 +214,30 @@ const OfficialTravelHistoryPage: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                <OfficialTravelPdfButton
-                                                    data={req}
-                                                    schoolName={schoolInfo.schoolName}
-                                                    schoolAffiliation={schoolInfo.affiliation}
-                                                    directorName={schoolInfo.directorName}
-                                                    deputyName={schoolInfo.deputyName}
-                                                    personnelHeadName={schoolInfo.personnelHeadName}
-                                                />
+                                                <div className="flex items-center justify-end gap-2">
+                                                    {isSchoolAdmin && (
+                                                        <button
+                                                            onClick={() => {
+                                                                const userType = req.docPath.includes('/teachers/') ? 'teacher' : 'student';
+                                                                navigate(`/school/${schoolId}/official-travel-request?type=${userType}&editPath=${encodeURIComponent(req.docPath)}`);
+                                                            }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm font-medium"
+                                                            aria-label="แก้ไขคำขอไปราชการ"
+                                                        >
+                                                            <FaEdit aria-hidden="true" />
+                                                            แก้ไข
+                                                        </button>
+                                                    )}
+                                                    <OfficialTravelPdfButton
+                                                        data={req}
+                                                        schoolName={schoolInfo.schoolName}
+                                                        schoolAffiliation={schoolInfo.affiliation}
+                                                        directorName={schoolInfo.directorName}
+                                                        deputyName={schoolInfo.deputyName}
+                                                        personnelHeadName={schoolInfo.personnelHeadName}
+                                                        personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
+                                                    />
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}

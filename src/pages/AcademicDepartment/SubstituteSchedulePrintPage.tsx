@@ -25,6 +25,7 @@ import BackButton from "@/components/Shared/BackButton";
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from "@/firebase";
 import { RootState } from "@/store";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 
 try {
   Font.register({
@@ -49,7 +50,11 @@ interface SubstitutionRecord {
   classId?: string | string[] | null;
   subjectName?: string;
   subjectCode?: string;
+  dayPortion?: "full" | "morning" | "afternoon";
 }
+
+const portionSuffix = (dayPortion?: "full" | "morning" | "afternoon") =>
+  dayPortion === "morning" ? " (เช้า)" : dayPortion === "afternoon" ? " (บ่าย)" : "";
 
 interface TeacherGroup {
   teacherName: string;
@@ -190,8 +195,9 @@ const SubstituteSchedulePdf: React.FC<{
   groups: TeacherGroup[];
   signerName: string;
   academicHeadName: string;
+  academicHeadRoleLabel: string;
   logoUrl?: string;
-}> = ({ schoolName, dateLabel, groups, signerName, academicHeadName, logoUrl }) => (
+}> = ({ schoolName, dateLabel, groups, signerName, academicHeadName, academicHeadRoleLabel, logoUrl }) => (
   <PdfDocument>
     <Page size="A4" style={pdfStyles.page}>
       {/* Running header — fixed on every page */}
@@ -225,7 +231,7 @@ const SubstituteSchedulePdf: React.FC<{
           </View>
           {group.records.map((rec, ri) => (
             <View key={ri} style={pdfStyles.row} wrap={false}>
-              <Text style={[pdfStyles.cell, pdfStyles.cellPeriod]}>{rec.period ?? "-"}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.cellPeriod]}>{rec.period ?? "-"}{portionSuffix(rec.dayPortion)}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellCode]}>{rec.subjectCode || "-"}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellClass]}>{formatClassId(rec.classId)}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellTeacher]}>{rec.substituteTeacherName || "-"}</Text>
@@ -253,7 +259,7 @@ const SubstituteSchedulePdf: React.FC<{
               <View style={pdfStyles.signDotsCol}>
                 <View style={pdfStyles.signDotsLine} />
               </View>
-              <Text style={pdfStyles.signRole}>หัวหน้ากลุ่มบริหารวิชาการ</Text>
+              <Text style={pdfStyles.signRole}>{academicHeadRoleLabel}</Text>
             </View>
             <Text style={pdfStyles.signName}>{`(${academicHeadName || "........................................"})`}</Text>
           </View>
@@ -277,12 +283,41 @@ const SubstituteSchedulePrintPage: React.FC = () => {
   const [records, setRecords] = useState<SubstitutionRecord[]>([]);
   const [signerName, setSignerName] = useState("");
   const [academicHeadName, setAcademicHeadName] = useState("");
+  const [academicHeadRoleLabel, setAcademicHeadRoleLabel] = useState("หัวหน้ากลุ่มบริหารวิชาการ");
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!schoolId || !uid) return;
     loadSchoolAndSignerInfo();
   }, [schoolId, uid]);
+
+  useEffect(() => {
+    if (!logoUrl) {
+      setLogoBase64(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(logoUrl);
+        const blob = await response.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelled) setLogoBase64(dataUrl);
+      } catch (error) {
+        console.warn("Unable to load school logo for PDF", error);
+        if (!cancelled) setLogoBase64(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [logoUrl]);
 
   useEffect(() => {
     if (schoolId && selectedDate) loadRecords(selectedDate);
@@ -298,9 +333,9 @@ const SubstituteSchedulePrintPage: React.FC = () => {
       const data = schoolSnap.data();
       setSchoolName(String(data.schoolName || data.name || data.schoolThaiName || ""));
       if (data.logoUrl) setLogoUrl(String(data.logoUrl));
-      const headPrefix = String(data.academicHeadPrefix || "").trim();
-      const headName = String(data.academicHeadName || "").trim();
-      setAcademicHeadName([headPrefix, headName].filter(Boolean).join(""));
+      const academicPersonnel = getGroupPersonnel(data, 'academic', false, 'หัวหน้ากลุ่มบริหารวิชาการ');
+      setAcademicHeadName(academicPersonnel.name);
+      setAcademicHeadRoleLabel(academicPersonnel.label);
     }
 
     if (teacherSnap.exists()) {
@@ -308,7 +343,7 @@ const SubstituteSchedulePrintPage: React.FC = () => {
       const title = String(td.title || "").trim();
       const firstName = String(td.firstName || "").trim();
       const lastName = String(td.lastName || "").trim();
-      const composed = [title, firstName, lastName].filter(Boolean).join("");
+      const composed = `${title}${[firstName, lastName].filter(Boolean).join(" ")}`.trim();
       setSignerName(composed || String(currentUser?.fullName || "").trim());
     } else {
       setSignerName(String(currentUser?.fullName || "").trim());
@@ -363,7 +398,8 @@ const SubstituteSchedulePrintPage: React.FC = () => {
           groups={groups}
           signerName={signerName}
           academicHeadName={academicHeadName}
-          logoUrl={logoUrl}
+          academicHeadRoleLabel={academicHeadRoleLabel}
+          logoUrl={logoBase64}
         />
       ).toBlob();
       saveAs(blob, `ตารางสอนแทน_${sanitizeFileName(selectedDate)}.pdf`);
@@ -505,9 +541,16 @@ const SubstituteSchedulePrintPage: React.FC = () => {
                             className={`border-b border-gray-50 dark:border-white/[0.03] hover:bg-teal-50/30 dark:hover:bg-teal-500/5 transition-colors ${ri % 2 === 1 ? "bg-gray-50/40 dark:bg-white/[0.01]" : ""}`}
                           >
                             <td className="px-4 py-2.5 text-center">
-                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
-                                {rec.period ?? "-"}
-                              </span>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                                  {rec.period ?? "-"}
+                                </span>
+                                {rec.dayPortion && rec.dayPortion !== "full" && (
+                                  <span className="text-[10px] font-black text-sky-600 dark:text-sky-400">
+                                    {rec.dayPortion === "morning" ? "🌅" : "🌇"}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-2.5 text-center font-mono text-xs text-gray-500 dark:text-gray-400">{rec.subjectCode || "-"}</td>
                             <td className="px-4 py-2.5 text-center text-gray-700 dark:text-gray-300">{formatClassId(rec.classId)}</td>

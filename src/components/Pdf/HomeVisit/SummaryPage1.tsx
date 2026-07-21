@@ -34,6 +34,7 @@ interface SummaryPage1Props {
             game: number;
             others: number;
         };
+        riskTotal: number;
         economicRisk: number;
         otherRisk: number;
         otherRiskDetail: string;
@@ -81,8 +82,6 @@ const SummaryPage1: React.FC<SummaryPage1Props> = ({
     ]);
 
     const rowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, marginBottom: 7 };
-
-    const behaviorTotal = Object.values(stats?.behaviorRisk || {}).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0);
 
     return (
         <Page style={styles.page}>
@@ -157,7 +156,7 @@ const SummaryPage1: React.FC<SummaryPage1Props> = ({
                 { label: '9. พบว่านักเรียนมิได้อาศัยอยู่กับบิดาหรือมารดาของตนเอง', value: stats?.notLivingWithParents },
                 { label: '10. พบว่านักเรียนเสี่ยงหรือมีปัญหาด้านการเรียน', value: stats?.learningRisk },
                 { label: '11. พบว่านักเรียนมีปัญหาด้านสุขภาพ', value: stats?.healthRisk },
-                { label: '12. พบว่านักเรียนมีพฤติกรรมเสี่ยง', value: behaviorTotal },
+                { label: '12. พบว่านักเรียนมีพฤติกรรมเสี่ยง', value: stats?.riskTotal },
             ].map((item, idx) => (
                 <View key={idx} style={rowStyle}>
                     <Text style={[styles.text, { width: 330 }]}>{item.label}</Text>

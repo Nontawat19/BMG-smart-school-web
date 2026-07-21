@@ -330,6 +330,7 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                                         (periodSetting?.id === 'lunch' || periodSetting?.label?.includes('พัก') ? 'พักเที่ยง' : ''));
 
                                      const ignoredInstanceIds: string[] = [];
+                                     const ignoredSlots: string[] = [];
                                      if (activeDragItem) {
                                          ignoredInstanceIds.push(activeDragItem.instanceId);
                                          let originalSlot: string | null = null;
@@ -340,39 +341,49 @@ export const TimetableGrid: React.FC<TimetableGridProps> = ({
                                              }
                                          }
                                          if (originalSlot) {
+                                             ignoredSlots.push(originalSlot);
                                              const [origDay, origPeriodStr] = originalSlot.split('-');
                                              const origPeriod = parseInt(origPeriodStr);
                                              const partnerIdx = getPartnerIndexForPeriods(origPeriod, periodSettings);
                                              if (partnerIdx !== -1) {
                                                  const partnerSlot = `${origDay}-${partnerIdx}`;
                                                  const partnerCourses = schedule[partnerSlot] || [];
-                                                 const partnerItem = partnerCourses.find(c => 
-                                                     c.compositeId === activeDragItem.compositeId && 
+                                                 const partnerItem = partnerCourses.find(c =>
+                                                     c.compositeId === activeDragItem.compositeId &&
                                                      c.instanceId !== activeDragItem.instanceId
                                                  );
                                                  if (partnerItem) {
                                                      ignoredInstanceIds.push(partnerItem.instanceId);
+                                                     ignoredSlots.push(partnerSlot);
                                                  }
                                              }
                                          }
                                      }
 
-                                     const constraintResult = activeDragItem 
+                                     const constraintResult = activeDragItem
                                          ? checkConstraints(
-                                             activeDragItem, 
-                                             rawSlotId, 
-                                             teachers.find(t => t.id === activeDragItem.teacherId || (t.teacherId && t.teacherId === activeDragItem.teacherId)), 
-                                             periodSettings, 
-                                             specialPeriods, 
-                                             assignmentConstraints, 
+                                             activeDragItem,
+                                             rawSlotId,
+                                             teachers.find(t => t.id === activeDragItem.teacherId || (t.teacherId && t.teacherId === activeDragItem.teacherId)),
+                                             periodSettings,
+                                             specialPeriods,
+                                             assignmentConstraints,
                                              activeDragItem.teacherId === selectedTeacher ? dynamicUnavailableSlots : (teachers.find(t => t.id === activeDragItem.teacherId)?.preferences?.unavailableSlots || []),
                                              schoolMasterSchedule,
                                              1,
-                                             ignoredInstanceIds
-                                         ) 
+                                             ignoredInstanceIds,
+                                             false,
+                                             ignoredSlots
+                                         )
                                          : { forbidden: false, message: '' };
                                      const isLockedUnavailable = type === 'teacher' && dynamicUnavailableSlots.includes(rawSlotId);
-                                     const forbidden = constraintResult.forbidden || isLockedUnavailable;
+                                     // A conflict where the slot already has an occupant can potentially be
+                                     // resolved by displacing that occupant (see useDragAndDrop's global
+                                     // conflict resolution) — only show the hard "forbidden" cue when there's
+                                     // nothing to displace, so the hover state matches actual drop behavior.
+                                     const hasOccupancyAtSlot = (schoolMasterSchedule[rawSlotId] || []).length > 0;
+                                     const isHardForbidden = constraintResult.forbidden && !hasOccupancyAtSlot;
+                                     const forbidden = isHardForbidden || isLockedUnavailable;
                                      const message = isLockedUnavailable
                                          ? 'คาบว่างนี้ถูกล็อคไว้'
                                          : constraintResult.message;

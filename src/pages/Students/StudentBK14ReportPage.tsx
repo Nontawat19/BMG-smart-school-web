@@ -21,6 +21,10 @@ Font.register({
   ],
 });
 
+// ป้องกัน @react-pdf/renderer แทรกเครื่องหมาย "-" ตอนตัดบรรทัด (ตัดคำได้เฉพาะที่ช่องว่างจริง 1 ตัวเป๊ะ ๆ
+// ถ้าไม่ใช่ช่องว่างจริง หรือช่องว่างซ้ำกันมากกว่า 1 ตัว จะแทรก "-" ให้เสมอ)
+Font.registerHyphenationCallback((word) => [word]);
+
 interface CalendarEvent {
   type?: string;
   description?: string;
@@ -148,14 +152,14 @@ const noticeStyles = StyleSheet.create({
   formBlock: { width: "100%" },
   subjectBlock: { marginBottom: 6 },
   subjectText: { fontSize: 15, marginBottom: 3 },
-  textParagraph: { fontSize: 15, lineHeight: 1.25, textAlign: "justify", marginBottom: 8 },
+  textParagraph: { fontSize: 15, lineHeight: 1.25, textAlign: "justify", marginBottom: 8, textIndent: 32 },
   signBlockRow: { flexDirection: "row", justifyContent: "flex-end", paddingRight: 40, marginTop: 8, marginBottom: 10 },
   signBlock: { width: 240, alignItems: "center" },
   signText: { fontSize: 15, lineHeight: 1.25, textAlign: "center" },
   dividerBlock: { marginVertical: 10, alignItems: "center" },
   dividerLine: { width: "100%", borderBottomWidth: 0.75, borderBottomColor: "#000", borderStyle: "dashed" },
   receiptHeader: { fontSize: 14.5, fontWeight: "bold", marginBottom: 4 },
-  receiptTextParagraph: { fontSize: 14.5, lineHeight: 1.2, textAlign: "justify", marginBottom: 8 },
+  receiptTextParagraph: { fontSize: 14.5, lineHeight: 1.2, textAlign: "justify", marginBottom: 8, textIndent: 32 },
   receiptSignBlockRow: { flexDirection: "row", justifyContent: "flex-end", marginRight: 10, marginTop: 6 },
   receiptSignBlock: { width: 240, alignItems: "center" },
   receiptSignText: { fontSize: 14.5, lineHeight: 1.25, textAlign: "center" },
@@ -421,32 +425,32 @@ const Bk14NoticePdfDocument: React.FC<{
 
         <View style={noticeStyles.dateRow}>
           <Text style={noticeStyles.dateText}>
-            วันที่  {currentDay}  เดือน  {currentThaiMonth}  พ.ศ.  {currentThaiYear}
+            วันที่ {currentDay} เดือน {currentThaiMonth} พ.ศ. {currentThaiYear}
           </Text>
         </View>
 
         <View style={noticeStyles.formBlock}>
           <View style={noticeStyles.subjectBlock}>
-            <Text style={noticeStyles.subjectText}>เรื่อง   นักเรียนขาดเรียน ครั้งที่ ............</Text>
+            <Text style={noticeStyles.subjectText}>เรื่อง นักเรียนขาดเรียน ครั้งที่ ............</Text>
             <Text style={noticeStyles.subjectText}>
-              เรียน   ผู้ปกครอง(ด.ช./ด.ญ./นาย/นางสาว){" "}
+              เรียน ผู้ปกครอง(ด.ช./ด.ญ./นาย/นางสาว){" "}
               <Text style={{ fontWeight: "bold" }}>{row.parentName || "..........................................................................."}</Text>
             </Text>
           </View>
 
           <Text style={noticeStyles.textParagraph}>
-            {"          "}ด้วย(ด.ช./ด.ญ./นาย/นางสาว){" "}
-            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{"  "}นักเรียน ชั้น ม.{"  "}
-            <Text style={{ fontWeight: "bold" }}>{classText}</Text>{"  "}ปีการศึกษา{"  "}
-            <Text style={{ fontWeight: "bold" }}>{thaiYear}</Text>{"  "}เลขประจำตัว{"  "}
+            ด้วย(ด.ช./ด.ญ./นาย/นางสาว){" "}
+            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{" "}นักเรียน ชั้น ม.{" "}
+            <Text style={{ fontWeight: "bold" }}>{classText}</Text>{" "}ปีการศึกษา{" "}
+            <Text style={{ fontWeight: "bold" }}>{thaiYear}</Text>{" "}เลขประจำตัว{" "}
             <Text style={{ fontWeight: "bold" }}>{row.studentId}</Text>
-            {"  "}ซึ่งอยู่ในความปกครองของท่านหยุดเรียนมาแล้วในเดือนนี้ รวม{"  "}
+            {" "}ซึ่งอยู่ในความปกครองของท่านหยุดเรียนมาแล้วในเดือนนี้ รวม{" "}
             <Text style={{ fontWeight: "bold" }}>{row.absentCount}</Text>
-            {"  "}วัน (เกิน 5 วัน ติดต่อกัน และเกินกว่า 7 วัน ในรอบ 1 เดือน) โดยไม่ได้รับอนุญาตและไม่แจ้งเหตุให้โรงเรียนทราบ ซึ่งก่อให้เกิดผลเสียต่อการเรียนของนักเรียนเป็นอย่างยิ่ง โรงเรียนจึงขอเตือนให้ท่านส่งนักเรียนไปเข้าเรียนตามปกติโดยด่วน หากฝ่าฝืนโดยปราศจากเหตุผลอันสมควรจะมีความผิดตามมาตรา 15 แห่งพระราชบัญญัติการศึกษา ภาคบังคับ พ.ศ. 2545 ต้องระวางโทษปรับไม่เกิน 10,000 บาท (หนึ่งหมื่นบาทถ้วน)
+            {" "}วัน (เกิน 5 วัน ติดต่อกัน และเกินกว่า 7 วัน ในรอบ 1 เดือน) โดยไม่ได้รับอนุญาตและไม่แจ้งเหตุให้โรงเรียนทราบ ซึ่งก่อให้เกิดผลเสียต่อการเรียนของนักเรียนเป็นอย่างยิ่ง โรงเรียนจึงขอเตือนให้ท่านส่งนักเรียนไปเข้าเรียนตามปกติโดยด่วน หากฝ่าฝืนโดยปราศจากเหตุผลอันสมควรจะมีความผิดตามมาตรา 15 แห่งพระราชบัญญัติการศึกษา ภาคบังคับ พ.ศ. 2545 ต้องระวางโทษปรับไม่เกิน 10,000 บาท (หนึ่งหมื่นบาทถ้วน)
           </Text>
 
           <Text style={noticeStyles.textParagraph}>
-            {"          "}จึงเรียนมาเพื่อทราบและดำเนินการต่อไป
+            จึงเรียนมาเพื่อทราบและดำเนินการต่อไป
           </Text>
 
           <View style={noticeStyles.signBlockRow}>
@@ -461,15 +465,15 @@ const Bk14NoticePdfDocument: React.FC<{
             <View style={noticeStyles.dividerLine} />
           </View>
 
-          <Text style={noticeStyles.receiptHeader}>เรียน   ผู้อำนวยการ{schoolName}</Text>
+          <Text style={noticeStyles.receiptHeader}>เรียน ผู้อำนวยการ{schoolName}</Text>
 
           <Text style={noticeStyles.receiptTextParagraph}>
-            {"          "}ข้าพเจ้า{"  "}
+            ข้าพเจ้า{" "}
             <Text style={{ fontWeight: "bold" }}>{row.parentName || "............................................................"}</Text>
-            {"  "}ผู้ปกครองของ{"  "}
-            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{"  "}ชั้น ม.{"  "}
+            {" "}ผู้ปกครองของ{" "}
+            <Text style={{ fontWeight: "bold" }}>{row.fullName}</Text>{" "}ชั้น ม.{" "}
             <Text style={{ fontWeight: "bold" }}>{classText}</Text>
-            {"  "}ได้รับทราบว่านักเรียนขาดเรียน ครั้งที่ ............ ซึ่งนักเรียนอาจไม่จบหลักสูตร ข้าพเจ้าขอตอบรับการนัดหมายการติดต่อครูที่ปรึกษา ภายในวันที่ ....... เดือน ............................ พ.ศ. ................. เวลา ................. น.
+            {" "}ได้รับทราบว่านักเรียนขาดเรียน ครั้งที่ ............ ซึ่งนักเรียนอาจไม่จบหลักสูตร ข้าพเจ้าขอตอบรับการนัดหมายการติดต่อครูที่ปรึกษา ภายในวันที่ ....... เดือน ............................ พ.ศ. ................. เวลา ................. น.
           </Text>
 
           <View style={noticeStyles.receiptSignBlockRow}>

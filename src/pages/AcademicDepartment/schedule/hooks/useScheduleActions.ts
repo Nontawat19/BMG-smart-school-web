@@ -70,7 +70,7 @@ const getFirebaseErrorMessage = (error: unknown): string => {
     const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
     if (msg.includes('permission') || msg.includes('unauthorized')) return 'ไม่มีสิทธิ์เข้าถึงข้อมูล กรุณาตรวจสอบการเข้าสู่ระบบ';
     if (msg.includes('network') || msg.includes('unavailable')) return 'เกิดปัญหาการเชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อ';
-    if (msg.includes('quota')) return 'เกินโควต้าการใช้งาน กรุณาลองใหม่ภายหลัง';
+    if (msg.includes('quota')) return 'พื้นที่จัดเก็บข้อมูลของเบราว์เซอร์เต็ม กรุณาลบข้อมูลเว็บไซต์บางส่วน (Clear browsing data) หรือเพิ่มพื้นที่ว่างของเครื่อง แล้วลองใหม่';
     return error instanceof Error ? error.message : 'ข้อผิดพลาดที่ไม่รู้จัก';
 };
 

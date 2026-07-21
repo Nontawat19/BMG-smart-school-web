@@ -285,6 +285,7 @@ const LoginPage: React.FC = () => {
         return;
       }
 
+      try { await signInAnonymously(auth); } catch (_) {}
       localStorage.setItem('currentUserType', 'parent');
       localStorage.setItem('parentSession', JSON.stringify({ children: foundChildren }));
 

@@ -1,14 +1,27 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock, RefreshCw, Search } from "lucide-react";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { saveAs } from "file-saver";
+import Swal from "sweetalert2";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock, FileDown, RefreshCw, Search } from "lucide-react";
 import { firestore } from "@/firebase";
-import { RootState } from "@/store";
+import { RootState, AppDispatch } from "@/store";
+import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { isActiveStudentStatus } from "@/utils/studentStatusUtils";
-import { CLASSES, getLevelsByRange } from "@/utils/schoolUtils";
+import { CLASSES, getLevelsByRange, dedupeSchoolWord } from "@/utils/schoolUtils";
+
+Font.register({
+  family: "TH Sarabun PSK",
+  fonts: [
+    { src: "/fonts/THSarabunNew.ttf" },
+    { src: "/fonts/THSarabunNew-Bold.ttf", fontWeight: "bold" },
+  ],
+});
+Font.registerHyphenationCallback((word) => [word]);
 
 interface StudentRow {
   id: string;
@@ -94,8 +107,217 @@ const getScanType = (attendance: any, hasAttendance: boolean) => {
   return "-";
 };
 
+const formatThaiDateFull = (isoDate: string) => {
+  if (!isoDate) return "";
+  const date = new Date(`${isoDate}T12:00:00`);
+  return date.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+};
+
+const pdfStyles = StyleSheet.create({
+  page: {
+    paddingTop: 30,
+    paddingHorizontal: 30,
+    paddingBottom: 30,
+    fontFamily: "TH Sarabun PSK",
+    fontSize: 11.5,
+    color: "#000",
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderBottomWidth: 0.8,
+    borderBottomColor: "#5f5f5f",
+    paddingBottom: 2,
+    marginBottom: 10,
+  },
+  topText: { fontSize: 11, fontWeight: "bold" },
+  header: {
+    position: "relative",
+    minHeight: 54,
+    marginBottom: 10,
+    justifyContent: "center",
+  },
+  logoBox: {
+    position: "absolute",
+    left: 0,
+    top: -4,
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logo: { width: 46, height: 46, objectFit: "contain" },
+  titleBlock: { alignItems: "center", paddingLeft: 55, paddingRight: 55, lineHeight: 1.25 },
+  reportTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 3, textAlign: "center" },
+  reportSubtitle: { fontSize: 13.5, marginBottom: 1, textAlign: "center" },
+  table: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: "#000",
+  },
+  row: { flexDirection: "row", minHeight: 16 },
+  headerRow: { backgroundColor: "#e5e5e5", minHeight: 18 },
+  cell: {
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#000",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+  },
+  centerCell: { alignItems: "center", textAlign: "center" },
+  leftCell: { alignItems: "flex-start", textAlign: "left" },
+  headerText: { fontSize: 10.5, fontWeight: "bold", textAlign: "center" },
+  bodyText: { fontSize: 10.5 },
+  pageNumber: { position: "absolute", bottom: 16, right: 30, fontSize: 9 },
+});
+
+const PDF_COL_WIDTHS = {
+  idx: "4%",
+  studentId: "10%",
+  name: "15%",
+  classText: "8%",
+  checkIn: "8%",
+  checkOut: "8%",
+  category: "10%",
+  note: "27%",
+  type: "10%",
+};
+
+const PDF_ROWS_PER_PAGE = 20;
+const PDF_NOTE_MAX_LENGTH = 90;
+
+const truncateNote = (note: string) =>
+  note.length > PDF_NOTE_MAX_LENGTH ? `${note.slice(0, PDF_NOTE_MAX_LENGTH)}…` : note;
+
+const CLASS_LEVEL_FULL_LABELS: Record<string, string> = {
+  "อ.1": "ชั้นอนุบาลปีที่ 1",
+  "อ.2": "ชั้นอนุบาลปีที่ 2",
+  "อ.3": "ชั้นอนุบาลปีที่ 3",
+  "ป.1": "ชั้นประถมศึกษาปีที่ 1",
+  "ป.2": "ชั้นประถมศึกษาปีที่ 2",
+  "ป.3": "ชั้นประถมศึกษาปีที่ 3",
+  "ป.4": "ชั้นประถมศึกษาปีที่ 4",
+  "ป.5": "ชั้นประถมศึกษาปีที่ 5",
+  "ป.6": "ชั้นประถมศึกษาปีที่ 6",
+  "ม.1": "ชั้นมัธยมศึกษาปีที่ 1",
+  "ม.2": "ชั้นมัธยมศึกษาปีที่ 2",
+  "ม.3": "ชั้นมัธยมศึกษาปีที่ 3",
+  "ม.4": "ชั้นมัธยมศึกษาปีที่ 4",
+  "ม.5": "ชั้นมัธยมศึกษาปีที่ 5",
+  "ม.6": "ชั้นมัธยมศึกษาปีที่ 6",
+};
+
+const getFullClassLevelLabel = (classLevel: string) => CLASS_LEVEL_FULL_LABELS[classLevel] || `ชั้น${classLevel}`;
+
+interface AttendancePdfPage {
+  classLevel: string;
+  chunk: StudentRow[];
+  isGroupStart: boolean;
+}
+
+const buildAttendancePdfPages = (rows: StudentRow[]): AttendancePdfPage[] => {
+  const groups: { classLevel: string; items: StudentRow[] }[] = [];
+  rows.forEach((row) => {
+    const classLevel = row.classText.split("/")[0] || "-";
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.classLevel === classLevel) {
+      lastGroup.items.push(row);
+    } else {
+      groups.push({ classLevel, items: [row] });
+    }
+  });
+
+  const pages: AttendancePdfPage[] = [];
+  groups.forEach((group) => {
+    for (let i = 0; i < group.items.length; i += PDF_ROWS_PER_PAGE) {
+      pages.push({
+        classLevel: group.classLevel,
+        chunk: group.items.slice(i, i + PDF_ROWS_PER_PAGE),
+        isGroupStart: i === 0,
+      });
+    }
+  });
+  if (pages.length === 0) pages.push({ classLevel: "-", chunk: [], isGroupStart: true });
+  return pages;
+};
+
+interface AttendancePdfProps {
+  rows: StudentRow[];
+  schoolName: string;
+  logoBase64?: string;
+  dateStr: string;
+  filterLabel: string;
+}
+
+const StudentAttendanceDatePdfDocument: React.FC<AttendancePdfProps> = ({ rows, schoolName, logoBase64, dateStr, filterLabel }) => {
+  const displaySchoolName = dedupeSchoolWord(`โรงเรียน${schoolName}`);
+  const pages = buildAttendancePdfPages(rows);
+
+  return (
+    <Document>
+      {pages.map((pageData, pageIndex) => (
+        <Page key={pageIndex} size="A4" orientation="landscape" style={pdfStyles.page}>
+          <View style={pdfStyles.topBar} fixed>
+            <Text style={pdfStyles.topText}>{displaySchoolName}</Text>
+            <Text style={pdfStyles.topText}>รายงานการลงเวลานักเรียน - {getFullClassLevelLabel(pageData.classLevel)}</Text>
+          </View>
+
+          {pageData.isGroupStart && (
+            <View style={pdfStyles.header}>
+              {logoBase64 && (
+                <View style={pdfStyles.logoBox}>
+                  <Image src={logoBase64} style={pdfStyles.logo} />
+                </View>
+              )}
+              <View style={pdfStyles.titleBlock}>
+                <Text style={pdfStyles.reportTitle}>รายงานการลงเวลานักเรียน</Text>
+                <Text style={pdfStyles.reportSubtitle}>{displaySchoolName} {getFullClassLevelLabel(pageData.classLevel)}</Text>
+                <Text style={pdfStyles.reportSubtitle}>ประจำวันที่ {formatThaiDateFull(dateStr)}{filterLabel ? ` (${filterLabel})` : ""}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={pdfStyles.table}>
+            <View style={[pdfStyles.row, pdfStyles.headerRow]} fixed>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.idx }]}><Text style={pdfStyles.headerText}>เลขที่</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.studentId }]}><Text style={pdfStyles.headerText}>รหัสนักเรียน</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.name }]}><Text style={pdfStyles.headerText}>ชื่อ-นามสกุล</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.classText }]}><Text style={pdfStyles.headerText}>ชั้น/ห้อง</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkIn }]}><Text style={pdfStyles.headerText}>เวลาเข้า</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkOut }]}><Text style={pdfStyles.headerText}>เวลาออก</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.category }]}><Text style={pdfStyles.headerText}>ประเภท</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.note }]}><Text style={pdfStyles.headerText}>หมายเหตุ</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.headerText}>ประเภทการสแกน</Text></View>
+            </View>
+
+            {pageData.chunk.map((row) => (
+              <View key={row.id} style={pdfStyles.row}>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.idx }]}><Text style={pdfStyles.bodyText}>{row.studentNumber}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.studentId }]}><Text style={pdfStyles.bodyText}>{row.studentId}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.name }]}><Text style={pdfStyles.bodyText}>{row.fullName}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.classText }]}><Text style={pdfStyles.bodyText}>{row.classText}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkIn }]}><Text style={pdfStyles.bodyText}>{row.checkInTime}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkOut }]}><Text style={pdfStyles.bodyText}>{row.checkOutTime}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.category }]}><Text style={pdfStyles.bodyText}>{row.category}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.note }]}><Text style={pdfStyles.bodyText}>{truncateNote(row.note)}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.bodyText}>{row.type}</Text></View>
+              </View>
+            ))}
+          </View>
+
+          <Text style={pdfStyles.pageNumber} render={({ pageNumber, totalPages }) => `หน้า ${pageNumber} / ${totalPages}`} fixed />
+        </Page>
+      ))}
+    </Document>
+  );
+};
+
 const StudentAttendanceDateSelectionPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
+  const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
+  const dispatch = useDispatch<AppDispatch>();
   const schoolId = currentUser?.schoolId;
   const [selectedDate, setSelectedDate] = useState(getTodayString());
   const [schoolName, setSchoolName] = useState("-");
@@ -104,12 +326,34 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [selectedClassLevel, setSelectedClassLevel] = useState("");
   const [selectedRoom, setSelectedRoom] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
+
+  useEffect(() => {
+    if (schoolId) dispatch(fetchSchoolSettings(schoolId));
+  }, [schoolId, dispatch]);
+
+  useEffect(() => {
+    if (!schoolSettings?.logoUrl) return;
+    const convert = async () => {
+      try {
+        const response = await fetch(schoolSettings.logoUrl);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => setLogoBase64(reader.result as string);
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.error("Error converting logo:", error);
+      }
+    };
+    convert();
+  }, [schoolSettings?.logoUrl]);
 
   useEffect(() => {
     if (!schoolId) return;
@@ -309,6 +553,37 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
     });
   };
 
+  const exportPdf = async () => {
+    if (filteredRows.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลการลงเวลาตามเงื่อนไขที่เลือก", "info");
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const filterLabelParts = [
+        selectedClassLevel || "",
+        selectedClassLevel && selectedRoom ? `/${selectedRoom}` : selectedRoom ? `ห้อง ${selectedRoom}` : "",
+      ].filter(Boolean);
+      const filterLabel = filterLabelParts.join("");
+
+      const blob = await pdf(
+        <StudentAttendanceDatePdfDocument
+          rows={filteredRows}
+          schoolName={schoolName !== "-" ? schoolName : schoolSettings?.schoolName || ""}
+          logoBase64={logoBase64}
+          dateStr={selectedDate}
+          filterLabel={filterLabel}
+        />
+      ).toBlob();
+      saveAs(blob, `รายงานการลงเวลานักเรียน_${selectedDate}.pdf`);
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      Swal.fire("เกิดข้อผิดพลาด", "ไม่สามารถสร้างไฟล์ PDF ได้", "error");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-[#1e1f21] dark:text-white sm:px-6 lg:px-8">
@@ -329,9 +604,20 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:text-slate-300 dark:ring-slate-700">
-              <CalendarDays size={16} className="text-indigo-500" />
-              จำนวนทั้งหมด : {filteredRows.length}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:text-slate-300 dark:ring-slate-700">
+                <CalendarDays size={16} className="text-indigo-500" />
+                จำนวนทั้งหมด : {filteredRows.length}
+              </div>
+              <button
+                type="button"
+                onClick={exportPdf}
+                disabled={loading || exportingPdf || filteredRows.length === 0}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FileDown size={16} className={exportingPdf ? "animate-pulse" : ""} />
+                {exportingPdf ? "กำลังสร้างไฟล์..." : "ดาวน์โหลด PDF"}
+              </button>
             </div>
           </div>
 

@@ -216,6 +216,7 @@ export interface HomeVisitSummaryStats {
         game: number;
         others: number;
     };
+    riskTotal: number;
     economicRisk: number;
     otherRisk: number;
     otherRiskDetail: string;

@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
-import { BarChart3, Users, FileText, TrendingUp, ChevronLeft, ArrowRight, MapPin } from "lucide-react";
+import { BarChart3, Users, FileText, TrendingUp, ChevronLeft, ArrowRight, MapPin, Layers, User } from "lucide-react";
 import { motion } from "framer-motion";
 
 const menus = [
@@ -21,6 +21,20 @@ const menus = [
     },
     {
         num: "02",
+        title: "รายงานรายคน",
+        description: "ค้นหา/กรองนักเรียนรายบุคคล ดูสถานะการเยี่ยม และพิมพ์แบบฟอร์มรายคนได้ทันที",
+        icon: User,
+        gradient: "from-cyan-500 to-sky-600",
+        lightGradient: "from-cyan-50 to-sky-50",
+        darkGradient: "from-cyan-950/40 to-sky-950/30",
+        accent: "bg-cyan-500",
+        textColor: "text-cyan-600 dark:text-cyan-400",
+        badgeColor: "bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300",
+        badgeText: "รายคน",
+        route: "/student-support/home-visit/summary/individual",
+    },
+    {
+        num: "03",
         title: "สรุปทั้งหมดทุกห้อง",
         description: "ภาพรวมการเยี่ยมบ้านของทุกห้องเรียนในโรงเรียน เปรียบเทียบสถิติระหว่างห้อง",
         icon: Users,
@@ -34,7 +48,21 @@ const menus = [
         route: "/student-support/home-visit/summary/all",
     },
     {
-        num: "03",
+        num: "04",
+        title: "สรุปแบบช่วงชั้น",
+        description: "รวมสถิติการเยี่ยมบ้านตามช่วงชั้น เช่น ประถมต้น ประถมปลาย มัธยมต้น มัธยมปลาย",
+        icon: Layers,
+        gradient: "from-orange-500 to-amber-600",
+        lightGradient: "from-orange-50 to-amber-50",
+        darkGradient: "from-orange-950/40 to-amber-950/30",
+        accent: "bg-orange-500",
+        textColor: "text-orange-600 dark:text-orange-400",
+        badgeColor: "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300",
+        badgeText: "ช่วงชั้น",
+        route: "/student-support/home-visit/summary/level-range",
+    },
+    {
+        num: "05",
         title: "สรุป สพฐ.",
         description: "รายงานสรุปตามแบบฟอร์มมาตรฐาน สพฐ. พร้อมส่งออกเป็น PDF ได้ทันที",
         icon: FileText,
@@ -48,7 +76,7 @@ const menus = [
         route: "/student-support/home-visit/summary/obec",
     },
     {
-        num: "04",
+        num: "06",
         title: "ติดตามการเยี่ยมบ้าน",
         description: "แสดงความคืบหน้าเป็นเปอร์เซ็นต์และกราฟแท่ง แยกรายห้องและภาพรวมทั้งโรงเรียน",
         icon: TrendingUp,

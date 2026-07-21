@@ -40,41 +40,6 @@ interface BehaviorScoreConfig {
   classroomAttendanceRules?: ClassroomAttendanceScoreRule[];
 }
 
-const DEFAULT_ATTENDANCE_RULES: AttendanceScoreRule[] = [
-  { statusKey: "late", points: 5, isActive: true },
-  { statusKey: "absent", points: 10, isActive: true },
-  { statusKey: "early", points: 5, isActive: true },
-  { statusKey: "noCheckout", points: 3, isActive: true },
-];
-
-const DEFAULT_FLAG_CEREMONY_RULES: FlagCeremonyScoreRule[] = [
-  { statusKey: "normal", points: 0, isActive: false },
-  { statusKey: "sickLeave", points: 0, isActive: false },
-  { statusKey: "personalLeave", points: 0, isActive: false },
-  { statusKey: "cancelFlag", points: 0, isActive: false },
-  { statusKey: "noScanPresentNoDeduct", points: 0, isActive: false },
-  { statusKey: "noScanPresentDeduct", points: 5, isActive: true },
-  { statusKey: "scannedAbsentDeduct", points: 5, isActive: true },
-  { statusKey: "cancelFlagKeepGate", points: 0, isActive: false },
-];
-
-const DEFAULT_CLASSROOM_ATTENDANCE_RULES: ClassroomAttendanceScoreRule[] = [
-  { statusKey: "present", points: 0, isActive: false },
-  { statusKey: "late", points: 2, isActive: true },
-  { statusKey: "absent", points: 5, isActive: true },
-  { statusKey: "escape", points: 10, isActive: true },
-  { statusKey: "leave", points: 0, isActive: false },
-];
-
-interface ApplyBehaviorScoreParams {
-  batch: WriteBatch;
-  studentRef: DocumentReference;
-  currentScore?: number | null;
-  oldStatus?: string | null;
-  newStatus?: string | null;
-  config?: BehaviorScoreConfig | null;
-}
-
 interface BehaviorScoreCalculationParams {
   currentScore?: number | null;
   oldStatus?: string | null;
@@ -127,13 +92,15 @@ export const getBehaviorClassroomAttendanceStatusKey = (status?: string | null):
   return validKeys.includes(normalized as any) ? (normalized as ClassroomAttendanceStatusKey) : null;
 };
 
+// Deduction points come ONLY from what the school explicitly saved on
+// /academic/behavior-score-config. If a rule was never saved there (or the
+// school never saved the config at all), no points are deducted — there is
+// no hardcoded fallback amount.
 export const getRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null, type?: "attendance" | "flag" | "classroom") => {
   if (type === "classroom" || (status && String(status).startsWith("class:"))) {
     const classStatusKey = getBehaviorClassroomAttendanceStatusKey(status);
     if (classStatusKey) {
-      const rules = Array.isArray(config?.classroomAttendanceRules) && config.classroomAttendanceRules.length > 0
-        ? config.classroomAttendanceRules
-        : DEFAULT_CLASSROOM_ATTENDANCE_RULES;
+      const rules = Array.isArray(config?.classroomAttendanceRules) ? config.classroomAttendanceRules : [];
       const rule = rules.find(item => item.statusKey === classStatusKey);
       if (!rule || rule.isActive === false) return 0;
       return Math.max(0, Number(rule.points) || 0);
@@ -142,9 +109,7 @@ export const getRulePoints = (config: BehaviorScoreConfig | null | undefined, st
   }
   const flagStatusKey = getBehaviorFlagCeremonyStatusKey(status);
   if (flagStatusKey) {
-    const rules = Array.isArray(config?.flagCeremonyRules) && config.flagCeremonyRules.length > 0
-      ? config.flagCeremonyRules
-      : DEFAULT_FLAG_CEREMONY_RULES;
+    const rules = Array.isArray(config?.flagCeremonyRules) ? config.flagCeremonyRules : [];
     const rule = rules.find(item => item.statusKey === flagStatusKey);
     if (!rule || rule.isActive === false) return 0;
     return Math.max(0, Number(rule.points) || 0);
@@ -153,35 +118,11 @@ export const getRulePoints = (config: BehaviorScoreConfig | null | undefined, st
   const statusKey = getBehaviorAttendanceStatusKey(status);
   if (!statusKey) return 0;
 
-  const rules = Array.isArray(config?.attendanceRules) && config.attendanceRules.length > 0
-    ? config.attendanceRules
-    : DEFAULT_ATTENDANCE_RULES;
+  const rules = Array.isArray(config?.attendanceRules) ? config.attendanceRules : [];
   const rule = rules.find(item => item.statusKey === statusKey);
   if (!rule || rule.isActive === false) return 0;
 
   return Math.max(0, Number(rule.points) || 0);
-};
-
-export const applyAttendanceBehaviorScore = ({
-  batch,
-  studentRef,
-  currentScore,
-  oldStatus,
-  newStatus,
-  config,
-}: ApplyBehaviorScoreParams) => {
-  const result = calculateAttendanceBehaviorScoreChange({
-    currentScore,
-    oldStatus,
-    newStatus,
-    config,
-  });
-
-  if (!result) return null;
-
-  batch.set(studentRef, result.update, { merge: true });
-
-  return result.summary;
 };
 
 export const calculateAttendanceBehaviorScoreChange = ({
@@ -220,14 +161,12 @@ export const calculateAttendanceBehaviorScoreChange = ({
   };
 };
 
-export const applyClassroomBehaviorScore = ({
-  batch,
-  studentRef,
+export const calculateClassroomBehaviorScoreChange = ({
   currentScore,
   oldStatus,
   newStatus,
   config,
-}: ApplyBehaviorScoreParams) => {
+}: BehaviorScoreCalculationParams) => {
   const oldPenalty = getRulePoints(config, oldStatus, "classroom");
   const newPenalty = getRulePoints(config, newStatus, "classroom");
   const delta = oldPenalty - newPenalty;
@@ -252,9 +191,10 @@ export const applyClassroomBehaviorScore = ({
     },
   };
 
-  batch.set(studentRef, update, { merge: true });
-
-  return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
+  return {
+    update,
+    summary: { previousScore: baseScore, nextScore, delta: nextScore - baseScore },
+  };
 };
 
 // ── Per-Activity Behavior Rules ──────────────────────────────────────────────
@@ -334,33 +274,23 @@ export const applySpecialPeriodBehaviorScoreWithRules = ({
   return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
 };
 
-const DEFAULT_SPECIAL_PERIOD_RULES: ClassroomAttendanceScoreRule[] = [
-  { statusKey: "present", points: 0, isActive: false },
-  { statusKey: "late", points: 2, isActive: true },
-  { statusKey: "absent", points: 5, isActive: true },
-  { statusKey: "escape", points: 10, isActive: true },
-  { statusKey: "leave", points: 0, isActive: false },
-];
-
+// Deduction points come ONLY from what the school explicitly saved on
+// /academic/behavior-score-config — no hardcoded fallback amount.
 export const getSpecialPeriodRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null) => {
   const classStatusKey = getBehaviorClassroomAttendanceStatusKey(status);
   if (!classStatusKey) return 0;
-  const rules = Array.isArray((config as any)?.specialPeriodRules) && (config as any).specialPeriodRules.length > 0
-    ? (config as any).specialPeriodRules
-    : DEFAULT_SPECIAL_PERIOD_RULES;
+  const rules = Array.isArray((config as any)?.specialPeriodRules) ? (config as any).specialPeriodRules : [];
   const rule = rules.find((item: ClassroomAttendanceScoreRule) => item.statusKey === classStatusKey);
   if (!rule || rule.isActive === false) return 0;
   return Math.max(0, Number(rule.points) || 0);
 };
 
-export const applySpecialPeriodBehaviorScore = ({
-  batch,
-  studentRef,
+export const calculateSpecialPeriodBehaviorScoreChange = ({
   currentScore,
   oldStatus,
   newStatus,
   config,
-}: ApplyBehaviorScoreParams) => {
+}: BehaviorScoreCalculationParams) => {
   const oldPenalty = getSpecialPeriodRulePoints(config, oldStatus);
   const newPenalty = getSpecialPeriodRulePoints(config, newStatus);
   const delta = oldPenalty - newPenalty;
@@ -385,7 +315,8 @@ export const applySpecialPeriodBehaviorScore = ({
     },
   };
 
-  batch.set(studentRef, update, { merge: true });
-
-  return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
+  return {
+    update,
+    summary: { previousScore: baseScore, nextScore, delta: nextScore - baseScore },
+  };
 };

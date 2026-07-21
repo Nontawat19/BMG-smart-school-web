@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { Student, StudentAttendanceSummary } from './types';
 import PdfPage from './PdfPage';
+import { getGroupPersonnel } from '@/utils/schoolUtils';
 
 interface SummaryPageProps {
     schoolInfo: any;
@@ -278,8 +279,8 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                         </View>
                         <View style={[{ width: '50%' }, styles.textCenter, { marginVertical: 2 }]}>
                             <Text style={styles.textMd}>ลงชื่อ ............................................................</Text>
-                            <Text style={styles.textMd}>( {`${schoolInfo?.academicHeadPrefix || ''}${schoolInfo?.academicHeadName || ''}`.trim() || '............................................................'} )</Text>
-                            <Text style={[styles.fontBold, { fontSize: 15 }]}>หัวหน้าฝ่ายวิชาการ</Text>
+                            <Text style={styles.textMd}>( {getGroupPersonnel(schoolInfo, 'academic').name || '............................................................'} )</Text>
+                            <Text style={[styles.fontBold, { fontSize: 15 }]}>{getGroupPersonnel(schoolInfo, 'academic').label}</Text>
                         </View>
                     </View>
 

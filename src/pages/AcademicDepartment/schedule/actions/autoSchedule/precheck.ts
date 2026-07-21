@@ -1,7 +1,7 @@
 import { EngineTask, EngineTeachingSlot } from '../../engine/schedulerEngine';
 import { getTaskTeacherIds } from '../../scheduleSharedUtils';
-import { getClassDisplayName, getPartnerIndexForPeriods } from '../../utils';
-import { PeriodSetting, Teacher } from '../../types';
+import { DAYS, getClassDisplayName, getPartnerIndexForPeriods } from '../../utils';
+import { AssignmentConstraintMap, PeriodSetting, Teacher } from '../../types';
 
 export interface PrecheckInput {
     tasks: EngineTask[];
@@ -13,6 +13,7 @@ export interface PrecheckInput {
     teachersMap: Record<string, Teacher>;
     dynamicUnavailableSlots: string[];
     selectedTeacher: string;
+    assignmentConstraints: AssignmentConstraintMap;
     /** Per-task set of slot IDs that pass the normal (non-relaxed) placement constraints. */
     validSlotsByTask: Map<EngineTask, Set<string>>;
     dataReadinessWarnings: string[];
@@ -41,6 +42,7 @@ export const runSchedulePrecheck = (input: PrecheckInput): PrecheckResult => {
         teachersMap,
         dynamicUnavailableSlots,
         selectedTeacher,
+        assignmentConstraints,
         validSlotsByTask,
         dataReadinessWarnings,
         skippedCourseIssues
@@ -71,6 +73,47 @@ export const runSchedulePrecheck = (input: PrecheckInput): PrecheckResult => {
         return partnerSlot?.periodSetting.isTeachingPeriod
             ? [task.requiredSlot, partnerSlotId]
             : [task.requiredSlot];
+    };
+
+    const lockedSlotLabel = (slot: { day: string; periodId: string } | string): string => {
+        if (typeof slot !== 'string') {
+            return `วัน${DAYS[slot.day as keyof typeof DAYS] || slot.day} คาบ ${slot.periodId}`;
+        }
+        const [dayKey, periodIndex] = slot.split('-');
+        if (!periodIndex) return slot;
+        return `วัน${DAYS[dayKey as keyof typeof DAYS] || dayKey} คาบ ${periodIndex}`;
+    };
+
+    /** Explains *why* a task ended up with very few valid slots, when the cause traces back
+     * to a lock/preference set on the Period Constraints page, so the warning tells the user
+     * where to go fix it instead of just reporting the symptom. */
+    const describeLowSlotCause = (task: EngineTask): string | null => {
+        const constraint = assignmentConstraints[task.compositeId];
+        if (!constraint) return null;
+
+        const causes: string[] = [];
+
+        if (constraint.isLocked && constraint.lockedSlots?.length) {
+            causes.push(`ถูกล็อกคาบไว้ที่ ${constraint.lockedSlots.map(lockedSlotLabel).join(', ')}`);
+        }
+        if (constraint.excludedDays?.length) {
+            causes.push(`ถูกยกเว้นวัน${constraint.excludedDays.map(d => DAYS[d as keyof typeof DAYS] || d).join(', ')}`);
+        }
+        const timePreference = task.duration >= 2 ? constraint.doublePreference : constraint.singlePreference;
+        if (timePreference && timePreference !== 'any') {
+            causes.push(`ถูกกำหนดให้ลงได้เฉพาะช่วง${timePreference === 'morning' ? 'เช้า' : 'บ่าย'}`);
+        }
+        if (constraint.layoutPreference && constraint.layoutPreference !== 'any') {
+            const layoutLabel = {
+                double_only: 'ต้องเป็นคาบคู่เท่านั้น',
+                single_only: 'ต้องเป็นคาบเดี่ยวเท่านั้น',
+                mixed: 'รูปแบบผสม',
+            }[constraint.layoutPreference];
+            if (layoutLabel) causes.push(layoutLabel);
+        }
+
+        if (causes.length === 0) return null;
+        return `${causes.join(' และ')} (ตั้งค่าไว้ที่หน้าล็อกคาบสอน)`;
     };
 
     const fatalIssues: string[] = [];
@@ -160,10 +203,21 @@ export const runSchedulePrecheck = (input: PrecheckInput): PrecheckResult => {
 
     tasks.forEach(task => {
         const validSlotCount = validSlotsByTask.get(task)?.size || 0;
+        if (validSlotCount > 2) return;
+
+        const lockCause = describeLowSlotCause(task);
         if (validSlotCount === 0) {
-            warningIssues.push(`${taskLabel(task)} ไม่มีช่องที่ผ่านเงื่อนไขปกติ ระบบจะลองวางในช่องสอนว่างที่ไม่ชนกันเป็นทางเลือกสุดท้าย`);
-        } else if (validSlotCount <= 2) {
-            warningIssues.push(`${taskLabel(task)} มีช่องที่เป็นไปได้เพียง ${validSlotCount} ช่อง`);
+            warningIssues.push(
+                lockCause
+                    ? `${taskLabel(task)} ไม่มีช่องที่ผ่านเงื่อนไขปกติ เนื่องจาก${lockCause} ระบบจะลองวางในช่องสอนว่างที่ไม่ชนกันเป็นทางเลือกสุดท้าย`
+                    : `${taskLabel(task)} ไม่มีช่องที่ผ่านเงื่อนไขปกติ ระบบจะลองวางในช่องสอนว่างที่ไม่ชนกันเป็นทางเลือกสุดท้าย`
+            );
+        } else {
+            warningIssues.push(
+                lockCause
+                    ? `${taskLabel(task)} มีช่องที่เป็นไปได้เพียง ${validSlotCount} ช่อง เนื่องจาก${lockCause}`
+                    : `${taskLabel(task)} มีช่องที่เป็นไปได้เพียง ${validSlotCount} ช่อง (สาเหตุอาจมาจากตารางครู/ห้องเรียนที่แน่นอยู่แล้วในช่วงที่เหลือ)`
+            );
         }
     });
 

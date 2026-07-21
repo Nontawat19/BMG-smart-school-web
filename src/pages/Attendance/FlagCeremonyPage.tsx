@@ -16,9 +16,11 @@ import {
   collectionGroup,
   increment,
   serverTimestamp,
+  runTransaction,
+  DocumentReference,
 } from "firebase/firestore";
 import { updatePeriodSummaries, syncDailySummary } from "@/utils/periodSummaryUtils";
-import { applyAttendanceBehaviorScore, calculateAttendanceBehaviorScoreChange, getRulePoints } from "@/utils/behaviorScoreUtils";
+import { getRulePoints } from "@/utils/behaviorScoreUtils";
 import {
   calculateAttendanceStatus,
   GateRecord,
@@ -1212,13 +1214,17 @@ const FlagCeremonyPage: React.FC = () => {
     };
   };
 
-  const getYesterdayScore = (student: Student) => {
+  // Sum of the penalty already applied TODAY specifically by this mechanism
+  // (gate attendance + flag ceremony), so callers can apply just the delta
+  // between old and new penalty on top of the live score, instead of
+  // reconstructing a "yesterday baseline" and recomputing from scratch.
+  const getTodayAppliedPenalty = (student: Student) => {
     const isFlagSavedToday = !!student._flagSavedToday;
     const hasGateCheckin = !!(student as any)._gateData?.checkinTime;
 
     // หากระบบเช็คแถวเสาธงในวันนี้ยังไม่ได้บันทึก และนักเรียนคนนี้ไม่มีการสแกนบัตรที่ประตู (Gate) ในช่วงเช้าเลย
     // แสดงว่าคะแนนพฤติกรรมใน DB (student.behaviorScore) จะยังไม่มีการหักคะแนนใดๆ ของวันนี้เกิดขึ้น
-    // ดังนั้นจึงไม่ต้องบวกคะแนนของสถานะเดิม (เช่น ขาด) กลับคืนมา
+    // ดังนั้นจึงไม่ต้องนับว่ามีคะแนนของสถานะเดิม (เช่น ขาด) ถูกหักไปแล้ว
     const oldAttendancePenalty = (isFlagSavedToday || hasGateCheckin)
       ? getRulePoints(behaviorScoreConfig, student.existingBehaviorScoreStatus || student.existingDailyStatus)
       : 0;
@@ -1228,7 +1234,7 @@ const FlagCeremonyPage: React.FC = () => {
       ? getRulePoints(behaviorScoreConfig, student.existingFlagBehaviorScoreStatus)
       : 0;
 
-    return (student.behaviorScore ?? 100) + oldAttendancePenalty + oldFlagCeremonyPenalty;
+    return oldAttendancePenalty + oldFlagCeremonyPenalty;
   };
 
   const getBehaviorScorePreview = (student: Student) => {
@@ -1240,7 +1246,7 @@ const FlagCeremonyPage: React.FC = () => {
     const resolved = resolveFlagActionResult(student, gateData, leaveData, travelData);
     if (!resolved.shouldWriteDaily && !resolved.shouldDeleteDaily) return null;
 
-    const yesterdayScore = getYesterdayScore(student);
+    const todayAppliedPenalty = getTodayAppliedPenalty(student);
     const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
     const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
 
@@ -1264,9 +1270,10 @@ const FlagCeremonyPage: React.FC = () => {
     const newFlagPenalty = getRulePoints(behaviorScoreConfig, nextFlagBehaviorStatus);
 
     const totalPenalty = newAttendancePenalty + newFlagPenalty;
+    const penaltyDelta = todayAppliedPenalty - totalPenalty;
 
-    const nextScore = Math.min(maxScore, Math.max(minScore, yesterdayScore - totalPenalty));
     const currentScore = student.behaviorScore ?? 100;
+    const nextScore = Math.min(maxScore, Math.max(minScore, currentScore + penaltyDelta));
     const netDelta = nextScore - currentScore;
 
     // หากไม่มีความเปลี่ยนแปลงของคะแนนพฤติกรรมในเซสชันนี้ ไม่ต้องแสดง Preview การคำนวณคะแนนพฤติกรรม
@@ -1300,6 +1307,53 @@ const FlagCeremonyPage: React.FC = () => {
       // 📌 เพิ่ม: สร้าง list ของนักเรียนที่ต้องแจ้งเตือน
       const studentsToNotify: { student: Student, status: AttendanceStatus }[] = [];
       const behaviorScoreUpdates = new Map<string, number>();
+
+      // Applies only the NET CHANGE (delta) in today's attendance/flag-ceremony
+      // penalty on top of whatever the live score is at write time — read fresh
+      // inside a transaction. This is deliberately NOT "reconstruct yesterday's
+      // baseline and recompute from scratch": that approach would silently wipe
+      // out any other same-day change (a manual adjustment, classroom deduction,
+      // etc.) applied between page load and save, since it assumed the entire
+      // gap between the live score and the reconstructed baseline belonged to
+      // this mechanism alone. Using a delta on the fresh live score preserves
+      // whatever else has happened to the score in the meantime.
+      const applyBehaviorScoreChange = async (
+        studentRef: DocumentReference,
+        studentId: string,
+        penaltyDelta: number,
+        oldStatus: string | null,
+        newStatus: string | null,
+      ) => {
+        if (penaltyDelta === 0) return;
+
+        const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
+        const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
+
+        const nextScore = await runTransaction(firestore, async (transaction) => {
+          const snap = await transaction.get(studentRef);
+          const currentScore = Number(snap.data()?.behaviorScore ?? 100);
+          const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + penaltyDelta));
+          if (computedNextScore === currentScore) return null;
+
+          transaction.set(studentRef, {
+            behaviorScore: computedNextScore,
+            behaviorScoreUpdatedAt: serverTimestamp(),
+            lastBehaviorScoreChange: {
+              delta: computedNextScore - currentScore,
+              oldStatus: oldStatus || null,
+              newStatus: newStatus || null,
+              updatedAt: serverTimestamp(),
+              source: "attendance",
+            },
+          }, { merge: true });
+          return computedNextScore;
+        });
+
+        if (nextScore !== null) {
+          behaviorScoreUpdates.set(studentId, nextScore);
+        }
+      };
+
       const savedStatusUpdates = new Map<string, {
         flagStatus: AttendanceStatus | null;
         dailyStatus: string | null | undefined;
@@ -1458,25 +1512,12 @@ const FlagCeremonyPage: React.FC = () => {
         if (resolved.shouldDeleteDaily) {
           batch.delete(dailyAttendanceRef);
           
-          // Revert behavior score back to baseline (refund today's penalties if any)
-          const yesterdayScore = getYesterdayScore(student);
-          const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-          const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
-          const nextScore = Math.min(maxScore, Math.max(minScore, yesterdayScore));
-          const netDelta = nextScore - (student.behaviorScore ?? 100);
+          // Refund whatever this mechanism (gate attendance + flag ceremony) had
+          // already deducted today for this student — expressed as a delta on
+          // the live score, not a reconstructed absolute baseline.
+          const refundDelta = getTodayAppliedPenalty(student);
 
-          if (nextScore !== student.behaviorScore) {
-            studentRefUpdates.behaviorScore = nextScore;
-            studentRefUpdates.behaviorScoreUpdatedAt = serverTimestamp();
-            studentRefUpdates.lastBehaviorScoreChange = {
-              delta: netDelta,
-              oldStatus: student.existingDailyStatus || null,
-              newStatus: null,
-              updatedAt: serverTimestamp(),
-              source: "attendance",
-            };
-            behaviorScoreUpdates.set(student.id, nextScore);
-          }
+          await applyBehaviorScoreChange(studentRef, student.id, refundDelta, student.existingDailyStatus || null, null);
         } else if (resolved.shouldWriteDaily && resolved.dailyStatus) {
           const dailyAttendanceData: Record<string, any> = {
             schoolId,
@@ -1513,10 +1554,9 @@ const FlagCeremonyPage: React.FC = () => {
             dailyAttendanceData.checkinDevice = resolved.checkinDevice;
           }
 
-          // Unified behavior score calculation relative to yesterday's score
-          const yesterdayScore = getYesterdayScore(student);
-          const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-          const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
+          // Unified behavior score calculation — delta between what was already
+          // applied today for this student and what should apply now.
+          const todayAppliedPenalty = getTodayAppliedPenalty(student);
 
           const newAttendanceStatus = resolved.action === "noScanPresentDeduct"
             ? ATTENDANCE_STATUS.PRESENT
@@ -1538,21 +1578,15 @@ const FlagCeremonyPage: React.FC = () => {
           const newFlagPenalty = getRulePoints(behaviorScoreConfig, nextFlagBehaviorStatus);
 
           const totalPenalty = newAttendancePenalty + newFlagPenalty;
-          const nextScore = Math.min(maxScore, Math.max(minScore, yesterdayScore - totalPenalty));
-          const netDelta = nextScore - (student.behaviorScore ?? 100);
+          const penaltyDelta = todayAppliedPenalty - totalPenalty;
 
-          if (nextScore !== student.behaviorScore) {
-            studentRefUpdates.behaviorScore = nextScore;
-            studentRefUpdates.behaviorScoreUpdatedAt = serverTimestamp();
-            studentRefUpdates.lastBehaviorScoreChange = {
-              delta: netDelta,
-              oldStatus: student.existingDailyStatus || null,
-              newStatus: nextFlagBehaviorStatus || newAttendanceStatus || null,
-              updatedAt: serverTimestamp(),
-              source: "attendance",
-            };
-            behaviorScoreUpdates.set(student.id, nextScore);
-          }
+          await applyBehaviorScoreChange(
+            studentRef,
+            student.id,
+            penaltyDelta,
+            student.existingDailyStatus || null,
+            nextFlagBehaviorStatus || newAttendanceStatus || null,
+          );
 
           batch.set(dailyAttendanceRef, dailyAttendanceData, { merge: true });
         }

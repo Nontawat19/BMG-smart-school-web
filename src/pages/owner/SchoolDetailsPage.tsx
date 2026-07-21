@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { firestore as db } from '../../firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
-import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit, FaTable, FaCertificate, FaHeartbeat, FaBoxOpen, FaCodeBranch, FaCalendarTimes } from 'react-icons/fa';
+import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit, FaTable, FaCertificate, FaHeartbeat, FaBoxOpen, FaCodeBranch, FaCalendarTimes, FaFileExcel } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
+import { getGroupPersonnel } from '@/utils/schoolUtils';
+import { parseStudentBirthDateParts } from '@/utils/birthDateUtils';
 import {
   buildFirebaseMonthlyUsageSummary,
   fetchSchoolDashboardSummary,
@@ -40,6 +43,16 @@ interface SchoolInfo {
   generalHeadName?: string;
   deputyPrefix?: string;
   deputyName?: string;
+  deputyAcademicPrefix?: string;
+  deputyAcademicName?: string;
+  deputyBudgetPrefix?: string;
+  deputyBudgetName?: string;
+  deputyPersonnelPrefix?: string;
+  deputyPersonnelName?: string;
+  deputyGeneralPrefix?: string;
+  deputyGeneralName?: string;
+  studentSupportOfficerPrefix?: string;
+  studentSupportOfficerName?: string;
   logoUrl?: string;
   teacherCount?: number;
   studentCount?: number;
@@ -96,6 +109,7 @@ const SchoolDetailsPage: React.FC = () => {
   const [info, setInfo] = useState<SchoolInfo | null>(null);
   const [licenseInfo, setLicenseInfo] = useState<SchoolLicenseInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExportingStudents, setIsExportingStudents] = useState(false);
 
   const collectionName = 'school-settings';
 
@@ -163,6 +177,58 @@ const SchoolDetailsPage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
+  const handleExportStudents = async () => {
+    if (!schoolId) return;
+    setIsExportingStudents(true);
+    try {
+      const snap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
+      const rows = snap.docs
+        .map(d => d.data() as Record<string, any>)
+        .sort((a, b) => {
+          const classCompare = String(a.classLevel || '').localeCompare(String(b.classLevel || ''), 'th');
+          if (classCompare !== 0) return classCompare;
+          const roomCompare = String(a.room || '').localeCompare(String(b.room || ''), 'th', { numeric: true });
+          if (roomCompare !== 0) return roomCompare;
+          return (Number(a.studentNumber) || 0) - (Number(b.studentNumber) || 0);
+        })
+        .map(s => {
+          const birthParts = parseStudentBirthDateParts(s.birthDate);
+          const birthDateText = birthParts
+            ? `${String(birthParts.day).padStart(2, '0')}/${String(birthParts.month).padStart(2, '0')}/${birthParts.year >= 2400 ? birthParts.year : birthParts.year + 543}`
+            : '';
+
+          return {
+            'ชื่อโรงเรียน': info?.schoolName || '',
+            'ชั้น': s.classLevel || '',
+            'ห้อง': s.room || '',
+            'รหัสนักเรียน': s.studentId || '',
+            'คำนำหน้าชื่อ': s.title || '',
+            'ชื่อ': s.firstName || '',
+            'นามสกุล': s.lastName || '',
+            'วันเดือนปีเกิด': birthDateText,
+            'เลขประจำตัวประชาชน': s.idCardNumber || '',
+            'หมู่โลหิต': s.bloodType || '',
+            'หมายเหตุ': '',
+          };
+        });
+
+      if (rows.length === 0) {
+        Swal.fire('ไม่พบข้อมูล', 'โรงเรียนนี้ยังไม่มีข้อมูลนักเรียน', 'info');
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'นักเรียน');
+      XLSX.writeFile(wb, `ข้อมูลนักเรียน_${info?.schoolName || schoolId}.xlsx`);
+    } catch (error) {
+      console.error('Error exporting students:', error);
+      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถดาวน์โหลดข้อมูลนักเรียนได้', 'error');
+    } finally {
+      setIsExportingStudents(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -205,6 +271,15 @@ const SchoolDetailsPage: React.FC = () => {
                 <Link to={`/owner/school-info/${schoolId}`} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
                   แก้ไขข้อมูล
                 </Link>
+                <button
+                  type="button"
+                  onClick={handleExportStudents}
+                  disabled={isExportingStudents}
+                  className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  <FaFileExcel size={14} />
+                  {isExportingStudents ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด Excel นักเรียน'}
+                </button>
               </div>
             )}
           </div>
@@ -242,10 +317,21 @@ const SchoolDetailsPage: React.FC = () => {
                     <InfoRow icon={<FaLayerGroup size={20} />} label="ระดับชั้นที่เปิดสอน" value={info.opportunityExpansionLevel} />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 border-b border-gray-200 dark:border-gray-700">
-                    <InfoRow icon={<FaUserGraduate size={20} />} label="หัวหน้าฝ่ายบริหารงานวิชาการ" value={[info.academicHeadPrefix, info.academicHeadName].filter(Boolean).join(' ')} />
-                    <InfoRow icon={<FaMoneyBillWave size={20} />} label="หัวหน้าฝ่ายบริหารงานงบประมาณ" value={[info.budgetHeadPrefix, info.budgetHeadName].filter(Boolean).join(' ')} />
-                    <InfoRow icon={<FaUsers size={20} />} label="หัวหน้าฝ่ายบริหารงานบุคคล" value={[info.personnelHeadPrefix, info.personnelHeadName].filter(Boolean).join(' ')} />
-                    <InfoRow icon={<FaTasks size={20} />} label="หัวหน้าฝ่ายบริหารงานทั่วไป" value={[info.generalHeadPrefix, info.generalHeadName].filter(Boolean).join(' ')} />
+                    {(() => {
+                      const academic = getGroupPersonnel(info, 'academic');
+                      const budget = getGroupPersonnel(info, 'budget');
+                      const personnel = getGroupPersonnel(info, 'personnel');
+                      const general = getGroupPersonnel(info, 'general');
+                      return (
+                        <>
+                          <InfoRow icon={<FaUserGraduate size={20} />} label={academic.label} value={academic.name} />
+                          <InfoRow icon={<FaMoneyBillWave size={20} />} label={budget.label} value={budget.name} />
+                          <InfoRow icon={<FaUsers size={20} />} label={personnel.label} value={personnel.name} />
+                          <InfoRow icon={<FaTasks size={20} />} label={general.label} value={general.name} />
+                        </>
+                      );
+                    })()}
+                    <InfoRow icon={<FaUsers size={20} />} label="เจ้าหน้าที่ระบบดูแลช่วยเหลือนักเรียน" value={[info.studentSupportOfficerPrefix, info.studentSupportOfficerName].filter(Boolean).join(' ')} />
                   </div>
                   <div>
                     <InfoRow
@@ -286,7 +372,7 @@ const SchoolDetailsPage: React.FC = () => {
                       />
                       <InfoRow icon={<FaCalendarTimes size={20} />} label="วันหมดอายุสัญญา" value={licenseInfo?.contractExpiryDate} />
                       <InfoRow icon={<FaBoxOpen size={20} />} label="Backup ล่าสุด" value={licenseInfo?.lastBackupAt} />
-                      <InfoRow icon={<FaHeartbeat size={20} />} label="Last Sync" value={formatLastSyncTimestamp(info.lastSyncAt)} />
+                      <InfoRow icon={<FaHeartbeat size={20} />} label="ซิงค์ข้อมูลล่าสุด" value={formatLastSyncTimestamp(info.lastSyncAt)} />
                       <InfoRow icon={<FaCodeBranch size={20} />} label="เวอร์ชันระบบ" value={SYSTEM_VERSION} />
                     </div>
                   </div>

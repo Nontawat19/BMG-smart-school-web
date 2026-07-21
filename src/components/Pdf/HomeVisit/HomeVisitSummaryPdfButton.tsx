@@ -99,7 +99,7 @@ const HomeVisitSummaryPdfButton: React.FC<Props> = ({
             oneParentDeceased: latestVisits.filter(v => v.oneParentDeceased).length,
             parentsSeparated: latestVisits.filter(v => v.parentsSeparated).length,
             notLivingWithParents: latestVisits.filter(v => v.notLivingWithParents).length,
-            learningRisk: latestVisits.filter(v => v.visitSummary === 'กลุ่มเสี่ยง' && v.schoolAssistanceNeeded?.includes('ด้านการเรียน')).length,
+            learningRisk: latestVisits.filter(v => v.schoolAssistanceNeeded?.includes('ด้านการเรียน')).length,
             healthRisk: getRiskCount('healthRisk'),
             behaviorRisk: {
                 health: getRiskCount('healthRisk'),
@@ -110,7 +110,13 @@ const HomeVisitSummaryPdfButton: React.FC<Props> = ({
                 game: getRiskCount('gameRisk'),
                 others: 0,
             },
-            economicRisk: latestVisits.filter(v => v.visitSummary === 'กลุ่มเสี่ยง' && v.schoolAssistanceNeeded?.includes('ทุนการศึกษา')).length,
+            // นับแบบไม่ซ้ำคน (เหมือนการ์ด "พบกลุ่มเสี่ยง" บนหน้าจอ) แทนการรวมยอดแต่ละหมวดที่นับคนซ้ำได้
+            riskTotal: latestVisits.filter(v =>
+                (v.healthRisk?.length || 0) > 0 || (v.drugRisk?.length || 0) > 0 ||
+                (v.violenceRisk?.length || 0) > 0 || (v.sexualRisk?.length || 0) > 0 || (v.gameRisk?.length || 0) > 0
+            ).length,
+            // ค่าจริงที่บันทึกคือ 'ด้านเศรษฐกิจ (เช่น ขอรับทุน)' หรือ 'ด้านเศรษฐกิจ(เช่น ขอรับทุน)' แล้วแต่หน้าฟอร์มที่กรอก จึงเทียบด้วย startsWith แทน exact match
+            economicRisk: latestVisits.filter(v => v.schoolAssistanceNeeded?.some((s: string) => s.startsWith('ด้านเศรษฐกิจ'))).length,
             otherRisk: 0,
             otherRiskDetail: "",
             urgentTotal: latestVisits.filter(v => v.visitSummary === 'ช่วยเหลือด่วน').length,

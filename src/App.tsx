@@ -63,6 +63,8 @@ const HomeVisitSummaryHub = lazy(() => import("./pages/StudentSupport/HomeVisit/
 const HomeVisitSummaryClassroom = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryClassroom"));
 const HomeVisitSummaryAll = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryAll"));
 const HomeVisitSummaryOBEC = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryOBEC"));
+const HomeVisitSummaryLevelRange = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryLevelRange"));
+const HomeVisitSummaryIndividual = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryIndividual"));
 const HomeVisitTracking = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitTracking"));
 const AddTeacherPage = lazy(() => import("./pages/Teachers/AddTeacherPage"));
 const TeacherListPage = lazy(() => import("./pages/Teachers/TeacherListPage"));
@@ -96,6 +98,7 @@ const SpecialPeriodAttendancePage = lazy(() => import("./pages/AcademicDepartmen
 const SpecialPeriodReportsPage = lazy(() => import("./pages/AcademicDepartment/SpecialPeriodReportsPage"));
 const HistoricalClassroomAttendancePage = lazy(() => import("./pages/AcademicDepartment/HistoricalClassroomAttendancePage"));
 const AttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/AttendanceSummaryPage"));
+const MsReportPage = lazy(() => import("./pages/AcademicDepartment/MsReportPage"));
 const ClassroomAttendanceAuditPage = lazy(() => import("./pages/AcademicDepartment/ClassroomAttendanceAuditPage"));
 const EscapeSummaryPage = lazy(() => import("./pages/AcademicDepartment/EscapeSummaryPage"));
 const TimeRangeAttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/TimeRangeAttendanceSummaryPage"));
@@ -156,6 +159,7 @@ const TeacherAttendanceDateSelectionPage = lazy(() => import("./pages/HumanResou
 const LeaveApprovalPage = lazy(() => import("./pages/HumanResources/LeaveApprovalPage"));
 const HRTimeRegistrationPage = lazy(() => import("./pages/HumanResources/HRTimeRegistrationPage"));
 const StudentsAttendanceSummaryPage = lazy(() => import("./pages/Students/StudentsAttendanceSummaryPage"));
+const DailyClassroomAttendanceSummaryPage = lazy(() => import("./pages/Students/DailyClassroomAttendanceSummaryPage"));
 const LineOAManagementPage = lazy(() => import("./pages/Administrator/LineOAManagementPage"));
 const TelegramManagementPage = lazy(() => import("./pages/Administrator/TelegramManagementPage"));
 
@@ -246,12 +250,12 @@ function App() {
           <Route path="/student-support/sdq" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><SDQPage /></ProtectedRoute>} />
           <Route path="/student-support/sdq/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STUDENT_SUPPORT_OPERATIONAL_ACCESS]}><SDQStudentPage /></ProtectedRoute>} />
           <Route path="/student-support/sdq/teacher" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><SDQTeacherPage /></ProtectedRoute>} />
-          <Route path="/student-support/sdq/parent" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><SDQParentPage /></ProtectedRoute>} />
+          <Route path="/student-support/sdq/parent" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><SDQParentPage /></ProtectedRoute>} />
 
           <Route path="/student-support/screening" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><ScreeningHub /></ProtectedRoute>} />
           <Route path="/student-support/screening/teacher" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><ScreeningTeacherPage /></ProtectedRoute>} />
           <Route path="/student-support/screening/student" element={<ProtectedRoute allowedRoles={[ROLES.STUDENT, ...STUDENT_SUPPORT_OPERATIONAL_ACCESS]}><ScreeningStudentPage /></ProtectedRoute>} />
-          <Route path="/student-support/screening/parent" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><ScreeningParentPage /></ProtectedRoute>} />
+          <Route path="/student-support/screening/parent" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><ScreeningParentPage /></ProtectedRoute>} />
 
           <Route path="/student-support/home-visit" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><HomeVisitDashboard /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/new/:studentId" element={<ProtectedRoute allowedRoles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}><NewHomeVisit /></ProtectedRoute>} />
@@ -259,6 +263,8 @@ function App() {
           <Route path="/student-support/home-visit/summary/classroom" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryClassroom /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/all" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryAll /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/obec" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryOBEC /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/level-range" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryLevelRange /></ProtectedRoute>} />
+          <Route path="/student-support/home-visit/summary/individual" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryIndividual /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/tracking" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitTracking /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/legacy" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
 
@@ -328,6 +334,7 @@ function App() {
           <Route path="/academic/student-attendance-date-selection" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentAttendanceDateSelectionPage /></ProtectedRoute>} />
           <Route path="/academic/student-bk14-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBK14ReportPage /></ProtectedRoute>} />
           <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/daily-classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><DailyClassroomAttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/student-photo-download" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentPhotoDownloadPage /></ProtectedRoute>} />
 
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
@@ -358,6 +365,7 @@ function App() {
           <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><AttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/ms-report" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><MsReportPage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-audit" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClassroomAttendanceAuditPage /></ProtectedRoute>} />
           <Route path="/academic/escape-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><EscapeSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/time-range-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TimeRangeAttendanceSummaryPage /></ProtectedRoute>} />

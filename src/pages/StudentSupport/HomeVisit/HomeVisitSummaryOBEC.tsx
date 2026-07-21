@@ -52,10 +52,8 @@ interface Visit {
     travelMethod?: string;
 }
 
-const OBEC_ASSISTANCE = [
-    "ทุนการศึกษา", "อุปกรณ์การเรียน", "เครื่องแบบ", "อาหารกลางวัน",
-    "ที่พักพิง", "การรักษาพยาบาล", "คำปรึกษาด้านจิตใจ", "อื่นๆ",
-];
+// ตรงกับตัวเลือกจริงในฟอร์มบันทึกเยี่ยมบ้าน (ข้อ "สิ่งที่ผู้ปกครองต้องการให้โรงเรียนช่วยเหลือ")
+const OBEC_ASSISTANCE = ["ด้านการเรียน", "ด้านพฤติกรรม", "ด้านเศรษฐกิจ (เช่น ขอรับทุน)", "อื่นๆ"];
 
 const HomeVisitSummaryOBEC: React.FC = () => {
     const navigate = useNavigate();
@@ -102,7 +100,7 @@ const HomeVisitSummaryOBEC: React.FC = () => {
 
                 const roles = Array.isArray(userData?.role) ? userData.role : [userData?.role || ""];
                 const isPower = roles.some((r: string) =>
-                    ["admin", "school_admin", "super_admin", "academic", "academic_admin", "director"].includes(r)
+                    ["admin", "school_admin", "super_admin", "academic", "academic_admin", "director", "student_affairs"].includes(r)
                 );
                 setIsPowerUser(isPower);
 
@@ -213,10 +211,13 @@ const HomeVisitSummaryOBEC: React.FC = () => {
             notLivingWithParents: latestVisits.filter(v => v.notLivingWithParents).length,
         };
 
+        // ฟอร์มมี 2 จุดที่พิมพ์ตัวเลือก "ด้านเศรษฐกิจ" ต่างกัน (มี/ไม่มีช่องว่างก่อนวงเล็บ) จึง normalize ให้เป็นคีย์เดียวกัน
+        const normalizeAssistance = (a: string) => a.startsWith('ด้านเศรษฐกิจ') ? 'ด้านเศรษฐกิจ (เช่น ขอรับทุน)' : a;
         const assistanceCounts: Record<string, number> = {};
         latestVisits.forEach(v => {
             (v.schoolAssistanceNeeded || []).forEach(a => {
-                assistanceCounts[a] = (assistanceCounts[a] || 0) + 1;
+                const key = normalizeAssistance(a);
+                assistanceCounts[key] = (assistanceCounts[key] || 0) + 1;
             });
         });
 

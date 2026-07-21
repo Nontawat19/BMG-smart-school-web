@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runSchedulePrecheck } from '../actions/autoSchedule/precheck';
 import type { EngineTask, EngineTeachingSlot } from '../engine/schedulerEngine';
-import type { Course, PeriodSetting, Teacher } from '../types';
+import type { AssignmentConstraintMap, Course, PeriodSetting, Teacher } from '../types';
 
 const makeCourse = (id: string, title = id): Course => ({ id, title, code: id, credits: 1, hoursPerWeek: 1 });
 
@@ -45,6 +45,7 @@ const baseArgs = (overrides: Partial<Parameters<typeof runSchedulePrecheck>[0]> 
         teachersMap: {},
         dynamicUnavailableSlots: [],
         selectedTeacher: '',
+        assignmentConstraints: {},
         validSlotsByTask: new Map(),
         dataReadinessWarnings: [],
         skippedCourseIssues: [],
@@ -149,6 +150,31 @@ describe('runSchedulePrecheck', () => {
 
         expect(result.fatalIssues).toHaveLength(0);
         expect(result.warningIssues.some(issue => issue.includes('ไม่มีช่องที่ผ่านเงื่อนไขปกติ'))).toBe(true);
+    });
+
+    it('attributes a low valid-slot-count warning to a period lock set on the Period Constraints page', () => {
+        const task = makeTask({ course: makeCourse('c1') });
+        const assignmentConstraints: AssignmentConstraintMap = {
+            [task.compositeId]: { isLocked: true, lockedSlots: ['mon-2'] },
+        };
+        const result = runSchedulePrecheck(baseArgs({
+            tasks: [task],
+            assignmentConstraints,
+            validSlotsByTask: new Map([[task, new Set(['mon-2'])]]),
+        }));
+
+        expect(result.fatalIssues).toHaveLength(0);
+        expect(result.warningIssues.some(issue => issue.includes('ถูกล็อกคาบไว้ที่') && issue.includes('หน้าล็อกคาบสอน'))).toBe(true);
+    });
+
+    it('falls back to a generic low valid-slot-count warning when no constraint explains it', () => {
+        const task = makeTask({ course: makeCourse('c1') });
+        const result = runSchedulePrecheck(baseArgs({
+            tasks: [task],
+            validSlotsByTask: new Map([[task, new Set(['mon-2'])]]),
+        }));
+
+        expect(result.warningIssues.some(issue => issue.includes('มีช่องที่เป็นไปได้เพียง 1 ช่อง') && issue.includes('ตารางครู/ห้องเรียนที่แน่น'))).toBe(true);
     });
 
     it('passes through dataReadinessWarnings and skippedCourseIssues into warningIssues untouched', () => {

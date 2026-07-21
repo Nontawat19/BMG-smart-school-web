@@ -554,7 +554,7 @@ const SchoolListPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="mt-1 flex flex-col gap-0.5 text-[9px] text-gray-400 dark:text-gray-500">
-                        <span>❤️ Last Sync: {formatLastSyncTimestamp(school.lastSyncAt)}</span>
+                        <span>❤️ ซิงค์ข้อมูลล่าสุด: {formatLastSyncTimestamp(school.lastSyncAt)}</span>
                         {school.lastBackupAt && <span>📦 Backup ล่าสุด: {school.lastBackupAt}</span>}
                         {school.contractExpiryDate && <span>📅 หมดอายุสัญญา: {school.contractExpiryDate}</span>}
                       </div>

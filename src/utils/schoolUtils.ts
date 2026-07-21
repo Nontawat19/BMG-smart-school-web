@@ -36,6 +36,27 @@ export const CLASS_FULL_NAMES: Record<string, string> = {
     m6: "มัธยมศึกษาปีที่ 6",
 };
 
+export interface EducationLevelGroup {
+    key: string;
+    label: string;
+    shortLabel: string;
+    levels: string[];
+}
+
+export const EDUCATION_LEVEL_GROUPS: EducationLevelGroup[] = [
+    { key: 'kindergarten', label: 'อนุบาล (อ.1-อ.3)', shortLabel: 'อนุบาล', levels: ['อ.1', 'อ.2', 'อ.3'] },
+    { key: 'primary_lower', label: 'ประถมศึกษาตอนต้น (ป.1-ป.3)', shortLabel: 'ประถมต้น', levels: ['ป.1', 'ป.2', 'ป.3'] },
+    { key: 'primary_upper', label: 'ประถมศึกษาตอนปลาย (ป.4-ป.6)', shortLabel: 'ประถมปลาย', levels: ['ป.4', 'ป.5', 'ป.6'] },
+    { key: 'secondary_lower', label: 'มัธยมศึกษาตอนต้น (ม.1-ม.3)', shortLabel: 'มัธยมต้น', levels: ['ม.1', 'ม.2', 'ม.3'] },
+    { key: 'secondary_upper', label: 'มัธยมศึกษาตอนปลาย (ม.4-ม.6)', shortLabel: 'มัธยมปลาย', levels: ['ม.4', 'ม.5', 'ม.6'] },
+];
+
+export const getEducationLevelGroup = (classLevel?: string): EducationLevelGroup | undefined => {
+    const normalized = String(classLevel || '').trim();
+    if (!normalized) return undefined;
+    return EDUCATION_LEVEL_GROUPS.find(g => g.levels.includes(normalized));
+};
+
 export const getClassLevelRank = (classLevel?: string): number => {
     const normalized = String(classLevel || '').trim();
     if (!normalized) return -1;
@@ -158,3 +179,79 @@ export const getClassOptionsBySchoolSettings = (
 
 // Aliases for backward compatibility or easier usage
 export const CLASSES = CLASS_MAPPING;
+
+// ป้องกันคำว่า "โรงเรียน" ซ้ำติดกัน (ชื่อโรงเรียนในฐานข้อมูลบางแห่งมีคำว่า "โรงเรียน" นำหน้าอยู่แล้ว
+// เช่น "โรงเรียนบ้านแก้วปัดโป่ง" — ถ้าโค้ดเติม "โรงเรียน" นำหน้าซ้ำอีกที จะกลายเป็น "โรงเรียนโรงเรียนบ้านแก้วปัดโป่ง")
+export const dedupeSchoolWord = (text: string) => text.replace(/(โรงเรียน)(?:\1)+/g, '$1');
+
+// โรงเรียนขนาดใหญ่ (มักเป็นมัธยม) มีรองผู้อำนวยการประจำแต่ละกลุ่มบริหารงานโดยเฉพาะ
+// ส่วนโรงเรียนขนาดเล็ก/ประถม/ขยายโอกาสมักไม่มีตำแหน่งรองผู้อำนวยการระดับกลุ่มงาน ใช้ "หัวหน้าฝ่าย" แทน
+// ฟังก์ชันนี้เป็นจุดเดียวที่ใช้ตัดสินใจว่าจะแสดงชื่อ+ตำแหน่งใด ให้ทุกหน้า/PDF ที่ต้องพิมพ์ตำแหน่งนี้เรียกใช้ร่วมกัน
+export type AdminGroup = 'academic' | 'budget' | 'personnel' | 'general';
+
+export interface GroupPersonnelSource {
+    deputyAcademicPrefix?: string; deputyAcademicName?: string;
+    deputyBudgetPrefix?: string; deputyBudgetName?: string;
+    deputyPersonnelPrefix?: string; deputyPersonnelName?: string;
+    deputyGeneralPrefix?: string; deputyGeneralName?: string;
+    academicHeadPrefix?: string; academicHeadName?: string;
+    budgetHeadPrefix?: string; budgetHeadName?: string;
+    personnelHeadPrefix?: string; personnelHeadName?: string;
+    generalHeadPrefix?: string; generalHeadName?: string;
+    deputyPrefix?: string; deputyName?: string;
+}
+
+const GROUP_PERSONNEL_CONFIG: Record<AdminGroup, {
+    deputyPrefixKey: keyof GroupPersonnelSource; deputyNameKey: keyof GroupPersonnelSource;
+    headPrefixKey: keyof GroupPersonnelSource; headNameKey: keyof GroupPersonnelSource;
+    deputyLabel: string; headLabel: string;
+}> = {
+    academic: {
+        deputyPrefixKey: 'deputyAcademicPrefix', deputyNameKey: 'deputyAcademicName',
+        headPrefixKey: 'academicHeadPrefix', headNameKey: 'academicHeadName',
+        deputyLabel: 'รองผู้อำนวยการกลุ่มบริหารงานวิชาการ', headLabel: 'หัวหน้าฝ่ายวิชาการ',
+    },
+    budget: {
+        deputyPrefixKey: 'deputyBudgetPrefix', deputyNameKey: 'deputyBudgetName',
+        headPrefixKey: 'budgetHeadPrefix', headNameKey: 'budgetHeadName',
+        deputyLabel: 'รองผู้อำนวยการกลุ่มบริหารงานงบประมาณ', headLabel: 'หัวหน้าฝ่ายบริหารงานงบประมาณ',
+    },
+    personnel: {
+        deputyPrefixKey: 'deputyPersonnelPrefix', deputyNameKey: 'deputyPersonnelName',
+        headPrefixKey: 'personnelHeadPrefix', headNameKey: 'personnelHeadName',
+        deputyLabel: 'รองผู้อำนวยการกลุ่มบริหารงานบุคคล', headLabel: 'หัวหน้าฝ่ายบริหารงานบุคคล',
+    },
+    general: {
+        deputyPrefixKey: 'deputyGeneralPrefix', deputyNameKey: 'deputyGeneralName',
+        headPrefixKey: 'generalHeadPrefix', headNameKey: 'generalHeadName',
+        deputyLabel: 'รองผู้อำนวยการกลุ่มบริหารงานทั่วไป', headLabel: 'หัวหน้าฝ่ายบริหารงานทั่วไป',
+    },
+};
+
+/**
+ * คืนค่าชื่อ+ตำแหน่งที่ควรพิมพ์สำหรับกลุ่มบริหารงานหนึ่งๆ โดยเลือกตามลำดับ:
+ * รองผู้อำนวยการกลุ่มนั้น (ถ้ามีข้อมูล) > หัวหน้าฝ่ายกลุ่มนั้น > รองผู้อำนวยการทั่วไป (ถ้า fallbackToGenericDeputy)
+ */
+export const getGroupPersonnel = (
+    info: GroupPersonnelSource | undefined | null,
+    group: AdminGroup,
+    fallbackToGenericDeputy = false,
+    headLabelOverride?: string,
+): { label: string; name: string } => {
+    const config = GROUP_PERSONNEL_CONFIG[group];
+    const headLabel = headLabelOverride || config.headLabel;
+    if (!info) return { label: headLabel, name: '' };
+
+    const deputyValue = [info[config.deputyPrefixKey], info[config.deputyNameKey]].filter(Boolean).join(' ');
+    if (deputyValue) return { label: config.deputyLabel, name: deputyValue };
+
+    const headValue = [info[config.headPrefixKey], info[config.headNameKey]].filter(Boolean).join(' ');
+    if (headValue) return { label: headLabel, name: headValue };
+
+    if (fallbackToGenericDeputy) {
+        const genericDeputyValue = [info.deputyPrefix, info.deputyName].filter(Boolean).join(' ');
+        if (genericDeputyValue) return { label: 'รองผู้อำนวยการ', name: genericDeputyValue };
+    }
+
+    return { label: headLabel, name: '' };
+};

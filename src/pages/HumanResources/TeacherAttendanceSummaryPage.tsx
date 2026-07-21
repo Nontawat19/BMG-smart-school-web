@@ -17,6 +17,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -57,6 +58,8 @@ interface TeacherAttendancePdfDocumentProps {
   schoolAffiliation: string;
   schoolLogo?: string;
   directorName: string;
+  personnelHeadName?: string;
+  personnelHeadRoleLabel?: string;
   dateText: string;
   filterType: "daily" | "weekly" | "monthly" | "term" | "yearly" | "custom";
   totalItems: number;
@@ -219,6 +222,8 @@ const TeacherAttendancePdfDocument: React.FC<TeacherAttendancePdfDocumentProps> 
   schoolAffiliation,
   schoolLogo,
   directorName,
+  personnelHeadName,
+  personnelHeadRoleLabel,
   dateText,
   filterType,
   totalItems,
@@ -307,8 +312,8 @@ const TeacherAttendancePdfDocument: React.FC<TeacherAttendancePdfDocumentProps> 
                 </View>
                 <View style={pdfStyles.signBox}>
                   <Text>ลงชื่อ..........................................ผู้ตรวจสอบ</Text>
-                  <Text style={pdfStyles.signName}>(..........................................)</Text>
-                  <Text>หัวหน้าฝ่ายบริหารงานบุคคล</Text>
+                  <Text style={pdfStyles.signName}>({personnelHeadName || ".........................................."})</Text>
+                  <Text>{personnelHeadRoleLabel || "หัวหน้าฝ่ายบริหารงานบุคคล"}</Text>
                 </View>
                 <View style={pdfStyles.signBox}>
                   <Text>ลงชื่อ..........................................ผู้รับรอง</Text>
@@ -696,6 +701,9 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
 
     const schoolName = freshSchoolSettings.schoolName || "";
     const directorName = freshSchoolSettings.directorName || "";
+    const personnelPersonnel = getGroupPersonnel(freshSchoolSettings, 'personnel');
+    const personnelHeadName = personnelPersonnel.name;
+    const personnelHeadRoleLabel = personnelPersonnel.label;
     const schoolLogoUrl = freshSchoolSettings.logoUrl || "";
     const schoolLogo = schoolLogoUrl ? await getImageDataUrl(schoolLogoUrl) : "";
     const schoolAffiliation = freshSchoolSettings.affiliation || "";
@@ -742,6 +750,8 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
           schoolAffiliation={displayAffiliation}
           schoolLogo={schoolLogo}
           directorName={directorName}
+          personnelHeadName={personnelHeadName}
+          personnelHeadRoleLabel={personnelHeadRoleLabel}
           dateText={dateText}
           filterType={filterType}
           totalItems={filteredData.length}

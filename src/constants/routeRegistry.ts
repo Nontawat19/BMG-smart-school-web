@@ -92,6 +92,8 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'home_visit_summary_classroom',  path: '/student-support/home-visit/summary/classroom', label: 'รายงานสรุปเยี่ยมบ้าน - รายห้อง', category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'home_visit_summary_all',        path: '/student-support/home-visit/summary/all',       label: 'รายงานสรุปเยี่ยมบ้าน - ทุกห้อง', category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'home_visit_summary_obec',       path: '/student-support/home-visit/summary/obec',      label: 'รายงานสรุปเยี่ยมบ้าน - สพฐ.',    category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
+  { key: 'home_visit_summary_level_range', path: '/student-support/home-visit/summary/level-range', label: 'รายงานสรุปเยี่ยมบ้าน - ช่วงชั้น', category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
+  { key: 'home_visit_summary_individual', path: '/student-support/home-visit/summary/individual', label: 'รายงานสรุปเยี่ยมบ้าน - รายคน',   category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'home_visit_tracking',           path: '/student-support/home-visit/summary/tracking',  label: 'ติดตามการเยี่ยมบ้าน',             category: 'ดูแลช่วยเหลือนักเรียน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
 
   // ──────────────────────────────── วิชาการ - ทะเบียน ────────────────────────────────
@@ -151,12 +153,14 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
 
   // ──────────────────────────────── วิชาการ - รายงาน ────────────────────────────────
   { key: 'classroom_att_summary',    path: '/academic/classroom-attendance-summary',     label: 'สรุปการมาเรียนรายวิชา',        category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_ATTENDANCE_REPORT_ACCESS },
+  { key: 'ms_report',                path: '/academic/ms-report',                       label: 'รายงาน มส.',                    category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_ATTENDANCE_REPORT_ACCESS },
   { key: 'classroom_att_audit',      path: '/academic/classroom-attendance-audit',       label: 'ตรวจเช็คการเข้าสอนของครู',    category: 'วิชาการ - รายงาน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'escape_summary',           path: '/academic/escape-summary',                  label: 'สรุปยอดการหนีเรียน',           category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'time_range_attendance',    path: '/academic/time-range-attendance-summary',   label: 'สรุปมาเรียนตามช่วงเวลา',       category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'student_att_date',         path: '/academic/student-attendance-date-selection',label: 'ลงเวลานักเรียน (เลือกวัน)',    category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'student_bk14',             path: '/academic/student-bk14-report',             label: 'รายงาน บค.14',                 category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'students_att_summary',     path: '/academic/students-attendance-summary',     label: 'รายงานการมาเรียน (นักเรียน)', category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
+  { key: 'daily_classroom_att_summary', path: '/academic/daily-classroom-attendance-summary', label: 'รายงานยอดรวมรายวัน รายห้องเรียน', category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'teacher_att_today',        path: '/academic/teacher-attendance-today',        label: 'การลงเวลาวันนี้ (ครู)',        category: 'วิชาการ - รายงาน', defaultRoles: TEACHER_ATTENDANCE_TODAY_ACCESS },
   { key: 'teacher_att_date',         path: '/academic/teacher-attendance-date-selection',label: 'บันทึกลงเวลาครู (เลือกวัน)',  category: 'วิชาการ - รายงาน', defaultRoles: [ROLES.SCHOOL_ADMIN] },
   { key: 'teacher_att_summary',      path: '/academic/teacher-attendance-summary',      label: 'รายงานลงเวลา (ครู)',           category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },

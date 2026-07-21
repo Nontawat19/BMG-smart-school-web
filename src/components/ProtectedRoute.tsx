@@ -10,6 +10,7 @@ import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
 import { isPwaStandalone, PWA_ATTENDANCE_HUB_PATH } from '@/utils/pwaMode';
 import { usePermissionContext } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
+import { ROLES } from '@/constants/roles';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -164,8 +165,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       return <>{children}</>;
     }
 
+    // ครูเข้าหน้าเช็คอิน/เช็คเอาท์ได้เสมอ — จำกัดแค่ลงเวลาของตัวเองเท่านั้น (บังคับอยู่แล้วใน
+    // CheckinOutPage เมื่อเข้าด้วย ?mode=self) จึงปลอดภัยพอที่จะไม่ต้องพึ่งสวิตช์ตั้งค่าต่อโรงเรียน
+    const hasTeacherSelfCheckinAccess = matchedRouteKey === 'checkin_out' && userRoles.includes(ROLES.TEACHER);
+
     const hasRoleAccess = !effectiveRoles || effectiveRoles.length === 0 ||
-      effectiveRoles.some(r => userRoles.includes(normalizeRole(r)));
+      effectiveRoles.some(r => userRoles.includes(normalizeRole(r))) ||
+      hasTeacherSelfCheckinAccess;
 
     const hasDeptAccess = effectiveDepts.length > 0 &&
       !!user.department && effectiveDepts.includes(user.department);

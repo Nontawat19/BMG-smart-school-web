@@ -23,8 +23,24 @@ export interface SchoolSettingsState {
     directorPrefix: string;
     deputyName: string;
     deputyPrefix: string;
+    academicHeadName: string;
+    academicHeadPrefix: string;
+    budgetHeadName: string;
+    budgetHeadPrefix: string;
     personnelHeadName: string;
     personnelHeadPrefix: string;
+    generalHeadName: string;
+    generalHeadPrefix: string;
+    deputyAcademicName: string;
+    deputyAcademicPrefix: string;
+    deputyBudgetName: string;
+    deputyBudgetPrefix: string;
+    deputyPersonnelName: string;
+    deputyPersonnelPrefix: string;
+    deputyGeneralName: string;
+    deputyGeneralPrefix: string;
+    studentSupportOfficerName: string;
+    studentSupportOfficerPrefix: string;
 
     // ระดับชั้นที่เปิดสอน
     opportunityExpansionLevel: string;
@@ -48,8 +64,24 @@ const initialState: SchoolSettingsState = {
     directorPrefix: "",
     deputyName: "",
     deputyPrefix: "",
+    academicHeadName: "",
+    academicHeadPrefix: "",
+    budgetHeadName: "",
+    budgetHeadPrefix: "",
     personnelHeadName: "",
     personnelHeadPrefix: "",
+    generalHeadName: "",
+    generalHeadPrefix: "",
+    deputyAcademicName: "",
+    deputyAcademicPrefix: "",
+    deputyBudgetName: "",
+    deputyBudgetPrefix: "",
+    deputyPersonnelName: "",
+    deputyPersonnelPrefix: "",
+    deputyGeneralName: "",
+    deputyGeneralPrefix: "",
+    studentSupportOfficerName: "",
+    studentSupportOfficerPrefix: "",
 
     opportunityExpansionLevel: "",
     availableClassOptions: [],
@@ -97,8 +129,24 @@ export const fetchSchoolSettings = createAsyncThunk(
                 directorPrefix: data.directorPrefix || "",
                 deputyName: data.deputyName || "",
                 deputyPrefix: data.deputyPrefix || "",
+                academicHeadName: data.academicHeadName || "",
+                academicHeadPrefix: data.academicHeadPrefix || "",
+                budgetHeadName: data.budgetHeadName || "",
+                budgetHeadPrefix: data.budgetHeadPrefix || "",
                 personnelHeadName: data.personnelHeadName || "",
                 personnelHeadPrefix: data.personnelHeadPrefix || "",
+                generalHeadName: data.generalHeadName || "",
+                generalHeadPrefix: data.generalHeadPrefix || "",
+                deputyAcademicName: data.deputyAcademicName || "",
+                deputyAcademicPrefix: data.deputyAcademicPrefix || "",
+                deputyBudgetName: data.deputyBudgetName || "",
+                deputyBudgetPrefix: data.deputyBudgetPrefix || "",
+                deputyPersonnelName: data.deputyPersonnelName || "",
+                deputyPersonnelPrefix: data.deputyPersonnelPrefix || "",
+                deputyGeneralName: data.deputyGeneralName || "",
+                deputyGeneralPrefix: data.deputyGeneralPrefix || "",
+                studentSupportOfficerName: data.studentSupportOfficerName || "",
+                studentSupportOfficerPrefix: data.studentSupportOfficerPrefix || "",
 
                 opportunityExpansionLevel: level,
                 availableClassOptions,

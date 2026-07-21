@@ -49,7 +49,11 @@ interface SubstitutionRecord {
   endTime?: string;
   leaveRequestId?: string;
   createdAt?: Timestamp;
+  dayPortion?: "full" | "morning" | "afternoon";
 }
+
+const portionSuffix = (dayPortion?: "full" | "morning" | "afternoon") =>
+  dayPortion === "morning" ? " (เช้า)" : dayPortion === "afternoon" ? " (บ่าย)" : "";
 
 interface PdfColumn {
   label: string;
@@ -337,7 +341,7 @@ const SubstituteReportPage: React.FC = () => {
     rows: filteredRows.map((r, index) => [
       String(index + 1),
       formatShortThaiDate(r.date),
-      String(r.period ?? "-"),
+      `${r.period ?? "-"}${portionSuffix(r.dayPortion)}`,
       r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-",
       r.subjectCode || "-",
       r.subjectName || "-",
@@ -484,7 +488,7 @@ const SubstituteReportPage: React.FC = () => {
                           <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
                             <ReportTd className="text-center">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</ReportTd>
                             <ReportTd className="whitespace-nowrap text-center">{formatShortThaiDate(r.date)}</ReportTd>
-                            <ReportTd className="text-center">{r.period ?? "-"}</ReportTd>
+                            <ReportTd className="text-center">{r.period ?? "-"}{portionSuffix(r.dayPortion)}</ReportTd>
                             <ReportTd className="whitespace-nowrap text-center">{r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-"}</ReportTd>
                             <ReportTd className="text-center">{r.subjectCode || "-"}</ReportTd>
                             <ReportTd>{r.subjectName || "-"}</ReportTd>
@@ -511,7 +515,7 @@ const SubstituteReportPage: React.FC = () => {
                               <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
                                 <ReportTd className="text-center text-gray-400">{index + 1}</ReportTd>
                                 <ReportTd className="whitespace-nowrap text-center">{formatShortThaiDate(r.date)}</ReportTd>
-                                <ReportTd className="text-center">{r.period ?? "-"}</ReportTd>
+                                <ReportTd className="text-center">{r.period ?? "-"}{portionSuffix(r.dayPortion)}</ReportTd>
                                 <ReportTd className="whitespace-nowrap text-center">{r.startTime && r.endTime ? `${r.startTime}-${r.endTime}` : "-"}</ReportTd>
                                 <ReportTd className="text-center">{r.subjectCode || "-"}</ReportTd>
                                 <ReportTd>{r.subjectName || "-"}</ReportTd>

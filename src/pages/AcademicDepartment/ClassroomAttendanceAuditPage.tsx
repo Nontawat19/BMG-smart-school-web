@@ -42,8 +42,31 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
-import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
+import { CLASSES, CLASS_FULL_NAMES, getGroupPersonnel } from '@/utils/schoolUtils';
 import Swal from 'sweetalert2';
+import {
+    Document as PdfDocument,
+    Font,
+    Image as PdfImage,
+    Page as PdfPage,
+    StyleSheet as PdfStyleSheet,
+    Text as PdfText,
+    View as PdfView,
+    pdf
+} from '@react-pdf/renderer';
+import { saveAs } from 'file-saver';
+
+try {
+    Font.register({
+        family: 'TH Sarabun PSK',
+        fonts: [
+            { src: '/fonts/THSarabunNew.ttf' },
+            { src: '/fonts/THSarabunNew-Bold.ttf', fontWeight: 'bold' },
+        ],
+    });
+} catch (error) {
+    console.warn('Unable to register Thai PDF font', error);
+}
 
 interface PeriodSetting {
     id: string;
@@ -142,6 +165,214 @@ const formatClassName = (classId: string) => {
     return CLASSES[cleanId] || cleanId;
 };
 
+// ─── Official PDF Report ───────────────────────────────────────────────
+// A4 landscape, ตามระเบียบงานราชการ: ตราสัญลักษณ์/ชื่อโรงเรียนหัวกระดาษ,
+// ตารางเส้นขอบครบ, และช่องลงนามผู้ตรวจสอบ/หัวหน้ากลุ่มบริหารวิชาการท้ายรายงาน
+
+const auditPdfStyles = PdfStyleSheet.create({
+    page: {
+        fontFamily: 'TH Sarabun PSK',
+        fontSize: 11,
+        paddingHorizontal: 28,
+        paddingTop: 22,
+        paddingBottom: 40,
+        backgroundColor: '#ffffff',
+    },
+    topBar: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        borderBottomWidth: 0.8,
+        borderBottomColor: '#777',
+        paddingBottom: 4,
+        marginBottom: 8,
+    },
+    topText: { fontSize: 11, fontWeight: 'bold' },
+    headerBlock: { position: 'relative', minHeight: 58, marginBottom: 6 },
+    logo: { position: 'absolute', left: 0, top: 0, width: 54, height: 54, objectFit: 'contain' },
+    titleWrap: { alignItems: 'center', paddingTop: 2 },
+    mainTitle: { fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+    mainSubtitle: { fontSize: 12, textAlign: 'center', marginTop: 1 },
+    holidayNote: { fontSize: 11, fontWeight: 'bold', textAlign: 'center', marginTop: 1 },
+    summaryRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        marginTop: 6,
+        marginBottom: 8,
+        gap: 4,
+    },
+    summaryItem: { fontSize: 10, marginHorizontal: 8 },
+    rowHeader: {
+        flexDirection: 'row',
+        backgroundColor: '#f3f4f6',
+        borderTopWidth: 1,
+        borderLeftWidth: 1,
+        borderColor: '#374151',
+    },
+    row: {
+        flexDirection: 'row',
+        borderLeftWidth: 1,
+        borderColor: '#374151',
+    },
+    cell: {
+        borderRightWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: '#374151',
+        paddingVertical: 3,
+        paddingHorizontal: 3,
+        fontSize: 9,
+        textAlign: 'center',
+    },
+    cPeriod: { width: '4%' },
+    cTime: { width: '8%' },
+    cRoom: { width: '8%' },
+    cSubject: { width: '18%', textAlign: 'left' },
+    cTeacher: { width: '13%', textAlign: 'left' },
+    cStatus: { width: '9%' },
+    cCheckedAt: { width: '7%' },
+    cCheckedBy: { width: '11%', textAlign: 'left' },
+    cStat: { width: '4%' },
+    cTotal: { width: '5%' },
+    signSection: {
+        marginTop: 26,
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+    },
+    signBlock: { width: 220, alignItems: 'center' },
+    signRow: { flexDirection: 'row', alignItems: 'flex-end', width: '100%' },
+    signPrefix: { fontSize: 11 },
+    signDotsCol: { flex: 1 },
+    signDotsLine: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#000',
+        borderBottomStyle: 'dotted',
+        height: 12,
+    },
+    signName: { fontSize: 11, marginTop: 4, textAlign: 'center' },
+    signRole: { fontSize: 11, marginTop: 2, textAlign: 'center' },
+    pageNumber: {
+        position: 'absolute',
+        bottom: 14,
+        right: 28,
+        fontSize: 9,
+        color: '#555',
+    },
+});
+
+const STATUS_LABELS: Record<AuditSlot['status'], string> = {
+    checked: 'เช็คชื่อแล้ว',
+    pending: 'ยังไม่เช็คชื่อ',
+    adhoc: 'นอกตาราง (Ad-hoc)'
+};
+
+const ClassroomAttendanceAuditPdf: React.FC<{
+    schoolName: string;
+    logoUrl?: string;
+    dateLabel: string;
+    holidayNote?: string;
+    slots: AuditSlot[];
+    metrics: { totalScheduled: number; checkedScheduled: number; pendingScheduled: number; adhocCount: number; overallCheckRate: number };
+    signerName: string;
+    academicHeadName: string;
+    academicHeadRoleLabel: string;
+}> = ({ schoolName, logoUrl, dateLabel, holidayNote, slots, metrics, signerName, academicHeadName, academicHeadRoleLabel }) => (
+    <PdfDocument>
+        <PdfPage size="A4" orientation="landscape" style={auditPdfStyles.page}>
+            <PdfView style={auditPdfStyles.topBar} fixed>
+                <PdfText style={auditPdfStyles.topText}>{schoolName}</PdfText>
+                <PdfText style={auditPdfStyles.topText}>รายงานตรวจสอบการเข้าสอน & การเช็คชื่อ</PdfText>
+            </PdfView>
+
+            <PdfView style={auditPdfStyles.headerBlock}>
+                {logoUrl ? <PdfImage src={logoUrl} style={auditPdfStyles.logo} /> : null}
+                <PdfView style={auditPdfStyles.titleWrap}>
+                    <PdfText style={auditPdfStyles.mainTitle}>รายงานตรวจสอบการลงเวลาการเข้าสอนและการเช็คชื่อนักเรียนของครู</PdfText>
+                    <PdfText style={auditPdfStyles.mainSubtitle}>{schoolName}</PdfText>
+                    <PdfText style={auditPdfStyles.mainSubtitle}>ประจำวันที่ {dateLabel}</PdfText>
+                    {holidayNote ? <PdfText style={auditPdfStyles.holidayNote}>({holidayNote})</PdfText> : null}
+                </PdfView>
+            </PdfView>
+
+            <PdfView style={auditPdfStyles.summaryRow}>
+                <PdfText style={auditPdfStyles.summaryItem}>คาบสอนทั้งหมด: {metrics.totalScheduled} คาบ</PdfText>
+                <PdfText style={auditPdfStyles.summaryItem}>เช็คชื่อแล้ว: {metrics.checkedScheduled} คาบ ({metrics.overallCheckRate}%)</PdfText>
+                <PdfText style={auditPdfStyles.summaryItem}>ยังไม่เช็คชื่อ: {metrics.pendingScheduled} คาบ</PdfText>
+                <PdfText style={auditPdfStyles.summaryItem}>นอกตาราง: {metrics.adhocCount} คาบ</PdfText>
+            </PdfView>
+
+            <PdfView wrap={false}>
+                <PdfView style={auditPdfStyles.rowHeader}>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cPeriod, { fontWeight: 'bold' }]}>คาบ</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTime, { fontWeight: 'bold' }]}>เวลา</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cRoom, { fontWeight: 'bold' }]}>ระดับชั้น/ห้อง</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cSubject, { fontWeight: 'bold' }]}>วิชา</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTeacher, { fontWeight: 'bold' }]}>ครูผู้สอน</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStatus, { fontWeight: 'bold' }]}>สถานะ</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cCheckedAt, { fontWeight: 'bold' }]}>เวลาเช็ค</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cCheckedBy, { fontWeight: 'bold' }]}>ผู้เช็คชื่อ</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat, { fontWeight: 'bold' }]}>มา</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat, { fontWeight: 'bold' }]}>สาย</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat, { fontWeight: 'bold' }]}>ขาด</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat, { fontWeight: 'bold' }]}>ลา</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTotal, { fontWeight: 'bold' }]}>รวม</PdfText>
+                </PdfView>
+            </PdfView>
+
+            {slots.map((slot, idx) => (
+                <PdfView key={slot.id || idx} style={auditPdfStyles.row} wrap={false}>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cPeriod]}>{slot.periodIndex ?? '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTime]}>{slot.startTime}-{slot.endTime}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cRoom]}>{slot.className}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cSubject]}>{[slot.subjectCode, slot.subjectName].filter(Boolean).join(' ')}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTeacher]}>{slot.teacherName || '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStatus]}>{STATUS_LABELS[slot.status]}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cCheckedAt]}>
+                        {slot.checkedAt ? new Date(slot.checkedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cCheckedBy]}>{slot.checkedBy || '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat]}>{slot.stats?.present ?? '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat]}>{slot.stats?.late ?? '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat]}>{slot.stats?.absent ?? '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cStat]}>{slot.stats?.leave ?? '-'}</PdfText>
+                    <PdfText style={[auditPdfStyles.cell, auditPdfStyles.cTotal]}>{slot.stats?.total ?? '-'}</PdfText>
+                </PdfView>
+            ))}
+
+            <PdfView style={auditPdfStyles.signSection}>
+                <PdfView style={auditPdfStyles.signBlock}>
+                    <PdfView style={auditPdfStyles.signRow}>
+                        <PdfText style={auditPdfStyles.signPrefix}>ลงชื่อ</PdfText>
+                        <PdfView style={auditPdfStyles.signDotsCol}>
+                            <PdfView style={auditPdfStyles.signDotsLine} />
+                        </PdfView>
+                        <PdfText style={auditPdfStyles.signPrefix}>ผู้ตรวจสอบ</PdfText>
+                    </PdfView>
+                    <PdfText style={auditPdfStyles.signName}>({signerName || '.........................................'})</PdfText>
+                    <PdfText style={auditPdfStyles.signRole}>งานทะเบียนและวัดผล</PdfText>
+                </PdfView>
+                <PdfView style={auditPdfStyles.signBlock}>
+                    <PdfView style={auditPdfStyles.signRow}>
+                        <PdfText style={auditPdfStyles.signPrefix}>ลงชื่อ</PdfText>
+                        <PdfView style={auditPdfStyles.signDotsCol}>
+                            <PdfView style={auditPdfStyles.signDotsLine} />
+                        </PdfView>
+                        <PdfText style={auditPdfStyles.signPrefix}>ผู้รับรอง</PdfText>
+                    </PdfView>
+                    <PdfText style={auditPdfStyles.signName}>({academicHeadName || '.........................................'})</PdfText>
+                    <PdfText style={auditPdfStyles.signRole}>{academicHeadRoleLabel}</PdfText>
+                </PdfView>
+            </PdfView>
+
+            <PdfText
+                style={auditPdfStyles.pageNumber}
+                render={({ pageNumber, totalPages }) => `หน้า ${pageNumber}/${totalPages}`}
+                fixed
+            />
+        </PdfPage>
+    </PdfDocument>
+);
+
 const ClassroomAttendanceAuditPage: React.FC = () => {
     const dispatch = useDispatch();
     const { user: currentUser } = usePermissions();
@@ -149,6 +380,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
     const calendarState = useSelector((state: RootState) => state.calendar);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
+    const { availableClassOptions } = useSelector((state: RootState) => state.schoolSettings);
 
     const [selectedDate, setSelectedDate] = useState<Date>(() => {
         const today = new Date();
@@ -160,7 +392,15 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
     const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>(DEFAULT_PERIODS);
     const [rooms, setRooms] = useState<Record<string, string>>({});
     const [allSlots, setAllSlots] = useState<AuditSlot[]>([]);
-    
+
+    // PDF Report State
+    const [schoolName, setSchoolName] = useState('');
+    const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+    const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
+    const [academicHeadName, setAcademicHeadName] = useState('');
+    const [academicHeadRoleLabel, setAcademicHeadRoleLabel] = useState('หัวหน้ากลุ่มบริหารวิชาการ');
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
     // Filters State
     const [selectedLevel, setSelectedLevel] = useState<string>('all');
     const [selectedRoom, setSelectedRoom] = useState<string>('all');
@@ -190,6 +430,35 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
         }
     }, [selectedDate, schoolId, calendarState.status, periodSettings]);
 
+    // Convert school logo to base64 so @react-pdf/renderer can embed it reliably
+    useEffect(() => {
+        if (!logoUrl) {
+            setLogoBase64(undefined);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const response = await fetch(logoUrl);
+                const blob = await response.blob();
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                if (!cancelled) setLogoBase64(dataUrl);
+            } catch (error) {
+                console.warn('Unable to inline school logo as base64 for PDF, falling back to direct URL', error);
+                // Firebase Storage may block the base64 fetch via CORS — react-pdf can still
+                // load the image directly from the URL in most cases, so use it as a fallback
+                // rather than dropping the logo entirely.
+                if (!cancelled) setLogoBase64(logoUrl);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [logoUrl]);
+
     const loadSchoolConfig = async (currentSchoolId: string) => {
         try {
             // Load period settings
@@ -213,6 +482,17 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 roomMap[d.id] = data.roomCode || data.roomName || d.id;
             });
             setRooms(roomMap);
+
+            // Load school name/logo & academic head name for the PDF report header/signature
+            const schoolSnap = await getDoc(doc(db, 'school-settings', currentSchoolId));
+            if (schoolSnap.exists()) {
+                const data = schoolSnap.data();
+                setSchoolName(String(data.schoolName || data.name || data.schoolThaiName || ''));
+                if (data.logoUrl) setLogoUrl(String(data.logoUrl));
+                const academicPersonnel = getGroupPersonnel(data, 'academic');
+                setAcademicHeadName(academicPersonnel.name);
+                setAcademicHeadRoleLabel(academicPersonnel.label);
+            }
         } catch (e) {
             console.error("Error loading config:", e);
         }
@@ -646,20 +926,11 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
         }
     };
 
-    // Extract unique levels for filter dropdown
+    // Grade levels the school actually teaches (from school-settings.opportunityExpansionLevel),
+    // not just whatever happens to be scheduled for the selected day
     const classLevelsList = useMemo(() => {
-        const levels = new Set<string>();
-        allSlots.forEach(s => {
-            // Find level prefix (e.g., "ม.1/1" -> "ม.1", "ป.3/2" -> "ป.3")
-            const formatted = s.className;
-            if (formatted.includes('/')) {
-                levels.add(formatted.split('/')[0]);
-            } else {
-                levels.add(formatted);
-            }
-        });
-        return Array.from(levels).sort();
-    }, [allSlots]);
+        return availableClassOptions.map(([, label]) => label);
+    }, [availableClassOptions]);
 
     // Filtered & Sorted Slots
     const filteredResults = useMemo(() => {
@@ -928,9 +1199,35 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
         document.body.removeChild(link);
     };
 
-    // Print functionality
-    const handlePrint = () => {
-        window.print();
+    // Generate the official-format PDF report (ตามระเบียบงานราชการ)
+    const handleGeneratePdf = async () => {
+        if (filteredResults.length === 0) {
+            Swal.fire("ไม่พบข้อมูล", "ไม่มีข้อมูลสำหรับสร้างรายงานในหน้านี้", "info");
+            return;
+        }
+        setIsGeneratingPdf(true);
+        try {
+            const holiday = checkIsHoliday(formatDateKey(selectedDate));
+            const blob = await pdf(
+                <ClassroomAttendanceAuditPdf
+                    schoolName={schoolName}
+                    logoUrl={logoBase64}
+                    dateLabel={formatDateThai(selectedDate)}
+                    holidayNote={holiday.isHoliday ? holiday.description : undefined}
+                    slots={filteredResults}
+                    metrics={metrics}
+                    signerName={String(currentUser?.fullName || '').trim()}
+                    academicHeadName={academicHeadName}
+                    academicHeadRoleLabel={academicHeadRoleLabel}
+                />
+            ).toBlob();
+            saveAs(blob, `รายงานตรวจสอบการเข้าสอน_${formatDateKey(selectedDate)}.pdf`);
+        } catch (e) {
+            console.error("Error generating PDF:", e);
+            Swal.fire("ข้อผิดพลาด", "ไม่สามารถสร้างรายงาน PDF ได้", "error");
+        } finally {
+            setIsGeneratingPdf(false);
+        }
     };
 
     const isTodayHoliday = checkIsHoliday(formatDateKey(selectedDate));
@@ -938,32 +1235,11 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="w-full px-2 sm:px-6 lg:px-8 py-2 sm:py-5 text-gray-900 dark:text-white relative">
-                
-                {/* Print Style Overrides */}
-                <style>{`
-                    @media print {
-                        body {
-                            background-color: white !important;
-                            color: black !important;
-                        }
-                        .no-print {
-                            display: none !important;
-                        }
-                        .print-only {
-                            display: block !important;
-                        }
-                        .print-card {
-                            border: none !important;
-                            box-shadow: none !important;
-                            padding: 0 !important;
-                        }
-                    }
-                `}</style>
 
                 <div className="max-w-7xl mx-auto">
-                    
+
                     {/* Header */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-5 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300 no-print">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-5 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
                         <div className="space-y-1 text-left">
                             <div className="flex items-center gap-3">
                                 <BackButton to="/academic/hub/attendance" />
@@ -982,11 +1258,12 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2 self-start md:self-center">
                             <button
-                                onClick={handlePrint}
-                                className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition cursor-pointer"
+                                onClick={handleGeneratePdf}
+                                disabled={isGeneratingPdf}
+                                className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                <Printer size={16} className="text-gray-500 dark:text-gray-400" />
-                                <span>พิมพ์รายงาน</span>
+                                {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin text-gray-500 dark:text-gray-400" /> : <Printer size={16} className="text-gray-500 dark:text-gray-400" />}
+                                <span>พิมพ์รายงาน (PDF)</span>
                             </button>
                             <button
                                 onClick={handleExportCSV}
@@ -998,18 +1275,8 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* PRINT HEADINGS */}
-                    <div className="hidden print-only text-center mb-6">
-                        <h2 className="text-2xl font-bold">รายงานตรวจสอบการลงเวลาการเข้าสอนและการเช็คชื่อนักเรียนของครู</h2>
-                        <h3 className="text-lg font-medium mt-1">{formatDateThai(selectedDate)}</h3>
-                        {isTodayHoliday.isHoliday && (
-                            <p className="text-sm font-semibold mt-1">(* {isTodayHoliday.description} *)</p>
-                        )}
-                        <hr className="my-4 border-gray-300" />
-                    </div>
-
                     {/* Quick Date Navigator Row */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 bg-white dark:bg-[#1a1b1e] p-3 sm:p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm no-print">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 bg-white dark:bg-[#1a1b1e] p-3 sm:p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm">
                         
                         {/* Day switch buttons */}
                         <div className="flex items-center gap-2">
@@ -1082,7 +1349,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
                     {/* Holiday Notification Banner */}
                     {isTodayHoliday.isHoliday && (
-                        <div className="flex items-start gap-3 p-4 mb-6 rounded-2xl bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border border-amber-100 dark:border-amber-900/50 shadow-sm no-print">
+                        <div className="flex items-start gap-3 p-4 mb-6 rounded-2xl bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 border border-amber-100 dark:border-amber-900/50 shadow-sm">
                             <AlertTriangle size={20} className="shrink-0 text-amber-500 mt-0.5" />
                             <div>
                                 <span className="font-bold text-sm sm:text-base">แจ้งเตือนวันหยุดสถาบันการศึกษา</span>
@@ -1174,7 +1441,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     </div>
 
                     {/* Filter & Options Panel */}
-                    <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4 sm:p-5 mb-6 no-print">
+                    <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4 sm:p-5 mb-6">
                         <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3.5 flex items-center gap-2">
                             <Filter size={16} className="text-indigo-500" />
                             <span>ตัวกรองและข้อกำหนดการค้นหา</span>
@@ -1206,13 +1473,9 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                     className="w-full bg-gray-50 dark:bg-[#25262b] border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 font-semibold"
                                 >
                                     <option value="all">ทุกห้องเรียน</option>
-                                    <option value="/1">/1 (ห้อง 1)</option>
-                                    <option value="/2">/2 (ห้อง 2)</option>
-                                    <option value="/3">/3 (ห้อง 3)</option>
-                                    <option value="/4">/4 (ห้อง 4)</option>
-                                    <option value="/5">/5 (ห้อง 5)</option>
-                                    <option value="/6">/6 (ห้อง 6)</option>
-                                    <option value="/7">/7 (ห้อง 7)</option>
+                                    {Array.from({ length: 20 }, (_, i) => i + 1).map((room) => (
+                                        <option key={room} value={`/${room}`}>{room}</option>
+                                    ))}
                                 </select>
                             </div>
 
@@ -1249,7 +1512,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     </div>
 
                     {/* Results Table Container */}
-                    <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden print-card">
+                    <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
                         
                         {loading ? (
                             <div className="flex flex-col justify-center items-center py-20 text-gray-400">
@@ -1268,7 +1531,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
                                     <thead>
-                                        <tr className="bg-gray-50 dark:bg-[#1e1f22] border-b border-gray-100 dark:border-gray-800 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider no-print">
+                                        <tr className="bg-gray-50 dark:bg-[#1e1f22] border-b border-gray-100 dark:border-gray-800 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                             <th className="py-4 px-4 sm:px-6 cursor-pointer hover:text-indigo-500 select-none" onClick={() => handleSort('period')}>
                                                 <div className="flex items-center gap-1">
                                                     <span>คาบที่ / เวลา</span>
@@ -1292,18 +1555,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                             <th className="py-4 px-4 text-center">สถิติมาเรียน</th>
                                             <th className="py-4 px-4 sm:px-6 text-right">ดำเนินการ</th>
                                         </tr>
-
-                                        {/* PRINT-ONLY HEADERS */}
-                                        <tr className="hidden print-only bg-gray-100 border-b border-gray-300 text-xs font-bold text-black uppercase">
-                                            <th className="py-2.5 px-3">คาบ</th>
-                                            <th className="py-2.5 px-3">เวลา</th>
-                                            <th className="py-2.5 px-3">ห้อง</th>
-                                            <th className="py-2.5 px-3">รหัสวิชา</th>
-                                            <th className="py-2.5 px-3">วิชา</th>
-                                            <th className="py-2.5 px-3">ครูผู้สอน</th>
-                                            <th className="py-2.5 px-3">สถานะ</th>
-                                            <th className="py-2.5 px-3 text-center">สถิติเช็คชื่อ (มา/สาย/ขาด/ลา/รวม)</th>
-                                        </tr>
                                     </thead>
                                     
                                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
@@ -1317,7 +1568,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                 >
                                                     
                                                     {/* PERIOD / TIME */}
-                                                    <td className="py-4 px-4 sm:px-6 font-semibold no-print">
+                                                    <td className="py-4 px-4 sm:px-6 font-semibold">
                                                         <div className="flex flex-col">
                                                             <span className="text-gray-900 dark:text-white font-bold">{slot.periodLabel}</span>
                                                             <span className="text-xs text-gray-400 dark:text-gray-500 font-medium flex items-center gap-1 mt-0.5">
@@ -1326,19 +1577,14 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    
-                                                    {/* PRINT TIME COLUMNS */}
-                                                    <td className="hidden print-only py-2 px-3 font-semibold text-xs">{slot.periodIndex}</td>
-                                                    <td className="hidden print-only py-2 px-3 text-xs">{slot.startTime} - {slot.endTime}</td>
 
                                                     {/* CLASSROOM */}
-                                                    <td className="py-4 px-4 font-bold text-gray-900 dark:text-white no-print">
+                                                    <td className="py-4 px-4 font-bold text-gray-900 dark:text-white">
                                                         {slot.className}
                                                     </td>
-                                                    <td className="hidden print-only py-2 px-3 text-xs font-bold">{slot.className}</td>
 
                                                     {/* SUBJECT */}
-                                                    <td className="py-4 px-4 no-print">
+                                                    <td className="py-4 px-4">
                                                         <div className="flex flex-col max-w-xs sm:max-w-sm">
                                                             <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xs uppercase tracking-wide">
                                                                 {slot.subjectCode}
@@ -1348,17 +1594,14 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="hidden print-only py-2 px-3 text-xs font-semibold">{slot.subjectCode}</td>
-                                                    <td className="hidden print-only py-2 px-3 text-xs">{slot.subjectName}</td>
 
                                                     {/* TEACHER */}
-                                                    <td className="py-4 px-4 font-medium text-gray-800 dark:text-gray-200 no-print">
+                                                    <td className="py-4 px-4 font-medium text-gray-800 dark:text-gray-200">
                                                         {slot.teacherName}
                                                     </td>
-                                                    <td className="hidden print-only py-2 px-3 text-xs">{slot.teacherName}</td>
 
                                                     {/* AUDIT STATUS */}
-                                                    <td className="py-4 px-4 no-print">
+                                                    <td className="py-4 px-4">
                                                         {slot.status === 'checked' && (
                                                             <div className="flex flex-col">
                                                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40 w-fit">
@@ -1393,13 +1636,8 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                         )}
                                                     </td>
 
-                                                    {/* PRINT STATUS */}
-                                                    <td className="hidden print-only py-2 px-3 text-xs font-bold">
-                                                        {slot.status === 'checked' ? 'เช็คแล้ว' : slot.status === 'adhoc' ? 'เช็คแล้ว (นอกตาราง)' : 'ยังไม่เช็ค'}
-                                                    </td>
-
                                                     {/* STATS BREAKDOWN */}
-                                                    <td className="py-4 px-4 no-print">
+                                                    <td className="py-4 px-4">
                                                         {isChecked && slot.stats ? (
                                                             <div className="flex items-center justify-center gap-1.5 font-bold text-xs select-none">
                                                                 <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" title="มาเรียน">
@@ -1423,16 +1661,8 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                         )}
                                                     </td>
 
-                                                    {/* PRINT STATS */}
-                                                    <td className="hidden print-only py-2 px-3 text-xs text-center">
-                                                        {isChecked && slot.stats 
-                                                            ? `${slot.stats.present} / ${slot.stats.late} / ${slot.stats.absent} / ${slot.stats.leave} / (${slot.stats.total} คน)` 
-                                                            : '—'
-                                                        }
-                                                    </td>
-
                                                     {/* ACTION BUTTON */}
-                                                    <td className="py-4 px-4 sm:px-6 text-right no-print">
+                                                    <td className="py-4 px-4 sm:px-6 text-right">
                                                         {isChecked ? (
                                                             <button
                                                                 onClick={() => handleOpenDetails(slot)}
@@ -1465,7 +1695,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 {/* STUDENT DETAIL MODAL POPUP */}
                 {/* ========================================================================= */}
                 {activeModalSlot && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                         <div className="bg-white dark:bg-[#1c1d21] rounded-3xl border border-gray-100 dark:border-gray-800 w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                             
                             {/* Modal Header */}

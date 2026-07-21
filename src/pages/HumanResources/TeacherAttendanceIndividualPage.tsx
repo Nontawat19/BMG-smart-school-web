@@ -14,6 +14,7 @@ import Select from "react-select";
 import { useTheme } from "@/ThemeContext";
 import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
 import { classifyLeaveSubType } from "@/utils/periodSummaryUtils";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 
 // Register TH Sarabun Font for PDF
 Font.register({
@@ -324,6 +325,7 @@ interface PDFProps {
   teacherProfileImage?: string;
   directorName: string;
   personnelHeadName?: string;
+  personnelHeadRoleLabel?: string;
   dateText: string;
   reportPrintedAt: string;
   academicYearTerm: string;
@@ -339,6 +341,7 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
   teacherProfileImage,
   directorName,
   personnelHeadName,
+  personnelHeadRoleLabel,
   dateText,
   reportPrintedAt,
   academicYearTerm
@@ -485,7 +488,7 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
               <View style={pdfStyles.signBox}>
                 <Text>ลงชื่อ..................................................ผู้เสนอรายงาน</Text>
                 <Text style={pdfStyles.signName}>({personnelHeadName || ".................................................."})</Text>
-                <Text>ตำแหน่ง หัวหน้าฝ่ายบริหารงานบุคคล</Text>
+                <Text>ตำแหน่ง {personnelHeadRoleLabel || "หัวหน้าฝ่ายบริหารงานบุคคล"}</Text>
               </View>
               <View style={pdfStyles.signBox}>
                 <Text>ลงชื่อ..................................................ผู้รับรองรายงาน</Text>
@@ -967,7 +970,8 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
     // Load fresh school configurations
     let schoolName = "โรงเรียนปอเนาะวิทยา";
     let directorName = "";
-    let personnelHeadName = "นายนนทวัฒน์ สุวรรณบุผา";
+    let personnelHeadName = "";
+    let personnelHeadRoleLabel = "หัวหน้าฝ่ายบริหารงานบุคคล";
     let logoUrl = "";
     let affiliation = "";
 
@@ -978,7 +982,9 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
           const d = schoolDoc.data();
           schoolName = d.schoolName || schoolName;
           directorName = d.directorName || "";
-          personnelHeadName = [d.personnelHeadPrefix, d.personnelHeadName].filter(Boolean).join(' ') || d.personnelHeadName || "นายนนทวัฒน์ สุวรรณบุผา";
+          const personnelPersonnel = getGroupPersonnel(d, 'personnel');
+          personnelHeadName = personnelPersonnel.name;
+          personnelHeadRoleLabel = personnelPersonnel.label;
           logoUrl = d.logoUrl || "";
           affiliation = d.affiliation || "";
         }
@@ -1053,6 +1059,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
           teacherProfileImage={teacherProfileImage}
           directorName={directorName}
           personnelHeadName={personnelHeadName}
+          personnelHeadRoleLabel={personnelHeadRoleLabel}
           dateText={dateText}
           reportPrintedAt={reportPrintedAt}
           academicYearTerm={academicYearTerm}

@@ -10,9 +10,10 @@ interface Props {
     directorName?: string;
     deputyName?: string;
     personnelHeadName?: string;
+    personnelHeadRoleLabel?: string;
 }
 
-const OfficialTravelPdfButton: React.FC<Props> = ({ data, schoolName, schoolAffiliation, directorName, deputyName, personnelHeadName }) => {
+const OfficialTravelPdfButton: React.FC<Props> = ({ data, schoolName, schoolAffiliation, directorName, deputyName, personnelHeadName, personnelHeadRoleLabel }) => {
     const [isGenerated, setIsGenerated] = useState(false);
 
     // Prepare data for the document
@@ -22,6 +23,7 @@ const OfficialTravelPdfButton: React.FC<Props> = ({ data, schoolName, schoolAffi
         directorName: directorName,
         deputyName: deputyName,
         personnelHeadName: personnelHeadName,
+        personnelHeadRoleLabel: personnelHeadRoleLabel,
         requesterName: data.requesterName,
         position: data.position,
         department: data.department,

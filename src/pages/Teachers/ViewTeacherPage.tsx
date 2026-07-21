@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
 import { Chart } from "react-google-charts";
 import { useTheme } from "../../ThemeContext";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
+import { getGroupPersonnel } from "@/utils/schoolUtils";
 
 // --- Type Definition ---
 interface TeacherData {
@@ -203,11 +204,12 @@ export default function ViewTeacherPage() {
   const nextTeacherId = currentIndex < allTeacherIds.length - 1 ? allTeacherIds[currentIndex + 1] : null;
   const prevTeacherId = currentIndex > 0 ? allTeacherIds[currentIndex - 1] : null;
 
-  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; affiliation: string }>({
+  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; directorName: string; deputyName: string; personnelHeadName: string; personnelHeadRoleLabel: string; affiliation: string }>({
     schoolName: "",
     directorName: "",
     deputyName: "",
     personnelHeadName: "",
+    personnelHeadRoleLabel: "",
     affiliation: ""
   });
 
@@ -347,11 +349,13 @@ export default function ViewTeacherPage() {
           const schoolSnap = await getDoc(schoolRef);
           if (schoolSnap.exists()) {
             const sData = schoolSnap.data();
+            const personnelPersonnel = getGroupPersonnel(sData, 'personnel');
             setSchoolInfo({
               schoolName: sData.schoolName || "",
               directorName: sData.directorName || "",
               deputyName: (sData.deputyPrefix || "") + (sData.deputyName || ""),
-              personnelHeadName: (sData.personnelHeadPrefix || "") + (sData.personnelHeadName || ""),
+              personnelHeadName: personnelPersonnel.name,
+              personnelHeadRoleLabel: personnelPersonnel.label,
               affiliation: sData.affiliation || ""
             });
           }
@@ -1069,6 +1073,7 @@ export default function ViewTeacherPage() {
                                         directorName={schoolInfo.directorName}
                                         deputyName={schoolInfo.deputyName}
                                         personnelHeadName={schoolInfo.personnelHeadName}
+                                        personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
                                       />
                                     </div>
                                   </td>
