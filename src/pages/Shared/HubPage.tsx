@@ -105,7 +105,10 @@ const HubPage: React.FC = () => {
   );
 
   const [features, setFeatures] = React.useState<Record<string, any>>({});
-  const [activityMode, setActivityMode] = React.useState<'special-period' | 'course-based'>('special-period');
+  // undefined = school hasn't chosen a mode yet on /academic/activity-settings; menu items
+  // gated on activityMode below treat undefined the same as 'special-period' (kept visible),
+  // matching the convention most other consumers of this setting already use.
+  const [activityMode, setActivityMode] = React.useState<'special-period' | 'course-based' | undefined>(undefined);
   const [clubMode, setClubMode] = React.useState<'legacy' | 'course-based'>('legacy');
 
   React.useEffect(() => {
@@ -118,8 +121,9 @@ const HubPage: React.FC = () => {
           ...(data?.features || {}),
           ...(data?.academicSettings || {})
         });
-        setActivityMode(data?.activityHubSettings?.activityMode ?? 'special-period');
-        setClubMode(data?.activityHubSettings?.clubMode ?? 'legacy');
+        const rawActivityMode = data?.activityHubSettings?.activityMode;
+        setActivityMode(rawActivityMode === 'course-based' || rawActivityMode === 'special-period' ? rawActivityMode : undefined);
+        setClubMode(data?.activityHubSettings?.clubMode === 'course-based' ? 'course-based' : 'legacy');
       }
     });
 
@@ -787,7 +791,8 @@ const HubPage: React.FC = () => {
           icon: <Award size={24} />,
           path: schoolId ? `/school/${schoolId}/students/behavior` : "#",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
-          allowedRoles: STUDENT_AFFAIRS_ACCESS
+          // ครูผู้สอนทุกคนต้องเห็นเมนูนี้ ไม่จำกัดเฉพาะฝ่ายกิจการนักเรียน
+          allowedRoles: [...STUDENT_AFFAIRS_ACCESS, ROLES.TEACHER]
         },
         {
           title: "รายงานคะแนนความประพฤติ",
@@ -795,6 +800,14 @@ const HubPage: React.FC = () => {
           icon: <ShieldAlert size={24} />,
           path: schoolId ? `/school/${schoolId}/academic/student-behavior-class-report` : "/academic/student-behavior-class-report",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "วิเคราะห์คะแนนความประพฤติ",
+          description: "จัดอันดับนักเรียนคะแนนเชิงบวก/ลบ หลายระดับชั้นพร้อมกัน ตามช่วงวันที่ พร้อมพิมพ์ PDF",
+          icon: <BarChart3 size={24} />,
+          path: "/student-support/behavior-analysis",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
           allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]

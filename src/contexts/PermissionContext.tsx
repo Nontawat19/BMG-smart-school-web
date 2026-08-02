@@ -3,7 +3,6 @@ import { collection, getDocs, setDoc, doc, writeBatch } from 'firebase/firestore
 import { onAuthStateChanged } from 'firebase/auth';
 import { firestore as db, auth } from '@/firebase';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
-import { ROLES } from '@/constants/roles';
 
 export interface RoutePermissionEntry {
   allowedRoles: string[];
@@ -65,25 +64,20 @@ const unionEntry = (
 export const PermissionProvider: React.FC<{
   children: React.ReactNode;
   schoolId?: string | null;
-  userRoles?: string[] | null;
-}> = ({ children, schoolId, userRoles }) => {
+}> = ({ children, schoolId }) => {
   const [globalPerms, setGlobalPerms]   = useState<Record<string, RoutePermissionEntry>>({});
   const [schoolSpecificPerms, setSchoolSpecificPerms] = useState<Record<string, RoutePermissionEntry>>({});
   const [globalLoaded, setGlobalLoaded] = useState(false);
   const [schoolLoaded, setSchoolLoaded] = useState(false);
 
   const isLoaded = globalLoaded && schoolLoaded;
-  const normalizedRoles = useMemo(
-    () => (userRoles ?? []).map(role => role.toLowerCase()),
-    [userRoles]
-  );
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
-  const shouldLoadRemotePermissions =
-    pathname.startsWith('/owner/permission-management') ||
-    pathname.startsWith('/academic/permission-management');
-  const canReadGlobalPermissions = normalizedRoles.includes(ROLES.SUPER_ADMIN) || normalizedRoles.includes(ROLES.SCHOOL_ADMIN);
-  const canReadSchoolPermissions = canReadGlobalPermissions && shouldLoadRemotePermissions;
-  const canReadGlobalPermissionDocument = canReadGlobalPermissions && shouldLoadRemotePermissions;
+
+  // Firestore rules allow any authenticated user to read route_permissions,
+  // so overrides must load for every signed-in user on every page — not just
+  // admins on the permission-management screen — otherwise granted roles
+  // (e.g. teacher) never take effect when that user visits the route.
+  const canReadGlobalPermissionDocument = true;
+  const canReadSchoolPermissions = true;
 
   // Union merge: global is the floor, school adds on top
   const routePermissions = useMemo(() => {

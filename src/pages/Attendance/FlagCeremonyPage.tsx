@@ -1247,8 +1247,6 @@ const FlagCeremonyPage: React.FC = () => {
     if (!resolved.shouldWriteDaily && !resolved.shouldDeleteDaily) return null;
 
     const todayAppliedPenalty = getTodayAppliedPenalty(student);
-    const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-    const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
 
     const newAttendanceStatus = resolved.action === "noScanPresentDeduct"
       ? ATTENDANCE_STATUS.PRESENT
@@ -1273,7 +1271,8 @@ const FlagCeremonyPage: React.FC = () => {
     const penaltyDelta = todayAppliedPenalty - totalPenalty;
 
     const currentScore = student.behaviorScore ?? 100;
-    const nextScore = Math.min(maxScore, Math.max(minScore, currentScore + penaltyDelta));
+    // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ
+    const nextScore = currentScore + penaltyDelta;
     const netDelta = nextScore - currentScore;
 
     // หากไม่มีความเปลี่ยนแปลงของคะแนนพฤติกรรมในเซสชันนี้ ไม่ต้องแสดง Preview การคำนวณคะแนนพฤติกรรม
@@ -1326,13 +1325,11 @@ const FlagCeremonyPage: React.FC = () => {
       ) => {
         if (penaltyDelta === 0) return;
 
-        const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-        const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
-
         const nextScore = await runTransaction(firestore, async (transaction) => {
           const snap = await transaction.get(studentRef);
           const currentScore = Number(snap.data()?.behaviorScore ?? 100);
-          const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + penaltyDelta));
+          // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ
+          const computedNextScore = currentScore + penaltyDelta;
           if (computedNextScore === currentScore) return null;
 
           transaction.set(studentRef, {

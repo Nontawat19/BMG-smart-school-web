@@ -18,7 +18,6 @@ interface GradeBookToolbarProps {
     completenessStats: any;
     activeTab: 'grades' | 'characteristics' | 'readingWriting';
     setActiveTab: (tab: 'grades' | 'characteristics' | 'readingWriting') => void;
-    academicSettings: any;
     academicYear?: string;
     selectedClass: string;
     selectedRoom: string;
@@ -85,9 +84,12 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
     return (
         <div className="flex items-center gap-3 mb-6 bg-white/80 dark:bg-[#1a1b1e]/90 p-3 rounded-2xl border border-gray-100/50 dark:border-gray-800 backdrop-blur-xl sticky top-16 z-50 shadow-2xl shadow-gray-200/50 dark:shadow-none ring-1 ring-black/5 dark:ring-white/5 transition-all duration-300">
             
-            {/* Progress Segment */}
+            {/* Progress Segment — overall readiness across ALL sections (grades+characteristics+
+                reading/writing+attendance combined), not just the currently open tab. This is
+                intentionally a different metric from the per-tab "ความคืบหน้าการกรอก" cards below,
+                since it gates the PDF download button which requires everything to be complete. */}
             <div className="flex-shrink-0 flex items-center gap-3 pr-3 border-r border-gray-200 dark:border-gray-800">
-                <div className="relative w-10 h-10 flex items-center justify-center">
+                <div className="relative w-10 h-10 flex items-center justify-center" title="ความพร้อมออก PDF (รวมทุกส่วน: คะแนน คุณลักษณะฯ อ่านเขียน และการเช็คชื่อ)">
                     <svg className="w-full h-full transform -rotate-90">
                         <circle
                             cx="20" cy="20" r="17"
@@ -106,7 +108,7 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
                     <span className="absolute text-[9px] font-black text-gray-900 dark:text-white">{Math.round(progress)}%</span>
                 </div>
                 <div className={`hidden ${isCollapsed ? 'xl:flex' : 'hidden'} flex-col`}>
-                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter leading-none">ความคืบหน้า</span>
+                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter leading-none">ความพร้อม PDF</span>
                     <span className="text-[11px] font-bold text-gray-900 dark:text-white mt-1">{filledCount}/{totalCount}</span>
                 </div>
             </div>
@@ -125,7 +127,7 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
                                 }`}
                         >
                             <tab.icon size={14} />
-                            {(isCollapsed || !window.matchMedia('(min-width: 1024px)').matches) && <span>{tab.label}</span>}
+                            <span className={isCollapsed ? 'inline' : 'lg:hidden'}>{tab.label}</span>
                         </button>
                     ))}
                 </div>

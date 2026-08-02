@@ -195,10 +195,15 @@ export default function AddTeacherPage() {
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
-        const role = userData.role || "user";
-        setCurrentUserRole(role);
+        // role may be stored as a string (legacy) or an array (current standard)
+        const roles: string[] = Array.isArray(userData.role)
+          ? userData.role
+          : userData.role
+            ? [userData.role]
+            : ["user"];
+        setCurrentUserRole(roles[0] || "user");
 
-        const isSA = role === "super_admin";
+        const isSA = roles.includes("super_admin");
         setIsSuperAdmin(isSA);
         const loggedInUserSchoolId = userData.schoolId;
 
@@ -507,8 +512,12 @@ export default function AddTeacherPage() {
           <header className="mb-8 flex items-center gap-4">
             <BackButton to="/academic/hub/personnel_info" />
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลครูใหม่</h1>
-              <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)</p>
+              <h1 className="text-3xl font-bold tracking-tight">{form.personnelType === 'user' ? 'เพิ่มผู้ใช้ระบบใหม่' : 'เพิ่มข้อมูลครูใหม่'}</h1>
+              <p className="mt-1 text-gray-500 dark:text-gray-400">
+                {form.personnelType === 'user'
+                  ? 'กรอกข้อมูลผู้ใช้งานที่ไม่ใช่ครูผู้สอน (ใช้งานระบบได้ตามสิทธิ์ที่มอบหมาย ไม่มีสิทธิ์เรื่องงานสอน)'
+                  : 'กรอกรายละเอียดข้อมูลของครูให้ครบถ้วน'} (เครื่องหมาย <span className="text-red-500">*</span> คือข้อมูลที่จำเป็น)
+              </p>
             </div>
           </header>
 

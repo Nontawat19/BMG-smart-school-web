@@ -5,6 +5,7 @@ import { firestore as db } from '@/firebase';
 import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course } from '../types';
 import { CLASSES } from '@/utils/schoolUtils';
 import { mapSDQToCharacteristics } from '@/services/sdqService';
+import { getSDQCharacteristicType } from '../sdqCriteria';
 
 export const useGradeBookActions = (
     schoolId: string | undefined,
@@ -37,6 +38,38 @@ export const useGradeBookActions = (
     };
 
     const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
+
+    const applySDQToCriteria = (
+        prevGrades: Record<string, GradeRecord>,
+        criteriaList: CharacteristicCriteria[],
+        studentsList: Student[],
+        sdqSource: Record<string, any>
+    ) => {
+        const newGrades = { ...prevGrades };
+        const updatedStudentIds = new Set<string>();
+
+        studentsList.forEach(student => {
+            const sdq = sdqSource[student.id];
+            if (!sdq) return;
+            const mapped = mapSDQToCharacteristics(sdq);
+
+            criteriaList.forEach(criteriaObj => {
+                const type = getSDQCharacteristicType(criteriaObj.id, criteriaObj.title);
+                const sdqValue = type ? mapped[type] : undefined;
+                if (sdqValue === undefined) return;
+
+                const current = newGrades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0', characteristicsScores: {} };
+                const scores = { ...(current.characteristicsScores || {}) };
+                (criteriaObj.indicators || []).forEach((_, idx) => {
+                    scores[`${criteriaObj.id}_${idx}`] = sdqValue;
+                });
+                newGrades[student.id] = { ...current, characteristicsScores: scores };
+                updatedStudentIds.add(student.id);
+            });
+        });
+
+        return { newGrades, updatedStudentIds };
+    };
 
     const distributeFormativeScore = (score: number, existingDetails: Record<string, number> = {}) => {
         const assessments = currentCourse?.formativeAssessments?.filter(a => (a.maxScore || 0) > 0) || [];
@@ -188,66 +221,67 @@ export const useGradeBookActions = (
         if (!selectedClass || !selectedCourse) return;
 
         if (Object.keys(sdqMap).length === 0) {
-            Swal.fire({ icon: 'warning', title: 'ไม่พบข้อมูล SDQ', text: 'กรุณารอสักครู่ระบบกำลังดึงข้อมูล หรือไม่มีข้อมูล SDQ สำหรับนักเรียนกลุ่มนี้' });
+            await Swal.fire({ icon: 'warning', title: 'ไม่พบข้อมูล SDQ', text: 'กรุณารอสักครู่ระบบกำลังดึงข้อมูล หรือไม่มีข้อมูล SDQ สำหรับนักเรียนกลุ่มนี้' });
             return;
         }
 
-        Swal.fire({
+        const criteriaObj = characteristicsCriteria.find(c => c.id === criteriaId);
+        if (!criteriaObj) return;
+
+        const result = await Swal.fire({
             title: `Sync ${criteriaTitle}?`,
             text: "คะแนนในคอลัมน์นี้จะถูกแทนที่ด้วยผลประเมินจาก SDQ",
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'Sync เลย',
             cancelButtonText: 'ยกเลิก'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                let updateCount = 0;
-                setGrades(prev => {
-                    const newGrades = { ...prev };
-                    students.forEach(student => {
-                        const sdq = sdqMap[student.id];
-                        if (sdq) {
-                            const mapped = mapSDQToCharacteristics(sdq);
-                            let sdqValue: number | undefined;
-
-                            // Parsing to check type
-                            const cIdNum = parseInt(criteriaId);
-                            const isType2 = cIdNum === 2 || criteriaId === '2' || criteriaTitle.includes('ซื่อสัตย์');
-                            const isType3 = cIdNum === 3 || criteriaId === '3' || criteriaTitle.includes('วินัย');
-                            const isType8 = cIdNum === 8 || criteriaId === '8' || criteriaTitle.includes('จิตสาธารณะ');
-
-                            if (isType2) sdqValue = mapped[2];
-                            else if (isType3) sdqValue = mapped[3];
-                            else if (isType8) sdqValue = mapped[8];
-
-
-                            if (sdqValue !== undefined) {
-                                const current = newGrades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0', characteristicsScores: {} };
-                                const scores = { ...(current.characteristicsScores || {}) };
-
-                                const criteriaObj = characteristicsCriteria.find(c => c.id === criteriaId);
-                                if (criteriaObj) {
-                                    (criteriaObj.indicators || []).forEach((_, idx) => {
-                                        scores[`${criteriaId}_${idx}`] = sdqValue!;
-                                    });
-                                    newGrades[student.id] = { ...current, characteristicsScores: scores };
-                                    updateCount++;
-                                }
-                            }
-                        }
-                    });
-                    setModifiedStudentIds(prev => {
-                        const updated = new Set(prev);
-                        students.forEach(s => {
-                            if (sdqMap[s.id]) updated.add(s.id);
-                        });
-                        return updated;
-                    });
-                    return newGrades;
-                });
-                Swal.fire({ icon: 'success', title: `อัปเดตข้อมูลแล้ว ${updateCount} คน`, toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
-            }
         });
+
+        if (!result.isConfirmed) return;
+
+        let updateCount = 0;
+        setGrades(prev => {
+            const { newGrades, updatedStudentIds } = applySDQToCriteria(prev, [criteriaObj], students, sdqMap);
+            updateCount = updatedStudentIds.size;
+            setModifiedStudentIds(prevIds => new Set([...prevIds, ...updatedStudentIds]));
+            return newGrades;
+        });
+        Swal.fire({ icon: 'success', title: `อัปเดตข้อมูลแล้ว ${updateCount} คน`, toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+    }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades]);
+
+    const handleSyncSDQAll = useCallback(async () => {
+        if (!selectedClass || !selectedCourse) return;
+
+        if (Object.keys(sdqMap).length === 0) {
+            await Swal.fire({ icon: 'warning', title: 'ไม่พบข้อมูล SDQ', text: 'กรุณารอสักครู่ระบบกำลังดึงข้อมูล หรือไม่มีข้อมูล SDQ สำหรับนักเรียนกลุ่มนี้' });
+            return;
+        }
+
+        const sdqCriteria = characteristicsCriteria.filter(c => getSDQCharacteristicType(c.id, c.title) !== undefined);
+        if (sdqCriteria.length === 0) {
+            await Swal.fire({ icon: 'info', title: 'ไม่มีคอลัมน์ที่เชื่อมกับ SDQ', text: 'ไม่พบคุณลักษณะที่เชื่อมกับผลประเมิน SDQ (ซื่อสัตย์สุจริต / มีวินัย / มีจิตสาธารณะ)' });
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: 'นำคะแนนจาก SDQ มาใส่ทั้งหมด?',
+            text: `คะแนนคุณลักษณะฯ ${sdqCriteria.length} หัวข้อ (${sdqCriteria.map(c => c.title).join(', ')}) จะถูกแทนที่ด้วยผลประเมินจาก SDQ`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sync เลย',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (!result.isConfirmed) return;
+
+        let updateCount = 0;
+        setGrades(prev => {
+            const { newGrades, updatedStudentIds } = applySDQToCriteria(prev, sdqCriteria, students, sdqMap);
+            updateCount = updatedStudentIds.size;
+            setModifiedStudentIds(prevIds => new Set([...prevIds, ...updatedStudentIds]));
+            return newGrades;
+        });
+        Swal.fire({ icon: 'success', title: `อัปเดตข้อมูลแล้ว ${updateCount} คน`, toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
     }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades]);
 
     const handleClearScores = useCallback(() => {
@@ -450,6 +484,7 @@ export const useGradeBookActions = (
         handleBulkFill,
         handleBulkFillColumn,
         handleSyncSDQColumn,
+        handleSyncSDQAll,
         handleClearScores,
         handleSave,
         handleImportFromOtherCourse

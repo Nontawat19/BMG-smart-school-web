@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import { ChevronLeft, GraduationCap, Sparkles, BookOpen } from 'lucide-react';
 import { Course } from '../types';

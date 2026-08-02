@@ -19,13 +19,17 @@ import {
 import Swal from 'sweetalert2';
 
 interface ActivityHubSettings {
-  activityMode: 'special-period' | 'course-based';
+  // undefined = the school hasn't chosen yet. Every other page that reads this setting treats
+  // an unset value as 'special-period' (see src/hooks/useActivityHubSettings.ts) — this page
+  // must not silently pick a "default" of its own, or it would show a mode as active that the
+  // admin never actually chose.
+  activityMode?: 'special-period' | 'course-based';
   disabledActivityIds: string[];
   clubMode: 'legacy' | 'course-based';
 }
 
 const DEFAULT_SETTINGS: ActivityHubSettings = {
-  activityMode: 'course-based',
+  activityMode: undefined,
   disabledActivityIds: [],
   clubMode: 'legacy',
 };
@@ -94,6 +98,26 @@ const MODES = [
   },
 ];
 
+// Shown in the hero/summary areas when the school hasn't chosen a mode yet — deliberately
+// neutral (gray, no icon-brand color) so it can never be mistaken for either real mode being
+// "active" by default.
+const UNSET_MODE = {
+  id: undefined as unknown as 'special-period' | 'course-based',
+  label: 'ยังไม่ได้เลือกโหมด',
+  sublabel: 'Not Configured',
+  icon: AlertTriangle,
+  color: 'gray',
+  gradient: 'from-gray-400 to-gray-500',
+  activeBg: 'bg-gray-50 dark:bg-gray-500/10',
+  activeBorder: 'border-gray-300 dark:border-gray-600',
+  activeText: 'text-gray-500 dark:text-gray-400',
+  activeDot: 'bg-gray-400',
+  hoverBorder: 'hover:border-gray-300 dark:hover:border-gray-600',
+  checkColor: 'text-gray-400',
+  pros: [] as string[],
+  cons: [] as string[],
+};
+
 const ActivityHubSettingsPage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
@@ -138,7 +162,7 @@ const ActivityHubSettingsPage: React.FC = () => {
     }
   };
 
-  const activeMode = MODES.find((m) => m.id === settings.activityMode) ?? MODES[1];
+  const activeMode = MODES.find((m) => m.id === settings.activityMode) ?? UNSET_MODE;
 
   if (loading) {
     return (

@@ -39,6 +39,7 @@ import Select from "react-select";
 import { compareTeachersByGroupAndId, getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import BackButton from "@/components/Shared/BackButton";
 import { isActivityCourse, isClubCourse } from "./schedule/utils";
+import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 
 // --- Types ---
 interface GroupAssignment {
@@ -495,8 +496,13 @@ const CourseAssignmentPage: React.FC = () => {
     // Data States
     const [courses, setCourses] = useState<Course[]>([]);
     const [activityCoursesWithPeriod, setActivityCoursesWithPeriod] = useState<Set<string>>(new Set());
-    const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('course-based');
-    const [clubMode, setClubMode] = useState<'legacy' | 'course-based'>('legacy');
+    // A school that hasn't chosen an activityMode yet defaults to 'special-period' here,
+    // matching the convention most other consumers of this setting use (this file used to
+    // default to 'course-based' instead, which disagreed with every other page and made the
+    // same "กิจกรรม" courses assignable here but hidden on CourseAssignmentPage2 for any
+    // school that had never visited /academic/activity-settings).
+    const { activityMode: rawActivityMode, clubMode } = useActivityHubSettings(schoolId);
+    const activityMode = rawActivityMode ?? 'special-period';
     const [rooms, setRooms] = useState<Room[]>([]);
     const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -1049,13 +1055,6 @@ const CourseAssignmentPage: React.FC = () => {
         });
 
         // Fetch learner-activities to know which activity courses have a special period (Mode 1)
-        // Load activity hub mode setting
-        getDoc(doc(db, 'school-settings', schoolId)).then(snap => {
-            const mode = snap.data()?.activityHubSettings?.activityMode;
-            if (mode === 'special-period' || mode === 'course-based') setActivityMode(mode);
-            const cMode = snap.data()?.activityHubSettings?.clubMode;
-            if (cMode === 'legacy' || cMode === 'course-based') setClubMode(cMode);
-        });
         getDocs(collection(db, 'school-settings', schoolId, 'learner-activities')).then(snap => {
             const withPeriod = new Set<string>();
             snap.docs.forEach(d => {
@@ -2376,7 +2375,7 @@ const CourseAssignmentPage: React.FC = () => {
                                                         {teacher.name}
                                                     </h4>
                                                 </div>
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isSelected ? 'bg-white/20 text-white' : (totalLoad > 20 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500')}`}>
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isSelected ? 'bg-white/20 text-white' : (totalLoad > 25 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500')}`}>
                                                     {formatWeeklyLoad(totalLoad)} คาบ
                                                 </span>
                                             </div>

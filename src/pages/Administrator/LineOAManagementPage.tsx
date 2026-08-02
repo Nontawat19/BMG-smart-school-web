@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { firestore } from "@/firebase";
-import { collection, getDocs, query, where, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, updateDoc, getDoc, writeBatch } from "firebase/firestore";
 import Swal from "sweetalert2";
 import { RootState } from "../../store";
 import Navbar from "../../components/Navbar/Navbar";
@@ -31,6 +31,15 @@ interface SchoolData {
   schoolName: string;
 }
 
+interface TeacherGroup {
+  key: string;
+  grade: string;
+  room: string;
+  label: string;
+  teachers: Teacher[];
+  configSource: Teacher;
+}
+
 const systemConfigDetails: Record<string, { name: string, description: string }> = {
   school: { name: 'LINE OA หลักของโรงเรียน', description: 'บัญชีทางการหลักสำหรับติดต่อสอบถามและประชาสัมพันธ์ภาพรวมของโรงเรียน' },
   general: { name: 'งานบริหารทั่วไป', description: 'รับ-ส่งหนังสือราชการ และการแจ้งเตือนทั่วไปของฝ่าย' },
@@ -38,6 +47,32 @@ const systemConfigDetails: Record<string, { name: string, description: string }>
   budget: { name: 'งานบริหารงบประมาณ', description: 'แจ้งเตือนเกี่ยวกับการเงิน บัญชี และพัสดุ' },
   personnel: { name: 'งานบริหารบุคคล', description: 'แจ้งเตือนเกี่ยวกับการลา สรุปเวลา และข้อมูลบุคลากร' },
 };
+
+const normalizeHomeroomValue = (value?: string | number | null) => String(value ?? "").trim();
+
+const splitHomeroom = (teacher: Partial<Teacher> & Record<string, any>) => {
+  const rawGrade = normalizeHomeroomValue(teacher.homeroomGrade);
+  const gradeParts = rawGrade.split("/").map((part) => part.trim()).filter(Boolean);
+  const grade = gradeParts[0] || rawGrade || "ไม่ระบุชั้น";
+  const room = [
+    gradeParts[1],
+    teacher.room,
+    teacher.roomNumber,
+    teacher.classroom,
+    teacher.homeroomRoom,
+    teacher.section,
+  ]
+    .map((value) => normalizeHomeroomValue(value))
+    .find(Boolean) || "";
+
+  return { grade, room, label: room ? `${grade}/${room}` : grade };
+};
+
+const hasLineConfig = (teacher?: Partial<Teacher>) =>
+  Boolean(teacher?.lineChannelAccessToken && teacher?.lineChannelSecret);
+
+const getTeacherDisplayName = (teacher: Partial<Teacher>) =>
+  `${teacher.title || ""}${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || "ไม่ระบุชื่อ";
 
 const LineOAManagementPage: React.FC = () => {
   const navigate = useNavigate();
@@ -57,7 +92,7 @@ const LineOAManagementPage: React.FC = () => {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState<{ type: 'teacher'; data: Teacher } | { type: 'system'; key: string; name: string } | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<{ type: 'teacher-group'; group: TeacherGroup } | { type: 'system'; key: string; name: string } | null>(null);
   const [formData, setFormData] = useState<Partial<Teacher>>({
     lineChannelAccessToken: "",
     lineChannelSecret: "",
@@ -133,12 +168,12 @@ const LineOAManagementPage: React.FC = () => {
     fetchData();
   }, [selectedSchoolId]);
 
-  const handleOpenModal = (target: { type: 'teacher', data: Teacher } | { type: 'system', key: string, name: string }) => {
+  const handleOpenModal = (target: { type: 'teacher-group', group: TeacherGroup } | { type: 'system', key: string, name: string }) => {
     setSelectedTarget(target);
     let configData: Partial<Teacher> = {};
 
-    if (target.type === 'teacher') {
-      configData = target.data;
+    if (target.type === 'teacher-group') {
+      configData = target.group.configSource;
     } else if (target.type === 'system') {
       // 💡 เปลี่ยน: ดึง config จาก state ของ systemConfigs
       configData = systemConfigs[target.key] || {};
@@ -174,8 +209,7 @@ const LineOAManagementPage: React.FC = () => {
     if (!selectedSchoolId || !selectedTarget) return;
 
     try {
-      if (selectedTarget.type === 'teacher') {
-        const teacherRef = doc(firestore, "school-settings", selectedSchoolId, "teachers", selectedTarget.data.id);
+      if (selectedTarget.type === 'teacher-group') {
         const updatedData = {
           lineChannelAccessToken: formData.lineChannelAccessToken,
           lineChannelSecret: formData.lineChannelSecret,
@@ -184,11 +218,19 @@ const LineOAManagementPage: React.FC = () => {
           liffId: formData.liffId,
           enableNotification: formData.enableNotification
         };
-        await updateDoc(teacherRef, updatedData);
+
+        const batch = writeBatch(firestore);
+        selectedTarget.group.teachers.forEach((teacher) => {
+          const teacherRef = doc(firestore, "school-settings", selectedSchoolId, "teachers", teacher.id);
+          batch.update(teacherRef, updatedData);
+        });
+        await batch.commit();
 
         // Update local state for instant feedback
         setTeachers(prev => prev.map(t =>
-          t.id === selectedTarget.data.id ? { ...t, ...updatedData } : t
+          selectedTarget.group.teachers.some((teacher) => teacher.id === t.id)
+            ? { ...t, ...updatedData }
+            : t
         ));
       } else if (selectedTarget.type === 'system') {
         const schoolDocRef = doc(firestore, "school-settings", selectedSchoolId);
@@ -236,6 +278,40 @@ const LineOAManagementPage: React.FC = () => {
     });
     return groups;
   }, [filteredTeachers]);
+
+  const groupedHomeroomTeachers = useMemo(() => {
+    const groups: Record<string, TeacherGroup[]> = {};
+
+    Object.keys(groupedTeachers).forEach((gradeKey) => {
+      const homeroomMap = new Map<string, Teacher[]>();
+
+      groupedTeachers[gradeKey].forEach((teacher) => {
+        const homeroom = splitHomeroom(teacher as Teacher & Record<string, any>);
+        const groupKey = `${homeroom.grade}__${homeroom.room || "-"}`;
+        const current = homeroomMap.get(groupKey) || [];
+        current.push(teacher);
+        homeroomMap.set(groupKey, current);
+      });
+
+      groups[gradeKey] = Array.from(homeroomMap.entries())
+        .map(([key, homeroomTeachers]) => {
+          const configSource = homeroomTeachers.find((teacher) => hasLineConfig(teacher)) || homeroomTeachers[0];
+          const homeroom = splitHomeroom(configSource as Teacher & Record<string, any>);
+
+          return {
+            key,
+            grade: homeroom.grade,
+            room: homeroom.room,
+            label: homeroom.label,
+            teachers: homeroomTeachers,
+            configSource,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+    });
+
+    return groups;
+  }, [groupedTeachers]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300">
@@ -339,7 +415,7 @@ const LineOAManagementPage: React.FC = () => {
           ) : (
             <div className="space-y-10">
               {/* Grouping logic */}
-              {Object.keys(groupedTeachers).sort().map(grade => (
+              {Object.keys(groupedHomeroomTeachers).sort().map(grade => (
                 <div key={grade} className="space-y-4">
                   <div className="flex items-center gap-4">
                     <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-4 py-1 rounded-full border border-gray-200 dark:border-gray-700">
@@ -349,43 +425,44 @@ const LineOAManagementPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {groupedTeachers[grade].map((teacher) => {
-                      const isConfigured = !!teacher.lineChannelAccessToken && !!teacher.lineChannelSecret;
+                    {groupedHomeroomTeachers[grade].map((group) => {
+                      const isConfigured = hasLineConfig(group.configSource);
+                      const teacherNames = group.teachers.map(getTeacherDisplayName);
                       return (
-                        <div key={teacher.id} className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col hover:shadow-md transition-shadow">
+                        <div key={group.key} className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col hover:shadow-md transition-shadow">
                           <div className="flex items-start justify-between mb-4">
                             <div className="flex items-center gap-3">
                               <img
-                                src={teacher.profileImageUrl || ProfilePlaceholder}
+                                src={group.configSource.profileImageUrl || ProfilePlaceholder}
                                 alt="Profile"
-                                onClick={() => navigate(`/school/${selectedSchoolId}/teachers/view/${teacher.id}`)}
+                                onClick={() => navigate(`/school/${selectedSchoolId}/teachers/view/${group.configSource.id}`)}
                                 className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-gray-600 cursor-pointer hover:opacity-80 transition-opacity"
                               />
                               <div
-                                onClick={() => navigate(`/school/${selectedSchoolId}/teachers/view/${teacher.id}`)}
+                                onClick={() => navigate(`/school/${selectedSchoolId}/teachers/view/${group.configSource.id}`)}
                                 className="cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                               >
                                 <h3 className="font-bold text-gray-900 dark:text-white">
-                                  {teacher.title}{teacher.firstName} {teacher.lastName}
+                                  {group.teachers.length > 1
+                                    ? `ครูประจำชั้นร่วม ${group.label}`
+                                    : teacherNames[0]}
                                 </h3>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                  {group.teachers.length > 1
+                                    ? teacherNames.join(" • ")
+                                    : "ครูประจำชั้น"}
+                                </p>
                                 <div className="flex gap-4 mt-2">
                                   <div className="flex flex-col border-r border-gray-200 dark:border-gray-700 pr-4">
                                     <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ชั้น</span>
                                     <span className="text-base font-bold text-indigo-600 dark:text-indigo-400">
-                                      {(teacher.homeroomGrade || "").split("/")[0] || "-"}
+                                      {group.grade || "-"}
                                     </span>
                                   </div>
                                   <div className="flex flex-col">
                                     <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ห้อง</span>
                                     <span className="text-base font-bold text-gray-900 dark:text-white">
-                                      {[
-                                        teacher.room,
-                                        (teacher as any).roomNumber,
-                                        (teacher as any).classroom,
-                                        (teacher as any).homeroomRoom,
-                                        (teacher as any).section,
-                                        teacher.homeroomGrade?.toString().includes('/') ? teacher.homeroomGrade.split('/')[1].trim() : null
-                                      ].find(v => v !== undefined && v !== null && v !== "") ?? "-"}
+                                      {group.room || "-"}
                                     </span>
                                   </div>
                                 </div>
@@ -412,9 +489,14 @@ const LineOAManagementPage: React.FC = () => {
                                 {isConfigured ? "พร้อมใช้งาน" : "ยังไม่ระบุ"}
                               </span>
                             </div>
+                            {group.teachers.length > 1 && (
+                              <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                บันทึกครั้งเดียว ระบบจะใช้ร่วมกันสำหรับครูประจำชั้นทั้ง {group.teachers.length} คน
+                              </p>
+                            )}
 
                             <button
-                              onClick={() => handleOpenModal({ type: 'teacher', data: teacher })}
+                              onClick={() => handleOpenModal({ type: 'teacher-group', group })}
                               className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-[#323338] border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
                             >
                               <Key className="w-4 h-4" />
@@ -439,7 +521,7 @@ const LineOAManagementPage: React.FC = () => {
               <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-green-50 dark:bg-green-900/10">
                 <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-green-600" />
-                  ตั้งค่า LINE OA {selectedTarget.type === 'teacher' ? `(${selectedTarget.data.homeroomGrade})` : `(${selectedTarget.name})`}
+                  ตั้งค่า LINE OA {selectedTarget.type === 'teacher-group' ? `(${selectedTarget.group.label})` : `(${selectedTarget.name})`}
                 </h3>
                 <button onClick={handleCloseModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                   <X className="w-5 h-5" />
@@ -449,6 +531,11 @@ const LineOAManagementPage: React.FC = () => {
               <form onSubmit={handleSave} className="p-5 space-y-3 overflow-y-auto min-h-0">
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-800 dark:text-blue-300">
                   <p className="mb-1">กรุณาระบุข้อมูลจาก LINE Developers Console สำหรับบัญชี LINE OA ของห้องเรียนนี้</p>
+                  {selectedTarget.type === 'teacher-group' && selectedTarget.group.teachers.length > 1 && (
+                    <p className="mb-1">
+                      เมื่อบันทึกแล้ว ระบบจะอัปเดตครูประจำชั้นทุกคนในห้อง {selectedTarget.group.label} พร้อมกัน
+                    </p>
+                  )}
                   <a
                     href="https://developers.line.biz/console/"
                     target="_blank"

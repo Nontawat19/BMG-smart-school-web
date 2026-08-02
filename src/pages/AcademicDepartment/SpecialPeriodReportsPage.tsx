@@ -18,6 +18,7 @@ import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from "@/firebase";
 import { RootState } from "@/store";
 import { CLASS_FULL_NAMES, CLASSES } from "@/utils/schoolUtils";
+import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 
 // ─── Font ───────────────────────────────────────────────────────────────────
 
@@ -397,7 +398,10 @@ const SpecialPeriodReportsPage: React.FC = () => {
   const calendarTerms = useSelector((state: RootState) => state.calendar.terms);
   const calendarAcademicYear = useSelector((state: RootState) => state.calendar.academicYear);
 
-  const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
+  // A school that hasn't chosen a mode yet defaults to 'special-period' here, matching the
+  // convention most other consumers of this setting use (see useActivityHubSettings).
+  const { activityMode: rawActivityMode, loading: activityModeSettingLoading } = useActivityHubSettings(schoolId);
+  const activityMode = rawActivityMode ?? 'special-period';
   const [learnerActivities, setLearnerActivities] = useState<LearnerActivityItem[]>([]);
 
   const [periods, setPeriods] = useState<SpecialPeriod[]>([]);
@@ -547,39 +551,34 @@ const SpecialPeriodReportsPage: React.FC = () => {
     return results;
   };
 
-  // ── Load mode + selectable items ────────────────────────────────────────────
+  // ── Load selectable items once the (shared, live) activity mode is known ───
   useEffect(() => {
-    if (!schoolId) return;
-    getDoc(doc(db, "school-settings", schoolId)).then((schoolSnap) => {
-      const mode: 'special-period' | 'course-based' =
-        schoolSnap.data()?.activityHubSettings?.activityMode ?? 'special-period';
-      setActivityMode(mode);
+    if (!schoolId || activityModeSettingLoading) return;
 
-      if (mode === 'course-based') {
-        getDocs(collection(db, "school-settings", schoolId, "learner-activities")).then((actSnap) => {
-          const list = actSnap.docs
-            .map((d) => ({ id: d.id, name: (d.data() as any).name || 'กิจกรรม', courseCode: (d.data() as any).courseCode } as LearnerActivityItem))
-            .sort((a, b) => a.name.localeCompare(b.name, "th"));
-          setLearnerActivities(list);
-          setPeriodsLoading(false);
-        });
-      } else {
-        getDocs(collection(db, "school-settings", schoolId, "special-periods")).then((snap) => {
-          const list = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() } as SpecialPeriod))
-            .sort((a, b) => {
-              if (a.periodType === "oneTime" && b.periodType === "oneTime")
-                return (b.eventDate || "") > (a.eventDate || "") ? 1 : -1;
-              if (a.periodType === "oneTime") return -1;
-              if (b.periodType === "oneTime") return 1;
-              return String(a.title).localeCompare(String(b.title), "th");
-            });
-          setPeriods(list);
-          setPeriodsLoading(false);
-        });
-      }
-    }).catch(() => setPeriodsLoading(false));
-  }, [schoolId]);
+    if (activityMode === 'course-based') {
+      getDocs(collection(db, "school-settings", schoolId, "learner-activities")).then((actSnap) => {
+        const list = actSnap.docs
+          .map((d) => ({ id: d.id, name: (d.data() as any).name || 'กิจกรรม', courseCode: (d.data() as any).courseCode } as LearnerActivityItem))
+          .sort((a, b) => a.name.localeCompare(b.name, "th"));
+        setLearnerActivities(list);
+        setPeriodsLoading(false);
+      }).catch(() => setPeriodsLoading(false));
+    } else {
+      getDocs(collection(db, "school-settings", schoolId, "special-periods")).then((snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as SpecialPeriod))
+          .sort((a, b) => {
+            if (a.periodType === "oneTime" && b.periodType === "oneTime")
+              return (b.eventDate || "") > (a.eventDate || "") ? 1 : -1;
+            if (a.periodType === "oneTime") return -1;
+            if (b.periodType === "oneTime") return 1;
+            return String(a.title).localeCompare(String(b.title), "th");
+          });
+        setPeriods(list);
+        setPeriodsLoading(false);
+      }).catch(() => setPeriodsLoading(false));
+    }
+  }, [schoolId, activityMode, activityModeSettingLoading]);
 
   useEffect(() => {
     if (!schoolId) return;

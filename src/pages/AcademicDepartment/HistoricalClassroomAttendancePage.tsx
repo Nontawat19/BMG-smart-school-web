@@ -335,6 +335,55 @@ const calculateAnnualCalendarYear = (acadYearStr: string, monthIdx: number, term
     return monthIdx >= 0 && monthIdx <= 3 ? acadYearAD + 1 : acadYearAD;
 };
 
+const getMonthsInWrappedRange = (startMonth: number, endMonth: number) => {
+    if (startMonth <= endMonth) {
+        return Array.from({ length: endMonth - startMonth + 1 }, (_, index) => startMonth + index);
+    }
+
+    return [
+        ...Array.from({ length: 12 - startMonth }, (_, index) => startMonth + index),
+        ...Array.from({ length: endMonth + 1 }, (_, index) => index)
+    ];
+};
+
+const getAllowedMonthsForSelection = (
+    semesterValue: string,
+    isPrimaryAnnualMode: boolean,
+    terms?: { term1?: Term; term2?: Term }
+) => {
+    const monthSet = new Set<number>();
+
+    if (isPrimaryAnnualMode) {
+        (['term1', 'term2'] as const).forEach(termKey => {
+            const termData = terms?.[termKey];
+            if (!termData?.startDate || !termData?.endDate) return;
+
+            const startMonth = new Date(termData.startDate).getMonth();
+            const endMonth = new Date(termData.endDate).getMonth();
+            getMonthsInWrappedRange(startMonth, endMonth).forEach(month => monthSet.add(month));
+        });
+
+        if (monthSet.size > 0) {
+            return Array.from(monthSet).sort((a, b) => a - b);
+        }
+
+        return Array.from({ length: 12 }, (_, index) => index);
+    }
+
+    const termKey = semesterValue === '2' ? 'term2' : 'term1';
+    const termData = terms?.[termKey];
+
+    if (termData?.startDate && termData?.endDate) {
+        const startMonth = new Date(termData.startDate).getMonth();
+        const endMonth = new Date(termData.endDate).getMonth();
+        return getMonthsInWrappedRange(startMonth, endMonth);
+    }
+
+    return semesterValue === '2'
+        ? [10, 11, 0, 1, 2, 3]
+        : [4, 5, 6, 7, 8, 9];
+};
+
 const HistoricalClassroomAttendancePage: React.FC = () => {
     const [searchParams] = useSearchParams();
 
@@ -398,6 +447,24 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             : calculateCalendarYear(academicYear, semester, selectedMonth, terms);
     }, [academicYear, semester, selectedMonth, terms, isPrimaryAnnualMode]);
 
+    const allowedMonths = useMemo(() => {
+        return getAllowedMonthsForSelection(semester, isPrimaryAnnualMode, terms);
+    }, [semester, isPrimaryAnnualMode, terms]);
+
+    const previousAllowedMonth = useMemo(() => {
+        if (allowedMonths.length === 0) return selectedMonth;
+        const currentIndex = allowedMonths.indexOf(selectedMonth);
+        if (currentIndex === -1) return allowedMonths[allowedMonths.length - 1];
+        return allowedMonths[(currentIndex - 1 + allowedMonths.length) % allowedMonths.length];
+    }, [allowedMonths, selectedMonth]);
+
+    const nextAllowedMonth = useMemo(() => {
+        if (allowedMonths.length === 0) return selectedMonth;
+        const currentIndex = allowedMonths.indexOf(selectedMonth);
+        if (currentIndex === -1) return allowedMonths[0];
+        return allowedMonths[(currentIndex + 1) % allowedMonths.length];
+    }, [allowedMonths, selectedMonth]);
+
     const dispatch = useDispatch();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
@@ -422,6 +489,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const currentTeacher = useMemo(() => {
         return Object.values(teacherMap || {}).find((t: any) => t.uid === (currentUser as any)?.uid || t.id === (currentUser as any)?.uid);
     }, [teacherMap, currentUser]);
+
+    useEffect(() => {
+        if (allowedMonths.length === 0) return;
+        if (!allowedMonths.includes(selectedMonth)) {
+            setSelectedMonth(allowedMonths[0]);
+        }
+    }, [allowedMonths, selectedMonth]);
 
     useEffect(() => {
         const fetchAnnualAttendanceCount = async () => {
@@ -1999,7 +2073,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 <div className="relative min-w-0" ref={monthPickerRef}>
                                     <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 p-1 rounded-xl border border-gray-100 dark:border-gray-700 w-full">
                                         <button
-                                            onClick={() => setSelectedMonth(p => p === 0 ? 11 : p - 1)}
+                                            onClick={() => setSelectedMonth(previousAllowedMonth)}
                                             className="h-9 w-9 flex items-center justify-center hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95 shrink-0"
                                             title="เดือนก่อนหน้า"
                                         >
@@ -2018,7 +2092,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         </button>
 
                                         <button
-                                            onClick={() => setSelectedMonth(p => p === 11 ? 0 : p + 1)}
+                                            onClick={() => setSelectedMonth(nextAllowedMonth)}
                                             className="h-9 w-9 flex items-center justify-center hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm transition-all text-gray-500 hover:text-indigo-600 active:scale-95 shrink-0"
                                             title="เดือนถัดไป"
                                         >
@@ -2032,58 +2106,26 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                     <div className="grid grid-cols-3 gap-2">
                                         {months.map((month, idx) => {
                                             const isSelected = selectedMonth === idx;
-                                            
-                                            // Dynamic month-in-term check based on SchoolCalendarPage dates
-                                            const isMonthInTerm = (() => {
-                                                if (isPrimaryAnnualMode) {
-                                                    const termKeys: ('term1' | 'term2')[] = ['term1', 'term2'];
-                                                    const hasTermData = termKeys.some(key => terms?.[key]?.startDate && terms?.[key]?.endDate);
-                                                    if (!hasTermData) return idx >= 0 && idx <= 11;
-
-                                                    return termKeys.some(key => {
-                                                        const termData = terms?.[key];
-                                                        if (!termData?.startDate || !termData?.endDate) return false;
-                                                        const startM = new Date(termData.startDate).getMonth();
-                                                        const endM = new Date(termData.endDate).getMonth();
-                                                        return startM <= endM
-                                                            ? idx >= startM && idx <= endM
-                                                            : idx >= startM || idx <= endM;
-                                                    });
-                                                }
-
-                                                const termKey = semester === '2' ? 'term2' : 'term1';
-                                                const termData = terms?.[termKey];
-                                                if (!termData?.startDate || !termData?.endDate) {
-                                                    // Fallback to heuristic if no data
-                                                    return semester === '1' ? (idx >= 4 && idx <= 9) : (idx >= 10 || idx <= 3);
-                                                }
-                                                
-                                                const startM = new Date(termData.startDate).getMonth();
-                                                const endM = new Date(termData.endDate).getMonth();
-                                                
-                                                if (startM <= endM) {
-                                                    return idx >= startM && idx <= endM;
-                                                } else {
-                                                    // Wrap around (e.g. Nov to Mar)
-                                                    return idx >= startM || idx <= endM;
-                                                }
-                                            })();
+                                            const isMonthInTerm = allowedMonths.includes(idx);
 
                                             return (
                                                 <button
                                                     key={month}
                                                     onClick={() => {
+                                                        if (!isMonthInTerm) return;
                                                         setSelectedMonth(idx);
                                                         setIsMonthPickerOpen(false);
                                                     }}
+                                                    disabled={!isMonthInTerm}
                                                     className={`
                                                         py-3 rounded-xl text-sm font-semibold transition-all relative
                                                         ${isSelected
                                                             ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none'
                                                             : isMonthInTerm
                                                                 ? 'bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
-                                                                : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 dark:text-gray-600'}
+                                                                : 'text-gray-300 dark:text-gray-700 cursor-not-allowed bg-gray-50 dark:bg-gray-900/40'}
                                                     `}
+                                                    title={isMonthInTerm ? month : 'เดือนนี้อยู่นอกภาคเรียนที่เลือก'}
                                                 >
                                                     {month.substring(0, 3)}
                                                     {/* Term Indicator Dot */}
@@ -2222,8 +2264,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                         reason === 'special_holiday' ? 'วันหยุดกรณีพิเศษ' :
                                                             reason === 'weekend' ? 'วันเสาร์-อาทิตย์' :
                                                                 reason === 'term_break' ? 'อยู่นอกภาคเรียน' :
-                                                                    reason === 'not_scheduled' ? 'ยังไม่ได้เช็คชื่อ' :
-                                                                        ''
+                                                                    reason === 'historical_locked' ? 'อยู่นอกช่วงเวลาที่อนุญาตให้เช็คชื่อย้อนหลัง' :
+                                                                        reason === 'not_scheduled' ? 'ยังไม่ได้เช็คชื่อ' :
+                                                                            ''
                                             );
 
                                             const fullTooltip = tooltipText + (meta?.periodCount ? (tooltipText ? ` (สอน ${meta.periodCount} คาบ)` : `สอน ${meta.periodCount} คาบ`) : '');
@@ -2349,8 +2392,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                                     reason === 'special_holiday' ? 'วันหยุดกรณีพิเศษ' :
                                                                         reason === 'weekend' ? 'วันเสาร์-อาทิตย์' :
                                                                             reason === 'term_break' ? 'อยู่นอกภาคเรียน' :
-                                                                                reason === 'not_scheduled' ? 'ยังไม่ได้เช็คชื่อ' :
-                                                                                    ''
+                                                                                reason === 'historical_locked' ? 'อยู่นอกช่วงเวลาที่อนุญาตให้เช็คชื่อย้อนหลัง' :
+                                                                                    reason === 'not_scheduled' ? 'ยังไม่ได้เช็คชื่อ' :
+                                                                                        ''
                                                         ));
                                                         const tooltipText = rawTooltip + (meta?.periodCount ? (rawTooltip ? ` (สอน ${meta.periodCount} คาบ)` : `สอน ${meta.periodCount} คาบ`) : '');
 

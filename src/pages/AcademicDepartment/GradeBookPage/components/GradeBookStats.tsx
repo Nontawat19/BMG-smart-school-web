@@ -5,31 +5,33 @@ import { Student, GradeRecord } from '../types';
 interface GradeBookStatsProps {
     students: Student[];
     grades: Record<string, GradeRecord>;
-    completenessStats: any;
+    completenessDisplay: { percentage: number; filled: number; total: number };
     activeTab: 'grades' | 'characteristics' | 'readingWriting';
 }
 
-const GradeBookStats: React.FC<GradeBookStatsProps> = ({ students, grades, completenessStats, activeTab }) => {
+const GradeBookStats: React.FC<GradeBookStatsProps> = ({ students, grades, completenessDisplay, activeTab }) => {
     const totalStudents = students.length;
-    
-    // คำนวณความคืบหน้าแยกตามแท็บที่เปิดอยู่
-    let displayPercentage = completenessStats?.percentage || 0;
-    let displayRatio = `${completenessStats?.filled || 0}/${completenessStats?.total || 0}`;
 
-    if (activeTab === 'grades') {
-        displayPercentage = completenessStats?.percentGrades || 0;
-        displayRatio = `${completenessStats?.filledGrades || 0}/${completenessStats?.totalGrades || 0}`;
-    } else if (activeTab === 'characteristics') {
-        displayPercentage = completenessStats?.percentChar || 0;
-        displayRatio = `${completenessStats?.filledChar || 0}/${completenessStats?.totalChar || 0}`;
-    } else if (activeTab === 'readingWriting') {
-        displayPercentage = completenessStats?.percentRW || 0;
-        displayRatio = `${completenessStats?.filledRW || 0}/${completenessStats?.totalRW || 0}`;
-    }
+    const displayPercentage = completenessDisplay?.percentage || 0;
+    const displayRatio = `${completenessDisplay?.filled || 0}/${completenessDisplay?.total || 0}`;
 
     const averageGrade = (() => {
-        const numericGrades = Object.values(grades).filter(g => !isNaN(parseFloat(g.grade)));
-        return (numericGrades.length > 0 ? (numericGrades.reduce((acc, curr) => acc + parseFloat(curr.grade), 0) / numericGrades.length) : 0).toFixed(2);
+        // นักเรียนที่ได้สถานะ "ร"/"มส" ไม่นับรวมในเกรดเฉลี่ย เพราะไม่ใช่ผลการเรียนเป็นตัวเลข
+        const validGrades = Object.values(grades).filter(g => !isNaN(parseFloat(g.grade)) && g.status !== 'ร' && g.status !== 'มส');
+        return (validGrades.length > 0 ? (validGrades.reduce((acc, curr) => acc + parseFloat(curr.grade), 0) / validGrades.length) : 0).toFixed(2);
+    })();
+
+    // คะแนนเฉลี่ยของแท็บประเมิน (คุณลักษณะฯ / อ่าน-คิด-เขียน) — สลับตาม activeTab และนับเฉลี่ยเฉพาะ
+    // นักเรียนที่มีคะแนนกรอกแล้วจริง ไม่รวมคนที่ยังไม่มีคะแนนเข้าไปในตัวหารเพื่อไม่ให้ค่าเฉลี่ยต่ำเกินจริง
+    const isRWTab = activeTab === 'readingWriting';
+    const evalAverage = (() => {
+        const scores: number[] = [];
+        Object.values(grades).forEach(g => {
+            const scoreMap = isRWTab ? g.readingWritingScores : g.characteristicsScores;
+            const values = Object.values(scoreMap || {});
+            if (values.length > 0) scores.push(values.reduce((a, b) => a + b, 0) / values.length);
+        });
+        return scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : '0.00';
     })();
 
     const stats = [
@@ -61,8 +63,8 @@ const GradeBookStats: React.FC<GradeBookStatsProps> = ({ students, grades, compl
             border: 'border-indigo-100/50'
         },
         {
-            label: 'คะแนนเฉลี่ยคุณลักษณะฯ',
-            value: (Object.values(grades).reduce((acc, curr) => acc + (Object.values(curr.characteristicsScores || {}).reduce((a, b) => a + b, 0) / (Object.keys(curr.characteristicsScores || {}).length || 1)), 0) / (Object.keys(grades).length || 1)).toFixed(2),
+            label: isRWTab ? 'คะแนนเฉลี่ยอ่าน/คิด/เขียน' : 'คะแนนเฉลี่ยคุณลักษณะฯ',
+            value: evalAverage,
             unit: 'คะแนน',
             icon: Star,
             color: 'text-purple-600',

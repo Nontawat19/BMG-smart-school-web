@@ -150,6 +150,9 @@ export const HoveredSlotTooltip: React.FC<HoveredSlotTooltipProps> = ({
                             }).join(', ');
                         })()}
                     </span></div>
+                    {!hoveredSlot.isDynamicUnavailable && hoveredSlot.courses[0]?.isRelaxedSchedule && (
+                        <div className="flex"><span className="w-20 text-slate-500 dark:text-gray-500">เงื่อนไข:</span><span className="flex-1 text-orange-500 dark:text-orange-400">{hoveredSlot.courses[0]?.scheduleWarning || 'เงื่อนไขไม่ตรง'}</span></div>
+                    )}
                 </div>
             </div>
         </div>

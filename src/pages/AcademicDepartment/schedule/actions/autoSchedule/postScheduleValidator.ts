@@ -1,6 +1,23 @@
 import { EngineSchedule, EngineTask } from '../../engine/schedulerEngine';
 import { getTaskTeacherIds, normalizeClassIds, normalizeRooms } from '../../scheduleSharedUtils';
-import { getClassDisplayName } from '../../utils';
+import { getClassDisplayName, haveDistinctSpecificRooms } from '../../utils';
+
+// Two placements that only share a coarse grade-level classId (e.g. "m3" — elective/
+// rotation-group courses aren't tied to a single classroom, see CLASS_MAPPING in
+// schoolUtils.ts) are NOT a real conflict when they're the same course split into
+// parallel groups, or when each has its own specific, non-overlapping room.
+const isRealClassPlacementConflict = (
+    a: { courseId: string; groupNumber: number; room: string[] },
+    b: { courseId: string; groupNumber: number; room: string[] }
+): boolean => {
+    const isParallelGroupSameCourse = a.courseId === b.courseId &&
+        Number(a.groupNumber || 0) > 0 &&
+        Number(b.groupNumber || 0) > 0 &&
+        Number(a.groupNumber) !== Number(b.groupNumber);
+    if (isParallelGroupSameCourse) return false;
+    if (a.courseId !== b.courseId && haveDistinctSpecificRooms(a.room, b.room)) return false;
+    return true;
+};
 
 export type ScheduleValidationIssueType =
     | 'teacher_conflict'
@@ -65,7 +82,7 @@ export const validatePostSchedule = ({
 
     Object.entries(timetable).forEach(([slotId, occupancies]) => {
         const teacherPlacements = new Map<string, Set<string>>();
-        const classPlacements = new Map<string, Set<string>>();
+        const classPlacements = new Map<string, Map<string, { courseId: string; groupNumber: number; room: string[] }>>();
         const roomPlacements = new Map<string, Set<string>>();
 
         occupancies.forEach((occupancy) => {
@@ -78,12 +95,17 @@ export const validatePostSchedule = ({
             if (!teacherPlacements.has(occupancy.teacherId)) teacherPlacements.set(occupancy.teacherId, new Set());
             teacherPlacements.get(occupancy.teacherId)!.add(placementKey);
 
+            const normalizedRoom = normalizeRooms(occupancy.room);
             normalizeClassIds(occupancy.classId).forEach(classId => {
-                if (!classPlacements.has(classId)) classPlacements.set(classId, new Set());
-                classPlacements.get(classId)!.add(placementKey);
+                if (!classPlacements.has(classId)) classPlacements.set(classId, new Map());
+                classPlacements.get(classId)!.set(placementKey, {
+                    courseId: occupancy.courseId,
+                    groupNumber: occupancy.groupNumber,
+                    room: normalizedRoom
+                });
             });
 
-            normalizeRooms(occupancy.room).forEach(roomId => {
+            normalizedRoom.forEach(roomId => {
                 if (!roomPlacements.has(roomId)) roomPlacements.set(roomId, new Set());
                 roomPlacements.get(roomId)!.add(placementKey);
             });
@@ -93,7 +115,12 @@ export const validatePostSchedule = ({
             if (placements.size > 1) pushConflictIssue(issues, 'teacher_conflict', slotId, teacherId, placements.size);
         });
         classPlacements.forEach((placements, classId) => {
-            if (placements.size > 1) pushConflictIssue(issues, 'class_conflict', slotId, getClassDisplayName(classId), placements.size);
+            if (placements.size <= 1) return;
+            const entries = Array.from(placements.values());
+            const hasRealConflict = entries.some((entryA, i) =>
+                entries.slice(i + 1).some(entryB => isRealClassPlacementConflict(entryA, entryB))
+            );
+            if (hasRealConflict) pushConflictIssue(issues, 'class_conflict', slotId, getClassDisplayName(classId), placements.size);
         });
         roomPlacements.forEach((placements, roomId) => {
             if (placements.size > 1) pushConflictIssue(issues, 'room_conflict', slotId, roomId, placements.size);

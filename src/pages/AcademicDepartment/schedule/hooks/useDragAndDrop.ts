@@ -2,7 +2,7 @@ import { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 import { CourseInstance, MasterScheduleEntry, Schedule, Teacher, PeriodSetting, SpecialPeriod, AssignmentConstraintMap } from '../types';
-import { checkConstraints, findValidSlots, getClassDisplayName, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isActivityCourse, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
+import { checkConstraints, findValidSlots, getClassDisplayName, haveDistinctSpecificRooms, isAssignmentSlotLocked, DAYS, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isActivityCourse, isDoubleCapableConstraint, shouldUseDoubleSessionForNextPlacement } from '../utils';
 
 const MySwal = withReactContent(Swal);
 
@@ -288,7 +288,10 @@ export const useDragAndDrop = ({
         });
     };
 
-    const checkIfPlacementIsRelaxed = (item: CourseInstance, slot: string, isDoubleStart: boolean, isDoublePartner: boolean) => {
+    // Returns the specific reason checkConstraints rejected the slot (empty string when the
+    // placement is fine) so the UI can show the actual constraint that failed instead of a
+    // generic "conditions don't match" message.
+    const checkIfPlacementIsRelaxed = (item: CourseInstance, slot: string, isDoubleStart: boolean, isDoublePartner: boolean): string => {
         const allTeacherIds = item.teacherIds?.length ? item.teacherIds : [item.teacherId || selectedTeacher].filter(Boolean) as string[];
         for (const tId of allTeacherIds) {
             const itemTeacher = teacherMap[tId];
@@ -304,9 +307,9 @@ export const useDragAndDrop = ({
                 isDoubleStart ? 2 : 1,
                 [item.instanceId]
             );
-            if (check.forbidden) return true;
+            if (check.forbidden) return check.message || 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)';
         }
-        return false;
+        return '';
     };
 
     const handleDragStart = (event: DragStartEvent) => {
@@ -612,7 +615,14 @@ export const useDragAndDrop = ({
                     gItem.course?.id === activeItem.id &&
                     Number(activeItem.groupNumber || 1) > 0 &&
                     Number(gItem.groupNumber || 1) !== Number(activeItem.groupNumber || 1);
-                if ((isSameTeacher || isSameClass || isSameRoom) && !isSelf && !isCoTeachingSameAssignment && !isParallelGroupSameCourse) {
+                // Two DIFFERENT courses (e.g. ทัศนศิลป์ & สุขศึกษา) that only share a coarse
+                // grade-level classId (classId stores level only, not a specific room/section —
+                // see CLASS_MAPPING) are NOT a real conflict when each has its own specific,
+                // non-overlapping room: different rooms mean different physical student groups.
+                const isDifferentCourseWithDistinctRooms = gItem.course?.id !== activeItem.id &&
+                    haveDistinctSpecificRooms(draggedRooms, itemRooms);
+                const isClassConflict = isSameClass && !isDifferentCourseWithDistinctRooms;
+                if ((isSameTeacher || isClassConflict || isSameRoom) && !isSelf && !isCoTeachingSameAssignment && !isParallelGroupSameCourse) {
                     addConflict(slot, gItem.course as CourseInstance, gItem.teacherId);
                 }
             });
@@ -740,15 +750,19 @@ export const useDragAndDrop = ({
 
         // 2. Process displacements
         displacementMoves.forEach(move => {
-            const isRelaxed = checkIfPlacementIsRelaxed(move.item, move.toSlot, false, false);
+            const relaxedReason = checkIfPlacementIsRelaxed(move.item, move.toSlot, false, false);
             const updatedItem = { ...move.item };
-            if (isRelaxed) {
+            if (relaxedReason) {
                 updatedItem.isRelaxedSchedule = true;
-                updatedItem.scheduleWarning = 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)';
+                updatedItem.scheduleWarning = relaxedReason;
             } else {
                 delete updatedItem.isRelaxedSchedule;
                 delete updatedItem.scheduleWarning;
             }
+            // A slot pinned on the Period Constraints page should land locked here too, so the
+            // two "lock" features agree — set before updateGlobalForAllTeachers so the persisted
+            // master schedule (read by other teachers/views) matches what the local grid shows.
+            updatedItem.locked = isAssignmentSlotLocked(updatedItem.compositeId, move.toSlot, assignmentConstraints, periodSettings);
 
             updateGlobalForAllTeachers(move.fromSlot, move.toSlot, updatedItem);
             const allTeacherIds = updatedItem.teacherIds?.length ? updatedItem.teacherIds : [updatedItem.teacherId || selectedTeacher].filter(Boolean) as string[];
@@ -759,7 +773,7 @@ export const useDragAndDrop = ({
                 }
                 if (!newLocalSchedule[move.toSlot]) newLocalSchedule[move.toSlot] = [];
                 newLocalSchedule[move.toSlot] = removeMatchingCourseFromSlot(newLocalSchedule[move.toSlot], selectedTeacher, updatedItem);
-                newLocalSchedule[move.toSlot].push({ ...updatedItem, locked: false });
+                newLocalSchedule[move.toSlot].push({ ...updatedItem });
             }
         });
 
@@ -768,23 +782,26 @@ export const useDragAndDrop = ({
             const itemToPlace = movingItems[index]?.item || activeItem;
             const isDoubleStartSlot = Boolean(partnerSlotId && slot === (forcedDoubleStartSlotId || overId));
             const isDoublePartnerSlot = Boolean(partnerSlotId && slot !== (forcedDoubleStartSlotId || overId));
-            
-            const isRelaxed = checkIfPlacementIsRelaxed(itemToPlace, slot, isDoubleStartSlot, isDoublePartnerSlot);
+
+            const relaxedReason = checkIfPlacementIsRelaxed(itemToPlace, slot, isDoubleStartSlot, isDoublePartnerSlot);
             const updatedItem = { ...itemToPlace };
-            if (isRelaxed) {
+            if (relaxedReason) {
                 updatedItem.isRelaxedSchedule = true;
-                updatedItem.scheduleWarning = 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)';
+                updatedItem.scheduleWarning = relaxedReason;
             } else {
                 delete updatedItem.isRelaxedSchedule;
                 delete updatedItem.scheduleWarning;
             }
+            // Covers both the single-period case and each half of a double period, since
+            // targetSlots holds one entry per slot being filled (2 for a double placement).
+            updatedItem.locked = isAssignmentSlotLocked(updatedItem.compositeId, slot, assignmentConstraints, periodSettings);
 
             updateGlobalForAllTeachers(null, slot, updatedItem);
             const allTeacherIds = updatedItem.teacherIds?.length ? updatedItem.teacherIds : [updatedItem.teacherId || selectedTeacher].filter(Boolean) as string[];
             if (allTeacherIds.includes(selectedTeacher)) {
                 if (!newLocalSchedule[slot]) newLocalSchedule[slot] = [];
                 newLocalSchedule[slot] = removeMatchingCourseFromSlot(newLocalSchedule[slot], selectedTeacher, updatedItem);
-                newLocalSchedule[slot].push({ ...updatedItem, locked: false });
+                newLocalSchedule[slot].push({ ...updatedItem });
             }
         });
 
@@ -820,25 +837,32 @@ export const useDragAndDrop = ({
     };
 
 
-    const toggleLock = (slotId: string, instanceId: string) => {
+    const toggleLock = (slotId: string, instanceId: string, targetCourse?: CourseInstance) => {
         if (takeSnapshot) takeSnapshot();
         setSchedule((prev: Schedule) => {
             const courses = prev[slotId];
             if (!courses || courses.length === 0) return prev;
 
+            const matchedCourse = courses.find((c: CourseInstance) =>
+                c.instanceId === instanceId || (targetCourse ? isSameCourseInstance(selectedTeacher, c, targetCourse) : false)
+            );
+            if (!matchedCourse) return prev;
+
             const updatedCourses = courses.map((c: CourseInstance) =>
-                c.instanceId === instanceId ? { ...c, locked: !c.locked } : c
+                isSameCourseInstance(selectedTeacher, c, matchedCourse) ? { ...c, locked: !c.locked } : c
             );
             return { ...prev, [slotId]: updatedCourses };
         });
     };
 
-    const handleRemoveCourse = (slotId: string, instanceId: string) => {
+    const handleRemoveCourse = (slotId: string, instanceId: string, targetCourse?: CourseInstance) => {
         if (takeSnapshot) takeSnapshot();
         const courses = schedule[slotId];
         if (!courses || courses.length === 0) return;
 
-        const removedCourse = courses.find(c => c.instanceId === instanceId);
+        const removedCourse = courses.find(c =>
+            c.instanceId === instanceId || (targetCourse ? isSameCourseInstance(selectedTeacher, c, targetCourse) : false)
+        );
         if (!removedCourse) return;
 
         const pairedMove = getPairedGridMove(removedCourse, slotId);
@@ -876,12 +900,16 @@ export const useDragAndDrop = ({
         });
     };
 
-    const handleManualAdd = async (slotId: string, courseCode: string) => {
+    const handleManualAdd = async (slotId: string, courseCode: string, preferredCompositeId?: string) => {
         if (!courseCode) return;
         if (takeSnapshot) takeSnapshot();
 
-        // Find an instance from the bank
-        const activeItem = availableCourseInstances.find(c => c.code === courseCode);
+        // When a course has multiple groups/assignments (e.g. two separate sections taught to
+        // different classes/rooms), matching by code alone is ambiguous and can silently place
+        // the period against the wrong group's class/room. Prefer the specific group the
+        // dropdown selection identified; fall back to code-only for callers that don't pass one.
+        const activeItem = (preferredCompositeId && availableCourseInstances.find(c => c.compositeId === preferredCompositeId))
+            || availableCourseInstances.find(c => c.code === courseCode);
         if (!activeItem) {
             MySwal.fire({ icon: 'error', title: 'ไม่พบรายวิชา', text: 'รายวิชานี้อาจจะจัดครบตามจำนวนคาบแล้ว' });
             return;
@@ -998,28 +1026,31 @@ export const useDragAndDrop = ({
         }
 
         // --- UPDATE STATE ---
-        const isPrimaryRelaxed = checkIfPlacementIsRelaxed(activeItem, primarySlotId, partnerSlotId ? true : false, false);
+        const primaryRelaxedReason = checkIfPlacementIsRelaxed(activeItem, primarySlotId, partnerSlotId ? true : false, false);
         const uid = () => Math.random().toString(36).slice(2, 9);
         const primaryItem = {
             ...activeItem,
             instanceId: `${activeItem.id}-${primarySlotId}-${Date.now()}-${uid()}`,
-            locked: false,
-            ...(isPrimaryRelaxed ? {
+            // A slot pinned on the Period Constraints page should land locked here too, so the
+            // two "lock" features agree — matters just as much for a double period's second
+            // slot as for a single, so both primary and partner are checked independently.
+            locked: isAssignmentSlotLocked(activeItem.compositeId, primarySlotId, assignmentConstraints, periodSettings),
+            ...(primaryRelaxedReason ? {
                 isRelaxedSchedule: true,
-                scheduleWarning: 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)'
+                scheduleWarning: primaryRelaxedReason
             } : {})
         };
 
         let partnerItem: CourseInstance | null = null;
         if (partnerSlotId) {
-            const isPartnerRelaxed = checkIfPlacementIsRelaxed(activeItem, partnerSlotId, false, true);
+            const partnerRelaxedReason = checkIfPlacementIsRelaxed(activeItem, partnerSlotId, false, true);
             partnerItem = {
                 ...activeItem,
                 instanceId: `${activeItem.id}-${partnerSlotId}-${Date.now()}-${uid()}`,
-                locked: false,
-                ...(isPartnerRelaxed ? {
+                locked: isAssignmentSlotLocked(activeItem.compositeId, partnerSlotId, assignmentConstraints, periodSettings),
+                ...(partnerRelaxedReason ? {
                     isRelaxedSchedule: true,
-                    scheduleWarning: 'จัดลงช่วงเวลาที่ไม่ได้กำหนด (เงื่อนไขไม่ตรง)'
+                    scheduleWarning: partnerRelaxedReason
                 } : {})
             };
         }

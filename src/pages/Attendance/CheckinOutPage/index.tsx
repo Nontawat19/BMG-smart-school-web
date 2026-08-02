@@ -21,6 +21,7 @@ import {
   limit,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import Swal from "sweetalert2";
 import { RootState } from "../../../store";
 import { isNonOfficialHoliday } from "../../../utils/calendarUtils";
@@ -40,6 +41,7 @@ import {
   LeaveRecord
 } from "../../../utils/attendanceLogic";
 import { ROLES } from "../../../constants/roles";
+import { STAFF_ACCESS } from "../../../constants/permissions";
 import { calculateAttendanceBehaviorScoreChange } from "../../../utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "../../../utils/attendanceRoles";
 import { isStudyingStudent } from "../../../utils/studentStatusUtils";
@@ -280,8 +282,23 @@ const CheckinOutPage: React.FC = () => {
   const [teacherCheckoutStart, setTeacherCheckoutStart] = useState("14:00");
   const [teacherCheckoutEnd, setTeacherCheckoutEnd] = useState("18:00");
   const [isHoliday, setIsHoliday] = useState(false);
+  // ตัวจุดชนวนให้ effect คำนวณ isHoliday รันซ้ำเมื่อ "วันที่" เปลี่ยน (ข้ามเที่ยงคืน)
+  // ไม่ใช่แค่ตอน calendarEvents เปลี่ยน — ป้องกัน isHoliday ค้างค่าของเมื่อวานข้ามเข้าสู่วันหยุด/วันเสาร์-อาทิตย์
+  const [todayTick, setTodayTick] = useState(getTodayString());
 
-  const [timeOffset, setTimeOffset] = useState(0);
+  const [timeOffset, setTimeOffset] = useState(() => {
+    const stored = localStorage.getItem("timeSyncOffset");
+    return stored ? Number(JSON.parse(stored).offset) || 0 : 0;
+  });
+  const [timeSyncStatus, setTimeSyncStatus] = useState<"synced" | "stale" | "unverified">(
+    "unverified"
+  );
+  const lastTimeSyncAtRef = useRef<number | null>(
+    (() => {
+      const stored = localStorage.getItem("timeSyncOffset");
+      return stored ? Number(JSON.parse(stored).syncedAt) || null : null;
+    })()
+  );
   const [speechTrigger, setSpeechTrigger] = useState<{
     user: FoundUser | null;
     type: "checkin" | "checkout" | "checkin_and_checkout" | null;
@@ -364,6 +381,9 @@ const CheckinOutPage: React.FC = () => {
       // ล้าง in-memory cache (attendance fetch + face scan cooldowns)
       attendanceFetchCacheRef.current.clear();
       faceScanCooldownRef.current.clear();
+
+      // แจ้ง effect คำนวณ isHoliday ให้รันใหม่ทันทีที่วันเปลี่ยน (ไม่ใช่รอ calendarEvents เปลี่ยน)
+      setTodayTick(today);
 
       console.log(`[Cleanup] วันใหม่ ${today} — ล้าง att_* ${keysToRemove.length} keys, memory cache, cooldowns`);
     };
@@ -569,13 +589,15 @@ const CheckinOutPage: React.FC = () => {
       if (currentUser) {
         const roles = normalizeRoleList((currentUser as any).role);
 
-        // โหมดลงเวลาด้วยตนเอง (mode=self): ไม่ว่า role จะเป็นครูหรือแอดมินโรงเรียน
+        // โหมดลงเวลาด้วยตนเอง (mode=self): ไม่ว่า role จะเป็นบุคลากรตำแหน่งใด (ครู/ผู้บริหาร/ฝ่ายงาน ฯลฯ)
         // ก็ลงเวลาได้เฉพาะบัญชีตัวเองเท่านั้น (บังคับที่ performSearch อีกชั้น) — ไม่ให้สิทธิ์คีออสก์เต็มรูปแบบ
         // แม้แอดมินโรงเรียนก็ตาม เพื่อไม่ให้ bypass การเช็ค IP/ตำแหน่ง และไม่ให้ค้นหา/ลงเวลาแทนคนอื่นได้
-        // หมายเหตุ: ไม่ผูกกับสวิตช์ allowTeacherSelfCheckin อีกต่อไป เพราะโหมดนี้จำกัดแค่บัญชีตัวเองอยู่แล้วจึงปลอดภัยพอที่จะเปิดให้เสมอ
+        // ต้องเปิดสวิตช์ allowTeacherSelfCheckin ที่หน้า /owner/school-info ก่อน (super admin เป็นคนกำหนดรายโรงเรียน)
+        // ฟีเจอร์นี้ถึงจะใช้งานได้ — ถ้าปิดอยู่ ถือว่าโรงเรียนไม่เปิดใช้ ไม่ว่า role จะเป็นอะไรก็ตาม
         if (isSelfServiceMode) {
-          const isEligibleForSelfCheckin = roles.includes(ROLES.TEACHER) || roles.includes(ROLES.SCHOOL_ADMIN);
-          if (isEligibleForSelfCheckin) {
+          const isEligibleForSelfCheckin = roles.some((r) => STAFF_ACCESS.includes(r as typeof STAFF_ACCESS[number]));
+          const isSelfCheckinEnabledForSchool = schoolSettings?.allowTeacherSelfCheckin === true;
+          if (isEligibleForSelfCheckin && isSelfCheckinEnabledForSchool) {
             setCanScanTeachers(true);
           }
           return;
@@ -618,7 +640,7 @@ const CheckinOutPage: React.FC = () => {
       }
     };
     checkUserRole();
-  }, [currentUser, schoolId, isSelfServiceMode]);
+  }, [currentUser, schoolId, isSelfServiceMode, schoolSettings?.allowTeacherSelfCheckin]);
 
   useEffect(() => {
     setSearchedUser(null);
@@ -628,58 +650,50 @@ const CheckinOutPage: React.FC = () => {
   }, [searchId]);
 
   useEffect(() => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const SYNC_INTERVAL_MS = 3 * 60 * 1000; // resync every 3 min once healthy
+    const RETRY_INTERVAL_MS = 15 * 1000; // retry quickly while failing
+    const STALE_AFTER_MS = 30 * 60 * 1000; // offset older than this can no longer be trusted
+
+    const scheduleNext = (delay: number) => {
+      if (cancelled) return;
+      timeoutId = setTimeout(syncTime, delay);
+    };
+
+    // เวลาแท้จริงมาจาก Cloud Function `getServerTime` เท่านั้น (นาฬิกาเซิร์ฟเวอร์ Google, ไม่ใช่นาฬิกาเครื่อง kiosk)
+    // ถ้า sync ล้มเหลว จะไม่ fallback ไปใช้นาฬิกาเครื่องดิบเด็ดขาด — ใช้ offset ล่าสุดที่เคยยืนยันได้ต่อไปแทน
     const syncTime = async () => {
-      // 1. Primary: TimeAPI.io (More stable recently)
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const t0 = Date.now();
+        const getServerTime = httpsCallable(getFunctions(undefined, "us-central1"), "getServerTime");
+        const result = await getServerTime();
+        const t2 = Date.now();
+        const serverNow = Number((result.data as { now?: number })?.now);
+        if (!Number.isFinite(serverNow)) throw new Error("Invalid getServerTime response");
 
-        const response = await fetch(
-          "https://timeapi.io/api/Time/current/zone?timeZone=Asia/Bangkok",
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
+        // NTP-style midpoint estimate เพื่อชดเชย network latency ของ round trip
+        const offset = serverNow - (t0 + t2) / 2;
+        const syncedAt = Date.now();
 
-        if (response.ok) {
-          const data = await response.json();
-          const serverTime = new Date(data.dateTime).getTime();
-          const deviceTime = Date.now();
-          const offset = serverTime - deviceTime;
-          setTimeOffset(offset);
-          console.log("⏰ Time synced with TimeAPI.io. Offset:", offset);
-          return;
-        }
+        if (cancelled) return;
+        lastTimeSyncAtRef.current = syncedAt;
+        setTimeOffset(offset);
+        setTimeSyncStatus("synced");
+        localStorage.setItem("timeSyncOffset", JSON.stringify({ offset, syncedAt }));
+        console.log("⏰ Time synced with getServerTime. Offset:", offset);
+        scheduleNext(SYNC_INTERVAL_MS);
       } catch (error) {
-        // Quiet failure for primary
-      }
-
-      // 2. Fallback: WorldTimeAPI
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const response = await fetch(
-          "https://worldtimeapi.org/api/timezone/Asia/Bangkok",
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          const serverTime = new Date(data.datetime).getTime();
-          const deviceTime = Date.now();
-          const offset = serverTime - deviceTime;
-          setTimeOffset(offset);
-          console.log("⏰ Time synced with WorldTimeAPI. Offset:", offset);
-          return;
-        }
-      } catch (error) {
-        console.warn("⚠️ All Time APIs failed. Using device time.", error);
+        console.warn("⚠️ Time sync failed, keeping last verified offset.", error);
+        if (cancelled) return;
+        const staleFor = lastTimeSyncAtRef.current ? Date.now() - lastTimeSyncAtRef.current : Infinity;
+        setTimeSyncStatus(staleFor < STALE_AFTER_MS ? "stale" : "unverified");
+        scheduleNext(RETRY_INTERVAL_MS);
       }
     };
 
     syncTime();
-    const interval = setInterval(syncTime, 10 * 60 * 1000);
 
     // IP Sync - Pre-fetch and background sync every 5 minutes
     const syncIp = async () => {
@@ -712,10 +726,20 @@ const CheckinOutPage: React.FC = () => {
     };
     window.addEventListener("online", handleOnline);
 
+    // Resync ทันทีเมื่อ kiosk tab กลับมา focus (เผื่อเครื่อง sleep/สลับแท็บทิ้งไว้นาน)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncTime();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
-      clearInterval(interval);
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
       clearInterval(ipInterval);
       window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -998,7 +1022,7 @@ const CheckinOutPage: React.FC = () => {
     } else {
       setIsHoliday(false);
     }
-  }, [calendarEvents]);
+  }, [calendarEvents, todayTick]);
 
   // แอดมินโรงเรียนก็เป็นครูคนหนึ่งในโรงเรียน: ตอน "ลงเวลาให้ตัวเอง" ต้องผ่านการเช็ค GPS/IP
   // เหมือนครูทั่วไป ไม่ bypass พิเศษ — แต่ตอนสแกน/ค้นหาให้ "คนอื่น" ที่หน้าคีออสก์ ยัง bypass ตามเดิม
@@ -1285,10 +1309,10 @@ const CheckinOutPage: React.FC = () => {
     }
 
     const checkin = attendanceSnap.exists()
-      ? attendanceSnap.data().checkinTime?.toDate().toLocaleTimeString("th-TH")
+      ? attendanceSnap.data().checkinTime?.toDate().toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })
       : null;
     const checkout = attendanceSnap.exists()
-      ? attendanceSnap.data().checkoutTime?.toDate().toLocaleTimeString("th-TH")
+      ? attendanceSnap.data().checkoutTime?.toDate().toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })
       : null;
     const status = attendanceSnap.exists() ? attendanceSnap.data().status : null;
     const flagData = flagSnap?.exists() ? { status: flagSnap.data().status } : null;
@@ -1591,11 +1615,13 @@ const CheckinOutPage: React.FC = () => {
     const now = new Date(Date.now() + timeOffset);
     const todayStr = getTodayString();
     const timeStr = now.toLocaleTimeString("th-TH", {
+      timeZone: "Asia/Bangkok",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
     const timeForCompare = now.toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Bangkok",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -1746,10 +1772,10 @@ const CheckinOutPage: React.FC = () => {
         reason: transactionResult.reason,
       });
       if (transactionResult.reason === "already_checked_in" && transactionResult.data?.checkinTime) {
-        setCheckinTime(transactionResult.data.checkinTime.toDate().toLocaleTimeString("th-TH"));
+        setCheckinTime(transactionResult.data.checkinTime.toDate().toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" }));
       }
       if (transactionResult.reason === "already_checked_out" && transactionResult.data?.checkoutTime) {
-        setCheckoutTime(transactionResult.data.checkoutTime.toDate().toLocaleTimeString("th-TH"));
+        setCheckoutTime(transactionResult.data.checkoutTime.toDate().toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" }));
       }
       return;
     }
@@ -2181,6 +2207,7 @@ const CheckinOutPage: React.FC = () => {
 
     const now = new Date(Date.now() + timeOffset);
     const timeForCompare = now.toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Bangkok",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -2395,6 +2422,21 @@ const CheckinOutPage: React.FC = () => {
   const performSearch = async (idToSearchRaw: string) => {
     const idToSearch = idToSearchRaw.trim();
     if (!idToSearch || !schoolId || isLoading) return;
+
+    if (timeSyncStatus === "unverified") {
+      setSearchId("");
+      Swal.fire({
+        icon: "warning",
+        title: "ยังไม่สามารถยืนยันเวลาที่ถูกต้องได้",
+        text: "กรุณารอสักครู่ ระบบกำลังเชื่อมต่อเซิร์ฟเวอร์เวลา แล้วลองสแกนใหม่อีกครั้ง",
+        toast: true,
+        position: "top-end",
+        showConfirmButton: false,
+        timer: 3000,
+      });
+      return;
+    }
+
     const idCandidates = expandStudentIdCandidates(idToSearch);
     const rfidCandidates = uniq([idToSearch]);
 
@@ -2800,6 +2842,7 @@ const CheckinOutPage: React.FC = () => {
     const checkTime = () => {
       const now = new Date(Date.now() + timeOffset);
       const timeStr = now.toLocaleTimeString("en-GB", {
+        timeZone: "Asia/Bangkok",
         hour: "2-digit",
         minute: "2-digit",
       });
@@ -2876,6 +2919,10 @@ const CheckinOutPage: React.FC = () => {
 
     if (!schoolId || !faceScanEndpoint) {
       return { matched: false, message: "ยังไม่ได้ตั้งค่า endpoint" };
+    }
+
+    if (timeSyncStatus === "unverified") {
+      return { matched: false, message: "ยังไม่สามารถยืนยันเวลาที่ถูกต้องได้ กรุณารอสักครู่" };
     }
 
     const todayStr = getTodayString();
@@ -3365,7 +3412,7 @@ const CheckinOutPage: React.FC = () => {
     setDisplayUser(returnUser);
 
     return { matched: true, user: returnUser, users: [returnUser], confidence, message: "สแกนผ่าน" };
-  }, [calendarEvents, faceScanEndpoint, faceScanThreshold, schoolId, schoolSettings, resolveFaceMatchedUser, processAttendanceForUser, uploadFaceScanSnapshot]);
+  }, [calendarEvents, faceScanEndpoint, faceScanThreshold, schoolId, schoolSettings, timeSyncStatus, resolveFaceMatchedUser, processAttendanceForUser, uploadFaceScanSnapshot]);
 
   // เมื่อ super_admin ตั้งค่าเปิดใช้ระบบนี้แล้วปิดสวิตช์ "เปิดโหมดการลงเวลา" (useFaceScanMode === false)
   // ให้บล็อกหน้าจอลงเวลาทั้งหมด ไม่ว่าจะเป็นสแกนหน้า, RFID, หรือกรอกรหัส
@@ -3414,6 +3461,17 @@ const CheckinOutPage: React.FC = () => {
                   calendarEvents={calendarEvents}
                   getTodayString={getTodayString}
                 />
+
+                {timeSyncStatus === "stale" && (
+                  <div className="mb-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-2 text-sm text-amber-700 dark:text-amber-300 text-center">
+                    ⚠️ กำลังใช้เวลาที่ซิงค์ไว้ล่าสุด (เชื่อมต่อเซิร์ฟเวอร์เวลาไม่ได้ชั่วคราว)
+                  </div>
+                )}
+                {timeSyncStatus === "unverified" && (
+                  <div className="mb-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-4 py-2 text-sm text-red-700 dark:text-red-300 text-center">
+                    ⏳ กำลังตรวจสอบเวลาที่ถูกต้อง ระบบจะยังไม่บันทึกการลงเวลาจนกว่าจะเชื่อมต่อสำเร็จ
+                  </div>
+                )}
 
                 <div className="flex-1 flex min-w-0">
                   <div className={`grid grid-cols-1 sm:grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-4 lg:gap-10'} flex-1 min-w-0`}>

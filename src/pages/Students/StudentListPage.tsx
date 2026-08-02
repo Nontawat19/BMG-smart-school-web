@@ -944,7 +944,9 @@ export default function StudentListPage() {
                           setStudents(prev => prev.map(s => s.id === student.id ? { ...s, behaviorScore: val } : s));
                         }}
                         onBlur={(e) => {
-                          const val = e.target.value === "" ? 100 : Number(e.target.value);
+                          const raw = e.target.value === "" ? 100 : Number(e.target.value);
+                          // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ
+                          const val = Number.isFinite(raw) ? raw : 100;
                           handleUpdateField(student.id, { behaviorScore: val });
                           setEditingBehaviorScoreId(null);
                         }}
@@ -955,8 +957,6 @@ export default function StudentListPage() {
                             setEditingBehaviorScoreId(null);
                           }
                         }}
-                        min="0"
-                        max="100"
                       />
                     )}
                   </CanAccess>

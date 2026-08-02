@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View, StyleSheet, Image } from '@react-pdf/renderer';
-import { Student, StudentAttendanceSummary } from './types';
+import { Student } from './types';
 import PdfPage from './PdfPage';
 import { getGroupPersonnel } from '@/utils/schoolUtils';
 
@@ -18,7 +18,6 @@ interface SummaryPageProps {
     headOfAssessmentName?: string;
     homeroomTeacher: any;
     students: Student[];
-    studentAttendanceSummaries?: Record<string, StudentAttendanceSummary>;
     gradeDistribution: Record<string, number>;
     assessmentSummary?: {
         char: Record<string, number>;
@@ -88,7 +87,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
     headOfAssessmentName,
     homeroomTeacher,
     students,
-    studentAttendanceSummaries,
     gradeDistribution,
     assessmentSummary,
     qrCodeDataUrl,
@@ -100,22 +98,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
     const isPrimary = selectedClass.startsWith('p');
     const studentCount = students.length;
     const calcPercent = (val: number) => studentCount > 0 ? ((val / studentCount) * 100).toFixed(2) : '0.00';
-
-    const attendanceStats = React.useMemo(() => {
-        if (!studentAttendanceSummaries) return { totalPossible: 0, presentAvg: 0, percentAvg: 0 };
-        const summaries = Object.values(studentAttendanceSummaries);
-        if (summaries.length === 0) return { totalPossible: 0, presentAvg: 0, percentAvg: 0 };
-
-        const totalPossible = summaries[0].annual.totalPossibleHours;
-        const totalPresent = summaries.reduce((acc, s) => acc + s.annual.present + s.annual.late, 0);
-        const percentAvg = summaries.reduce((acc, s) => acc + s.annual.percentage, 0) / summaries.length;
-
-        return {
-            totalPossible,
-            presentAvg: totalPresent / summaries.length,
-            percentAvg
-        };
-    }, [studentAttendanceSummaries]);
 
     const colWidths = {
         total: '20%',
@@ -144,7 +126,7 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                     </View>
                     <View style={[styles.flexRow, styles.justifyBetween, styles.wFull, styles.textMd, { borderTop: '1px solid #f3f4f6', paddingTop: 2 }]}>
                         <Text>
-                            <Text style={styles.fontBold}>ชั้น</Text> &nbsp;&nbsp;&nbsp;&nbsp; {curriculumClassDisplay}{curriculumRoomDisplay && curriculumRoomDisplay !== 'all' ? ` ห้อง ${curriculumRoomDisplay}` : (curriculumRoomDisplay === 'all' || !curriculumRoomDisplay ? ' (ทุกห้อง)' : ` ห้อง ${curriculumRoomDisplay}`)}
+                            <Text style={styles.fontBold}>ชั้น</Text> &nbsp;&nbsp;&nbsp;&nbsp; {curriculumClassDisplay}{curriculumRoomDisplay && curriculumRoomDisplay !== 'all' ? ` ห้อง ${curriculumRoomDisplay}` : ' (ทุกห้อง)'}
                         </Text>
                         {isPrimary ? null : (
                             <Text>

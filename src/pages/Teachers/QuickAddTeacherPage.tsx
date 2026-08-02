@@ -73,7 +73,20 @@ const initialState = {
   email: "",
   password: "",
   teacherId: "", // Staff ID
+  personnelType: "teacher" as "teacher" | "user",
+  role: "student_attendance",
 };
+
+// ตัวเลือกบทบาท/สิทธิ์สำหรับ "ผู้ใช้ระบบ" (ไม่ใช่ครูผู้สอน) — ไม่มี "teacher" ให้เลือก
+// เพื่อไม่ให้ได้สิทธิ์เรื่องงานสอนโดยไม่ตั้งใจ
+const STAFF_USER_ROLES = [
+  { value: "school_admin", label: "ผู้ดูแลระบบโรงเรียน (School Admin)" },
+  { value: "academic_admin", label: "ฝ่ายวิชาการ (Academic Admin)" },
+  { value: "student_affairs", label: "งานกิจการนักเรียน" },
+  { value: "student_attendance", label: "เจ้าหน้าที่ลงเวลานักเรียน" },
+  { value: "teacher_attendance", label: "เจ้าหน้าที่ลงเวลาครู" },
+  { value: "school_attendance", label: "เจ้าหน้าที่ลงเวลาทั้งโรงเรียน" },
+];
 
 export default function QuickAddTeacherPage() {
   const { schoolId } = useParams<{ schoolId: string }>();
@@ -111,6 +124,16 @@ export default function QuickAddTeacherPage() {
 
     if (!/^\d{13}$/.test(form.idCardNumber)) {
         Swal.fire("ข้อมูลไม่ถูกต้อง", "เลขบัตรประชาชนต้องเป็นตัวเลข 13 หลัก", "warning");
+        return;
+    }
+
+    if (form.personnelType === "teacher" && !form.learningArea) {
+        Swal.fire("ข้อมูลไม่ครบ", "กรุณาเลือกกลุ่มสาระการเรียนรู้", "warning");
+        return;
+    }
+
+    if (form.personnelType === "user" && !form.role) {
+        Swal.fire("ข้อมูลไม่ครบ", "กรุณาเลือกบทบาทและสิทธิ์การใช้งาน", "warning");
         return;
     }
 
@@ -152,19 +175,23 @@ export default function QuickAddTeacherPage() {
       const finalTitle = form.title === "อื่นๆ" ? customTitle : form.title;
       if (!finalTitle) throw new Error("กรุณาระบุคำนำหน้า");
 
+      const isSystemUser = form.personnelType === "user";
+      const finalRole = isSystemUser ? [form.role] : ["teacher"];
+
       // 4. Save Teacher Doc
       const teacherData = {
         ...form,
         title: finalTitle,
-        learningArea: form.learningArea || "",
-        subjectGroup: form.learningArea || "",
+        learningArea: isSystemUser ? "" : (form.learningArea || ""),
+        subjectGroup: isSystemUser ? "" : (form.learningArea || ""),
         profileImageUrl,
         schoolId,
         uid: user.uid,
-        role: ["teacher"],
+        role: finalRole,
+        personnelType: form.personnelType,
         createdAt: serverTimestamp(),
       };
-      
+
       await setDoc(doc(firestore, "school-settings", schoolId, "teachers", user.uid), teacherData);
       await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: 1 });
 
@@ -174,13 +201,13 @@ export default function QuickAddTeacherPage() {
         email: form.email,
         profileUrl: profileImageUrl,
         schoolId: schoolId,
-        role: ["teacher"],
+        role: finalRole,
         createdAt: serverTimestamp(),
       });
 
       Swal.fire({
         icon: "success",
-        title: "เพิ่มครูสำเร็จ",
+        title: isSystemUser ? "เพิ่มผู้ใช้สำเร็จ" : "เพิ่มครูสำเร็จ",
         timer: 1500,
         showConfirmButton: false,
         background: "#2a2b2f",
@@ -216,7 +243,7 @@ export default function QuickAddTeacherPage() {
               </button>
               <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                 <FaUserPlus className="text-indigo-600" size={18} />
-                เพิ่มครูด่วน
+                {form.personnelType === "user" ? "เพิ่มผู้ใช้ด่วน" : "เพิ่มครูด่วน"}
               </h1>
             </div>
             <p className="text-[10px] text-gray-400 font-medium hidden sm:block italic">กรอกเฉพาะข้อมูลที่จำเป็นเพื่อประหยัดเวลา</p>
@@ -224,7 +251,29 @@ export default function QuickAddTeacherPage() {
 
           <form onSubmit={handleSubmit} className="flex-grow overflow-hidden flex flex-col">
             <div className="p-4 sm:p-6 space-y-5 flex-grow overflow-y-auto scrollbar-hide">
-              
+
+              {/* ประเภทบุคลากร */}
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">ประเภทบุคลากร:</span>
+                <button
+                  type="button"
+                  onClick={() => setForm(p => ({ ...p, personnelType: 'teacher' }))}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${form.personnelType === 'teacher' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                >
+                  ครูผู้สอน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(p => ({ ...p, personnelType: 'user', learningArea: '' }))}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${form.personnelType === 'user' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                >
+                  ผู้ใช้ระบบ
+                </button>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">
+                  {form.personnelType === 'teacher' ? '— ครูผู้สอน ต้องระบุกลุ่มสาระการเรียนรู้' : '— เจ้าหน้าที่ที่เข้าระบบได้ตามสิทธิ์ ไม่ใช่ครูผู้สอน จะไม่มีสิทธิ์เรื่องงานสอน'}
+                </span>
+              </div>
+
               {/* Top Row: Image and Identity */}
               <div className="flex flex-col md:flex-row gap-6">
                 {/* Image Section */}
@@ -306,23 +355,48 @@ export default function QuickAddTeacherPage() {
 
               {/* Middle Row: Work Info */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-50 dark:border-gray-700/50">
-                <div>
-                  <label className="block text-[11px] font-bold mb-0.5 text-gray-500 dark:text-gray-400 uppercase tracking-tight">กลุ่มสาระฯ *</label>
-                  <select name="learningArea" value={form.learningArea} onChange={handleChange} required className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">เลือกกลุ่มสาระ</option>
-                    {subjectGroups.map(g => (
-                      <option key={g.id} value={g.name}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {form.personnelType === 'teacher' ? (
+                  <div>
+                    <label className="block text-[11px] font-bold mb-0.5 text-gray-500 dark:text-gray-400 uppercase tracking-tight">กลุ่มสาระฯ *</label>
+                    <select name="learningArea" value={form.learningArea} onChange={handleChange} required className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">เลือกกลุ่มสาระ</option>
+                      {subjectGroups.map(g => (
+                        <option key={g.id} value={g.name}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-bold mb-0.5 text-gray-500 dark:text-gray-400 uppercase tracking-tight">บทบาทและสิทธิ์ *</label>
+                    <select name="role" value={form.role} onChange={handleChange} required className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      {STAFF_USER_ROLES.map(r => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-[11px] font-bold mb-0.5 text-gray-500 dark:text-gray-400 uppercase tracking-tight">ตำแหน่ง *</label>
                   <select name="position" value={form.position} onChange={handleChange} required className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="">เลือกตำแหน่ง</option>
-                    <option value="ครู">ครู</option>
-                    <option value="ครูผู้ช่วย">ครูผู้ช่วย</option>
-                    <option value="ผู้อำนวยการ">ผู้อำนวยการ</option>
-                    <option value="รองผู้อำนวยการ">รองผู้อำนวยการ</option>
+                    {form.personnelType === 'teacher' ? (
+                      <>
+                        <option value="ครู">ครู</option>
+                        <option value="ครูผู้ช่วย">ครูผู้ช่วย</option>
+                        <option value="ผู้อำนวยการ">ผู้อำนวยการ</option>
+                        <option value="รองผู้อำนวยการ">รองผู้อำนวยการ</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="บุคลากรทางการศึกษา">บุคลากรทางการศึกษา</option>
+                        <option value="เจ้าหน้าที่ธุรการ">เจ้าหน้าที่ธุรการ</option>
+                        <option value="นักการภารโรง">นักการภารโรง</option>
+                        <option value="แม่บ้าน">แม่บ้าน</option>
+                        <option value="ยาม">ยาม/รปภ.</option>
+                        <option value="พี่เลี้ยงเด็กพิการ">พี่เลี้ยงเด็กพิการ</option>
+                        <option value="อื่นๆ">อื่นๆ</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="col-span-2 md:col-span-1">

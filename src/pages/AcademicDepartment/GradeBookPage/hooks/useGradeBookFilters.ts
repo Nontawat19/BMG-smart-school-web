@@ -74,12 +74,25 @@ const assignmentMatchesFilters = (assignment: any, course: Course, selectedClass
     return matchesClass && matchesRoom;
 };
 
+const hasRealLegacyTeacher = (course: Course) => {
+    const ids = [...toStringArray(course.teacherId), ...toStringArray(course.teacherIds)];
+    return ids.some(id => id.toLowerCase() !== 'pending');
+};
+
 const courseMatchesClassAndRoom = (course: Course, selectedClass: string, selectedRoom: string) => {
+    // A course only counts as "เปิดสอน" this term if it has an active teaching assignment
+    // (course_assignments, already scoped to the selected academic year/semester upstream, or the
+    // embedded teacherAssignments array some course screens write directly on the course doc).
     const assignments = course.teacherAssignments || [];
     if (assignments.length > 0) {
         return assignments.some(assignment => assignmentMatchesFilters(assignment, course, selectedClass, selectedRoom));
     }
 
+    // No structured assignment record at all. Only fall back to the course's own classId/room
+    // when a REAL teacher (not the creation placeholder "pending") is actually set on it — courses
+    // created via CourseManagementPage/ViewCoursesPage only ever get teacherId/teacherIds, never a
+    // course_assignments doc, so without this they'd vanish even though a teacher is assigned.
+    if (!hasRealLegacyTeacher(course)) return false;
     return classMatches(course.classId, selectedClass) && courseMatchesRoom(course.room, selectedRoom);
 };
 
@@ -93,7 +106,8 @@ export const useGradeBookFilters = (
     teacherMap: Record<string, Teacher>,
     userPrivileges: any,
     academicYear: string,
-    subjectGroups: SubjectGroupLike[] = []
+    subjectGroups: SubjectGroupLike[] = [],
+    isDataReady: boolean = true
 ) => {
     const [selectedClass, setSelectedClass] = useState<string>(initialClass);
     const [selectedRoom, setSelectedRoom] = useState<string>(initialRoom);
@@ -123,14 +137,19 @@ export const useGradeBookFilters = (
                 if (!isAnnualCourse && c.semester !== selectedSemester) return false;
             }
 
-            // Teacher / My Courses Filter
+            // Teacher / My Courses Filter — prefer structured assignment entries; only fall back to
+            // legacy teacherId/teacherIds when there's no structured assignment at all, mirroring
+            // courseMatchesClassAndRoom above, so a legacy-assigned course still shows for its teacher.
             const courseTeacherIds = new Set<string>();
-            if (c.teacherId) courseTeacherIds.add(c.teacherId);
-            if (c.teacherIds) c.teacherIds.forEach(id => courseTeacherIds.add(id));
-            if (c.teacherAssignments) {
-                c.teacherAssignments.forEach((a: any) => {
+            const structuredAssignments = c.teacherAssignments || [];
+            if (structuredAssignments.length > 0) {
+                structuredAssignments.forEach((a: any) => {
                     if (a.teacherId) courseTeacherIds.add(a.teacherId);
                 });
+            } else {
+                [...toStringArray(c.teacherId), ...toStringArray(c.teacherIds)]
+                    .filter(id => id.toLowerCase() !== 'pending')
+                    .forEach(id => courseTeacherIds.add(id));
             }
 
             const myIds = userPrivileges.myTeacherIds || [];
@@ -165,12 +184,16 @@ export const useGradeBookFilters = (
 
 
     useEffect(() => {
+        // Wait until courses + course_assignments have loaded at least once — otherwise a course
+        // selected via URL param would get wiped out just because filteredCourses is still empty
+        // on the very first render, before the data that would actually validate it has arrived.
+        if (!isDataReady) return;
         if (!selectedCourse) return;
         const isSelectedCourseVisible = filteredCourses.some(c => c.id === selectedCourse);
         if (!isSelectedCourseVisible) {
             setSelectedCourse('');
         }
-    }, [selectedCourse, filteredCourses]);
+    }, [selectedCourse, filteredCourses, isDataReady]);
 
     // Derive available groups for the selected course
     const availableGroups = useMemo(() => {
@@ -207,6 +230,9 @@ export const useGradeBookFilters = (
 
     // When course or groups change, update selectedGroup if invalid
     useEffect(() => {
+        // Same loading guard as above — avoid wiping a group selected via URL param before the
+        // assignments backing `availableGroups` have actually loaded.
+        if (!isDataReady) return;
         if (selectedCourse && availableGroups.length > 0) {
             // If current selectedGroup is not in available, pick the first one
             const isValid = availableGroups.some(g => g.id === selectedGroup);
@@ -216,7 +242,7 @@ export const useGradeBookFilters = (
         } else {
             setSelectedGroup('');
         }
-    }, [selectedCourse, availableGroups, selectedGroup]);
+    }, [selectedCourse, availableGroups, selectedGroup, isDataReady]);
 
     return {
         selectedClass, setSelectedClass,

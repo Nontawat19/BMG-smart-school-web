@@ -29,6 +29,7 @@ interface Teacher {
   homeroomRoom: string;
   advisorRole: string;
   role: string | string[];
+  personnelType?: 'teacher' | 'user';
 }
 
 const STAFF_ROLES = new Set([
@@ -57,7 +58,9 @@ const EXCLUDED_ROLES = new Set([
   'student',
 ]);
 
-const shouldExcludeTeacher = (role: unknown) => {
+const shouldExcludeTeacher = (role: unknown, personnelType?: unknown) => {
+  // "ผู้ใช้ระบบ" (non-teaching staff) must never be assignable as a homeroom advisor.
+  if (personnelType === 'user') return true;
   const roles = toRoleArray(role);
   if (roles.some(r => EXCLUDED_ROLES.has(r.toLowerCase()))) return true;
   if (!roles.some(r => STAFF_ROLES.has(r.toLowerCase()))) return true;
@@ -86,6 +89,7 @@ const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): 
     homeroomGrade: data.homeroomGrade || '',
     homeroomRoom: data.homeroomRoom || '',
     advisorRole: data.advisorRole || '',
+    personnelType: data.personnelType,
   };
 };
 
@@ -157,9 +161,10 @@ export default function AdvisorManagementPage() {
             homeroomRoom: data.homeroomRoom || userData.homeroomRoom || '',
             advisorRole: data.advisorRole || userData.advisorRole || '',
             role: data.role || userData.role || [],
+            personnelType: data.personnelType || userData.personnelType,
           } as Teacher;
         })
-        .filter(t => t.status === 'อยู่' && !shouldExcludeTeacher(t.role)); // ONLY display active teachers and exclude attendance/student roles
+        .filter(t => t.status === 'อยู่' && !shouldExcludeTeacher(t.role, t.personnelType)); // ONLY display active teaching staff
 
       // Map users who are active but not present in subcollection yet
       const teachersById = new Map(activeTeachers.map(teacher => [teacher.id, teacher]));
@@ -168,7 +173,7 @@ export default function AdvisorManagementPage() {
 
         const userData = userDoc.data();
         if (userData.status !== 'อยู่') return;
-        if (shouldExcludeTeacher(userData.role)) return;
+        if (shouldExcludeTeacher(userData.role, userData.personnelType)) return;
 
         teachersById.set(userDoc.id, buildFallbackTeacherFromUser(userDoc.id, userData, currentSchoolId));
       });

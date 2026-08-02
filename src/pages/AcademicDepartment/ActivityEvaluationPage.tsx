@@ -25,6 +25,7 @@ import { RootState } from "@/store";
 import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import { CLASSES } from "@/utils/schoolUtils";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 import {
   LearnerActivityTeacherScope,
   buildLearnerActivityEvaluationDocId,
@@ -118,7 +119,9 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   const academicYear =
     useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
   const schoolId = (currentUser as any)?.schoolId || "";
-  const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
+  // undefined = school hasn't chosen a mode yet; treated the same as 'special-period' below.
+  const { activityMode: rawActivityMode, loading: activityModeLoading } = useActivityHubSettings(schoolId);
+  const activityMode = rawActivityMode ?? 'special-period';
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector(
     (state: RootState) => state.userMap
   );
@@ -145,7 +148,6 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   const [loading, setLoading] = useState(true);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activityModeReady, setActivityModeReady] = useState(false);
   const [courseBasedEmptyWarning, setCourseBasedEmptyWarning] = useState(false);
   const optionsLoadedForRef = useRef("");
 
@@ -173,12 +175,6 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
     if (schoolId && teacherMapStatus === "idle") dispatch(fetchTeachersMap(schoolId) as any);
   }, [schoolId, teacherMapStatus, dispatch]);
 
-  useEffect(() => {
-    if (!schoolId) return;
-    getDoc(doc(db, "school-settings", schoolId)).then((snap) => {
-      setActivityMode(snap.data()?.activityHubSettings?.activityMode ?? 'special-period');
-    }).catch(() => {}).finally(() => setActivityModeReady(true));
-  }, [schoolId]);
 
   useEffect(() => {
     if (!teacherScopes.some((s) => s.key === selectedTeacherScopeKey)) {
@@ -244,7 +240,7 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
   useEffect(() => {
     const load = async () => {
       if (!schoolId) return;
-      if (!activityModeReady) return;
+      if (activityModeLoading) return;
       if (mode !== "guidance" && !selectedId) return;
       if (mode === "guidance" && (!selectedClassKey || !selectedRoom)) return;
       setStudentsLoading(true);
@@ -296,7 +292,7 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
     };
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schoolId, mode, selectedId, selectedClassKey, selectedRoom, semester, academicYear, selectedTeacherScope, activityMode, activityModeReady]);
+  }, [schoolId, mode, selectedId, selectedClassKey, selectedRoom, semester, academicYear, selectedTeacherScope, activityMode, activityModeLoading]);
 
   const getEvaluationRef = () => {
     const baseId = `${academicYear}_${semester}`;

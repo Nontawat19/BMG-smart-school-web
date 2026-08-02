@@ -80,6 +80,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   };
 
   const [features, setFeatures] = useState<any>({});
+  // ควบคุมโดย super admin ที่หน้า /owner/school-info/:schoolId ("อนุญาตให้ครูลงเวลาเอง")
+  const [allowTeacherSelfCheckin, setAllowTeacherSelfCheckin] = useState(false);
 
   React.useEffect(() => {
     if (schoolId && !isOwnerRoute) {
@@ -90,11 +92,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
             ...(data?.features || {}),
             ...(data?.academicSettings || {})
           });
+          setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
         }
       });
       return () => unsub();
     }
     setFeatures({});
+    setAllowTeacherSelfCheckin(false);
   }, [isOwnerRoute, schoolId]);
 
   const isEnabled = (key: string) => features[key] ?? true;
@@ -231,12 +235,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <FaChalkboardTeacher className="text-lg min-w-[18px]" />
                   <span>ตารางสอน</span>
                 </NavLink>
-                <CanAccess roles={[ROLES.TEACHER, ROLES.SCHOOL_ADMIN]}>
-                  <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
-                    <FaUserClock className="text-lg min-w-[18px]" />
-                    <span>ลงเวลา</span>
-                  </NavLink>
-                </CanAccess>
+                {allowTeacherSelfCheckin && (
+                  <CanAccess roles={STAFF_ACCESS}>
+                    <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
+                      <FaUserClock className="text-lg min-w-[18px]" />
+                      <span>ลงเวลา</span>
+                    </NavLink>
+                  </CanAccess>
+                )}
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
@@ -331,15 +337,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   </CanAccess>
                 )}
 
-                {/* --- ลงเวลาของฉัน (ครู/แอดมินโรงเรียน ลงเวลาเข้า-ออกด้วยตนเอง) --- */}
-                <CanAccess roles={[ROLES.TEACHER, ROLES.SCHOOL_ADMIN]}>
-                  <div className="flex flex-col gap-1">
-                    <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
-                      <FaUserClock className="text-lg min-w-[18px]" />
-                      <span>ลงเวลา</span>
-                    </NavLink>
-                  </div>
-                </CanAccess>
+                {/* --- ลงเวลาของฉัน (บุคลากรทุกตำแหน่งลงเวลาเข้า-ออกด้วยตนเอง) — เปิด/ปิดได้ที่ /owner/school-info --- */}
+                {allowTeacherSelfCheckin && (
+                  <CanAccess roles={STAFF_ACCESS}>
+                    <div className="flex flex-col gap-1">
+                      <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
+                        <FaUserClock className="text-lg min-w-[18px]" />
+                        <span>ลงเวลา</span>
+                      </NavLink>
+                    </div>
+                  </CanAccess>
+                )}
               </>
             )}
           </nav>

@@ -16,7 +16,7 @@ import { processTemporaryPlacements } from './autoSchedule/temporaryPlacer';
 import { writeSchedulesToFirestore } from './autoSchedule/firestoreWriter';
 import { acquireSchedulingRunLock, forceReleaseSchedulingRunLock, getActiveSchedulingLock, releaseSchedulingRunLock } from '../scheduleRunLock';
 import { getAssignmentCompositeId, getScheduleDocId, getTaskTeacherIds, normalizeGroupNumber, resolveScheduleTeacherId } from '../scheduleSharedUtils';
-import { buildPreferredSessionDurations, checkConstraints, DAYS, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isAcademicCourse, isActivityCourse, isClubCourse, isDoubleCapableConstraint, isProtectedSpecialPeriodSetting } from '../utils';
+import { appendGroupRoom, buildPreferredSessionDurations, checkConstraints, DAYS, getMatchingSpecialPeriod, getPartnerIndexForPeriods, getRequiredWeeklyPeriods, isAcademicCourse, isActivityCourse, isClubCourse, isDoubleCapableConstraint, isProtectedSpecialPeriodSetting } from '../utils';
 import { isActiveTeacher } from '@/utils/teacherSortUtils';
 import type { CourseAssignmentDocData } from './autoSchedule/loadSchedulingData';
 
@@ -141,6 +141,17 @@ export const useAutoScheduleAction = ({
             };
 
             const updateProgress = (percentage: number, message: string) => updateSchedulingProgress(percentage, message, cancelRequestedRef);
+
+            updateProgress(4, 'กำลังโหลดการตั้งค่ากิจกรรม...');
+            const schoolSettingsDocRef = doc(db, 'school-settings', schoolId);
+            const schoolSettingsSnap = await getDoc(schoolSettingsDocRef);
+            throwIfCancelled();
+            // ค่าเริ่มต้นตรงกับ DEFAULT_SETTINGS ใน ActivityHubSettingsPage.tsx (clubMode: 'legacy')
+            // วิชาชุมนุมถูกคุมด้วย clubMode (แยกจาก activityMode ที่คุมกิจกรรมพัฒนาผู้เรียนทั่วไป)
+            const activityHubClubMode: 'legacy' | 'course-based' =
+                schoolSettingsSnap.data()?.activityHubSettings?.clubMode === 'course-based'
+                    ? 'course-based'
+                    : 'legacy';
 
             updateProgress(5, 'กำลังโหลดข้อมูลรายวิชา...');
             const coursesCollectionRef = collection(db, 'school-settings', schoolId, 'courses');
@@ -376,7 +387,9 @@ export const useAutoScheduleAction = ({
                 const isCorrectSemester = semStr === "0" || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/');
 
                 if (!isCorrectSemester) return false;
-                if (isClubCourse(c)) return false;
+                // โหมด "legacy" (Club Hub): วิชาชุมนุมจัดการผ่านหน้าชุมนุมโดยเฉพาะ ไม่ต้องให้ตัวจัดตารางอัตโนมัติวางคาบซ้ำ
+                // โหมด "course-based": วิชาชุมนุมต้องจัดตารางเหมือนวิชาปกติตามที่ตั้งค่าไว้ในหน้ากิจกรรมพัฒนาผู้เรียน
+                if (isClubCourse(c) && activityHubClubMode !== 'course-based') return false;
                 if (!isAcademicCourse(c) && !isActivityCourse(c)) return false;
                 if (!assignmentByCourseId.has(c.id) || !hasUsableAssignment(c)) return false;
                 if (normalizedTargetTeacherId) {
@@ -725,11 +738,7 @@ export const useAutoScheduleAction = ({
                         : (Array.isArray(course.classId) ? course.classId : (course.classId ? [course.classId] : [])).filter(Boolean);
 
                     const groupRoom = assign.room;
-                    const classIds = baseClassIds.map((id: string) => {
-                        if (id.includes('/')) return id;
-                        if (groupRoom && groupRoom !== 'all') return `${id}/${groupRoom}`;
-                        return id;
-                    });
+                    const classIds = baseClassIds.map((id: string) => appendGroupRoom(id, groupRoom));
 
                     if (classIds.length === 0) {
                         skippedCourseIssues.push(`${course.code || '-'} ${course.title}: ยังไม่มีระดับชั้น/กลุ่มเรียน`);

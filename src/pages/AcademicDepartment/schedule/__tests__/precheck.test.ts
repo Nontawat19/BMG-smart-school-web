@@ -133,6 +133,26 @@ describe('runSchedulePrecheck', () => {
         expect(result.fatalIssues.some(issue => issue.includes('ล็อกคาบชนกัน') && issue.includes('ห้อง'))).toBe(true);
     });
 
+    // Regression coverage: elective/rotation-group courses (e.g. ทัศนศิลป์, สุขศึกษา) share a
+    // coarse, grade-level-only classId (per CLASS_MAPPING — no per-room granularity), so two
+    // DIFFERENT locked courses in different rooms used to be wrongly reported as a fatal
+    // "ล็อกคาบชนกัน" (locked-slot conflict) that blocked the entire auto-schedule run.
+    it('does not treat two different locked tasks sharing a coarse classId as conflicting when their rooms are distinct', () => {
+        const taskA = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'], targetRooms: ['room-313'], requiredSlot: 'mon-0' });
+        const taskB = makeTask({ course: makeCourse('health'), teacherId: 't2', targetClasses: ['m3'], targetRooms: ['room-117'], compositeId: 'health_1', requiredSlot: 'mon-0' });
+        const result = runSchedulePrecheck(baseArgs({ tasks: [taskA, taskB] }));
+
+        expect(result.fatalIssues.some(issue => issue.includes('ล็อกคาบชนกัน') && issue.includes('ชั้น'))).toBe(false);
+    });
+
+    it('still flags two different locked tasks sharing a coarse classId when rooms overlap or are unspecified', () => {
+        const taskA = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'], targetRooms: ['room-313'], requiredSlot: 'mon-0' });
+        const taskB = makeTask({ course: makeCourse('health'), teacherId: 't2', targetClasses: ['m3'], targetRooms: ['room-313'], compositeId: 'health_1', requiredSlot: 'mon-0' });
+        const result = runSchedulePrecheck(baseArgs({ tasks: [taskA, taskB] }));
+
+        expect(result.fatalIssues.some(issue => issue.includes('ล็อกคาบชนกัน') && issue.includes('ชั้น'))).toBe(true);
+    });
+
     it('does not treat two tasks sharing a requiredSlot as conflicting when rooms are both "all"', () => {
         const taskA = makeTask({ course: makeCourse('c1'), teacherId: 't1', targetClasses: ['m1'], targetRooms: ['all'], requiredSlot: 'mon-0' });
         const taskB = makeTask({ course: makeCourse('c2'), teacherId: 't2', targetClasses: ['m2'], targetRooms: ['all'], compositeId: 'c2_1', requiredSlot: 'mon-1' });

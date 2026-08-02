@@ -3,6 +3,12 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
+// เวลาปัจจุบันจากนาฬิกาเซิร์ฟเวอร์ Google (NTP-synced) — ใช้เป็นแหล่งเวลาแท้จริงสำหรับระบบลงเวลา
+// แทนการอ้างอิงนาฬิกาเครื่อง kiosk หรือ third-party API ภายนอกที่ถูกบล็อก/cache ได้ง่าย
+exports.getServerTime = functions.region("us-central1").https.onCall(async () => {
+    return { now: Date.now() };
+});
+
 exports.deleteUser = functions.region("us-central1").https.onCall(async (data, context) => {
     // เปิดการเช็คสิทธิ์ (คุณอาจต้องการให้แค่ role บางอย่างทำได้ ให้เขียนเพิ่มที่นี่)
     // if (!context.auth) {

@@ -167,6 +167,14 @@
     @apply text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1;
   }
 
+  /* ✅ SweetAlert2 stacking fix: the library's own .swal2-container rule uses
+     :where() (zero specificity) with z-index 1060, so the fixed Navbar (z-[9999])
+     was rendering on top of alerts/toasts — most noticeable with top-end toasts
+     (e.g. the schedule drag-and-drop save toast) appearing hidden behind it. */
+  .swal2-container {
+    z-index: 999999;
+  }
+
   /* ✅ SweetAlert2 Dark Mode override */
   html.dark .swal2-popup {
     background-color: #2a2b2f !important;

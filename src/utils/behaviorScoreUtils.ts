@@ -29,6 +29,18 @@ interface ClassroomAttendanceScoreRule {
   statusKey: ClassroomAttendanceStatusKey;
   points?: number;
   isActive?: boolean;
+  // Only meaningful for specialPeriodRules — classroomAttendanceRules has no
+  // UI to set this and is always treated as a deduction regardless of value.
+  type?: 'increase' | 'decrease';
+}
+
+export interface BehaviorScoreInterventionTier {
+  id: string;
+  // คะแนนต่ำกว่าค่านี้ = เข้าเกณฑ์ต้องดำเนินการ
+  threshold: number;
+  // ข้อความอธิบายสิ่งที่ต้องทำ เช่น "ต้องเข้าร่วมกิจกรรมปรับพฤติกรรมให้คะแนนกลับถึง 100"
+  actionLabel: string;
+  isActive?: boolean;
 }
 
 interface BehaviorScoreConfig {
@@ -38,7 +50,21 @@ interface BehaviorScoreConfig {
   attendanceRules?: AttendanceScoreRule[];
   flagCeremonyRules?: FlagCeremonyScoreRule[];
   classroomAttendanceRules?: ClassroomAttendanceScoreRule[];
+  interventionTiers?: BehaviorScoreInterventionTier[];
 }
+
+// เกณฑ์แต่ละช่วงคะแนนกำหนดโดยโรงเรียนเอง (ตั้งค่าได้ที่ /academic/behavior-score-config)
+// เป็นแค่ป้ายเตือน/สถานะให้ครูเห็น ไม่ได้ล็อกฟีเจอร์หรือบังคับ workflow ใดๆ ในระบบ
+// ถ้าคะแนนต่ำกว่าหลาย threshold พร้อมกัน จะคืนเกณฑ์ที่ "รุนแรงที่สุด" (threshold ต่ำสุดที่ยังเข้าเกณฑ์)
+export const getActiveInterventionTier = (
+  score: number,
+  tiers?: BehaviorScoreInterventionTier[] | null,
+): BehaviorScoreInterventionTier | null => {
+  const matching = (tiers || [])
+    .filter((t) => t.isActive !== false && Number.isFinite(Number(t.threshold)) && score < Number(t.threshold))
+    .sort((a, b) => Number(a.threshold) - Number(b.threshold));
+  return matching[0] || null;
+};
 
 interface BehaviorScoreCalculationParams {
   currentScore?: number | null;
@@ -96,6 +122,44 @@ export const getBehaviorClassroomAttendanceStatusKey = (status?: string | null):
 // /academic/behavior-score-config. If a rule was never saved there (or the
 // school never saved the config at all), no points are deducted — there is
 // no hardcoded fallback amount.
+// Firestore Timestamp | {seconds} | Date → Date, or null if not present
+const toDateOrNull = (v: any): Date | null => {
+  if (!v) return null;
+  if (typeof v.toDate === "function") return v.toDate();
+  if (v instanceof Date) return v;
+  if (typeof v.seconds === "number") return new Date(v.seconds * 1000);
+  return null;
+};
+
+// วันที่ (YYYY-MM-DD) + เวลา (HH:mm) ของกฎเกณฑ์การตัดคะแนน → Date สำหรับแสดงผล
+const combineDateAndTime = (dateStr: string, timeStr?: string): Date => {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const [h, m] = (timeStr || "00:00").split(":").map(Number);
+  d.setHours(h || 0, m || 0, 0, 0);
+  return d;
+};
+
+// เวลาจริงที่ควรแสดงสำหรับรายการหักคะแนนจากการลงเวลา (แทนที่จะ hardcode 12:00 เสมอ):
+// - มาสาย/ไม่ลงเวลาออก → เวลาที่สแกนเข้าจริง (checkinTime)
+// - กลับก่อนกำหนด        → เวลาที่สแกนออกจริง (checkoutTime)
+// - ขาด (ไม่มีการสแกนเลย) → เวลาที่ระบบตัดสินว่าขาด (เวลาปิดรับลงเวลาเข้า ตามการตั้งค่าโรงเรียน)
+export const getAttendanceEventDate = (
+  data: any,
+  statusKey: AttendanceStatusKey | null,
+  attendanceConfig?: { studentCheckinEnd?: string; studentCheckoutEnd?: string } | null,
+): Date => {
+  if (statusKey === "late" || statusKey === "noCheckout") {
+    return toDateOrNull(data?.checkinTime) || combineDateAndTime(data?.date, attendanceConfig?.studentCheckinEnd);
+  }
+  if (statusKey === "early") {
+    return toDateOrNull(data?.checkoutTime) || combineDateAndTime(data?.date, attendanceConfig?.studentCheckoutEnd);
+  }
+  if (statusKey === "absent") {
+    return combineDateAndTime(data?.date, attendanceConfig?.studentCheckinEnd);
+  }
+  return data?.date ? new Date(`${data.date}T12:00:00`) : new Date();
+};
+
 export const getRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null, type?: "attendance" | "flag" | "classroom") => {
   if (type === "classroom" || (status && String(status).startsWith("class:"))) {
     const classStatusKey = getBehaviorClassroomAttendanceStatusKey(status);
@@ -138,10 +202,9 @@ export const calculateAttendanceBehaviorScoreChange = ({
   if (delta === 0) return null;
 
   const startingScore = Number(config?.startingScore ?? 100);
-  const minScore = Number(config?.minScore ?? 0);
-  const maxScore = Number(config?.maxScore ?? 100);
   const baseScore = Number.isFinite(Number(currentScore)) ? Number(currentScore) : startingScore;
-  const nextScore = Math.min(maxScore, Math.max(minScore, baseScore + delta));
+  // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ ทั้งเกิน 100 หรือติดลบ
+  const nextScore = baseScore + delta;
 
   const update = {
     behaviorScore: nextScore,
@@ -174,10 +237,9 @@ export const calculateClassroomBehaviorScoreChange = ({
   if (delta === 0) return null;
 
   const startingScore = Number(config?.startingScore ?? 100);
-  const minScore = Number(config?.minScore ?? 0);
-  const maxScore = Number(config?.maxScore ?? 100);
   const baseScore = Number.isFinite(Number(currentScore)) ? Number(currentScore) : startingScore;
-  const nextScore = Math.min(maxScore, Math.max(minScore, baseScore + delta));
+  // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ ทั้งเกิน 100 หรือติดลบ
+  const nextScore = baseScore + delta;
 
   const update = {
     behaviorScore: nextScore,
@@ -253,10 +315,9 @@ export const applySpecialPeriodBehaviorScoreWithRules = ({
   if (delta === 0) return null;
 
   const startingScore = Number(config?.startingScore ?? 100);
-  const minScore = Number(config?.minScore ?? 0);
-  const maxScore = Number(config?.maxScore ?? 100);
   const baseScore = Number.isFinite(Number(currentScore)) ? Number(currentScore) : startingScore;
-  const nextScore = Math.min(maxScore, Math.max(minScore, baseScore + delta));
+  // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ ทั้งเกิน 100 หรือติดลบ
+  const nextScore = baseScore + delta;
 
   const update = {
     behaviorScore: nextScore,
@@ -274,15 +335,19 @@ export const applySpecialPeriodBehaviorScoreWithRules = ({
   return { previousScore: baseScore, nextScore, delta: nextScore - baseScore };
 };
 
-// Deduction points come ONLY from what the school explicitly saved on
-// /academic/behavior-score-config — no hardcoded fallback amount.
+// Points come ONLY from what the school explicitly saved on
+// /academic/behavior-score-config — no hardcoded fallback amount. The return
+// value is SIGNED: positive for a rule marked "เชิงบวก" (increase), negative
+// for "เชิงลบ" (decrease, also the default when a rule has no type set) — do
+// not re-negate it at call sites, it already carries the correct direction.
 export const getSpecialPeriodRulePoints = (config: BehaviorScoreConfig | null | undefined, status?: string | null) => {
   const classStatusKey = getBehaviorClassroomAttendanceStatusKey(status);
   if (!classStatusKey) return 0;
   const rules = Array.isArray((config as any)?.specialPeriodRules) ? (config as any).specialPeriodRules : [];
   const rule = rules.find((item: ClassroomAttendanceScoreRule) => item.statusKey === classStatusKey);
   if (!rule || rule.isActive === false) return 0;
-  return Math.max(0, Number(rule.points) || 0);
+  const magnitude = Math.max(0, Number(rule.points) || 0);
+  return rule.type === "increase" ? magnitude : -magnitude;
 };
 
 export const calculateSpecialPeriodBehaviorScoreChange = ({
@@ -291,17 +356,16 @@ export const calculateSpecialPeriodBehaviorScoreChange = ({
   newStatus,
   config,
 }: BehaviorScoreCalculationParams) => {
-  const oldPenalty = getSpecialPeriodRulePoints(config, oldStatus);
-  const newPenalty = getSpecialPeriodRulePoints(config, newStatus);
-  const delta = oldPenalty - newPenalty;
+  const oldEffect = getSpecialPeriodRulePoints(config, oldStatus);
+  const newEffect = getSpecialPeriodRulePoints(config, newStatus);
+  const delta = newEffect - oldEffect;
 
   if (delta === 0) return null;
 
   const startingScore = Number(config?.startingScore ?? 100);
-  const minScore = Number(config?.minScore ?? 0);
-  const maxScore = Number(config?.maxScore ?? 100);
   const baseScore = Number.isFinite(Number(currentScore)) ? Number(currentScore) : startingScore;
-  const nextScore = Math.min(maxScore, Math.max(minScore, baseScore + delta));
+  // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ ทั้งเกิน 100 หรือติดลบ
+  const nextScore = baseScore + delta;
 
   const update = {
     behaviorScore: nextScore,

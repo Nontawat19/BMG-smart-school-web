@@ -18,12 +18,12 @@ export interface DroppableCellProps {
     occupiedByAnotherTeacherInfo: { classId: string; courseTitle: string; teacherName: string; isLocked: boolean; } | null;
     onToggleUnavailable?: () => void;
     onRemoveUnavailable?: () => void;
-    onLockToggle?: (slotId: string, instanceId: string) => void;
+    onLockToggle?: (slotId: string, instanceId: string, course?: CourseInstance) => void;
     isDraggingOver: boolean;
     isDropForbidden: boolean;
     forbiddenMessage?: string;
     isDoublePartner?: boolean;
-    handleRemoveCourse?: (slotId: string, instanceId: string) => void;
+    handleRemoveCourse?: (slotId: string, instanceId: string, course?: CourseInstance) => void;
     isFilteredOut?: boolean;
     type?: 'teacher' | 'room' | 'class';
     teachers?: Teacher[];
@@ -144,8 +144,8 @@ export const DroppableCell: React.FC<DroppableCellProps> = ({
                         <DraggableCourse 
                             course={c} 
                             showRemove={true} 
-                            onRemove={() => handleRemoveCourse?.(rawSlotId, c.instanceId)} 
-                            onLockToggle={() => onLockToggle?.(rawSlotId, c.instanceId)}
+                            onRemove={() => handleRemoveCourse?.(rawSlotId, c.instanceId, c)} 
+                            onLockToggle={() => onLockToggle?.(rawSlotId, c.instanceId, c)}
                             viewType={type}
                             teachers={teachers}
                             onClick={onCourseClick}

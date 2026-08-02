@@ -1,30 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { firestore as db } from '@/firebase';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { useActivityHubSettings } from '@/hooks/useActivityHubSettings';
 
 /**
  * Blocks access to learner-activity assignment pages when activityMode === 'course-based'.
  * In course-based mode, teacher assignment is done via CourseAssignment, so these pages are irrelevant.
+ * A school that hasn't chosen a mode yet (isActivityModeConfigured === false) is NOT blocked —
+ * these legacy pages stay available until the admin explicitly opts into course-based mode.
  */
 const ActivityModeGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
-  const [loading, setLoading] = useState(true);
-  const [blocked, setBlocked] = useState(false);
-
-  useEffect(() => {
-    if (!schoolId) { setLoading(false); return; }
-    getDoc(doc(db, 'school-settings', schoolId))
-      .then(snap => {
-        const mode = snap.data()?.activityHubSettings?.activityMode ?? 'special-period';
-        setBlocked(mode === 'course-based');
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [schoolId]);
+  const { activityMode, loading } = useActivityHubSettings(schoolId);
+  const blocked = activityMode === 'course-based';
 
   if (loading) {
     return (

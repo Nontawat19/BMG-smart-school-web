@@ -1275,10 +1275,10 @@ const HomePage = () => {
     // === DERIVED STATS FOR BMG SMART SCHOOL STYLE REPORT ===
     const totalStudents = studentReport.active || 0; // count only studying students (กำลังศึกษาอยู่)
     const stSummary = studentTodaySummary || {};
-    const sPresent = stSummary.present || 0;
-    const sLate = stSummary.late || 0;
-    const sLeave = stSummary.leave || 0;
-    const sOfficial = stSummary.officialTravel || 0;
+    const sPresent = Math.max(0, stSummary.present || 0);
+    const sLate = Math.max(0, stSummary.late || 0);
+    const sLeave = Math.max(0, stSummary.leave || 0);
+    const sOfficial = Math.max(0, stSummary.officialTravel || 0);
     const sAbsent = Math.max(0, stSummary.absent || 0);
     
     // Total scans recorded
@@ -1295,8 +1295,8 @@ const HomePage = () => {
 
     const totalTeachers = activeTeachersCount !== null ? activeTeachersCount : (teacherReport.total || 0);
     const tSummary = teacherTodaySummary || {};
-    const tPresent = tSummary.present || 0;
-    const tLate = tSummary.late || 0;
+    const tPresent = Math.max(0, tSummary.present || 0);
+    const tLate = Math.max(0, tSummary.late || 0);
     const tLeave = Math.max(tSummary.leave || 0, (leaveReport.teacherSick || 0) + (leaveReport.teacherPersonal || 0));
     const tOfficial = Math.max(tSummary.officialTravel || 0, leaveReport.teacherOfficial || 0);
     const tAbsent = Math.max(0, tSummary.absent || 0);

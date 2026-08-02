@@ -24,7 +24,7 @@ import { RootState } from "@/store";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { CLASSES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
-import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey } from "@/utils/behaviorScoreUtils";
+import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey, getSpecialPeriodRulePoints } from "@/utils/behaviorScoreUtils";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -74,6 +74,7 @@ interface ReportRow {
   logs: BehaviorLog[];
   plusScore: number;
   minusScore: number;
+  initialScore: number;
   currentScore: number;
 }
 
@@ -110,6 +111,9 @@ interface ClassroomAttendanceScoreRule {
   description?: string;
   points: number;
   isActive?: boolean;
+  // Only meaningful for specialPeriodRules — classroomAttendanceRules has no
+  // UI to set this and is always treated as a deduction regardless of value.
+  type?: "increase" | "decrease";
 }
 
 interface BehaviorScoreConfig {
@@ -117,6 +121,10 @@ interface BehaviorScoreConfig {
   attendanceRules: AttendanceScoreRule[];
   flagCeremonyRules: FlagCeremonyScoreRule[];
   classroomAttendanceRules: ClassroomAttendanceScoreRule[];
+  specialPeriodRules: ClassroomAttendanceScoreRule[];
+  startingScore: number;
+  minScore: number;
+  maxScore: number;
 }
 
 const DEFAULT_BEHAVIOR_RULES: BehaviorScoreRule[] = [
@@ -148,6 +156,10 @@ const DEFAULT_BEHAVIOR_CONFIG: BehaviorScoreConfig = {
   attendanceRules: DEFAULT_ATTENDANCE_RULES,
   flagCeremonyRules: DEFAULT_FLAG_CEREMONY_RULES,
   classroomAttendanceRules: DEFAULT_CLASSROOM_ATTENDANCE_RULES,
+  specialPeriodRules: [],
+  startingScore: 100,
+  minScore: 0,
+  maxScore: 100,
 };
 
 const toInputDate = (date: Date) => {
@@ -244,6 +256,19 @@ const normalizeBehaviorConfig = (rawConfig: any): BehaviorScoreConfig => ({
         isActive: rule.isActive !== false,
       }))
     : [],
+  specialPeriodRules: Array.isArray(rawConfig?.specialPeriodRules)
+    ? rawConfig.specialPeriodRules.map((rule: Partial<ClassroomAttendanceScoreRule>) => ({
+        statusKey: String(rule.statusKey || ""),
+        statusLabel: String(rule.statusLabel || rule.statusKey || ""),
+        description: String(rule.description || ""),
+        points: Math.max(0, Number(rule.points) || 0),
+        isActive: rule.isActive !== false,
+        type: rule.type === "increase" ? "increase" : "decrease",
+      }))
+    : [],
+  startingScore: Number(rawConfig?.startingScore ?? 100),
+  minScore: Number(rawConfig?.minScore ?? 0),
+  maxScore: Number(rawConfig?.maxScore ?? 100),
 });
 
 const getLogStatusKey = (log: BehaviorLog) => {
@@ -259,15 +284,6 @@ const resolveBehaviorLogDisplay = (log: BehaviorLog, config: BehaviorScoreConfig
   const scoreType = points > 0 ? "increase" : "decrease";
   const absPoints = Math.abs(points);
   const statusKey = getLogStatusKey(log);
-  const flagRule = statusKey
-    ? config.flagCeremonyRules.find((rule) => rule.statusKey === statusKey)
-    : null;
-  const attendanceRule = statusKey
-    ? config.attendanceRules.find((rule) => rule.statusKey === statusKey)
-    : null;
-  const classroomRule = statusKey
-    ? config.classroomAttendanceRules.find((rule) => rule.statusKey === statusKey)
-    : null;
   const manualRule = log.ruleId
     ? config.rules.find((rule) => rule.id === log.ruleId)
     : config.rules.find((rule) => (
@@ -282,22 +298,37 @@ const resolveBehaviorLogDisplay = (log: BehaviorLog, config: BehaviorScoreConfig
       topic: manualRule.title,
     };
   }
-  if (flagRule) {
+
+  // Branch on the log's own type first — attendance / classroom / special-period
+  // rules reuse the same statusKey values ("late", "absent", ...), so matching by
+  // statusKey alone (without the type) would misclassify e.g. a subject-period
+  // "late" as a gate check-in "late".
+  if (log.type === "flag_ceremony") {
+    const flagRule = statusKey ? config.flagCeremonyRules.find((rule) => rule.statusKey === statusKey) : null;
     return {
       category: "การเข้าแถว",
-      topic: flagRule.statusLabel || flagRule.description || "บันทึกการเข้าแถว",
+      topic: flagRule?.statusLabel || flagRule?.description || log.title || "บันทึกการเข้าแถว",
     };
   }
-  if (attendanceRule) {
+  if (log.type === "attendance") {
+    const attendanceRule = statusKey ? config.attendanceRules.find((rule) => rule.statusKey === statusKey) : null;
     return {
       category: "การลงเวลา",
-      topic: attendanceRule.statusLabel || attendanceRule.description || "บันทึกการมาเรียน",
+      topic: attendanceRule?.statusLabel || attendanceRule?.description || log.title || "บันทึกการมาเรียน",
     };
   }
-  if (classroomRule) {
+  if (log.type === "classroom") {
+    const classroomRule = statusKey ? config.classroomAttendanceRules.find((rule) => rule.statusKey === statusKey) : null;
     return {
       category: "การเข้าเรียนรายวิชา",
-      topic: classroomRule.statusLabel || classroomRule.description || "บันทึกการเข้าเรียนรายวิชา",
+      topic: classroomRule?.statusLabel || classroomRule?.description || log.title || "บันทึกการเข้าเรียนรายวิชา",
+    };
+  }
+  if (log.type === "special_period") {
+    const specialRule = statusKey ? config.specialPeriodRules.find((rule) => rule.statusKey === statusKey) : null;
+    return {
+      category: "กิจกรรมพิเศษ",
+      topic: specialRule?.statusLabel || specialRule?.description || log.title || "บันทึกกิจกรรมพิเศษ",
     };
   }
 
@@ -305,6 +336,20 @@ const resolveBehaviorLogDisplay = (log: BehaviorLog, config: BehaviorScoreConfig
     category: log.category || (log.type === "activity_adjust" ? "ความประพฤติ" : "ระบบ"),
     topic: log.title || log.notes || "-",
   };
+};
+
+// Self-contained: every student starts at the school's configured starting
+// score (100 by default, from /academic/behavior-score-config), and the
+// remaining score for the selected period is that baseline plus/minus exactly
+// the itemized points shown in the report for that period (also priced by the
+// rules on /academic/behavior-score-config). No live DB field and no
+// full-history replay — the report only ever reflects what's on screen.
+const computeRemainingScore = (
+  initialScore: number,
+  netScoreChange: number,
+) => {
+  // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — ให้ตรงกับคะแนนจริงบน student doc
+  return initialScore + netScoreChange;
 };
 
 const behaviorPdfStyles = StyleSheet.create({
@@ -348,6 +393,10 @@ const behaviorPdfStyles = StyleSheet.create({
     width: 64,
     height: 86,
     objectFit: "cover",
+    // ID photos are framed with headroom above and more of the torso below —
+    // a center crop (the default) clips into the top of the head. Anchoring
+    // to the top crops the excess from the bottom instead.
+    objectPosition: "top",
   },
   emptyPhoto: {
     width: 64,
@@ -500,9 +549,11 @@ const BehaviorReportPdfDocument: React.FC<BehaviorReportPdfDocumentProps> = ({
     const dateB = toDate(b.createdAt)?.getTime() || 0;
     return dateA - dateB;
   });
-  const netScoreChange = row.plusScore + row.minusScore;
-  const initialScore = sortedLogs[0]?.previousScore ?? (row.currentScore - netScoreChange);
-  const currentScore = sortedLogs[sortedLogs.length - 1]?.nextScore ?? row.currentScore;
+  // row.initialScore is the school's fixed starting baseline (100 by default);
+  // row.currentScore is already anchored to endDate in buildReport — neither
+  // should be re-derived here from row.logs.
+  const initialScore = row.initialScore;
+  const currentScore = row.currentScore;
   const schoolDisplayName = schoolName?.startsWith("โรงเรียน") ? schoolName : `โรงเรียน${schoolName || "-"}`;
   const directorPosition = schoolName ? `ผู้อำนวยการ${schoolDisplayName}` : "ผู้อำนวยการโรงเรียน";
 
@@ -852,14 +903,15 @@ const StudentBehaviorClassReportPage: React.FC = () => {
     setSelectedStudentIds([]);
     try {
       const rows = await Promise.all(targetStudents.map(async (student) => {
-        // 1. Fetch Manual Logs
         const logsRef = collection(firestore, "school-settings", schoolId, "students", student.id, "behavior_logs");
-        const logsSnap = await getDocs(logsRef);
+        const attRef = collection(firestore, "school-settings", schoolId, "students", student.id, "attendance");
+        const classRef = collection(firestore, "school-settings", schoolId, "students", student.id, "ClassroomAttendance");
+        const [logsSnap, attSnap, classSnap] = await Promise.all([getDocs(logsRef), getDocs(attRef), getDocs(classRef)]);
+
+        // 1. Manual Logs
         const manualLogs = logsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BehaviorLog));
 
-        // 2. Fetch Attendance Logs
-        const attRef = collection(firestore, "school-settings", schoolId, "students", student.id, "attendance");
-        const attSnap = await getDocs(attRef);
+        // 2. Attendance Logs (gate check-in + flag ceremony)
         const attendanceLogs: BehaviorLog[] = [];
 
         attSnap.docs.forEach((docSnap) => {
@@ -911,8 +963,62 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           }
         });
 
-        // 3. Merge, Filter, and Sort
-        const logs = [...manualLogs, ...attendanceLogs]
+        // 3. ClassroomAttendance Logs (subject-period check-in + special-period activities)
+        // BehaviorScorePage.tsx already reads this subcollection for the per-student
+        // history view — this report previously never fetched it at all, so any
+        // deduction made from "เช็คชื่อรายวิชา" / special-period pages was invisible
+        // here even though it was already applied to the student's live score.
+        const classroomLogs: BehaviorLog[] = [];
+        classSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const logDate = data.date?.toDate ? data.date.toDate() : new Date();
+          const academicYearStr = data.academicYear || academicYear || String(getCurrentThaiYear());
+
+          if (data.attendanceType === "special_period") {
+            if (!data.deductBehavior) return;
+            // Signed: positive for a rule marked เชิงบวก, negative for เชิงลบ — do not renegate.
+            const spPoints = getSpecialPeriodRulePoints(behaviorScoreConfig as any, data.status);
+            if (spPoints !== 0) {
+              const title =
+                data.status === "late" ? "เข้าร่วมสาย" :
+                data.status === "absent" ? "ไม่เข้าร่วมกิจกรรม" : (data.specialPeriodTitle || data.status);
+              classroomLogs.push({
+                id: `sp_${docSnap.id}`,
+                type: "special_period",
+                title,
+                category: "กิจกรรมพิเศษ",
+                points: spPoints,
+                behaviorStatus: data.status,
+                statusKey: data.status,
+                createdAt: { toDate: () => logDate },
+                academicYear: academicYearStr,
+              });
+            }
+          } else {
+            const classPoints = getRulePoints(behaviorScoreConfig as any, `class:${data.status}`);
+            if (classPoints > 0) {
+              const title =
+                data.status === "late" ? "เข้าเรียนสาย" :
+                data.status === "absent" ? "ขาดเรียน" :
+                data.status === "escape" ? "หนีเรียน" : (data.subjectName || data.status);
+              classroomLogs.push({
+                id: `cls_${docSnap.id}`,
+                type: "classroom",
+                title,
+                category: "การเข้าเรียนรายวิชา",
+                points: -classPoints,
+                behaviorStatus: data.status,
+                statusKey: data.status,
+                createdAt: { toDate: () => logDate },
+                academicYear: academicYearStr,
+              });
+            }
+          }
+        });
+
+        // 4. Merge, Filter, and Sort for the itemized list shown in the table/PDF
+        const fullLogs = [...manualLogs, ...attendanceLogs, ...classroomLogs];
+        const logs = fullLogs
           .filter(isLogInRange)
           .sort((a, b) => {
             const dateA = toDate(a.createdAt)?.getTime() || 0;
@@ -923,12 +1029,22 @@ const StudentBehaviorClassReportPage: React.FC = () => {
         const plusScore = logs.reduce((sum, log) => sum + Math.max(0, Number(log.points || 0)), 0);
         const minusScore = logs.reduce((sum, log) => sum + Math.min(0, Number(log.points || 0)), 0);
 
+        // 5. Every student starts at the school's configured baseline (100 by
+        // default) — this is fixed, never derived from the window that happens
+        // to be selected in the filter. The remaining score is that baseline
+        // plus/minus exactly the itemized points above (priced by the rules on
+        // /academic/behavior-score-config) — no live DB field involved, so it
+        // always reconciles with what's printed in the table.
+        const initialScore = Number(behaviorScoreConfig.startingScore ?? 100);
+        const currentScore = computeRemainingScore(initialScore, plusScore + minusScore);
+
         return {
           student,
           logs,
           plusScore,
           minusScore,
-          currentScore: Number(student.behaviorScore ?? 100),
+          initialScore,
+          currentScore,
         };
       }));
 
@@ -939,7 +1055,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
     } finally {
       setLoadingReport(false);
     }
-  }, [endDate, isLogInRange, schoolId, selectedClassLevel, startDate, targetStudents]);
+  }, [behaviorScoreConfig, endDate, isLogInRange, schoolId, selectedClassLevel, startDate, targetStudents]);
 
   useEffect(() => {
     if (targetStudents.length > 0 && selectedClassLevel) {
@@ -1081,7 +1197,9 @@ const StudentBehaviorClassReportPage: React.FC = () => {
         <div className="mx-auto max-w-7xl">
           <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <BackButton to="/academic/hub/students" />
+              {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
+                  /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
+              <BackButton />
               <div>
                 <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Student behavior class report</p>
                 <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">รายงานคะแนนความประพฤติ แบบเลือกห้องเรียน</h1>
@@ -1306,8 +1424,8 @@ const StudentBehaviorClassReportPage: React.FC = () => {
       </div>
 
       {activeRow && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 px-3 py-5 sm:px-6">
-          <div className="mt-0 max-h-[90vh] w-full max-w-5xl overflow-hidden rounded bg-white shadow-2xl dark:bg-white">
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/55 px-3 pb-5 pt-20 sm:px-6">
+          <div className="mt-0 max-h-[85vh] w-full max-w-5xl overflow-hidden rounded bg-white shadow-2xl dark:bg-white">
             <div className="flex items-center justify-between border-b border-slate-200 px-7 py-5">
               <h3 className="text-xl font-bold text-slate-800">
                 ข้อมูลของ {getStudentName(activeRow.student)}
@@ -1386,7 +1504,7 @@ const StudentBehaviorClassReportPage: React.FC = () => {
 
       {/* PDF Export Modal */}
       {isPdfModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm transition-opacity">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm transition-opacity">
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-[#1f2024] dark:ring-1 dark:ring-white/10">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 dark:border-white/10 dark:bg-white/5">
               <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 dark:text-white">

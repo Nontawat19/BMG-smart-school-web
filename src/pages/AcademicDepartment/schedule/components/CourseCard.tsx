@@ -104,7 +104,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({ course, isOverlay, viewT
 
             {/* Lock Indicator */}
             {(isLocked || isTemporary || isRelaxed) && (
-                <div className="absolute top-1 right-1">
+                <div className="absolute top-1 right-1" title={isRelaxed ? course.scheduleWarning : undefined}>
                     {isTemporary ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-amber-600/80'} /> : isRelaxed ? <AlertCircle size={7} className={isOverlay ? 'text-white/50' : 'text-orange-500/80'} /> : <Lock size={7} className={isOverlay ? 'text-white/40' : 'text-amber-500/60'} />}
                 </div>
             )}

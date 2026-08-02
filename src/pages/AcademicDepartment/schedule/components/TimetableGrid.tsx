@@ -87,8 +87,8 @@ export interface TimetableGridProps {
     setDynamicUnavailableSlots: React.Dispatch<React.SetStateAction<string[]>>;
     setAvailableCourseInstances: React.Dispatch<React.SetStateAction<CourseInstance[]>>;
     onCellHover?: (info: { id: string; courses: CourseInstance[]; isDynamicUnavailable: boolean; rect: DOMRect } | null) => void;
-    onLockToggle?: (slotId: string, instanceId: string) => void;
-    handleRemoveCourse?: (slotId: string, instanceId: string) => void;
+    onLockToggle?: (slotId: string, instanceId: string, course?: CourseInstance) => void;
+    handleRemoveCourse?: (slotId: string, instanceId: string, course?: CourseInstance) => void;
     assignmentConstraints: AssignmentConstraintMap;
     selectedTeacherData?: Teacher;
     onCellClick?: (slotId: string) => void;

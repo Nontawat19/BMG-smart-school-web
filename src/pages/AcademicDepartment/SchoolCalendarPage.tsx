@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { doc, setDoc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { firestore as db } from '../../firebase';
 import Swal from 'sweetalert2';
@@ -186,6 +186,9 @@ const SchoolCalendarPage: React.FC = () => {
   });
   const [academicYear, setAcademicYear] = useState<string>('');
   const [fetchedYears, setFetchedYears] = useState<Set<number>>(new Set());
+  const [activeDocId, setActiveDocId] = useState<string>('default');
+  const [isDataReady, setIsDataReady] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [desktopScale, setDesktopScale] = useState(1);
   const desktopViewportRef = useRef<HTMLDivElement>(null);
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -253,14 +256,37 @@ const SchoolCalendarPage: React.FC = () => {
     } catch (error) {
       console.error("Error fetching activities for calendar:", error);
       setEvents(baseEvents); // Fallback to just calendar events
+    } finally {
+      setIsDataReady(true);
     }
   }, [schoolId]);
 
   useEffect(() => {
     if (schoolId) {
+      setActiveDocId('default');
       fetchData();
     }
   }, [fetchData, schoolId]);
+
+  // Auto-save: persist events/terms to the active calendar document shortly after any change,
+  // so edits aren't lost if the user navigates away without pressing "บันทึกปฏิทิน".
+  useEffect(() => {
+    if (!schoolId || !isDataReady) return;
+
+    setAutoSaveStatus('saving');
+    const handler = setTimeout(async () => {
+      try {
+        const docRef = doc(db, 'school-settings', schoolId, 'main_calendar', activeDocId);
+        await setDoc(docRef, { events, terms, academicYear }, { merge: true });
+        setAutoSaveStatus('saved');
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        setAutoSaveStatus('error');
+      }
+    }, 1000);
+
+    return () => clearTimeout(handler);
+  }, [events, terms, academicYear, schoolId, activeDocId, isDataReady]);
 
   useLayoutEffect(() => {
     const updateDesktopScale = () => {
@@ -408,6 +434,16 @@ const SchoolCalendarPage: React.FC = () => {
               if (!isNonOfficialHoliday(summary)) {
                 newEvents[dateStr] = { type: 'holiday', description: summary };
                 newOfficial[dateStr] = { type: 'holiday', description: summary };
+
+                // วันเข้าพรรษาตกเป็นวันถัดจากวันอาสาฬหบูชาเสมอ แต่ปฏิทินวันหยุดของ Google
+                // ไม่มี event นี้แยกให้ จึงต้องคำนวณเพิ่มเองจากวันอาสาฬหบูชาที่ดึงมาได้
+                if (summary.includes('วันอาสาฬหบูชา')) {
+                  const [ay, am, ad] = dateStr.split('-').map(Number);
+                  const khaoPhansa = new Date(ay, am - 1, ad + 1);
+                  const khaoPhansaStr = `${khaoPhansa.getFullYear()}-${String(khaoPhansa.getMonth() + 1).padStart(2, '0')}-${String(khaoPhansa.getDate()).padStart(2, '0')}`;
+                  newEvents[khaoPhansaStr] = { type: 'holiday', description: 'วันเข้าพรรษา' };
+                  newOfficial[khaoPhansaStr] = { type: 'holiday', description: 'วันเข้าพรรษา' };
+                }
               } else {
                 // ถ้าเจอวันหยุดที่ต้องกรองออก และมีอยู่ในปฏิทินแล้ว ให้ลบออก
                 if (newEvents[dateStr] && newEvents[dateStr].type === 'holiday') {
@@ -435,6 +471,7 @@ const SchoolCalendarPage: React.FC = () => {
     try {
       const docRef = doc(db, 'school-settings', schoolId, 'main_calendar', academicYear);
       const docSnap = await getDoc(docRef);
+      setActiveDocId(academicYear);
       if (docSnap.exists()) {
         const data = docSnap.data() as SchoolCalendarData;
         setEvents(data.events || {});
@@ -473,6 +510,7 @@ const SchoolCalendarPage: React.FC = () => {
       // 1. บันทึกข้อมูลลงใน Document ID ที่เป็นปีการศึกษา (เช่น "2569") เพื่อเก็บประวัติแยกกัน
       const yearDocRef = doc(db, 'school-settings', schoolId, 'main_calendar', academicYear);
       await setDoc(yearDocRef, { events, terms, academicYear });
+      setActiveDocId(academicYear);
 
       // 2. ถามผู้ใช้ว่าต้องการตั้งเป็นปีปัจจุบัน (Default) หรือไม่
       const result = await Swal.fire({
@@ -509,22 +547,26 @@ const SchoolCalendarPage: React.FC = () => {
     }
   };
 
+  const clearDayEvent = useCallback((dateString: string) => {
+    setEvents(prev => {
+      const newEvents = { ...prev };
+      // Check if this date was originally an official holiday
+      if (officialHolidays[dateString]) {
+        newEvents[dateString] = officialHolidays[dateString];
+      } else {
+        delete newEvents[dateString];
+      }
+      return newEvents;
+    });
+  }, [officialHolidays]);
+
   const handleDayClick = async (date: Date) => {
     const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const existingEvent = events[dateString];
 
     if (existingEvent && existingEvent.type === selectedTool) {
       // Click again to clear
-      setEvents(prev => {
-        const newEvents = { ...prev };
-        // Check if this date was originally an official holiday
-        if (officialHolidays[dateString]) {
-          newEvents[dateString] = officialHolidays[dateString];
-        } else {
-          delete newEvents[dateString];
-        }
-        return newEvents;
-      });
+      clearDayEvent(dateString);
     } else {
       // Add or change event
       if (selectedTool === 'holiday' || selectedTool === 'specialHoliday') {
@@ -675,6 +717,24 @@ const SchoolCalendarPage: React.FC = () => {
     }
   };
 
+  // Official holidays (from Google Calendar) in the visible month that are not currently
+  // marked as a holiday in the calendar — usually means a filter or manual edit removed it.
+  const monthAnomalies = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const list: { dateString: string; day: number; description?: string }[] = [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const official = officialHolidays[dateString];
+      if (official && events[dateString]?.type !== 'holiday') {
+        list.push({ dateString, day, description: official.description });
+      }
+    }
+    return list;
+  }, [currentDate, officialHolidays, events]);
+
   const renderCalendar = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -722,6 +782,15 @@ const SchoolCalendarPage: React.FC = () => {
           className={`relative min-w-0 min-h-0 h-full overflow-hidden border border-gray-200 dark:border-gray-700/50 rounded-lg p-1.5 sm:p-2 text-left cursor-pointer transition-all duration-200 ease-in-out flex flex-col ${cellClass}`}
         >
           {termIndicator}
+          {event && (
+            <button
+              onClick={(e) => { e.stopPropagation(); clearDayEvent(dateString); }}
+              title="ลบการกำหนดวันนี้"
+              className="absolute top-0.5 left-0.5 w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center rounded-full bg-white/80 dark:bg-black/40 text-gray-500 dark:text-gray-300 hover:bg-red-500 hover:text-white text-xs leading-none z-10 shadow-sm"
+            >
+              ×
+            </button>
+          )}
           <div className={`shrink-0 font-semibold mb-1 text-sm sm:text-base ${isToday ? 'bg-indigo-600 text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center' : 'text-gray-700 dark:text-gray-200'}`}>{day}</div>
           {event && (event.type !== 'schoolDay' || event.description || event.scheduleDay) && (
             <div className="text-[10px] sm:text-xs opacity-90 flex-grow overflow-hidden min-h-0">
@@ -756,6 +825,31 @@ const SchoolCalendarPage: React.FC = () => {
     { id: 'specialHoliday', label: 'กำหนดวันหยุดพิเศษ', color: 'bg-yellow-500' },
   ];
 
+  const autoSaveIndicator = (
+    <span className={`text-xs font-medium whitespace-nowrap ${autoSaveStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>
+      {autoSaveStatus === 'saving' && 'กำลังบันทึกอัตโนมัติ...'}
+      {autoSaveStatus === 'saved' && 'บันทึกอัตโนมัติแล้ว ✓'}
+      {autoSaveStatus === 'error' && 'บันทึกอัตโนมัติไม่สำเร็จ'}
+    </span>
+  );
+
+  const anomalyBadge = monthAnomalies.length > 0 ? (
+    <div className="relative group">
+      <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium cursor-help whitespace-nowrap">
+        <span>⚠</span>
+        <span>วันหยุดราชการผิดปกติ {monthAnomalies.length} วัน</span>
+      </div>
+      <div className="hidden group-hover:block absolute right-0 mt-1 z-50 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-700 dark:text-gray-200">
+        <p className="font-semibold mb-1">วันหยุดราชการที่ไม่ได้ถูกทำเครื่องหมายเป็นวันหยุดในปฏิทินนี้:</p>
+        <ul className="space-y-1">
+          {monthAnomalies.map(a => (
+            <li key={a.dateString}>{a.day} {thaiMonths[currentDate.getMonth()]} — {a.description}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <MainLayout>
       <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-4 text-gray-900 dark:text-white transition-colors duration-300 overflow-x-hidden lg:h-[calc(100vh-60px)] lg:overflow-hidden">
@@ -788,6 +882,7 @@ const SchoolCalendarPage: React.FC = () => {
                 }}
               >
                 <div className="flex justify-end items-center mb-3 gap-3 shrink-0">
+                  {autoSaveIndicator}
                   <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
                     {isSaving ? 'กำลังบันทึก...' : 'บันทึกปฏิทิน'}
                   </button>
@@ -868,7 +963,10 @@ const SchoolCalendarPage: React.FC = () => {
                       <h2 className="text-xl font-bold text-gray-900 dark:text-white text-center min-w-0">
                         {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
                       </h2>
-                      <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {anomalyBadge}
+                        <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-7 gap-1 min-w-0 shrink-0">
@@ -886,6 +984,7 @@ const SchoolCalendarPage: React.FC = () => {
 
           <div className="lg:hidden bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 sm:p-5 shadow-sm dark:shadow-none overflow-x-hidden flex flex-col">
             <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center mb-3 gap-3 shrink-0">
+              {autoSaveIndicator}
               <button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded-lg transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed">
                 {isSaving ? 'กำลังบันทึก...' : 'บันทึกปฏิทิน'}
               </button>
@@ -966,7 +1065,10 @@ const SchoolCalendarPage: React.FC = () => {
                   <h2 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white text-center min-w-0">
                     {thaiMonths[currentDate.getMonth()]} {getThaiYear(currentDate)}
                   </h2>
-                  <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {anomalyBadge}
+                    <button onClick={() => changeMonth(1)} className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 shrink-0">&gt;</button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-7 gap-1 sm:gap-1.5 min-w-0 shrink-0">

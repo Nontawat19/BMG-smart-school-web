@@ -1,12 +1,11 @@
 import React from 'react';
-import { Info, Link2, Edit2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import {
     Student,
     GradeRecord,
     CharacteristicCriteria,
     ReadingWritingCriteria
 } from '../types';
+import { isSDQCharacteristic } from '../sdqCriteria';
 
 interface GradeBookTableProps {
     activeTab: 'grades' | 'characteristics' | 'readingWriting';
@@ -34,15 +33,17 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
     maxScores,
     selectedClass,
     selectedCourse,
+    sdqMap,
     formatPrefix,
     handleScoreChange,
     handleBulkFillColumn,
     handleSyncSDQColumn,
     getOverallQuality
 }) => {
-    
+
     const isCharacteristics = activeTab === 'characteristics';
     const isRW = activeTab === 'readingWriting';
+    const hasSDQData = Object.keys(sdqMap || {}).length > 0;
     const scoreInputClass = "w-16 h-9 text-center bg-slate-900/5 dark:bg-slate-800 border rounded-xl text-sm font-black focus:ring-2 outline-none transition-all shadow-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
     return (
@@ -56,7 +57,7 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                 <th className="px-1 py-3 w-10 sticky left-0 bg-slate-700 dark:bg-slate-900 z-30 text-[10px] text-white/80 dark:text-gray-300 text-center font-bold">เลขที่</th>
                                 <th className="px-4 py-3 w-48 sticky left-10 bg-slate-700 dark:bg-slate-900 z-30 text-[11px] text-white dark:text-gray-300 font-bold border-r border-slate-600/30 dark:border-slate-800">ชื่อ-นามสกุล</th>
                                 {characteristicsCriteria.map((c, cIdx) => {
-                                    const isSDQ = c.title.includes('ซื่อสัตย์') || c.title.includes('มีวินัย') || c.title.includes('จิตสาธารณะ');
+                                    const isSDQ = isSDQCharacteristic(c.id, c.title);
                                     return (
                                         <th
                                             key={`char_title_${c.id}`}
@@ -66,7 +67,15 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                             <div className="flex flex-col items-center gap-1">
                                                 <div className="flex items-center gap-1 relative">
                                                     {isSDQ && (
-                                                        <div className="absolute -left-8 top-0 bg-[#22c55e] text-white text-[8px] px-1.5 py-0.5 rounded-full font-black shadow-lg">SDQ</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSyncSDQColumn(c.title, c.id)}
+                                                            disabled={!hasSDQData}
+                                                            title={hasSDQData ? `นำคะแนน SDQ มาใส่ในคอลัมน์ "${c.title}"` : 'ยังไม่มีข้อมูล SDQ สำหรับนักเรียนกลุ่มนี้'}
+                                                            className={`absolute -left-8 top-0 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black shadow-lg transition-transform ${hasSDQData ? 'bg-[#22c55e] hover:scale-110 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-60'}`}
+                                                        >
+                                                            SDQ
+                                                        </button>
                                                     )}
                                                     <span className="whitespace-nowrap">{cIdx + 1}. {c.title.split(' ')[0]}</span>
                                                 </div>
@@ -92,7 +101,7 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                 </td>
                                 {characteristicsCriteria.flatMap((c) =>
                                     (c.indicators || []).map((_, iIdx) => {
-                                        const isSDQ = c.title.includes('ซื่อสัตย์') || c.title.includes('มีวินัย') || c.title.includes('จิตสาธารณะ');
+                                        const isSDQ = isSDQCharacteristic(c.id, c.title);
                                         return (
                                             <td key={`bulk_${c.id}_${iIdx}`} className={`px-0.5 py-1 text-center border-r border-gray-100 dark:border-gray-800/50 ${isSDQ ? 'bg-indigo-50 dark:bg-indigo-900/10' : ''}`}>
                                                 <input
@@ -200,7 +209,7 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                         {characteristicsCriteria.flatMap(c =>
                                             (c.indicators || []).map((_, iIdx) => {
                                                 const scoreKey = `${c.id}_${iIdx}`;
-                                                const isSDQ = c.title.includes('ซื่อสัตย์') || c.title.includes('มีวินัย') || c.title.includes('จิตสาธารณะ');
+                                                const isSDQ = isSDQCharacteristic(c.id, c.title);
                                                 return (
                                                     <td key={scoreKey} className={`px-0.5 py-2 border-r border-gray-100 dark:border-gray-800/30 text-center ${isSDQ ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
                                                         <input

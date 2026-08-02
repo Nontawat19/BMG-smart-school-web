@@ -27,6 +27,8 @@ import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getCurrentThaiYear } from "@/utils/dateUtils";
 import MainLayout from "@/layouts/MainLayout";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
+import { isClubCourse } from "./schedule/utils";
+import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 import {
     Users,
     BookOpen,
@@ -256,13 +258,6 @@ interface Enrollment {
     academicYear?: string;
 }
 
-const isClubCourse = (course?: Partial<Pick<Course, 'type' | 'title'>> | null): boolean => {
-    if (!course) return false;
-    const cType = String(course.type || '').trim().toLowerCase();
-    const cTitle = String(course.title || '').trim();
-    return cType === 'ชุมนุม' || cTitle.includes('ชุมนุม');
-};
-
 const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'title'>> | null, category: string) => {
     if (!course) return false;
     if (category === "ทั้งหมด") return true;
@@ -308,7 +303,6 @@ const CourseEnrollmentPage: React.FC = () => {
     const [availableYears, setAvailableYears] = useState<string[]>([]);
     const [activeSemester, setActiveSemester] = useState("1");
     const [activeClassLevel, setActiveClassLevel] = useState<string>("ทั้งหมด");
-    const [schoolInfo, setSchoolInfo] = useState<any>(null);
     const [activeRoom, setActiveRoom] = useState<string>("01");
     const [activeGroupNum, setActiveGroupNum] = useState<number>(1);
 
@@ -446,7 +440,7 @@ const CourseEnrollmentPage: React.FC = () => {
 
     const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
     const [semesterAssignments, setSemesterAssignments] = useState<any[]>([]);
-    const clubMode = schoolInfo?.activityHubSettings?.clubMode === 'course-based' ? 'course-based' : 'legacy';
+    const { clubMode } = useActivityHubSettings(schoolId);
 
     // Sync assignments for active year/semester
     useEffect(() => {
@@ -553,10 +547,9 @@ const CourseEnrollmentPage: React.FC = () => {
             dispatch(fetchCalendar(schoolId) as any);
         }
 
-        // Fetch School Info & Calendar Settings
+        // Fetch Calendar Settings (clubMode itself now comes from useActivityHubSettings below)
         const fetchSettings = async () => {
             try {
-                const schoolRef = doc(db, 'school-settings', schoolId);
                 const calendarSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'main_calendar')));
                 const years = calendarSnap.docs.map(doc => doc.id).filter(id => id !== 'default');
                 setAvailableYears(years.sort((a,b) => b.localeCompare(a)));
@@ -566,9 +559,6 @@ const CourseEnrollmentPage: React.FC = () => {
                     const currentTerm = calendarState.rawData?.currentTerm || "1";
                     setActiveSemester(currentTerm);
                 }
-
-                const sInfoSnap = await getDoc(schoolRef);
-                if (sInfoSnap.exists()) setSchoolInfo(sInfoSnap.data());
             } catch (error) {
                 console.error("Error fetching settings:", error);
             }

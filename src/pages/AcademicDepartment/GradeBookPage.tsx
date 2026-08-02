@@ -40,6 +40,7 @@ import { usePdfGenerator } from './GradeBookPage/hooks/usePdfGenerator';
 import { useGradeBookCalculations } from './GradeBookPage/hooks/useGradeBookCalculations';
 import { useGradeBookFilters } from './GradeBookPage/hooks/useGradeBookFilters';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ROLES } from '@/constants/roles';
 import { useGradeBookData } from './GradeBookPage/hooks/useGradeBookData';
 import { useGradeBookAttendance } from './GradeBookPage/hooks/useGradeBookAttendance';
 import { getSubjectGroupInfo, getSubjectGroupName } from '@/utils/subjectGroupUtils';
@@ -66,7 +67,9 @@ const GradeBookPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'grades' | 'characteristics' | 'readingWriting'>('grades');
   const [courses, setCourses] = useState<Course[]>([]);
+  const [coursesLoaded, setCoursesLoaded] = useState(false);
   const [semesterAssignments, setSemesterAssignments] = useState<Record<string, GroupAssignment[]>>({});
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
   const [characteristicsCriteria, setCharacteristicsCriteria] = useState<CharacteristicCriteria[]>([]);
   const [readingWritingCriteria, setReadingWritingCriteria] = useState<ReadingWritingCriteria[]>([]);
   const [maxScores, setMaxScores] = useState({ formative: 0, midterm: 0, final: 0 });
@@ -85,20 +88,30 @@ const GradeBookPage: React.FC = () => {
   const [courseSchedule, setCourseSchedule] = useState<Record<string, number[]>>({});
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
 
-  const { user: currentUser, isSchoolAdmin } = usePermissions();
+  const { user: currentUser, isSchoolAdmin, isAcademicAdmin, isSuperAdmin, hasRole } = usePermissions();
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const { availableClassOptions: reduxLevels, currentAcademicYear: schoolYear, schoolName, logoUrl, directorName, directorPrefix, status: schoolSettingsStatus } = useSelector((state: RootState) => state.schoolSettings);
   const { groups: reduxSubjectGroups, status: subjectGroupsStatus } = useSelector((state: RootState) => state.subjectGroups);
-  const { academicYear: calYear, terms: calTerms, rawData: calendarData, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
+  const { academicYear: calYearRaw, terms: calTerms, rawData: calendarData, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
+  // Only fall back to the school's currentAcademicYear if the calendar fetch genuinely failed —
+  // falling back while it's merely still loading risks firing enrollment/assignment queries with
+  // a year value that may not match what CourseAssignmentPage actually wrote (it keys strictly off
+  // the calendar's academicYear), which would silently return zero results instead of just waiting.
+  const calYear = calYearRaw || (calendarStatus === 'failed' ? schoolYear : '') || '';
   const { periods: reduxPeriods, status: periodsStatus } = useSelector((state: RootState) => state.periodSettings);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
+
+  const isSchoolLeadership = hasRole([ROLES.DIRECTOR, ROLES.DEPT_HEAD]);
 
   const userPrivileges = useMemo(() => {
     const teacherProfiles = Object.values(teacherMap || {}).filter((t: any) => t.uid === currentUser?.uid);
     const teacherProfile = teacherProfiles[0] as Teacher | undefined;
     const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
-    const isAdmin = isSchoolAdmin;
+    // School/Academic admins and school-level leadership (director, dept head) see every course,
+    // same as a designated head of learning-area/assessment — matches the roles this route already
+    // grants access to (TEACHER_OPERATIONAL), regardless of whether they also have a teacher profile.
+    const isAdmin = isSchoolAdmin || isSuperAdmin || isAcademicAdmin || isSchoolLeadership;
 
     return {
       canSeeAll: isAdmin || isHead,
@@ -107,7 +120,7 @@ const GradeBookPage: React.FC = () => {
       teacherDocId: teacherProfile?.id,
       myTeacherIds: teacherProfiles.map(t => t.id)
     };
-  }, [currentUser, teacherMap, isSchoolAdmin]);
+  }, [currentUser, teacherMap, isSchoolAdmin, isSuperAdmin, isAcademicAdmin, isSchoolLeadership]);
 
   const {
     selectedClass, setSelectedClass,
@@ -127,19 +140,23 @@ const GradeBookPage: React.FC = () => {
     useMemo(() => {
       return courses.map(c => ({
         ...c,
-        teacherAssignments: semesterAssignments[c.id] || []
+        // Prefer the semester-scoped course_assignments record; fall back to whatever embedded
+        // teacherAssignments array already lives on the course doc (written by CourseManagementPage/
+        // ViewCoursesPage) so courses assigned only through those screens don't disappear here.
+        teacherAssignments: semesterAssignments[c.id]?.length ? semesterAssignments[c.id] : (c.teacherAssignments || [])
       }));
     }, [courses, semesterAssignments]),
     teacherMap,
     userPrivileges,
     calYear || '',
-    reduxSubjectGroups
+    reduxSubjectGroups,
+    coursesLoaded && assignmentsLoaded
   );
 
   const coursesWithAssignments = useMemo(() => {
     return courses.map(c => ({
       ...c,
-      teacherAssignments: semesterAssignments[c.id] || []
+      teacherAssignments: semesterAssignments[c.id]?.length ? semesterAssignments[c.id] : (c.teacherAssignments || [])
     }));
   }, [courses, semesterAssignments]);
 
@@ -221,7 +238,16 @@ const GradeBookPage: React.FC = () => {
     checkIsHolidayLocal
   );
 
-
+  // Single source of truth for "ความคืบหน้าการกรอก" so every card on the page shows the same number
+  // for the currently open tab, instead of each component deriving it with a slightly different formula.
+  const completenessDisplay = useMemo(() => {
+    const stats = attendance.completenessStats;
+    if (!stats) return { percentage: 0, filled: 0, total: 0 };
+    if (activeTab === 'grades') return { percentage: stats.percentGrades || 0, filled: stats.filledGrades || 0, total: stats.totalGrades || 0 };
+    if (activeTab === 'characteristics') return { percentage: stats.percentChar || 0, filled: stats.filledChar || 0, total: stats.totalChar || 0 };
+    if (activeTab === 'readingWriting') return { percentage: stats.percentRW || 0, filled: stats.filledRW || 0, total: stats.totalRW || 0 };
+    return { percentage: stats.percentage || 0, filled: stats.filled || 0, total: stats.total || 0 };
+  }, [attendance.completenessStats, activeTab]);
 
   const {
     isSaving,
@@ -229,6 +255,7 @@ const GradeBookPage: React.FC = () => {
     handleBulkFill,
     handleBulkFillColumn,
     handleSyncSDQColumn,
+    handleSyncSDQAll,
     handleClearScores,
     handleSave,
     handleImportFromOtherCourse
@@ -295,6 +322,7 @@ const GradeBookPage: React.FC = () => {
     const coursesRef = collection(db, 'school-settings', schoolId, 'courses');
     const unsubscribe = onSnapshot(query(coursesRef, orderBy('code', 'asc')), (snap) => {
       setCourses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Course)).filter(c => c.isActive !== false));
+      setCoursesLoaded(true);
     });
     return () => unsubscribe();
   }, [schoolId]);
@@ -374,8 +402,10 @@ const GradeBookPage: React.FC = () => {
   useEffect(() => {
     if (!schoolId || !calYear || !effectiveSemester) {
       setSemesterAssignments({});
+      setAssignmentsLoaded(false);
       return;
     }
+    setAssignmentsLoaded(false);
     const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
     const assignmentConstraints = [
       where('academicYear', '==', String(calYear)),
@@ -393,6 +423,7 @@ const GradeBookPage: React.FC = () => {
         ];
       });
       setSemesterAssignments(mapping);
+      setAssignmentsLoaded(true);
     });
 
     return () => unsubscribe();
@@ -784,19 +815,17 @@ const GradeBookPage: React.FC = () => {
             selectedClass={selectedClass} setSelectedClass={setSelectedClass}
             selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom}
             setSelectedCourse={setSelectedCourse} availableClassOptions={availableClassOptions}
-            currentCourse={currentCourse}
-            selectedCourse={selectedCourse} 
+            selectedCourse={selectedCourse}
             selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup}
             availableGroups={availableGroups}
             selectedSemester={selectedSemester} setSelectedSemester={setSelectedSemester}
             filteredCourses={filteredCourses}
-            teacherMap={teacherMap} userPrivileges={userPrivileges}
             searchTerm={searchTerm} setSearchTerm={setSearchTerm}
           />
           <GradeBookToolbar
             selectedCourse={selectedCourse} completenessStats={attendance.completenessStats}
             activeTab={activeTab} setActiveTab={setActiveTab}
-            academicSettings={schoolInfo} academicYear={calYear || ''}
+            academicYear={calYear || ''}
             selectedClass={selectedClass}
             selectedRoom={selectedRoom}
             selectedGroup={selectedGroup}
@@ -808,7 +837,7 @@ const GradeBookPage: React.FC = () => {
           <GradeBookActionButtons
             activeTab={activeTab} selectedCourse={selectedCourse}
             handleImportFromOtherCourse={handleImportFromOtherCourse}
-            handleSyncSDQ={async () => { }}
+            handleSyncSDQ={handleSyncSDQAll}
             handleBulkFill={handleBulkFill} handleClearScores={handleClearScores}
           />
           {!selectedClass || !selectedCourse ? (
@@ -828,6 +857,7 @@ const GradeBookPage: React.FC = () => {
             <GradeBookResults
               loading={loading} activeTab={activeTab} students={students} grades={grades}
               completenessStats={attendance.completenessStats}
+              completenessDisplay={completenessDisplay}
               characteristicsCriteria={characteristicsCriteria} readingWritingCriteria={readingWritingCriteria}
               maxScores={maxScores} selectedClass={selectedClass} selectedCourse={selectedCourse}
               sdqMap={sdqMap} scoreDistribution={calculations.scoreDistribution}

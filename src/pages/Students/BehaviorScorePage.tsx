@@ -10,7 +10,7 @@ import {
   query,
   orderBy,
   doc,
-  getDoc,
+  onSnapshot,
   serverTimestamp,
   where,
   limit,
@@ -45,7 +45,7 @@ import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { useTheme } from "@/ThemeContext";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey, getSpecialPeriodRulePoints } from "@/utils/behaviorScoreUtils";
+import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey, getSpecialPeriodRulePoints, getAttendanceEventDate, getActiveInterventionTier } from "@/utils/behaviorScoreUtils";
 
 interface Student {
   id: string;
@@ -115,6 +115,8 @@ export default function BehaviorScorePage() {
 
   // Behavior Score Config (for auto-deduction lookup)
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
+  // Attendance cutoff times (for displaying the actual deduction event time, not a placeholder)
+  const [attendanceConfig, setAttendanceConfig] = useState<any>(null);
 
   // Modal States
   const [activeAdjustStudent, setActiveAdjustStudent] = useState<Student | null>(null);
@@ -157,40 +159,45 @@ export default function BehaviorScorePage() {
     }
   }, [currentUser, schoolId]);
 
-  // Fetch school levels for filtering
+  // Fetch school levels + behavior score config for filtering/adjusting.
+  // Real-time (onSnapshot), not a one-time getDoc: an admin saving new point
+  // values on /academic/behavior-score-config while this page is already open
+  // in another tab must be reflected immediately, not only after a reload —
+  // this page writes real deductions using these numbers.
   useEffect(() => {
-    const fetchLevels = async () => {
-      if (!schoolId) return;
-      try {
-        const schoolRef = doc(firestore, "school-settings", schoolId);
-        const schoolSnap = await getDoc(schoolRef);
-        if (schoolSnap.exists()) {
-          const data = schoolSnap.data();
-          const levels = getLevelsByRange(data.opportunityExpansionLevel);
-          setAvailableLevels(levels);
-          setBehaviorScoreConfig(data.behaviorScoreConfig || null);
-          const savedRules = data.behaviorScoreConfig?.rules;
-          if (Array.isArray(savedRules) && savedRules.length > 0) {
-            const normalizedRules = savedRules
-              .map((rule: Partial<BehaviorScoreRule>, index: number): BehaviorScoreRule => ({
-                id: rule.id || `rule-${index + 1}`,
-                title: String(rule.title || "").trim(),
-                category: String(rule.category || "").trim() || "พฤติกรรมทั่วไป",
-                type: rule.type === "increase" ? "increase" : "decrease",
-                points: Math.max(1, Number(rule.points) || 1),
-                isActive: rule.isActive !== false,
-              }))
-              .filter((rule) => Boolean(rule.title) && rule.isActive !== false);
-            setBehaviorRules(normalizedRules.length > 0 ? normalizedRules : DEFAULT_BEHAVIOR_RULES);
-          } else {
-            setBehaviorRules(DEFAULT_BEHAVIOR_RULES);
-          }
+    if (!schoolId) return;
+    const schoolRef = doc(firestore, "school-settings", schoolId);
+    const unsubscribe = onSnapshot(
+      schoolRef,
+      (schoolSnap) => {
+        if (!schoolSnap.exists()) return;
+        const data = schoolSnap.data();
+        const levels = getLevelsByRange(data.opportunityExpansionLevel);
+        setAvailableLevels(levels);
+        setBehaviorScoreConfig(data.behaviorScoreConfig || null);
+        setAttendanceConfig(data.attendanceConfig || null);
+        const savedRules = data.behaviorScoreConfig?.rules;
+        if (Array.isArray(savedRules) && savedRules.length > 0) {
+          const normalizedRules = savedRules
+            .map((rule: Partial<BehaviorScoreRule>, index: number): BehaviorScoreRule => ({
+              id: rule.id || `rule-${index + 1}`,
+              title: String(rule.title || "").trim(),
+              category: String(rule.category || "").trim() || "พฤติกรรมทั่วไป",
+              type: rule.type === "increase" ? "increase" : "decrease",
+              points: Math.max(1, Number(rule.points) || 1),
+              isActive: rule.isActive !== false,
+            }))
+            .filter((rule) => Boolean(rule.title) && rule.isActive !== false);
+          setBehaviorRules(normalizedRules.length > 0 ? normalizedRules : DEFAULT_BEHAVIOR_RULES);
+        } else {
+          setBehaviorRules(DEFAULT_BEHAVIOR_RULES);
         }
-      } catch (error) {
+      },
+      (error) => {
         console.error("Error fetching school levels:", error);
       }
-    };
-    fetchLevels();
+    );
+    return unsubscribe;
   }, [schoolId]);
 
   const activeAdjustRules = useMemo(
@@ -202,13 +209,19 @@ export default function BehaviorScorePage() {
     [behaviorRules, bulkType]
   );
   const filteredHistoryLogs = useMemo(() => {
-    setHistoryPage(1);
     if (historyTypeFilter === 'manual')     return studentHistoryLogs.filter(l => l.type === 'activity_adjust');
     if (historyTypeFilter === 'attendance') return studentHistoryLogs.filter(l => l.type === 'attendance');
     if (historyTypeFilter === 'flag')       return studentHistoryLogs.filter(l => l.type === 'flag_ceremony');
     if (historyTypeFilter === 'classroom')  return studentHistoryLogs.filter(l => l.type === 'classroom');
     if (historyTypeFilter === 'special')    return studentHistoryLogs.filter(l => l.type === 'special_period');
     return studentHistoryLogs;
+  }, [studentHistoryLogs, historyTypeFilter]);
+
+  // Resetting pagination is a side effect, not part of computing the filtered
+  // list — belongs in an effect, not inside useMemo (which React may call
+  // more than once per commit and must stay pure).
+  useEffect(() => {
+    setHistoryPage(1);
   }, [studentHistoryLogs, historyTypeFilter]);
 
   const historyPageSize = 20;
@@ -296,7 +309,7 @@ export default function BehaviorScorePage() {
 
       attSnapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        const logDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
+        const fallbackDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
 
         // Gate attendance (สาย / ขาด / กลับก่อน / ไม่ลงเวลาออก)
         // Use the reconciled status when the flag-ceremony flow has already
@@ -318,6 +331,7 @@ export default function BehaviorScorePage() {
               statusKey === 'early'      ? 'ลงเวลาออกก่อนเวลาเลิกเรียน' :
               statusKey === 'noCheckout' ? 'ลงเวลาเข้าแต่ไม่มีเวลาออกเมื่อสิ้นวัน' : '';
 
+            const eventDate = getAttendanceEventDate(data, statusKey, attendanceConfig);
             autoLogs.push({
               id: `att_${docSnap.id}`,
               type: "attendance",
@@ -329,7 +343,7 @@ export default function BehaviorScorePage() {
               nextScore: 0,
               notes: attNote,
               createdBy: "ระบบอัตโนมัติ",
-              createdAt: { toDate: () => logDate },
+              createdAt: { toDate: () => eventDate },
               academicYear: "",
               behaviorStatus: effectiveAttendanceStatus,
             });
@@ -362,7 +376,7 @@ export default function BehaviorScorePage() {
               nextScore: 0,
               notes: flagNote,
               createdBy: "ระบบอัตโนมัติ",
-              createdAt: { toDate: () => logDate },
+              createdAt: { toDate: () => fallbackDate },
               academicYear: "",
               behaviorStatus: flagStatus,
             });
@@ -381,8 +395,9 @@ export default function BehaviorScorePage() {
         if (data.attendanceType === 'special_period') {
           // กิจกรรมพิเศษ — เฉพาะที่เปิดหักคะแนน
           if (!data.deductBehavior) return;
+          // Signed: positive for a rule marked เชิงบวก, negative for เชิงลบ — do not renegate.
           const spPoints = getSpecialPeriodRulePoints(behaviorScoreConfig, data.status);
-          if (spPoints > 0) {
+          if (spPoints !== 0) {
             const spTitle =
               data.status === 'late'   ? 'เข้าร่วมสาย' :
               data.status === 'absent' ? 'ไม่เข้าร่วมกิจกรรม' :
@@ -392,8 +407,8 @@ export default function BehaviorScorePage() {
               type: "special_period",
               title: spTitle,
               category: "กิจกรรมพิเศษ",
-              action: 'deduct',
-              points: -spPoints,
+              action: spPoints > 0 ? 'add' : 'deduct',
+              points: spPoints,
               previousScore: 0,
               nextScore: 0,
               notes: [data.specialPeriodTitle || data.subjectName, data.className ? `ชั้น ${data.className}` : ''].filter(Boolean).join(' · '),
@@ -484,8 +499,6 @@ export default function BehaviorScorePage() {
     try {
       const selectedRule = activeAdjustRules.find((rule) => rule.id === adjustRuleId);
       const finalPoints = adjustType === 'add' ? pointsToApply : -pointsToApply;
-      const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-      const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
       const startingScore = Number(behaviorScoreConfig?.startingScore ?? 100);
 
       const studentDocRef = doc(firestore, "school-settings", schoolId, "students", activeAdjustStudent.id);
@@ -498,7 +511,8 @@ export default function BehaviorScorePage() {
       const nextScore = await runTransaction(firestore, async (transaction) => {
         const studentSnap = await transaction.get(studentDocRef);
         const currentScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? startingScore) : startingScore;
-        const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + finalPoints));
+        // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ
+        const computedNextScore = currentScore + finalPoints;
 
         transaction.set(newLogRef, {
           type: "activity_adjust",
@@ -576,8 +590,6 @@ export default function BehaviorScorePage() {
         });
 
         try {
-          const maxScore = Number(behaviorScoreConfig?.maxScore ?? 100);
-          const minScore = Number(behaviorScoreConfig?.minScore ?? 0);
           const startingScore = Number(behaviorScoreConfig?.startingScore ?? 100);
 
           const promises = selectedStudentIds.map(async (studentId) => {
@@ -591,7 +603,8 @@ export default function BehaviorScorePage() {
             const nextScore = await runTransaction(firestore, async (transaction) => {
               const studentSnap = await transaction.get(studentDocRef);
               const currentScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? startingScore) : startingScore;
-              const computedNextScore = Math.min(maxScore, Math.max(minScore, currentScore + finalPoints));
+              // ไม่จำกัดทั้งเพดานบนและเพดานล่าง — คะแนนสะท้อนผลรวมจริงเสมอ
+              const computedNextScore = currentScore + finalPoints;
 
               transaction.set(newLogRef, {
                 type: "activity_adjust",
@@ -672,6 +685,22 @@ export default function BehaviorScorePage() {
     );
   };
 
+  // ป้ายเตือนตามเกณฑ์ที่โรงเรียนตั้งไว้เอง (ตั้งค่าได้ที่ /academic/behavior-score-config)
+  // เป็นแค่ป้ายแจ้งเตือน ไม่ได้บล็อกฟีเจอร์ใดๆ
+  const renderInterventionBadge = (score?: number) => {
+    const tier = getActiveInterventionTier(score ?? 100, behaviorScoreConfig?.interventionTiers);
+    if (!tier) return null;
+    return (
+      <span
+        title={tier.actionLabel}
+        className="px-2.5 py-1 rounded-full text-xs font-bold border bg-orange-500/10 text-orange-500 border-orange-500/20 inline-flex items-center gap-1"
+      >
+        <AlertTriangle className="w-3.5 h-3.5" />
+        {tier.actionLabel}
+      </span>
+    );
+  };
+
   // Filter lists
   const filteredStudents = students.filter(student =>
     `${student.title}${student.firstName} ${student.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -741,7 +770,9 @@ export default function BehaviorScorePage() {
           {/* Header & Back Button */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <BackButton to="/academic/hub/students" />
+              {/* ไม่ hardcode ปลายทาง — หน้านี้เข้าถึงได้ทั้งจาก /academic/hub/students และ
+                  /student-support/hub ให้ BackButton ย้อนกลับตาม browser history จริง */}
+              <BackButton />
               <div>
                 <h1 className="text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2">
                   <Shield className="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
@@ -1131,7 +1162,10 @@ export default function BehaviorScorePage() {
 
                           {/* Current Score Badge */}
                           <td className="py-3 px-4">
-                            {renderScoreBadge(student.behaviorScore)}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {renderScoreBadge(student.behaviorScore)}
+                              {renderInterventionBadge(student.behaviorScore)}
+                            </div>
                           </td>
 
                           {/* Actions */}
@@ -1219,7 +1253,7 @@ export default function BehaviorScorePage() {
 
       {/* -------------------- Adjust score Modal -------------------- */}
       {activeAdjustStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-md w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
             
             {/* Modal Header */}
@@ -1398,7 +1432,7 @@ export default function BehaviorScorePage() {
 
       {/* -------------------- View History Modal -------------------- */}
       {historyStudent && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center px-4 pt-16 pb-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center px-4 pt-16 pb-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col max-h-[calc(100vh-80px)]">
 
             {/* Modal Header */}
@@ -1435,7 +1469,10 @@ export default function BehaviorScorePage() {
                     </p>
                   </div>
                 </div>
-                {renderScoreBadge(historyStudent.behaviorScore)}
+                <div className="flex flex-col items-end gap-1">
+                  {renderScoreBadge(historyStudent.behaviorScore)}
+                  {renderInterventionBadge(historyStudent.behaviorScore)}
+                </div>
               </div>
 
               {/* Stats + Filter — single compact row */}

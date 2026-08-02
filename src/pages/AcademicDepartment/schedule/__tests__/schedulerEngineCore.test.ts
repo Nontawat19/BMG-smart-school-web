@@ -151,6 +151,35 @@ describe('canPlaceWithIndex', () => {
         expect(canPlaceWithIndex(task, ['mon-0'], index)).toBe(false);
     });
 
+    // Regression coverage: elective/rotation-group courses (e.g. ทัศนศิลป์, สุขศึกษา) share a
+    // coarse, grade-level-only classId (no per-room granularity), so the auto-scheduler used to
+    // refuse to place a DIFFERENT course into a slot already used by another course under the
+    // same classId even when each has its own specific, non-overlapping room.
+    it('allows a different course sharing a coarse classId when each has a distinct specific room', () => {
+        const index = createRuntimeConflictIndex();
+        occupy(index, 'mon-0', { teacherId: 'other-teacher', courseId: 'health', classId: ['m3'], room: ['room-117'], groupNumber: 2 });
+        const task = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'], targetRooms: ['room-313'], groupNumber: 1 });
+        expect(canPlaceWithIndex(task, ['mon-0'], index)).toBe(true);
+    });
+
+    it('still rejects a different course sharing a coarse classId when rooms overlap or are unspecified', () => {
+        const index = createRuntimeConflictIndex();
+        occupy(index, 'mon-0', { teacherId: 'other-teacher', courseId: 'health', classId: ['m3'], groupNumber: 2 });
+        const task = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'], groupNumber: 1 });
+        expect(canPlaceWithIndex(task, ['mon-0'], index)).toBe(false);
+    });
+
+    // Before this fix, hasClassConflict blocked ANY two occupants sharing a classId+slot with
+    // zero awareness of groupNumber, so even the same course split into parallel groups (e.g.
+    // English group 1 vs group 2, taught to different students at the same time) was wrongly
+    // rejected by the raw engine index whenever their classId collided.
+    it('allows the SAME course split into parallel groups sharing a coarse classId', () => {
+        const index = createRuntimeConflictIndex();
+        occupy(index, 'mon-0', { teacherId: 'other-teacher', courseId: 'english', classId: ['p3'], groupNumber: 2 });
+        const task = makeTask({ course: makeCourse('english'), teacherId: 't1', targetClasses: ['p3'], groupNumber: 1 });
+        expect(canPlaceWithIndex(task, ['mon-0'], index)).toBe(true);
+    });
+
     it('does not block on rooms marked "all"', () => {
         const index = createRuntimeConflictIndex();
         occupy(index, 'mon-0', { teacherId: 'other-teacher', courseId: 'other', classId: ['m2'], room: ['all'] });

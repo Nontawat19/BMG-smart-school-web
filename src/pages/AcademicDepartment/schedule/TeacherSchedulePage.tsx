@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { collection, getDocs, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { CollisionDetection, DndContext, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors, closestCenter, defaultDropAnimationSideEffects, pointerWithin } from '@dnd-kit/core';
 import { restrictToWindowEdges } from '@dnd-kit/modifiers';
@@ -11,7 +11,7 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import Swal from 'sweetalert2';
 import MainLayout from "@/layouts/MainLayout";
 import { Course, CourseInstance, PhysicalRoom, Schedule, SchedulingMetrics, Teacher, getAssignmentTeacherIds } from './types';
-import { CLASSES, getClassDisplayName, isAcademicCourse, isActivityCourse, isClubCourse, getRequiredWeeklyPeriods } from './utils';
+import { CLASSES, getClassDisplayName, isAcademicCourse, isActivityCourse, isClubCourse, getRequiredWeeklyPeriods, appendGroupRoom, isAssignmentSlotLocked } from './utils';
 import { CourseCard } from './components/CourseCard';
 import { TimetableGrid } from './components/TimetableGrid';
 import { TeacherScheduleHeader } from './components/TeacherScheduleHeader';
@@ -59,6 +59,11 @@ const TeacherSchedulePageContent: React.FC = () => {
     const [filterPhysicalRoomTeacher, setFilterPhysicalRoomTeacher] = useState<string>('all');
     const [physicalRooms, setPhysicalRooms] = useState<PhysicalRoom[]>([]);
     const [searchTerm, setSearchTerm] = useState<string>('');
+    // Disambiguates which specific group/assignment (compositeId) the dropdown selection points
+    // at when a course has multiple groups assigned to different classes/rooms — searchTerm alone
+    // (a bare course code) can't tell those apart, which used to let manual-add place a period
+    // against the wrong class/room.
+    const [selectedAssignmentKey, setSelectedAssignmentKey] = useState<string>('');
     const [activeDragItem, setActiveDragItem] = useState<CourseInstance | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isAutoScheduling, setIsAutoScheduling] = useState(false);
@@ -66,6 +71,9 @@ const TeacherSchedulePageContent: React.FC = () => {
     const [dynamicUnavailableSlots, setDynamicUnavailableSlots] = useState<string[]>([]);
     const [localUnavailableSlotsMap, setLocalUnavailableSlotsMap] = useState<Record<string, string[]>>({});
     const [hoveredSlot, setHoveredSlot] = useState<HoveredSlotInfo | null>(null);
+    // ค่าเริ่มต้นตรงกับ DEFAULT_SETTINGS ใน ActivityHubSettingsPage.tsx (clubMode: 'legacy')
+    // วิชาชุมนุมถูกคุมด้วย clubMode (แยกจาก activityMode ที่คุมกิจกรรมพัฒนาผู้เรียนทั่วไป)
+    const [activityHubClubMode, setActivityHubClubMode] = useState<'legacy' | 'course-based'>('legacy');
     const scheduleSectionRef = useRef<HTMLDivElement>(null);
 
     const {
@@ -107,6 +115,15 @@ const TeacherSchedulePageContent: React.FC = () => {
             dispatch(fetchCalendar(schoolId));
         }
     }, [schoolId, calendarState.status, dispatch]);
+
+    useEffect(() => {
+        if (!schoolId) return;
+        const unsub = onSnapshot(doc(db, 'school-settings', schoolId), (snap) => {
+            const mode = snap.data()?.activityHubSettings?.clubMode;
+            setActivityHubClubMode(mode === 'course-based' ? 'course-based' : 'legacy');
+        });
+        return unsub;
+    }, [schoolId]);
 
     useEffect(() => {
         const fetchYears = async () => {
@@ -256,7 +273,7 @@ const TeacherSchedulePageContent: React.FC = () => {
                 targetSem.startsWith(semStr + '/');
 
             if (!isCorrectSemester) return;
-            if (isClubCourse(course)) return;
+            if (isClubCourse(course) && activityHubClubMode !== 'course-based') return;
             if (!isAcademicCourse(course) && !isActivityCourse(course)) return;
 
             const relevantAssignments = (course.teacherAssignments || []).filter((assignment) => {
@@ -287,7 +304,7 @@ const TeacherSchedulePageContent: React.FC = () => {
         });
 
         return { scheduled, total };
-    }, [selectedTeacher, selectedSemester, allCourses, schedule, isCourseAllowedInScheduleViews]);
+    }, [selectedTeacher, selectedSemester, allCourses, schedule, isCourseAllowedInScheduleViews, activityHubClubMode]);
 
     const selectedTeacherScheduleSubtitle = selectedTeacherData
         ? `${selectedTeacherData.name} • จัดสำเร็จ ${selectedTeacherPeriodProgress.scheduled}/${selectedTeacherPeriodProgress.total} คาบ`
@@ -319,8 +336,11 @@ const TeacherSchedulePageContent: React.FC = () => {
 
     const focusPreviewFromCourse = useCallback((course: CourseInstance) => {
         const { classKey, room } = getClassFilterFromCourse(course);
-        if (classKey) setFilterClass(classKey);
-        setFilterRoom(room || 'all');
+        // Keep filterClass/filterRoom in lockstep — a stale room left over from a previous
+        // click while filterClass resets to 'all' makes classSchedule match every grade's
+        // room-N section at once, cramming unrelated classes into the same cell.
+        setFilterClass(classKey || 'all');
+        setFilterRoom(classKey ? (room || 'all') : 'all');
         setFilterGroup('all');
 
         const roomIds = Array.isArray(course.room) ? course.room : [];
@@ -388,12 +408,17 @@ const TeacherSchedulePageContent: React.FC = () => {
                     const groupNum = teacherOcc.course?.groupNumber || 1;
                     if (!isCourseAllowedInScheduleViews(teacherOcc.course?.id, selectedTeacher, groupNum)) return;
                     const assign = courseDoc?.teacherAssignments?.find(a => getAssignmentTeacherIds(a).includes(selectedTeacher) && a.groupNumber === groupNum);
+                    const compositeIdForSlot = `${courseDoc?.id || teacherOcc.course.id}_${groupNum}`;
+                    // A course pinned to this exact slot on the Period Constraints page should be
+                    // just as undraggable here as one the user manually locked with the icon —
+                    // otherwise the two "lock" features silently disagree with each other.
+                    const isPinnedByConstraint = isAssignmentSlotLocked(compositeIdForSlot, slotId, assignmentConstraints, periodSettings);
 
                     const courseData = {
                         ...(courseDoc || {}),
                         ...(teacherOcc.course || {}),
                         room: (assign?.roomIds && assign.roomIds.length > 0) ? assign.roomIds : (teacherOcc.course?.room || courseDoc?.room || []),
-                        locked: teacherOcc.course.locked || courseDoc?.locked || false
+                        locked: teacherOcc.course.locked || courseDoc?.locked || isPinnedByConstraint || false
                     } as Course;
 
                     const roomIds = courseData.room || [];
@@ -443,7 +468,7 @@ const TeacherSchedulePageContent: React.FC = () => {
             const isCorrectSemester = (!c.semester || semStr === targetSem || semStr.startsWith(targetSem + '/') || targetSem.startsWith(semStr + '/'));
 
             if (!isAssignedToTeacher || !isCorrectSemester) return false;
-            if (isClubCourse(c)) return false;
+            if (isClubCourse(c) && activityHubClubMode !== 'course-based') return false;
             if (!isAcademicCourse(c) && !isActivityCourse(c)) return false;
 
             if (filterClass !== 'all') {
@@ -515,6 +540,17 @@ const TeacherSchedulePageContent: React.FC = () => {
                     ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
                     : '';
 
+                // classLevels only ever holds the bare grade (e.g. "m3"); the room/section
+                // number lives separately in assign.room. Append it here the same way
+                // useAutoScheduleAction.ts and PeriodConstraintPage.tsx do, so bank items
+                // dragged onto the grid show "ม.3/1" instead of just "ม.3".
+                const baseClassIds = assign.classLevels && assign.classLevels.length > 0
+                    ? assign.classLevels
+                    : (Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[]);
+                const groupRoom = assign.room;
+                const assignedClassIds = baseClassIds.map((id: string) => appendGroupRoom(id, groupRoom));
+                const assignedClassName = assignedClassIds.map(getClassDisplayName).join(' + ');
+
                 const rawHours = getRequiredWeeklyPeriods(course);
                 const totalHours = isActivityCourse(course) ? Math.min(rawHours, 2) : rawHours;
 
@@ -526,6 +562,8 @@ const TeacherSchedulePageContent: React.FC = () => {
                         teacherIds: getAssignmentTeacherIds(assign),
                         room: roomIds,
                         roomDisplay,
+                        classId: assignedClassIds,
+                        className: assignedClassName,
                         instanceId: `${course.id}-bank-${groupNum}-${Date.now()}-${i}`,
                         compositeId: `${course.id}_${groupNum}`,
                         groupNumber: groupNum,
@@ -535,7 +573,7 @@ const TeacherSchedulePageContent: React.FC = () => {
             });
         });
         setAvailableCourseInstances(bank);
-    }, [masterScheduleLoadVersion, selectedTeacher, selectedSemester, schoolId, teachers, allCourses, selectedTeacherData, setSchedule, setAvailableCourseInstances, filterClass, filterRoom, filterGroup, searchTerm, isCourseAllowedInScheduleViews, roomMap]);
+    }, [masterScheduleLoadVersion, selectedTeacher, selectedSemester, schoolId, teachers, allCourses, selectedTeacherData, setSchedule, setAvailableCourseInstances, filterClass, filterRoom, filterGroup, searchTerm, isCourseAllowedInScheduleViews, roomMap, activityHubClubMode, assignmentConstraints, periodSettings]);
 
     const saveTeacherUnavailableSlots = useCallback(async (teacherId: string, slots: string[]) => {
         if (!schoolId || !teacherId) return false;
@@ -1005,9 +1043,11 @@ const TeacherSchedulePageContent: React.FC = () => {
                                         filterPhysicalRoom={filterPhysicalRoom}
                                         physicalRooms={physicalRooms}
                                         searchTerm={searchTerm}
+                                        selectedAssignmentKey={selectedAssignmentKey}
                                         schoolSettings={schoolSettings}
                                         isAutoScheduling={isAutoScheduling}
                                         setSearchTerm={setSearchTerm}
+                                        setSelectedAssignmentKey={setSelectedAssignmentKey}
                                         setSelectedTeacher={setSelectedTeacher}
                                         setSchedule={setSchedule}
                                         setFilterClass={setFilterClass}
@@ -1056,7 +1096,7 @@ const TeacherSchedulePageContent: React.FC = () => {
                                 handleRemoveCourse={handleRemoveCourse}
                                 assignmentConstraints={assignmentConstraints}
                                 selectedTeacherData={selectedTeacherData}
-                                onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
+                                onCellClick={(slotId) => handleManualAdd(slotId, searchTerm, selectedAssignmentKey)}
                                 onCourseClick={focusPreviewFromCourse}
                                 selectedCourseCode={searchTerm}
                             />
@@ -1096,7 +1136,7 @@ const TeacherSchedulePageContent: React.FC = () => {
                                     handleRemoveCourse={handleRemoveCourse}
                                     assignmentConstraints={assignmentConstraints}
                                     selectedTeacherData={selectedTeacherData}
-                                    onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
+                                    onCellClick={(slotId) => handleManualAdd(slotId, searchTerm, selectedAssignmentKey)}
                                     selectedCourseCode={searchTerm}
                                 />
                             </div>
@@ -1130,7 +1170,7 @@ const TeacherSchedulePageContent: React.FC = () => {
                                     handleRemoveCourse={handleRemoveCourse}
                                     assignmentConstraints={assignmentConstraints}
                                     selectedTeacherData={selectedTeacherData}
-                                    onCellClick={(slotId) => handleManualAdd(slotId, searchTerm)}
+                                    onCellClick={(slotId) => handleManualAdd(slotId, searchTerm, selectedAssignmentKey)}
                                     selectedCourseCode={searchTerm}
                                 />
                             </div>

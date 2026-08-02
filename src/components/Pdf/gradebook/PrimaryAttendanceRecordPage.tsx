@@ -315,7 +315,7 @@ const PrimaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                             if (d.eventType === 'schoolDay') {
                               cellStyle = styles.makeupDayCell;
                             } else if (d.isHoliday && d.eventType !== 'schoolDay') {
-                              if (d.holidayName === 'วันหยุดเสาร์-อาทิตย์') {
+                              if (d.holidayName === 'ปิดภาคเรียน' || d.holidayName === 'วันหยุดเสาร์-อาทิตย์') {
                                 cellStyle = styles.termBreakCell;
                               } else if (d.eventType === 'specialHoliday') {
                                 cellStyle = styles.specialHolidayCell;
@@ -360,7 +360,7 @@ const PrimaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                           if (d.eventType === 'schoolDay') {
                             cellStyle = styles.makeupDayCell;
                           } else if (d.isHoliday && d.eventType !== 'schoolDay') {
-                            if (d.holidayName === 'วันหยุดเสาร์-อาทิตย์') {
+                            if (d.holidayName === 'ปิดภาคเรียน' || d.holidayName === 'วันหยุดเสาร์-อาทิตย์') {
                               cellStyle = styles.termBreakCell;
                             } else if (d.eventType === 'specialHoliday') {
                               cellStyle = styles.specialHolidayCell;

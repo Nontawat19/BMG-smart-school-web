@@ -318,12 +318,14 @@ const LearnerActivityAttendancePage: React.FC = () => {
           // Mode 2: no members yet — load students by class levels from teacher assignment
           const mode2Scopes = deriveTeacherScopesFromCourse(selectedActivity, selectedCourse, teacherMap as any);
           const relevantScope = mode2Scopes.find(scope => scopeIncludesTeacher(scope, currentTeacherId));
-          const classLevels = (relevantScope?.classLevels || []).map(l => l.toLowerCase());
+          // classLevels/classId are stored as short codes ("m1"), but student.classLevel is
+          // stored as the Thai display label ("ม.1") — compare via the same CLASSES lookup the
+          // rest of this file already uses (line 858), or "m1"/"ม.1" never match and every
+          // not-yet-rostered ("virtual") activity looks like it has 0 students.
+          const toThaiClassLevel = (code: string) => CLASSES[code as keyof typeof CLASSES] || code;
+          const classLevels = normalizeClassIds(relevantScope?.classLevels).map(l => toThaiClassLevel(l.toLowerCase()).toLowerCase());
           const roomIds = relevantScope?.roomIds || [];
-          const courseClassIds = (Array.isArray(selectedActivity.classId)
-            ? selectedActivity.classId as string[]
-            : (selectedActivity.classId ? [selectedActivity.classId as string] : [])
-          ).map(l => l.toLowerCase());
+          const courseClassIds = normalizeClassIds(selectedActivity.classId).map(l => toThaiClassLevel(l.toLowerCase()).toLowerCase());
           activityStudents = allStudents.filter(s => {
             const lvl = (s.classLevel || '').toLowerCase().replace(/\s/g, '');
             const matchClass = classLevels.length > 0

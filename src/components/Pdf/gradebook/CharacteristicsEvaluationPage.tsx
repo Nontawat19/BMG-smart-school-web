@@ -32,7 +32,6 @@ const COL_WIDTHS = {
 };
 
 const NAME_WIDTH = 158;
-const CRITERIA_VISIBLE_COUNT = 8;
 const CRITERIA_TOTAL_COLUMNS = 10;
 const CRITERIA_GROUP_WIDTH = COL_WIDTHS.CRITERIA * CRITERIA_TOTAL_COLUMNS;
 const SUMMARY_GROUP_WIDTH = COL_WIDTHS.SUMMARY_LEVEL + COL_WIDTHS.SUMMARY_RES;
@@ -235,7 +234,7 @@ const CharacteristicsEvaluationPage: React.FC<CharacteristicsEvaluationPageProps
                                         idx === CRITERIA_TOTAL_COLUMNS - 1 ? styles.thickRight : {},
                                     ]}
                                 >
-                                    <Text style={styles.headerText}>{idx < CRITERIA_VISIBLE_COUNT ? idx + 1 : ''}</Text>
+                                    <Text style={styles.headerText}>{idx < characteristicsCriteria.length ? idx + 1 : ''}</Text>
                                 </View>
                             ))}
                         </View>
@@ -251,7 +250,7 @@ const CharacteristicsEvaluationPage: React.FC<CharacteristicsEvaluationPageProps
                                         idx === CRITERIA_TOTAL_COLUMNS - 1 ? styles.thickRight : {},
                                     ]}
                                 >
-                                    <Text style={styles.headerText}>{idx < CRITERIA_VISIBLE_COUNT ? '3' : ''}</Text>
+                                    <Text style={styles.headerText}>{idx < characteristicsCriteria.length ? '3' : ''}</Text>
                                 </View>
                             ))}
                         </View>
@@ -310,7 +309,7 @@ const CharacteristicsEvaluationPage: React.FC<CharacteristicsEvaluationPageProps
                                             idx === CRITERIA_TOTAL_COLUMNS - 1 ? styles.thickRight : {},
                                         ]}
                                     >
-                                        <Text style={styles.bodyTextBold}>{idx < CRITERIA_VISIBLE_COUNT && score !== null ? score : ''}</Text>
+                                        <Text style={styles.bodyTextBold}>{score !== null ? score : ''}</Text>
                                     </View>
                                 );
                             })}

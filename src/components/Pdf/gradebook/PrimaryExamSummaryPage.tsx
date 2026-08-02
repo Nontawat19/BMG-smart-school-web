@@ -169,6 +169,8 @@ const PrimaryExamSummaryPage: React.FC<PrimaryExamSummaryPageProps> = ({
   studentChunk,
   preMidtermAssessments,
   postMidtermAssessments,
+  preMidtermTotal,
+  postMidtermTotal,
   midtermMax,
   finalMax,
   grades,
@@ -180,8 +182,6 @@ const PrimaryExamSummaryPage: React.FC<PrimaryExamSummaryPageProps> = ({
   courseTeacherName,
 }) => {
 
-  const preMidtermTotal = preMidtermAssessments.reduce((sum, a) => sum + (a.maxScore || 0), 0);
-  const postMidtermTotal = postMidtermAssessments.reduce((sum, a) => sum + (a.maxScore || 0), 0);
   const totalFormativeMax = preMidtermTotal + postMidtermTotal;
   const grandTotalMax = totalFormativeMax + midtermMax + finalMax;
 

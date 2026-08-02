@@ -1,7 +1,21 @@
 import { EngineTask, EngineTeachingSlot } from '../../engine/schedulerEngine';
 import { getTaskTeacherIds } from '../../scheduleSharedUtils';
-import { DAYS, getClassDisplayName, getPartnerIndexForPeriods } from '../../utils';
+import { DAYS, getClassDisplayName, getPartnerIndexForPeriods, haveDistinctSpecificRooms } from '../../utils';
 import { AssignmentConstraintMap, PeriodSetting, Teacher } from '../../types';
+
+// Two locked tasks that only share a coarse grade-level classId (e.g. "m3" — elective/
+// rotation-group courses aren't tied to a single classroom, see CLASS_MAPPING in
+// schoolUtils.ts) are NOT a real lock conflict when they're the same course split into
+// parallel groups, or when each has its own specific, non-overlapping room.
+const isRealLockedClassConflict = (a: EngineTask, b: EngineTask): boolean => {
+    const isParallelGroupSameCourse = a.course.id === b.course.id &&
+        Number(a.groupNumber || 0) > 0 &&
+        Number(b.groupNumber || 0) > 0 &&
+        Number(a.groupNumber) !== Number(b.groupNumber);
+    if (isParallelGroupSameCourse) return false;
+    if (a.course.id !== b.course.id && haveDistinctSpecificRooms(a.targetRooms, b.targetRooms)) return false;
+    return true;
+};
 
 export interface PrecheckInput {
     tasks: EngineTask[];
@@ -75,13 +89,19 @@ export const runSchedulePrecheck = (input: PrecheckInput): PrecheckResult => {
             : [task.requiredSlot];
     };
 
+    // periodSettings is 0-indexed internally (array position), but that's an implementation
+    // detail — always show the period's own human-facing label (the same one the grid header
+    // shows, e.g. "1", "2") instead of the raw 0-based index, which reads as "period 0".
     const lockedSlotLabel = (slot: { day: string; periodId: string } | string): string => {
         if (typeof slot !== 'string') {
-            return `วัน${DAYS[slot.day as keyof typeof DAYS] || slot.day} คาบ ${slot.periodId}`;
+            const period = periodSettings.find(p => p.id === slot.periodId);
+            return `วัน${DAYS[slot.day as keyof typeof DAYS] || slot.day} คาบ ${period?.label || slot.periodId}`;
         }
-        const [dayKey, periodIndex] = slot.split('-');
-        if (!periodIndex) return slot;
-        return `วัน${DAYS[dayKey as keyof typeof DAYS] || dayKey} คาบ ${periodIndex}`;
+        const [dayKey, periodIndexStr] = slot.split('-');
+        if (!periodIndexStr) return slot;
+        const period = periodSettings[Number(periodIndexStr)];
+        const periodLabel = period?.label || String(Number(periodIndexStr) + 1);
+        return `วัน${DAYS[dayKey as keyof typeof DAYS] || dayKey} คาบ ${periodLabel}`;
     };
 
     /** Explains *why* a task ended up with very few valid slots, when the cause traces back
@@ -191,6 +211,10 @@ export const runSchedulePrecheck = (input: PrecheckInput): PrecheckResult => {
 
     requiredClassSlot.forEach((slotTasks, key) => {
         if (slotTasks.length <= 1) return;
+        const hasRealConflict = slotTasks.some((t1, i) =>
+            slotTasks.slice(i + 1).some(t2 => isRealLockedClassConflict(t1, t2))
+        );
+        if (!hasRealConflict) return;
         const [classId, slotId] = key.split('|');
         fatalIssues.push(`ล็อกคาบชนกัน: ชั้น ${getClassDisplayName(classId)} ถูกล็อก ${slotTasks.length} รายวิชาในคาบ ${slotId}`);
     });

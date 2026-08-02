@@ -156,6 +156,7 @@ export default function TeacherListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [schoolId, setSchoolId] = useState<string | null>(null);
+  const { schoolId: paramSchoolId } = useParams<{ schoolId?: string }>();
   const { ADMIN_ACCESS } = usePermissions();
   const profile = useSelector((state: RootState) => state.profile);
 
@@ -537,6 +538,14 @@ export default function TeacherListPage() {
   }, []);
 
   useEffect(() => {
+    // A schoolId in the URL (e.g. an owner/super_admin browsing a specific school)
+    // takes priority over the logged-in user's own school.
+    if (paramSchoolId) {
+      setSchoolId(paramSchoolId);
+      fetchTeachers(paramSchoolId);
+      return;
+    }
+
     const unsub = auth.onAuthStateChanged(async (user) => {
       if (user) {
         const userDocRef = doc(firestore, "users", user.uid);
@@ -556,7 +565,7 @@ export default function TeacherListPage() {
       }
     });
     return () => unsub();
-  }, [fetchTeachers]);
+  }, [paramSchoolId, fetchTeachers]);
 
   // Reset pagination when search term changes
   useEffect(() => {

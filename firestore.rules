@@ -112,6 +112,14 @@ service cloud.firestore {
       }
       match /learner-activities/{docId} {
         allow read, write: if isAuthenticated();
+
+        // Subcollections (members, attendance, ...) need their own explicit rule —
+        // the parent-doc rule above does not cascade to them, so queries like
+        // learner-activities/{id}/members were being denied with "Missing or
+        // insufficient permissions" even for authenticated teachers.
+        match /{subPath=**} {
+          allow read, write: if isAuthenticated();
+        }
       }
       match /manual_substitute_requests/{docId} {
         allow read, write: if isAuthenticated();
@@ -166,6 +174,14 @@ service cloud.firestore {
         }
       }
 
+      // FIX: PermissionContext.tsx reads this with getDocs(collection(...)) (a `list`
+      // query) to load school-specific route permission overrides — the catch-all
+      // wildcard below only grants `get`, so it needs its own explicit match.
+      match /route_permissions/{routeKey} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+
       // NEW: ยกเว้น summaries/license ออกจาก catch-all นี้ (ไม่งั้นจะ OR ทับ rule เฉพาะด้านบน)
       match /{allSubcollections=**} {
         allow read, write: if isAuthenticated()
@@ -210,6 +226,14 @@ service cloud.firestore {
     match /slugs/{slug} {
       allow read: if true;
       allow write: if isAuthenticated();
+    }
+
+    // 4.1 FIX: same list-vs-get gap as above but for the global route_permissions
+    // collection (PermissionContext.tsx: getDocs(collection(db, 'route_permissions'))).
+    // Global overrides are system-wide, so writes are restricted to super admin.
+    match /route_permissions/{routeKey} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
     }
 
     // NEW: 4.5 Users - ป้องกัน privilege escalation

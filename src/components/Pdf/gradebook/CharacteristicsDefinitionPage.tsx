@@ -144,7 +144,7 @@ const CharacteristicsDefinitionPage: React.FC<CharacteristicsDefinitionPageProps
                     </View>
                 </View>
 
-                {DESIRED_CHARACTERISTICS.map((item, idx) => (
+                {(criteria && criteria.length > 0 ? criteria : DESIRED_CHARACTERISTICS).map((item, idx) => (
                     <View key={item.id} style={styles.tableRow} wrap={false}>
                         {/* คอลัมน์ซ้าย: จัดชื่อหัวข้อไว้บน และคะแนนไว้ตรงกลางพื้นที่ที่เหลือ */}
                         <View style={styles.col1}>
@@ -161,7 +161,7 @@ const CharacteristicsDefinitionPage: React.FC<CharacteristicsDefinitionPageProps
 
                         {/* คอลัมน์ขวา: พฤติกรรมบ่งชี้ */}
                         <View style={styles.col2}>
-                            {item.indicators.map((indicator, iIdx) => (
+                            {(item.indicators || []).map((indicator, iIdx) => (
                                 <View key={iIdx} style={styles.indicatorItem}>
                                     <Text style={styles.indicatorNumber}>
                                         {idx + 1}.{iIdx + 1}

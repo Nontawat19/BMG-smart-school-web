@@ -66,6 +66,7 @@ const HomeVisitSummaryOBEC = lazy(() => import("./pages/StudentSupport/HomeVisit
 const HomeVisitSummaryLevelRange = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryLevelRange"));
 const HomeVisitSummaryIndividual = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitSummaryIndividual"));
 const HomeVisitTracking = lazy(() => import("./pages/StudentSupport/HomeVisit/HomeVisitTracking"));
+const BehaviorScoreAnalysisPage = lazy(() => import("./pages/StudentSupport/BehaviorScoreAnalysisPage"));
 const AddTeacherPage = lazy(() => import("./pages/Teachers/AddTeacherPage"));
 const TeacherListPage = lazy(() => import("./pages/Teachers/TeacherListPage"));
 const EditTeacherPage = lazy(() => import("./pages/Teachers/EditTeacherPage"));
@@ -212,7 +213,7 @@ function App() {
   // Permission groups are imported from @/constants/permissions
 
   return (
-    <PermissionProvider schoolId={user?.schoolId} userRoles={user?.role}>
+    <PermissionProvider schoolId={user?.schoolId}>
     <PullToRefresh>
       <Router>
         <Suspense fallback={<LoadingScreen />}><Routes>
@@ -232,7 +233,8 @@ function App() {
 
           {/* Attendance & Leave (Staff Only) */}
           <Route path="/attendance/leave-request" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><LeaveRequestPage /></ProtectedRoute>} />
-          <Route path="/attendance/checkin-out" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><CheckinOutPage /></ProtectedRoute>} />
+          {/* บุคลากรทุกตำแหน่ง (ครู/ผู้บริหาร/เจ้าหน้าที่ ฯลฯ) ต้องลงเวลาด้วยตนเองได้ ไม่จำกัดเฉพาะเจ้าหน้าที่ลงเวลา */}
+          <Route path="/attendance/checkin-out" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.SUPER_ADMIN, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><CheckinOutPage /></ProtectedRoute>} />
           <Route path="/attendance/teacher-leave-request" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><TeacherLeaveRequestPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/official-travel-request" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><OfficialTravelRequestPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/official-travel-history" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><OfficialTravelHistoryPage /></ProtectedRoute>} />
@@ -267,10 +269,12 @@ function App() {
           <Route path="/student-support/home-visit/summary/individual" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummaryIndividual /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/tracking" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitTracking /></ProtectedRoute>} />
           <Route path="/student-support/home-visit/summary/legacy" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><HomeVisitSummary /></ProtectedRoute>} />
+          <Route path="/student-support/behavior-analysis" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><BehaviorScoreAnalysisPage /></ProtectedRoute>} />
 
           {/* Student Management */}
           <Route path="/school/:schoolId/students" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentListPage /></ProtectedRoute>} />
-          <Route path="/school/:schoolId/students/behavior" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><BehaviorScorePage /></ProtectedRoute>} />
+          {/* ครูผู้สอนทุกคนต้องเข้าถึงเมนูคะแนนพฤติกรรมได้ ไม่จำกัดเฉพาะฝ่ายกิจการนักเรียน */}
+          <Route path="/school/:schoolId/students/behavior" element={<ProtectedRoute allowedRoles={[...STUDENT_AFFAIRS_ACCESS, ROLES.TEACHER]}><BehaviorScorePage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/add" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><AddStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/quick-add" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><QuickAddStudentPage /></ProtectedRoute>} />
           <Route path="/school/:schoolId/students/edit/:studentId" element={<ProtectedRoute allowedRoles={ACADEMIC_ACCESS}><EditStudentPage /></ProtectedRoute>} />

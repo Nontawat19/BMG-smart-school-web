@@ -165,6 +165,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       return <>{children}</>;
     }
 
+    // Wait for route_permissions to finish loading before deciding access —
+    // otherwise a role granted access via the permission-management UI would
+    // get bounced to /home during the brief window before the fetch resolves.
+    if (!permissionsLoaded) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        </div>
+      );
+    }
+
     // ครูเข้าหน้าเช็คอิน/เช็คเอาท์ได้เสมอ — จำกัดแค่ลงเวลาของตัวเองเท่านั้น (บังคับอยู่แล้วใน
     // CheckinOutPage เมื่อเข้าด้วย ?mode=self) จึงปลอดภัยพอที่จะไม่ต้องพึ่งสวิตช์ตั้งค่าต่อโรงเรียน
     const hasTeacherSelfCheckinAccess = matchedRouteKey === 'checkin_out' && userRoles.includes(ROLES.TEACHER);

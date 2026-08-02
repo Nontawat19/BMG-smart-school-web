@@ -152,7 +152,6 @@ const GradeBookDocument = (props: GradeBookDocumentProps) => {
     } = props;
 
     const isPrimary = selectedClass.startsWith('p');
-    const lastAttendancePageIndex = isPrimary ? 9 : 4; // 40 weeks -> 10 pages (0-9), 20 weeks -> 5 pages (0-4)
     return (
         <Document>
             <SummaryPage
@@ -171,7 +170,6 @@ const GradeBookDocument = (props: GradeBookDocumentProps) => {
                 students={students}
                 gradeDistribution={gradeDistribution}
                 assessmentSummary={assessmentSummary}
-                studentAttendanceSummaries={studentAttendanceSummaries}
                 qrCodeDataUrl={qrCodeDataUrl}
                 schoolId={schoolId}
                 selectedRoom={selectedRoom}

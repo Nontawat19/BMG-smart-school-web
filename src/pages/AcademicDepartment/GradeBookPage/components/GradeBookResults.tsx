@@ -13,6 +13,7 @@ interface GradeBookResultsProps {
     students: Student[];
     grades: Record<string, GradeRecord>;
     completenessStats: any;
+    completenessDisplay: { percentage: number; filled: number; total: number };
     characteristicsCriteria: CharacteristicCriteria[];
     readingWritingCriteria: ReadingWritingCriteria[];
     maxScores: { formative: number; midterm: number; final: number };
@@ -33,6 +34,7 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
     students,
     grades,
     completenessStats,
+    completenessDisplay,
     characteristicsCriteria,
     readingWritingCriteria,
     maxScores,
@@ -84,10 +86,10 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
     return (
         <div className="animate-in fade-in duration-500 space-y-4">
 
-            <GradeBookStats 
-                students={students} 
-                grades={grades} 
-                completenessStats={completenessStats}
+            <GradeBookStats
+                students={students}
+                grades={grades}
+                completenessDisplay={completenessDisplay}
                 activeTab={activeTab}
             />
 
@@ -111,7 +113,7 @@ const GradeBookResults: React.FC<GradeBookResultsProps> = ({
             </div>
 
             <GradeBookLegend selectedCourse={selectedCourse} scoreDistribution={scoreDistribution} activeTab={activeTab} />
-            <GradeBookSummary selectedCourse={selectedCourse} activeTab={activeTab} scoreDistribution={scoreDistribution} students={students} grades={grades} />
+            <GradeBookSummary selectedCourse={selectedCourse} activeTab={activeTab} completenessDisplay={completenessDisplay} students={students} grades={grades} />
         </div>
     );
 };

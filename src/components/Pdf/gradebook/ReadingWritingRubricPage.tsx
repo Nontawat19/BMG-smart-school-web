@@ -233,6 +233,7 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
   schoolInfo,
   academicYear,
   termToDisplay,
+  selectedClass,
   readingWritingCriteria,
   curriculumClassDisplay,
   curriculumRoomDisplay,
@@ -241,13 +242,18 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
     ? schoolInfo.schoolName
     : `โรงเรียน${schoolInfo?.schoolName || ''}`;
 
+  const isPrimary = String(selectedClass || '').toLowerCase().startsWith('p');
+  const levelWord = isPrimary ? 'ประถมศึกษา' : 'มัธยมศึกษา';
+  const gradeNum = parseInt(String(selectedClass || '').replace(/[^0-9]/g, ''), 10) || 0;
+  const rangeLabel = gradeNum <= 3 ? '1 - 3' : '4 - 6';
+
   return (
     <PdfPage>
       {/* Header */}
       <View style={styles.headerContainer} fixed>
-        <Text style={styles.title} hyphenationCallback={disableHyphenation}>การประเมินคุณภาพการอ่าน คิด วิเคราะห์ และเขียน ของนักเรียนระดับชั้นมัธยมศึกษาปีที่ 1 - 3</Text>
+        <Text style={styles.title} hyphenationCallback={disableHyphenation}>การประเมินคุณภาพการอ่าน คิด วิเคราะห์ และเขียน ของนักเรียนระดับชั้น{levelWord}ปีที่ {rangeLabel}</Text>
         <Text style={styles.subtitle} hyphenationCallback={disableHyphenation}>
-          ชั้นมัธยมศึกษาปีที่ {curriculumClassDisplay.replace(/[^0-9]/g, '')} {formattedSchoolName} ปีการศึกษา {academicYear || '2568'}
+          ชั้น{levelWord}ปีที่ {curriculumClassDisplay.replace(/[^0-9]/g, '')} {formattedSchoolName} ปีการศึกษา {academicYear || '2568'}
         </Text>
       </View>
 

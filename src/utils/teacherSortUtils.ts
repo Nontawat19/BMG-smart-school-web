@@ -59,6 +59,10 @@ export const isActiveTeacher = (teacher: any) => {
   const status = String(teacher?.status || 'อยู่').trim();
   if (status && status !== 'อยู่') return false;
 
+  // Exclude non-teaching staff ("ผู้ใช้ระบบ") explicitly flagged via personnelType —
+  // they have menu access per their assigned role but must never be assignable to teach.
+  if (teacher?.personnelType === 'user') return false;
+
   // Exclude if ALL roles are attendance-only (device/kiosk accounts, not real teachers)
   const roleArray: string[] = Array.isArray(teacher?.role)
     ? teacher.role

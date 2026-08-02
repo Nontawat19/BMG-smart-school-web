@@ -56,6 +56,42 @@ describe('validatePostSchedule', () => {
         expect(result.conflictCount).toBe(3);
     });
 
+    // Regression coverage: elective/rotation-group courses (e.g. ทัศนศิลป์, สุขศึกษา) share a
+    // coarse, grade-level-only classId (per CLASS_MAPPING — no per-room granularity), so a
+    // schedule with two DIFFERENT courses/teachers/rooms placed in parallel under that same
+    // classId used to be wrongly reported as a class_conflict error even though it's valid.
+    it('does not report a class_conflict for two different courses sharing a coarse classId in different rooms', () => {
+        const taskA = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'], targetRooms: ['room-313'] });
+        const taskB = makeTask({ course: makeCourse('health'), teacherId: 't2', targetClasses: ['m3'], targetRooms: ['room-117'], compositeId: 'health_1' });
+        const timetable: EngineSchedule = {
+            'mon-0': [
+                { teacherId: 't1', classId: ['m3'], room: ['room-313'], courseId: 'art', course: taskA.course, taskId: 0, groupNumber: 1 },
+                { teacherId: 't2', classId: ['m3'], room: ['room-117'], courseId: 'health', course: taskB.course, taskId: 1, groupNumber: 1 },
+            ],
+        };
+
+        const result = validatePostSchedule({ tasks: [taskA, taskB], timetable });
+
+        expect(result.issues.map(issue => issue.type)).not.toContain('class_conflict');
+        expect(result.isValid).toBe(true);
+    });
+
+    it('still reports a class_conflict for two different courses sharing a coarse classId when rooms overlap or are unspecified', () => {
+        const taskA = makeTask({ course: makeCourse('art'), teacherId: 't1', targetClasses: ['m3'] });
+        const taskB = makeTask({ course: makeCourse('health'), teacherId: 't2', targetClasses: ['m3'], compositeId: 'health_1' });
+        const timetable: EngineSchedule = {
+            'mon-0': [
+                { teacherId: 't1', classId: ['m3'], room: [], courseId: 'art', course: taskA.course, taskId: 0, groupNumber: 1 },
+                { teacherId: 't2', classId: ['m3'], room: [], courseId: 'health', course: taskB.course, taskId: 1, groupNumber: 1 },
+            ],
+        };
+
+        const result = validatePostSchedule({ tasks: [taskA, taskB], timetable });
+
+        expect(result.issues.map(issue => issue.type)).toContain('class_conflict');
+        expect(result.isValid).toBe(false);
+    });
+
     it('reports missing required periods and locked-slot mismatches', () => {
         const locked = makeTask({ course: makeCourse('c1'), duration: 2, requiredSlot: 'mon-0' });
         const timetable: EngineSchedule = {

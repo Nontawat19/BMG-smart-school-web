@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, query, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
-import { getRulePoints, getBehaviorAttendanceStatusKey, getBehaviorFlagCeremonyStatusKey } from '@/utils/behaviorScoreUtils';
+import {
+  getRulePoints,
+  getBehaviorAttendanceStatusKey,
+  getBehaviorFlagCeremonyStatusKey,
+  getBehaviorClassroomAttendanceStatusKey,
+  getSpecialPeriodRulePoints,
+  getAttendanceEventDate,
+  getActiveInterventionTier,
+} from '@/utils/behaviorScoreUtils';
 import { Loader2, ShieldCheck, TrendingUp, TrendingDown, Minus, Clock, AlertTriangle, Star, Calendar } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -93,11 +101,15 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
     if (!schoolId || !studentId) return;
     setIsLoading(true);
     try {
-      // 1. Load behaviorScoreConfig (best-effort)
+      // 1. Load behaviorScoreConfig + attendanceConfig (best-effort)
       let config: any = null;
+      let attendanceConfig: any = null;
       try {
         const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
-        if (schoolSnap.exists()) config = schoolSnap.data().behaviorScoreConfig ?? null;
+        if (schoolSnap.exists()) {
+          config = schoolSnap.data().behaviorScoreConfig ?? null;
+          attendanceConfig = schoolSnap.data().attendanceConfig ?? null;
+        }
         setBehaviorConfig(config);
       } catch { /* no config */ }
 
@@ -116,18 +128,24 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
 
       attSnap.docs.forEach(docSnap => {
         const data = docSnap.data();
-        const logDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
+        const fallbackDate = data.date ? new Date(`${data.date}T12:00:00`) : new Date();
 
-        // Gate attendance
+        // Gate attendance (สาย / ขาด / กลับก่อน / ไม่ลงเวลาออก)
         if (data.status) {
           const pts = getRulePoints(config, data.status);
           if (pts > 0) {
             const statusKey = getBehaviorAttendanceStatusKey(data.status);
             const title =
               statusKey === 'late' ? 'มาสาย' :
-              statusKey === 'absent' ? 'ขาดเรียน' :
+              statusKey === 'absent' ? 'ขาดเรียน (ไม่ลงเวลาเข้า)' :
               statusKey === 'early' ? 'กลับก่อนกำหนด' :
               statusKey === 'noCheckout' ? 'ไม่ลงเวลาออก' : data.status;
+            const note =
+              statusKey === 'late' ? 'ลงเวลาเข้าหลังเวลาที่กำหนด' :
+              statusKey === 'absent' ? 'ไม่มีการลงเวลาเข้าภายในเวลาที่กำหนด' :
+              statusKey === 'early' ? 'ลงเวลาออกก่อนเวลาเลิกเรียน' :
+              statusKey === 'noCheckout' ? 'ลงเวลาเข้าแล้วไม่มีเวลาออกเมื่อสิ้นวัน' : '';
+            const eventDate = getAttendanceEventDate(data, statusKey, attendanceConfig);
             autoLogs.push({
               id: `att_${docSnap.id}`,
               type: 'attendance',
@@ -137,15 +155,15 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
               points: -pts,
               previousScore: 0,
               nextScore: 0,
-              notes: data.remark || '',
+              notes: data.remark || note,
               createdBy: 'ระบบอัตโนมัติ',
-              createdAt: { toDate: () => logDate },
+              createdAt: { toDate: () => eventDate },
               academicYear: '',
             });
           }
         }
 
-        // Flag ceremony
+        // Flag ceremony (เข้าแถวเช้า)
         const metadata = data.metadata || {};
         const flagStatus = metadata.flagBehaviorScoreStatus || metadata.flag;
         if (flagStatus && String(flagStatus).startsWith('flag:')) {
@@ -154,8 +172,11 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
             const flagKey = getBehaviorFlagCeremonyStatusKey(flagStatus);
             const title =
               flagKey === 'noScanPresentDeduct' ? 'ไม่สแกนบัตรเข้าแถว' :
-              flagKey === 'scannedAbsentDeduct' ? 'ไม่เข้าแถว' :
+              flagKey === 'scannedAbsentDeduct' ? 'โดดแถว (ไม่เข้าแถว)' :
               String(flagStatus).replace('flag:', '');
+            const note =
+              flagKey === 'noScanPresentDeduct' ? 'ครูยืนยันว่ามาเข้าแถว แต่ไม่ได้สแกนบัตร/บัตร Lock' :
+              flagKey === 'scannedAbsentDeduct' ? 'มีเวลาสแกนบัตรเข้าโรงเรียน แต่ไม่ได้เข้าร่วมกิจกรรมเข้าแถว' : '';
             autoLogs.push({
               id: `flag_${docSnap.id}`,
               type: 'flag_ceremony',
@@ -165,15 +186,81 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
               points: -pts,
               previousScore: 0,
               nextScore: 0,
+              notes: note,
               createdBy: 'ระบบอัตโนมัติ',
-              createdAt: { toDate: () => logDate },
+              createdAt: { toDate: () => fallbackDate },
               academicYear: '',
             });
           }
         }
       });
 
-      // 4. Merge + sort
+      // 4. ClassroomAttendance → เช็คชื่อรายวิชา + กิจกรรมพิเศษ
+      const classSnap = await getDocs(
+        collection(db, 'school-settings', schoolId, 'students', studentId, 'ClassroomAttendance')
+      );
+
+      classSnap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const logDate = data.date?.toDate ? data.date.toDate() : new Date();
+
+        if (data.attendanceType === 'special_period') {
+          // กิจกรรมพิเศษ — เฉพาะที่เปิดหักคะแนน
+          if (!data.deductBehavior) return;
+          const spPoints = getSpecialPeriodRulePoints(config, data.status);
+          if (spPoints !== 0) {
+            const title =
+              data.status === 'late' ? 'เข้าร่วมสาย' :
+              data.status === 'absent' ? 'ไม่เข้าร่วมกิจกรรม' :
+              data.status === 'escape' ? 'หลีกเลี่ยงกิจกรรม' : data.status;
+            autoLogs.push({
+              id: `sp_${docSnap.id}`,
+              type: 'special_period',
+              title,
+              category: 'กิจกรรมพิเศษ',
+              action: spPoints > 0 ? 'add' : 'deduct',
+              points: spPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: [data.specialPeriodTitle || data.subjectName, data.className ? `ชั้น ${data.className}` : ''].filter(Boolean).join(' · '),
+              createdBy: data.teacherName || 'ระบบอัตโนมัติ',
+              createdAt: { toDate: () => logDate },
+              academicYear: data.academicYear || '',
+            });
+          }
+        } else {
+          // เช็คชื่อรายวิชาปกติ (สาย / ขาด / หนีเรียน)
+          const classStatus = `class:${data.status}`;
+          const classPoints = getRulePoints(config, classStatus);
+          if (classPoints > 0) {
+            const classKey = getBehaviorClassroomAttendanceStatusKey(data.status);
+            const title =
+              classKey === 'late' ? 'เข้าเรียนสาย' :
+              classKey === 'absent' ? 'ขาดเรียน' :
+              classKey === 'escape' ? 'หนีเรียน' : data.status;
+            const note =
+              classKey === 'late' ? 'เข้าเรียนหลังเวลาที่ครูเช็คชื่อ' :
+              classKey === 'absent' ? 'ไม่มาเรียนวิชานี้' :
+              classKey === 'escape' ? 'เข้าเรียนตอนเช็คชื่อ แต่ออกจากห้องเรียนกลางคาบ' : '';
+            autoLogs.push({
+              id: `cls_${docSnap.id}`,
+              type: 'classroom',
+              title,
+              category: 'เช็คชื่อรายวิชา',
+              action: 'deduct',
+              points: -classPoints,
+              previousScore: 0,
+              nextScore: 0,
+              notes: [note, data.subjectName, data.period ? `คาบที่ ${data.period}` : ''].filter(Boolean).join(' · '),
+              createdBy: data.teacherName || 'ระบบอัตโนมัติ',
+              createdAt: { toDate: () => logDate },
+              academicYear: data.academicYear || '',
+            });
+          }
+        }
+      });
+
+      // 5. Merge + sort
       const combined = [...manualLogs, ...autoLogs].sort(
         (a, b) => getLogDate(b).getTime() - getLogDate(a).getTime()
       );
@@ -200,6 +287,9 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
   const totalAdd     = logs.filter(l => l.points > 0).reduce((s, l) => s + l.points, 0);
 
   const typesPresent = [...new Set(logs.map(l => l.type))];
+
+  // ป้ายเตือนตามเกณฑ์ที่โรงเรียนตั้งไว้เอง (ตั้งค่าได้ที่ /academic/behavior-score-config)
+  const activeTier = getActiveInterventionTier(currentScore, behaviorConfig?.interventionTiers);
 
   if (isLoading) {
     return (
@@ -247,6 +337,14 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
           <div className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">ตลอดปีการศึกษา</div>
         </div>
       </div>
+
+      {/* Intervention tier warning banner */}
+      {activeTier && (
+        <div className="flex items-start gap-2.5 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-900/30 rounded-xl p-3.5">
+          <AlertTriangle size={16} className="text-orange-500 dark:text-orange-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-orange-700 dark:text-orange-300 font-medium">{activeTier.actionLabel}</div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
@@ -370,12 +468,14 @@ const StudentBehaviorHistoryEmbed: React.FC<Props> = ({
                         {log.previousScore} → <span className={`font-semibold ${scoreColor(log.nextScore)}`}>{log.nextScore}</span>
                       </span>
                     )}
-                    {log.notes && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 italic truncate max-w-[200px]">
-                        {log.notes}
-                      </span>
-                    )}
                   </div>
+
+                  {/* Reason for the deduction/addition */}
+                  {log.notes && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5">
+                      {log.notes}
+                    </div>
+                  )}
 
                   {/* Date & creator */}
                   <div className="flex items-center gap-2 mt-1">

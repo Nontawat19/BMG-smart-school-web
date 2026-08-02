@@ -9,7 +9,6 @@ interface GradeBookFilterProps {
     setSelectedRoom: React.Dispatch<React.SetStateAction<string>>;
     setSelectedCourse: React.Dispatch<React.SetStateAction<string>>;
     availableClassOptions: [string, string][];
-    currentCourse: Course | undefined;
     selectedCourse: string;
     selectedGroup: string;
     setSelectedGroup: React.Dispatch<React.SetStateAction<string>>;
@@ -17,8 +16,6 @@ interface GradeBookFilterProps {
     selectedSemester: string;
     setSelectedSemester: React.Dispatch<React.SetStateAction<string>>;
     filteredCourses: Course[];
-    teacherMap: any;
-    userPrivileges: { canSeeAll?: boolean;[key: string]: any };
     searchTerm: string;
     setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
 }
@@ -37,8 +34,6 @@ const GradeBookFilter: React.FC<GradeBookFilterProps> = ({
     selectedSemester,
     setSelectedSemester,
     filteredCourses,
-    teacherMap,
-    userPrivileges,
     searchTerm,
     setSearchTerm,
 }) => {

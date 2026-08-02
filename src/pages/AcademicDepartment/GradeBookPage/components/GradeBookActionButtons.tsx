@@ -30,13 +30,15 @@ const GradeBookActionButtons: React.FC<GradeBookActionButtonsProps> = ({
                     <Copy size={14} /> นำเข้า
                 </button>
 
-                <button
-                    onClick={handleSyncSDQ}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-bold transition-all border border-teal-100 dark:border-teal-800/30 shadow-sm"
-                    title="นำคะแนนจาก SDQ มาใส่โดยอัตโนมัติ"
-                >
-                    <RefreshCw size={14} /> นำจาก SDQ
-                </button>
+                {activeTab === 'characteristics' && (
+                    <button
+                        onClick={handleSyncSDQ}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 text-xs font-bold transition-all border border-teal-100 dark:border-teal-800/30 shadow-sm"
+                        title="นำคะแนนจาก SDQ มาใส่ทุกคอลัมน์ที่เชื่อมกับ SDQ โดยอัตโนมัติ"
+                    >
+                        <RefreshCw size={14} /> นำจาก SDQ
+                    </button>
+                )}
             </div>
 
             <div className="flex items-center gap-2.5 bg-white/[0.03] dark:bg-gray-800/40 p-1 pl-3 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">

@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
-import { firestore } from "@/firebase";
+import { auth as primaryAuth, firestore } from "@/firebase";
 import { getLevelsByRange } from "@/utils/schoolUtils";
-import { getAuth, sendPasswordResetEmail } from "firebase/auth";
+import { initializeApp, deleteApp } from "firebase/app";
+import { getAuth, sendPasswordResetEmail, createUserWithEmailAndPassword } from "firebase/auth";
 import {
   collection,
   getDocs,
   getDoc,
-  addDoc,
   updateDoc,
   deleteDoc,
   doc,
+  setDoc,
+  serverTimestamp,
   query,
-  where,
   collectionGroup,
 } from "firebase/firestore";
 import Swal from "sweetalert2";
@@ -79,9 +80,13 @@ const UserManagementPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SchoolUser | null>(null);
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form State
-  const [formData, setFormData] = useState<Partial<SchoolUser>>({
+  // Password fields (used only when creating a new user's login account)
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const defaultFormData: Partial<SchoolUser> = {
     teacherId: "",
     title: "นาย",
     firstName: "",
@@ -90,11 +95,14 @@ const UserManagementPage: React.FC = () => {
     role: "teacher",
     email: "",
     phoneNumber: "",
-    schoolId: "",
+    schoolId: currentSchoolId || "",
     department: "",
     homeroomGrade: "",
     homeroomRoom: "",
-  });
+  };
+
+  // Form State
+  const [formData, setFormData] = useState<Partial<SchoolUser>>(defaultFormData);
 
   // Fetch Schools List
   useEffect(() => {
@@ -148,24 +156,44 @@ const UserManagementPage: React.FC = () => {
     fetchUsers();
   }, [selectedSchoolFilter, currentSchoolId]); // Re-fetch when filter changes
 
+  const loadLevelsForSchool = async (schoolId: string) => {
+    try {
+      const schoolRef = doc(firestore, "school-settings", schoolId);
+      const schoolSnap = await getDoc(schoolRef);
+      if (schoolSnap.exists()) {
+        const data = schoolSnap.data();
+        const levels = getLevelsByRange(data.opportunityExpansionLevel || "");
+        setAvailableLevels(levels);
+      }
+    } catch (error) {
+      console.error("Error fetching school levels for modal:", error);
+      setAvailableLevels([]); // Reset on error
+    }
+  };
+
   const handleOpenModal = async (user: SchoolUser) => {
     setEditingUser(user);
     setFormData(user);
+    setPassword("");
+    setConfirmPassword("");
 
     // Fetch available levels for the user's school
     if (user.schoolId) {
-      try {
-        const schoolRef = doc(firestore, "school-settings", user.schoolId);
-        const schoolSnap = await getDoc(schoolRef);
-        if (schoolSnap.exists()) {
-          const data = schoolSnap.data();
-          const levels = getLevelsByRange(data.opportunityExpansionLevel || "");
-          setAvailableLevels(levels);
-        }
-      } catch (error) {
-        console.error("Error fetching school levels for modal:", error);
-        setAvailableLevels([]); // Reset on error
-      }
+      await loadLevelsForSchool(user.schoolId);
+    }
+
+    setIsModalOpen(true);
+  };
+
+  const handleOpenAddModal = async () => {
+    setEditingUser(null);
+    setFormData(defaultFormData);
+    setPassword("");
+    setConfirmPassword("");
+    setAvailableLevels([]);
+
+    if (currentSchoolId) {
+      await loadLevelsForSchool(currentSchoolId);
     }
 
     setIsModalOpen(true);
@@ -174,6 +202,8 @@ const UserManagementPage: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingUser(null);
+    setPassword("");
+    setConfirmPassword("");
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -202,24 +232,93 @@ const UserManagementPage: React.FC = () => {
       return;
     }
 
-    try {
-      if (editingUser) {
-        // Update
+    if (editingUser) {
+      // Update existing teacher/staff record
+      setIsSubmitting(true);
+      try {
         const userRef = doc(firestore, "school-settings", targetSchoolId, "teachers", editingUser.id);
         await updateDoc(userRef, formData);
         Swal.fire("Success", "อัปเดตข้อมูลสำเร็จ", "success");
-      } else {
-        // Add New
-        const colRef = collection(firestore, "school-settings", targetSchoolId, "teachers");
-        await addDoc(colRef, formData);
-        await updateOwnerAndSchoolCounts(firestore, targetSchoolId, { teachers: 1 });
-        Swal.fire("Success", "เพิ่มผู้ใช้ใหม่สำเร็จ", "success");
+        handleCloseModal();
+        fetchUsers();
+      } catch (error) {
+        console.error("Error saving user:", error);
+        Swal.fire("Error", "เกิดข้อผิดพลาดในการบันทึก", "error");
+      } finally {
+        setIsSubmitting(false);
       }
+      return;
+    }
+
+    // Add New: this must also create a real login account, not just a Firestore record
+    if (!formData.email) {
+      Swal.fire("Error", "กรุณากรอกอีเมล", "error");
+      return;
+    }
+    if (password.length < 6) {
+      Swal.fire("Error", "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร", "error");
+      return;
+    }
+    if (password !== confirmPassword) {
+      Swal.fire("Error", "รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const secondaryApp = initializeApp(primaryAuth.app.options, `AddSchoolUser-${Date.now()}`);
+    try {
+      const secondaryAuth = getAuth(secondaryApp);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, password);
+      const newUid = userCredential.user.uid;
+
+      const fullName = `${formData.title || ""}${formData.firstName || ""} ${formData.lastName || ""}`.trim();
+
+      // 1. Central users collection (drives login role/permissions)
+      await setDoc(doc(firestore, "users", newUid), {
+        uid: newUid,
+        fullName,
+        firstName: formData.firstName || "",
+        lastName: formData.lastName || "",
+        title: formData.title || "",
+        email: formData.email,
+        role: [formData.role || ROLES.TEACHER],
+        schoolId: targetSchoolId,
+        profileUrl: null,
+        createdAt: serverTimestamp(),
+      });
+
+      // 2. School-specific teacher record (doc id = uid, so it links back to the auth account)
+      const teacherRef = doc(firestore, "school-settings", targetSchoolId, "teachers", newUid);
+      await setDoc(teacherRef, {
+        ...formData,
+        uid: newUid,
+        schoolId: targetSchoolId,
+        createdAt: serverTimestamp(),
+      });
+      await updateOwnerAndSchoolCounts(firestore, targetSchoolId, { teachers: 1 });
+
+      // 3. Profile slug so /profile resolves for this account like other users
+      await setDoc(doc(firestore, "slugs", `profile:${newUid}`), {
+        slug: `profile:${newUid}`,
+        targetId: newUid,
+        targetType: "profile",
+        schoolId: targetSchoolId,
+        fullPath: "/profile",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      Swal.fire("Success", "เพิ่มผู้ใช้ใหม่และสร้างบัญชีสำหรับเข้าสู่ระบบสำเร็จ", "success");
       handleCloseModal();
       fetchUsers();
-    } catch (error) {
-      console.error("Error saving user:", error);
-      Swal.fire("Error", "เกิดข้อผิดพลาดในการบันทึก", "error");
+    } catch (error: any) {
+      console.error("Error creating user:", error);
+      const message = error.code === "auth/email-already-in-use"
+        ? "อีเมลนี้ถูกใช้งานแล้วในระบบ"
+        : (error.message || "เกิดข้อผิดพลาดในการบันทึก");
+      Swal.fire("Error", message, "error");
+    } finally {
+      await deleteApp(secondaryApp);
+      setIsSubmitting(false);
     }
   };
 
@@ -347,6 +446,14 @@ const UserManagementPage: React.FC = () => {
                 {currentSchoolId ? 'บริหารจัดการข้อมูลครูและบุคลากรภายในโรงเรียน' : 'บริหารจัดการข้อมูลครูและบุคลากรจากโรงเรียนทั้งหมดในระบบ'}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={handleOpenAddModal}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition-colors font-medium"
+            >
+              <UserPlus className="w-4 h-4" />
+              เพิ่มผู้ใช้ใหม่
+            </button>
           </div>
 
           {/* Tab bar */}
@@ -491,17 +598,17 @@ const UserManagementPage: React.FC = () => {
         {/* Modal */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  แก้ไขข้อมูลผู้ใช้
+                  {editingUser ? "แก้ไขข้อมูลผู้ใช้" : "เพิ่มผู้ใช้ใหม่"}
                 </h3>
                 <button onClick={handleCloseModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">สังกัดโรงเรียน</label>
                   {currentSchoolId ? (
@@ -517,7 +624,7 @@ const UserManagementPage: React.FC = () => {
                       value={formData.schoolId}
                       onChange={handleInputChange}
                       required
-                      disabled={true} // ห้ามย้ายโรงเรียนตอนแก้ไข (เพื่อความปลอดภัยของ path)
+                      disabled={!!editingUser} // ห้ามย้ายโรงเรียนตอนแก้ไข (เพื่อความปลอดภัยของ path) แต่เลือกได้ตอนเพิ่มใหม่
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
                     >
                       <option value="">-- เลือกโรงเรียน --</option>
@@ -673,7 +780,7 @@ const UserManagementPage: React.FC = () => {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">อีเมล</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">อีเมล{editingUser ? "" : " (ใช้สำหรับเข้าสู่ระบบ)"}</label>
                   <input
                     type="email"
                     name="email"
@@ -683,6 +790,34 @@ const UserManagementPage: React.FC = () => {
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+
+                {!editingUser && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">รหัสผ่าน</label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        placeholder="อย่างน้อย 6 ตัวอักษร"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ยืนยันรหัสผ่าน</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-4 flex justify-end gap-3">
                   <button
@@ -694,10 +829,11 @@ const UserManagementPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-colors"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white rounded-lg shadow-md transition-colors"
                   >
                     <Save className="w-4 h-4" />
-                    บันทึก
+                    {isSubmitting ? "กำลังบันทึก..." : "บันทึก"}
                   </button>
                 </div>
               </form>

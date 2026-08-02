@@ -1,5 +1,5 @@
 import { AssignmentConstraintMap, Course, CourseInstance } from '../types';
-import { getRequiredWeeklyPeriods } from '../utils';
+import { getRequiredWeeklyPeriods, haveDistinctSpecificRooms } from '../utils';
 import { getTaskTeacherIds } from '../scheduleSharedUtils';
 import { isCoreAcademicCourseTitle } from '../scheduleMetrics';
 import {
@@ -82,9 +82,11 @@ export type EngineTask = {
     requiredSlot?: string;
 };
 
+type ClassSlotOccupant = { courseId: string; groupNumber: number; room: string[] };
+
 export type RuntimeConflictIndex = {
     teacherSlots: Map<string, Set<string>>;
-    classSlots: Map<string, Map<string, Set<string>>>; // classId -> slotId -> Set of placement keys
+    classSlots: Map<string, Map<string, Map<string, ClassSlotOccupant>>>; // classId -> slotId -> placementKey -> occupant summary
     roomSlots: Map<string, Set<string>>;
     teacherDayLoad: Map<string, number>;
     classDayLoad: Map<string, number>;
@@ -240,8 +242,12 @@ export const addOccupancyToIndex = (index: RuntimeConflictIndex, slotId: string,
 
             if (!index.classSlots.has(classId)) index.classSlots.set(classId, new Map());
             const slotMap = index.classSlots.get(classId)!;
-            if (!slotMap.has(slotId)) slotMap.set(slotId, new Set());
-            slotMap.get(slotId)!.add(getClassPlacementKey(occupancy));
+            if (!slotMap.has(slotId)) slotMap.set(slotId, new Map());
+            slotMap.get(slotId)!.set(getClassPlacementKey(occupancy), {
+                courseId: occupancy.courseId,
+                groupNumber: occupancy.groupNumber || 0,
+                room: normalizeSpecificRooms(occupancy.room)
+            });
 
             const courseDayKey = `${classId}|${occupancy.courseId}|${dayKey}`;
             index.classCourseDayCount.set(courseDayKey, (index.classCourseDayCount.get(courseDayKey) || 0) + 1);
@@ -323,10 +329,10 @@ const removeOccupancyFromIndex = (index: RuntimeConflictIndex, slotId: string, o
 
             const slotMap = index.classSlots.get(classId);
             if (slotMap) {
-                const groupSet = slotMap.get(slotId);
-                if (groupSet) {
-                    groupSet.delete(getClassPlacementKey(occupancy));
-                    if (groupSet.size === 0) slotMap.delete(slotId);
+                const occupants = slotMap.get(slotId);
+                if (occupants) {
+                    occupants.delete(getClassPlacementKey(occupancy));
+                    if (occupants.size === 0) slotMap.delete(slotId);
                 }
                 if (slotMap.size === 0) index.classSlots.delete(classId);
             }
@@ -373,12 +379,35 @@ const hasSlot = (map: Map<string, Set<string>>, key: string, slotId: string) => 
     return map.get(key)?.has(slotId) || false;
 };
 
-const hasClassConflict = (index: RuntimeConflictIndex, classId: string, slotId: string) => {
+// Two DIFFERENT courses that only share a coarse grade-level classId (e.g. "m3" — elective/
+// rotation-group courses aren't tied to a single classroom, see CLASS_MAPPING in
+// schoolUtils.ts) are NOT a real conflict when they're the same course split into parallel
+// groups, or when each has its own specific, non-overlapping room — see haveDistinctSpecificRooms
+// in utils.ts, which this mirrors for the same reason (a manual-drag/UI-side counterpart of
+// this exact check already applies that exemption).
+const hasClassConflict = (
+    index: RuntimeConflictIndex,
+    classId: string,
+    slotId: string,
+    requesting: ClassSlotOccupant
+) => {
     const slotMap = index.classSlots.get(classId);
     if (!slotMap) return false;
-    const occupiedGroups = slotMap.get(slotId);
-    if (!occupiedGroups) return false;
-    return occupiedGroups.size > 0;
+    const occupants = slotMap.get(slotId);
+    if (!occupants || occupants.size === 0) return false;
+
+    for (const occupant of occupants.values()) {
+        const isParallelGroupSameCourse = occupant.courseId === requesting.courseId &&
+            occupant.groupNumber > 0 &&
+            requesting.groupNumber > 0 &&
+            occupant.groupNumber !== requesting.groupNumber;
+        if (isParallelGroupSameCourse) continue;
+
+        if (occupant.courseId !== requesting.courseId && haveDistinctSpecificRooms(occupant.room, requesting.room)) continue;
+
+        return true;
+    }
+    return false;
 };
 
 export const countGaps = (periods: number[]) => {
@@ -516,9 +545,15 @@ export const canPlaceWithIndex = (task: EngineTask, sessionSlots: string[], inde
     const isDoubleSession = task.duration > 1;
     const allowSameDaySingleRepeat = task.duration === 1 && getRequiredWeeklyPeriods(task.course) > 6;
 
+    const requestingOccupant: ClassSlotOccupant = {
+        courseId: task.course.id,
+        groupNumber: task.groupNumber || 0,
+        room: requestedRooms
+    };
+
     for (const slotId of sessionSlots) {
         if (teacherIds.some(teacherId => hasSlot(index.teacherSlots, teacherId, slotId))) return false;
-        if (task.targetClasses.some(classId => hasClassConflict(index, classId, slotId))) return false;
+        if (task.targetClasses.some(classId => hasClassConflict(index, classId, slotId, requestingOccupant))) return false;
         if (requestedRooms.some(roomId => hasSlot(index.roomSlots, roomId, slotId))) return false;
     }
 

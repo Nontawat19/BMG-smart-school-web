@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import Select, { SingleValue, StylesConfig } from 'react-select';
 import { Trash2, Zap } from 'lucide-react';
-import { CLASSES, thaiFormatClass } from '../utils';
+import { appendGroupRoom, getClassDisplayName } from '../utils';
 import { Course, CourseInstance, PhysicalRoom, Schedule, SchoolSettings, Teacher, getAssignmentTeacherIds } from '../types';
 import { TeacherSelect } from './TeacherSelect';
 
@@ -9,6 +9,7 @@ interface CourseOption {
     value: string;
     label: string;
     course?: Course;
+    compositeId?: string;
 }
 
 interface CompactScheduleToolbarProps {
@@ -24,9 +25,11 @@ interface CompactScheduleToolbarProps {
     filterPhysicalRoom: string;
     physicalRooms: PhysicalRoom[];
     searchTerm: string;
+    selectedAssignmentKey: string;
     schoolSettings: SchoolSettings;
     isAutoScheduling: boolean;
     setSearchTerm: (value: string) => void;
+    setSelectedAssignmentKey: (value: string) => void;
     setSelectedTeacher: (value: string) => void;
     setSchedule: React.Dispatch<React.SetStateAction<Schedule>>;
     setFilterClass: (value: string) => void;
@@ -74,9 +77,11 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
     filterPhysicalRoom,
     physicalRooms,
     searchTerm,
+    selectedAssignmentKey,
     schoolSettings,
     isAutoScheduling,
     setSearchTerm,
+    setSelectedAssignmentKey,
     setSelectedTeacher,
     setSchedule,
     setFilterClass,
@@ -117,7 +122,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
     }, [filterGroup, selectedTeacher]);
 
     // Filtered courses for dropdown selection
-    const courseOptions = useMemo(() => {
+    const courseOptions = useMemo<CourseOption[]>(() => {
         const filtered = allCourses
             .filter(c => {
                 const semStr = String(c.semester || "");
@@ -133,10 +138,7 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                 const allAssociatedClasses = [...classIds, ...assignedClasses];
                 const isForSelectedClass = filterClass === 'all' || allAssociatedClasses.some(id => id === filterClass || id.startsWith(filterClass + '/'));
 
-                if (!hasAssignments || !isForSelectedTeacher || !isForSelectedClass || !courseMatchesRoom(c) || !courseMatchesGroup(c)) return false;
-
-                const remainingCount = availableCourseInstances.filter(inst => inst.code === c.code).length;
-                return remainingCount > 0;
+                return hasAssignments && isForSelectedTeacher && isForSelectedClass && courseMatchesRoom(c) && courseMatchesGroup(c);
             })
             .sort((a, b) => {
                 const groupA = getSubjectGroupOrder(a.subjectGroup);
@@ -151,30 +153,74 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
 
                 return a.code.localeCompare(b.code);
             })
-            .map(course => {
+            .flatMap(course => {
                 const cleanGroup = course.subjectGroup
                     ? course.subjectGroup.replace(/^กลุ่มสาระการเรียนรู้\s*/u, "").replace(/^กลุ่มสาระ\s*/u, "").trim()
                     : "";
-                const label = cleanGroup 
+                const baseLabel = cleanGroup
                     ? `[${cleanGroup}] ${course.code} - ${course.title}`
                     : `${course.code} - ${course.title}`;
-                return {
-                    value: course.code,
-                    label,
-                    course
-                };
+
+                // A course can have several groups/assignments, each taught to a different
+                // class/room (e.g. group 1 -> ม.1/1, group 2 -> ม.2/1). Matching by course code
+                // alone can't tell those apart and used to let manual-add silently place a
+                // period against the wrong group's class — so surface each group with remaining
+                // periods as its own option once there's more than one to choose from.
+                const relevantAssignments = (course.teacherAssignments || [])
+                    .filter(a => !selectedTeacher || getAssignmentTeacherIds(a).includes(selectedTeacher))
+                    .filter(a => filterGroup === 'all' || String(a.groupNumber || 1) === filterGroup);
+
+                const groupsWithRemaining = relevantAssignments
+                    .map(a => {
+                        const groupNum = a.groupNumber || 1;
+                        const compositeId = `${course.id}_${groupNum}`;
+                        const remaining = availableCourseInstances.filter(inst => inst.compositeId === compositeId).length;
+                        const baseClassIds = a.classLevels && a.classLevels.length > 0
+                            ? a.classLevels
+                            : (Array.isArray(course.classId) ? course.classId : [course.classId].filter(Boolean) as string[]);
+                        const classLabel = baseClassIds.map(id => appendGroupRoom(id, a.room)).map(getClassDisplayName).join(' + ');
+                        return { compositeId, remaining, classLabel };
+                    })
+                    .filter(g => g.remaining > 0);
+
+                if (groupsWithRemaining.length === 0) return [];
+                if (groupsWithRemaining.length === 1) {
+                    return [{ value: groupsWithRemaining[0].compositeId, label: baseLabel, course, compositeId: groupsWithRemaining[0].compositeId }];
+                }
+                return groupsWithRemaining.map(g => ({
+                    value: g.compositeId,
+                    label: g.classLabel ? `${baseLabel} (${g.classLabel})` : baseLabel,
+                    course,
+                    compositeId: g.compositeId
+                }));
             });
 
         return [{ value: '', label: 'ทุกรายวิชา...' }, ...filtered];
-    }, [allCourses, selectedSemester, selectedTeacher, filterClass, availableCourseInstances, courseMatchesRoom, courseMatchesGroup]);
+    }, [allCourses, selectedSemester, selectedTeacher, filterClass, filterGroup, availableCourseInstances, courseMatchesRoom, courseMatchesGroup]);
 
     const selectedCourseOption = useMemo(() => {
         if (!searchTerm) return null;
         const course = allCourses.find(c => c.code === searchTerm);
         if (!course) return { value: searchTerm, label: searchTerm };
+        const matchedOption = courseOptions.find(o => o.course?.code === searchTerm && (!selectedAssignmentKey || o.compositeId === selectedAssignmentKey));
+        if (matchedOption) return matchedOption;
         const label = `${course.code} - ${course.title}`;
         return { value: course.code, label };
-    }, [allCourses, searchTerm]);
+    }, [allCourses, searchTerm, selectedAssignmentKey, courseOptions]);
+
+    // Once the selected group's periods are fully placed, availableCourseInstances no longer
+    // contains it — clear the selection immediately instead of leaving the exhausted course
+    // stuck displayed in the box until something else happens to reset searchTerm.
+    useEffect(() => {
+        if (!searchTerm) return;
+        const stillAvailable = selectedAssignmentKey
+            ? availableCourseInstances.some(inst => inst.compositeId === selectedAssignmentKey)
+            : availableCourseInstances.some(inst => inst.code === searchTerm);
+        if (!stillAvailable) {
+            setSearchTerm('');
+            setSelectedAssignmentKey('');
+        }
+    }, [searchTerm, selectedAssignmentKey, availableCourseInstances, setSearchTerm, setSelectedAssignmentKey]);
 
     const selectedTeacherLabel = useMemo(() => {
         const teacher = teachers.find(t => t.id === selectedTeacher);
@@ -282,7 +328,10 @@ export const CompactScheduleToolbar: React.FC<CompactScheduleToolbarProps> = ({
                         <Select
                             menuPortalTarget={document.body}
                             value={selectedCourseOption}
-                            onChange={(option: SingleValue<CourseOption>) => setSearchTerm(option?.value || '')}
+                            onChange={(option: SingleValue<CourseOption>) => {
+                                setSearchTerm(option?.course?.code || '');
+                                setSelectedAssignmentKey(option?.compositeId || '');
+                            }}
                             options={courseOptions}
                             placeholder="ค้นหารายวิชา..."
                             isClearable

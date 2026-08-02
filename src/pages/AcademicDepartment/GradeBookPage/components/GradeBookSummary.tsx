@@ -7,7 +7,7 @@ import {
 interface GradeBookSummaryProps {
     selectedCourse: string;
     activeTab: 'grades' | 'characteristics' | 'readingWriting';
-    scoreDistribution: Record<string, number> | null;
+    completenessDisplay: { percentage: number; filled: number; total: number };
     students: Student[];
     grades: Record<string, GradeRecord>;
 }
@@ -15,7 +15,7 @@ interface GradeBookSummaryProps {
 const GradeBookSummary: React.FC<GradeBookSummaryProps> = ({
     selectedCourse,
     activeTab,
-    scoreDistribution,
+    completenessDisplay,
     students,
     grades
 }) => {
@@ -27,14 +27,15 @@ const GradeBookSummary: React.FC<GradeBookSummaryProps> = ({
     const assessmentStats = React.useMemo(() => {
         if (isGradeTab) return null;
 
+        // ไม่ปัดเศษค่าเฉลี่ยรายคนก่อนนำไปเฉลี่ยรวม เพื่อให้ตรงกับสูตรใน GradeBookStats.tsx
         const scores: number[] = [];
         Object.values(grades).forEach(g => {
             if (activeTab === 'characteristics') {
                 const charScores = Object.values(g.characteristicsScores || {});
-                if (charScores.length > 0) scores.push(Math.round(charScores.reduce((a, b) => a + b, 0) / charScores.length));
+                if (charScores.length > 0) scores.push(charScores.reduce((a, b) => a + b, 0) / charScores.length);
             } else {
                 const rwScores = Object.values(g.readingWritingScores || {});
-                if (rwScores.length > 0) scores.push(Math.round(rwScores.reduce((a, b) => a + b, 0) / rwScores.length));
+                if (rwScores.length > 0) scores.push(rwScores.reduce((a, b) => a + b, 0) / rwScores.length);
             }
         });
 
@@ -60,9 +61,9 @@ const GradeBookSummary: React.FC<GradeBookSummaryProps> = ({
                 <div className="text-gray-400 dark:text-gray-500 text-xs font-black uppercase tracking-widest mb-1">ความคืบหน้าการกรอก</div>
                 <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-black text-emerald-500">
-                        {Math.round((Object.keys(grades).length / (students.length || 1)) * 100)}%
+                        {Math.round(completenessDisplay?.percentage || 0)}%
                     </span>
-                    <span className="text-sm font-bold text-gray-400">({Object.keys(grades).length}/{students.length})</span>
+                    <span className="text-sm font-bold text-gray-400">({completenessDisplay?.filled || 0}/{completenessDisplay?.total || 0})</span>
                 </div>
             </div>
 

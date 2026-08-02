@@ -29,6 +29,7 @@ import {
 import Swal from "sweetalert2";
 import Select from "react-select";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 import BackButton from "@/components/Shared/BackButton";
 
 import {
@@ -738,8 +739,11 @@ const CourseAssignmentPage2: React.FC = () => {
     const [assignPhysicalRoomId, setAssignPhysicalRoomId] = useState<string>("");
     const [assignCoTeacherIds, setAssignCoTeacherIds] = useState<string[]>([]);
 
-    // Activity mode setting (from school-settings)
-    const [activityMode, setActivityMode] = useState<'special-period' | 'course-based'>('special-period');
+    // Activity mode setting (from school-settings) — a school that hasn't chosen a mode yet
+    // defaults to 'special-period' here, matching the convention most other consumers of this
+    // setting use (see useActivityHubSettings).
+    const { activityMode: rawActivityMode } = useActivityHubSettings(schoolId);
+    const activityMode = rawActivityMode ?? 'special-period';
 
     // --- DND States & Handlers ---
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
@@ -1148,16 +1152,10 @@ const CourseAssignmentPage2: React.FC = () => {
             setSubjectGroupsList(data);
         });
 
-        const unsubSettings = onSnapshot(doc(db, 'school-settings', schoolId), (snap) => {
-            const mode = snap.data()?.activityHubSettings?.activityMode ?? 'special-period';
-            setActivityMode(mode);
-        });
-
         return () => {
             unsubCourses();
             unsubRooms();
             unsubGroups();
-            unsubSettings();
         };
     }, [schoolId]);
 

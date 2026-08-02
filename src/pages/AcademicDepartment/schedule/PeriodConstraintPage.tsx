@@ -11,7 +11,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from '@/components/Shared/BackButton';
 import Swal from 'sweetalert2';
 import { useTheme } from '@/ThemeContext';
-import { isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
+import { appendGroupRoom, isAcademicCourse, getPartnerIndexForPeriods, getRequiredWeeklyPeriods as getScheduleRequiredWeeklyPeriods, parseScheduleNumber } from './utils';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getEffectivePeriodEnd, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
 import { normalizeSubjectGroupValue } from '@/utils/subjectGroupUtils';
@@ -154,11 +154,7 @@ const getAssignmentClassIds = (assignment: AssignmentRow): string[] => {
     const classIds = assignmentClassIds.length > 0 ? assignmentClassIds : courseClassIds;
     const groupRoom = assignment.assignment.room;
 
-    return Array.from(new Set(classIds.map(classId => {
-        if (classId.includes('/')) return classId;
-        if (groupRoom && groupRoom !== 'all') return `${classId}/${groupRoom}`;
-        return classId;
-    })));
+    return Array.from(new Set(classIds.map(classId => appendGroupRoom(classId, groupRoom))));
 };
 
 const toArray = <T,>(value: T | T[] | undefined | null): T[] => {

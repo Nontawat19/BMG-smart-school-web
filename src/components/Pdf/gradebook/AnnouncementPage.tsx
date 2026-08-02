@@ -221,8 +221,7 @@ const AnnouncementPage: React.FC<AnnouncementPageProps> = ({
 
   const ROWS_PER_COL = 25;
 
-  const className = FULL_CLASSES[selectedClass] || selectedClass;
-  const isPrimary = className.includes('ประถม') || className.startsWith('ป.');
+  const isPrimary = String(selectedClass || '').toLowerCase().startsWith('p');
 
   const RenderEvaluationTable = ({ title, counts }: { title: string, counts: any }) => (
     <View style={styles.evalTableWrapper}>

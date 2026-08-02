@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { CalendarClock, Clock, Flag, Plus, Save, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, Clock, Flag, Plus, Save, Settings, ShieldCheck, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 import { firestore } from "@/firebase";
 import MainLayout from "@/layouts/MainLayout";
@@ -53,6 +53,18 @@ interface ClassroomAttendanceScoreRule {
   description: string;
   points: number;
   isActive: boolean;
+  // Only editable (and only meaningful) for specialPeriodRules — classroomAttendanceRules
+  // has no UI for this and is always applied as a deduction regardless of value.
+  type: ScoreType;
+}
+
+interface InterventionTier {
+  id: string;
+  // คะแนนต่ำกว่าค่านี้ = เข้าเกณฑ์ต้องดำเนินการ
+  threshold: number;
+  // ข้อความอธิบายสิ่งที่ต้องทำ แสดงเป็นป้ายเตือนในหน้ารายชื่อ/โปรไฟล์นักเรียน
+  actionLabel: string;
+  isActive: boolean;
 }
 
 interface BehaviorScoreConfig {
@@ -64,6 +76,7 @@ interface BehaviorScoreConfig {
   classroomAttendanceRules: ClassroomAttendanceScoreRule[];
   specialPeriodRules: ClassroomAttendanceScoreRule[];
   rules: BehaviorScoreRule[];
+  interventionTiers: InterventionTier[];
 }
 
 interface AttendanceConfig {
@@ -96,6 +109,21 @@ const DEFAULT_RULES: BehaviorScoreRule[] = [
     category: "ความดี",
     type: "increase",
     points: 10,
+    isActive: true
+  }
+];
+
+const DEFAULT_INTERVENTION_TIERS: InterventionTier[] = [
+  {
+    id: "tier-80",
+    threshold: 80,
+    actionLabel: "ต้องเข้าร่วมกิจกรรมปรับพฤติกรรม เพื่อกู้คะแนนคืนให้ถึง 100",
+    isActive: true
+  },
+  {
+    id: "tier-50",
+    threshold: 50,
+    actionLabel: "ต้องดำเนินการแก้ไขคะแนนให้ถึง 80 คะแนน",
     isActive: true
   }
 ];
@@ -198,35 +226,40 @@ const DEFAULT_CONFIG: BehaviorScoreConfig = {
       statusLabel: "มาเรียนปกติ",
       description: "เช็คชื่อเข้าเรียนปกติ",
       points: 0,
-      isActive: false
+      isActive: false,
+      type: "decrease"
     },
     {
       statusKey: "late",
       statusLabel: "เข้าเรียนสาย",
       description: "มาเรียนแต่เข้าห้องเรียนช้า",
       points: 2,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "absent",
       statusLabel: "ขาดเรียน",
       description: "ไม่ได้เข้าห้องเรียน",
       points: 5,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "escape",
       statusLabel: "หนีเรียน",
       description: "มาโรงเรียนแต่ไม่เข้าห้องเรียน",
       points: 10,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "leave",
       statusLabel: "ลา",
       description: "ลาป่วย/ลากิจ แจ้งล่วงหน้า",
       points: 0,
-      isActive: false
+      isActive: false,
+      type: "decrease"
     }
   ],
   specialPeriodRules: [
@@ -235,38 +268,44 @@ const DEFAULT_CONFIG: BehaviorScoreConfig = {
       statusLabel: "เข้าร่วมปกติ",
       description: "เช็คชื่อเข้าร่วมกิจกรรมปกติ",
       points: 0,
-      isActive: false
+      isActive: false,
+      type: "increase"
     },
     {
       statusKey: "late",
       statusLabel: "เข้าร่วมสาย",
       description: "เข้าร่วมกิจกรรมแต่มาช้า",
       points: 2,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "absent",
       statusLabel: "ขาด/ไม่เข้าร่วม",
       description: "ไม่เข้าร่วมกิจกรรมโดยไม่มีเหตุผล",
       points: 5,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "escape",
       statusLabel: "หลีกเลี่ยงกิจกรรม",
       description: "มีชื่อแต่หนีไม่เข้าร่วมกิจกรรม",
       points: 10,
-      isActive: true
+      isActive: true,
+      type: "decrease"
     },
     {
       statusKey: "leave",
       statusLabel: "ลา",
       description: "ลาป่วย/ลากิจ มีใบลา",
       points: 0,
-      isActive: false
+      isActive: false,
+      type: "decrease"
     }
   ],
-  rules: DEFAULT_RULES
+  rules: DEFAULT_RULES,
+  interventionTiers: DEFAULT_INTERVENTION_TIERS
 };
 
 const DEFAULT_ATTENDANCE_CONFIG: AttendanceConfig = {
@@ -349,7 +388,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   return {
                     ...defaultRule,
                     points: Number(savedRule?.points ?? defaultRule.points),
-                    isActive: savedRule?.isActive !== false
+                    isActive: savedRule?.isActive !== false,
+                    type: savedRule?.type === "increase" || savedRule?.type === "decrease" ? savedRule.type : defaultRule.type
                   };
                 })
               : DEFAULT_CONFIG.classroomAttendanceRules,
@@ -359,7 +399,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   return {
                     ...defaultRule,
                     points: Number(savedRule?.points ?? defaultRule.points),
-                    isActive: savedRule?.isActive !== false
+                    isActive: savedRule?.isActive !== false,
+                    type: savedRule?.type === "increase" || savedRule?.type === "decrease" ? savedRule.type : defaultRule.type
                   };
                 })
               : DEFAULT_CONFIG.specialPeriodRules,
@@ -372,7 +413,15 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   points: Number(rule.points ?? 1),
                   isActive: rule.isActive !== false
                 }))
-              : DEFAULT_RULES
+              : DEFAULT_RULES,
+            interventionTiers: Array.isArray(savedConfig.interventionTiers) && savedConfig.interventionTiers.length > 0
+              ? savedConfig.interventionTiers.map((tier: Partial<InterventionTier>, index: number) => ({
+                  id: tier.id || `tier-${index + 1}`,
+                  threshold: Number(tier.threshold ?? 0),
+                  actionLabel: tier.actionLabel || "",
+                  isActive: tier.isActive !== false
+                }))
+              : DEFAULT_INTERVENTION_TIERS
           });
         }
       } catch (error) {
@@ -467,6 +516,24 @@ const BehaviorScoreConfigPage: React.FC = () => {
     setConfig((prev) => ({ ...prev, rules: prev.rules.filter((rule) => rule.id !== id) }));
   };
 
+  const updateTier = <K extends keyof InterventionTier>(id: string, key: K, value: InterventionTier[K]) => {
+    setConfig((prev) => ({
+      ...prev,
+      interventionTiers: prev.interventionTiers.map((tier) => tier.id === id ? { ...tier, [key]: value } : tier)
+    }));
+  };
+
+  const addTier = () => {
+    setConfig((prev) => ({
+      ...prev,
+      interventionTiers: [...prev.interventionTiers, { id: `tier-${Date.now()}`, threshold: 0, actionLabel: "", isActive: true }]
+    }));
+  };
+
+  const removeTier = (id: string) => {
+    setConfig((prev) => ({ ...prev, interventionTiers: prev.interventionTiers.filter((tier) => tier.id !== id) }));
+  };
+
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!schoolId) return;
@@ -495,6 +562,29 @@ const BehaviorScoreConfigPage: React.FC = () => {
       return;
     }
 
+    // Catch duplicate rule names before they ever reach Firestore — the same
+    // title saved twice (possibly with different points) makes rule-based
+    // matching elsewhere ambiguous, so block the save rather than silently
+    // keeping both.
+    const seenTitles = new Map<string, string>();
+    const duplicateTitles = new Set<string>();
+    cleanedRules.forEach((rule) => {
+      const key = rule.title.toLowerCase();
+      if (seenTitles.has(key)) {
+        duplicateTitles.add(seenTitles.get(key)!);
+      } else {
+        seenTitles.set(key, rule.title);
+      }
+    });
+    if (duplicateTitles.size > 0) {
+      Swal.fire(
+        "ตรวจสอบข้อมูล",
+        `พบชื่อพฤติกรรมซ้ำกัน: ${Array.from(duplicateTitles).join(", ")} กรุณาแก้ไขให้ไม่ซ้ำกันก่อนบันทึก`,
+        "warning"
+      );
+      return;
+    }
+
     const cleanedAttendanceRules = config.attendanceRules.map((rule) => ({
       ...rule,
       points: Math.max(1, Number(rule.points) || 1)
@@ -515,6 +605,11 @@ const BehaviorScoreConfigPage: React.FC = () => {
       points: Math.max(0, Number(rule.points) || 0)
     }));
 
+    // ป้ายเตือนช่วงคะแนน — เก็บเฉพาะรายการที่มีข้อความ, threshold เป็นตัวเลขจริง
+    const cleanedInterventionTiers = config.interventionTiers
+      .map((tier) => ({ ...tier, actionLabel: tier.actionLabel.trim(), threshold: Number(tier.threshold) || 0 }))
+      .filter((tier) => Boolean(tier.actionLabel));
+
     setIsSaving(true);
     try {
       await setDoc(doc(firestore, "school-settings", schoolId), {
@@ -525,6 +620,7 @@ const BehaviorScoreConfigPage: React.FC = () => {
           classroomAttendanceRules: cleanedClassroomAttendanceRules,
           specialPeriodRules: cleanedSpecialPeriodRules,
           rules: cleanedRules,
+          interventionTiers: cleanedInterventionTiers,
           updatedAt: serverTimestamp()
         }
       }, { merge: true });
@@ -535,7 +631,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
         flagCeremonyRules: cleanedFlagCeremonyRules,
         classroomAttendanceRules: cleanedClassroomAttendanceRules,
         specialPeriodRules: cleanedSpecialPeriodRules,
-        rules: cleanedRules
+        rules: cleanedRules,
+        interventionTiers: cleanedInterventionTiers
       }));
       Swal.fire({
         icon: "success",
@@ -642,6 +739,83 @@ const BehaviorScoreConfigPage: React.FC = () => {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500 outline-none"
                   required
                 />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 -mt-2">
+              หมายเหตุ: คะแนนต่ำสุด/สูงสุดเป็นค่าอ้างอิงเท่านั้น ไม่ได้จำกัดคะแนนจริงของนักเรียนอีกต่อไป —
+              คะแนนจะสะสมเกิน 100 หรือติดลบได้ตามจริง ถ้าต้องการเตือนเมื่อคะแนนตกช่วงใดช่วงหนึ่ง ให้ตั้งค่าที่หัวข้อ "ป้ายเตือนช่วงคะแนน" ด้านล่าง
+            </p>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">ป้ายเตือนช่วงคะแนน</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      กำหนดเองว่าคะแนนต่ำกว่าเท่าไหร่ ต้องแสดงป้ายเตือนอะไร — แสดงเป็นป้ายแจ้งเตือนในหน้ารายชื่อคะแนนพฤติกรรมและโปรไฟล์นักเรียนเท่านั้น ไม่ได้บล็อกฟีเจอร์ใดๆ ในระบบ
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={addTier}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium transition-colors shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  เพิ่มเกณฑ์
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {config.interventionTiers.map((tier) => (
+                  <div key={tier.id} className="grid grid-cols-1 lg:grid-cols-[160px_minmax(200px,1fr)_90px_44px] gap-3 items-end bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">คะแนนต่ำกว่า</label>
+                      <input
+                        type="number"
+                        value={tier.threshold}
+                        onChange={(event) => updateTier(tier.id, "threshold", Number(event.target.value))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ข้อความแจ้งเตือน</label>
+                      <input
+                        type="text"
+                        value={tier.actionLabel}
+                        onChange={(event) => updateTier(tier.id, "actionLabel", event.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                        placeholder="เช่น ต้องเข้าร่วมกิจกรรมปรับพฤติกรรมให้ถึง 100 คะแนน"
+                        required
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 h-10 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={tier.isActive}
+                        onChange={(event) => updateTier(tier.id, "isActive", event.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      />
+                      ใช้
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeTier(tier.id)}
+                      className="h-10 w-10 inline-flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-900/20 dark:hover:bg-rose-900/30 dark:text-rose-300 transition-colors"
+                      title="ลบเกณฑ์"
+                      aria-label="ลบเกณฑ์"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {config.interventionTiers.length === 0 && (
+                  <p className="text-sm text-gray-400 dark:text-gray-500 italic">ยังไม่มีเกณฑ์เตือน — กด "เพิ่มเกณฑ์" เพื่อเริ่มตั้งค่า</p>
+                )}
               </div>
             </div>
 
@@ -818,12 +992,23 @@ const BehaviorScoreConfigPage: React.FC = () => {
 
               <div className="space-y-3">
                 {config.specialPeriodRules.map((rule) => (
-                  <div key={rule.statusKey} className="grid grid-cols-1 md:grid-cols-[minmax(180px,260px)_minmax(220px,1fr)_130px_90px] gap-3 items-center bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                  <div key={rule.statusKey} className="grid grid-cols-1 md:grid-cols-[minmax(180px,240px)_minmax(200px,1fr)_130px_130px_90px] gap-3 items-center bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl p-4">
                     <div>
                       <p className="font-bold text-gray-900 dark:text-white leading-snug">{rule.statusLabel}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">สถานะเช็คชื่อกิจกรรมพิเศษ</p>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-300">{rule.description}</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ประเภท</label>
+                      <select
+                        value={rule.type}
+                        onChange={(event) => updateSpecialPeriodRule(rule.statusKey, "type", event.target.value as ScoreType)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                      >
+                        <option value="decrease">เชิงลบ</option>
+                        <option value="increase">เชิงบวก</option>
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ตัดคะแนน</label>
                       <input
@@ -894,8 +1079,8 @@ const BehaviorScoreConfigPage: React.FC = () => {
                       onChange={(event) => updateRule(rule.id, "type", event.target.value as ScoreType)}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500 outline-none"
                     >
-                      <option value="decrease">ลดคะแนน</option>
-                      <option value="increase">เพิ่มคะแนน</option>
+                      <option value="decrease">เชิงลบ</option>
+                      <option value="increase">เชิงบวก</option>
                     </select>
                   </div>
                   <div>

@@ -35,6 +35,44 @@ export const thaiFormatClass = (name: string): string => {
     return formatted;
 };
 
+// True only for a single concrete grade (m1, p3, k2, ...). Aggregate level codes used by
+// clubs/activities (e.g. "junior_high", "ม.ต้น") span multiple grades and rooms, so they
+// have no single room/section to append — appendGroupRoom below must skip those.
+export const isSingleGradeClassId = (id: string): boolean => !!CLASSES[id as ClassKey];
+
+// Combine a base class id with its assignment's room/section (e.g. "m3" + "1" -> "m3/1"),
+// used to derive the display class for a scheduled/bank course instance. Leaves ids that
+// already carry a "/" or that aren't a single concrete grade (whole-level club codes) untouched.
+export const appendGroupRoom = (id: string, groupRoom?: string): string => {
+    if (!id || id.includes('/')) return id;
+    if (!groupRoom || groupRoom === 'all') return id;
+    if (!isSingleGradeClassId(id)) return id;
+    return `${id}/${groupRoom}`;
+};
+
+// True when `slotId` is one of the exact slots pinned for this assignment on the Period
+// Constraints page. Used to auto-lock a placed CourseInstance against dragging/removal in the
+// Teacher Schedule grid so the two "lock" features actually agree with each other — previously
+// this constraint only ever produced a soft validation warning and never touched the
+// CourseInstance.locked field that the drag-and-drop UI checks.
+export const isAssignmentSlotLocked = (
+    compositeId: string | undefined,
+    slotId: string,
+    assignmentConstraints: AssignmentConstraintMap,
+    periodSettings: PeriodSetting[] = []
+): boolean => {
+    if (!compositeId) return false;
+    const cst = assignmentConstraints[compositeId];
+    if (!cst?.isLocked || !cst.lockedSlots || cst.lockedSlots.length === 0) return false;
+
+    const [dayKey, periodIndexStr] = slotId.split('-');
+    return cst.lockedSlots.some((s: { day: string; periodId: string } | string) => {
+        if (typeof s === 'string') return s === slotId;
+        const period = periodSettings[Number(periodIndexStr)];
+        return s.day === dayKey && Boolean(period) && s.periodId === period.id;
+    });
+};
+
 // Helper to get display name for class(es)
 export const getClassDisplayName = (classId?: string | string[]): string => {
     if (!classId) return '';
@@ -389,6 +427,19 @@ export const isDoublePeriodStart = (
     return getPartnerIndexForPeriods(idx, periodSettings) === idx + 1;
 };
 
+// Two DIFFERENT courses that only share a coarse classId (e.g. grade-level "m3" used
+// for elective/rotation groups that pull students from across the whole grade — see
+// CLASS_MAPPING in schoolUtils.ts, which only has level keys, not per-room ones) are
+// NOT a real scheduling conflict when each has its own specific, non-overlapping room:
+// different rooms mean different physical groups of students, even though classId
+// alone makes them look identical.
+export const haveDistinctSpecificRooms = (roomsA: string[] = [], roomsB: string[] = []): boolean => {
+    const specificA = roomsA.filter(r => r && r !== 'all');
+    const specificB = roomsB.filter(r => r && r !== 'all');
+    if (specificA.length === 0 || specificB.length === 0) return false;
+    return !specificA.some(r => specificB.includes(r));
+};
+
 export const checkConstraints = (
     course: CourseInstance,
     targetSlotId: string,
@@ -409,6 +460,14 @@ export const checkConstraints = (
 
     // 0. Get granular assignment constraints
     const asgnCst = assignmentConstraints[course.compositeId];
+
+    const lunchIdx = periodSettings.findIndex(p => p.id === 'lunch');
+    const lunchStartTime = lunchIdx !== -1 ? periodSettings[lunchIdx].startTime : '12:00';
+    const isSlotMorning = (slotId: string): boolean | null => {
+        const [, pStr] = slotId.split('-');
+        const setting = periodSettings[parseInt(pStr)];
+        return setting ? setting.startTime < lunchStartTime : null;
+    };
 
     // Constraint 1: Non-teaching periods (Lunch, Homeroom, etc.)
     if (!periodSetting || !periodSetting.isTeachingPeriod || isProtectedSpecialPeriodSetting(periodSetting)) {
@@ -433,10 +492,14 @@ export const checkConstraints = (
             // B) Class Conflict: This class group already has another teacher in this slot
             const occClasses = Array.isArray(occ.classId) ? occ.classId : [occ.classId];
             const sharedClass = courseClasses.find(c => c && occClasses.includes(c));
-            
+
             if (sharedClass) {
                 if (!currentTeacherIds.includes(occ.teacherId) && !isSameAssignment) {
-                    return { forbidden: true, message: `นักเรียนชั้น ${getClassDisplayName(sharedClass)} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                    const isDifferentCourseWithDistinctRooms = occ.course?.id !== course.id &&
+                        haveDistinctSpecificRooms(course.room, occ.course?.room);
+                    if (!isDifferentCourseWithDistinctRooms) {
+                        return { forbidden: true, message: `นักเรียนชั้น ${getClassDisplayName(sharedClass)} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
+                    }
                 }
             }
 
@@ -466,10 +529,28 @@ export const checkConstraints = (
 
     // Constraint 4: Assignment-specific Locked Slots
     if (asgnCst?.isLocked && asgnCst.lockedSlots && asgnCst.lockedSlots.length > 0) {
-        const isThisSlotLocked = asgnCst.lockedSlots.some((s: { day: string; periodId: string } | string) => {
+        const isThisSlotLockedExact = asgnCst.lockedSlots.some((s: { day: string; periodId: string } | string) => {
             if (typeof s === 'string') return s === targetSlotId;
             return s.day === dayKey && s.periodId === periodSetting.id;
         });
+
+        let isThisSlotLocked = isThisSlotLockedExact;
+
+        // A locked slot pinned to a specific day (e.g. "fri-4") is how this UI expresses
+        // "must teach in the afternoon" when every locked slot for this assignment happens to
+        // fall in the same half of the day — the admin didn't necessarily mean THAT exact day,
+        // just that half. Only relax the exact match this way when ALL locked slots agree on
+        // one half; a genuinely mixed set (some morning, some afternoon) means specific days
+        // were deliberately pinned, so keep requiring an exact match for those.
+        if (!isThisSlotLocked) {
+            const stringSlots = asgnCst.lockedSlots.filter((s): s is string => typeof s === 'string');
+            const categories = stringSlots.map(isSlotMorning).filter((v): v is boolean => v !== null);
+            const uniformMorning = categories.length > 0 && categories.every(c => c === categories[0]) ? categories[0] : null;
+            if (uniformMorning !== null && periodSetting && (periodSetting.startTime < lunchStartTime) === uniformMorning) {
+                isThisSlotLocked = true;
+            }
+        }
+
         if (!isThisSlotLocked) {
             return { forbidden: true, message: `กลุ่มเรียนนี้ถูกล็อคให้สอนในคาบเฉพาะเจาะจงเท่านั้น` };
         }
@@ -477,8 +558,6 @@ export const checkConstraints = (
 
     // Constraint 4.5: Morning/Afternoon Preferences
     if (asgnCst) {
-        const lunchIdx = periodSettings.findIndex(p => p.id === 'lunch');
-        const lunchStartTime = lunchIdx !== -1 ? periodSettings[lunchIdx].startTime : '12:00';
         const currentPeriod = periodSettings[periodIndex];
         const isMorning = currentPeriod.startTime < lunchStartTime;
 
@@ -568,7 +647,13 @@ export const checkConstraints = (
                     occ.course?.id === course.id &&
                     currentGroup > 0 &&
                     Number(occ.groupNumber ?? occ.course?.groupNumber ?? 0) !== currentGroup;
-                if (!isParallelGroupSameCourse) {
+                // Two DIFFERENT courses (e.g. ทัศนศิลป์ & สุขศึกษา) that happen to share the
+                // same coarse classId only because it's a whole-grade elective/rotation tag —
+                // if each is assigned its own specific, non-overlapping room, they're clearly
+                // different physical groups of students and can run in parallel.
+                const isDifferentCourseWithDistinctRooms = occ.course?.id !== course.id &&
+                    haveDistinctSpecificRooms(course.room, occ.course?.room);
+                if (!isParallelGroupSameCourse && !isDifferentCourseWithDistinctRooms) {
                     return { forbidden: true, message: `นักเรียนชั้น ${getClassDisplayName(sharedClass)} มีเรียนวิชาอื่นอยู่แล้วในคาบนี้` };
                 }
             }
@@ -747,7 +832,7 @@ export const findValidSlots = (
  * ตรวจว่าเป็นวิชากิจกรรมพัฒนาผู้เรียน (ลส/ยุว/รด/ชุมนุม ฯลฯ)
  * ใช้สำหรับแยก Mode 2 (ไม่มีคาบพิเศษ) ออกจาก isAcademicCourse
  */
-export const isClubCourse = (course: { type?: string; title?: string; name?: string }): boolean => {
+export const isClubCourse = (course?: { type?: string; title?: string; name?: string } | null): boolean => {
     if (!course) return false;
     const type = (course.type || '').toLowerCase();
     const label = ((course.title || '') + ' ' + (course.name || '')).toLowerCase();
