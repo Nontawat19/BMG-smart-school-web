@@ -15,6 +15,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
 // Helper สำหรับอัปเดต dyasummary (นักเรียน)
@@ -34,7 +35,7 @@ const getStatusKey = (status: string) => {
 
 const AttendanceConfigPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

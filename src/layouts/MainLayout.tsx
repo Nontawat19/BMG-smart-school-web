@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store'; // 💡 ปรับ path ไปยัง store ของคุณให้ถูกต้อง
 import { useTheme } from "../ThemeContext";
 import { useSidebar } from "../SidebarContext";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -12,7 +13,7 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const { user } = useSelector((state: RootState) => state.auth);
-  const schoolId = user?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const { isDarkMode } = useTheme();
   const { isCollapsed: isSidebarCollapsed, toggleSidebar } = useSidebar();
 

@@ -18,6 +18,7 @@ import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { getGroupPersonnel } from "@/utils/schoolUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 Font.register({
   family: "TH Sarabun PSK",
@@ -335,7 +336,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<any[]>([]);

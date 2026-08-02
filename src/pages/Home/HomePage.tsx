@@ -23,6 +23,7 @@ import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { fetchStudentReportSummary, syncStudentReportSummary, normalizeStudentReportLevel } from "@/utils/studentReportSummaryUtils";
 import { isArchivedStudentStatus, normalizeStudentStatus } from "@/utils/studentStatusUtils";
 import { fetchSchoolDashboardSummary } from "@/utils/ownerStatsUtils";
+import { useSchoolScope } from "@/hooks/useEffectiveSchool";
 
 interface CalendarEvent { type?: string; description?: string; scheduleDay?: string; }
 interface NewsItem { id: string; title?: string; content?: string; imageUrl?: string; linkUrl?: string; linkText?: string; isActive?: boolean; createdAt?: any; viewCount?: number; }
@@ -284,6 +285,8 @@ const SchoolCalendarEventsList: React.FC<{ events: Record<string, CalendarEvent>
 // ==================== MAIN COMPONENT ====================
 const HomePage = () => {
     const { user: currentUser, ACADEMIC_ACCESS, isSuperAdmin } = usePermissions();
+    const { effectiveSchoolId, isImpersonatingSchool } = useSchoolScope();
+    const showSchoolDashboard = !isSuperAdmin || isImpersonatingSchool;
     const navigate = useNavigate();
     const [userProfile, setUserProfile] = useState<any>(null);
 
@@ -293,10 +296,10 @@ const HomePage = () => {
             return;
         }
 
-        if (isSuperAdmin) {
+        if (isSuperAdmin && !isImpersonatingSchool) {
             navigate("/owner/hub", { replace: true });
         }
-    }, [currentUser?.role, isSuperAdmin, navigate]);
+    }, [currentUser?.role, isSuperAdmin, isImpersonatingSchool, navigate]);
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -307,7 +310,7 @@ const HomePage = () => {
                 const userDocSnap = await getDoc(userDocRef);
                 if (userDocSnap.exists()) {
                     const userData = userDocSnap.data();
-                    const schoolId = userData.schoolId || currentUser?.schoolId;
+                    const schoolId = effectiveSchoolId || userData.schoolId || currentUser?.schoolId;
                     if (schoolId) {
                         const teacherDocRef = doc(db, "school-settings", schoolId, "teachers", uid);
                         const teacherDocSnap = await getDoc(teacherDocRef);
@@ -318,7 +321,7 @@ const HomePage = () => {
             } catch (error) { console.error("Error fetching user profile:", error); }
         };
         if (!currentUser?.fullName) fetchProfile();
-    }, [currentUser]);
+    }, [currentUser, effectiveSchoolId]);
 
     const user = userProfile || currentUser;
     let userName = user?.displayName || user?.email || "User";
@@ -371,7 +374,7 @@ const HomePage = () => {
 
     // === EFFECT: Teacher Leaves Today ===
     useEffect(() => {
-        const schoolId = currentUser?.schoolId;
+        const schoolId = effectiveSchoolId;
         if (!schoolId) return;
 
         const fetchTodayTeacherLeaves = async () => {
@@ -463,7 +466,7 @@ const HomePage = () => {
         };
 
         fetchTodayTeacherLeaves();
-    }, [currentUser]);
+    }, [effectiveSchoolId]);
 
 
 
@@ -472,15 +475,15 @@ const HomePage = () => {
     const reduxRawData = calendarState.rawData;
 
     useEffect(() => {
-        const schoolId = currentUser?.schoolId;
+        const schoolId = effectiveSchoolId;
         if (schoolId) {
             dispatch(fetchCalendar(schoolId) as any);
         }
-    }, [currentUser, dispatch]);
+    }, [effectiveSchoolId, dispatch]);
 
     // === EFFECT 1: Fetch Activities & Sync from Redux Calendar ===
     useEffect(() => {
-        const schoolId = currentUser?.schoolId;
+        const schoolId = effectiveSchoolId;
         if (!schoolId) return;
 
         let active = true;
@@ -533,13 +536,13 @@ const HomePage = () => {
             active = false;
             unsubActivities();
         };
-    }, [currentUser, calendarState.status, reduxRawData]);
+    }, [effectiveSchoolId, calendarState.status, reduxRawData]);
 
 
 
     // === EFFECT 3: News Popup ===
     useEffect(() => {
-        const schoolId = currentUser?.schoolId;
+        const schoolId = effectiveSchoolId;
         if (!schoolId) return;
         const q = query(collection(db, "school-settings", schoolId, "news"), where("isActive", "==", true), orderBy("createdAt", "desc"), limit(5));
         const unsub = onSnapshot(q, (snapshot) => {
@@ -549,11 +552,11 @@ const HomePage = () => {
             if (unseenNews.length > 0) setShowNewsModal(true);
         }, (error) => console.error("Error fetching news:", error));
         return () => unsub();
-    }, [currentUser]);
+    }, [effectiveSchoolId]);
 
     // === EFFECT 4: System Report ===
     useEffect(() => {
-        const schoolId = currentUser?.schoolId;
+        const schoolId = effectiveSchoolId;
         if (!schoolId) return;
         const fetchReportData = async () => {
             setReportLoading(true);
@@ -1269,7 +1272,7 @@ const HomePage = () => {
     const handlePrevNews = () => setCurrentNewsIndex(prev => (prev - 1 + newsList.length) % newsList.length);
     useEffect(() => { if (!showNewsModal || newsList.length <= 1) return; const iv = setInterval(() => setCurrentNewsIndex(prev => (prev + 1) % newsList.length), 5000); return () => clearInterval(iv); }, [showNewsModal, newsList.length]);
     const currentNews = newsList[currentNewsIndex];
-    const incrementViewCount = async (id: string) => { const schoolId = currentUser?.schoolId; if (!schoolId || !id) return; try { await updateDoc(doc(db, "school-settings", schoolId, "news", id), { viewCount: increment(1) }); } catch (error) { console.error("Error incrementing view count:", error); } };
+    const incrementViewCount = async (id: string) => { const schoolId = effectiveSchoolId; if (!schoolId || !id) return; try { await updateDoc(doc(db, "school-settings", schoolId, "news", id), { viewCount: increment(1) }); } catch (error) { console.error("Error incrementing view count:", error); } };
     useEffect(() => { if (showNewsModal && currentNews && !viewedNewsIds.current.has(currentNews.id)) { incrementViewCount(currentNews.id); viewedNewsIds.current.add(currentNews.id); } }, [currentNews, showNewsModal]);
 
     // === DERIVED STATS FOR BMG SMART SCHOOL STYLE REPORT ===
@@ -1471,7 +1474,7 @@ const HomePage = () => {
 
 
                     {/* SYSTEM REPORT - For all roles except Super Admin */}
-                    {!isSuperAdmin && (
+                    {showSchoolDashboard && (
                         <div className="mb-8">
                             <div className="flex items-center gap-2 mb-5"><div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" /><h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2><span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span></div>
                             {
@@ -1493,7 +1496,7 @@ const HomePage = () => {
                         </div>
                     )}
 
-                    {!isSuperAdmin && (
+                    {showSchoolDashboard && (
                         <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:gap-6 mb-8">
                             {/* Student Attendance Donut */}
                             <div className="bg-white dark:bg-[#2a2b2f] p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-100 dark:border-white/5 relative overflow-hidden group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">

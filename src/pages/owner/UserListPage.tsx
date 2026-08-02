@@ -18,6 +18,9 @@ import {
   updateOwnerAndSchoolCounts,
 } from "@/utils/ownerStatsUtils";
 import { ROLES } from "@/constants/roles";
+import { OWNER_ROLE_OPTIONS, ROLE_PRIORITY } from '@/constants/roleManagement';
+
+const shouldSyncToPersonnel = (roles: string[]) => roles.includes(ROLES.TEACHER);
 
 // --- Type Definitions ---
 interface User {
@@ -69,20 +72,12 @@ const Badge: React.FC<{ icon: React.ReactNode; text: string; className: string }
 
 // --- Role Badge Component ---
 const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email }) => {
-  const roleHierarchy: { [key: string]: number } = {
-    [ROLES.SUPER_ADMIN]: 100,
-    [ROLES.SCHOOL_ADMIN]: 80,
-    [ROLES.STUDENT_AFFAIRS]: 60,
-    [ROLES.TEACHER_ATTENDANCE]: 55,
-    [ROLES.STUDENT_ATTENDANCE]: 50,
-    [ROLES.SCHOOL_ATTENDANCE]: 50,
-    [ROLES.TEACHER]: 40,
-    [ROLES.STUDENT]: 20,
-  };
+  const roleHierarchy: { [key: string]: number } = ROLE_PRIORITY;
 
   const roleStyles: { [key: string]: { icon: React.ReactNode, text: string, className: string } } = {
     [ROLES.SUPER_ADMIN]: { icon: <FaShieldAlt />, text: 'ผู้ดูแลสูงสุด (Super Admin)', className: 'bg-red-50 text-red-600 border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' },
     [ROLES.SCHOOL_ADMIN]: { icon: <FaSchool />, text: 'ผู้ดูแลโรงเรียน (School Admin)', className: 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20' },
+    [ROLES.GENERAL_USER]: { icon: <FaBriefcase />, text: 'ผู้ใช้ทั่วไป', className: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20' },
     [ROLES.STUDENT_AFFAIRS]: { icon: <FaUserGraduate />, text: 'งานกิจการนักเรียน', className: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20' },
     [ROLES.TEACHER]: { icon: <FaChalkboardTeacher />, text: 'ครู (Teacher)', className: 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' },
     [ROLES.STUDENT_ATTENDANCE]: { icon: <FaIdBadge />, text: 'ลงเวลานักเรียน', className: 'bg-cyan-50 text-cyan-700 border-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/20' },
@@ -253,7 +248,7 @@ const UserListPage: React.FC = () => {
 
         // Cascading Deletion for Teacher Record if applicable
         const userToDelete = users.find(u => u.id === userId);
-        if (userToDelete?.schoolId && userToDelete.role.includes('teacher')) {
+        if (userToDelete?.schoolId && shouldSyncToPersonnel(userToDelete.role)) {
           try {
             const teacherRef = doc(firestore, "school-settings", userToDelete.schoolId, "teachers", userId);
             const teacherSnap = await getDoc(teacherRef);
@@ -524,13 +519,9 @@ const UserListPage: React.FC = () => {
                   className="w-full pl-4 pr-10 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white"
                 >
                   <option value="all">ทุกบทบาท</option>
-                  <option value={ROLES.SUPER_ADMIN}>ผู้ดูแลระบบสูงสุด (Super Admin)</option>
-                  <option value={ROLES.SCHOOL_ADMIN}>ผู้ดูแลระบบโรงเรียน (School Admin)</option>
-                  <option value={ROLES.STUDENT_AFFAIRS}>งานกิจการนักเรียน (Student Affairs)</option>
-                  <option value={ROLES.TEACHER}>ครู (Teacher)</option>
-                  <option value={ROLES.STUDENT_ATTENDANCE}>ลงเวลานักเรียน (Student Attendance)</option>
-                  <option value={ROLES.TEACHER_ATTENDANCE}>ลงเวลาครู (Teacher Attendance)</option>
-                  <option value={ROLES.STUDENT}>นักเรียน (Student)</option>
+                  {OWNER_ROLE_OPTIONS.map((role) => (
+                    <option key={role.value} value={role.value}>{role.label}</option>
+                  ))}
                 </select>
               </div>
               {/* View Mode Toggle */}

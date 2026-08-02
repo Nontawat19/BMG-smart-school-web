@@ -36,6 +36,7 @@ import Swal from "sweetalert2";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
+import { useSchoolScope } from "@/hooks/useEffectiveSchool";
 
 /* -------------------- types -------------------- */
 interface Notification {
@@ -66,6 +67,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { schoolId: settingsSchoolId, schoolName, logoUrl } = useSelector((state: RootState) => state.schoolSettings);
+  const { effectiveSchoolId, isImpersonatingSchool, activeSchoolName } = useSchoolScope();
   const profileUrl = currentUser?.profileUrl || defaultProfile;
   const isPwaMode = usePwaMode();
 
@@ -78,7 +80,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const [isLoadingNoti, setIsLoadingNoti] = useState(true);
   const [processingNotificationId, setProcessingNotificationId] = useState<string | null>(null);
 
-  const resolvedSchoolId = schoolId || (currentUser as any)?.schoolId || null;
+  const resolvedSchoolId = schoolId || effectiveSchoolId || null;
   const isOwnerRoute = location.pathname.startsWith("/owner/");
   const schoolDisplayName = settingsSchoolId === resolvedSchoolId ? schoolName : "";
   const schoolLogoUrl = settingsSchoolId === resolvedSchoolId ? logoUrl : "";
@@ -452,9 +454,16 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
               ) : (
                 <FaBookOpen className="w-7 h-7 text-sky-500 dark:text-sky-400" aria-hidden="true" />
               )}
-              <span className="font-bold text-lg text-gray-800 dark:text-white hidden sm:block whitespace-nowrap">
-                {schoolDisplayName || "BMG Smart School"}
-              </span>
+              <div className="hidden sm:flex flex-col min-w-0">
+                <span className="font-bold text-lg text-gray-800 dark:text-white whitespace-nowrap">
+                  {schoolDisplayName || "BMG Smart School"}
+                </span>
+                {isImpersonatingSchool && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-300 truncate">
+                    กำลังดูแลแทน: {activeSchoolName || schoolDisplayName || "โรงเรียนที่เลือก"}
+                  </span>
+                )}
+              </div>
             </button>
 
             {/* Search Icon Only */}

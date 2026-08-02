@@ -148,7 +148,7 @@ export default function AdvisorManagementPage() {
           return {
             id: doc.id,
             schoolId: currentSchoolId,
-            teacherId: data.teacherId || userData.teacherId || '',
+            teacherId: data.teacherId || '',
             title,
             firstName,
             lastName,

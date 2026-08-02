@@ -23,6 +23,9 @@ import MainLayout from "../../layouts/MainLayout";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { ROLES } from "@/constants/roles";
 import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
+import { SCHOOL_USER_ROLE_OPTIONS } from "@/constants/roleManagement";
+import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import {
   Users,
   UserPlus,
@@ -43,6 +46,8 @@ import ProfilePlaceholder from "../../assets/profile.png";
 interface SchoolUser {
   id: string;
   teacherId: string; // ID Card / Staff ID
+  idCardNumber?: string;
+  rfid?: string;
   title: string;
   firstName: string;
   lastName: string;
@@ -66,7 +71,7 @@ interface SchoolData {
 
 const UserManagementPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const currentSchoolId = currentUser?.schoolId;
+  const currentSchoolId = useEffectiveSchoolId();
   const auth = getAuth();
 
   const [users, setUsers] = useState<SchoolUser[]>([]);
@@ -274,18 +279,21 @@ const UserManagementPage: React.FC = () => {
       const fullName = `${formData.title || ""}${formData.firstName || ""} ${formData.lastName || ""}`.trim();
 
       // 1. Central users collection (drives login role/permissions)
-      await setDoc(doc(firestore, "users", newUid), {
-        uid: newUid,
-        fullName,
-        firstName: formData.firstName || "",
-        lastName: formData.lastName || "",
-        title: formData.title || "",
-        email: formData.email,
-        role: [formData.role || ROLES.TEACHER],
-        schoolId: targetSchoolId,
-        profileUrl: null,
-        createdAt: serverTimestamp(),
-      });
+	      await setDoc(doc(firestore, "users", newUid), {
+	        uid: newUid,
+	        fullName,
+	        firstName: formData.firstName || "",
+	        lastName: formData.lastName || "",
+	        title: formData.title || "",
+	        email: formData.email,
+	        role: [formData.role || ROLES.TEACHER],
+	        personnelType: (formData.role || ROLES.TEACHER) === ROLES.TEACHER ? 'teacher' : 'user',
+	        schoolId: targetSchoolId,
+	        teacherId: formData.teacherId || "",
+	        idCardNumber: formData.idCardNumber || "",
+	        profileUrl: null,
+	        createdAt: serverTimestamp(),
+	      });
 
       // 2. School-specific teacher record (doc id = uid, so it links back to the auth account)
       const teacherRef = doc(firestore, "school-settings", targetSchoolId, "teachers", newUid);
@@ -293,9 +301,12 @@ const UserManagementPage: React.FC = () => {
         ...formData,
         uid: newUid,
         schoolId: targetSchoolId,
+        personnelType: (formData.role || ROLES.TEACHER) === ROLES.TEACHER ? 'teacher' : 'user',
         createdAt: serverTimestamp(),
       });
-      await updateOwnerAndSchoolCounts(firestore, targetSchoolId, { teachers: 1 });
+      if ((formData.role || ROLES.TEACHER) === ROLES.TEACHER) {
+        await updateOwnerAndSchoolCounts(firestore, targetSchoolId, { teachers: 1 });
+      }
 
       // 3. Profile slug so /profile resolves for this account like other users
       await setDoc(doc(firestore, "slugs", `profile:${newUid}`), {
@@ -396,6 +407,7 @@ const UserManagementPage: React.FC = () => {
     switch (role) {
       case ROLES.SUPER_ADMIN: return 'ผู้ดูแลระบบสูงสุด (Super Admin)';
       case ROLES.SCHOOL_ADMIN: return 'ผู้ดูแลระบบโรงเรียน (School Admin)';
+      case ROLES.GENERAL_USER: return 'ผู้ใช้ทั่วไป (General User)';
       case 'admin': return 'ผู้ดูแลระบบโรงเรียน (Admin)';
       case 'director': return 'ผู้อำนวยการ (Director)';
       case ROLES.TEACHER: return 'ครู (Teacher)';
@@ -410,10 +422,16 @@ const UserManagementPage: React.FC = () => {
 
   const resolvePersonnelType = (user: SchoolUser): 'teacher' | 'user' => {
     if (user.personnelType === 'teacher' || user.personnelType === 'user') return user.personnelType;
-    const roles = typeof user.role === 'string' ? [user.role] : [];
+    const roles = Array.isArray(user.role) ? user.role : typeof user.role === 'string' ? [user.role] : [];
     const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+    if (!roles.includes(ROLES.TEACHER)) return 'user';
     if (roles.length > 0 && roles.every(r => attendanceOnly.includes(r))) return 'user';
     return 'teacher';
+  };
+
+  const isAttendanceOnlyAccount = (role: string | string[]) => {
+    const roles = Array.isArray(role) ? role : [role];
+    return roles.length > 0 && isAttendanceEntryOnly(roles);
   };
 
   const filteredUsers = users.filter((user) => {
@@ -421,7 +439,7 @@ const UserManagementPage: React.FC = () => {
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
     const pType = resolvePersonnelType(user);
-    const matchesTab = activeTab === 'all' ? true : activeTab === pType;
+    const matchesTab = activeTab === 'all' ? !isAttendanceOnlyAccount(user.role) : activeTab === pType;
     return matchesSearch && matchesTab;
   });
 
@@ -717,13 +735,13 @@ const UserManagementPage: React.FC = () => {
                       onChange={handleInputChange}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value={ROLES.TEACHER}>ครู (Teacher)</option>
-                      <option value={ROLES.ACADEMIC_ADMIN}>ฝ่ายวิชาการ (Academic)</option>
-                      <option value={ROLES.SCHOOL_ADMIN}>ผู้ดูแลระบบโรงเรียน (School Admin)</option>
                       <option value="director">ผู้อำนวยการ (Director)</option>
                       {currentUser?.role?.includes(ROLES.SUPER_ADMIN) && (
                         <option value={ROLES.SUPER_ADMIN}>ผู้ดูแลระบบสูงสุด (Super Admin)</option>
                       )}
+                      {SCHOOL_USER_ROLE_OPTIONS.map((role) => (
+                        <option key={role.value} value={role.value}>{role.label}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

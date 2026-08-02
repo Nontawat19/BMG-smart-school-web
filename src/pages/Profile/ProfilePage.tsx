@@ -67,6 +67,7 @@ interface TeacherProfile {
     noCheckout?: number;
     official_travel_days?: number; // Added field
   };
+  personnelType?: 'teacher' | 'user';
 }
 
 interface CourseData {
@@ -321,7 +322,7 @@ const ProfilePage: React.FC = () => {
 
   // 2. รวม State ให้จัดการง่ายขึ้น
   const [profile, setProfile] = useState<any | null>(null);
-  const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
+  const [userRole, setUserRole] = useState<'teacher' | 'student' | 'user' | null>(null);
   const [isFetching, setIsFetching] = useState(true);
   const [courses, setCourses] = useState<CourseData[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -479,7 +480,7 @@ const ProfilePage: React.FC = () => {
           return null;
         };
 
-        const subscribeProfileDoc = (profileDoc: any, role: 'teacher' | 'student') => {
+        const subscribeProfileDoc = (profileDoc: any, role: 'teacher' | 'student' | 'user') => {
           unsubscribeProfile?.();
           unsubscribeProfile = onSnapshot(profileDoc.ref, (docSnap: DocumentSnapshot) => {
             if (!docSnap.exists() || !isMounted) return;
@@ -499,6 +500,41 @@ const ProfilePage: React.FC = () => {
           const studentDoc = await findProfileDoc("students");
           if (studentDoc && isMounted) {
             subscribeProfileDoc(studentDoc, 'student');
+          } else if (userDocSnap.exists()) {
+            const rawRoles = Array.isArray(userData.role) ? userData.role : (userData.role ? [userData.role] : []);
+            const normalizedRoles = rawRoles.map((role: string) => String(role).toLowerCase());
+            const fallbackPosition = userData.position
+              || (normalizedRoles.includes('super_admin')
+                ? 'ผู้ดูแลระบบสูงสุด'
+                : normalizedRoles.includes('school_admin')
+                  ? 'ผู้ดูแลระบบโรงเรียน'
+                  : normalizedRoles.includes('academic_admin')
+                    ? 'ผู้ดูแลระบบงานวิชาการ'
+                    : normalizedRoles.includes('student_affairs')
+                      ? 'เจ้าหน้าที่งานกิจการนักเรียน'
+                      : normalizedRoles.includes('general_user')
+                        ? 'ผู้ใช้ทั่วไป'
+                        : 'บุคลากร');
+
+            setProfile({
+              ...(userData as any),
+              title: userData.title || '',
+              firstName: userData.firstName || '',
+              lastName: userData.lastName || '',
+              email: userData.email || currentUser.email || '',
+              profileImageUrl: userData.profileImageUrl || userData.profileUrl || '',
+              schoolId,
+              docId: currentUser.uid,
+              teacherId: userData.teacherId || '',
+              department: userData.department || 'งานบริหารทั่วไป',
+              contact: userData.contact || '',
+              address: userData.address || '',
+              position: fallbackPosition,
+              personnelType: userData.personnelType || 'user',
+              createdAt: userData.createdAt,
+              updatedAt: userData.updatedAt,
+            });
+            setUserRole('user');
           }
         }
       } catch (error) {
@@ -1069,6 +1105,9 @@ const ProfilePage: React.FC = () => {
     { id: "health_welfare", label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
     { id: "attendance", label: "สถิติการมาเรียน", icon: <FaClock /> },
     { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
+  ] : userRole === 'user' ? [
+    { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
+    { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
   ] : [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
@@ -1485,34 +1524,36 @@ const ProfilePage: React.FC = () => {
                 </div>
               )}
 
-              {activeTab === "work" && userRole === 'teacher' && (
+              {activeTab === "work" && userRole !== 'student' && (
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ข้อมูลการทำงานและติดต่อ</h2>
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <DetailField label="รหัสครู" value={profile.teacherId} />
+                      <DetailField label={userRole === 'teacher' ? "รหัสครู" : "รหัสบุคลากร"} value={profile.teacherId} />
                       <DetailField label="ตำแหน่ง" value={profile.position} />
                       <DetailField label="ฝ่ายงาน" value={profile.department} />
-                      <DetailField label="กลุ่มสาระการเรียนรู้" value={profile.learningArea} />
+                      {userRole === 'teacher' && <DetailField label="กลุ่มสาระการเรียนรู้" value={profile.learningArea} />}
 
-                      <DetailField label="ที่ปรึกษา" value={profile.advisorRole || (profile.isHomeroomTeacher ? "ครูประจำชั้น" : "-")} />
-                      <div className="grid grid-cols-2 gap-4">
-                        <DetailField label="ชั้น" value={profile.homeroomGrade?.toString().split('/')[0]?.trim() || profile.homeroomGrade} />
-                        <DetailField
-                          label="ห้อง"
-                          value={
-                            [
-                              profile.room,
-                              (profile as any).roomNumber,
-                              (profile as any).classroom,
-                              (profile as any).homeroomRoom,
-                              (profile as any).section,
-                              profile.homeroomGrade?.toString().includes('/') ? profile.homeroomGrade.split('/')[1].trim() : null
-                            ].find(v => v !== undefined && v !== null && v !== "") ?? null
-                          }
-                        />
-                      </div>
-                      {profile.isHeadOfLearningArea && (
+                      {userRole === 'teacher' && <DetailField label="ที่ปรึกษา" value={profile.advisorRole || (profile.isHomeroomTeacher ? "ครูประจำชั้น" : "-")} />}
+                      {userRole === 'teacher' && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <DetailField label="ชั้น" value={profile.homeroomGrade?.toString().split('/')[0]?.trim() || profile.homeroomGrade} />
+                          <DetailField
+                            label="ห้อง"
+                            value={
+                              [
+                                profile.room,
+                                (profile as any).roomNumber,
+                                (profile as any).classroom,
+                                (profile as any).homeroomRoom,
+                                (profile as any).section,
+                                profile.homeroomGrade?.toString().includes('/') ? profile.homeroomGrade.split('/')[1].trim() : null
+                              ].find(v => v !== undefined && v !== null && v !== "") ?? null
+                            }
+                          />
+                        </div>
+                      )}
+                      {userRole === 'teacher' && profile.isHeadOfLearningArea && (
                         <div>
                           <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">บทบาทพิเศษ</label>
                           <span className="mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">

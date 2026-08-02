@@ -9,6 +9,7 @@ import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { isActiveTeacherSummaryStatus } from "@/utils/ownerStatsUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface TeacherRow {
   id: string;
@@ -75,7 +76,7 @@ const getTeacherPosition = (teacher: any) => {
 
 const TeacherAttendanceDateSelectionPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const [selectedDate, setSelectedDate] = useState(getTodayString());
   const [schoolName, setSchoolName] = useState("-");
   const [rows, setRows] = useState<TeacherRow[]>([]);

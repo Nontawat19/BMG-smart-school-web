@@ -22,6 +22,7 @@ import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface TeacherOption {
   value: string; // teacher document ID
@@ -190,7 +191,7 @@ const ThaiDatePicker: React.FC<{
 const TeacherLeaveRequestPage: React.FC = () => {
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
-  const schoolId = user?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   // Redux Calendar State
   const calendarState = useSelector((state: RootState) => state.calendar);

@@ -5,6 +5,7 @@ import MainLayout from '@/layouts/MainLayout';
 import { usePermissionContext, RoutePermissionEntry } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY, ROUTE_CATEGORIES } from '@/constants/routeRegistry';
 import { ROLES, ROLE_LABELS } from '@/constants/roles';
+import { ROLE_PRIORITY } from '@/constants/roleManagement';
 import { RootState } from '@/store';
 import Swal from 'sweetalert2';
 import {
@@ -48,12 +49,13 @@ const ROLE_CONFIGS: RoleConfig[] = [
   { value: ROLES.DEPT_HEAD,         label: ROLE_LABELS[ROLES.DEPT_HEAD],         bg: 'bg-fuchsia-50 dark:bg-fuchsia-500/10', text: 'text-fuchsia-700 dark:text-fuchsia-300', border: 'border-fuchsia-200 dark:border-fuchsia-500/30', activeBg: 'bg-fuchsia-600', icon: <FaUserTie /> },
   { value: ROLES.ACADEMIC_ADMIN,    label: ROLE_LABELS[ROLES.ACADEMIC_ADMIN],    bg: 'bg-blue-50 dark:bg-blue-500/10',       text: 'text-blue-700 dark:text-blue-300',       border: 'border-blue-200 dark:border-blue-500/30',       activeBg: 'bg-blue-600',    icon: <FaGraduationCap /> },
   { value: ROLES.STUDENT_AFFAIRS,   label: ROLE_LABELS[ROLES.STUDENT_AFFAIRS],   bg: 'bg-teal-50 dark:bg-teal-500/10',       text: 'text-teal-700 dark:text-teal-300',       border: 'border-teal-200 dark:border-teal-500/30',       activeBg: 'bg-teal-600',    icon: <FaUsers /> },
-  { value: ROLES.TEACHER,           label: ROLE_LABELS[ROLES.TEACHER],           bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-500/30', activeBg: 'bg-emerald-600', icon: <FaUser /> },
-  { value: ROLES.STUDENT_ATTENDANCE,label: ROLE_LABELS[ROLES.STUDENT_ATTENDANCE],bg: 'bg-amber-50 dark:bg-amber-500/10',     text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-500/30',     activeBg: 'bg-amber-500',   icon: <FaClock /> },
-  { value: ROLES.TEACHER_ATTENDANCE,label: ROLE_LABELS[ROLES.TEACHER_ATTENDANCE],bg: 'bg-orange-50 dark:bg-orange-500/10',   text: 'text-orange-700 dark:text-orange-300',   border: 'border-orange-200 dark:border-orange-500/30',   activeBg: 'bg-orange-500',  icon: <FaClock /> },
   { value: ROLES.SCHOOL_ATTENDANCE, label: ROLE_LABELS[ROLES.SCHOOL_ATTENDANCE], bg: 'bg-rose-50 dark:bg-rose-500/10',       text: 'text-rose-700 dark:text-rose-300',       border: 'border-rose-200 dark:border-rose-500/30',       activeBg: 'bg-rose-500',    icon: <FaClock /> },
+  { value: ROLES.TEACHER_ATTENDANCE,label: ROLE_LABELS[ROLES.TEACHER_ATTENDANCE],bg: 'bg-orange-50 dark:bg-orange-500/10',   text: 'text-orange-700 dark:text-orange-300',   border: 'border-orange-200 dark:border-orange-500/30',   activeBg: 'bg-orange-500',  icon: <FaClock /> },
+  { value: ROLES.STUDENT_ATTENDANCE,label: ROLE_LABELS[ROLES.STUDENT_ATTENDANCE],bg: 'bg-amber-50 dark:bg-amber-500/10',     text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-500/30',     activeBg: 'bg-amber-500',   icon: <FaClock /> },
+  { value: ROLES.TEACHER,           label: ROLE_LABELS[ROLES.TEACHER],           bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-500/30', activeBg: 'bg-emerald-600', icon: <FaUser /> },
+  { value: ROLES.GENERAL_USER,      label: ROLE_LABELS[ROLES.GENERAL_USER],      bg: 'bg-slate-50 dark:bg-slate-500/10',     text: 'text-slate-700 dark:text-slate-300',     border: 'border-slate-200 dark:border-slate-500/30',     activeBg: 'bg-slate-600',   icon: <FaBriefcase /> },
   { value: ROLES.STUDENT,           label: ROLE_LABELS[ROLES.STUDENT],           bg: 'bg-sky-50 dark:bg-sky-500/10',         text: 'text-sky-700 dark:text-sky-300',         border: 'border-sky-200 dark:border-sky-500/30',         activeBg: 'bg-sky-500',     icon: <FaGraduationCap /> },
-];
+].sort((a, b) => (ROLE_PRIORITY[b.value] || 0) - (ROLE_PRIORITY[a.value] || 0));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const emptyEntry = (): RoutePermissionEntry => ({

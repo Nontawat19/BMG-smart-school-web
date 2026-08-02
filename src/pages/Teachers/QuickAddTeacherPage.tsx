@@ -19,6 +19,7 @@ import Swal from "sweetalert2";
 import { compressImage } from "@/utils/imageUtils";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { SCHOOL_STAFF_USER_ROLE_OPTIONS } from "@/constants/roleManagement";
 
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div className="bg-white dark:bg-[#2a2b2f] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
@@ -79,14 +80,7 @@ const initialState = {
 
 // ตัวเลือกบทบาท/สิทธิ์สำหรับ "ผู้ใช้ระบบ" (ไม่ใช่ครูผู้สอน) — ไม่มี "teacher" ให้เลือก
 // เพื่อไม่ให้ได้สิทธิ์เรื่องงานสอนโดยไม่ตั้งใจ
-const STAFF_USER_ROLES = [
-  { value: "school_admin", label: "ผู้ดูแลระบบโรงเรียน (School Admin)" },
-  { value: "academic_admin", label: "ฝ่ายวิชาการ (Academic Admin)" },
-  { value: "student_affairs", label: "งานกิจการนักเรียน" },
-  { value: "student_attendance", label: "เจ้าหน้าที่ลงเวลานักเรียน" },
-  { value: "teacher_attendance", label: "เจ้าหน้าที่ลงเวลาครู" },
-  { value: "school_attendance", label: "เจ้าหน้าที่ลงเวลาทั้งโรงเรียน" },
-];
+const STAFF_USER_ROLES = SCHOOL_STAFF_USER_ROLE_OPTIONS;
 
 export default function QuickAddTeacherPage() {
   const { schoolId } = useParams<{ schoolId: string }>();
@@ -196,14 +190,20 @@ export default function QuickAddTeacherPage() {
       await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: 1 });
 
       // 5. Save User Doc
-      await setDoc(doc(firestore, "users", user.uid), {
-        fullName: `${form.title === "อื่นๆ" ? customTitle : form.title}${form.firstName} ${form.lastName}`,
-        email: form.email,
-        profileUrl: profileImageUrl,
-        schoolId: schoolId,
-        role: finalRole,
-        createdAt: serverTimestamp(),
-      });
+	      await setDoc(doc(firestore, "users", user.uid), {
+	        fullName: `${form.title === "อื่นๆ" ? customTitle : form.title}${form.firstName} ${form.lastName}`,
+	        firstName: form.firstName,
+	        lastName: form.lastName,
+	        title: finalTitle,
+	        email: form.email,
+	        profileUrl: profileImageUrl,
+	        schoolId: schoolId,
+	        role: finalRole,
+	        personnelType: form.personnelType,
+	        teacherId: form.teacherId || "",
+	        idCardNumber: form.idCardNumber || "",
+	        createdAt: serverTimestamp(),
+	      });
 
       Swal.fire({
         icon: "success",

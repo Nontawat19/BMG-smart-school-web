@@ -67,7 +67,12 @@ export const isActiveTeacher = (teacher: any) => {
   const roleArray: string[] = Array.isArray(teacher?.role)
     ? teacher.role
     : teacher?.role ? [String(teacher.role)] : [];
-  if (roleArray.length > 0 && roleArray.every(r => ATTENDANCE_ONLY_ROLES.includes(r))) return false;
+  const normalizedRoles = roleArray.map(role => String(role).toLowerCase());
+
+  // Only users explicitly carrying the teacher role can be used as teaching staff
+  // in academic workflows such as course assignment, schedules, and gradebook.
+  if (normalizedRoles.length > 0 && !normalizedRoles.includes('teacher')) return false;
+  if (normalizedRoles.length > 0 && normalizedRoles.every(r => ATTENDANCE_ONLY_ROLES.includes(r))) return false;
 
   // Exclude device/kiosk accounts identified by name patterns (CAM, RFID, ลงเวลา, etc.)
   const name = String(teacher?.name || '').toLowerCase();

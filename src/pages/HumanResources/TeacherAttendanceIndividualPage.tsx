@@ -15,6 +15,7 @@ import { useTheme } from "@/ThemeContext";
 import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
 import { classifyLeaveSubType } from "@/utils/periodSummaryUtils";
 import { getGroupPersonnel } from "@/utils/schoolUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 // Register TH Sarabun Font for PDF
 Font.register({
@@ -508,7 +509,7 @@ const IndividualAttendancePdfDocument: React.FC<PDFProps> = ({
 const TeacherAttendanceIndividualPage: React.FC = () => {
   const { isDarkMode } = useTheme();
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   // Teachers State
   const [teachers, setTeachers] = useState<Teacher[]>([]);

@@ -28,6 +28,7 @@ import { RootState } from "@/store";
 import { FaChevronDown, FaCheck } from 'react-icons/fa';
 import BackButton from "@/components/Shared/BackButton";
 import { isActiveTeacherSummaryStatus, updateOwnerAndSchoolCounts } from "@/utils/ownerStatsUtils";
+import { SCHOOL_STAFF_USER_ROLE_OPTIONS, SCHOOL_USER_ROLE_OPTIONS, sortRolesByPriority } from "@/constants/roleManagement";
 
 // Component ย่อยสำหรับ Card (ไม่มีการเปลี่ยนแปลง)
 const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({
@@ -145,19 +146,9 @@ export default function AddTeacherPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const userRoles = [
-    { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
-    { value: 'academic_admin', label: 'ฝ่ายวิชาการ (Academic Admin)' },
-    { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
-  ];
+  const userRoles = SCHOOL_USER_ROLE_OPTIONS.filter(role => role.value === 'teacher' || role.value === 'academic_admin');
 
-  const staffRoles = [
-    { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลานักเรียน' },
-    { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลาครู' },
-    { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาทั้งโรงเรียน' },
-    { value: 'student_affairs', label: 'งานกิจการนักเรียน' },
-    { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน' },
-  ];
+  const staffRoles = SCHOOL_STAFF_USER_ROLE_OPTIONS;
 
   const activeRoles = form.personnelType === 'user' ? staffRoles : userRoles;
   const allRoleOptions = [...userRoles, ...staffRoles];
@@ -168,7 +159,7 @@ export default function AddTeacherPage() {
       ? currentRoles.filter(r => r !== roleValue)
       : [...currentRoles, roleValue];
 
-    setForm(prev => ({ ...prev, role: updatedRoles }));
+    setForm(prev => ({ ...prev, role: sortRolesByPriority(updatedRoles) }));
   };
 
   // ดึงข้อมูลกลุ่มสาระจาก Firebase (อ้างอิง SubjectGroupManagementPage)
@@ -440,14 +431,20 @@ export default function AddTeacherPage() {
         await updateOwnerAndSchoolCounts(firestore, schoolId, { teachers: 1 });
       }
 
-      await setDoc(doc(firestore, "users", user.uid), {
-        fullName: `${finalTitle}${teacherData.firstName} ${teacherData.lastName}`,
-        email: email,
-        profileUrl: finalProfileImageUrl,
-        schoolId: schoolId,
-        role: form.role,
-        createdAt: serverTimestamp(),
-      });
+	      await setDoc(doc(firestore, "users", user.uid), {
+	        fullName: `${finalTitle}${teacherData.firstName} ${teacherData.lastName}`,
+	        firstName: teacherData.firstName,
+	        lastName: teacherData.lastName,
+	        title: finalTitle,
+	        email: email,
+	        profileUrl: finalProfileImageUrl,
+	        schoolId: schoolId,
+	        role: form.role,
+	        personnelType: form.personnelType,
+	        teacherId: teacherData.teacherId || "",
+	        idCardNumber: teacherData.idCardNumber || "",
+	        createdAt: serverTimestamp(),
+	      });
 
       console.log("Teacher and User documents created for UID:", user.uid);
 
@@ -534,7 +531,7 @@ export default function AddTeacherPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setForm(p => ({ ...p, personnelType: 'user', role: ['student_attendance'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
+                onClick={() => setForm(p => ({ ...p, personnelType: 'user', role: ['general_user'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
                 className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${form.personnelType === 'user' ? 'bg-emerald-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
               >
                 ผู้ใช้ระบบ

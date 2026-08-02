@@ -10,6 +10,7 @@ import defaultProfile from "@/assets/profile.png";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface AttendanceRecord {
   id: string;
@@ -26,7 +27,7 @@ interface AttendanceRecord {
 
 const TeacherAttendanceTodayPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);

@@ -2,6 +2,12 @@ import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, firestore } from '@/firebase';
 import { collectionGroup, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { expandSuperAdminScopedRoles } from '@/utils/superAdminScope';
+import { ROLES } from '@/constants/roles';
+
+const areRolesEqual = (left: string[] = [], right: string[] = []) => (
+  left.length === right.length && left.every((role, index) => role === right[index])
+);
 
 interface UserProfile {
   uid: string;
@@ -9,6 +15,8 @@ interface UserProfile {
   fullName: string;
   profileUrl: string;
   schoolId?: string | null;
+  homeSchoolId?: string | null;
+  homeRole?: string[];
   role: string[];
   department?: string;
   personnelType?: 'teacher' | 'user';
@@ -62,6 +70,7 @@ export const listenToAuthChanges = createAsyncThunk(
                         if (td.personnelType === 'teacher' || td.personnelType === 'user') return td.personnelType;
                         const tdRoles: string[] = Array.isArray(td.role) ? td.role : typeof td.role === 'string' ? [td.role] : roles;
                         const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+                        if (!tdRoles.includes(ROLES.TEACHER)) return 'user';
                         if (tdRoles.length > 0 && tdRoles.every((r: string) => attendanceOnly.includes(r))) return 'user';
                         return 'teacher';
                       };
@@ -83,6 +92,8 @@ export const listenToAuthChanges = createAsyncThunk(
                   fullName: userData.fullName,
                   profileUrl: userData.profileUrl,
                   schoolId: userData.schoolId,
+                  homeSchoolId: userData.schoolId,
+                  homeRole: roles,
                   role: roles,
                   ...teacherFields,
                 };
@@ -121,7 +132,7 @@ export const listenToAuthChanges = createAsyncThunk(
 
                     const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
                     const personnelType: 'teacher' | 'user' =
-                      roles.length > 0 && roles.every((r) => attendanceOnly.includes(r)) ? 'user' : 'teacher';
+                      !roles.includes(ROLES.TEACHER) || (roles.length > 0 && roles.every((r) => attendanceOnly.includes(r))) ? 'user' : 'teacher';
 
                     const profile: UserProfile = {
                       uid: user.uid,
@@ -129,6 +140,8 @@ export const listenToAuthChanges = createAsyncThunk(
                       fullName: resolvedFullName,
                       profileUrl: td.profileImageUrl || '',
                       schoolId,
+                      homeSchoolId: schoolId,
+                      homeRole: roles,
                       role: roles,
                       ...(td.department ? { department: td.department } : {}),
                       personnelType,
@@ -174,6 +187,23 @@ const authSlice = createSlice({
     setUser(state, action: PayloadAction<UserProfile | null>) {
       state.user = action.payload;
     },
+    applySchoolScope(state, action: PayloadAction<string | null>) {
+      if (!state.user) return;
+      const roles = Array.isArray(state.user.homeRole) ? state.user.homeRole : state.user.role;
+      const isSuperAdmin = roles.includes('super_admin');
+      if (!isSuperAdmin) return;
+
+      const isImpersonatingSchool = !!action.payload;
+      const nextSchoolId = action.payload || state.user.homeSchoolId || null;
+      const nextRoles = expandSuperAdminScopedRoles(roles, isImpersonatingSchool);
+
+      if (state.user.schoolId === nextSchoolId && areRolesEqual(state.user.role, nextRoles)) {
+        return;
+      }
+
+      state.user.schoolId = nextSchoolId;
+      state.user.role = nextRoles;
+    },
     clearUser(state) {
       state.user = null;
     },
@@ -195,5 +225,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, clearUser, setLoading } = authSlice.actions;
+export const { setUser, applySchoolScope, clearUser, setLoading } = authSlice.actions;
 export default authSlice.reducer;

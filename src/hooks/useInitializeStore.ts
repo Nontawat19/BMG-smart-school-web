@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
-import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
-import { fetchPeriodSettings } from "@/store/slices/periodSettingsSlice";
-import { fetchCalendar } from "@/store/slices/calendarSlice";
-import { fetchSubjectGroups } from "@/store/slices/subjectGroupsSlice";
-import { fetchTeachersMap } from "@/store/slices/userMapSlice";
-import { fetchUserProfile } from "@/store/slices/profileSlice";
+import { fetchSchoolSettings, resetSchoolSettings } from "@/store/slices/schoolSettingsSlice";
+import { fetchPeriodSettings, resetPeriodSettings } from "@/store/slices/periodSettingsSlice";
+import { fetchCalendar, resetCalendar } from "@/store/slices/calendarSlice";
+import { fetchSubjectGroups, resetSubjectGroups } from "@/store/slices/subjectGroupsSlice";
+import { fetchTeachersMap, resetTeachersMap } from "@/store/slices/userMapSlice";
+import { fetchUserProfile, resetUserProfile } from "@/store/slices/profileSlice";
 
 /**
  * useInitializeStore
@@ -23,9 +23,18 @@ export function useInitializeStore() {
     const subjectGroupsStatus = useSelector((state: RootState) => state.subjectGroups.status);
     const teacherMapStatus = useSelector((state: RootState) => state.userMap.status);
     const profileStatus = useSelector((state: RootState) => state.profile.status);
+    const activeSchoolId = useSelector((state: RootState) => state.schoolScope.activeSchoolId);
 
-    const schoolId = (user as any)?.schoolId;
+    const schoolId = activeSchoolId || (user as any)?.schoolId;
     const uid = (user as any)?.uid;
+
+    useEffect(() => {
+        dispatch(resetSchoolSettings());
+        dispatch(resetPeriodSettings());
+        dispatch(resetCalendar());
+        dispatch(resetSubjectGroups());
+        dispatch(resetTeachersMap());
+    }, [dispatch, schoolId]);
 
     useEffect(() => {
         if (!schoolId) return;
@@ -55,4 +64,8 @@ export function useInitializeStore() {
             dispatch(fetchUserProfile(uid) as any);
         }
     }, [uid, dispatch, profileStatus]);
+
+    useEffect(() => {
+        dispatch(resetUserProfile());
+    }, [dispatch, uid]);
 }

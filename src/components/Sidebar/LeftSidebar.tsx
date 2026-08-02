@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { firestore as db } from "../../firebase";
 import LogoutButton from "@/components/LogoutButton";
 import {
@@ -57,14 +57,29 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
+import { useSchoolScope } from "@/hooks/useEffectiveSchool";
+import { clearActiveSchoolScope } from "@/store/slices/schoolScopeSlice";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
+  const dispatch = useDispatch();
   const location = useLocation();
   const { user: currentUser, roles: normalizedRoles, OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS } = usePermissions();
   const isLoading = useSelector((state: RootState) => state.auth.loading);
-  const schoolId = currentUser?.schoolId;
+  const { effectiveSchoolId: schoolId, isImpersonatingSchool, activeSchoolName } = useSchoolScope();
   const isOwnerRoute = location.pathname.startsWith("/owner/");
   const isPwaMode = usePwaMode();
+  const isGeneralUserOnly =
+    normalizedRoles.includes(ROLES.GENERAL_USER) &&
+    !normalizedRoles.includes(ROLES.TEACHER) &&
+    !normalizedRoles.includes(ROLES.SCHOOL_ADMIN) &&
+    !normalizedRoles.includes(ROLES.SUPER_ADMIN) &&
+    !normalizedRoles.includes(ROLES.ACADEMIC_ADMIN) &&
+    !normalizedRoles.includes(ROLES.STUDENT_AFFAIRS) &&
+    !normalizedRoles.includes(ROLES.DIRECTOR) &&
+    !normalizedRoles.includes(ROLES.DEPT_HEAD) &&
+    !normalizedRoles.includes(ROLES.STUDENT_ATTENDANCE) &&
+    !normalizedRoles.includes(ROLES.TEACHER_ATTENDANCE) &&
+    !normalizedRoles.includes(ROLES.SCHOOL_ATTENDANCE);
 
   // ฟังก์ชันสำหรับสร้าง className ของ NavLink
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
@@ -84,21 +99,47 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   const [allowTeacherSelfCheckin, setAllowTeacherSelfCheckin] = useState(false);
 
   React.useEffect(() => {
-    if (schoolId && !isOwnerRoute) {
-      const unsub = onSnapshot(doc(db, 'school-settings', schoolId), (doc) => {
-        if (doc.exists()) {
-          const data = doc.data();
-          setFeatures({
-            ...(data?.features || {}),
-            ...(data?.academicSettings || {})
-          });
-          setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
+    let cancelled = false;
+
+    const loadSidebarState = async () => {
+      if (!schoolId || isOwnerRoute) {
+        setFeatures({});
+        setAllowTeacherSelfCheckin(false);
+        return;
+      }
+
+      try {
+        const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
+        if (!schoolSnap.exists() || cancelled) {
+          if (!cancelled) {
+            setFeatures({});
+            setAllowTeacherSelfCheckin(false);
+          }
+          return;
         }
-      });
-      return () => unsub();
-    }
-    setFeatures({});
-    setAllowTeacherSelfCheckin(false);
+
+        const data = schoolSnap.data();
+        if (cancelled) return;
+
+        setFeatures({
+          ...(data?.features || {}),
+          ...(data?.academicSettings || {})
+        });
+        setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error loading sidebar features:", error);
+          setFeatures({});
+          setAllowTeacherSelfCheckin(false);
+        }
+      }
+    };
+
+    loadSidebarState();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOwnerRoute, schoolId]);
 
   const isEnabled = (key: string) => features[key] ?? true;
@@ -151,6 +192,20 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
         : `${isCollapsed ? "w-0" : "w-[280px]"} hidden lg:flex z-40`
         } overflow-hidden`}>
         <div className="w-[280px] h-full flex flex-col gap-6 p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-gray-100 dark:scrollbar-track-gray-900">
+          {isImpersonatingSchool && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
+              <button
+                type="button"
+                onClick={() => {
+                  dispatch(clearActiveSchoolScope());
+                  window.location.href = "/owner/schools";
+                }}
+                className="w-full rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                กลับหน้า Super Admin
+              </button>
+            </div>
+          )}
 
           {/* โปรไฟล์ผู้ใช้ */}
           {isPwaMode || isAttendanceEntryOnly(currentUser?.role) ? (
@@ -225,7 +280,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
 
           {/* เมนู */}
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
-            {isPwaMode ? (
+            {isGeneralUserOnly ? (
+              <div className="flex flex-col gap-1">
+                <NavLink to="/profile" className={navLinkClasses}>
+                  <FaUserTie className="text-lg min-w-[18px]" />
+                  <span>ข้อมูลส่วนตัว</span>
+                </NavLink>
+              </div>
+            ) : isPwaMode ? (
               <div className="flex flex-col gap-1">
                 <NavLink to={PWA_ATTENDANCE_HUB_PATH} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
@@ -262,10 +324,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                       <NavLink to="/academic/hub/attendance" className={navLinkClasses}>
                         <FaChartBar className="text-lg min-w-[18px]" />
                         <span>รายงานกิจการนักเรียน</span>
-                      </NavLink>
-                      <NavLink to="/academic/hub/settings" className={navLinkClasses}>
-                        <FaCog className="text-lg min-w-[18px]" />
-                        <span>ตั้งค่าคะแนนพฤติกรรม</span>
                       </NavLink>
                     </>
                   )}
@@ -325,14 +383,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                           <span>การตั้งค่าระบบ</span>
                         </NavLink>
                       </CanAccess>
-                      <CanAccess roles={[ROLES.STUDENT_AFFAIRS]}>
-                        {isEnabled('studentAffairs') && (
-                          <NavLink to="/academic/hub/settings" className={navLinkClasses}>
-                            <FaCog className="text-lg min-w-[18px]" />
-                            <span>ตั้งค่าคะแนนพฤติกรรม</span>
-                          </NavLink>
-                        )}
-                      </CanAccess>
                     </div>
                   </CanAccess>
                 )}
@@ -353,7 +403,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           </nav>
 
           {/* Owner Menu */}
-          {!isPwaMode && (
+          {!isPwaMode && !isImpersonatingSchool && (
             <CanAccess roles={OWNER_ONLY}>
               <div>
                 {renderSectionHeader("เจ้าของระบบ", "owner")}

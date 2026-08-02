@@ -17,6 +17,7 @@ import {
   updateOwnerAndSchoolCounts,
 } from '@/utils/ownerStatsUtils';
 import { ROLES } from '@/constants/roles';
+import { OWNER_ROLE_OPTIONS, sortRolesByPriority } from '@/constants/roleManagement';
 
 interface User {
   fullName: string;
@@ -45,16 +46,8 @@ const departmentOptions = [
   "ฝ่ายบริหาร"
 ];
 
-const STAFF_ROLES: string[] = [
-  ROLES.TEACHER,
-  ROLES.SCHOOL_ADMIN,
-  ROLES.ACADEMIC_ADMIN,
-  ROLES.STUDENT_AFFAIRS,
-  ROLES.SUPER_ADMIN,
-  ROLES.STUDENT_ATTENDANCE,
-  ROLES.TEACHER_ATTENDANCE,
-  ROLES.SCHOOL_ATTENDANCE,
-];
+const shouldSyncToPersonnel = (roles: string[]) => roles.includes(ROLES.TEACHER);
+const resolvePersonnelType = (roles: string[]): 'teacher' | 'user' => roles.includes(ROLES.TEACHER) ? 'teacher' : 'user';
 
 const EditUserPage: React.FC = () => {
   const { userId } = useParams<{ userId: string }>();
@@ -132,7 +125,7 @@ const EditUserPage: React.FC = () => {
         // Fetch department from teacher document if schoolId exists
         if (userData.schoolId) {
           const roles = Array.isArray(userData.role) ? userData.role : [userData.role];
-          const isStaff = roles.some(r => STAFF_ROLES.includes(r));
+          const isStaff = shouldSyncToPersonnel(roles);
           if (isStaff) {
             const teacherDocRef = doc(firestore, "school-settings", userData.schoolId, "teachers", userId);
             const teacherSnap = await getDoc(teacherDocRef);
@@ -196,7 +189,7 @@ const EditUserPage: React.FC = () => {
       ? currentRoles.filter(r => r !== roleValue)
       : [...currentRoles, roleValue];
 
-    setUser({ ...user, role: updatedRoles });
+    setUser({ ...user, role: sortRolesByPriority(updatedRoles) });
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -303,7 +296,7 @@ const EditUserPage: React.FC = () => {
   };
 
   const hasStaffRole = (roles: string[]) => {
-    return roles.some(r => STAFF_ROLES.includes(r));
+    return shouldSyncToPersonnel(roles);
   };
 
   const deleteTeacherDocIfActive = async (schoolId: string, uid: string) => {
@@ -394,6 +387,7 @@ const EditUserPage: React.FC = () => {
         title: finalTitle || null,
         email: user.email,
         role: user.role,
+        personnelType: resolvePersonnelType(Array.isArray(user.role) ? user.role : [user.role]),
         schoolId: user.schoolId || null,
         profileUrl: profileUrl || null,
         updatedAt: serverTimestamp(),
@@ -419,9 +413,12 @@ const EditUserPage: React.FC = () => {
           const oldTeacherSnap = oldTeacherDocRef && previousSchoolId !== user.schoolId
             ? await getDoc(oldTeacherDocRef)
             : teacherSnap;
-          const sourceTeacherData = oldTeacherSnap.exists()
-            ? oldTeacherSnap.data()
-            : (teacherSnap.exists() ? teacherSnap.data() : {});
+          const currentTeacherData = teacherSnap.exists() ? teacherSnap.data() : {};
+          const previousTeacherData = oldTeacherSnap.exists() ? oldTeacherSnap.data() : {};
+          const sourceTeacherData = {
+            ...previousTeacherData,
+            ...currentTeacherData,
+          };
           
           const teacherData = {
             ...sourceTeacherData,
@@ -431,9 +428,14 @@ const EditUserPage: React.FC = () => {
             title: finalTitle,
             email: user.email,
             role: user.role,
+            personnelType: 'teacher',
             schoolId: user.schoolId,
             profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
             updatedAt: serverTimestamp(),
+            // Owner edit must not silently replace school-specific identity fields.
+            teacherId: sourceTeacherData.teacherId || "",
+            idCardNumber: sourceTeacherData.idCardNumber || "",
+            rfid: sourceTeacherData.rfid || "",
             // Preserve existing teacher-specific fields if they exist, or use defaults
             position: sourceTeacherData.position 
               ? sourceTeacherData.position
@@ -460,8 +462,13 @@ const EditUserPage: React.FC = () => {
             subjectGroup: sourceTeacherData.subjectGroup || "",
           };
           
-          await setDoc(teacherDocRef, teacherData, { merge: true });
-          await deleteStaleTeacherDocs(userId, user.schoolId, previousSchoolId ? [previousSchoolId] : []);
+	          await setDoc(teacherDocRef, teacherData, { merge: true });
+	          await updateDoc(doc(firestore, 'users', userId), {
+	            teacherId: teacherData.teacherId || "",
+	            idCardNumber: teacherData.idCardNumber || "",
+	            rfid: teacherData.rfid || "",
+	          });
+	          await deleteStaleTeacherDocs(userId, user.schoolId, previousSchoolId ? [previousSchoolId] : []);
           if (!teacherSnap.exists() && isActiveTeacherSummaryStatus(teacherData.status)) {
             await updateOwnerAndSchoolCounts(firestore, user.schoolId, { teachers: 1 });
           }
@@ -535,7 +542,19 @@ const EditUserPage: React.FC = () => {
         timer: 2000,
         showConfirmButton: false,
       });
-      navigate('/owner/users');
+      setOriginalUser({
+        ...user,
+        fullName,
+        title: finalTitle || undefined,
+        profileUrl: profileUrl || undefined,
+        role: Array.isArray(user.role) ? [...user.role] : user.role,
+      });
+      setUser(prev => prev ? ({
+        ...prev,
+        fullName,
+        title: finalTitle || undefined,
+        profileUrl: profileUrl || undefined,
+      }) : prev);
     } catch (err: any) {
       console.error("Error updating user:", err);
       Swal.fire({
@@ -573,17 +592,7 @@ const EditUserPage: React.FC = () => {
     );
   }
 
-  const userRoles = [
-    { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลระบบสูงสุด (Super Admin)' },
-    { value: ROLES.SCHOOL_ADMIN, label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
-    { value: ROLES.ACADEMIC_ADMIN, label: 'ผู้ดูแลระบบงานวิชาการ (Academic Admin)' },
-    { value: ROLES.STUDENT_AFFAIRS, label: 'งานกิจการนักเรียน (Student Affairs)' },
-    { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
-    { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
-    { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
-    { value: ROLES.SCHOOL_ATTENDANCE, label: 'ลงเวลาทั้งโรงเรียน (School Attendance)' },
-    { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
-  ];
+  const userRoles = OWNER_ROLE_OPTIONS;
 
   return (
     <MainLayout>
@@ -803,7 +812,7 @@ const EditUserPage: React.FC = () => {
                         </div>
 
                         {/* Department Selection */}
-                        {(Array.isArray(user.role) ? user.role : [user.role]).some(r => STAFF_ROLES.includes(r)) && (
+                        {shouldSyncToPersonnel(Array.isArray(user.role) ? user.role : [user.role]) && (
                           <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                             <label htmlFor="department" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ฝ่ายงาน</label>
                             <select

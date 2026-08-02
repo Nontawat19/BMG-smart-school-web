@@ -696,7 +696,11 @@ const HubPage: React.FC = () => {
           icon: <ClipboardList size={24} />,
           path: "/academic/learner-activity-attendance",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          // In course-based mode these activities are just regular courses — attendance
+          // should go through "เช็คชื่อรายวิชา" instead, matching the assignment/enrollment
+          // menu items above which already hide the same way (lines ~877, 886).
+          hideWhenCourseBased: true
         },
         {
           title: "เช็คชื่อคาบกิจกรรมหลัก",

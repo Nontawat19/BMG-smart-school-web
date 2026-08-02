@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { firestore as db } from '../../firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import { useDispatch } from 'react-redux';
 import Swal from 'sweetalert2';
 import { FaSchool, FaUserTie, FaUserGraduate, FaMapMarkerAlt, FaMoneyBillWave, FaUsers, FaTasks, FaChalkboardTeacher, FaDatabase, FaHdd, FaCloudDownloadAlt, FaCloudUploadAlt, FaTrashAlt, FaLayerGroup, FaEdit, FaTable, FaCertificate, FaHeartbeat, FaBoxOpen, FaCodeBranch, FaCalendarTimes, FaFileExcel } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
@@ -22,6 +23,7 @@ import {
   formatLastSyncTimestamp,
   type SchoolLicenseInfo,
 } from '@/utils/ownerStatsUtils';
+import { setActiveSchoolScope } from '@/store/slices/schoolScopeSlice';
 
 interface SchoolInfo {
   schoolName?: string;
@@ -104,6 +106,7 @@ const SkeletonLoader: React.FC = () => (
 );
 
 const SchoolDetailsPage: React.FC = () => {
+  const dispatch = useDispatch();
   const { schoolId } = useParams<{ schoolId: string }>();
   const navigate = useNavigate();
   const [info, setInfo] = useState<SchoolInfo | null>(null);
@@ -229,6 +232,15 @@ const SchoolDetailsPage: React.FC = () => {
     }
   };
 
+  const handleEnterSchool = () => {
+    if (!schoolId) return;
+    dispatch(setActiveSchoolScope({
+      schoolId,
+      schoolName: info?.schoolName || info?.schoolAbbreviation || schoolId,
+    }));
+    window.location.href = "/academic/hub/registration";
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -268,6 +280,13 @@ const SchoolDetailsPage: React.FC = () => {
                   <FaTable size={14} />
                   ดูข้อมูลทั้งหมดในโรงเรียน
                 </Link>
+                <button
+                  type="button"
+                  onClick={handleEnterSchool}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  เข้าดูโรงเรียน
+                </button>
                 <Link to={`/owner/school-info/${schoolId}`} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
                   แก้ไขข้อมูล
                 </Link>

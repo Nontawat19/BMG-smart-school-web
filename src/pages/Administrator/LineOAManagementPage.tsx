@@ -9,6 +9,7 @@ import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
 import { MessageSquare, Save, Search, Key, CheckCircle, XCircle, X, ExternalLink, Bell } from "lucide-react";
 import ProfilePlaceholder from "../../assets/profile.png";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface Teacher {
   id: string;
@@ -77,7 +78,7 @@ const getTeacherDisplayName = (teacher: Partial<Teacher>) =>
 const LineOAManagementPage: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const currentSchoolId = currentUser?.schoolId;
+  const currentSchoolId = useEffectiveSchoolId();
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isLoading, setIsLoading] = useState(false);

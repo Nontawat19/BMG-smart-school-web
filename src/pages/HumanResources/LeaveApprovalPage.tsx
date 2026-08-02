@@ -23,6 +23,7 @@ import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
 import { getThaiYear } from "@/utils/dateUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface BaseRequest {
   id: string;
@@ -64,7 +65,7 @@ interface TravelRequest extends BaseRequest {
 
 const LeaveApprovalPage: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
-  const schoolId = user?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains("dark"));
 
   useEffect(() => {

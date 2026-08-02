@@ -10,6 +10,7 @@ import Swal from "sweetalert2";
 import Select from "react-select";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { useTheme } from "@/ThemeContext";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 interface TeacherOption {
   value: string;
@@ -19,7 +20,7 @@ interface TeacherOption {
 
 const HRTimeRegistrationPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const { isDarkMode } = useTheme();
 
   const [date, setDate] = useState(() => {

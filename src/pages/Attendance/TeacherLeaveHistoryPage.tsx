@@ -22,6 +22,7 @@ import SkeletonLoader from '@/components/SkeletonLoader';
 import BackButton from '@/components/Shared/BackButton';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import { getThaiYear } from '@/utils/dateUtils';
+import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 
 interface TeacherLeaveRequest {
   id: string;
@@ -81,7 +82,7 @@ const TeacherLeaveHistoryPageSkeleton: React.FC = () => {
 
 const TeacherLeaveHistoryPage: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
-  const schoolId = user?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const [data, setData] = useState<TeacherLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

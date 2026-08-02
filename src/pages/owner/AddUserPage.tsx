@@ -18,6 +18,7 @@ import {
     updateOwnerAndSchoolCounts,
 } from '@/utils/ownerStatsUtils';
 import { ROLES } from '@/constants/roles';
+import { OWNER_ROLE_OPTIONS, sortRolesByPriority } from '@/constants/roleManagement';
 
 interface School {
     id: string;
@@ -34,22 +35,14 @@ const departmentOptions = [
     "ฝ่ายบริหาร"
 ];
 
-const STAFF_ROLES: string[] = [
-    ROLES.TEACHER,
-    ROLES.SCHOOL_ADMIN,
-    ROLES.ACADEMIC_ADMIN,
-    ROLES.STUDENT_AFFAIRS,
-    ROLES.SUPER_ADMIN,
-    ROLES.STUDENT_ATTENDANCE,
-    ROLES.TEACHER_ATTENDANCE,
-    ROLES.SCHOOL_ATTENDANCE,
-];
-
 const ATTENDANCE_ONLY_ROLES: string[] = [
     ROLES.STUDENT_ATTENDANCE,
     ROLES.TEACHER_ATTENDANCE,
     ROLES.SCHOOL_ATTENDANCE,
 ];
+
+const shouldSyncToPersonnel = (roles: string[]) => roles.includes(ROLES.TEACHER);
+const resolvePersonnelType = (roles: string[]): 'teacher' | 'user' => roles.includes(ROLES.TEACHER) ? 'teacher' : 'user';
 
 const AddUserPage = () => {
     const navigate = useNavigate();
@@ -61,7 +54,7 @@ const AddUserPage = () => {
         email: '',
         password: '',
         confirmPassword: '',
-        role: ['teacher'] as string[],
+        role: [ROLES.TEACHER] as string[],
         schoolId: '',
         department: '',
     });
@@ -132,7 +125,7 @@ const AddUserPage = () => {
             ? currentRoles.filter(r => r !== roleValue)
             : [...currentRoles, roleValue];
         const isAttendanceOnly = updatedRoles.length > 0 && updatedRoles.every(r => ATTENDANCE_ONLY_ROLES.includes(r));
-        setFormData({ ...formData, role: updatedRoles, department: isAttendanceOnly ? '' : formData.department });
+        setFormData({ ...formData, role: sortRolesByPriority(updatedRoles), department: isAttendanceOnly ? '' : formData.department });
     };
 
     const selectedSchool = useMemo(() => {
@@ -288,6 +281,7 @@ const AddUserPage = () => {
                 title: finalTitle,
                 email: formData.email,
                 role: formData.role,
+                personnelType: resolvePersonnelType(formData.role),
                 schoolId: formData.schoolId || null,
                 profileUrl: profileUrl || null,
                 createdAt: serverTimestamp(),
@@ -297,7 +291,7 @@ const AddUserPage = () => {
             // 2. Write to school-specific collections if applicable
             if (formData.schoolId) {
                 const roles = formData.role;
-                const isStaff = roles.some(r => STAFF_ROLES.includes(r));
+                const isStaff = shouldSyncToPersonnel(roles);
                 const isStudent = roles.includes(ROLES.STUDENT);
 
                 // Sync to Teachers collection
@@ -309,6 +303,7 @@ const AddUserPage = () => {
                         title: finalTitle,
                         email: formData.email,
                         role: formData.role,
+                        personnelType: 'teacher',
                         schoolId: formData.schoolId,
                         profileImageUrl: profileUrl || null, // ProfilePage expects profileImageUrl
                         teacherId: "", // Default empty
@@ -414,17 +409,7 @@ const AddUserPage = () => {
         }
     };
 
-    const userRoles = [
-        { value: ROLES.SUPER_ADMIN, label: 'ผู้ดูแลสูงสุด (Super Admin)' },
-        { value: ROLES.SCHOOL_ADMIN, label: 'แอดมินโรงเรียน (School Admin)' },
-        { value: ROLES.ACADEMIC_ADMIN, label: 'ผู้ดูแลระบบงานวิชาการ (Academic Admin)' },
-        { value: ROLES.STUDENT_AFFAIRS, label: 'งานกิจการนักเรียน (Student Affairs)' },
-        { value: ROLES.TEACHER, label: 'ครูผู้สอน (Teacher)' },
-        { value: ROLES.STUDENT_ATTENDANCE, label: 'ลงเวลานักเรียน (Student Attendance)' },
-        { value: ROLES.TEACHER_ATTENDANCE, label: 'ลงเวลาครู (Teacher Attendance)' },
-        { value: ROLES.SCHOOL_ATTENDANCE, label: 'ลงเวลาทั้งโรงเรียน (School Attendance)' },
-        { value: ROLES.STUDENT, label: 'นักเรียน (Student)' },
-    ];
+    const userRoles = OWNER_ROLE_OPTIONS;
 
     const inputClasses = "w-full pl-11 pr-4 h-[46px] bg-white dark:bg-[#1c1c24] border border-gray-200 dark:border-gray-700/50 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 shadow-sm dark:autofill:shadow-[0_0_0_30px_#1c1c24_inset]";
     const labelClasses = "block text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2 ml-1";
@@ -792,7 +777,7 @@ const AddUserPage = () => {
                                         </div>
 
                                     {/* Department Select - Hide when only attendance roles selected */}
-                                    {formData.role.some(r => STAFF_ROLES.includes(r)) && !formData.role.every(r => ATTENDANCE_ONLY_ROLES.includes(r)) && (
+                                    {shouldSyncToPersonnel(formData.role) && !formData.role.every(r => ATTENDANCE_ONLY_ROLES.includes(r)) && (
                                         <div className="md:col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
                                             <label className={labelClasses}>ฝ่ายงาน (Department)</label>
                                             <select

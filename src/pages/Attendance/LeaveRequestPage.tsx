@@ -25,6 +25,7 @@ import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 // ... (Interface StudentOption และ CustomStyles ไม่มีการเปลี่ยนแปลง)
 
@@ -196,7 +197,7 @@ const ThaiDatePicker: React.FC<{
 const LeaveRequestPage: React.FC = () => {
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
-  const schoolId = user?.schoolId;
+  const schoolId = useEffectiveSchoolId();
 
   // Redux Calendar State
   const calendarState = useSelector((state: RootState) => state.calendar);

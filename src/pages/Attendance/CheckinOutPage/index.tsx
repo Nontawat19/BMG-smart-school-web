@@ -53,6 +53,7 @@ import { Settings, Sun, Moon, ChevronsLeft, ChevronsRight, ScanFace, ShieldCheck
 import LogoutButton from "@/components/LogoutButton";
 import { useTheme } from "@/ThemeContext";
 import MainLayout from "@/layouts/MainLayout";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 
 const LOCAL_FACE_BRIDGE_URL = "http://127.0.0.1:18188/findface";
 const FACE_SCAN_DEBUG = import.meta.env.VITE_FACE_SCAN_DEBUG === "true";
@@ -233,7 +234,7 @@ const SELF_CHECKIN_DEVICE_LOCK_PREFIX = "selfCheckinDeviceLock_";
 
 const CheckinOutPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
-  const schoolId = currentUser?.schoolId;
+  const schoolId = useEffectiveSchoolId();
   const location = useLocation();
   // โหมดลงเวลาด้วยตนเอง (เข้าจากเมนู "ลงเวลา" ของครู/แอดมิน): บังคับใช้รหัสเท่านั้น ไม่มีสแกนใบหน้า
   // และจำกัด 1 คนต่ออุปกรณ์ต่อวัน (คนเดิมยังเข้า-ออกได้ตามปกติ)

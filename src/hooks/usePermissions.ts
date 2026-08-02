@@ -2,9 +2,11 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { ROLES } from '@/constants/roles';
 import { OWNER_ONLY, ADMIN_ACCESS, ACADEMIC_ACCESS, STAFF_ACCESS, ACADEMIC_STAFF, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS } from '@/constants/permissions';
+import { expandSuperAdminScopedRoles } from '@/utils/superAdminScope';
 
 export const usePermissions = () => {
     const user = useSelector((state: RootState) => state.auth.user);
+    const activeSchoolId = useSelector((state: RootState) => state.schoolScope.activeSchoolId);
 
     const normalizeRoleValue = (role: string) => {
         if (role === 'admin') {
@@ -17,11 +19,13 @@ export const usePermissions = () => {
     };
 
     // Normalize legacy role names while preserving each permission lane.
-    const normalizedRoles = Array.isArray(user?.role)
+    const baseNormalizedRoles = Array.isArray(user?.role)
         ? user.role.map(normalizeRoleValue)
         : typeof user?.role === 'string'
             ? [normalizeRoleValue(user.role)]
             : [];
+
+    const normalizedRoles = expandSuperAdminScopedRoles(baseNormalizedRoles, !!activeSchoolId);
 
     const hasRole = (allowedRoles: string[]) => {
         if (!user || !user.role) return false;

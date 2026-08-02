@@ -51,6 +51,7 @@ interface Teacher {
 const STAFF_ROLES = new Set([
   'teacher',
   'school_admin',
+  'general_user',
   'academic_admin',
   'super_admin',
   'admin',
@@ -76,8 +77,14 @@ const resolvePersonnelType = (data: any): 'teacher' | 'user' => {
     return data.personnelType;
   }
   const roles = toRoleArray(data.role);
+  if (!roles.some(role => role.toLowerCase() === 'teacher')) return 'user';
   if (isAttendanceEntryOnly(roles)) return 'user';
   return 'teacher';
+};
+
+const isAttendanceOnlyAccount = (role: unknown) => {
+  const roles = toRoleArray(role).map(item => item.toLowerCase());
+  return roles.length > 0 && isAttendanceEntryOnly(roles);
 };
 
 const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): Teacher => {
@@ -479,7 +486,7 @@ export default function TeacherListPage() {
         const merged = {
           id: doc.id,
           schoolId: currentSchoolId,
-          teacherId: data.teacherId || userData.teacherId || '',
+          teacherId: data.teacherId || '',
           idCardNumber: data.idCardNumber || userData.idCardNumber || '',
           rfid: data.rfid || userData.rfid || '',
           title,
@@ -586,13 +593,12 @@ export default function TeacherListPage() {
     }
 
     const filteredTeachers = teachers.filter(teacher => {
-      if (isAttendanceEntryOnly(teacher.role)) return false;
       const matchesSearch = `${teacher.title}${teacher.firstName} ${teacher.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.teacherId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.idCardNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (teacher.rfid || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesTab =
-        activeTab === 'all' ? true :
+        activeTab === 'all' ? !isAttendanceOnlyAccount(teacher.role) :
         activeTab === 'teacher' ? (!teacher.personnelType || teacher.personnelType === 'teacher') :
         teacher.personnelType === 'user';
       return matchesSearch && matchesTab;

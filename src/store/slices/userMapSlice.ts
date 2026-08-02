@@ -43,13 +43,8 @@ const initialState: UserMapState = {
   error: null,
 };
 
-const STAFF_ROLES = new Set([
+const PERSONNEL_ROLES = new Set([
   'teacher',
-  'school_admin',
-  'academic_admin',
-  'super_admin',
-  'admin',
-  'academic',
 ]);
 
 const toRoleArray = (role: unknown): string[] => {
@@ -60,7 +55,7 @@ const toRoleArray = (role: unknown): string[] => {
 };
 
 const hasStaffRole = (role: unknown) =>
-  toRoleArray(role).some(roleName => STAFF_ROLES.has(roleName.toLowerCase()));
+  toRoleArray(role).some(roleName => PERSONNEL_ROLES.has(roleName.toLowerCase()));
 
 const buildFallbackTeacherFromUser = (id: string, data: any, schoolId: string): Teacher => {
   const roles = toRoleArray(data.role);
@@ -129,7 +124,7 @@ export const fetchTeachersMap = createAsyncThunk(
 
         teachersData[doc.id] = {
           id: doc.id,
-          teacherId: data.teacherId || userData.teacherId || '',
+          teacherId: data.teacherId || '',
           name: name || 'ไม่ระบุชื่อ',
           profileImageUrl: data.profileImageUrl || userData.profileImageUrl || userData.profileUrl || '',
           displayName: `${firstName} ${lastName}`.trim() || userData.fullName || '',
@@ -174,7 +169,11 @@ export const fetchTeachersMap = createAsyncThunk(
 const userMapSlice = createSlice({
   name: "userMap",
   initialState,
-  reducers: {},
+  reducers: {
+    resetTeachersMap() {
+      return initialState;
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchTeachersMap.pending, (state) => { state.status = 'loading'; })
@@ -183,4 +182,5 @@ const userMapSlice = createSlice({
   },
 });
 
+export const { resetTeachersMap } = userMapSlice.actions;
 export default userMapSlice.reducer;

@@ -321,21 +321,32 @@ export default function ImportTeacherPage() {
                     const existingRoles = Array.isArray(existingData.role) ? existingData.role : [existingData.role || "teacher"];
                     const updatedRoles = Array.from(new Set([...existingRoles, "teacher"]));
                     
-                    await setDoc(doc(firestore, "users", uid), {
-                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
-                        role: updatedRoles,
-                        schoolId: existingData.schoolId || schoolId,
-                        updatedAt: serverTimestamp(),
-                    }, { merge: true });
-                } else {
-                    await setDoc(doc(firestore, "users", uid), {
-                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
-                        email: teacher.email,
-                        schoolId: schoolId,
-                        role: ["teacher"],
-                        createdAt: serverTimestamp(),
-                    });
-                }
+	                    await setDoc(doc(firestore, "users", uid), {
+	                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
+	                        firstName: teacher.firstName,
+	                        lastName: teacher.lastName,
+	                        title: teacher.title,
+	                        role: updatedRoles,
+	                        schoolId: existingData.schoolId || schoolId,
+	                        teacherId: teacher.teacherId || "",
+	                        idCardNumber: teacher.idCardNumber || "",
+	                        updatedAt: serverTimestamp(),
+	                    }, { merge: true });
+	                } else {
+	                    await setDoc(doc(firestore, "users", uid), {
+	                        fullName: `${teacher.title}${teacher.firstName} ${teacher.lastName}`,
+	                        firstName: teacher.firstName,
+	                        lastName: teacher.lastName,
+	                        title: teacher.title,
+	                        email: teacher.email,
+	                        schoolId: schoolId,
+	                        role: ["teacher"],
+	                        personnelType: "teacher",
+	                        teacherId: teacher.teacherId || "",
+	                        idCardNumber: teacher.idCardNumber || "",
+	                        createdAt: serverTimestamp(),
+	                    });
+	                }
 
                 successCount++;
             } catch (error: any) {

@@ -6,6 +6,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { firestore } from "@/firebase";
+import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import {
   collection,
   collectionGroup,
@@ -43,7 +44,7 @@ interface NotificationItem {
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
   const currentUser = useSelector((state: RootState) => state.auth.user);
-  const schoolId = (currentUser as any)?.schoolId || null;
+  const schoolId = useEffectiveSchoolId();
 
   const [systemNotifications, setSystemNotifications] = useState<NotificationItem[]>([]);
   const [clubNotifications, setClubNotifications] = useState<NotificationItem[]>([]);

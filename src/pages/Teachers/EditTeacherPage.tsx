@@ -14,6 +14,7 @@ import { useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { FaChevronDown, FaCheck, FaCamera } from 'react-icons/fa';
 import { usePermissions } from "@/hooks/usePermissions";
+import { SCHOOL_STAFF_USER_ROLE_OPTIONS, SCHOOL_USER_ROLE_OPTIONS, sortRolesByPriority } from "@/constants/roleManagement";
 
 // --- Interface สำหรับ Teacher Form State (Type Safety) ---
 interface TeacherFormState {
@@ -135,19 +136,9 @@ export default function EditTeacherPage() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const userRoles = [
-        { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน (School Admin)' },
-        { value: 'academic_admin', label: 'ฝ่ายวิชาการ (Academic Admin)' },
-        { value: 'teacher', label: 'ครูผู้สอน (Teacher)' },
-    ];
+    const userRoles = SCHOOL_USER_ROLE_OPTIONS.filter(role => role.value === 'teacher' || role.value === 'academic_admin');
 
-    const staffRoles = [
-        { value: 'student_attendance', label: 'เจ้าหน้าที่ลงเวลานักเรียน' },
-        { value: 'teacher_attendance', label: 'เจ้าหน้าที่ลงเวลาครู' },
-        { value: 'school_attendance', label: 'เจ้าหน้าที่ลงเวลาทั้งโรงเรียน' },
-        { value: 'student_affairs', label: 'งานกิจการนักเรียน' },
-        { value: 'school_admin', label: 'ผู้ดูแลระบบโรงเรียน' },
-    ];
+    const staffRoles = SCHOOL_STAFF_USER_ROLE_OPTIONS;
 
     const activeRoles = form.personnelType === 'user' ? staffRoles : userRoles;
     const allRoleOptions = [...userRoles, ...staffRoles];
@@ -158,7 +149,7 @@ export default function EditTeacherPage() {
             ? currentRoles.filter(r => r !== roleValue)
             : [...currentRoles, roleValue];
 
-        setForm(prev => ({ ...prev, role: updatedRoles }));
+        setForm(prev => ({ ...prev, role: sortRolesByPriority(updatedRoles) }));
     };
 
     // ดึงข้อมูลกลุ่มสาระจาก Firebase (อ้างอิง SubjectGroupManagementPage)
@@ -244,6 +235,7 @@ export default function EditTeacherPage() {
                         if (d.personnelType === 'teacher' || d.personnelType === 'user') return d.personnelType;
                         const roles: string[] = Array.isArray(d.role) ? d.role : (typeof d.role === 'string' ? [d.role] : []);
                         const attendanceOnly = ['student_attendance', 'teacher_attendance', 'school_attendance'];
+                        if (!roles.includes('teacher')) return 'user';
                         if (roles.length > 0 && roles.every(r => attendanceOnly.includes(r))) return 'user';
                         return 'teacher';
                     };
@@ -428,12 +420,19 @@ export default function EditTeacherPage() {
             await setDoc(docRef, dataToUpdate, { merge: true });
 
             // อัปเดตข้อมูลใน Firestore (User Collection)
-            const userDocRef = doc(firestore, "users", teacherId);
-            await updateDoc(userDocRef, {
-                fullName: `${finalTitle}${form.firstName} ${form.lastName}`,
-                profileUrl: dataToUpdate.profileImageUrl || form.profileImageUrl,
-                role: form.role,
-            });
+	            const userDocRef = doc(firestore, "users", teacherId);
+	            await updateDoc(userDocRef, {
+	                fullName: `${finalTitle}${form.firstName} ${form.lastName}`,
+	                firstName: form.firstName,
+	                lastName: form.lastName,
+	                title: finalTitle,
+	                profileUrl: dataToUpdate.profileImageUrl || form.profileImageUrl,
+	                role: form.role,
+	                schoolId,
+	                personnelType: form.personnelType || 'teacher',
+	                teacherId: form.teacherId || "",
+	                idCardNumber: form.idCardNumber || "",
+	            });
 
             // Sync head of learning area to subject_groups collection
             if (form.learningArea) {
@@ -522,14 +521,14 @@ export default function EditTeacherPage() {
                             <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
                                 <button
                                     type="button"
-                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'teacher', role: prev.role.some(r => ['teacher','school_admin','academic_admin'].includes(r)) ? prev.role : ['teacher'] }))}
+                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'teacher', role: prev.role.includes('teacher') ? prev.role : ['teacher'] }))}
                                     className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${form.personnelType !== 'user' ? 'bg-white dark:bg-[#3a3b3f] text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
                                 >
                                     ครูผู้สอน
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'user', role: prev.role.some(r => ['student_attendance','teacher_attendance','school_attendance','student_affairs'].includes(r)) ? prev.role : ['student_attendance'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
+                                    onClick={() => setForm(prev => ({ ...prev, personnelType: 'user', role: prev.role.some(r => ['general_user','student_attendance','teacher_attendance','school_attendance','student_affairs','school_admin','academic_admin'].includes(r)) ? prev.role.filter(r => r !== 'teacher') : ['general_user'], learningArea: '', homeroomGrade: '', homeroomRoom: '', advisorRole: '', isHeadOfLearningArea: false, isHeadOfAssessment: false, isGuidanceTeacher: false }))}
                                     className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${form.personnelType === 'user' ? 'bg-white dark:bg-[#3a3b3f] text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
                                 >
                                     ผู้ใช้ระบบ

@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "./store";
 import { useInitializeStore } from "@/hooks/useInitializeStore";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -25,6 +25,8 @@ import { PermissionProvider } from "@/contexts/PermissionContext";
 import { lazy, Suspense, useEffect } from "react";
 import { useFcmNotification } from "@/hooks/useFcmNotification";
 import { ROLES } from "@/constants/roles";
+import { applySchoolScope } from "@/store/slices/authSlice";
+import { expandSuperAdminScopedRoles } from "@/utils/superAdminScope";
 
 const LoginPage = lazy(() => import("./pages/Auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/Auth/RegisterPage"));
@@ -165,7 +167,9 @@ const LineOAManagementPage = lazy(() => import("./pages/Administrator/LineOAMana
 const TelegramManagementPage = lazy(() => import("./pages/Administrator/TelegramManagementPage"));
 
 function App() {
+  const dispatch = useDispatch();
   const { loading, user } = useSelector((state: RootState) => state.auth);
+  const activeSchoolId = useSelector((state: RootState) => state.schoolScope.activeSchoolId);
   useFcmNotification(user?.uid);
   const TEACHER_LEAVE_HISTORY_ACCESS = [...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
   const TEACHER_ATTENDANCE_TODAY_ACCESS = [ROLES.SCHOOL_ADMIN, ...STAFF_ACCESS, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE];
@@ -206,6 +210,26 @@ function App() {
   // 🔥 Auto-fetch ทุก Redux Slice ครั้งเดียวหลัง login
   useInitializeStore();
 
+  useEffect(() => {
+    const sourceRoles = Array.isArray(user?.homeRole) ? user.homeRole : Array.isArray(user?.role) ? user.role : [];
+    if (!sourceRoles.includes(ROLES.SUPER_ADMIN)) {
+      return;
+    }
+
+    const targetSchoolId = activeSchoolId || user?.homeSchoolId || null;
+    const targetRoles = expandSuperAdminScopedRoles(sourceRoles, !!activeSchoolId);
+    const currentRoles = Array.isArray(user?.role) ? user.role : [];
+    const rolesMatch =
+      currentRoles.length === targetRoles.length &&
+      currentRoles.every((role, index) => role === targetRoles[index]);
+
+    if (user?.schoolId === targetSchoolId && rolesMatch) {
+      return;
+    }
+
+    dispatch(applySchoolScope(activeSchoolId || null));
+  }, [dispatch, user?.homeRole, user?.role, user?.schoolId, user?.homeSchoolId, activeSchoolId]);
+
   if (loading) {
     return <LoadingScreen />;
   }
@@ -213,7 +237,7 @@ function App() {
   // Permission groups are imported from @/constants/permissions
 
   return (
-    <PermissionProvider schoolId={user?.schoolId}>
+    <PermissionProvider schoolId={activeSchoolId || user?.schoolId}>
     <PullToRefresh>
       <Router>
         <Suspense fallback={<LoadingScreen />}><Routes>

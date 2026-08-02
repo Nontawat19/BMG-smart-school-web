@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { firestore as db, storage } from '../../firebase';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
+import { useDispatch } from 'react-redux';
 import Swal from 'sweetalert2';
 import { FaPlus, FaEdit, FaTrash, FaSchool, FaUserTie, FaSearch, FaChalkboardTeacher, FaUserGraduate, FaDatabase, FaHdd, FaServer } from 'react-icons/fa';
 import { List, LayoutGrid } from 'lucide-react';
@@ -24,6 +25,7 @@ import {
   formatLastSyncTimestamp,
   type LicenseStatus,
 } from '@/utils/ownerStatsUtils';
+import { setActiveSchoolScope } from '@/store/slices/schoolScopeSlice';
 
 interface SchoolInfo {
   id: string;
@@ -109,6 +111,7 @@ const SkeletonLoader: React.FC = () => (
 );
 
 const SchoolListPage: React.FC = () => {
+  const dispatch = useDispatch();
   const [schools, setSchools] = useState<SchoolInfo[]>([]);
   const [stats, setStats] = useState({
     totalSchools: 0,
@@ -125,6 +128,14 @@ const SchoolListPage: React.FC = () => {
   });
 
   const collectionName = 'school-settings';
+
+  const enterSchoolAsSuperAdmin = (school: SchoolInfo) => {
+    dispatch(setActiveSchoolScope({
+      schoolId: school.id,
+      schoolName: school.schoolName || school.schoolAbbreviation || school.id,
+    }));
+    window.location.href = "/academic/hub/registration";
+  };
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -445,6 +456,14 @@ const SchoolListPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => enterSchoolAsSuperAdmin(school)}
+                          className="text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                          title="เข้าดูโรงเรียน"
+                        >
+                          <FaSchool size={11} />
+                        </button>
                         <Link to={`/owner/school-info/${school.id}`} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="แก้ไข">
                           <FaEdit size={11} />
                         </Link>
@@ -496,6 +515,14 @@ const SchoolListPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => enterSchoolAsSuperAdmin(school)}
+                            className="text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                            title="เข้าดูโรงเรียน"
+                          >
+                            <FaSchool size={12} />
+                          </button>
                           <Link to={`/owner/school-info/${school.id}`} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="แก้ไข">
                             <FaEdit size={12} />
                           </Link>

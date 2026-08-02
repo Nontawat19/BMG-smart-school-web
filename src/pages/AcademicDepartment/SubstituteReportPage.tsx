@@ -477,8 +477,8 @@ const SubstituteReportPage: React.FC = () => {
                   <table className="min-w-full border-collapse border border-gray-300 bg-white text-[13px] text-gray-800 dark:border-white/10 dark:bg-[#2a2b2f] dark:text-gray-100">
                     <thead>
                       <tr className="bg-gray-200 dark:bg-white/10">
-                        {["#", "วันที่", "คาบที่", "เวลา", "รหัสวิชา", "ชื่อวิชา", "ชั้นเรียน", "ครูเจ้าของคาบ", "ครูสอนแทน", "สถานที่"].map((h) => (
-                          <th key={h} className="whitespace-nowrap border border-gray-300 px-2 py-2 text-center font-bold dark:border-white/10">{h}</th>
+                        {["#", "วันที่", "คาบที่", "เวลา", "รหัสวิชา", "ชื่อวิชา", "ชั้นเรียน", "ครูเจ้าของคาบ", "ครูสอนแทน", "สถานที่"].map((h, index) => (
+                          <th key={`${h}-${index}`} className="whitespace-nowrap border border-gray-300 px-2 py-2 text-center font-bold dark:border-white/10">{h}</th>
                         ))}
                       </tr>
                     </thead>

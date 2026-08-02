@@ -11,6 +11,7 @@ import { isPwaStandalone, PWA_ATTENDANCE_HUB_PATH } from '@/utils/pwaMode';
 import { usePermissionContext } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 import { ROLES } from '@/constants/roles';
+import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -25,6 +26,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   const [isFeatureEnabled, setIsFeatureEnabled] = useState(true);
 
   const { user } = useSelector((state: RootState) => state.auth);
+  const effectiveSchoolId = useEffectiveSchoolId();
   const { routePermissions, isLoaded: permissionsLoaded } = usePermissionContext();
 
   const matchedRouteKey = useMemo(() => {
@@ -56,9 +58,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       if (firebaseUser) {
         setIsAuthenticated(true);
 
-        if (featureFlag && user?.schoolId) {
+        if (featureFlag && effectiveSchoolId) {
           try {
-            const schoolRef = doc(db, 'school-settings', user.schoolId);
+            const schoolRef = doc(db, 'school-settings', effectiveSchoolId);
             const schoolSnap = await getDoc(schoolRef);
             if (schoolSnap.exists() && isMounted) {
               const features = schoolSnap.data().features || {};
@@ -115,7 +117,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       isMounted = false;
       unsubscribe();
     };
-  }, [featureFlag, user?.schoolId]);
+  }, [featureFlag, effectiveSchoolId]);
 
   if (loading) {
     return (
@@ -146,6 +148,28 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     !isAllowedPathForAttendanceEntry
   ) {
     return <Navigate to="/attendance/checkin-out" replace />;
+  }
+
+  const normalizedCurrentRoles = Array.isArray(user?.role)
+    ? user.role.map(role => typeof role === 'string' ? role.toLowerCase() : '').filter(Boolean)
+    : [];
+
+  const isGeneralUserOnly =
+    normalizedCurrentRoles.includes(ROLES.GENERAL_USER) &&
+    !normalizedCurrentRoles.includes(ROLES.TEACHER) &&
+    !normalizedCurrentRoles.includes(ROLES.SCHOOL_ADMIN) &&
+    !normalizedCurrentRoles.includes(ROLES.SUPER_ADMIN) &&
+    !normalizedCurrentRoles.includes(ROLES.ACADEMIC_ADMIN) &&
+    !normalizedCurrentRoles.includes(ROLES.STUDENT_AFFAIRS) &&
+    !normalizedCurrentRoles.includes(ROLES.DIRECTOR) &&
+    !normalizedCurrentRoles.includes(ROLES.DEPT_HEAD) &&
+    !normalizedCurrentRoles.includes(ROLES.STUDENT_ATTENDANCE) &&
+    !normalizedCurrentRoles.includes(ROLES.TEACHER_ATTENDANCE) &&
+    !normalizedCurrentRoles.includes(ROLES.SCHOOL_ATTENDANCE) &&
+    !normalizedCurrentRoles.includes(ROLES.STUDENT);
+
+  if (user && isGeneralUserOnly && location.pathname !== '/profile') {
+    return <Navigate to="/profile" replace />;
   }
 
   if (user && !isPwaAttendanceHub) {
@@ -201,7 +225,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   }
 
   if (!isFeatureEnabled) {
-    console.warn(`Feature ${featureFlag} is disabled for school ${user?.schoolId}`);
+    console.warn(`Feature ${featureFlag} is disabled for school ${effectiveSchoolId}`);
     return <Navigate to="/home" replace />;
   }
 
