@@ -1228,7 +1228,7 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
               <img
                 src={selectedTeacher.profileImageUrl || defaultProfile}
                 alt={selectedTeacher.fullName}
-                className="w-20 h-20 rounded-full object-cover border-2 border-white dark:border-gray-700 shadow-md flex-shrink-0"
+                className="w-20 h-20 rounded-full object-cover object-top border-2 border-white dark:border-gray-700 shadow-md flex-shrink-0"
                 onError={(e) => { e.currentTarget.src = defaultProfile; }}
               />
               <div className="text-center md:text-left">

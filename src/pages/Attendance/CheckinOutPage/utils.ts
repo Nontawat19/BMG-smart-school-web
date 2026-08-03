@@ -40,3 +40,66 @@ export const getStatusKey = (status: string) => {
     default: return null;
   }
 };
+
+const formatTeacherGrade = (grade?: string, room?: string) => {
+  const rawGrade = String(grade || "").trim();
+  const rawRoom = String(room || "").trim();
+  if (!rawGrade) return "";
+
+  let formattedGrade = rawGrade;
+  if (!rawGrade.startsWith('ม.') && !rawGrade.startsWith('ป.')) {
+    const num = rawGrade.replace(/[^0-9]/g, '');
+    if (num) {
+      formattedGrade = `ม.${num}`;
+    }
+  }
+
+  if (rawRoom) {
+    const gradeRoom = rawGrade.includes('/') ? rawGrade.split('/')[1]?.trim() : "";
+    if (!gradeRoom) {
+      formattedGrade += `/${rawRoom}`;
+    }
+  }
+
+  return formattedGrade;
+};
+
+const normalizeAdvisorRole = (advisorRole?: string) => {
+  const text = String(advisorRole || "").trim();
+  if (!text) return "";
+  if (text.includes("ครูที่ปรึกษา")) return "ครูที่ปรึกษา";
+  if (text.includes("ครูสอนประจำชั้น") || text.includes("ครูประจำชั้น")) return "ครูประจำชั้น";
+  return text;
+};
+
+const inferAdvisorRoleFromGrade = (grade?: string, isHomeroomTeacher?: boolean) => {
+  const rawGrade = String(grade || "").trim();
+  if (!rawGrade && !isHomeroomTeacher) return "";
+  return rawGrade.startsWith("ม.") ? "ครูที่ปรึกษา" : "ครูประจำชั้น";
+};
+
+export const getTeacherRoleDisplay = (user: {
+  type?: string;
+  grade?: string;
+  room?: string;
+  position?: string;
+  advisorRole?: string;
+  isHomeroomTeacher?: boolean;
+}) => {
+  if (user.type === "student") return user.position || "";
+
+  const roleLabel =
+    normalizeAdvisorRole(user.advisorRole) ||
+    inferAdvisorRoleFromGrade(user.grade, user.isHomeroomTeacher);
+  const gradeLabel = formatTeacherGrade(user.grade, user.room);
+
+  if (roleLabel && gradeLabel) {
+    return `${roleLabel} ${gradeLabel}`;
+  }
+
+  if (roleLabel) {
+    return roleLabel;
+  }
+
+  return user.position || "ครู";
+};

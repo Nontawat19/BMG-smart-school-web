@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FoundUser } from './types';
+import { getTeacherRoleDisplay } from './utils';
 
 interface LatestUsersProps {
   latestUsers: FoundUser[];
@@ -157,18 +158,7 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                         <span className={`text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider border ${user.type === "student" ? "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-white border-slate-200 dark:border-slate-700" : "bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-white border-emerald-100 dark:border-emerald-800"}`}>
                           {(() => {
                             if (user.type !== "student") {
-                              if (user.grade) {
-                                const g = user.grade.trim();
-                                let formattedGrade = "";
-                                if (g.startsWith('ม.') || g.startsWith('ป.')) {
-                                  formattedGrade = g;
-                                } else {
-                                  const num = g.replace(/[^0-9]/g, '');
-                                  formattedGrade = num ? `ม.${num}` : g;
-                                }
-                                return `ครูประจำชั้น ${formattedGrade}${user.room ? `/${user.room}` : ""}`;
-                              }
-                              return user.position || "ครู";
+                              return getTeacherRoleDisplay(user);
                             }
 
                             let display = "นักเรียน";

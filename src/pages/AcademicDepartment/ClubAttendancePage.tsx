@@ -9,6 +9,7 @@ import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
+import { usePermissions } from '@/hooks/usePermissions';
 import Swal from 'sweetalert2';
 import {
   ClipboardCheck,
@@ -98,6 +99,11 @@ const ClubAttendancePage: React.FC = () => {
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
   const dispatch = useDispatch();
+  // Admin-type roles oversee every club in the school, not just ones they personally teach —
+  // without this, school_admin/director/dept_head/academic_admin would see an empty list here
+  // since they typically aren't listed as a club's responsible teacher themselves.
+  const { hasRole, ACADEMIC_MANAGEMENT } = usePermissions();
+  const canSeeAllClubs = hasRole(ACADEMIC_MANAGEMENT);
 
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const calendarState = useSelector((state: RootState) => state.calendar);
@@ -190,7 +196,9 @@ const ClubAttendancePage: React.FC = () => {
   }, [schoolId, calendarState.status, calendarState.academicYear, calendarState.rawData]);
 
   useEffect(() => {
-    if (!schoolId || currentTeacherKeys.size === 0) return;
+    // Admins don't need a teacherMap match (currentTeacherKeys) since they see every club
+    // regardless of who's assigned — only require it for the teacher-scoped view.
+    if (!schoolId || (!canSeeAllClubs && currentTeacherKeys.size === 0)) return;
 
     const fetchData = async () => {
       setLoading(true);
@@ -198,7 +206,7 @@ const ClubAttendancePage: React.FC = () => {
         const clubsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'clubs'));
         const clubsData = clubsSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Club))
-          .filter(isClubManagedByCurrentTeacher)
+          .filter(club => canSeeAllClubs || isClubManagedByCurrentTeacher(club))
           .sort((a, b) => a.name.localeCompare(b.name, 'th'));
         setMyClubs(clubsData);
         if (clubsData.length === 1) setSelectedClub(clubsData[0]);
@@ -215,7 +223,7 @@ const ClubAttendancePage: React.FC = () => {
     };
 
     fetchData();
-  }, [schoolId, currentTeacherId, currentTeacherKeys]);
+  }, [schoolId, currentTeacherId, currentTeacherKeys, canSeeAllClubs]);
 
   const clubSpecialPeriod = useMemo(() => {
     if (!selectedClub) return null;

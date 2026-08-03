@@ -70,7 +70,7 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="w-full h-full flex flex-col items-center justify-center"
           >
-            <div className={`${isCompact ? 'w-40 h-40' : 'w-72 h-72 2xl:w-80 2xl:h-80'} rounded-[1.75rem] border-[6px] border-[#fafbfc] dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto ${isCompact ? 'mb-3' : 'mb-8'}`}>
+            <div className={`${isCompact ? 'w-40' : 'w-72 2xl:w-80'} max-w-full aspect-square rounded-[1.75rem] border-[6px] border-[#fafbfc] dark:border-[#323338] shadow-2xl overflow-hidden ring-4 ring-gray-100 dark:ring-gray-700 mx-auto ${isCompact ? 'mb-3' : 'mb-8'}`}>
               <img
                 src={displayUser.profileImageUrl || `https://ui-avatars.com/api/?name=${displayUser.name}&background=random&color=fff`}
                 alt={displayUser.name}
@@ -137,12 +137,12 @@ const UserInfoPanel: React.FC<UserInfoPanelProps> = ({ displayUser, checkinTime,
             exit={{ opacity: 0 }}
             className="flex flex-col items-center"
           >
-            <div className={`${isCompact ? 'w-40 h-40' : 'w-72 h-72 2xl:w-80 2xl:h-80'} rounded-[1.75rem] border-[6px] border-dashed border-gray-300 dark:border-gray-700 bg-[#f0f2f6] dark:bg-gray-800/50 flex items-center justify-center ${isCompact ? 'mb-3' : 'mb-8'} mx-auto`}>
+            <div className={`${isCompact ? 'w-40' : 'w-72 2xl:w-80'} max-w-full aspect-square rounded-[1.75rem] border-[6px] border-dashed border-gray-300 dark:border-gray-700 bg-[#f0f2f6] dark:bg-gray-800/50 flex items-center justify-center ${isCompact ? 'mb-3' : 'mb-8'} mx-auto`}>
               <svg xmlns="http://www.w3.org/2000/svg" className={`${isCompact ? 'h-14 w-14' : 'h-24 w-24'} text-gray-400 dark:text-gray-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <h2 className="text-4xl font-extrabold text-gray-400 dark:text-gray-500">รอการลงเวลา...</h2>
+            <h2 className={`${isCompact ? 'text-2xl' : 'text-4xl'} font-extrabold text-gray-400 dark:text-gray-500 whitespace-nowrap`}>รอการลงเวลา...</h2>
           </motion.div>
         )}
       </AnimatePresence>

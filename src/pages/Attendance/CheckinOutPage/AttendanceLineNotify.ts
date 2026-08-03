@@ -1,5 +1,6 @@
 import { FoundUser } from "./types";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { getTeacherRoleDisplay } from "./utils";
 
 export const sendTeacherLineAttendanceNotification = async (
     user: FoundUser,
@@ -82,8 +83,7 @@ export const sendTeacherLineAttendanceNotification = async (
                                     type: "box", layout: "vertical", margin: "lg",
                                     contents: [
                                         { type: "text", text: user.name, weight: "bold", size: "xl", color: "#111111" },
-                                        { type: "text", text: `${user.position || "ครู"}${user.displayId ? ` • ${user.displayId}` : ""}`, size: "sm", color: "#666666", margin: "xs" },
-                                        ...(user.grade ? [{ type: "text", text: `ครูประจำชั้น ${user.grade}${user.room ? `/${user.room}` : ""}`, size: "xs", color: "#888888", margin: "xs" }] : [])
+                                        { type: "text", text: `${getTeacherRoleDisplay(user)}${user.displayId ? ` • ${user.displayId}` : ""}`, size: "sm", color: "#666666", margin: "xs" }
                                     ]
                                 }
                             ]

@@ -17,6 +17,15 @@ TASK_NAME = "BMG_SmartSchool_CameraProxy"
 
 
 def detect_python():
+    # This installer only runs under Python 3 (f-strings), so the interpreter
+    # currently executing it is always a valid choice. Prefer it over
+    # re-searching PATH by name: on Windows, some installs only register the
+    # "py" launcher (not "python"/"python3"), which would make the PATH
+    # search below fail even though we are demonstrably running on Python 3
+    # right now (auto_start_proxy.bat already falls back to "py" for us).
+    if sys.executable:
+        return sys.executable
+
     for cmd in ("python3", "python"):
         path = shutil.which(cmd)
         if path:

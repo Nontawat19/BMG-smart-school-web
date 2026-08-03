@@ -56,7 +56,46 @@ RTSP_WORKERS_LOCK = threading.Lock()
 
 
 def sanitize_for_log(value):
-    return re.sub(r"(rtsp://)([^:/?#]+):([^@/?#]+)@", r"\1***:***@", value)
+    value = re.sub(r"(rtsp://)([^:/?#]+):([^@/?#]+)@", r"\1***:***@", value)
+    # Camera URLs (with basic-auth credentials) are passed as a `url=` query
+    # param to /frame and /findface, often percent-encoded. Redact the whole
+    # value rather than trying to match every encoding of "user:pass@".
+    value = re.sub(r"(?i)(url=)[^&\s\"]+", r"\1[redacted]", value)
+    return value
+
+
+LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILES = (
+    os.path.join(LOG_DIR, "camera_proxy_stdout.log"),
+    os.path.join(LOG_DIR, "camera_proxy_stderr.log"),
+)
+LOG_MAX_BYTES = int(os.environ.get("BMG_LOG_MAX_BYTES", str(5 * 1024 * 1024)))
+LOG_TRIM_INTERVAL_SECONDS = 300
+
+
+def _trim_log_file(path, max_bytes):
+    try:
+        if os.path.getsize(path) <= max_bytes:
+            return
+        keep_bytes = max_bytes // 2
+        with open(path, "rb") as f:
+            f.seek(-keep_bytes, os.SEEK_END)
+            tail = f.read()
+        with open(path, "wb") as f:
+            f.write(b"--- log trimmed (exceeded %d bytes) ---\n" % max_bytes)
+            f.write(tail)
+    except OSError:
+        pass
+
+
+def _log_rotation_loop():
+    # Truncates the log files in place once they grow too large. Safe to run
+    # alongside the 'a' / append-mode writers because append writes always
+    # seek to end-of-file first, so they keep working correctly after a trim.
+    while True:
+        time.sleep(LOG_TRIM_INTERVAL_SECONDS)
+        for log_path in LOG_FILES:
+            _trim_log_file(log_path, LOG_MAX_BYTES)
 
 
 class RtspFrameWorker:
@@ -347,7 +386,7 @@ except ImportError:
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Avoid logging full camera URLs because they may contain credentials.
-        sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
+        sys.stderr.write("%s - %s\n" % (self.address_string(), sanitize_for_log(format % args)))
 
     def is_allowed_browser_origin(self):
         origin = self.headers.get('Origin')
@@ -720,6 +759,8 @@ if __name__ == '__main__':
     print(" Press Ctrl+C to close this bridge proxy.")
     print("=" * 60)
     
+    threading.Thread(target=_log_rotation_loop, daemon=True).start()
+
     try:
         with ThreadingTCPServer((HOST, PORT), ProxyHandler) as httpd:
             httpd.serve_forever()

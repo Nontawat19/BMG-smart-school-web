@@ -708,7 +708,9 @@ const HubPage: React.FC = () => {
           icon: <CalendarClock size={24} />,
           path: "/academic/special-period-attendance",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          // Purely a special-period-mode feature — same reasoning as the item above.
+          hideWhenCourseBased: true
         },
         {
           title: "สรุปการมาเรียนรายวิชา",
@@ -1190,6 +1192,12 @@ const HubPage: React.FC = () => {
     let icon = <ClipboardList size={24} />;
     let path = `/academic/learner-activity-attendance?periodId=${period.id}`;
     let colorClass = "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400"; // default teal
+    // Homeroom/guidance/club/flag-ceremony each have their own dedicated, mode-independent
+    // page (set below) — only the generic "custom activity" bucket (ลูกเสือ/ยุวกาชาด/รด/
+    // ลงพื้นที่เขต/บำเพ็ญประโยชน์, per ActivityHubSettingsPage's own description) is the
+    // special-period-mode side of the activityMode setting, so only that one hides in
+    // course-based mode.
+    let hideWhenCourseBased = false;
 
     if (lowerTitle.includes("โฮมรูม") || lowerTitle.includes("โฮมรู") || lowerTitle.includes("homeroom") || lowerTitle.includes("โอมรูม")) {
       icon = <Home size={24} />;
@@ -1208,9 +1216,14 @@ const HubPage: React.FC = () => {
       path = `/academic/flag-ceremony`;
       colorClass = "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400";
     } else {
-      // Custom special period — route to class-based attendance check-in
+      // Custom special period (ลูกเสือ/ยุวกาชาด/รด/ลงพื้นที่เขต/บำเพ็ญประโยชน์, etc.) —
+      // this IS the special-period side of the activityMode setting, so it must hide once
+      // the school switches to course-based mode (attendance then goes through
+      // "เช็คชื่อรายวิชา" instead) — otherwise this dynamic card bypassed the same gating
+      // the static fallback menu item already had.
       icon = <ClipboardCheck size={24} />;
       path = `/academic/special-period-attendance?periodId=${period.id}`;
+      hideWhenCourseBased = true;
       const colors = [
         "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
         "bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/20 dark:text-fuchsia-400",
@@ -1231,7 +1244,8 @@ const HubPage: React.FC = () => {
       icon,
       path,
       colorClass,
-      allowedRoles: TEACHER_OPERATIONAL
+      allowedRoles: TEACHER_OPERATIONAL,
+      hideWhenCourseBased
     };
   };
 

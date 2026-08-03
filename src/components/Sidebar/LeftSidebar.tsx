@@ -59,6 +59,7 @@ import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 import { useSchoolScope } from "@/hooks/useEffectiveSchool";
 import { clearActiveSchoolScope } from "@/store/slices/schoolScopeSlice";
+import { SYSTEM_VERSION } from "@/utils/ownerStatsUtils";
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapsed = false, toggleSidebar }) => {
   const dispatch = useDispatch();
@@ -421,6 +422,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
             <LogoutButton className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors duration-200 text-sm font-medium" />
             <p className="text-[10px] text-gray-400 dark:text-gray-500 px-4 mt-1 leading-relaxed text-center">
               © 2025-{new Date().getFullYear()} BMG Smart School. All rights reserved.
+              <br />
+              เวอร์ชันระบบ {SYSTEM_VERSION}
             </p>
           </div>
         </div>

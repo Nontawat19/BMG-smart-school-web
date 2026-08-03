@@ -393,64 +393,6 @@ const CheckinOutPage: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Pre-load and cache all teachers to avoid Firestore reads during scanning
-  useEffect(() => {
-    if (!schoolId) return;
-
-    const loadAndCacheTeachers = async () => {
-      try {
-        const cacheKey = `teachers_cache_${schoolId}`;
-        const cachedData = localStorage.getItem(cacheKey);
-        const cached = parseUserCache(cachedData);
-        if (cached.records.length > 0) {
-          cached.records.forEach((teacherDoc: any) => {
-            const user = buildFoundUser("teacher", teacherDoc.id, teacherDoc.data, "สแกนใบหน้า");
-            sessionUserCache.current.set(user.id, user);
-            if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-            if (user.rfid) sessionUserCache.current.set(user.rfid, user);
-            if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-            if (user.name) {
-              sessionUserCache.current.set(user.name, user);
-              sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-            }
-          });
-          if (FACE_SCAN_DEBUG) console.log(`Loaded ${cached.records.length} teachers from localStorage cache.`);
-        }
-
-        if (cached.cachedAt && Date.now() - cached.cachedAt < USER_CACHE_TTL_MS) return;
-
-        // Refresh stale or legacy cache so newly imported/updated users can scan.
-        const teachersSnap = await getDocs(
-          collection(firestore, "school-settings", schoolId, "teachers")
-        );
-        
-        const toCache: any[] = [];
-        teachersSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          const docId = docSnap.id;
-          toCache.push({ id: docId, data });
-
-          const user = buildFoundUser("teacher", docId, data, "สแกนใบหน้า");
-          sessionUserCache.current.set(user.id, user);
-          if (user.displayId) sessionUserCache.current.set(user.displayId, user);
-          if (user.rfid) sessionUserCache.current.set(user.rfid, user);
-          if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
-          if (user.name) {
-            sessionUserCache.current.set(user.name, user);
-            sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
-          }
-        });
-
-        localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now(), records: toCache }));
-        if (FACE_SCAN_DEBUG) console.log(`Cached ${toCache.length} teachers successfully!`);
-      } catch (err) {
-        console.error("Error caching teachers:", err);
-      }
-    };
-
-    loadAndCacheTeachers();
-  }, [schoolId]);
-
   // Pre-load and cache all students to avoid Firestore reads during scanning
   useEffect(() => {
     if (!schoolId) return;
@@ -1245,6 +1187,8 @@ const CheckinOutPage: React.FC = () => {
       grade: String(d.homeroomGrade || d.classLevel || d.grade || ""),
       room: String(d.room || d.homeroomRoom || ""),
       position: d.position || "ครู",
+      advisorRole: d.advisorRole || "",
+      isHomeroomTeacher: Boolean(d.isHomeroomTeacher || d.homeroomGrade),
       role: d.role,
       rfid: d.rfid || "",
       scanMethod,
@@ -1252,6 +1196,100 @@ const CheckinOutPage: React.FC = () => {
       findfaceCardId: findfaceCardId || d.findfaceCardId || d.faceExternalId || "",
     };
   }, []);
+
+  // Pre-load and keep teachers in sync so latest check-in cards follow profile updates immediately.
+  useEffect(() => {
+    if (!schoolId) return;
+
+    let isMounted = true;
+
+    const syncTeacherRecord = (teacherDoc: { id: string; data: any }) => {
+      const user = buildFoundUser("teacher", teacherDoc.id, teacherDoc.data, "สแกนใบหน้า");
+      sessionUserCache.current.set(user.id, user);
+      if (user.displayId) sessionUserCache.current.set(user.displayId, user);
+      if (user.rfid) sessionUserCache.current.set(user.rfid, user);
+      if (user.findfaceCardId) sessionUserCache.current.set(String(user.findfaceCardId), user);
+      if (user.name) {
+        sessionUserCache.current.set(user.name, user);
+        sessionUserCache.current.set(user.name.replace(/\s+/g, ""), user);
+      }
+
+      setLatestUsers((prev) => {
+        let changed = false;
+        const next = prev.map((existingUser) => {
+          if (existingUser.type !== "teacher" || existingUser.id !== user.id) return existingUser;
+          changed = true;
+          return {
+            ...existingUser,
+            ...user,
+            latestActionTime: existingUser.latestActionTime,
+            status: existingUser.status,
+            lastAction: existingUser.lastAction,
+            checkinTime: existingUser.checkinTime,
+            checkoutTime: existingUser.checkoutTime,
+          };
+        });
+        if (changed) {
+          try {
+            localStorage.setItem("latestUsers", JSON.stringify(next));
+          } catch {
+            // localStorage quota exceeded — state still updates
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
+
+    const loadAndCacheTeachers = async () => {
+      try {
+        const cacheKey = `teachers_cache_${schoolId}`;
+        const cachedData = localStorage.getItem(cacheKey);
+        const cached = parseUserCache(cachedData);
+        if (cached.records.length > 0) {
+          cached.records.forEach((teacherDoc: any) => {
+            syncTeacherRecord(teacherDoc);
+          });
+          if (FACE_SCAN_DEBUG) console.log(`Loaded ${cached.records.length} teachers from localStorage cache.`);
+        }
+      } catch (err) {
+        console.error("Error caching teachers:", err);
+      }
+    };
+
+    loadAndCacheTeachers();
+
+    const teachersRef = collection(firestore, "school-settings", schoolId, "teachers");
+    const unsubscribe = onSnapshot(
+      teachersRef,
+      (teachersSnap) => {
+        if (!isMounted) return;
+
+        const toCache: any[] = [];
+        teachersSnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          const teacherDoc = { id: docSnap.id, data };
+          toCache.push(teacherDoc);
+          syncTeacherRecord(teacherDoc);
+        });
+
+        try {
+          localStorage.setItem(`teachers_cache_${schoolId}`, JSON.stringify({ cachedAt: Date.now(), records: toCache }));
+        } catch {
+          // localStorage quota exceeded — session cache still updates
+        }
+
+        if (FACE_SCAN_DEBUG) console.log(`Synced ${toCache.length} teachers from Firestore.`);
+      },
+      (err) => {
+        console.error("Error syncing teachers:", err);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [buildFoundUser, schoolId]);
 
   const fetchAttendance = useCallback(async (user: FoundUser) => {
     if (!schoolId)
@@ -2586,6 +2624,8 @@ const CheckinOutPage: React.FC = () => {
             grade: String(d.homeroomGrade || d.classLevel || d.grade || ""),
             room: String(d.room || d.homeroomRoom || ""),
             position: d.position || "ครู",
+            advisorRole: d.advisorRole || "",
+            isHomeroomTeacher: Boolean(d.isHomeroomTeacher || d.homeroomGrade),
             role: d.role,
             rfid: d.rfid || "",
             scanMethod: "พิมพ์รหัสเอง",
@@ -2628,6 +2668,8 @@ const CheckinOutPage: React.FC = () => {
             grade: String(d.homeroomGrade || d.classLevel || d.grade || ""),
             room: String(d.room || d.homeroomRoom || ""),
             position: d.position || "ครู",
+            advisorRole: d.advisorRole || "",
+            isHomeroomTeacher: Boolean(d.isHomeroomTeacher || d.homeroomGrade),
             role: d.role,
             rfid: d.rfid || "",
             scanMethod: "สแกนบัตร",
@@ -3437,8 +3479,8 @@ const CheckinOutPage: React.FC = () => {
       <main className={`flex-grow flex overflow-x-hidden ${isSelfServiceMode ? 'items-start' : 'items-center'} justify-center ${isSquareScreen ? 'p-2' : 'p-3 sm:p-6'}`}>
         <div className={`w-full min-w-0 ${isSquareScreen ? '' : 'lg:max-w-screen-2xl'}`}>
           <div className={`grid grid-cols-1 lg:grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'}`}>
-            <div className={`min-w-0 lg:col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} h-full`}>
-              <div className={`min-w-0 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-4' : 'p-4 sm:p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none h-full flex flex-col`}>
+            <div className={`min-w-0 lg:col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} ${isSelfServiceMode ? '' : 'h-full'}`}>
+              <div className={`min-w-0 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-4' : 'p-4 sm:p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none ${isSelfServiceMode ? '' : 'h-full'} flex flex-col`}>
                 <div className={`flex items-center gap-3 sm:gap-5 min-w-0 ${isSquareScreen ? 'mb-3' : 'mb-4 sm:mb-8'}`}>
                   {schoolSettings?.logoUrl && (
                     <img
@@ -3503,7 +3545,7 @@ const CheckinOutPage: React.FC = () => {
                           displayUser={displayUser}
                           checkinTime={checkinTime}
                           checkoutTime={checkoutTime}
-                          isCompact={isSquareScreen}
+                          isCompact={isSquareScreen || isSelfServiceMode}
                         />
                         <SearchPanel
                           handleSearch={handleSearch}
@@ -3513,7 +3555,7 @@ const CheckinOutPage: React.FC = () => {
                           currentTime={currentTime}
                           hideInput={isFaceScanModeEnabled}
                           className="sm:col-span-3"
-                          isCompact={isSquareScreen}
+                          isCompact={isSquareScreen || isSelfServiceMode}
                         />
                       </>
                     )}
@@ -3521,7 +3563,7 @@ const CheckinOutPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="min-w-0 lg:col-span-4 h-full">
+            <div className={`min-w-0 lg:col-span-4 ${isSelfServiceMode ? '' : 'h-full'}`}>
               <LatestUsers
                 latestUsers={latestUsers.filter(u =>
                   (u.type === 'student' && canScanStudents) ||

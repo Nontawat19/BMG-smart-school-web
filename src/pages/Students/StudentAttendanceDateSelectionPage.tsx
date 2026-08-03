@@ -99,6 +99,11 @@ const getAttendanceCategory = (status?: string, hasAttendance?: boolean) => {
 
 const getScanType = (attendance: any, hasAttendance: boolean) => {
   if (!hasAttendance) return "-";
+  const rawDevice = (attendance?.checkinDevice || attendance?.metadata?.checkinDevice || "").toString().toLowerCase().trim();
+  const rawFlag = (attendance?.metadata?.flag || attendance?.metadata?.actionLabel || attendance?.metadata?.action || "").toString().toLowerCase().trim();
+  if (rawDevice.includes("flagceremony") || rawDevice.includes("flag ceremony") || rawFlag.includes("เข้าแถว") || rawFlag.includes("เช็คแถว") || rawFlag.includes("เคารพธง")) {
+    return "เช็คแถว";
+  }
   const rawType = (attendance?.scanType || attendance?.checkinType || attendance?.type || "").toString().toLowerCase().trim();
   if (rawType.includes("face") || rawType.includes("ใบหน้า") || rawType.includes("หน้า")) return "สแกนใบหน้า";
   if (rawType.includes("manual") || rawType.includes("พิมพ์") || rawType.includes("key") || rawType === "พิมพ์รหัสเอง") return "พิมพ์รหัสเอง";
@@ -113,13 +118,19 @@ const formatThaiDateFull = (isoDate: string) => {
   return date.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 };
 
+const sanitizeFlagCeremonyNote = (note: string, scanType: string) => {
+  if (scanType !== "เช็คแถว") return note;
+  return note.replace(/\s*\([^()]*\)\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+};
+
 const pdfStyles = StyleSheet.create({
   page: {
     paddingTop: 30,
-    paddingHorizontal: 30,
-    paddingBottom: 30,
+    paddingLeft: 44,
+    paddingRight: 36,
+    paddingBottom: 28,
     fontFamily: "TH Sarabun PSK",
-    fontSize: 11.5,
+    fontSize: 14,
     color: "#000",
   },
   topBar: {
@@ -128,68 +139,110 @@ const pdfStyles = StyleSheet.create({
     borderBottomWidth: 0.8,
     borderBottomColor: "#5f5f5f",
     paddingBottom: 2,
-    marginBottom: 10,
+    marginBottom: 4,
   },
-  topText: { fontSize: 11, fontWeight: "bold" },
+  topText: { fontSize: 10.5, fontWeight: "bold" },
   header: {
     position: "relative",
-    minHeight: 54,
-    marginBottom: 10,
+    minHeight: 38,
+    marginBottom: 4,
     justifyContent: "center",
   },
   logoBox: {
     position: "absolute",
     left: 0,
-    top: -4,
-    width: 46,
-    height: 46,
+    top: -2,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
   },
-  logo: { width: 46, height: 46, objectFit: "contain" },
-  titleBlock: { alignItems: "center", paddingLeft: 55, paddingRight: 55, lineHeight: 1.25 },
-  reportTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 3, textAlign: "center" },
-  reportSubtitle: { fontSize: 13.5, marginBottom: 1, textAlign: "center" },
+  logo: { width: 38, height: 38, objectFit: "contain" },
+  titleBlock: { alignItems: "center", paddingLeft: 44, paddingRight: 28, lineHeight: 1.15 },
+  reportTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 1, textAlign: "center" },
+  reportSubtitle: { fontSize: 12.5, marginBottom: 1, textAlign: "center" },
   table: {
-    marginTop: 8,
+    marginTop: 4,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderColor: "#000",
   },
-  row: { flexDirection: "row", minHeight: 16 },
-  headerRow: { backgroundColor: "#e5e5e5", minHeight: 18 },
+  row: { flexDirection: "row", minHeight: 15.05 },
+  headerRow: { backgroundColor: "#e5e5e5", minHeight: 16.6 },
   cell: {
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#000",
     justifyContent: "center",
-    paddingHorizontal: 3,
-    paddingVertical: 2,
+    paddingHorizontal: 2.25,
+    paddingVertical: 1.2,
   },
   centerCell: { alignItems: "center", textAlign: "center" },
   leftCell: { alignItems: "flex-start", textAlign: "left" },
-  headerText: { fontSize: 10.5, fontWeight: "bold", textAlign: "center" },
-  bodyText: { fontSize: 10.5 },
-  pageNumber: { position: "absolute", bottom: 16, right: 30, fontSize: 9 },
+  noteText: { fontSize: 9.7, lineHeight: 1 },
+  headerText: { fontSize: 11.2, fontWeight: "bold", textAlign: "center", lineHeight: 1.03 },
+  bodyText: { fontSize: 10.95, lineHeight: 1.03 },
+  pageNumber: { position: "absolute", bottom: 10, right: 36, fontSize: 9.2 },
 });
 
 const PDF_COL_WIDTHS = {
-  idx: "4%",
-  studentId: "10%",
-  name: "15%",
-  classText: "8%",
-  checkIn: "8%",
-  checkOut: "8%",
-  category: "10%",
-  note: "27%",
-  type: "10%",
+  idx: "6%",
+  studentId: "11%",
+  name: "19%",
+  classText: "9%",
+  checkIn: "8.5%",
+  checkOut: "8.5%",
+  category: "8%",
+  note: "21%",
+  type: "9%",
 };
 
-const PDF_ROWS_PER_PAGE = 20;
-const PDF_NOTE_MAX_LENGTH = 90;
+const PDF_ROWS_PER_PAGE = 40;
+interface PdfTableRow extends StudentRow {
+  displayNumber: string;
+}
 
-const truncateNote = (note: string) =>
-  note.length > PDF_NOTE_MAX_LENGTH ? `${note.slice(0, PDF_NOTE_MAX_LENGTH)}…` : note;
+const createBlankPdfRow = (displayNumber: number): PdfTableRow => ({
+  id: `blank-${displayNumber}`,
+  studentId: "",
+  studentNumber: "",
+  schoolName: "",
+  date: "",
+  fullName: "",
+  classText: "",
+  checkInTime: "",
+  checkOutTime: "",
+  lateText: "",
+  category: "",
+  note: "",
+  type: "",
+  displayNumber: String(displayNumber),
+});
+
+const getStudentNumberSlot = (value: string | number) => {
+  const matched = String(value || "").match(/\d+/);
+  if (!matched) return null;
+  const number = parseInt(matched[0], 10);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
+const buildPdfRows = (rows: StudentRow[], startNumber: number): PdfTableRow[] => {
+  const rowMap = new Map<number, StudentRow>();
+  rows.forEach((row) => {
+    const slot = getStudentNumberSlot(row.studentNumber);
+    if (slot !== null && slot >= startNumber && slot < startNumber + PDF_ROWS_PER_PAGE && !rowMap.has(slot)) {
+      rowMap.set(slot, row);
+    }
+  });
+
+  return Array.from({ length: PDF_ROWS_PER_PAGE }, (_, index) => {
+    const displayNumber = startNumber + index;
+    const matchedRow = rowMap.get(displayNumber);
+    return matchedRow
+      ? { ...matchedRow, displayNumber: String(displayNumber) }
+      : createBlankPdfRow(displayNumber);
+  });
+};
 
 const CLASS_LEVEL_FULL_LABELS: Record<string, string> = {
   "อ.1": "ชั้นอนุบาลปีที่ 1",
@@ -211,35 +264,55 @@ const CLASS_LEVEL_FULL_LABELS: Record<string, string> = {
 
 const getFullClassLevelLabel = (classLevel: string) => CLASS_LEVEL_FULL_LABELS[classLevel] || `ชั้น${classLevel}`;
 
+const getFullClassroomLabel = (classText: string) => {
+  const [classLevelRaw = "-", roomRaw = ""] = String(classText || "").split("/");
+  const classLabel = getFullClassLevelLabel(classLevelRaw || "-");
+  const roomLabel = String(roomRaw || "").trim();
+  return roomLabel ? `${classLabel} ห้อง ${roomLabel}` : classLabel;
+};
+
 interface AttendancePdfPage {
-  classLevel: string;
+  classText: string;
   chunk: StudentRow[];
   isGroupStart: boolean;
+  startNumber: number;
 }
 
 const buildAttendancePdfPages = (rows: StudentRow[]): AttendancePdfPage[] => {
-  const groups: { classLevel: string; items: StudentRow[] }[] = [];
+  const groups: { classText: string; items: StudentRow[] }[] = [];
   rows.forEach((row) => {
-    const classLevel = row.classText.split("/")[0] || "-";
+    const classText = row.classText || "-";
     const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup.classLevel === classLevel) {
+    if (lastGroup && lastGroup.classText === classText) {
       lastGroup.items.push(row);
     } else {
-      groups.push({ classLevel, items: [row] });
+      groups.push({ classText, items: [row] });
     }
   });
 
   const pages: AttendancePdfPage[] = [];
   groups.forEach((group) => {
-    for (let i = 0; i < group.items.length; i += PDF_ROWS_PER_PAGE) {
+    const validSlots = group.items
+      .map((item) => getStudentNumberSlot(item.studentNumber))
+      .filter((slot): slot is number => slot !== null);
+    const maxSlot = validSlots.length > 0 ? Math.max(...validSlots) : 0;
+    const pageCount = Math.max(1, Math.ceil(maxSlot / PDF_ROWS_PER_PAGE));
+
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      const startNumber = pageIndex * PDF_ROWS_PER_PAGE + 1;
+      const endNumber = startNumber + PDF_ROWS_PER_PAGE - 1;
       pages.push({
-        classLevel: group.classLevel,
-        chunk: group.items.slice(i, i + PDF_ROWS_PER_PAGE),
-        isGroupStart: i === 0,
+        classText: group.classText,
+        chunk: group.items.filter((item) => {
+          const slot = getStudentNumberSlot(item.studentNumber);
+          return slot !== null && slot >= startNumber && slot <= endNumber;
+        }),
+        isGroupStart: pageIndex === 0,
+        startNumber,
       });
     }
   });
-  if (pages.length === 0) pages.push({ classLevel: "-", chunk: [], isGroupStart: true });
+  if (pages.length === 0) pages.push({ classText: "-", chunk: [], isGroupStart: true, startNumber: 1 });
   return pages;
 };
 
@@ -258,10 +331,10 @@ const StudentAttendanceDatePdfDocument: React.FC<AttendancePdfProps> = ({ rows, 
   return (
     <Document>
       {pages.map((pageData, pageIndex) => (
-        <Page key={pageIndex} size="A4" orientation="landscape" style={pdfStyles.page}>
+        <Page key={pageIndex} size="A4" orientation="portrait" style={pdfStyles.page}>
           <View style={pdfStyles.topBar} fixed>
             <Text style={pdfStyles.topText}>{displaySchoolName}</Text>
-            <Text style={pdfStyles.topText}>รายงานการลงเวลานักเรียน - {getFullClassLevelLabel(pageData.classLevel)}</Text>
+            <Text style={pdfStyles.topText}>รายงานการลงเวลานักเรียน - {getFullClassroomLabel(pageData.classText)}</Text>
           </View>
 
           {pageData.isGroupStart && (
@@ -273,7 +346,7 @@ const StudentAttendanceDatePdfDocument: React.FC<AttendancePdfProps> = ({ rows, 
               )}
               <View style={pdfStyles.titleBlock}>
                 <Text style={pdfStyles.reportTitle}>รายงานการลงเวลานักเรียน</Text>
-                <Text style={pdfStyles.reportSubtitle}>{displaySchoolName} {getFullClassLevelLabel(pageData.classLevel)}</Text>
+                <Text style={pdfStyles.reportSubtitle}>{displaySchoolName} {getFullClassroomLabel(pageData.classText)}</Text>
                 <Text style={pdfStyles.reportSubtitle}>ประจำวันที่ {formatThaiDateFull(dateStr)}{filterLabel ? ` (${filterLabel})` : ""}</Text>
               </View>
             </View>
@@ -289,20 +362,20 @@ const StudentAttendanceDatePdfDocument: React.FC<AttendancePdfProps> = ({ rows, 
               <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkOut }]}><Text style={pdfStyles.headerText}>เวลาออก</Text></View>
               <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.category }]}><Text style={pdfStyles.headerText}>ประเภท</Text></View>
               <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.note }]}><Text style={pdfStyles.headerText}>หมายเหตุ</Text></View>
-              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.headerText}>ประเภทการสแกน</Text></View>
+              <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.headerText}>รูปแบบลงเวลา</Text></View>
             </View>
 
-            {pageData.chunk.map((row) => (
+            {buildPdfRows(pageData.chunk, pageData.startNumber).map((row) => (
               <View key={row.id} style={pdfStyles.row}>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.idx }]}><Text style={pdfStyles.bodyText}>{row.studentNumber}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.studentId }]}><Text style={pdfStyles.bodyText}>{row.studentId}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.name }]}><Text style={pdfStyles.bodyText}>{row.fullName}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.classText }]}><Text style={pdfStyles.bodyText}>{row.classText}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkIn }]}><Text style={pdfStyles.bodyText}>{row.checkInTime}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkOut }]}><Text style={pdfStyles.bodyText}>{row.checkOutTime}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.category }]}><Text style={pdfStyles.bodyText}>{row.category}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.note }]}><Text style={pdfStyles.bodyText}>{truncateNote(row.note)}</Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.bodyText}>{row.type}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.idx }]}><Text style={pdfStyles.bodyText}>{row.displayNumber}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.studentId }]}><Text style={pdfStyles.bodyText}>{row.studentId || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.name }]}><Text style={pdfStyles.bodyText}>{row.fullName || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.classText }]}><Text style={pdfStyles.bodyText}>{row.classText || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkIn }]}><Text style={pdfStyles.bodyText}>{row.checkInTime || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.checkOut }]}><Text style={pdfStyles.bodyText}>{row.checkOutTime || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.category }]}><Text style={pdfStyles.bodyText}>{row.category || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: PDF_COL_WIDTHS.note }]}><Text style={pdfStyles.noteText} {...({ maxLines: 1 } as any)}>{row.note || ""}</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: PDF_COL_WIDTHS.type }]}><Text style={pdfStyles.bodyText}>{row.type || ""}</Text></View>
               </View>
             ))}
           </View>
@@ -444,13 +517,15 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
               ? `${leaveData.leaveType || "ลา"}${isPending(leaveData) ? " (รออนุมัติ)" : ""}`
               : getAttendanceCategory(attendance?.status, hasAttendance);
 
-          const note = travelData
+          const rawNote = travelData
             ? `${isPending(travelData) ? "(รออนุมัติ) " : ""}ไปราชการ: ${travelData.reason || travelData.subject || "ไปราชการ"}${travelData.location ? ` [สถานที่: ${travelData.location}]` : ""}`
             : leaveData
               ? `${isPending(leaveData) ? "(รออนุมัติ) " : ""}[${leaveData.leaveType || "ลา"}] ${leaveData.reason || "ไม่ได้ระบุเหตุผล"}`
               : hasAttendance
                 ? (attendance?.metadata?.description || attendance?.note || getAttendanceCategory(attendance?.status, true))
                 : "ยังไม่มีข้อมูลลงเวลา";
+          const scanType = getScanType(attendance, hasAttendance);
+          const note = sanitizeFlagCeremonyNote(rawNote, scanType);
 
           const classText = `${student.classLevel || student.level || "-"}${student.room || student.roomNumber ? `/${student.room || student.roomNumber}` : ""}`;
 
@@ -467,7 +542,7 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
             lateText: attendance?.status === "สาย" || attendance?.status === "Late" ? "สาย" : "-",
             category,
             note,
-            type: getScanType(attendance, hasAttendance),
+            type: scanType,
           };
         }));
 

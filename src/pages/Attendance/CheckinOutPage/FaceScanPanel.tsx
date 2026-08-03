@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Camera, Loader2, ScanFace, ShieldCheck, WifiOff } from "lucide-react";
 import { FoundUser } from "./types";
+import { getTeacherRoleDisplay } from "./utils";
 
 interface FaceScanPanelProps {
   enabled: boolean;
@@ -1213,7 +1214,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
                         {user.name}
                       </span>
                       <span className="text-[9px] font-bold text-gray-300 shrink-0">
-                        {user.type === "student" ? `รหัส: ${user.displayId}` : user.position || "ครู"}
+                        {user.type === "student" ? `รหัส: ${user.displayId}` : getTeacherRoleDisplay(user)}
                       </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 text-[9px] font-black">
@@ -1243,7 +1244,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
                     {displayUser.name}
                   </span>
                   <span className="text-[9px] font-bold text-gray-300 shrink-0">
-                    {displayUser.type === "student" ? `รหัส: ${displayUser.displayId}` : displayUser.position || "ครู"}
+                    {displayUser.type === "student" ? `รหัส: ${displayUser.displayId}` : getTeacherRoleDisplay(displayUser)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 text-[9px] font-black">

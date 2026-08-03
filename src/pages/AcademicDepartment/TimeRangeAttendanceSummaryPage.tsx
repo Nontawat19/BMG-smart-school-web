@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { FileSpreadsheet, Loader2, Printer, RefreshCw, Search } from 'lucide-react';
+import { FileDown, Loader2, Search } from 'lucide-react';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
-import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import BackButton from '@/components/Shared/BackButton';
 import MainLayout from '@/layouts/MainLayout';
@@ -612,39 +611,6 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
         }, { present: 0, late: 0, leave: 0, absent: 0, escape: 0, total: 0 });
     }, [getStats, students]);
 
-    const handleExportExcel = () => {
-        if (students.length === 0) {
-            Swal.fire('ไม่มีข้อมูล', 'ไม่มีข้อมูลสำหรับส่งออก', 'warning');
-            return;
-        }
-
-        const rows = students.map((student, index) => {
-            const stats = getStats(student.id);
-            const row: Record<string, string | number> = {
-                '#': index + 1,
-                'รหัสนักเรียน': student.studentCode,
-                'ชื่อ-นามสกุล': `${student.prefix || ''}${student.firstName} ${student.lastName}`.trim(),
-                'ชั้น': getFullClassLabel(selectedClassLevel, selectedRoom || student.room),
-            };
-
-            dates.forEach(day => {
-                const status = attendanceMap[student.id]?.[day.iso];
-                row[day.label] = status ? statusText[status] : '';
-            });
-
-            row[summaryLabels[0]] = stats.present;
-            row[summaryLabels[1]] = stats.late;
-            row[summaryLabels[2]] = stats.absent;
-            row[summaryLabels[3]] = stats.leave;
-            row[summaryLabels[4]] = stats.total;
-            return row;
-        });
-
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Attendance');
-        XLSX.writeFile(workbook, `สรุปมาเรียนตามช่วงเวลา_${selectedClassLevel}_${selectedRoom || 'all'}_${startDate}_${endDate}.xlsx`);
-    };
-
     const selectedClassLabel = getFullClassLabel(selectedClassLevel, selectedRoom);
 
     const handleExportPdf = async () => {
@@ -694,29 +660,12 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                             <div className="flex items-center gap-1.5">
                                 <button
                                     type="button"
-                                    onClick={fetchReport}
-                                    disabled={loading}
-                                    title="รีเฟรชข้อมูล"
-                                    className="inline-flex h-[30px] w-[34px] items-center justify-center rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60"
-                                >
-                                    {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                                </button>
-                                <button
-                                    type="button"
                                     onClick={handleExportPdf}
                                     disabled={pdfGenerating || loading}
-                                    className="inline-flex h-[30px] items-center gap-1.5 rounded bg-sky-500 px-3 text-[12px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                                    PDF
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleExportExcel}
-                                    className="inline-flex h-[30px] items-center gap-1.5 rounded bg-blue-500 px-3 text-[12px] font-semibold text-white hover:bg-blue-600"
-                                >
-                                    <FileSpreadsheet size={14} />
-                                    Excel
+                                    <FileDown size={16} className={pdfGenerating ? "animate-pulse" : ""} />
+                                    {pdfGenerating ? "กำลังสร้างไฟล์..." : "ดาวน์โหลด PDF"}
                                 </button>
                             </div>
                         </div>

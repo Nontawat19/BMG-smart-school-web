@@ -9,6 +9,8 @@ export interface FoundUser {
   grade?: string;
   room?: string;
   position?: string;
+  advisorRole?: string;
+  isHomeroomTeacher?: boolean;
   nickname?: string;
   parentLineUserIds?: string[];
   parentLineRegistrationContexts?: Record<string, {

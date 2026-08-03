@@ -142,8 +142,10 @@ const RoleBadges: React.FC<{ roles: string[]; email: string }> = ({ roles, email
 const UserListPage: React.FC = () => {
   const { user: currentUser, isSchoolAdmin, isTeacher } = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
+  const [schools, setSchools] = useState<{ id: string; name: string }[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [schoolFilter, setSchoolFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -167,6 +169,11 @@ const UserListPage: React.FC = () => {
         schoolSnapshot.forEach(doc => {
           schoolMap.set(doc.id, doc.data().schoolName);
         });
+
+        const schoolsList = Array.from(schoolMap.entries())
+          .map(([id, name]) => ({ id, name }))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+        setSchools(schoolsList);
 
         const usersCollection = collection(firestore, "users");
         const q = query(usersCollection, orderBy("createdAt", "desc"));
@@ -203,13 +210,14 @@ const UserListPage: React.FC = () => {
 
       const userRoles = Array.isArray(user.role) ? user.role : [user.role];
       const matchesRole = roleFilter === 'all' || userRoles.includes(roleFilter);
+      const matchesSchool = schoolFilter === 'all' || user.schoolId === schoolFilter;
       const matchesSearch = searchTerm === '' ||
         (user.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (user.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (user.schoolName || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesRole && matchesSearch;
+      return matchesRole && matchesSchool && matchesSearch;
     });
-  }, [users, searchTerm, roleFilter, isSchoolAdmin, isTeacher, currentUser]);
+  }, [users, searchTerm, roleFilter, schoolFilter, isSchoolAdmin, isTeacher, currentUser]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -218,7 +226,7 @@ const UserListPage: React.FC = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, roleFilter]);
+  }, [searchTerm, roleFilter, schoolFilter]);
 
   const handleDeleteUser = async (userId: string, userFullName: string) => {
     const result = await Swal.fire({
@@ -493,7 +501,7 @@ const UserListPage: React.FC = () => {
             <div>
             <div className="flex items-center gap-4">
               <BackButton />
-              <h1 className="text-3xl font-bold tracking-tight">ผู้ใช้ทั้งหมดในระบบ</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight whitespace-nowrap">ผู้ใช้ทั้งหมดในระบบ</h1>
             </div>
               <p className="mt-1 text-gray-500 dark:text-gray-400">
                 จัดการและตรวจสอบข้อมูลผู้ใช้ทั้งหมด
@@ -511,6 +519,18 @@ const UserListPage: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+              </div>
+              <div className="relative w-full sm:w-48">
+                <select
+                  value={schoolFilter}
+                  onChange={(e) => setSchoolFilter(e.target.value)}
+                  className="w-full pl-4 pr-10 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="all">ทุกโรงเรียน</option>
+                  {schools.map((school) => (
+                    <option key={school.id} value={school.id}>{school.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="relative w-full sm:w-48">
                 <select

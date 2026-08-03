@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import { firestore as db, storage } from '../../firebase';
-import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, orderBy, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
@@ -201,14 +201,20 @@ const ClubManagementPage: React.FC = () => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const q = query(collection(db, 'school-settings', schoolId, 'clubs'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
+      // No orderBy('createdAt') here on purpose — Firestore silently omits any document
+      // missing the ordered field, and clubs synced in from the course-based assignment/
+      // enrollment flow (CourseAssignmentPage.tsx, CourseEnrollmentPage.tsx) never set
+      // createdAt, so they were vanishing entirely from this admin list (while still showing
+      // on ClubListPage, which orders by 'name' instead). Sort client-side so every club doc
+      // is included regardless of which field(s) it happens to have.
+      const snap = await getDocs(collection(db, 'school-settings', schoolId, 'clubs'));
       const clubsData = await Promise.all(snap.docs.map(async (doc) => {
         const club = { id: doc.id, ...doc.data() } as Club;
         const membersCollection = collection(db, 'school-settings', schoolId, 'clubs', doc.id, 'members');
         const membersSnap = await getDocs(membersCollection);
         return { ...club, memberCount: membersSnap.size };
       }));
+      clubsData.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
       setClubs(clubsData);
     } catch (error) {
       console.error("Error fetching clubs:", error);
