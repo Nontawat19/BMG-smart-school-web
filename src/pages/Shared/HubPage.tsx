@@ -1057,6 +1057,14 @@ const HubPage: React.FC = () => {
           path: "/academic/permission-management",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ADMIN_ACCESS
+        },
+        {
+          title: "คู่มือการใช้งาน",
+          description: "เอกสารคู่มือการใช้งานระบบ (PDF) เพิ่มโดย Super Admin เห็นได้ทุกคนในทุกโรงเรียน",
+          icon: <BookOpen size={24} />,
+          path: "/academic/user-manuals",
+          colorClass: "bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400"
+          // ไม่กำหนด allowedRoles โดยตั้งใจ — ผู้ใช้ทุกสิทธิ์ที่เข้าถึงหน้านี้ได้ต้องเห็นเมนูนี้เสมอ
         }
       ]
     },
@@ -1095,6 +1103,14 @@ const HubPage: React.FC = () => {
           icon: <ShieldCheck size={24} />,
           path: "/owner/permission-management",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: OWNER_ONLY
+        },
+        {
+          title: "จัดการคู่มือการใช้ระบบ",
+          description: "เพิ่ม แก้ไข และลบเอกสารคู่มือ (PDF) ให้ผู้ใช้งานทุกคนในทุกโรงเรียนเห็นร่วมกัน",
+          icon: <BookOpen size={24} />,
+          path: "/owner/manuals",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
           allowedRoles: OWNER_ONLY
         }
       ]

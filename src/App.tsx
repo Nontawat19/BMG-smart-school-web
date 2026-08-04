@@ -137,6 +137,7 @@ const AddUserPage = lazy(() => import("./pages/owner/AddUserPage"));
 const PermissionManagementPage = lazy(() => import("./pages/owner/PermissionManagementPage"));
 const SchoolPermissionManagementPage = lazy(() => import("./pages/AcademicDepartment/SchoolPermissionManagementPage"));
 const SchoolDataExplorerPage = lazy(() => import("./pages/owner/SchoolDataExplorerPage"));
+const ManualManagementPage = lazy(() => import("./pages/owner/ManualManagementPage"));
 const ImportCoursePage = lazy(() => import("./pages/AcademicDepartment/ImportCoursePage"));
 const EnrollmentListPage = lazy(() => import("./pages/AcademicDepartment/EnrollmentListPage"));
 const SubjectGroupManagementPage = lazy(() => import("@/pages/AcademicDepartment/SubjectGroupManagementPage"));
@@ -153,6 +154,7 @@ const GradeTransferPage = lazy(() => import("./pages/Students/GradeTransferPage"
 const PhysicalRoomsPage = lazy(() => import("./pages/AcademicDepartment/PhysicalRoomsPage"));
 const PorBor7Page = lazy(() => import("./pages/AcademicDepartment/PorBor7Page"));
 const HubPage = lazy(() => import("./pages/Shared/HubPage"));
+const UserManualsPage = lazy(() => import("./pages/Shared/UserManualsPage"));
 const AttendanceConfigPage = lazy(() => import("./pages/HumanResources/AttendanceConfigPage"));
 const BehaviorScoreConfigPage = lazy(() => import("./pages/HumanResources/BehaviorScoreConfigPage"));
 const TeacherAttendanceTodayPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceTodayPage"));
@@ -415,6 +417,9 @@ function App() {
           <Route path="/owner/users/edit/:userId" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><EditUserPage /></ProtectedRoute>} />
           <Route path="/owner/users/add" element={<ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN, ...ADMIN_ACCESS]}><AddUserPage /></ProtectedRoute>} />
           <Route path="/owner/permission-management" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><PermissionManagementPage /></ProtectedRoute>} />
+          <Route path="/owner/manuals" element={<ProtectedRoute allowedRoles={OWNER_ONLY}><ManualManagementPage /></ProtectedRoute>} />
+          {/* คู่มือการใช้งาน: ผู้ใช้ทุกคนในทุกโรงเรียนต้องเห็นข้อมูลเดียวกันได้ จึงไม่จำกัด allowedRoles */}
+          <Route path="/academic/user-manuals" element={<ProtectedRoute><UserManualsPage /></ProtectedRoute>} />
 
           {/* Slug Resolver (Multi-tenancy) */}
           <Route path="/:slug" element={<SlugResolverPage />} />

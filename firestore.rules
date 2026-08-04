@@ -236,6 +236,13 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 4.2 System manuals (คู่มือการใช้ระบบ) - เอกสารกลาง ใช้ร่วมกันทุกโรงเรียน
+    // อ่านได้ทุกคนที่ล็อกอิน แก้ไข/เพิ่ม/ลบได้เฉพาะ Super Admin
+    match /system-manuals/{manualId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
     // NEW: 4.5 Users - ป้องกัน privilege escalation
     match /users/{userId} {
       allow read: if isAuthenticated();

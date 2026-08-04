@@ -1025,7 +1025,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
   }, [cameraError, enabled, endpointConfigured, onIdentifyFrame, cameraSource, isRtspCamera]);
 
   return (
-    <div className={`${className} relative flex h-full min-h-[460px] max-h-[580px] flex-col overflow-hidden rounded-3xl border-4 border-indigo-100 bg-[#1e1f21] shadow-2xl dark:border-indigo-500/30`}>
+    <div className={`${className} relative flex h-full min-h-[240px] max-h-[80vh] sm:min-h-[340px] sm:max-h-[75vh] lg:min-h-[460px] flex-col overflow-hidden rounded-3xl border-4 border-indigo-100 bg-[#1e1f21] shadow-2xl dark:border-indigo-500/30`}>
       {/* Full-bleed Camera Preview Container */}
       <div className="relative flex-1 w-full overflow-hidden">
         {cameraSource === "ipcamera" ? (
@@ -1261,7 +1261,7 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
 
         {/* Compact Inline Time Constraints */}
         {!isHoliday && (
-          <div className="pt-2 border-t border-white/5 text-[10px] text-gray-400 flex items-center justify-center gap-4 font-black">
+          <div className="pt-2 border-t border-white/5 text-[10px] text-gray-400 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 font-black">
             {canScanStudents && (
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-300 font-black">นักเรียน:</span>
