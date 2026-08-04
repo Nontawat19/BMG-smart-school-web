@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useParams } from "react-router-dom";
 import { firestore as db } from "../../firebase";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, query, doc, onSnapshot, where, orderBy, getDocs, setDoc } from "firebase/firestore";
+import { collection, query, doc, onSnapshot, where, orderBy, getDocs, setDoc, writeBatch } from "firebase/firestore";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
@@ -26,11 +26,15 @@ import {
     Scissors,
     Clock
 } from "lucide-react";
+import { FaFilePdf } from "react-icons/fa";
 import Swal from "sweetalert2";
 import Select from "react-select";
+import { pdf } from "@react-pdf/renderer";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import { useActivityHubSettings } from "@/hooks/useActivityHubSettings";
 import BackButton from "@/components/Shared/BackButton";
+import { isActivityCourse, isClubCourse } from "./schedule/utils";
+import { CourseAssignmentDocument, CourseAssignmentPdfTeacherGroup } from "@/components/Pdf/CourseAssignment/CourseAssignmentDocument";
 
 import {
     DndContext,
@@ -140,6 +144,8 @@ interface Teacher {
     email?: string;
     role?: string;
     subjectGroup?: string;
+    learningArea?: string;
+    isHeadOfLearningArea?: boolean;
     status?: string;
     profileImageUrl?: string;
 }
@@ -303,6 +309,22 @@ const removeUndefinedFields = <T,>(value: T): T => {
     }
 
     return value;
+};
+
+const matchesCourseCategory = (course: Partial<Pick<Course, 'type' | 'isElective' | 'title'>> | null, category: string) => {
+    if (!course) return false;
+    if (category === "ประเภท" || category === "ทั้งหมด") return true;
+    if (category === "วิชาเลือกเสรี") return course.isElective === true;
+
+    const rawType = String(course.type || "").trim().toLowerCase();
+    if (!rawType) return false;
+
+    if (category === "ชุมนุม") return isClubCourse(course);
+    if (category === "กิจกรรม") return rawType.includes("กิจกรรม");
+    if (category === "พื้นฐาน") return rawType.includes("พื้นฐาน");
+    if (category === "เพิ่มเติม") return rawType.includes("เพิ่มเติม");
+
+    return rawType === category.trim().toLowerCase();
 };
 
 // Premium select styles
@@ -493,9 +515,6 @@ const formatTeacherOptionLabel = (option: any, { context }: { context: 'menu' | 
     if (option.value === 'ทั้งหมด') {
         return (
             <div className="flex items-center gap-2 py-0.5">
-                <div className={`${isMenu ? 'w-8 h-8' : 'w-6 h-6 text-[10px]'} rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0`}>
-                    ALL
-                </div>
                 <div className="flex flex-col min-w-0">
                     <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">ครูทุกคน</span>
                     {isMenu && (
@@ -699,7 +718,8 @@ const getSwalPeriodStyles = () => {
 
 const CourseAssignmentPage2: React.FC = () => {
     const dispatch = useDispatch();
-    const { availableClassOptions, classKeys } = useSelector((state: RootState) => state.schoolSettings);
+    const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
+    const { availableClassOptions, classKeys } = schoolSettings;
     const { schoolId: urlSchoolId } = useParams<{ schoolId?: string }>();
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = urlSchoolId || (currentUser as any)?.schoolId;
@@ -707,7 +727,7 @@ const CourseAssignmentPage2: React.FC = () => {
     // Data States
     const [courses, setCourses] = useState<Course[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
-    const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string}[]>([]);
+    const [subjectGroupsList, setSubjectGroupsList] = useState<{id: string, name: string, code: string, headName?: string, headTeacherName?: string}[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -742,7 +762,7 @@ const CourseAssignmentPage2: React.FC = () => {
     // Activity mode setting (from school-settings) — a school that hasn't chosen a mode yet
     // defaults to 'special-period' here, matching the convention most other consumers of this
     // setting use (see useActivityHubSettings).
-    const { activityMode: rawActivityMode } = useActivityHubSettings(schoolId);
+    const { activityMode: rawActivityMode, clubMode } = useActivityHubSettings(schoolId);
     const activityMode = rawActivityMode ?? 'special-period';
 
     // --- DND States & Handlers ---
@@ -1032,11 +1052,7 @@ const CourseAssignmentPage2: React.FC = () => {
         );
     };
 
-    const matchesCourseType = (course: Course) => {
-        if (categoryFilter === "ทั้งหมด") return true;
-        if (categoryFilter === "วิชาเลือกเสรี") return course.isElective === true;
-        return String(course.type || "").trim().toLowerCase() === categoryFilter.trim().toLowerCase();
-    };
+    const matchesCourseType = (course: Course) => matchesCourseCategory(course, categoryFilter);
 
     const matchesCourseSemester = (course: Course) => {
         if (selectedSemester === "0") return true;
@@ -1147,7 +1163,10 @@ const CourseAssignmentPage2: React.FC = () => {
         });
 
         const unsubGroups = onSnapshot(collection(db, 'school-settings', schoolId, 'subject_groups'), (snap) => {
-            const data = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as { name: string, code: string }) }));
+            const data = snap.docs.map(doc => ({
+                id: doc.id,
+                ...(doc.data() as { name: string, code: string, headName?: string, headTeacherName?: string })
+            }));
             data.sort((a, b) => (a.code || '999').localeCompare(b.code || '999', undefined, { numeric: true, sensitivity: 'base' }));
             setSubjectGroupsList(data);
         });
@@ -1175,6 +1194,27 @@ const CourseAssignmentPage2: React.FC = () => {
 
         return () => unsub();
     }, [schoolId, selectedYear, selectedSemester]);
+
+    // Sync teacher assignments of club-type courses into the `clubs` collection so the
+    // existing club attendance/evaluation pages (which only read `clubs/{clubId}`) stay in sync
+    // whenever "ลงทะเบียนแบบรายวิชา" club mode is enabled from ActivityHubSettingsPage.
+    useEffect(() => {
+        if (!schoolId || clubMode !== 'course-based') return;
+        semesterAssignments.forEach((a: any) => {
+            const course = courses.find(c => c.id === a.courseId);
+            if (!course) return;
+            if (!isClubCourse(course)) return;
+            const teacherIds = new Set<string>();
+            (a.teacherAssignments || []).forEach((ta: any) => {
+                (ta.teacherIds?.length ? ta.teacherIds : [ta.teacherId]).forEach((id: string) => { if (id) teacherIds.add(id); });
+            });
+            setDoc(doc(db, 'school-settings', schoolId, 'clubs', course.id), {
+                name: course.title || course.code || '',
+                responsibleTeacherIds: Array.from(teacherIds),
+                linkedCourseId: course.id,
+            }, { merge: true }).catch(err => console.error('Failed to sync club teacher assignment:', err));
+        });
+    }, [schoolId, clubMode, semesterAssignments, courses]);
 
     // Aggregate teaching hours and courses by teacher
     const teachersData = useMemo(() => {
@@ -1283,19 +1323,25 @@ const CourseAssignmentPage2: React.FC = () => {
             const totalLoad = aggregatedRows.reduce((acc, row) => acc + row.totalPeriodsTaught, 0);
             // Compute total semester/year hours across all courses
             const totalSemesterLoad = aggregatedRows.reduce((acc, row) => acc + row.totalSemesterHours, 0);
+            // Split weekly load into regular vs. activity/club periods so overload warnings
+            // can distinguish subject-teaching load from กิจกรรม/ชุมนุม load.
+            const regularLoad = aggregatedRows.reduce((acc, row) => acc + (isActivityCourse(row.course) ? 0 : row.totalPeriodsTaught), 0);
+            const activityLoad = aggregatedRows.reduce((acc, row) => acc + (isActivityCourse(row.course) ? row.totalPeriodsTaught : 0), 0);
 
             return {
                 teacher,
                 assignedCourses: aggregatedRows,
                 totalLoad,
-                totalSemesterLoad
+                totalSemesterLoad,
+                regularLoad,
+                activityLoad
             };
         });
     }, [teacherList, coursesWithAssignments, pendingQueue, courses, teacherMap]);
 
     // Filtering teachers and courses
     const filteredTeachersData = useMemo(() => {
-        return teachersData.reduce<typeof teachersData>((acc, { teacher, assignedCourses, totalLoad, totalSemesterLoad }) => {
+        return teachersData.reduce<typeof teachersData>((acc, { teacher, assignedCourses, totalLoad, totalSemesterLoad, regularLoad, activityLoad }) => {
             // Match teacher selected dropdown
             if (selectedTeacherId !== "ทั้งหมด" && teacher.id !== selectedTeacherId) {
                 return acc;
@@ -1322,13 +1368,21 @@ const CourseAssignmentPage2: React.FC = () => {
             const nextSemesterLoad = hasCourseFilters
                 ? visibleAssignments.reduce((sum, row) => sum + row.totalSemesterHours, 0)
                 : totalSemesterLoad;
+            const nextRegularLoad = hasCourseFilters
+                ? visibleAssignments.reduce((sum, row) => sum + (isActivityCourse(row.course) ? 0 : row.totalPeriodsTaught), 0)
+                : regularLoad;
+            const nextActivityLoad = hasCourseFilters
+                ? visibleAssignments.reduce((sum, row) => sum + (isActivityCourse(row.course) ? row.totalPeriodsTaught : 0), 0)
+                : activityLoad;
             if (showOnlyAssignedTeachers && nextLoad === 0) return acc;
 
             acc.push({
                 teacher,
                 assignedCourses: hasCourseFilters ? visibleAssignments : assignedCourses,
                 totalLoad: nextLoad,
-                totalSemesterLoad: nextSemesterLoad
+                totalSemesterLoad: nextSemesterLoad,
+                regularLoad: nextRegularLoad,
+                activityLoad: nextActivityLoad
             });
             return acc;
         }, []);
@@ -1353,14 +1407,43 @@ const CourseAssignmentPage2: React.FC = () => {
         return coursesWithAssignments
             .filter(course => {
                 const t = String(course.type || '').trim();
-                // ชุมนุม uses its own dedicated system — always excluded
-                if (t === 'ชุมนุม') return false;
                 // กิจกรรม (ลูกเสือ/รด/ยุวกาชาด) is assignable only in course-based mode
                 if (t === 'กิจกรรม' && activityMode !== 'course-based') return false;
                 return courseMatchesActiveFilters(course);
             })
             .sort((a, b) => (a.code || "").localeCompare(b.code || "", "th", { numeric: true }));
     }, [coursesWithAssignments, courseSearch, subjectGroupFilter, categoryFilter, selectedLevel, selectedSemester, subjectGroupsList, activityMode]);
+
+    // Counts how many groups currently occupy each physical room (committed + pending),
+    // shown as a hint in room pickers to help avoid double-booking a room.
+    const roomUsageCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        const bump = (roomId?: string) => { if (roomId) counts[roomId] = (counts[roomId] || 0) + 1; };
+        coursesWithAssignments.forEach(course => {
+            course.teacherAssignments?.forEach((ta: any) => (ta.roomIds || []).forEach(bump));
+        });
+        pendingQueue.forEach(p => (p.roomIds || []).forEach(bump));
+        return counts;
+    }, [coursesWithAssignments, pendingQueue]);
+
+    // Shared option list for all room <Select> pickers: sorted by building then room code
+    // (matching Page 1's room panel ordering) and annotated with current usage count.
+    const buildRoomOptions = useCallback(() => {
+        return [...rooms]
+            .sort((a, b) => {
+                const buildA = a.building || "";
+                const buildB = b.building || "";
+                if (buildA !== buildB) return buildA.localeCompare(buildB, 'th', { numeric: true });
+                return (a.roomCode || "").localeCompare(b.roomCode || "", 'th', { numeric: true });
+            })
+            .map(room => {
+                const usage = roomUsageCounts[room.id] || 0;
+                return {
+                    value: room.id,
+                    label: `${room.roomCode} — ${room.roomName}${room.building ? ` (${room.building})` : ''}${usage > 0 ? ` · ใช้อยู่ ${usage} คาบ` : ''}`
+                };
+            });
+    }, [rooms, roomUsageCounts]);
 
     const getCoTeacherOptions = useCallback((excludedTeacherId?: string): TeacherSelectOption[] => {
         return teacherList
@@ -2053,6 +2136,8 @@ const CourseAssignmentPage2: React.FC = () => {
                 byCourse[item.courseId].push(item);
             });
 
+            const batch = writeBatch(db);
+
             for (const [courseId, queueItems] of Object.entries(byCourse)) {
                 const assignmentId = `${courseId}_${selectedYear}_${selectedSemester}`;
                 const assignmentRef = doc(db, 'school-settings', schoolId, 'course_assignments', assignmentId);
@@ -2081,13 +2166,15 @@ const CourseAssignmentPage2: React.FC = () => {
                     }
                 });
 
-                await setDoc(assignmentRef, removeUndefinedFields({
+                batch.set(assignmentRef, removeUndefinedFields({
                     courseId,
                     academicYear: selectedYear,
                     semester: selectedSemester,
                     teacherAssignments: currentAssignments
                 }), { merge: true });
             }
+
+            await batch.commit();
 
             if (!options.silent) {
                 Swal.fire({ icon: 'success', title: 'บันทึกตารางเรียนสำเร็จ', text: 'ตารางการมอบหมายทั้งหมดบันทึกเรียบร้อย', timer: 2000, showConfirmButton: false });
@@ -2111,6 +2198,99 @@ const CourseAssignmentPage2: React.FC = () => {
     const handleCommitAllDrafts = useCallback(async () => {
         await commitPendingQueue(pendingQueue, { confirm: true });
     }, [commitPendingQueue, pendingQueue]);
+
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+    const handleExportPdf = useCallback(async () => {
+        if (isExportingPdf) return;
+        setIsExportingPdf(true);
+        try {
+            const teacherGroups: CourseAssignmentPdfTeacherGroup[] = filteredTeachersData
+                .filter(({ assignedCourses }) => assignedCourses.length > 0)
+                .map(({ teacher, assignedCourses }) => ({
+                    teacherCode: teacher.teacherId || "",
+                    teacherName: teacher.name || "",
+                    rows: assignedCourses.map(row => ({
+                        courseTitle: row.course.title || "",
+                        courseCode: row.course.code || "",
+                        levelLabel: getLevelLabel(row.course.classId) || "—",
+                        credits: row.course.credits !== undefined && row.course.credits !== null ? String(row.course.credits) : "—",
+                        weeklyPeriods: row.weeklyPeriods,
+                        groupsCount: row.groups.length,
+                        totalSemesterHours: row.totalSemesterHours,
+                        roomCodes: Array.from(new Set(row.groups.flatMap(group => group.roomIds)))
+                            .map(roomId => rooms.find(room => room.id === roomId)?.roomCode)
+                            .filter(Boolean)
+                            .join(', ')
+                    }))
+                }));
+
+            if (teacherGroups.length === 0) {
+                Swal.fire({ icon: 'warning', title: 'ไม่มีข้อมูลให้ส่งออก', text: 'ยังไม่มีรายวิชาที่ถูกมอบหมายตามเงื่อนไขที่เลือกอยู่ในขณะนี้' });
+                return;
+            }
+
+            const subjectGroupLabel = subjectGroupFilter === "กลุ่มสาระทั้งหมด" ? "ทั้งหมด" : subjectGroupFilter;
+            const semesterLabel = selectedSemester === "0" ? "ทั้งปี" : selectedSemester;
+
+            // Signature resolution ignores the filter dropdowns entirely — it looks at the
+            // teacher(s) actually being exported, finds their subject group, then finds that
+            // group's head. If the export spans more than one subject group there's no single
+            // head to name, so the subject-group signature line is left out.
+            const exportedTeachers = filteredTeachersData
+                .filter(({ assignedCourses }) => assignedCourses.length > 0)
+                .map(({ teacher }) => teacher);
+            const distinctTeacherGroups = Array.from(new Set(
+                exportedTeachers
+                    .map(teacher => normalizeSubjectGroupValue(teacher.subjectGroup || teacher.learningArea || ""))
+                    .filter(Boolean)
+            ));
+            const singleTeacherGroupNormalized = distinctTeacherGroups.length === 1 ? distinctTeacherGroups[0] : "";
+            const singleTeacherSubjectGroupInfo = singleTeacherGroupNormalized
+                ? subjectGroupsList.find(group => {
+                    const candidates = [group.name, group.code, group.id].filter(Boolean) as string[];
+                    return candidates.some(candidate => normalizeSubjectGroupValue(candidate) === singleTeacherGroupNormalized);
+                })
+                : undefined;
+            const headTeacherForGroup = singleTeacherGroupNormalized
+                ? teacherList.find(teacher => {
+                    const teacherGroup = teacher.subjectGroup || teacher.learningArea || "";
+                    return Boolean(teacher.isHeadOfLearningArea) &&
+                        normalizeSubjectGroupValue(teacherGroup) === singleTeacherGroupNormalized;
+                })
+                : undefined;
+            const subjectGroupHeadGroupLabel = singleTeacherSubjectGroupInfo?.name
+                || (exportedTeachers.length === 1 ? (exportedTeachers[0].subjectGroup || exportedTeachers[0].learningArea || "") : "");
+            const showSubjectGroupSignature = Boolean(singleTeacherGroupNormalized);
+
+            const blob = await pdf(
+                <CourseAssignmentDocument
+                    teacherGroups={teacherGroups}
+                    schoolInfo={schoolSettings}
+                    subjectGroupLabel={subjectGroupLabel}
+                    academicYear={selectedYear}
+                    semesterLabel={semesterLabel}
+                    subjectGroupHeadName={headTeacherForGroup?.name || singleTeacherSubjectGroupInfo?.headTeacherName || singleTeacherSubjectGroupInfo?.headName || ""}
+                    subjectGroupHeadGroupLabel={subjectGroupHeadGroupLabel}
+                    showSubjectGroupSignature={showSubjectGroupSignature}
+                />
+            ).toBlob();
+
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = `แผนการเปิดการจัดการเรียนการสอน_${subjectGroupLabel}_ภาค${semesterLabel}_${selectedYear}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error("Error generating course assignment PDF:", error);
+            Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: 'ไม่สามารถสร้างไฟล์ PDF ได้' });
+        } finally {
+            setIsExportingPdf(false);
+        }
+    }, [isExportingPdf, filteredTeachersData, subjectGroupFilter, selectedTeacherId, selectedSemester, selectedYear, schoolSettings, rooms, subjectGroupsList, teacherList]);
 
     // Auto-save: fires 1800ms after last queue change (same as Page 1)
     useEffect(() => {
@@ -2198,7 +2378,17 @@ const CourseAssignmentPage2: React.FC = () => {
                             </div>
                         </div>
 
-                        <button 
+                        <button
+                            onClick={handleExportPdf}
+                            disabled={isExportingPdf}
+                            title="ส่งออกตารางที่แสดงอยู่เป็น PDF"
+                            className={`px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:bg-slate-300 dark:disabled:bg-white/5 disabled:text-slate-500 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-red-600/20 flex items-center gap-2 border border-white/10 ${isExportingPdf ? 'opacity-70 cursor-wait' : ''}`}
+                        >
+                            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <FaFilePdf size={16} />}
+                            ส่งออก PDF
+                        </button>
+
+                        <button
                             onClick={handleCommitAllDrafts}
                             disabled={!pendingQueue.length || isSaving}
                             className={`px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 dark:disabled:bg-white/5 disabled:text-slate-500 text-white rounded-xl font-black text-xs transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2 border border-white/10 ${isSaving ? 'opacity-70 cursor-wait' : ''}`}
@@ -2386,7 +2576,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                         </tr>
                                     </tbody>
                                 ) : (
-                                    filteredTeachersData.map(({ teacher, assignedCourses, totalLoad, totalSemesterLoad }) => {
+                                    filteredTeachersData.map(({ teacher, assignedCourses, totalLoad, totalSemesterLoad, activityLoad }) => {
                                         const rows = assignedCourses.length > 0 ? assignedCourses : [null];
                                         const canCollapse = assignedCourses.length > 1;
                                         const isCollapsed = canCollapse && collapsedTeachers[teacher.id];
@@ -2423,7 +2613,9 @@ const CourseAssignmentPage2: React.FC = () => {
                                                                         <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">{teacher.subjectGroup || "ไม่มีกลุ่มสาระ"}</div>
                                                                         <div className="mt-3 flex flex-wrap gap-1.5">
                                                                             <span className={`px-2 py-1 rounded-md bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 font-black ${loadColor}`}>
-                                                                                รวม {formatWeeklyLoad(totalLoad)} คาบ
+                                                                                {activityLoad > 0
+                                                                                    ? `ปกติ ${formatWeeklyLoad(totalLoad - activityLoad)} + กิจกรรม ${formatWeeklyLoad(activityLoad)} คาบ`
+                                                                                    : `รวม ${formatWeeklyLoad(totalLoad)} คาบ`}
                                                                             </span>
                                                                             <button
                                                                                 onClick={() => handleOpenAssignModal(teacher.id)}
@@ -2553,10 +2745,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                                                                                 <Select
                                                                                                     autoFocus
                                                                                                     menuIsOpen={true}
-                                                                                                    options={rooms.map(room => ({
-                                                                                                        value: room.id,
-                                                                                                        label: `${room.roomCode} - ${room.roomName}`
-                                                                                                    }))}
+                                                                                                    options={buildRoomOptions()}
                                                                                                     value={roomObj ? {
                                                                                                         value: roomId,
                                                                                                         label: roomCode
@@ -2761,10 +2950,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                         <div className="col-span-6">
                                             <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block mb-1.5">สถานที่เรียน <span className="text-rose-500">*</span></label>
                                             <Select
-                                                options={rooms.map(room => ({
-                                                    value: room.id,
-                                                    label: `${room.roomCode} – ${room.roomName}${room.building ? ` (${room.building})` : ''}`
-                                                }))}
+                                                options={buildRoomOptions()}
                                                 value={rooms.find(r => r.id === assignPhysicalRoomId) ? {
                                                     value: assignPhysicalRoomId,
                                                     label: rooms.find(r => r.id === assignPhysicalRoomId)?.roomCode || ""
@@ -2940,11 +3126,7 @@ const CourseAssignmentPage2: React.FC = () => {
                                                     <div className="col-span-4">
                                                         <label className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wide block mb-1.5">สถานที่เรียน <span className="text-rose-500">*</span></label>
                                                         <Select
-                                                            options={rooms.map(room => ({
-                                                                value: room.id,
-                                                                label: `${room.roomCode} — ${room.roomName}`,
-                                                                sublabel: room.building || "ไม่มีอาคาร"
-                                                            }))}
+                                                            options={buildRoomOptions()}
                                                             value={rooms.find(r => r.id === group.roomIds[0]) ? {
                                                                 value: group.roomIds[0],
                                                                 label: (() => {
