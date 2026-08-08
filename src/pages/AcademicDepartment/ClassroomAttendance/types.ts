@@ -43,5 +43,11 @@ export interface CourseSchedule {
     originalTeacherName?: string;
     isDoublePeriod?: boolean;
     periods?: number[];
+    // The calendar day this substitution actually covers (YYYY-MM-DD), taken from the
+    // `substitutions` doc itself. Authoritative for saving attendance — must be used
+    // instead of the page's `currentDate` navigator, which can drift away from the
+    // substitution's real date (e.g. teacher pages forward/back, or reopens the link on
+    // a later day to back-fill) and would otherwise write attendance under the wrong date.
+    date?: string;
 }
 

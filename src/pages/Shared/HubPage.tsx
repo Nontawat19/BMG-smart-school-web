@@ -48,6 +48,8 @@ import {
   CalendarClock,
   Activity,
   FileWarning,
+  LogOut,
+  FileSpreadsheet,
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
@@ -325,19 +327,19 @@ const HubPage: React.FC = () => {
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
-          title: "มอบหมายรายวิชา",
-          description: "กำหนดครูผู้สอนและห้องเรียนสำหรับแต่ละวิชา",
-          icon: <UserCheck size={24} />,
-          path: "/academic/course-assignment",
-          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
           title: "เปิดสอนรายวิชา",
           description: "กำหนดรายวิชาที่เปิดสอน พร้อมครูผู้สอนและห้องเรียน (แบบตาราง)",
           icon: <UserCheck size={24} />,
           path: "/academic/course-assignment-2",
           colorClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "มอบหมายรายวิชา",
+          description: "กำหนดครูผู้สอนและห้องเรียนสำหรับแต่ละวิชา",
+          icon: <UserCheck size={24} />,
+          path: "/academic/course-assignment",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
@@ -751,6 +753,14 @@ const HubPage: React.FC = () => {
           path: "/academic/escape-summary",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
           allowedRoles: STUDENT_AFFAIRS_ACCESS
+        },
+        {
+          title: "อนุญาตกลับก่อน (ไม่ตัดคะแนน)",
+          description: "บันทึกอนุญาตนักเรียนกลับก่อนเวลา รายบุคคล รายห้อง หรือทั้งโรงเรียน โดยไม่ตัดคะแนนพฤติกรรม",
+          icon: <LogOut size={24} />,
+          path: "/academic/student-time-registration",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },
@@ -954,6 +964,14 @@ const HubPage: React.FC = () => {
           path: "/academic/score-configuration",
           colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ส่งออก Excel (SGS)",
+          description: "ส่งออกคะแนนรายวิชาเป็นไฟล์ Excel ตามรูปแบบโปรแกรม SGS",
+          icon: <FileSpreadsheet size={24} />,
+          path: "/academic/sgs-export",
+          colorClass: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400",
+          allowedRoles: TEACHER_OPERATIONAL
         }
       ]
     },

@@ -187,6 +187,8 @@ const semesterMatchesValue = (dataSemester: unknown, targetSemester: unknown) =>
 
 const formatDisplayTime = (time?: string) => String(time || '').replace(':', '.');
 
+const toDateKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const parseTimeParts = (time: string) => {
     const [hour, minute] = String(time || '').replace('.', ':').split(':').map(Number);
     return {
@@ -835,6 +837,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             day: dayKey,
                             isChecked: false,
                             isSubstitute: true,
+                            date: toDateKey(subDate),
                             originalTeacherId: data.originalTeacherId || "",
                             originalTeacherName: teacherMap[data.originalTeacherId]?.firstName
                                 ? `${teacherMap[data.originalTeacherId].title || ''}${teacherMap[data.originalTeacherId].firstName} ${teacherMap[data.originalTeacherId].lastName}`
@@ -1353,10 +1356,23 @@ const ClassroomAttendancePage: React.FC = () => {
         if (!schoolId || !selectedClass) return;
 
         try {
-            const year = currentDate.getFullYear();
-            const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${year}`;
+            // For substitute-teaching sessions, always save under the substitution's own
+            // scheduled date (selectedClass.date), never the page's currentDate navigator —
+            // currentDate can drift away from the substitution's real date (arrow buttons,
+            // or reopening the same check-in link on a later day to back-fill a missed
+            // session), which previously produced a second, wrongly-dated duplicate of the
+            // same attendance instead of correctly overwriting the original day's record.
+            const effectiveDate = (selectedClass.isSubstitute && selectedClass.date)
+                ? (() => {
+                    const [y, m, d] = selectedClass.date!.split('-').map(Number);
+                    return new Date(y, m - 1, d);
+                })()
+                : currentDate;
+
+            const year = effectiveDate.getFullYear();
+            const dateStr = `${String(effectiveDate.getDate()).padStart(2, '0')}-${String(effectiveDate.getMonth() + 1).padStart(2, '0')}-${year}`;
             // Match Historical Attendance Page: 12:00:00 for the date
-            const normalizedDateObj = new Date(year, currentDate.getMonth(), currentDate.getDate(), 12, 0, 0);
+            const normalizedDateObj = new Date(year, effectiveDate.getMonth(), effectiveDate.getDate(), 12, 0, 0);
 
             // Generate stable subject code and class key
             const stableSubjectCode = selectedClass.subjectCode || selectedClass.courseId || (selectedClass.isSubstitute ? (selectedClass.substitutionId || selectedClass.id) : '');
@@ -1489,6 +1505,7 @@ const ClassroomAttendancePage: React.FC = () => {
                         academicYear={academicYear}
                         semester={semester}
                         onDateChange={setCurrentDate}
+                        locked={!!selectedClass}
                         onBack={() => {
                             if (selectedClass) {
                                 setSelectedClass(null);

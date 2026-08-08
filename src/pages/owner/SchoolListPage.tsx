@@ -134,7 +134,7 @@ const SchoolListPage: React.FC = () => {
       schoolId: school.id,
       schoolName: school.schoolName || school.schoolAbbreviation || school.id,
     }));
-    window.location.href = "/academic/hub/registration";
+    window.location.href = "/home";
   };
 
   const fetchData = useCallback(async () => {

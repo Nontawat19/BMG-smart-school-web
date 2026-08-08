@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { firestore } from '@/firebase';
+import { auth, firestore } from '@/firebase';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import {
   collectionGroup,
   doc,
@@ -71,6 +72,23 @@ const LineRegisterPage: React.FC = () => {
   // Teacher form fields
   const [teacherId, setTeacherId] = useState('');
   const [teacherIdCard, setTeacherIdCard] = useState('');
+
+  // This page is public (no login) but Firestore rules require request.auth != null
+  // for querying/writing student & teacher docs — sign the visitor in anonymously
+  // so the LINE-linked submissions aren't rejected with permission-denied.
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setAuthReady(true);
+        return;
+      }
+      signInAnonymously(auth).catch((err) => {
+        console.error('Anonymous sign-in failed:', err);
+      });
+    });
+    return unsubscribe;
+  }, []);
 
   // Initial LIFF school resolution. The user no longer selects a school;
   // school identity is resolved from the matched student/teacher record.
@@ -620,7 +638,7 @@ const LineRegisterPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={submitting || !activeUserId}
+                  disabled={submitting || !activeUserId || !authReady}
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                 >
                   {submitting ? (
@@ -676,7 +694,7 @@ const LineRegisterPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={submitting || !activeUserId}
+                  disabled={submitting || !activeUserId || !authReady}
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                 >
                   {submitting ? (

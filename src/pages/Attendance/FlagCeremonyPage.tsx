@@ -1466,27 +1466,12 @@ const FlagCeremonyPage: React.FC = () => {
           }
         }
 
-        // 2. Update Daily and Period Summaries
-        const oldDailyStatus = student.existingDailyStatus || null;
-        const newDailyStatus = resolved.shouldDeleteDaily
-          ? null
-          : (resolved.shouldWriteDaily && resolved.dailyStatus ? resolved.dailyStatus : null);
-
-        if (oldDailyStatus !== newDailyStatus) {
-          updatePeriodSummaries(
-            firestore,
-            batch,
-            schoolId,
-            student.id,
-            'students',
-            todayStr,
-            oldDailyStatus,
-            newDailyStatus,
-            student.class || undefined,
-            currentAcademicYear
-          );
-        }
-        // --- END: Aggregation Logic ---
+        // classId ต้องเป็น "ระดับชั้นล้วนๆ" (เช่น "ม.3") ให้ตรงกับทุกจุดอื่นที่เรียก updatePeriodSummaries
+        // (CheckinOutPage, AttendanceConfigPage, LeaveRequestPage ฯลฯ) ห้ามใส่ห้อง (เช่น "ม.3/1") เด็ดขาด
+        // เพราะ field key ที่ build จาก classId แบบ string ("classes.${classId}.${field}") จะกลายเป็นคนละ field
+        // กันไปเลยถ้า classId มาคนละรูปแบบ ทำให้ยอดรวมต่อห้อง/ต่อชั้นเพี้ยนไม่ตรงกับยอดรวมบนสุด
+        const classLevelOnly = (student.class || "").split("/")[0]?.trim() || undefined;
+        // --- END: Aggregation Logic (ส่วนนับสถิติเช็คแถวบน studentRef ด้านบน — ไม่กระทบตัวนับ Todaysummary) ---
 
         // 📌 เพิ่ม: เก็บข้อมูลนักเรียนที่ต้องแจ้งเตือน
         // Logic ใหม่:
@@ -1507,14 +1492,24 @@ const FlagCeremonyPage: React.FC = () => {
         // 📌 Create/Update Daily Attendance (Unified Record)
         const dailyAttendanceRef = doc(firestore, "school-settings", schoolId, "students", student.id, "attendance", todayStr);
         if (resolved.shouldDeleteDaily) {
-          batch.delete(dailyAttendanceRef);
-          
           // Refund whatever this mechanism (gate attendance + flag ceremony) had
           // already deducted today for this student — expressed as a delta on
           // the live score, not a reconstructed absolute baseline.
           const refundDelta = getTodayAppliedPenalty(student);
 
           await applyBehaviorScoreChange(studentRef, student.id, refundDelta, student.existingDailyStatus || null, null);
+
+          // เดิมจุดนี้ใช้ student.existingDailyStatus (ค้างจากตอนโหลดหน้า) เป็น oldStatus ตอนอัปเดตตัวนับ
+          // Todaysummary — ถ้าระหว่างที่ครูเปิดหน้าเช็คแถวค้างไว้ มีการสแกนบัตรจริงที่ประตูเกิดขึ้นสำหรับ
+          // นักเรียนคนเดียวกัน (เช่น มาสายแล้วมาสแกนตอนครูกำลังเช็คแถวพอดี) การ "ยกเลิกเช็คแถว+เวลาสแกน"
+          // ตรงนี้จะไปลบตัวนับผิดสถานะ (ลบจากสถานะเก่าที่ค้างในเครื่อง ไม่ใช่สถานะจริงล่าสุดใน Firestore)
+          // ย้ายมาอ่านสถานะสดในทรานแซกชันเดียวกับตอนลบเอกสารเสมอ ปิดช่องว่างนี้ทั้งหมด
+          await runTransaction(firestore, async (transaction) => {
+            const freshDailySnap = await transaction.get(dailyAttendanceRef);
+            const freshOldStatus = freshDailySnap.exists() ? (freshDailySnap.data().status || null) : null;
+            transaction.delete(dailyAttendanceRef);
+            updatePeriodSummaries(firestore, transaction, schoolId, student.id, 'students', todayStr, freshOldStatus, null, classLevelOnly, currentAcademicYear);
+          });
         } else if (resolved.shouldWriteDaily && resolved.dailyStatus) {
           const dailyAttendanceData: Record<string, any> = {
             schoolId,
@@ -1585,7 +1580,16 @@ const FlagCeremonyPage: React.FC = () => {
             nextFlagBehaviorStatus || newAttendanceStatus || null,
           );
 
-          batch.set(dailyAttendanceRef, dailyAttendanceData, { merge: true });
+          // เช่นเดียวกับสาขา shouldDeleteDaily ด้านบน: ต้องอ่านสถานะสดของ attendance/{date} ในทรานแซกชัน
+          // เดียวกับตอนเขียน แล้วใช้ค่านั้นเป็น oldStatus ให้ updatePeriodSummaries เสมอ ไม่ใช้
+          // student.existingDailyStatus ที่ค้างจากตอนโหลดหน้า — กันนับซ้ำ/นับพลาดถ้ามีการสแกนบัตรจริง
+          // แทรกเข้ามาระหว่างที่ครูเปิดหน้าเช็คแถวค้างไว้ก่อนกดบันทึก
+          await runTransaction(firestore, async (transaction) => {
+            const freshDailySnap = await transaction.get(dailyAttendanceRef);
+            const freshOldStatus = freshDailySnap.exists() ? (freshDailySnap.data().status || null) : null;
+            transaction.set(dailyAttendanceRef, dailyAttendanceData, { merge: true });
+            updatePeriodSummaries(firestore, transaction, schoolId, student.id, 'students', todayStr, freshOldStatus, resolved.dailyStatus, classLevelOnly, currentAcademicYear);
+          });
         }
 
         // Commit all student updates in a single write operation per student

@@ -238,7 +238,7 @@ const SchoolDetailsPage: React.FC = () => {
       schoolId,
       schoolName: info?.schoolName || info?.schoolAbbreviation || schoolId,
     }));
-    window.location.href = "/academic/hub/registration";
+    window.location.href = "/home";
   };
 
   if (isLoading) {

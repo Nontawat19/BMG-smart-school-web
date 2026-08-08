@@ -48,6 +48,7 @@ interface SubstitutionRecord {
   date?: Timestamp;
   period?: number;
   classId?: string | string[] | null;
+  className?: string;
   subjectName?: string;
   subjectCode?: string;
   dayPortion?: "full" | "morning" | "afternoon";
@@ -72,11 +73,21 @@ const formatClassId = (classId: string | string[] | null | undefined): string =>
   const ids = Array.isArray(classId) ? classId : [classId];
   return ids
     .map((id) => {
-      const [lvl, rm] = String(id).split("/");
-      return CLASS_NAMES[lvl] ? `${CLASS_NAMES[lvl]}${rm ? `/${rm}` : ""}` : String(id);
+      const raw = String(id);
+      // course_assignments.classLevels (mirrored into substitutions.classId when a course
+      // has been assigned) uses "level-room" (e.g. "p5-2"), while some older/raw schedule
+      // values use "level/room" (e.g. "p5/2") — handle both, or assigned substitute
+      // sessions would print the raw code instead of "ป.5/2".
+      const [lvl, rm] = raw.includes("-") ? raw.split("-") : raw.split("/");
+      return CLASS_NAMES[lvl] ? `${CLASS_NAMES[lvl]}${rm ? `/${rm}` : ""}` : raw;
     })
     .join(", ");
 };
+
+// Prefer the saved display label (already includes the room, e.g. "ป.4/1") — some older
+// records only have the raw classId without a room suffix, so fall back to formatting that.
+const resolveClassLabel = (rec: SubstitutionRecord): string =>
+  rec.className?.trim() || formatClassId(rec.classId);
 
 const formatThaiDate = (dateStr: string): string => {
   if (!dateStr) return "";
@@ -233,7 +244,7 @@ const SubstituteSchedulePdf: React.FC<{
             <View key={ri} style={pdfStyles.row} wrap={false}>
               <Text style={[pdfStyles.cell, pdfStyles.cellPeriod]}>{rec.period ?? "-"}{portionSuffix(rec.dayPortion)}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellCode]}>{rec.subjectCode || "-"}</Text>
-              <Text style={[pdfStyles.cell, pdfStyles.cellClass]}>{formatClassId(rec.classId)}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.cellClass]}>{resolveClassLabel(rec)}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellTeacher]}>{rec.substituteTeacherName || "-"}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.cellSign]}>{""}</Text>
             </View>
@@ -553,7 +564,7 @@ const SubstituteSchedulePrintPage: React.FC = () => {
                               </div>
                             </td>
                             <td className="px-4 py-2.5 text-center font-mono text-xs text-gray-500 dark:text-gray-400">{rec.subjectCode || "-"}</td>
-                            <td className="px-4 py-2.5 text-center text-gray-700 dark:text-gray-300">{formatClassId(rec.classId)}</td>
+                            <td className="px-4 py-2.5 text-center text-gray-700 dark:text-gray-300">{resolveClassLabel(rec)}</td>
                             <td className="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{rec.substituteTeacherName || "-"}</td>
                           </tr>
                         ))}

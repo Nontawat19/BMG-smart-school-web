@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { firestore } from "@/firebase";
-import { collection, query, where, getDocs, doc, setDoc, writeBatch, serverTimestamp, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, runTransaction, serverTimestamp, getDoc } from "firebase/firestore";
 import { RootState } from "../../store";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
@@ -11,6 +11,7 @@ import Select from "react-select";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { useTheme } from "@/ThemeContext";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
+import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
 
 interface TeacherOption {
   value: string;
@@ -70,9 +71,10 @@ const HRTimeRegistrationPage: React.FC = () => {
         teachersSnap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           if (!isAttendanceEntryOnly(data.role)) {
+            const fullName = `${data.title || ''}${data.firstName} ${data.lastName}`.trim();
             teacherOptions.push({
               value: docSnap.id,
-              label: `${data.title || ''}${data.firstName} ${data.lastName}`.trim(),
+              label: data.teacherId ? `${data.teacherId} - ${fullName}` : fullName,
               teacherId: data.teacherId || "",
             });
           }
@@ -151,62 +153,85 @@ const HRTimeRegistrationPage: React.FC = () => {
       return;
     }
     
-    if (["มา", "สาย", "ออกก่อนเวลา"].includes(status) && !time) {
+    if (["มา", "สาย", "กลับก่อน"].includes(status) && !time) {
       Swal.fire("กรุณาระบุเวลา", "การลงเวลาประเภทนี้จำเป็นต้องระบุเวลา", "warning");
       return;
     }
 
     setLoading(true);
     try {
-      const batch = writeBatch(firestore);
       const attendanceRef = doc(firestore, "school-settings", schoolId, "teachers", selectedTeacher.value, "attendance", date);
-      
-      const attendanceDoc = await getDoc(attendanceRef);
-      const isExisting = attendanceDoc.exists();
-      
+
       const [hour, minute] = time ? time.split(':') : ["00", "00"];
       const dateObj = new Date(date);
       dateObj.setHours(parseInt(hour, 10));
       dateObj.setMinutes(parseInt(minute, 10));
       dateObj.setSeconds(0);
-      
-      const updateData: any = {
-        updatedAt: serverTimestamp(),
-        updatedBy: currentUser?.uid || "system",
-      };
 
-      if (!isExisting) {
-        updateData.createdAt = serverTimestamp();
-        updateData.scanType = "manual_hr";
-        updateData.date = date;
-      }
+      const academicYear = String(new Date().getFullYear() + 543);
 
-      // Handle different status
-      if (status === "ออกก่อนเวลา") {
-        updateData.checkoutTime = dateObj;
-        if (!isExisting) updateData.status = "กลับก่อน";
-      } else {
-        updateData.status = status;
-        updateData.checkinTime = dateObj;
-        
-        if (["ลากิจ", "ลาป่วย", "ไปราชการ"].includes(status)) {
-           updateData.leaveType = status;
-        } else {
-           updateData.leaveType = null;
+      await runTransaction(firestore, async (transaction) => {
+        // อ่านสถานะสดในทรานแซกชันเดียวกับตอนเขียนเสมอ — จุดนี้เดิม getDoc() นอกทรานแซกชัน แล้วไม่เคยอ่าน
+        // oldStatus ไปใช้เลยด้วยซ้ำ (ไม่เคยเรียก updatePeriodSummaries) ทำให้ทุกครั้งที่แอดมินลงเวลาให้ครู
+        // ผ่านหน้านี้ ตัวนับสรุปยอด (Todaysummary/Week/Month/Year/Semester) ไม่เคยขยับตามเลย
+        const freshSnap = await transaction.get(attendanceRef);
+        const freshData = freshSnap.exists() ? freshSnap.data() : null;
+        const isExisting = Boolean(freshData);
+        const oldStatus = freshData?.status || null;
+
+        const updateData: any = {
+          updatedAt: serverTimestamp(),
+          updatedBy: currentUser?.uid || "system",
+        };
+
+        if (!isExisting) {
+          updateData.createdAt = serverTimestamp();
+          updateData.scanType = "manual_hr";
+          updateData.date = date;
+          updateData.schoolId = schoolId;
+          updateData.userType = "teacher";
         }
-      }
 
-      if (note) {
-        updateData.note = note;
-      }
+        updateData.status = status;
 
-      if (isExisting) {
-        batch.update(attendanceRef, updateData);
-      } else {
-        batch.set(attendanceRef, updateData);
-      }
-      
-      await batch.commit();
+        // "กลับก่อน" (กลับก่อนเวลา) คือเหตุการณ์ "ออก" ไม่ใช่ "เข้า" — ต้องบันทึกลง checkoutTime
+        // เดิมโค้ดเขียนลง checkinTime เหมือนสถานะอื่นทั้งหมด ทำให้ (ก) ถ้าสร้างใหม่ เวลาที่โชว์เป็น "เวลาเข้า"
+        // กลายเป็นเวลาที่ควรจะเป็น "เวลาออก" และ (ข) ถ้าครูคนนั้นสแกนเข้าจริงที่ประตูมาก่อนแล้ว การลงเวลานี้
+        // จะเขียนทับเวลาเข้าจริงด้วยเวลา "กลับก่อน" ที่ผิด แล้วก็ยังไม่มีเวลาออกบันทึกอยู่ดี
+        if (status === "กลับก่อน") {
+          updateData.checkoutTime = dateObj;
+          if (!isExisting) {
+            // ไม่มีบันทึกเดิมเลย (ไม่เคยสแกนเข้า) — ใส่เวลาเข้าเป็นค่าเดียวกันไว้เป็นค่าเริ่มต้นที่สมเหตุสมผล
+            updateData.checkinTime = dateObj;
+          }
+        } else {
+          updateData.checkinTime = dateObj;
+          if (["ลากิจ", "ลาป่วย", "ไปราชการ"].includes(status)) {
+            updateData.leaveType = status;
+          } else {
+            updateData.leaveType = null;
+          }
+        }
+
+        if (note) {
+          updateData.note = note;
+        }
+
+        transaction.set(attendanceRef, updateData, { merge: true });
+
+        updatePeriodSummaries(
+          firestore,
+          transaction,
+          schoolId,
+          selectedTeacher.value,
+          "teachers",
+          date,
+          oldStatus,
+          status,
+          undefined,
+          academicYear
+        );
+      });
 
       Swal.fire({
         icon: "success",
@@ -263,6 +288,17 @@ const HRTimeRegistrationPage: React.FC = () => {
                     isClearable
                     isSearchable
                     isDisabled={fetchingTeachers}
+                    // react-select ค่าเริ่มต้นจะค้นหาจาก label (ชื่อ) เท่านั้น ไม่ค้นจาก teacherId เลย
+                    // ทั้งที่ placeholder บอกว่า "ใส่รหัสหรือชื่อนามสกุล" ได้ — พิมพ์รหัสแล้วไม่เจอผลลัพธ์เลย
+                    // (เหมือนพิมพ์ไม่ได้) ต้องใส่ filterOption เองให้ค้นจากทั้งชื่อและรหัส เหมือนหน้าอื่นที่ทำถูกแล้ว
+                    filterOption={(option, rawInput) => {
+                      const input = rawInput.toLowerCase().trim();
+                      if (!input) return true;
+                      const data = option.data as TeacherOption;
+                      const nameMatch = (data.label || "").toLowerCase().includes(input);
+                      const idMatch = (data.teacherId || "").toLowerCase().includes(input);
+                      return nameMatch || idMatch;
+                    }}
                     noOptionsMessage={() => "ไม่พบรายชื่อ"}
                     classNamePrefix="react-select"
                     styles={{
@@ -355,7 +391,9 @@ const HRTimeRegistrationPage: React.FC = () => {
                     required={["มา", "สาย", "กลับก่อน"].includes(status)}
                     className="w-full px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   />
-                  <p className="text-[11px] text-gray-500 mt-1">กรณีเลือก AM จะบันทึกเวลาเข้า, PM เวลาออก</p>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {status === "กลับก่อน" ? "จะบันทึกเป็นเวลาออก (checkout)" : "จะบันทึกเป็นเวลาเข้า (checkin)"}
+                  </p>
                 </div>
 
                 {/* Recorder (ผู้บันทึก) */}

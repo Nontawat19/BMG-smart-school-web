@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FoundUser } from './types';
 import { getTeacherRoleDisplay } from './utils';
+import AutoFitHeading from './AutoFitHeading';
 
 interface LatestUsersProps {
   latestUsers: FoundUser[];
@@ -152,10 +153,10 @@ const LatestUsers: React.FC<LatestUsersProps & { vertical?: boolean }> = ({ late
                   </div>
 
                   <div className={`${vertical ? 'flex-grow min-w-0' : 'w-full mt-4'}`}>
-                    <h3 className={`font-black tracking-tight truncate text-gray-900 dark:text-white ${vertical ? 'text-xl' : 'text-xl'}`} title={user.name}>{user.name}</h3>
+                    <AutoFitHeading as="h3" className="font-black tracking-tight text-gray-900 dark:text-white text-xl" minFontSizePx={11} title={user.name}>{user.name}</AutoFitHeading>
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider border ${user.type === "student" ? "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-white border-slate-200 dark:border-slate-700" : "bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-white border-emerald-100 dark:border-emerald-800"}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`whitespace-nowrap text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider border ${user.type === "student" ? "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-white border-slate-200 dark:border-slate-700" : "bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-white border-emerald-100 dark:border-emerald-800"}`}>
                           {(() => {
                             if (user.type !== "student") {
                               return getTeacherRoleDisplay(user);

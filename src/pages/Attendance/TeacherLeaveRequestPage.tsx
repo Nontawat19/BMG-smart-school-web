@@ -23,6 +23,7 @@ import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
+import { CalendarDays, Sunrise, Sunset } from "lucide-react";
 
 interface TeacherOption {
   value: string; // teacher document ID
@@ -219,6 +220,10 @@ const TeacherLeaveRequestPage: React.FC = () => {
   const [reason, setReason] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [requiresSubstitute, setRequiresSubstitute] = useState(true); // 📌 เพิ่ม state และตั้งค่าเริ่มต้นเป็น true
+  // ช่วงเวลาที่ลา (เต็มวัน/เช้า/บ่าย) — เลือกเช้า/บ่ายได้เฉพาะกรณีลา 1 วัน
+  // ส่วนที่จัดสอนแทน (SubstituteManagementPage) จะใช้ค่านี้กรองเฉพาะคาบก่อน/หลังพักเที่ยง
+  // โดยอิงตำแหน่งคาบ "lunch" จากหน้าตั้งค่าคาบเรียนโดยอัตโนมัติ
+  const [dayPortion, setDayPortion] = useState<"full" | "morning" | "afternoon">("full");
   const [isFetchingTeachers, setIsFetchingTeachers] = useState(true);
   const { isDarkMode } = useTheme();
   const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
@@ -394,6 +399,15 @@ const TeacherLeaveRequestPage: React.FC = () => {
     }
   }, [endDate, returnDate]);
 
+  // ลาครึ่งวัน (เช้า/บ่าย) มีความหมายเฉพาะกรณีลา 1 วันเท่านั้น — ถ้าเลือกลาหลายวัน
+  // ให้บังคับกลับเป็น "เต็มวัน" เสมอ เพื่อไม่ให้ระบบจัดสอนแทนตีความผิดว่าลาครึ่งวันทุกวันในช่วงนั้น
+  const isSingleDayLeave = startDate === endDate;
+  useEffect(() => {
+    if (!isSingleDayLeave && dayPortion !== "full") {
+      setDayPortion("full");
+    }
+  }, [isSingleDayLeave, dayPortion]);
+
   const handleReturnDateChange = (date: string) => {
     const { isHoliday, description } = checkIsHoliday(date);
     if (isHoliday) {
@@ -541,6 +555,8 @@ const TeacherLeaveRequestPage: React.FC = () => {
         status: "pending", // รอฝ่ายบุคคลอนุมัติ
         createdAt: Timestamp.now(),
         requiresSubstitute: requiresSubstitute, // 📌 เพิ่ม field นี้ตอนบันทึกข้อมูล
+        // ลาครึ่งวันมีผลเฉพาะตอนลา 1 วัน — กันเหนียวอีกชั้นตอนบันทึกเผื่อ state ยังไม่ทันถูกรีเซ็ต
+        dayPortion: isSingleDayLeave ? dayPortion : "full",
         docNo: docNo, // 📌 เพิ่มเลขที่เอกสาร
         academicYear: academicYear, // 📌 เพิ่มปีการศึกษา
         schoolAffiliation: schoolAffiliation, // 📌 เพิ่มสังกัด (อ้างอิงจากหน้าข้อมูลโรงเรียน)
@@ -560,6 +576,7 @@ const TeacherLeaveRequestPage: React.FC = () => {
       setSelectedTeacher(null);
       setReason("");
       setRequiresSubstitute(true); // 📌 รีเซ็ตค่ากลับเป็น true เสมอ
+      setDayPortion("full");
     } catch (error) {
       console.error("Error submitting leave request:", error);
       Swal.fire({
@@ -687,6 +704,41 @@ const TeacherLeaveRequestPage: React.FC = () => {
                   return null;
                 })()}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                ช่วงเวลาลา
+              </label>
+              <div className="grid grid-cols-3 gap-2 max-w-md">
+                {([
+                  { value: 'full', label: 'เต็มวัน', Icon: CalendarDays, activeClass: 'bg-indigo-600 border-indigo-600' },
+                  { value: 'morning', label: 'ครึ่งวันเช้า', Icon: Sunrise, activeClass: 'bg-amber-500 border-amber-500' },
+                  { value: 'afternoon', label: 'ครึ่งวันบ่าย', Icon: Sunset, activeClass: 'bg-orange-600 border-orange-600' },
+                ] as const).map(opt => {
+                  const isActive = dayPortion === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={!isSingleDayLeave}
+                      onClick={() => setDayPortion(opt.value)}
+                      className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive
+                        ? `${opt.activeClass} text-white`
+                        : 'bg-white dark:bg-[#1e1f21] text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400'
+                        }`}
+                    >
+                      <opt.Icon size={20} strokeWidth={2.25} />
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs mt-1.5 text-gray-500 dark:text-gray-400">
+                {isSingleDayLeave
+                  ? 'เลือกครึ่งวันเช้า (ก่อนพักเที่ยง) หรือบ่าย (หลังพักเที่ยง) ได้เมื่อลา 1 วัน — ระบบจัดสอนแทนจะจัดครูสอนแทนเฉพาะคาบในช่วงที่เลือกเท่านั้น'
+                  : 'ลาครึ่งวันเลือกได้เฉพาะกรณีลา 1 วัน — ช่วงที่เลือกวันที่เริ่มลาและสิ้นสุดต่างกันจะถูกบันทึกเป็น "เต็มวัน" เสมอ'}
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

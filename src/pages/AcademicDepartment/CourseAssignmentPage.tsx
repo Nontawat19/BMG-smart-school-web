@@ -547,6 +547,7 @@ const CourseAssignmentPage: React.FC = () => {
     const [selectedSemester, setSelectedSemester] = useState<string>("1");
     const [availableYears, setAvailableYears] = useState<string[]>([]);
     const [semesterAssignments, setSemesterAssignments] = useState<any[]>([]);
+    const [everAssignedYearsByCourse, setEverAssignedYearsByCourse] = useState<Record<string, Set<string>>>({});
 
     // Search/Filter States
     const [courseSearch, setCourseSearch] = useState("");
@@ -557,6 +558,11 @@ const CourseAssignmentPage: React.FC = () => {
     const [subjectGroupFilter, setSubjectGroupFilter] = useState("กลุ่มสาระทั้งหมด");
     const [teacherGroupFilter, setTeacherGroupFilter] = useState("ครูกลุ่มสาระ");
     const [showOnlyAssigned, setShowOnlyAssigned] = useState(false);
+    // Opt-in only: courses are freshly (re-)assigned every academic year with no auto-copy from
+    // the previous year, so a recurring course legitimately has zero assignment for the new year
+    // until someone assigns it here. Hiding that by default would make it impossible to ever
+    // assign it. This toggle only helps declutter the view of genuinely stale subjects on demand.
+    const [hideStaleSubjects, setHideStaleSubjects] = useState(false);
     const [selectedLevel, setSelectedLevel] = useState("ทั้งหมด");
     const [schoolInfo, setSchoolInfo] = useState<any>(null);
 
@@ -865,7 +871,10 @@ const CourseAssignmentPage: React.FC = () => {
             const assignment = semesterAssignments.find(a => a.courseId === course.id);
             return {
                 ...course,
-                teacherAssignments: assignment ? assignment.teacherAssignments : (course.teacherAssignments || [])
+                // Only trust this year+semester's real course_assignments record — falling back to
+                // a raw teacherAssignments field on the course doc would leak a past year's
+                // assignment forward forever, since course docs are reused across years.
+                teacherAssignments: assignment ? assignment.teacherAssignments : []
             };
         });
     }, [courses, semesterAssignments]);
@@ -1087,6 +1096,26 @@ const CourseAssignmentPage: React.FC = () => {
 
         return () => unsub();
     }, [schoolId, selectedYear, selectedSemester]);
+
+    // Tracks, across ALL academic years, which years each course actually had a teacher
+    // assignment. Used to hide subjects that were taught in a past year but are not part of
+    // this year's offering, without ever hiding a brand-new course that has never been
+    // assigned yet (it simply has no entry in this map).
+    useEffect(() => {
+        if (!schoolId) return;
+        const assignmentRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+        const unsub = onSnapshot(assignmentRef, (snap) => {
+            const map: Record<string, Set<string>> = {};
+            snap.docs.forEach(d => {
+                const data = d.data() as any;
+                if (!data.courseId || !data.academicYear) return;
+                if (!map[data.courseId]) map[data.courseId] = new Set();
+                map[data.courseId].add(String(data.academicYear));
+            });
+            setEverAssignedYearsByCourse(map);
+        });
+        return () => unsub();
+    }, [schoolId]);
 
     // Sync teacher assignments of club-type courses into the `clubs` collection so the
     // existing club attendance/evaluation pages (which only read `clubs/{clubId}`) stay in sync
@@ -1931,7 +1960,7 @@ const CourseAssignmentPage: React.FC = () => {
     };
 
     // Reset pages when filters change (must be before early return)
-    useEffect(() => { setCoursePage(1); setAssignmentPage(1); }, [courseSearch, selectedSemester, categoryFilter, subjectGroupFilter, selectedYear, showOnlyAssigned, selectedLevel]);
+    useEffect(() => { setCoursePage(1); setAssignmentPage(1); }, [courseSearch, selectedSemester, categoryFilter, subjectGroupFilter, selectedYear, showOnlyAssigned, hideStaleSubjects, selectedLevel]);
     useEffect(() => { setTeacherPage(1); }, [teacherSearch, teacherGroupFilter]);
     useEffect(() => { setRoomPage(1); }, [roomSearch, buildingFilter]);
 
@@ -1981,6 +2010,14 @@ const CourseAssignmentPage: React.FC = () => {
         }
 
         if (!(matchesSearch && matchesGroup && matchesType && matchesLevelFilter && matchesSemester)) return false;
+
+        // Opt-in: hide subjects that were taught in a past academic year but have no assignment
+        // record for the currently selected year. A brand-new, never-assigned course (no entry
+        // in the map) always stays visible regardless of this toggle.
+        if (hideStaleSubjects) {
+            const assignedYears = everAssignedYearsByCourse[c.id];
+            if (assignedYears && assignedYears.size > 0 && !assignedYears.has(selectedYear)) return false;
+        }
 
         // Status logic: Check assignment status
         const assignedInDB = (c.teacherAssignments?.length || 0);
@@ -2195,7 +2232,8 @@ const CourseAssignmentPage: React.FC = () => {
                                     count={filteredCourses.length} 
                                     compact 
                                     extra={
-                                        <div 
+                                        <>
+                                        <div
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setShowOnlyAssigned(!showOnlyAssigned);
@@ -2209,6 +2247,22 @@ const CourseAssignmentPage: React.FC = () => {
                                                 วิชามอบหมายแล้ว
                                             </span>
                                         </div>
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setHideStaleSubjects(!hideStaleSubjects);
+                                            }}
+                                            className="flex items-center gap-1.5 ml-3 cursor-pointer select-none group"
+                                            title="ซ่อนวิชาที่เคยมีการมอบหมายในปีก่อนๆ แต่ไม่มีการมอบหมายในปีการศึกษาที่เลือกอยู่นี้ (วิชาใหม่ที่ยังไม่เคยมอบหมายจะยังแสดงอยู่เสมอ)"
+                                        >
+                                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${hideStaleSubjects ? 'bg-indigo-500 border-indigo-500 shadow-sm' : 'bg-white dark:bg-white/5 border-slate-300 dark:border-slate-600 shadow-inner'}`}>
+                                                <Check size={10} className={`text-white transition-opacity ${hideStaleSubjects ? 'opacity-100' : 'opacity-0'}`} strokeWidth={4} />
+                                            </div>
+                                            <span className={`text-[9px] font-bold transition-colors ${hideStaleSubjects ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'}`}>
+                                                ซ่อนวิชาที่ไม่เปิดสอนปีนี้
+                                            </span>
+                                        </div>
+                                        </>
                                     }
                                 />
                                     <div className="space-y-1 p-2">

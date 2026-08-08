@@ -29,6 +29,7 @@ import { FoundUser } from "./types";
 import { sendLineAttendanceNotification, sendTeacherLineAttendanceNotification } from "./AttendanceLineNotify";
 import { deg2rad, getDistanceFromLatLonInM, isPointInPolygon, getStatusKey } from "./utils";
 import HolidayBanner from "./HolidayBanner";
+import AutoFitHeading from "./AutoFitHeading";
 import UserInfoPanel from "./UserInfoPanel";
 import SearchPanel from "./SearchPanel";
 import FaceScanPanel from "./FaceScanPanel";
@@ -1797,6 +1798,16 @@ const CheckinOutPage: React.FC = () => {
         }
       }
 
+      // "checkout" เดี่ยวๆ (ไม่ใช่ checkin_and_checkout): ตอน build attendanceData ด้านบนใช้
+      // existingAttendance.status (prop จากตอนค้นหา/สแกนครั้งก่อน) ซึ่งอาจไม่ทันสมัยแล้วถ้ามีจุดอื่น
+      // (เช่น เช็คแถว, แอดมินแก้ไข) เปลี่ยนสถานะไปแล้วระหว่างที่ค้างอยู่ในมือ ต้อง recompute จาก freshData
+      // ในทรานแซกชันนี้เสมอ ไม่งั้นจะเขียนทับสถานะที่ถูกต้องล่าสุดด้วยค่าเก่า
+      if (type === "checkout" && freshData) {
+        const freshEffectiveStatus = freshData.status || status;
+        status = timeForCompare < checkoutTimeConfig ? "กลับก่อน" : freshEffectiveStatus;
+        attendanceData.status = status;
+      }
+
       oldStatus = freshData?.status || null;
       transaction.set(attendanceRef, attendanceData, { merge: true });
       return { saved: true, reason: null, data: freshData };
@@ -2744,11 +2755,24 @@ const CheckinOutPage: React.FC = () => {
       const snap = await getDocs(
         collection(firestore, "school-settings", schoolId, collName)
       );
-      const batch = writeBatch(firestore);
       let count = 0;
 
+      // เดิมฟังก์ชันนี้อ่านสถานะทุกคนก่อน แล้วค่อย commit batch เดียวรวมท้ายสุด (อาจกินเวลาหลายวินาที/นาที
+      // สำหรับโรงเรียนที่มีคนเยอะ) ทำให้มีช่วงเวลาที่การสแกนบัตรจริงระหว่างนั้นอาจถูกเขียนทับกลับเป็น "ขาด"
+      // ตอน commit ท้ายสุด (TOCTOU) และถ้าฟังก์ชันนี้ถูกเรียกซ้ำ (เปิดหลายแท็บ/เครื่องคีออสก์พร้อมกันตอนถึงเวลา
+      // ตัดรอบพอดี) ก็จะบวกตัวนับ "ขาด" ซ้ำสองไม่มีอะไรกันเลย ย้ายมาเป็นทรานแซกชันต่อคน ให้ทั้งการเช็คว่า
+      // "ยังไม่มีบันทึกวันนี้" กับการเขียนสถานะ "ขาด" + อัปเดตตัวนับ เกิดขึ้นแบบ atomic จุดเดียวกัน — ถ้ามีคน
+      // สแกนจริงหรือมีการรันฟังก์ชันนี้ซ้ำแทรกเข้ามา ทรานแซกชันจะอ่านเห็นเอกสารล่าสุดเสมอและข้ามคนนั้นไปเอง
+      // (ไม่มีทางเขียนทับหรือบวกซ้ำ) ตรงกับพฤติกรรม idempotent ที่ต้องการ
       for (const uDoc of snap.docs) {
         const userData = uDoc.data();
+        if (targetType === "teacher" && isAttendanceEntryOnly(userData.role)) continue;
+        // สำคัญ: ต้องข้ามคนที่ไม่ได้ "กำลังศึกษาอยู่"/"อยู่" (ย้าย/ลาออก/จบ/แขวนลอย ฯลฯ) ก่อนเสมอ
+        // ไม่งั้น sweep นี้จะไปสร้างสถานะ "ขาด" ให้คนที่ไม่ได้เรียน/ทำงานที่นี่แล้วด้วย ทำให้ยอดขาด
+        // และยอดรวมเพี้ยนเกินจำนวนคนที่ยังศึกษา/ปฏิบัติงานอยู่จริง (บั๊กที่เจอวันนี้)
+        if (targetType === "student" && !isStudyingStudent(userData)) continue;
+        if (targetType === "teacher" && !isActiveTeacherSummaryStatus(userData.status || "อยู่")) continue;
+
         const attRef = doc(
           firestore,
           "school-settings",
@@ -2758,39 +2782,56 @@ const CheckinOutPage: React.FC = () => {
           "attendance",
           todayStr
         );
-        const attSnap = await getDoc(attRef);
-        if (!attSnap.exists()) {
-          batch.set(attRef, {
+        const studentRef = targetType === "student"
+          ? doc(firestore, "school-settings", schoolId, "students", uDoc.id)
+          : null;
+
+        const wasMarkedAbsent = await runTransaction(firestore, async (transaction) => {
+          const freshAttSnap = await transaction.get(attRef);
+          if (freshAttSnap.exists()) return false; // มีบันทึกแล้ว (สแกนจริงหรือรอบก่อนหน้าประมวลผลไปแล้ว) ข้าม
+
+          transaction.set(attRef, {
             status: "ขาด",
             date: todayStr,
             schoolId,
             userType: targetType,
             updatedAt: serverTimestamp(),
           });
-          if (targetType === "student") {
-            const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
-            // Read the live score fresh inside a transaction so a concurrent write
-            // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
-            // silently overwritten by this end-of-day absence sweep.
-            await runTransaction(firestore, async (transaction) => {
-              const studentSnap = await transaction.get(studentRef);
-              const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
-              const result = calculateAttendanceBehaviorScoreChange({
-                currentScore: freshScore,
-                oldStatus: null,
-                newStatus: "ขาด",
-                config: schoolSettings?.behaviorScoreConfig,
-              });
-              if (result) {
-                transaction.set(studentRef, result.update, { merge: true });
-              }
+
+          if (studentRef) {
+            const studentSnap = await transaction.get(studentRef);
+            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
+            const result = calculateAttendanceBehaviorScoreChange({
+              currentScore: freshScore,
+              oldStatus: null,
+              newStatus: "ขาด",
+              config: schoolSettings?.behaviorScoreConfig,
             });
+            if (result) {
+              transaction.set(studentRef, result.update, { merge: true });
+            }
           }
-          count++;
-        }
+
+          updatePeriodSummaries(
+            firestore,
+            transaction,
+            schoolId,
+            uDoc.id,
+            collName,
+            todayStr,
+            null,
+            "ขาด",
+            targetType === "student" ? (userData.classLevel || userData.grade || userData.classroom || "").toString().trim() || "ไม่ระบุชั้น" : undefined,
+            currentAcademicYear
+          );
+
+          return true;
+        });
+
+        if (wasMarkedAbsent) count++;
       }
 
-      if (count > 0) await batch.commit();
+      console.log(`[processAbsencesByType:${targetType}] Marked ${count} as absent (idempotent, transaction-per-user).`);
     } catch (err) {
       console.error(`Absence processing error (${targetType}):`, err);
     }
@@ -2803,54 +2844,57 @@ const CheckinOutPage: React.FC = () => {
       const snap = await getDocs(
         collection(firestore, "school-settings", schoolId, "students")
       );
-      const batch = writeBatch(firestore);
       let count = 0;
 
+      // เหมือนกับ processAbsencesByType: เดิมอ่านสถานะทุกคนก่อนแล้ว batch เดียวรวมท้ายสุด ทำให้ถ้านักเรียน
+      // สแกนบัตรออกจริง (checkoutTime ถูกเขียน) แทรกเข้ามาระหว่างรอบนี้ ตอน commit ท้ายสุดจะเขียนทับสถานะ
+      // เป็น "ไม่ลงเวลาออก" ทั้งที่จริงๆ เขาสแกนออกแล้ว — ย้ายมาเป็นทรานแซกชันต่อคน อ่าน-ตรวจเงื่อนไข-เขียน
+      // แบบ atomic ให้เห็นข้อมูลล่าสุดเสมอ และรันซ้ำกี่ครั้งก็ไม่บวก/ลบตัวนับซ้ำ (idempotent)
       for (const uDoc of snap.docs) {
         const userData = uDoc.data();
         const attRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id, "attendance", todayStr);
-        const attSnap = await getDoc(attRef);
-        if (!attSnap.exists()) continue;
+        const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
+        const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
 
-        const attData = attSnap.data();
-        if (
-          attData.checkinTime &&
-          !attData.checkoutTime &&
-          attData.status !== "ลา" &&
-          attData.status !== "ขาด" &&
-          attData.status !== "ไม่ลงเวลาออก"
-        ) {
+        const wasFlagged = await runTransaction(firestore, async (transaction) => {
+          const freshAttSnap = await transaction.get(attRef);
+          if (!freshAttSnap.exists()) return false;
+          const attData = freshAttSnap.data();
+
+          if (
+            !attData.checkinTime ||
+            attData.checkoutTime ||
+            attData.status === "ลา" ||
+            attData.status === "ขาด" ||
+            attData.status === "ไม่ลงเวลาออก"
+          ) {
+            return false;
+          }
+
           const oldStatus = attData.status as string;
           const newStatus = "ไม่ลงเวลาออก";
 
-          batch.update(attRef, { status: newStatus, remark: "Auto: ไม่ลงเวลาออก" });
+          transaction.update(attRef, { status: newStatus, remark: "Auto: ไม่ลงเวลาออก" });
 
-          const studentRef = doc(firestore, "school-settings", schoolId, "students", uDoc.id);
+          const studentSnap = await transaction.get(studentRef);
           const oldKey = getStatusKey(oldStatus);
           const newKey = getStatusKey(newStatus);
           const statsUpdate: Record<string, any> = {};
           if (oldKey) statsUpdate[`attendanceStats.${oldKey}`] = increment(-1);
           if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
-          if (Object.keys(statsUpdate).length > 0) batch.update(studentRef, statsUpdate);
+          if (Object.keys(statsUpdate).length > 0) transaction.update(studentRef, statsUpdate);
 
-          // Read the live score fresh inside a transaction so a concurrent write
-          // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
-          // silently overwritten by this end-of-day no-checkout sweep.
-          await runTransaction(firestore, async (transaction) => {
-            const studentSnap = await transaction.get(studentRef);
-            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
-            const scoreChange = calculateAttendanceBehaviorScoreChange({
-              currentScore: freshScore,
-              oldStatus,
-              newStatus,
-              config: schoolSettings?.behaviorScoreConfig,
-            });
-            if (scoreChange) {
-              transaction.set(studentRef, scoreChange.update, { merge: true });
-            }
+          const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
+          const scoreChange = calculateAttendanceBehaviorScoreChange({
+            currentScore: freshScore,
+            oldStatus,
+            newStatus,
+            config: schoolSettings?.behaviorScoreConfig,
           });
+          if (scoreChange) {
+            transaction.set(studentRef, scoreChange.update, { merge: true });
+          }
 
-          const summaryRef = doc(firestore, "school-settings", schoolId, "students", "Attendance", "dyasummary", todayStr);
           const classKey = userData.classLevel?.trim() || "ไม่ระบุชั้น";
           const oldSummaryKey = getStatusKey(oldStatus);
           const newSummaryKey = getStatusKey(newStatus);
@@ -2864,15 +2908,17 @@ const CheckinOutPage: React.FC = () => {
               summaryUpdates[newSummaryKey] = increment(1);
               summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
             }
-            batch.set(summaryRef, summaryUpdates, { merge: true });
+            transaction.set(summaryRef, summaryUpdates, { merge: true });
           }
 
-          updatePeriodSummaries(firestore, batch, schoolId, uDoc.id, "students", todayStr, oldStatus, newStatus, classKey, currentAcademicYear);
-          count++;
-        }
+          updatePeriodSummaries(firestore, transaction, schoolId, uDoc.id, "students", todayStr, oldStatus, newStatus, classKey, currentAcademicYear);
+          return true;
+        });
+
+        if (wasFlagged) count++;
       }
 
-      if (count > 0) await batch.commit();
+      console.log(`[processNoCheckout] Flagged ${count} as no-checkout (idempotent, transaction-per-user).`);
     } catch (err) {
       console.error("No-checkout processing error:", err);
     }
@@ -3147,12 +3193,17 @@ const CheckinOutPage: React.FC = () => {
                   const now   = Date.now();
                   const entry = acc.get(key);
 
+                  // เก็บ entry ที่หมดอายุแล้วทิ้งเป็นระยะ (กันแมพโตไม่จำกัดตอนสแกนคนจำนวนมาก)
+                  acc.forEach((v, k) => {
+                    if (k !== key && now - v.lastSeenAt >= LOW_CONF_WIN) acc.delete(k);
+                  });
+
+                  // เก็บสะสมแยกตาม cardId เพื่อไม่ให้คนที่เดินผ่านพร้อมกันหลายคนล้างความคืบหน้าของกันเอง
                   if (entry && now - entry.lastSeenAt < LOW_CONF_WIN) {
                     entry.count++;
                     entry.totalConf += confidence;
                     entry.lastSeenAt = now;
                   } else {
-                    acc.clear(); // ล้าง card อื่นที่ค้างอยู่
                     acc.set(key, { count: 1, totalConf: confidence, lastSeenAt: now });
                   }
 
@@ -3165,9 +3216,9 @@ const CheckinOutPage: React.FC = () => {
                   // ผ่านด้วยการสะสม → ใช้ค่าเฉลี่ย
                   effectiveConfidence = current.totalConf / current.count;
                   console.log(`[FaceScan] ✅ สะสมครบ ${LOW_CONF_HITS} ครั้ง → avg ${(effectiveConfidence * 100).toFixed(1)}% ผ่าน (cardId=${key})`);
-                  acc.clear();
+                  acc.delete(key);
                 } else {
-                  lowConfAccRef.current.clear();
+                  lowConfAccRef.current.delete(String(matchedCard.id));
                   console.warn(`[FaceScan] ⚠️ ความมั่นใจต่ำเกินไป: ${(confidence * 100).toFixed(1)}% < ${(LOW_CONF_FLOOR * 100).toFixed(1)}% — ข้ามการจับคู่`);
                   return;
                 }
@@ -3474,14 +3525,18 @@ const CheckinOutPage: React.FC = () => {
     );
   }
 
+  // จอคีออสก์ปกติ (ไม่ใช่มือถือ/แท็บเล็ตแนวตั้ง และไม่ใช่โหมดลงเวลาด้วยตนเอง)
+  // ให้ขยายเนื้อหาเต็มความสูง/กว้างของจอจริง แทนที่จะลอยกึ่งกลางแบบมีขอบขาวเหลือเยอะ
+  const useFullBleedKioskLayout = !isSquareScreen && !isSelfServiceMode;
+
   const content = (
-    <div className="min-h-dvh bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300">
-      <main className={`flex-grow flex overflow-x-hidden ${isSelfServiceMode ? 'items-start' : 'items-center'} justify-center ${isSquareScreen ? 'p-2' : 'p-3 sm:p-6'}`}>
-        <div className={`w-full min-w-0 ${isSquareScreen ? '' : 'lg:max-w-screen-2xl'}`}>
-          <div className={`grid grid-cols-1 lg:grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'}`}>
-            <div className={`min-w-0 lg:col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} ${isSelfServiceMode ? '' : 'h-full'}`}>
-              <div className={`min-w-0 bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-4' : 'p-4 sm:p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none ${isSelfServiceMode ? '' : 'h-full'} flex flex-col`}>
-                <div className={`flex items-center gap-3 sm:gap-5 min-w-0 ${isSquareScreen ? 'mb-3' : 'mb-4 sm:mb-8'}`}>
+    <div className={`bg-[#edf0f4] dark:bg-[#1e1f21] flex flex-col transition-colors duration-300 ${useFullBleedKioskLayout ? 'h-dvh overflow-hidden' : 'min-h-dvh'}`}>
+      <main className={`flex-grow flex overflow-x-hidden min-h-0 ${isSelfServiceMode ? 'items-start' : useFullBleedKioskLayout ? 'items-stretch' : 'items-center'} justify-center ${isSquareScreen ? 'p-2' : 'p-3 sm:p-6'}`}>
+        <div className={`w-full min-w-0 min-h-0 ${useFullBleedKioskLayout ? '' : isSquareScreen ? '' : 'lg:max-w-screen-2xl'}`}>
+          <div className={`grid grid-cols-1 lg:grid-cols-12 ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} ${useFullBleedKioskLayout ? 'h-full min-h-0' : ''}`}>
+            <div className={`min-w-0 min-h-0 lg:col-span-8 flex flex-col ${isSquareScreen ? 'gap-3' : 'gap-6 lg:gap-10'} ${isSelfServiceMode ? '' : 'h-full'}`}>
+              <div className={`min-w-0 min-h-0 overflow-hidden bg-[#fafbfc] dark:bg-[#2a2b2f] rounded-3xl ${isSquareScreen ? 'p-4' : 'p-4 sm:p-10'} text-gray-900 dark:text-white shadow-sm dark:shadow-none border border-gray-200/50 dark:border-none ${isSelfServiceMode ? '' : 'h-full'} flex flex-col`}>
+                <div className={`flex items-center gap-3 sm:gap-5 min-w-0 shrink-0 ${isSquareScreen ? 'mb-3' : 'mb-4 sm:mb-8'}`}>
                   {schoolSettings?.logoUrl && (
                     <img
                       src={schoolSettings.logoUrl}
@@ -3490,9 +3545,9 @@ const CheckinOutPage: React.FC = () => {
                     />
                   )}
                   <div className="flex flex-col min-w-0">
-                    <h1 className={`truncate ${isSquareScreen ? 'text-xl' : 'text-xl sm:text-4xl'} font-extrabold text-gray-900 dark:text-white`}>
+                    <AutoFitHeading className={`${isSquareScreen ? 'text-xl' : 'text-xl sm:text-4xl'} font-extrabold text-gray-900 dark:text-white`}>
                       ระบบลงเวลา{schoolName ? ` | ${schoolName}` : ""}
-                    </h1>
+                    </AutoFitHeading>
                     {schoolSettings?.affiliation && (
                       <p className={`truncate ${isSquareScreen ? 'text-xs' : 'text-xs sm:text-lg'} text-gray-900 dark:text-white font-bold mt-1`}>
                         สังกัด: {schoolSettings.affiliation}
@@ -3516,8 +3571,8 @@ const CheckinOutPage: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex-1 flex min-w-0">
-                  <div className={`grid grid-cols-1 sm:grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-4 lg:gap-10'} flex-1 min-w-0`}>
+                <div className="flex-1 flex min-w-0 min-h-0">
+                  <div className={`grid grid-cols-1 sm:grid-cols-5 ${isSquareScreen ? 'gap-4' : 'gap-4 lg:gap-10'} flex-1 min-w-0 min-h-0`}>
                     {isFaceScanModeEnabled ? (
                       <FaceScanPanel
                         enabled={isFaceScanModeEnabled}
@@ -3563,7 +3618,7 @@ const CheckinOutPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className={`min-w-0 lg:col-span-4 ${isSelfServiceMode ? '' : 'h-full'}`}>
+            <div className={`min-w-0 min-h-0 lg:col-span-4 ${isSelfServiceMode ? '' : 'h-full'}`}>
               <LatestUsers
                 latestUsers={latestUsers.filter(u =>
                   (u.type === 'student' && canScanStudents) ||

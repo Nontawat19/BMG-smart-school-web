@@ -495,7 +495,12 @@ const CourseEnrollmentPage: React.FC = () => {
             const assignment = semesterAssignments.find(a => a.courseId === course.id);
             return {
                 ...course,
-                teacherAssignments: assignment ? assignment.teacherAssignments : (course.teacherAssignments || [])
+                // Only trust this year+semester's real course_assignments record — falling back to
+                // a raw teacherAssignments field on the course doc would leak a past year's
+                // assignment forward forever, since course docs are reused across years. This is
+                // what keeps subjects not opened this year out of the enrollment picker below,
+                // since `isAssigned` is a hard requirement for a course to appear at all.
+                teacherAssignments: assignment ? assignment.teacherAssignments : []
             };
         });
     }, [courses, semesterAssignments]);

@@ -9,6 +9,7 @@ interface ManualDoc {
   id: string;
   title: string;
   description?: string;
+  category?: string;
   fileUrl: string;
   fileName: string;
   fileSize: number;
@@ -47,7 +48,8 @@ const UserManualsPage: React.FC = () => {
 
   const filteredManuals = manuals.filter((manual) =>
     manual.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (manual.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (manual.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (manual.category || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -105,9 +107,16 @@ const UserManualsPage: React.FC = () => {
                       <FileText size={22} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
-                        {manual.title}
-                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-gray-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
+                          {manual.title}
+                        </p>
+                        {manual.category && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 flex-shrink-0">
+                            {manual.category}
+                          </span>
+                        )}
+                      </div>
                       {manual.description && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{manual.description}</p>
                       )}

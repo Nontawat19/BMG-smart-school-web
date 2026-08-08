@@ -281,7 +281,7 @@ const LeaveApprovalPage: React.FC = () => {
         batch.set(
           attendanceRef,
           {
-            status: "ล", // 'ล' หมายถึง ลา
+            status: "ลา",
             checkinTime: null,
             checkoutTime: null,
             leaveRequestId: r.id,

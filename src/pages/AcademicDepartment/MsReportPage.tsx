@@ -25,12 +25,13 @@ import {
     AlertCircle,
     Download,
     RefreshCw,
-    Percent
+    Percent,
+    GraduationCap
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from '@/components/SkeletonLoader';
 import Select from 'react-select';
-import { CLASSES, CLASS_FULL_NAMES, getGroupPersonnel } from '@/utils/schoolUtils';
+import { CLASSES, CLASS_FULL_NAMES, getGroupPersonnel, getClassLevelRank } from '@/utils/schoolUtils';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
@@ -53,6 +54,7 @@ interface Course {
     hoursPerWeek?: number;
     semester?: string;
     isActive?: boolean;
+    classId?: string | string[];
 }
 
 interface AttendanceRecord {
@@ -121,6 +123,59 @@ const getTotalPeriods = (course?: Course | null) => {
 const getFullClassLabel = (classLevel: string, room: string) => {
     const fullLevel = CLASS_FULL_NAMES[classLevel] || CLASSES[classLevel] || classLevel || 'ไม่ระบุห้อง';
     return room ? `${fullLevel}/${room}` : fullLevel;
+};
+
+// รหัสรายวิชาที่ขึ้นต้นด้วย "ก" คือกิจกรรมพัฒนาผู้เรียน (ชุมนุม, ลูกเสือ-เนตรนารี ฯลฯ)
+// ตามมาตรฐานรหัสวิชาของ สพฐ. ไม่ใช่รายวิชาที่ต้องเช็คขาดคาบแบบ มส.
+const isActivityCourseCode = (code?: string) => String(code || '').trim().charAt(0) === 'ก';
+
+// ตัวเลือกค่าว่างของดรอปดาวน์รายวิชา — อยู่บนสุดของรายการเสมอ (ไม่ auto-select วิชาแรกให้)
+// เหมือนรูปแบบ "ทุกระดับชั้น" ของดรอปดาวน์ระดับชั้น
+const PLACEHOLDER_COURSE_OPTION = { value: '', label: 'เลือกรายวิชา' };
+
+// วิชาบางรายการมอบหมายเป็นช่วงชั้นรวม (เช่น วิชาเลือกที่เปิดให้ทั้ง ม.ต้น) โดยเก็บ classId
+// เป็น "junior_high"/"ม.ต้น" หรือ "senior_high"/"ม.ปลาย" แทนชั้นเดี่ยว — รูปแบบเดียวกับที่ใช้ใน
+// CourseAssignmentPage / CourseEnrollmentPage / GradeBookPage ทั่วทั้งระบบ
+const GROUP_LEVEL_LABELS: Record<string, string> = { junior_high: 'ม.ต้น', senior_high: 'ม.ปลาย' };
+const GROUP_LEVEL_RANK_ANCHOR: Record<string, string> = { junior_high: 'm1', 'ม.ต้น': 'm1', senior_high: 'm4', 'ม.ปลาย': 'm4' };
+const JUNIOR_HIGH_IDS = ['m1', 'm2', 'm3', 'junior_high', 'ม.ต้น', 'ม.1', 'ม.2', 'ม.3'];
+const SENIOR_HIGH_IDS = ['m4', 'm5', 'm6', 'senior_high', 'ม.ปลาย', 'ม.4', 'ม.5', 'ม.6'];
+const THAI_LEVEL_MAPPING: Record<string, string[]> = {
+    m1: ['ม.1'], m2: ['ม.2'], m3: ['ม.3'], m4: ['ม.4'], m5: ['ม.5'], m6: ['ม.6'],
+    p1: ['ป.1'], p2: ['ป.2'], p3: ['ป.3'], p4: ['ป.4'], p5: ['ป.5'], p6: ['ป.6'],
+    k1: ['อ.1', 'อนุบาล 1'], k2: ['อ.2', 'อนุบาล 2'], k3: ['อ.3', 'อนุบาล 3']
+};
+
+const getCourseClassIds = (course?: Course | null): string[] => {
+    if (!course || !course.classId) return [];
+    return (Array.isArray(course.classId) ? course.classId : [course.classId]).filter(Boolean);
+};
+
+const getCourseClassRank = (course?: Course | null) => {
+    const ranks = getCourseClassIds(course)
+        .map(id => getClassLevelRank(GROUP_LEVEL_RANK_ANCHOR[id] || id))
+        .filter(r => r >= 0);
+    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+};
+
+const getCourseClassLabel = (course?: Course | null) => {
+    const ids = getCourseClassIds(course);
+    return ids.map(id => GROUP_LEVEL_LABELS[id] || CLASSES[id] || id).join(', ');
+};
+
+// เทียบว่า classId ของวิชาตรงกับระดับชั้นที่กรองหรือไม่ (รองรับทั้งชั้นเดี่ยวและช่วงชั้นรวม)
+const matchesClassLevel = (courseClassId: string | string[] | undefined, selectedValue: string): boolean => {
+    if (selectedValue === 'all') return true;
+    if (!courseClassId) return false;
+    if (Array.isArray(courseClassId)) return courseClassId.some(id => matchesClassLevel(id, selectedValue));
+
+    const cid = String(courseClassId).toLowerCase().trim();
+    const sid = selectedValue.toLowerCase().trim();
+    if (cid === sid) return true;
+    if (THAI_LEVEL_MAPPING[sid]?.some(label => label.toLowerCase() === cid)) return true;
+    if (sid === 'junior_high' || sid === 'ม.ต้น') return JUNIOR_HIGH_IDS.some(v => v.toLowerCase() === cid);
+    if (sid === 'senior_high' || sid === 'ม.ปลาย') return SENIOR_HIGH_IDS.some(v => v.toLowerCase() === cid);
+    return false;
 };
 
 // ─── PDF Document ───────────────────────────────────────────────
@@ -368,9 +423,13 @@ const MsReportPage: React.FC = () => {
     const [academicHeadRoleLabel, setAcademicHeadRoleLabel] = useState('หัวหน้างานทะเบียนและวัดผล');
 
     const [courses, setCourses] = useState<Course[]>([]);
+    const [selectedClassLevel, setSelectedClassLevel] = useState<any>(() => {
+        const saved = sessionStorage.getItem('ms_classLevel');
+        return saved ? JSON.parse(saved) : { value: 'all', label: 'ทุกระดับชั้น' };
+    });
     const [selectedCourse, setSelectedCourse] = useState<any>(() => {
         const saved = sessionStorage.getItem('ms_course');
-        return saved ? JSON.parse(saved) : null;
+        return saved ? JSON.parse(saved) : PLACEHOLDER_COURSE_OPTION;
     });
     const [selectedRoom, setSelectedRoom] = useState<any>(() => {
         const saved = sessionStorage.getItem('ms_room');
@@ -388,10 +447,11 @@ const MsReportPage: React.FC = () => {
     useEffect(() => {
         if (academicYear) sessionStorage.setItem('ms_year', academicYear);
         if (semester) sessionStorage.setItem('ms_semester', semester);
+        if (selectedClassLevel) sessionStorage.setItem('ms_classLevel', JSON.stringify(selectedClassLevel));
         if (selectedCourse) sessionStorage.setItem('ms_course', JSON.stringify(selectedCourse));
         else sessionStorage.removeItem('ms_course');
         if (selectedRoom) sessionStorage.setItem('ms_room', JSON.stringify(selectedRoom));
-    }, [academicYear, semester, selectedCourse, selectedRoom]);
+    }, [academicYear, semester, selectedClassLevel, selectedCourse, selectedRoom]);
 
     useEffect(() => {
         const observer = new MutationObserver((mutations) => {
@@ -497,20 +557,59 @@ const MsReportPage: React.FC = () => {
         });
     }, [schoolId, academicYear, semester]);
 
-    const courseOptions = useMemo(() => {
-        const filtered = courses.filter(c => assignedCourseIds.has(c.id));
-        const sorted = [...filtered].sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true }));
-        const options = sorted.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }));
+    // เฉพาะวิชาที่มอบหมายจริงในปี/เทอมนี้ และไม่ใช่กิจกรรมพัฒนาผู้เรียน (รหัสขึ้นต้นด้วย "ก")
+    const eligibleCourses = useMemo(
+        () => courses.filter(c => assignedCourseIds.has(c.id) && !isActivityCourseCode(c.code)),
+        [courses, assignedCourseIds]
+    );
 
-        if (options.length > 0 && !selectedCourse) setSelectedCourse(options[0]);
-        else if (selectedCourse && options.length > 0) {
-            const isStillValid = options.some(opt => opt.value === selectedCourse.value);
-            if (!isStillValid) setSelectedCourse(options[0]);
-        } else if (selectedCourse && options.length === 0) {
-            setSelectedCourse(null);
+    // ระดับชั้นที่เปิดสอนอ้างอิงจากข้อมูลโรงเรียน (school-settings) หน้า /owner/school-info
+    // ไม่ใช่จากค่า classId ดิบของวิชา เพราะบางวิชานำเข้าข้อมูลมาเป็นข้อความอิสระ (เช่น "ม.ต้น")
+    // ที่เรียงลำดับตามชั้นไม่ได้ตรงๆ — ถ้าโรงเรียนเปิดสอนครบ ม.1-ม.3 หรือ ม.4-ม.6 จะแทรกตัวเลือก
+    // รวมช่วงชั้น "ม.ต้น" ต่อท้าย ม.3 และ "ม.ปลาย" ต่อท้าย ม.6 ตามรูปแบบเดียวกับหน้ามอบหมายวิชา
+    const classLevelOptions = useMemo(() => {
+        const availableClassOptions = schoolSettings?.availableClassOptions || [];
+        const classKeys: string[] = schoolSettings?.classKeys || [];
+        const options: { value: string; label: string }[] = [{ value: 'all', label: 'ทุกระดับชั้น' }];
+
+        availableClassOptions.forEach(([key, label]) => {
+            options.push({ value: key, label });
+            if (key === 'm3') options.push({ value: 'junior_high', label: 'ม.ต้น' });
+            if (key === 'm6') options.push({ value: 'senior_high', label: 'ม.ปลาย' });
+        });
+
+        const hasJunior = classKeys.some(k => ['m1', 'm2', 'm3'].includes(k));
+        const hasSenior = classKeys.some(k => ['m4', 'm5', 'm6'].includes(k));
+        if (hasJunior && !options.some(o => o.value === 'junior_high')) options.push({ value: 'junior_high', label: 'ม.ต้น' });
+        if (hasSenior && !options.some(o => o.value === 'senior_high')) options.push({ value: 'senior_high', label: 'ม.ปลาย' });
+
+        return options;
+    }, [schoolSettings]);
+
+    const courseOptions = useMemo(() => {
+        const filtered = selectedClassLevel && selectedClassLevel.value !== 'all'
+            ? eligibleCourses.filter(c => matchesClassLevel(c.classId, selectedClassLevel.value))
+            : eligibleCourses;
+
+        // เรียงตามระดับชั้นก่อน แล้วจึงเรียงตามรหัสวิชาในแต่ละชั้น
+        const sorted = [...filtered].sort((a, b) => {
+            const rankDiff = getCourseClassRank(a) - getCourseClassRank(b);
+            if (rankDiff !== 0) return rankDiff;
+            return String(a.code || '').localeCompare(String(b.code || ''), 'th', { numeric: true });
+        });
+        const courseOnlyOptions = sorted.map(c => {
+            const levelLabel = getCourseClassLabel(c);
+            return { value: c.code, label: levelLabel ? `${levelLabel} • ${c.code} - ${c.title}` : `${c.code} - ${c.title}` };
+        });
+        const options = [PLACEHOLDER_COURSE_OPTION, ...courseOnlyOptions];
+
+        // ถ้าวิชาที่เลือกไว้ไม่อยู่ในรายการที่กรองแล้ว (เช่น เปลี่ยนตัวกรองระดับชั้น) ให้กลับไปที่ "เลือกรายวิชา"
+        if (selectedCourse && selectedCourse.value) {
+            const isStillValid = courseOnlyOptions.some(opt => opt.value === selectedCourse.value);
+            if (!isStillValid) setSelectedCourse(PLACEHOLDER_COURSE_OPTION);
         }
         return options;
-    }, [courses, assignedCourseIds, selectedCourse]);
+    }, [eligibleCourses, selectedClassLevel, selectedCourse]);
 
     const selectedCourseData = useMemo(
         () => courses.find(c => c.code === selectedCourse?.value) || null,
@@ -519,7 +618,11 @@ const MsReportPage: React.FC = () => {
     const totalPeriods = useMemo(() => getTotalPeriods(selectedCourseData), [selectedCourseData]);
 
     const handleFetchData = async () => {
-        if (!schoolId || !academicYear || !semester || !selectedCourse) return;
+        if (!schoolId || !academicYear || !semester || !selectedCourse?.value) {
+            setStudentsInCourse([]);
+            setAttendanceRecords([]);
+            return;
+        }
         setLoading(true);
         setError(null);
         try {
@@ -735,7 +838,7 @@ const MsReportPage: React.FC = () => {
     };
 
     const handleExportPdf = async () => {
-        if (!selectedCourse) return;
+        if (!selectedCourse?.value) return;
         setPdfGenerating(true);
         try {
             const subjectLabel = selectedCourseData ? `${selectedCourseData.code} ${selectedCourseData.title}` : selectedCourse.label;
@@ -810,7 +913,7 @@ const MsReportPage: React.FC = () => {
                             </button>
                             <button
                                 onClick={handleExportPdf}
-                                disabled={!selectedCourse || studentSummary.length === 0 || pdfGenerating}
+                                disabled={!selectedCourse?.value || studentSummary.length === 0 || pdfGenerating}
                                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-slate-900 dark:bg-indigo-500 dark:hover:bg-white dark:hover:text-black text-white px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-500/10 transition-all font-black text-xs group disabled:opacity-60"
                             >
                                 {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
@@ -823,13 +926,19 @@ const MsReportPage: React.FC = () => {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 relative">
                     <div className="bg-white dark:bg-[#1a1b1e] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 items-end">
-                            <div className="lg:col-span-8 space-y-1.5">
+                            <div className="lg:col-span-6 space-y-1.5">
                                 <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 ml-1">
-                                    <BookOpen size={12} /> เลือกรหัสรายวิชา
+                                    <BookOpen size={12} /> เลือกรายวิชา
                                 </span>
-                                <Select options={courseOptions} value={selectedCourse} onChange={setSelectedCourse} placeholder="พิมพ์ค้นหารหัสวิชา..." styles={selectStyles} isClearable />
+                                <Select options={courseOptions} value={selectedCourse} onChange={setSelectedCourse} placeholder="พิมพ์ค้นหารหัสวิชา..." styles={selectStyles} />
                             </div>
-                            <div className="lg:col-span-4 space-y-1.5">
+                            <div className="lg:col-span-3 space-y-1.5">
+                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
+                                    <GraduationCap size={12} /> ระดับชั้น
+                                </span>
+                                <Select options={classLevelOptions} value={selectedClassLevel} onChange={setSelectedClassLevel} styles={selectStyles} isSearchable={false} />
+                            </div>
+                            <div className="lg:col-span-3 space-y-1.5">
                                 <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
                                     <Users size={12} /> ห้องเรียน
                                 </span>
@@ -843,7 +952,7 @@ const MsReportPage: React.FC = () => {
                         )}
                     </div>
 
-                    {!selectedCourse ? (
+                    {!selectedCourse?.value ? (
                         <div className="flex flex-col items-center justify-center py-24 text-center bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
                             <div className="bg-gradient-to-tr from-rose-500 to-indigo-600 p-10 rounded-2xl shadow-xl">
                                 <FileWarning size={64} className="text-white" />

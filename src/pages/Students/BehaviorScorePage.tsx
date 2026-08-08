@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
@@ -7,6 +7,7 @@ import { firestore, auth } from "@/firebase";
 import {
   collection,
   getDocs,
+  getDoc,
   query,
   orderBy,
   doc,
@@ -158,6 +159,38 @@ export default function BehaviorScorePage() {
       if (sId) setSchoolId(sId);
     }
   }, [currentUser, schoolId]);
+
+  // Convenience only — every teacher can already adjust/view every student on
+  // this page (no access restriction). A homeroom teacher (ครูที่ปรึกษา) just
+  // gets the class-level/room filters pre-set to their own room on load, so
+  // they land on their students first without having to filter manually; they
+  // can still clear/change the filters to reach any other class.
+  // Runs at most once per visit (guarded by the ref) — currentUser is a fresh
+  // object on every auth onSnapshot tick, and re-running on that would wipe
+  // out a filter the teacher already changed by hand.
+  const homeroomDefaultAppliedRef = useRef(false);
+  const currentUserUid = (currentUser as any)?.uid as string | undefined;
+  useEffect(() => {
+    if (!schoolId || !currentUserUid || homeroomDefaultAppliedRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", currentUserUid);
+        const snap = await getDoc(teacherRef);
+        if (cancelled) return;
+        homeroomDefaultAppliedRef.current = true;
+        if (!snap.exists()) return;
+        const data = snap.data();
+        if (data.isHomeroomTeacher && data.homeroomGrade) {
+          setSelectedClassLevel(data.homeroomGrade);
+          if (data.homeroomRoom) setSelectedRoom(data.homeroomRoom);
+        }
+      } catch (err) {
+        console.error("Error checking homeroom teacher status:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [schoolId, currentUserUid]);
 
   // Fetch school levels + behavior score config for filtering/adjusting.
   // Real-time (onSnapshot), not a one-time getDoc: an admin saving new point

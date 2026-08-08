@@ -148,10 +148,11 @@ const getLocalBridgeFrameUrl = (rawUrl: string): string => {
 const MOTION_SAMPLE_WIDTH = 64;
 const MOTION_SCAN_HOLD_MS = 15000;
 const IDLE_IP_CAMERA_PROBE_MS = 10000;
-const IP_CAMERA_ACTIVE_IDENTIFY_MS = 350;
-const RTSP_CAMERA_ACTIVE_IDENTIFY_MS = 600;
-const WEBCAM_IDENTIFY_MS = 700;
-const RTSP_CAMERA_PREVIEW_MS = 66;
+// Walk-through tuning: คนไม่หยุดยืน ต้องยิงสแกนถี่ขึ้นเพื่อจับเฟรมที่คมชัดพอให้ได้ก่อนเดินผ่านกล้อง
+const IP_CAMERA_ACTIVE_IDENTIFY_MS = 200;
+const RTSP_CAMERA_ACTIVE_IDENTIFY_MS = 380;
+const WEBCAM_IDENTIFY_MS = 350;
+const RTSP_CAMERA_PREVIEW_MS = 50;
 const IP_CAMERA_BOX_STALE_MS = 700;
 const IP_CAMERA_MOTION_OBSERVER_MS = 160;
 const IP_CAMERA_IDENTIFY_MAX_WIDTH = 960;
@@ -161,7 +162,7 @@ const RTSP_CAMERA_IDENTIFY_JPEG_QUALITY = 0.82;
 const IP_CAMERA_STALE_FETCH_ABORT_MS = 1800;
 const RTSP_CAMERA_STALE_FETCH_ABORT_MS = 10000;
 const WEBCAM_IDENTIFY_MAX_WIDTH = 960;
-const WEBCAM_IDENTIFY_JPEG_QUALITY = 0.78;
+const WEBCAM_IDENTIFY_JPEG_QUALITY = 0.86;
 const MOTION_DIFF_THRESHOLD = 28;
 const MOTION_MIN_CHANGED_PIXELS = 90;
 const MOTION_MIN_CHANGED_RATIO = 0.014;
@@ -552,6 +553,9 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
 
         const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
+            // short_range: blaze_face_full_range ใช้กับ Tasks Vision FaceDetector API เวอร์ชันนี้ไม่ได้
+            // (โมเดลไม่มี metadata กำหนด anchor config ให้ตรงกับกราฟ ทำให้ RET_CHECK shape mismatch
+            // ทุกครั้งไม่ว่าจะใช้ GPU หรือ CPU delegate) จึงต้องใช้ short_range ซึ่งเข้ากันได้จริง
             modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
             delegate: "GPU"
           },
@@ -609,7 +613,9 @@ const FaceScanPanel: React.FC<FaceScanPanelProps> = ({
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
-            frameRate: { ideal: 30, max: 30 },
+            // ขอ fps สูงสุดเท่าที่กล้องรองรับ (เผื่อได้ถึง 60fps) — fps ยิ่งสูง exposure time ต่อเฟรมยิ่งสั้น
+            // ภาพคนเดินผ่านจะเบลอน้อยลง ถ้ากล้องรองรับแค่ 30fps เบราว์เซอร์จะเลือกค่าสูงสุดที่ทำได้เองอัตโนมัติ
+            frameRate: { ideal: 60 },
             facingMode: { ideal: "user" },
           },
           audio: false,

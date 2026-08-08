@@ -237,6 +237,7 @@ export const sendLineAttendanceNotification = async (
         const bubbleTextColor = isLate ? "#92400e" : "#166534";
         const bubbleMessage = isCheckout ? "บุตรหลานของท่านกำลังเดินทางกลับ" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
         const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
+        const reportTitle = (isCheckout || status === "กลับก่อน") ? "รายงานการกลับบ้าน" : "รายงานการมาเรียน";
         const faceScanImageUrl = user.scanMethod === "สแกนใบหน้า" &&
             user.faceScanImageUrl &&
             user.faceScanImageUrl.startsWith("https://")
@@ -286,7 +287,7 @@ export const sendLineAttendanceNotification = async (
 
         const flexMessage = {
             type: "flex",
-            altText: `รายงานการเข้าเรียน: ${user.name}`,
+            altText: `${reportTitle}: ${user.name}`,
             contents: {
                 type: "bubble",
                 size: "giga",
@@ -314,7 +315,7 @@ export const sendLineAttendanceNotification = async (
                                             type: "image",
                                             url: profileUrl,
                                             position: "absolute",
-                                            offsetTop: "-10px",
+                                            offsetTop: "0px",
                                             offsetStart: "0px",
                                             size: "70px",
                                             aspectRatio: "7:9",

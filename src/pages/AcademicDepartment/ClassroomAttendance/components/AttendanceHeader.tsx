@@ -10,6 +10,10 @@ interface AttendanceHeaderProps {
     onDateChange: (date: Date) => void;
     onBack?: () => void;
     title?: string;
+    // Disables the prev/next date buttons — pass true while a class is actively selected
+    // for check-in, so the date can never drift mid-flow (that mismatch used to let a
+    // save go out under the wrong date instead of the class's intended day).
+    locked?: boolean;
 }
 
 const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
@@ -20,16 +24,19 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
     onDateChange,
     onBack,
     title = "ระบบเช็คชื่อเข้าเรียน",
+    locked = false,
 }) => {
     const isPwaMode = usePwaMode();
 
     const prevDate = () => {
+        if (locked) return;
         const d = new Date(currentDate);
         d.setDate(d.getDate() - 1);
         onDateChange(d);
     };
 
     const nextDate = () => {
+        if (locked) return;
         const d = new Date(currentDate);
         d.setDate(d.getDate() + 1);
         onDateChange(d);
@@ -69,7 +76,8 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
                 <div className="flex items-center bg-white dark:bg-[#1a1b1e] rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
                     <button
                         onClick={prevDate}
-                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 active:scale-90 shrink-0"
+                        disabled={locked}
+                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 active:scale-90 shrink-0 disabled:opacity-30 disabled:pointer-events-none"
                     >
                         <ChevronLeft size={16} />
                     </button>
@@ -79,7 +87,8 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
                     </div>
                     <button
                         onClick={nextDate}
-                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 rotate-180 active:scale-90 shrink-0"
+                        disabled={locked}
+                        className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-all text-gray-400 hover:text-indigo-600 rotate-180 active:scale-90 shrink-0 disabled:opacity-30 disabled:pointer-events-none"
                     >
                         <ChevronLeft size={16} />
                     </button>
@@ -135,7 +144,8 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
                 <div className="flex items-center gap-2 bg-white dark:bg-[#1a1b1e] p-1 rounded-xl shadow-lg shadow-indigo-500/5 border border-gray-100 dark:border-gray-800 ring-1 ring-gray-100 dark:ring-gray-700/30">
                     <button
                         onClick={prevDate}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-indigo-600 active:scale-90"
+                        disabled={locked}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-indigo-600 active:scale-90 disabled:opacity-30 disabled:pointer-events-none"
                     >
                         <ChevronLeft size={20} />
                     </button>
@@ -147,7 +157,8 @@ const AttendanceHeader: React.FC<AttendanceHeaderProps> = ({
                     </div>
                     <button
                         onClick={nextDate}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-indigo-600 rotate-180 active:scale-90"
+                        disabled={locked}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-all text-gray-400 hover:text-indigo-600 rotate-180 active:scale-90 disabled:opacity-30 disabled:pointer-events-none"
                     >
                         <ChevronLeft size={20} />
                     </button>

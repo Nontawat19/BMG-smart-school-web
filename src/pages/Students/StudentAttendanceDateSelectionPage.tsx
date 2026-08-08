@@ -4,7 +4,7 @@ import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock, FileDown, RefreshCw, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileDown, RefreshCw, Search } from "lucide-react";
 import { firestore } from "@/firebase";
 import { RootState, AppDispatch } from "@/store";
 import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
@@ -667,11 +667,7 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
             <div className="flex items-start gap-4">
               <BackButton to="/academic/hub/students" />
               <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400">
-                  <Clock size={16} />
-                  Student Attendance
-                </div>
-                <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
+                <h1 className="text-2xl font-black text-slate-900 dark:text-white">
                   ดูบันทึกการลงเวลานักเรียนแบบเลือกวัน
                 </h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">

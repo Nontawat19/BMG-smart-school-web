@@ -2,8 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { Link, useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
+import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import BackButton from "@/components/Shared/BackButton";
 import { RootState } from "@/store";
+import { usePermissions } from "@/hooks/usePermissions";
+import { ROLES } from "@/constants/roles";
 import { firestore as db } from "@/firebase";
 import { 
     collection, 
@@ -31,6 +34,7 @@ import {
     ChevronsRight
 } from "lucide-react";
 import { CLASSES, CLASS_FULL_NAMES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import Swal from "sweetalert2";
 
 interface Student {
@@ -61,6 +65,9 @@ interface Course {
     midtermWeight?: number;
     finalWeight?: number;
     semester?: string;
+    teacherId?: string | string[];
+    teacherIds?: string[];
+    teacherAssignments?: { teacherId?: string }[];
 }
 
 interface GradeRecord {
@@ -135,6 +142,12 @@ const matchesLevel = (courseClassId: any, selectedLevel: any): boolean => {
 };
 
 const allClassOptions = Object.entries(CLASSES) as [string, string][];
+const toStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.map(String).map(v => v.trim()).filter(Boolean);
+    if (value === null || value === undefined) return [];
+    const normalized = String(value).trim();
+    return normalized ? [normalized] : [];
+};
 const toScoreNumber = (value: unknown) => value === "" || value === undefined || value === null ? 0 : Number(value) || 0;
 const normalizeFormativeDetails = (details?: Record<string, number | string>) => {
     const normalized: Record<string, number> = {};
@@ -157,6 +170,22 @@ const PostMidtermScoreEntryPage: React.FC = () => {
     const schoolId = (currentUser as any)?.schoolId;
     const dispatch = useDispatch();
 
+    const { isSchoolAdmin, isAcademicAdmin, isSuperAdmin, hasRole } = usePermissions();
+    const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+    const isSchoolLeadership = hasRole([ROLES.DIRECTOR, ROLES.DEPT_HEAD]);
+
+    const userPrivileges = useMemo(() => {
+        const teacherProfiles = Object.values(teacherMap || {}).filter((t: any) => t.uid === currentUser?.uid);
+        const teacherProfile = teacherProfiles[0] as any;
+        const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
+        const isAdmin = isSchoolAdmin || isSuperAdmin || isAcademicAdmin || isSchoolLeadership;
+
+        return {
+            canSeeAll: isAdmin || isHead,
+            myTeacherIds: teacherProfiles.map((t: any) => t.id)
+        };
+    }, [currentUser, teacherMap, isSchoolAdmin, isSuperAdmin, isAcademicAdmin, isSchoolLeadership]);
+
     const { academicYear: calYear, status: calendarStatus } = useSelector((state: RootState) => state.calendar);
     const [academicYear, setAcademicYear] = useState<string>("");
 
@@ -164,7 +193,10 @@ const PostMidtermScoreEntryPage: React.FC = () => {
         if (schoolId && calendarStatus === 'idle') {
             dispatch(fetchCalendar(schoolId) as any);
         }
-    }, [schoolId, calendarStatus, dispatch]);
+        if (schoolId && teacherMapStatus === 'idle') {
+            dispatch(fetchTeachersMap(schoolId) as any);
+        }
+    }, [schoolId, calendarStatus, teacherMapStatus, dispatch]);
 
     useEffect(() => {
         if (calendarStatus === 'succeeded' && calYear) {
@@ -190,6 +222,7 @@ const PostMidtermScoreEntryPage: React.FC = () => {
     const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>(allClassOptions);
 
     const [courses, setCourses] = useState<Course[]>([]);
+    const [semesterAssignments, setSemesterAssignments] = useState<Record<string, { teacherId?: string }[]>>({});
     const [students, setStudents] = useState<Student[]>([]);
     const [grades, setGrades] = useState<Record<string, GradeRecord>>({});
     const [isLoading, setIsLoading] = useState(true);
@@ -198,6 +231,7 @@ const PostMidtermScoreEntryPage: React.FC = () => {
     const [availableGroups, setAvailableGroups] = useState<{ id: string; label: string }[]>([]);
     const [bulkValues, setBulkValues] = useState<Record<string, string>>({});
     const [rowBulkValues, setRowBulkValues] = useState<Record<string, string>>({});
+    const [availableRooms, setAvailableRooms] = useState<string[]>([]);
     const fetchStudentsRequestRef = useRef(0);
 
     useEffect(() => {
@@ -243,6 +277,46 @@ const PostMidtermScoreEntryPage: React.FC = () => {
         }
     }, [availableClassOptions, selectedLevel]);
 
+    // Rooms that actually exist for the selected level — derived from students who are
+    // currently active (isStudyingStudent). Older cohorts that have not graduated yet keep
+    // showing their room here even if this year's intake has fewer sections, since the room
+    // list follows real student assignments rather than a fixed count.
+    useEffect(() => {
+        if (!schoolId || !selectedLevel) {
+            setAvailableRooms([]);
+            return;
+        }
+        let cancelled = false;
+        const fetchRooms = async () => {
+            try {
+                const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+                const classLevelVariants = getClassLevelVariants(selectedLevel);
+                const snap = await getDocs(query(studentsRef, where('classLevel', 'in', classLevelVariants)));
+                if (cancelled) return;
+                const rooms = new Set<string>();
+                snap.forEach(d => {
+                    const data = d.data();
+                    if (!isStudyingStudent(data)) return;
+                    if (!matchesLevel(data.classLevel, selectedLevel)) return;
+                    const room = String(data.room || "").trim();
+                    if (room) rooms.add(room);
+                });
+                setAvailableRooms(Array.from(rooms).sort((a, b) => a.localeCompare(b, 'th', { numeric: true })));
+            } catch (err) {
+                console.error("Error fetching room options:", err);
+                if (!cancelled) setAvailableRooms([]);
+            }
+        };
+        fetchRooms();
+        return () => { cancelled = true; };
+    }, [schoolId, selectedLevel]);
+
+    useEffect(() => {
+        if (selectedRoom && selectedRoom !== 'all' && availableRooms.length > 0 && !availableRooms.includes(selectedRoom)) {
+            setSelectedRoom("");
+        }
+    }, [availableRooms, selectedRoom]);
+
     // Fetch Courses
     useEffect(() => {
         if (!schoolId) return;
@@ -256,6 +330,33 @@ const PostMidtermScoreEntryPage: React.FC = () => {
         };
         fetchCourses();
     }, [schoolId]);
+
+    // Fetch semester-scoped teacher assignments — course docs themselves don't reliably carry
+    // teacherId/teacherAssignments; the current-term source of truth is course_assignments
+    // (same collection GradeBookPage reads), keyed by courseId + academicYear + semester.
+    useEffect(() => {
+        if (!schoolId || !academicYear) {
+            setSemesterAssignments({});
+            return;
+        }
+        const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+        const constraints = [
+            where('academicYear', '==', String(academicYear)),
+            ...(selectedSemester && selectedSemester !== 'annual' ? [where('semester', '==', String(selectedSemester))] : [])
+        ];
+        const unsubscribe = onSnapshot(query(assignmentsRef, ...constraints), (snap) => {
+            const mapping: Record<string, { teacherId?: string }[]> = {};
+            snap.docs.forEach(d => {
+                const data = d.data();
+                mapping[data.courseId] = [
+                    ...(mapping[data.courseId] || []),
+                    ...(data.teacherAssignments || [])
+                ];
+            });
+            setSemesterAssignments(mapping);
+        });
+        return () => unsubscribe();
+    }, [schoolId, academicYear, selectedSemester]);
 
     // Derived State: Selected Course
     const currentCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
@@ -275,6 +376,28 @@ const PostMidtermScoreEntryPage: React.FC = () => {
                 if (!isAnnualCourse && c.semester !== selectedSemester) return false;
             }
 
+            // Teacher / My Courses Filter — teachers only see subjects assigned to them;
+            // admins and school leadership (director/dept head/head of learning area/assessment) see everything.
+            // Prefer the semester-scoped course_assignments record; fall back to whatever
+            // teacherAssignments/teacherId is embedded directly on the course doc.
+            const courseTeacherIds = new Set<string>();
+            const structuredAssignments = (semesterAssignments[c.id]?.length ? semesterAssignments[c.id] : c.teacherAssignments) || [];
+            if (structuredAssignments.length > 0) {
+                structuredAssignments.forEach((a) => {
+                    if (a.teacherId) courseTeacherIds.add(a.teacherId);
+                });
+            } else {
+                [...toStringArray(c.teacherId), ...toStringArray(c.teacherIds)]
+                    .filter(id => id.toLowerCase() !== 'pending')
+                    .forEach(id => courseTeacherIds.add(id));
+            }
+
+            const myIds = userPrivileges.myTeacherIds || [];
+            if (!userPrivileges.canSeeAll) {
+                const isMyCourse = myIds.length > 0 && myIds.some((id: string) => courseTeacherIds.has(id));
+                if (!isMyCourse) return false;
+            }
+
             if (searchTerm.trim()) {
                 const term = searchTerm.toLowerCase().trim();
                 return c.code.toLowerCase().includes(term) || c.title.toLowerCase().includes(term);
@@ -282,7 +405,7 @@ const PostMidtermScoreEntryPage: React.FC = () => {
 
             return true;
         });
-    }, [courses, selectedLevel, selectedRoom, selectedSemester, searchTerm]);
+    }, [courses, selectedLevel, selectedRoom, selectedSemester, searchTerm, userPrivileges, semesterAssignments]);
 
     useEffect(() => {
         const fetchGroups = async () => {
@@ -653,8 +776,8 @@ const PostMidtermScoreEntryPage: React.FC = () => {
                                         className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors"
                                     >
                                         <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">ทั้งหมด</option>
-                                        {Array.from({ length: 20 }, (_, i) => i + 1).map(r => (
-                                            <option key={r} value={String(r)} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{r}</option>
+                                        {availableRooms.map(r => (
+                                            <option key={r} value={r} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{r}</option>
                                         ))}
                                     </select>
                                 </div>

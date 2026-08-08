@@ -144,6 +144,7 @@ const SubjectGroupManagementPage = lazy(() => import("@/pages/AcademicDepartment
 const ScoreConfigurationPage = lazy(() => import("./pages/AcademicDepartment/ScoreConfigurationPage"));
 const FormativeScoreEntryPage = lazy(() => import("./pages/AcademicDepartment/FormativeScoreEntryPage"));
 const PostMidtermScoreEntryPage = lazy(() => import("./pages/AcademicDepartment/PostMidtermScoreEntryPage"));
+const SgsExportPage = lazy(() => import("./pages/AcademicDepartment/SgsExportPage"));
 const AcademicSettingsPage = lazy(() => import("./pages/AcademicDepartment/AcademicSettingsPage"));
 const PeriodConstraintPage = lazy(() => import("./pages/AcademicDepartment/schedule/PeriodConstraintPage"));
 const GraduationManagementPage = lazy(() => import("./pages/AcademicDepartment/GraduationManagementPage"));
@@ -163,6 +164,7 @@ const TeacherAttendanceIndividualPage = lazy(() => import("./pages/HumanResource
 const TeacherAttendanceDateSelectionPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceDateSelectionPage"));
 const LeaveApprovalPage = lazy(() => import("./pages/HumanResources/LeaveApprovalPage"));
 const HRTimeRegistrationPage = lazy(() => import("./pages/HumanResources/HRTimeRegistrationPage"));
+const StudentTimeRegistrationPage = lazy(() => import("./pages/Attendance/StudentTimeRegistrationPage"));
 const StudentsAttendanceSummaryPage = lazy(() => import("./pages/Students/StudentsAttendanceSummaryPage"));
 const DailyClassroomAttendanceSummaryPage = lazy(() => import("./pages/Students/DailyClassroomAttendanceSummaryPage"));
 const LineOAManagementPage = lazy(() => import("./pages/Administrator/LineOAManagementPage"));
@@ -332,6 +334,7 @@ function App() {
           <Route path="/academic/score-configuration" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ScoreConfigurationPage /></ProtectedRoute>} />
           <Route path="/academic/formative-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><FormativeScoreEntryPage /></ProtectedRoute>} />
           <Route path="/academic/post-midterm-scores" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><PostMidtermScoreEntryPage /></ProtectedRoute>} />
+          <Route path="/academic/sgs-export" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><SgsExportPage /></ProtectedRoute>} />
           <Route path="/academic/evaluation/learner-activities" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ActivityEvaluationPage mode="learner" /></ProtectedRoute>} />
           <Route path="/academic/evaluation/clubs" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ActivityEvaluationPage mode="club" /></ProtectedRoute>} />
           <Route path="/academic/evaluation/guidance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ActivityEvaluationPage mode="guidance" /></ProtectedRoute>} />
@@ -357,6 +360,7 @@ function App() {
           <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
           <Route path="/academic/permission-management" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><SchoolPermissionManagementPage /></ProtectedRoute>} />
           <Route path="/academic/personnel-time-registration" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><HRTimeRegistrationPage /></ProtectedRoute>} />
+          <Route path="/academic/student-time-registration" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentTimeRegistrationPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-today" element={<ProtectedRoute allowedRoles={TEACHER_ATTENDANCE_TODAY_ACCESS}><TeacherAttendanceTodayPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-date-selection" element={<ProtectedRoute allowedRoles={[ROLES.SCHOOL_ADMIN]}><TeacherAttendanceDateSelectionPage /></ProtectedRoute>} />
           <Route path="/academic/teacher-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TeacherAttendanceSummaryPage /></ProtectedRoute>} />

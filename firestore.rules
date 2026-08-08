@@ -7,6 +7,32 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // NEW: sign-in provider "anonymous" = the public LINE OA self-registration page
+    // (/line/register-parent). Anonymous sessions must never get the same broad
+    // isAuthenticated() access real staff logins get — every rule below that could
+    // otherwise match an anonymous session excludes it explicitly.
+    function isAnonymousUser() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isRealAuth() {
+      return isAuthenticated() && !isAnonymousUser();
+    }
+
+    // Only the exact fields the LINE parent-registration form writes to a student doc.
+    function isAnonymousLineParentUpdate() {
+      return isAnonymousUser() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'parentLineUserIds', 'parentLineRegistrations', 'parentLineRegistrationContexts',
+        'guardianFirstName', 'guardianLastName', 'guardianPhone', 'guardianRelationship',
+        'lineRegistrationReviewRequired', 'lineRegistrationReviewReason', 'lineRegistrationReviewResolvedAt'
+      ]);
+    }
+
+    // Only the exact field the LINE teacher-registration form writes to a teacher doc.
+    function isAnonymousLineTeacherUpdate() {
+      return isAnonymousUser() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lineUserId']);
+    }
+
     // NEW: อ่าน role ของผู้ใช้ที่ล็อกอินอยู่ จาก users/{uid} (role อาจเป็น string หรือ array)
     function hasRole(role) {
       let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
@@ -26,7 +52,7 @@ service cloud.firestore {
     // 1. School Settings - Root Access
     match /school-settings/{schoolId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isRealAuth();
 
       // NEW: License/MA/สัญญา - อ่าน/เขียนได้เฉพาะ Owner (super_admin) เท่านั้น
       match /summaries/license {
@@ -35,127 +61,137 @@ service cloud.firestore {
 
       match /students/{studentDocId} {
         allow get: if true;
+        // NEW: list is needed by the public LINE registration page to look up a
+        // student by studentId while signed in anonymously — same list access
+        // any real staff login already had.
         allow list: if isAuthenticated();
-        allow create, update, delete: if isAuthenticated();
+        allow create, delete: if isRealAuth();
+        allow update: if isRealAuth() || isAnonymousLineParentUpdate();
 
         match /{studentSubPath=**} {
           allow read: if true;
-          allow write: if isAuthenticated();
+          allow write: if isRealAuth();
         }
       }
 
+      // NEW: every match below this point requires isRealAuth() rather than plain
+      // isAuthenticated() — none of them are needed by the anonymous LINE
+      // registration flow, which only ever touches the students/teachers rules
+      // above. Firestore ORs all matching rule blocks together, so leaving any of
+      // these on isAuthenticated() would have re-opened the door to anonymous
+      // sessions regardless of how narrowly students/teachers were scoped.
       match /main_calendar/{calendarId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
       }
 
       match /courses/{courseId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
 
         match /{courseSubPath=**} {
-          allow read, write: if isAuthenticated();
+          allow read, write: if isRealAuth();
         }
       }
 
       match /schedules/{scheduleId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
       }
 
       match /course_assignments/{assignmentId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
       }
 
       match /special-periods/{periodId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
       }
 
       match /configs/{configId} {
-        allow get: if configId == "club_settings" || configId == "schedule_settings" || isAuthenticated();
-        allow list: if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow get: if configId == "club_settings" || configId == "schedule_settings" || isRealAuth();
+        allow list: if isRealAuth();
+        allow write: if isRealAuth();
       }
 
       match /clubs/{clubId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        allow write: if isRealAuth();
 
         match /members/{studentDocId} {
           allow get: if true;
-          allow list: if isAuthenticated();
-          allow write: if isAuthenticated();
+          allow list: if isRealAuth();
+          allow write: if isRealAuth();
         }
       }
 
       match /club_requests/{requestId} {
         allow create: if true;
-        allow get, list, update, delete: if isAuthenticated();
+        allow get, list, update, delete: if isRealAuth();
       }
 
       // FIX: recursive wildcard catch-all below only grants `get`, never `list`.
       // Any collection queried via getDocs/onSnapshot(query)/collectionGroup needs
       // its own explicit match here to support `list`.
       match /activities/{activityId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /subject_groups/{groupId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /director_assignments/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /enrollments/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /learner-activities/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
 
         // Subcollections (members, attendance, ...) need their own explicit rule —
         // the parent-doc rule above does not cascade to them, so queries like
         // learner-activities/{id}/members were being denied with "Missing or
         // insufficient permissions" even for authenticated teachers.
         match /{subPath=**} {
-          allow read, write: if isAuthenticated();
+          allow read, write: if isRealAuth();
         }
       }
       match /manual_substitute_requests/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /news/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /notifications/{notificationId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /physical-rooms/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /special-period-attendance/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /special_programs/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /substitutions/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /leave_summary/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /desired-characteristics/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /reading-thinking-writing/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /screening_assessments/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
       match /sdq-assessments/{docId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isRealAuth();
       }
 
       // FIX: teachers/{teacherId}/{attendance,leave_summary,travel_summary} are
@@ -164,13 +200,13 @@ service cloud.firestore {
       // list-vs-get issue as above, one level deeper under `teachers`.
       match /teachers/{teacherId} {
         match /attendance/{attendanceId} {
-          allow read, write: if isAuthenticated();
+          allow read, write: if isRealAuth();
         }
         match /leave_summary/{leaveId} {
-          allow read, write: if isAuthenticated();
+          allow read, write: if isRealAuth();
         }
         match /travel_summary/{travelId} {
-          allow read, write: if isAuthenticated();
+          allow read, write: if isRealAuth();
         }
       }
 
@@ -178,13 +214,16 @@ service cloud.firestore {
       // query) to load school-specific route permission overrides — the catch-all
       // wildcard below only grants `get`, so it needs its own explicit match.
       match /route_permissions/{routeKey} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow read: if isRealAuth();
+        allow write: if isRealAuth();
       }
 
       // NEW: ยกเว้น summaries/license ออกจาก catch-all นี้ (ไม่งั้นจะ OR ทับ rule เฉพาะด้านบน)
+      // Anonymous sessions are excluded here too — every collection an anonymous
+      // LINE-registration session actually needs has its own explicit, narrowly
+      // scoped rule above; this catch-all is for real staff logins only.
       match /{allSubcollections=**} {
-        allow read, write: if isAuthenticated()
+        allow read, write: if isRealAuth()
           && !(allSubcollections.size() >= 2 && allSubcollections[0] == 'summaries' && allSubcollections[1] == 'license');
       }
     }
@@ -193,67 +232,75 @@ service cloud.firestore {
     match /student-lookups/{hashedId} {
       allow get: if true;
       allow list: if false;
-      allow write: if isAuthenticated();
+      allow write: if isRealAuth();
     }
 
     // 3. Teachers Collection Group
     match /{path=**}/teachers/{teacherId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      // NEW: anonymous (public LINE teacher-registration page) may only ever set
+      // lineUserId on an existing teacher doc — never create/delete or touch any
+      // other field.
+      allow write: if isRealAuth() || isAnonymousLineTeacherUpdate();
     }
 
     // 3.5 FIX: collectionGroup() queries (across all schools) need their own
     // top-level match — the nested school-settings/{schoolId}/notifications
     // rule above only covers single-school-scoped queries, not collectionGroup.
     match /{path=**}/notifications/{notificationId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isRealAuth();
+      allow write: if isRealAuth();
     }
     match /{path=**}/leave_summary/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isRealAuth();
+      allow write: if isRealAuth();
     }
     // FIX: ClassroomAttendanceAuditPage and several other pages (AttendanceSummaryPage,
     // HistoricalClassroomAttendancePage, GuidanceAttendancePage, SpecialPeriodAttendancePage,
     // etc.) run collectionGroup(db, 'ClassroomAttendance') queries — same list-vs-collectionGroup
     // gap as notifications/leave_summary above.
     match /{path=**}/ClassroomAttendance/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if isRealAuth();
+      allow write: if isRealAuth();
     }
 
     // 4. Slugs
     match /slugs/{slug} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isRealAuth();
     }
 
     // 4.1 FIX: same list-vs-get gap as above but for the global route_permissions
     // collection (PermissionContext.tsx: getDocs(collection(db, 'route_permissions'))).
     // Global overrides are system-wide, so writes are restricted to super admin.
     match /route_permissions/{routeKey} {
-      allow read: if isAuthenticated();
+      allow read: if isRealAuth();
       allow write: if isSuperAdmin();
     }
 
     // 4.2 System manuals (คู่มือการใช้ระบบ) - เอกสารกลาง ใช้ร่วมกันทุกโรงเรียน
     // อ่านได้ทุกคนที่ล็อกอิน แก้ไข/เพิ่ม/ลบได้เฉพาะ Super Admin
     match /system-manuals/{manualId} {
-      allow read: if isAuthenticated();
+      allow read: if isRealAuth();
       allow write: if isSuperAdmin();
     }
 
     // NEW: 4.5 Users - ป้องกัน privilege escalation
+    // Anonymous sessions never legitimately touch users/** — the LINE teacher
+    // registration form's best-effort mirror write to users/{teacherUid} always
+    // fails for them anyway since request.auth.uid (a random anonymous uid) can
+    // never equal an existing teacher's real uid; that write is already wrapped
+    // in a try/catch in LineRegisterPage.tsx and treated as non-fatal.
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isRealAuth();
 
-      allow create: if isAuthenticated() && (
+      allow create: if isRealAuth() && (
         (request.auth.uid == userId && request.resource.data.role == 'teacher')
         || isSuperAdmin()
         || isSchoolAdmin()
       );
 
-      allow update: if isAuthenticated() && (
+      allow update: if isRealAuth() && (
         (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
         || isSuperAdmin()
         || isSchoolAdmin()
@@ -262,14 +309,15 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
 
       match /{userSubPath=**} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+        allow read, write: if isRealAuth() && (request.auth.uid == userId || isSuperAdmin());
       }
     }
 
     // 5. Global fallback
-    // NEW: กัน users/** ออก เพราะข้อ 4.5 คุมเองแล้ว
+    // NEW: กัน users/** ออก เพราะข้อ 4.5 คุมเองแล้ว — anonymous excluded entirely,
+    // it has no legitimate reason to touch anything not explicitly matched above.
     match /{document=**} {
-      allow read, write: if isAuthenticated() && document[0] != 'users';
+      allow read, write: if isRealAuth() && document[0] != 'users';
     }
   }
 }

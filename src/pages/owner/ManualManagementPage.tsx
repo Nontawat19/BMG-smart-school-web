@@ -19,10 +19,26 @@ import Swal from 'sweetalert2';
 import MainLayout from '@/layouts/MainLayout';
 import { ArrowLeft, BookOpen, FileText, Plus, Pencil, Trash2, Upload, X, Download } from 'lucide-react';
 
+// รายชื่อหมวดหมู่ตรงกับเมนูใน LeftSidebar (src/components/Sidebar/LeftSidebar.tsx) ส่วนงานวิชาการ
+const MANUAL_CATEGORIES = [
+  'งานทะเบียน',
+  'ตารางสอน',
+  'ข้อมูลนักเรียน',
+  'งานบุคลากร',
+  'ระบบเช็คชื่อ',
+  'กิจกรรมและชุมนุม',
+  'ระบบดูแลช่วยเหลือนักเรียน',
+  'วัดผลและประเมินผล',
+  'ทำเนียบศิษย์เก่า',
+  'การตั้งค่าระบบ',
+  'ลงเวลา',
+];
+
 interface ManualDoc {
   id: string;
   title: string;
   description?: string;
+  category?: string;
   fileUrl: string;
   fileName: string;
   fileSize: number;
@@ -53,6 +69,7 @@ const ManualManagementPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingManual, setEditingManual] = useState<ManualDoc | null>(null);
   const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,6 +89,7 @@ const ManualManagementPage: React.FC = () => {
   const openAddModal = () => {
     setEditingManual(null);
     setTitle('');
+    setCategory('');
     setDescription('');
     setFile(null);
     setIsModalOpen(true);
@@ -80,6 +98,7 @@ const ManualManagementPage: React.FC = () => {
   const openEditModal = (manual: ManualDoc) => {
     setEditingManual(manual);
     setTitle(manual.title);
+    setCategory(manual.category || '');
     setDescription(manual.description || '');
     setFile(null);
     setIsModalOpen(true);
@@ -143,6 +162,7 @@ const ManualManagementPage: React.FC = () => {
       if (editingManual) {
         await updateDoc(doc(db, COLLECTION_NAME, editingManual.id), {
           title: title.trim(),
+          category: category.trim(),
           description: description.trim(),
           fileUrl,
           fileName,
@@ -152,6 +172,7 @@ const ManualManagementPage: React.FC = () => {
       } else {
         await addDoc(collection(db, COLLECTION_NAME), {
           title: title.trim(),
+          category: category.trim(),
           description: description.trim(),
           fileUrl,
           fileName,
@@ -248,7 +269,14 @@ const ManualManagementPage: React.FC = () => {
                       <FileText size={20} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{manual.title}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{manual.title}</p>
+                        {manual.category && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 flex-shrink-0">
+                            {manual.category}
+                          </span>
+                        )}
+                      </div>
                       {manual.description && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{manual.description}</p>
                       )}
@@ -315,6 +343,21 @@ const ManualManagementPage: React.FC = () => {
                   placeholder="เช่น คู่มือการใช้งานระบบเช็คชื่อ"
                   className="w-full px-3.5 py-2.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm text-gray-900 dark:text-white"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  หมวดหมู่ (ไม่บังคับ)
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="">-- ไม่ระบุหมวดหมู่ --</option>
+                  {MANUAL_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">

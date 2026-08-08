@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { firestore } from "@/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp, increment, serverTimestamp, runTransaction } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, Timestamp, increment, serverTimestamp, runTransaction } from "firebase/firestore";
 import { updatePeriodSummaries, getStatusKey as getPeriodStatusKey } from "@/utils/periodSummaryUtils";
 import Swal from "sweetalert2";
 import { RootState } from "../../store";
@@ -16,6 +16,8 @@ import BackButton from "@/components/Shared/BackButton";
 import { calculateAttendanceBehaviorScoreChange } from "@/utils/behaviorScoreUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
+import { isStudyingStudent } from "@/utils/studentStatusUtils";
+import { isActiveTeacherSummaryStatus } from "@/utils/ownerStatsUtils";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
 // Helper สำหรับอัปเดต dyasummary (นักเรียน)
@@ -233,8 +235,15 @@ const AttendanceConfigPage: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const batch = writeBatch(firestore);
       let count = 0;
+
+      // เดิมฟังก์ชันนี้อ่านสถานะทุกคนก่อน แล้วค่อย commit batch เดียวรวมท้ายสุด — ถ้ามีนักเรียน/ครูสแกน
+      // เข้า-ออกจริงระหว่างที่ปุ่มนี้กำลังประมวลผลอยู่ (อาจกินเวลานานถ้าคนเยอะ) ตอน commit ท้ายสุดจะเขียนทับ
+      // ข้อมูลที่เพิ่งสแกนจริงกลับเป็น "ขาด"/"ไม่ลงเวลาออก" ได้ (TOCTOU) และถ้ากดปุ่มนี้ซ้ำ หรือกดพร้อมๆ กับที่
+      // ระบบสแกนหน้าประตูประมวลผลอัตโนมัติถึงเวลาตัดรอบพอดี ก็จะบวกตัวนับซ้ำสองไม่มีอะไรกันเลย
+      // ย้ายมาเป็นทรานแซกชันต่อคน ให้ทั้งการเช็คเงื่อนไขกับการเขียนเกิดขึ้นแบบ atomic จุดเดียวกัน
+      // ไม่ว่าจะกดปุ่มนี้ซ้ำกี่ครั้ง หรือรันพร้อมกับ auto-sweep ฝั่ง CheckinOutPage ก็ตาม
+      // ผลลัพธ์จะเหมือนกันเสมอ (idempotent) เพราะทรานแซกชันจะอ่านเห็นข้อมูลล่าสุดก่อนตัดสินใจทุกครั้ง
 
       // ฟังก์ชันสำหรับประมวลผลรายกลุ่ม (นักเรียน/ครู)
       const processGroup = async (collectionName: "students" | "teachers") => {
@@ -247,37 +256,39 @@ const AttendanceConfigPage: React.FC = () => {
           if (collectionName === "teachers" && isAttendanceEntryOnly(data.role)) {
             continue;
           }
-          // หมายเหตุ: ลบการข้าม (continue) ออก เพื่อให้ตรวจสอบคนที่ลงเวลาเข้าแล้วแต่ยังไม่ลงเวลาออกด้วย
-          // if (data.lastAttendanceDate === todayStr) continue;
+          // สำคัญ: ต้องข้ามคนที่ไม่ได้ "กำลังศึกษาอยู่"/"อยู่" (ย้าย/ลาออก/จบ/แขวนลอย ฯลฯ) ก่อนเสมอ
+          // ไม่งั้นปุ่มนี้จะไปสร้างสถานะ "ขาด" ให้คนที่ไม่ได้เรียน/ทำงานที่นี่แล้วด้วย ทำให้ยอดขาดและยอดรวม
+          // เพี้ยนเกินจำนวนคนที่ยังศึกษา/ปฏิบัติงานอยู่จริง (บั๊กที่เจอ — students collection เก็บประวัติ
+          // นักเรียนที่จบ/ย้าย/ลาออกไว้ด้วย ไม่ได้ลบทิ้ง)
+          if (collectionName === "students" && !isStudyingStudent(data)) continue;
+          if (collectionName === "teachers" && !isActiveTeacherSummaryStatus(data.status || "อยู่")) continue;
 
           // ตรวจสอบเอกสารการลงเวลาของวันนี้ (Path: .../{collectionName}/{id}/attendance/{date})
           const attendanceRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id, "attendance", todayStr);
-          const attendanceSnap = await getDoc(attendanceRef);
+          const userRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id);
+
+          const didProcess = await runTransaction(firestore, async (transaction) => {
+            const attendanceSnap = await transaction.get(attendanceRef);
 
             if (!attendanceSnap.exists()) {
-            // ถ้าไม่มีเอกสาร ให้สร้างสถานะ "ขาด"
-            batch.set(attendanceRef, {
-              status: "ขาด",
-              checkinTime: null,
-              checkoutTime: null,
-              timestamp: Timestamp.now(),
-              remark: "Auto-Absent by Admin"
-            });
+              // ถ้าไม่มีเอกสาร ให้สร้างสถานะ "ขาด"
+              transaction.set(attendanceRef, {
+                status: "ขาด",
+                checkinTime: null,
+                checkoutTime: null,
+                timestamp: Timestamp.now(),
+                remark: "Auto-Absent by Admin"
+              });
 
-            // อัปเดต dyasummary (เฉพาะนักเรียน)
-            if (collectionName === "students") {
-              const classKey = data.classLevel?.trim() || "ไม่ระบุชั้น";
-              batch.set(summaryRef, {
-                absent: increment(1),
-                [`classes.${classKey}.absent`]: increment(1),
-                updatedAt: serverTimestamp()
-              }, { merge: true });
-              // Read the live score fresh inside a transaction so a concurrent write
-              // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
-              // silently overwritten by this end-of-day absence sweep.
-              const studentRefForScore = doc(firestore, "school-settings", schoolId, "students", docSnap.id);
-              await runTransaction(firestore, async (transaction) => {
-                const studentSnap = await transaction.get(studentRefForScore);
+              if (collectionName === "students") {
+                const classKey = data.classLevel?.trim() || "ไม่ระบุชั้น";
+                transaction.set(summaryRef, {
+                  absent: increment(1),
+                  [`classes.${classKey}.absent`]: increment(1),
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                const studentSnap = await transaction.get(userRef);
                 const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
                 const result = calculateAttendanceBehaviorScoreChange({
                   currentScore: freshScore,
@@ -286,17 +297,17 @@ const AttendanceConfigPage: React.FC = () => {
                   config: behaviorScoreConfig,
                 });
                 if (result) {
-                  transaction.set(studentRefForScore, result.update, { merge: true });
+                  transaction.set(userRef, result.update, { merge: true });
                 }
-              });
+              }
+
+              // Update Period Summaries (Week, Month, Year, Semester)
+              // Previous status was likely null or undefined (since no attendance doc)
+              updatePeriodSummaries(firestore, transaction, schoolId, docSnap.id, collectionName, todayStr, null, "ขาด", collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
+
+              return true;
             }
 
-            // Update Period Summaries (Week, Month, Year, Semester)
-            // Previous status was likely null or undefined (since no attendance doc)
-            updatePeriodSummaries(firestore, batch, schoolId, docSnap.id, collectionName, todayStr, null, "ขาด", collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
-
-            count++;
-          } else {
             // กรณีมีเอกสารการลงเวลาแล้ว ตรวจสอบว่าลืมลงเวลาออกหรือไม่
             const attData = attendanceSnap.data();
             // เงื่อนไข: มีเวลาเข้า + ไม่มีเวลาออก + สถานะไม่ใช่ 'ลา', 'ขาด', หรือ 'ไม่ลงเวลาออก' อยู่แล้ว
@@ -305,13 +316,12 @@ const AttendanceConfigPage: React.FC = () => {
               const newStatus = "ไม่ลงเวลาออก";
 
               // อัปเดตสถานะเป็น "ไม่ลงเวลาออก"
-              batch.update(attendanceRef, {
+              transaction.update(attendanceRef, {
                 status: newStatus,
                 remark: "Auto-update: ไม่ลงเวลาออก"
               });
 
               // อัปเดตสถิติ (ลบสถานะเดิม บวกสถานะใหม่)
-              const userRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id);
               const oldKey = getStatusKey(oldStatus);
               const newKey = getStatusKey(newStatus);
 
@@ -320,30 +330,22 @@ const AttendanceConfigPage: React.FC = () => {
               if (newKey) statsUpdate[`attendanceStats.${newKey}`] = increment(1);
 
               if (Object.keys(statsUpdate).length > 0) {
-                batch.update(userRef, statsUpdate);
+                transaction.update(userRef, statsUpdate);
               }
 
               if (collectionName === "students") {
-                // Read the live score fresh inside a transaction so a concurrent write
-                // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
-                // silently overwritten by this end-of-day no-checkout sweep.
-                await runTransaction(firestore, async (transaction) => {
-                  const studentSnap = await transaction.get(userRef);
-                  const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
-                  const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
-                    currentScore: freshScore,
-                    oldStatus,
-                    newStatus,
-                    config: behaviorScoreConfig,
-                  });
-                  if (behaviorScoreChange) {
-                    transaction.set(userRef, behaviorScoreChange.update, { merge: true });
-                  }
+                const studentSnap = await transaction.get(userRef);
+                const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
+                const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
+                  currentScore: freshScore,
+                  oldStatus,
+                  newStatus,
+                  config: behaviorScoreConfig,
                 });
-              }
+                if (behaviorScoreChange) {
+                  transaction.set(userRef, behaviorScoreChange.update, { merge: true });
+                }
 
-              // อัปเดต dyasummary (เฉพาะนักเรียน)
-              if (collectionName === "students") {
                 const classKey = data.classLevel?.trim() || "ไม่ระบุชั้น";
                 const oldSummaryKey = getPeriodStatusKey(oldStatus);
                 const newSummaryKey = getPeriodStatusKey(newStatus);
@@ -357,16 +359,20 @@ const AttendanceConfigPage: React.FC = () => {
                     summaryUpdates[newSummaryKey] = increment(1);
                     summaryUpdates[`classes.${classKey}.${newSummaryKey}`] = increment(1);
                   }
-                  batch.set(summaryRef, summaryUpdates, { merge: true });
+                  transaction.set(summaryRef, summaryUpdates, { merge: true });
                 }
               }
 
               // Update Period Summaries (Week, Month, Year, Semester)
-              updatePeriodSummaries(firestore, batch, schoolId, docSnap.id, collectionName, todayStr, oldStatus, newStatus, collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
+              updatePeriodSummaries(firestore, transaction, schoolId, docSnap.id, collectionName, todayStr, oldStatus, newStatus, collectionName === 'students' ? (data.classLevel?.trim() || "ไม่ระบุชั้น") : undefined, currentAcademicYear);
 
-              count++;
+              return true;
             }
-          }
+
+            return false;
+          });
+
+          if (didProcess) count++;
         }
       };
 
@@ -375,7 +381,6 @@ const AttendanceConfigPage: React.FC = () => {
       await processGroup("teachers");
 
       if (count > 0) {
-        await batch.commit();
         Swal.fire("สำเร็จ", `ประมวลผลข้อมูล (ขาด/ไม่ลงเวลาออก) จำนวน ${count} รายการ`, "success");
       } else {
         Swal.fire("ข้อมูลครบถ้วน", "ไม่พบผู้ที่ยังไม่ลงเวลาในวันนี้", "info");

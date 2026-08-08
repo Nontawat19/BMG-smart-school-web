@@ -91,7 +91,7 @@ interface AuditSlot {
     teacherId: string;
     teacherName: string;
     roomName: string;
-    status: 'checked' | 'pending' | 'adhoc';
+    status: 'checked' | 'pending';
     checkedAt?: Date;
     checkedBy?: string;
     stats?: {
@@ -102,6 +102,11 @@ interface AuditSlot {
         total: number;
     };
     rawDocs?: any[];
+    // Filled in when this scheduled slot was covered by a substitute teacher — matched
+    // via the `substitutions` collection (by originalTeacherId + period), not by
+    // reconstructing/guessing classId, so it stays correct even when a course_assignments
+    // override makes the substitute's recorded classId differ from the schedule's raw classId.
+    substituteTeacherName?: string;
 }
 
 const THAI_DAYS = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
@@ -153,16 +158,29 @@ const formatTimeDisplay = (time: string) => {
 const formatClassName = (classId: string) => {
     if (!classId) return '';
     const cleanId = String(classId).trim();
-    if (cleanId.includes('-')) {
-        const parts = cleanId.split('-');
+    // Class docs use "-" (e.g. "p5-2") but substitute-teaching records save the
+    // same class as "level/room" (e.g. "p5/2") — handle both so substitute
+    // sessions display as "ป.5/2" instead of the raw unmapped "p5/2".
+    const separator = cleanId.includes('-') ? '-' : (cleanId.includes('/') ? '/' : null);
+    if (separator) {
+        const parts = cleanId.split(separator);
         const levelKey = parts[0];
         const room = parts[1];
-        return `${CLASSES[levelKey] || levelKey}/${room}`;
-    }
-    if (cleanId.includes('/')) {
-        return cleanId;
+        return `${CLASSES[levelKey] || levelKey}${room ? `/${room}` : ''}`;
     }
     return CLASSES[cleanId] || cleanId;
+};
+
+// Substitute-teaching records save classId as "level/room" (e.g. "p5/2") while the
+// regular weekly schedule uses "level-room" (e.g. "p5-2"). Normalize to a single
+// separator before building session keys, or substitute periods never match their
+// scheduled slot and get shown as "ยังไม่เช็คชื่อ" even though attendance was taken.
+const normalizeClassKeyId = (id: unknown) => String(id || '').trim().replace(/\//g, '-');
+
+const normalizeTeachingPeriod = (period: unknown) => {
+    const parsed = Number(period);
+    if (!Number.isFinite(parsed)) return 0;
+    return parsed === 0 ? 1 : parsed;
 };
 
 // ─── Official PDF Report ───────────────────────────────────────────────
@@ -262,8 +280,7 @@ const auditPdfStyles = PdfStyleSheet.create({
 
 const STATUS_LABELS: Record<AuditSlot['status'], string> = {
     checked: 'เช็คชื่อแล้ว',
-    pending: 'ยังไม่เช็คชื่อ',
-    adhoc: 'นอกตาราง (Ad-hoc)'
+    pending: 'ยังไม่เช็คชื่อ'
 };
 
 const ClassroomAttendanceAuditPdf: React.FC<{
@@ -272,7 +289,7 @@ const ClassroomAttendanceAuditPdf: React.FC<{
     dateLabel: string;
     holidayNote?: string;
     slots: AuditSlot[];
-    metrics: { totalScheduled: number; checkedScheduled: number; pendingScheduled: number; adhocCount: number; overallCheckRate: number };
+    metrics: { totalScheduled: number; checkedScheduled: number; pendingScheduled: number; overallCheckRate: number };
     signerName: string;
     academicHeadName: string;
     academicHeadRoleLabel: string;
@@ -298,7 +315,6 @@ const ClassroomAttendanceAuditPdf: React.FC<{
                 <PdfText style={auditPdfStyles.summaryItem}>คาบสอนทั้งหมด: {metrics.totalScheduled} คาบ</PdfText>
                 <PdfText style={auditPdfStyles.summaryItem}>เช็คชื่อแล้ว: {metrics.checkedScheduled} คาบ ({metrics.overallCheckRate}%)</PdfText>
                 <PdfText style={auditPdfStyles.summaryItem}>ยังไม่เช็คชื่อ: {metrics.pendingScheduled} คาบ</PdfText>
-                <PdfText style={auditPdfStyles.summaryItem}>นอกตาราง: {metrics.adhocCount} คาบ</PdfText>
             </PdfView>
 
             <PdfView wrap={false}>
@@ -600,10 +616,23 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 where('date', '<=', Timestamp.fromDate(endOfDay))
             );
 
-            const [schedulesSnap, assignmentsSnap, attendanceSnap] = await Promise.all([
+            // Substitute-teaching assignments for the day — used to link a substitute's
+            // check-in back to the original scheduled slot by originalTeacherId+period
+            // instead of by classId, since the classId recorded for a substitute session
+            // can diverge from the schedule's raw classId whenever a course_assignments
+            // override is in play (see normalizeClassKeyId comment below for the other
+            // half of this same class of bug).
+            const substitutionsQuery = query(
+                collection(db, 'school-settings', schoolId, 'substitutions'),
+                where('date', '>=', Timestamp.fromDate(startOfDay)),
+                where('date', '<=', Timestamp.fromDate(endOfDay))
+            );
+
+            const [schedulesSnap, assignmentsSnap, attendanceSnap, substitutionsSnap] = await Promise.all([
                 getDocs(schedulesQuery),
                 getDocs(assignmentsQuery),
-                getDocs(attendanceQuery)
+                getDocs(attendanceQuery),
+                getDocs(substitutionsQuery)
             ]);
 
             // 2. Map course assignments by courseId
@@ -663,7 +692,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     data.period === 0;
                 if (isHomeroomAttendance) return;
 
-                const classId = data.classId;
+                const classId = normalizeClassKeyId(data.classId);
                 const subjectCode = data.subjectCode;
                 const period = data.period;
 
@@ -676,11 +705,33 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     const roomKey = `${classId}_${data.room}_${subjectCode}_P${period}`;
                     addRecordToMap(roomKey, data);
                 }
+
+                // Also index by substitutionId so a substitute's check-in can be linked
+                // back to its original scheduled slot below, independent of classId.
+                if (data.substitutionId) {
+                    addRecordToMap(`sub:${data.substitutionId}`, data);
+                }
             });
 
+            // 3.1 Map substitutions for the day by "who they replace, in which period" so a
+            // substitute's checked-in attendance can fulfil the original teacher's slot even
+            // when the classId recorded for the substitute session doesn't match the schedule's
+            // raw classId (e.g. because a course_assignments override applies to one side only).
+            const subsByOrigTeacherPeriod = new Map<string, { id: string; courseId?: string; substituteTeacherName?: string }[]>();
+            substitutionsSnap.forEach((subDoc) => {
+                const data = subDoc.data();
+                if (!data.originalTeacherId) return;
+                const period = normalizeTeachingPeriod(data.period);
+                const key = `${data.originalTeacherId}_P${period}`;
+                if (!subsByOrigTeacherPeriod.has(key)) subsByOrigTeacherPeriod.set(key, []);
+                subsByOrigTeacherPeriod.get(key)!.push({
+                    id: subDoc.id,
+                    courseId: data.courseId || undefined,
+                    substituteTeacherName: data.substituteTeacherName || teacherMap[data.substituteTeacherId]?.name || undefined,
+                });
+            });
             // 4. Parse schedules and merge with dynamic Course Assignments
             const parsedSlots: AuditSlot[] = [];
-            const scheduledKeys = new Set<string>();
             const normalizedPeriods = normalizePeriodSettings(periodSettings);
             const teachingPeriods = getTimetableDisplayPeriods(normalizedPeriods)
                 .filter(period => {
@@ -793,17 +844,13 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
                             // E. Aggregate and match attendance for all assigned classes/classLevels
                             let attRecord: any = null;
-                            assignedClassIds.forEach((cId: string) => {
+                            assignedClassIds.forEach((rawCId: string) => {
+                                const cId = normalizeClassKeyId(rawCId);
                                 const generalKey = `${cId}_${subjectCode}_P${periodNum}`;
-                                scheduledKeys.add(generalKey);
 
                                 // Try specific room/group first, fallback to general level key
                                 const roomSuffix = matchedAssign?.room || (Array.isArray(course.room) ? undefined : course.room);
                                 const roomKey = (roomSuffix && roomSuffix !== 'all') ? `${cId}_${roomSuffix}_${subjectCode}_P${periodNum}` : null;
-                                
-                                if (roomKey) {
-                                    scheduledKeys.add(roomKey);
-                                }
 
                                 const record = (roomKey && attendanceMap.has(roomKey))
                                     ? attendanceMap.get(roomKey)
@@ -834,8 +881,32 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                 }
                             });
 
-                            // Ensure original slot key is marked so it doesn't duplicate as ad-hoc
-                            scheduledKeys.add(`${classId}_${subjectCode}_P${periodNum}`);
+                            // F. Fallback: if no attendance matched by classId, check whether a
+                            // substitute teacher covered this slot — matched by originalTeacherId
+                            // + period (from the `substitutions` collection), not by classId. This
+                            // stays correct even when a course_assignments override makes the
+                            // substitute's recorded classId diverge from the schedule's raw classId,
+                            // which is the root cause of substitute check-ins being shown as pending
+                            // instead of fulfilling their real slot.
+                            let substituteTeacherName: string | undefined;
+                            if (!attRecord) {
+                                const scheduleOwnerTeacherId = data.teacherId || '';
+                                const candidates = subsByOrigTeacherPeriod.get(`${scheduleOwnerTeacherId}_P${periodNum}`) || [];
+                                const matchedSub = candidates.find(c => !c.courseId || c.courseId === courseId) || candidates[0];
+                                if (matchedSub) {
+                                    const subAttRecord = attendanceMap.get(`sub:${matchedSub.id}`);
+                                    if (subAttRecord) {
+                                        attRecord = {
+                                            checked: true,
+                                            checkedAt: subAttRecord.checkedAt,
+                                            checkedBy: subAttRecord.checkedBy,
+                                            stats: { ...subAttRecord.stats },
+                                            rawDocs: [...subAttRecord.rawDocs]
+                                        };
+                                        substituteTeacherName = matchedSub.substituteTeacherName;
+                                    }
+                                }
+                            }
 
                             parsedSlots.push({
                                 id: `${schedDoc.id}_${slot}_${courseIdx}`,
@@ -855,67 +926,36 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                 checkedAt: attRecord?.checkedAt,
                                 checkedBy: attRecord?.checkedBy,
                                 stats: attRecord?.stats,
-                                rawDocs: attRecord?.rawDocs
+                                rawDocs: attRecord?.rawDocs,
+                                substituteTeacherName
                             });
                         });
                     }
                 });
             });
 
-            // 5. Append any checked sessions that were NOT in the official schedule (Ad-hoc checks)
-            const processedAdHocKeys = new Set<string>();
-            attendanceMap.forEach((attRecord, sessionKey) => {
-                if (attRecord.rawDocs.length === 0) return;
-
-                const sampleDoc = attRecord.rawDocs[0];
-                const classId = sampleDoc.classId;
-                const subjectCode = sampleDoc.subjectCode || '';
-                const subjectName = sampleDoc.subjectName || 'วิชานอกตารางเรียน';
-                const periodNum = sampleDoc.period || 0;
-                
-                const generalKey = `${classId}_${subjectCode}_P${periodNum}`;
-                
-                if (scheduledKeys.has(generalKey) || scheduledKeys.has(sessionKey)) {
-                    return;
+            // 4.1 Collapse exact-duplicate scheduled slots. Some courses (e.g. กิจกรรมชุมนุม/club
+            // activities) can end up listed more than once for the same teacher+period+class+subject
+            // — either from a duplicated schedule document or a repeated course entry within one slot
+            // — and since each occurrence pushes its own row above, they'd otherwise render as
+            // visually identical duplicate rows in the audit table.
+            const dedupedSlotsMap = new Map<string, AuditSlot>();
+            parsedSlots.forEach((slot) => {
+                const classKey = normalizeClassKeyId(
+                    Array.isArray(slot.classLevels) && slot.classLevels.length > 0
+                        ? slot.classLevels.join('-')
+                        : slot.classId
+                );
+                const key = `${slot.teacherId}_${classKey}_${slot.subjectCode}_P${slot.periodIndex}`;
+                const existing = dedupedSlotsMap.get(key);
+                // Prefer a "checked" duplicate over a "pending" one so a real check-in never
+                // gets silently discarded in favor of an identical-looking empty duplicate.
+                if (!existing || (existing.status !== 'checked' && slot.status === 'checked')) {
+                    dedupedSlotsMap.set(key, slot);
                 }
-
-                if (processedAdHocKeys.has(generalKey)) {
-                    return;
-                }
-                processedAdHocKeys.add(generalKey);
-
-                const setting = periodSettings.find(p => {
-                    const num = parseInt(p.id.replace('period-', ''));
-                    return num === periodNum;
-                });
-
-                // For ad-hoc display, use the custom formatting with room if available in sampleDoc
-                const roomSuffix = sampleDoc.room || (sampleDoc.groupNumber ? String(sampleDoc.groupNumber) : null);
-                let adhocClassName = formatClassName(classId);
-                if (roomSuffix && roomSuffix !== 'all' && !classId.includes('-') && !classId.includes('/')) {
-                    adhocClassName = `${adhocClassName}/${roomSuffix}`;
-                }
-
-                parsedSlots.push({
-                    id: `adhoc_${generalKey}`,
-                    classId,
-                    className: adhocClassName,
-                    subjectCode,
-                    subjectName,
-                    periodIndex: periodNum,
-                    periodLabel: setting?.label || `คาบที่ ${periodNum}`,
-                    startTime: setting?.startTime || '--.--',
-                    endTime: setting?.endTime || '--.--',
-                    teacherId: sampleDoc.teacherId || '',
-                    teacherName: sampleDoc.teacherName || 'ไม่ระบุชื่อครู',
-                    roomName: sampleDoc.room || 'ไม่ระบุสถานที่',
-                    status: 'adhoc',
-                    checkedAt: attRecord.checkedAt,
-                    checkedBy: attRecord.checkedBy,
-                    stats: attRecord.stats,
-                    rawDocs: attRecord.rawDocs
-                });
             });
+            parsedSlots.length = 0;
+            parsedSlots.push(...dedupedSlotsMap.values());
 
             setAllSlots(parsedSlots);
         } catch (e) {
@@ -953,7 +993,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 if (selectedStatus !== 'all') {
                     if (selectedStatus === 'checked' && slot.status !== 'checked') return false;
                     if (selectedStatus === 'pending' && slot.status !== 'pending') return false;
-                    if (selectedStatus === 'adhoc' && slot.status !== 'adhoc') return false;
                 }
 
                 // Filter by Search Term
@@ -989,18 +1028,15 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
 
     // Overall Metrics
     const metrics = useMemo(() => {
-        const scheduled = allSlots.filter(s => s.status !== 'adhoc');
-        const totalScheduled = scheduled.length;
-        const checkedScheduled = scheduled.filter(s => s.status === 'checked').length;
-        const pendingScheduled = scheduled.filter(s => s.status === 'pending').length;
-        const adhocCount = allSlots.filter(s => s.status === 'adhoc').length;
+        const totalScheduled = allSlots.length;
+        const checkedScheduled = allSlots.filter(s => s.status === 'checked').length;
+        const pendingScheduled = allSlots.filter(s => s.status === 'pending').length;
         const overallCheckRate = totalScheduled > 0 ? Math.round((checkedScheduled / totalScheduled) * 100) : 0;
 
         return {
             totalScheduled,
             checkedScheduled,
             pendingScheduled,
-            adhocCount,
             overallCheckRate
         };
     }, [allSlots]);
@@ -1165,7 +1201,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
             const timeRange = `${slot.startTime} - ${slot.endTime}`;
             let statusText = 'ยังไม่เช็ค';
             if (slot.status === 'checked') statusText = 'เช็คแล้ว';
-            else if (slot.status === 'adhoc') statusText = 'เช็คแล้ว (นอกตาราง)';
 
             return [
                 slot.periodLabel || `คาบที่ ${slot.periodIndex}`,
@@ -1361,7 +1396,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     )}
 
                     {/* Summary Cards Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                         
                         {/* CARD 1: Total Slots */}
                         <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4 sm:p-5 flex items-center justify-between">
@@ -1419,25 +1454,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                 <AlertTriangle size={24} />
                             </div>
                         </div>
-
-                        {/* CARD 4: Ad-hoc Count */}
-                        <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4 sm:p-5 flex items-center justify-between">
-                            <div className="min-w-0">
-                                <span className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
-                                    เช็คชื่อนอกตาราง (Ad-hoc)
-                                </span>
-                                <h3 className="text-3xl font-extrabold text-sky-600 dark:text-sky-400 leading-none">
-                                    {metrics.adhocCount}
-                                </h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 font-semibold flex items-center gap-1">
-                                    <Info size={12} className="text-sky-500" />
-                                    การเช็คชื่อ ad-hoc นอกเหนือตาราง
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-sky-50 dark:bg-sky-950/30 text-sky-600 dark:text-sky-400 shrink-0">
-                                <Info size={24} />
-                            </div>
-                        </div>
                     </div>
 
                     {/* Filter & Options Panel */}
@@ -1490,7 +1506,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                     <option value="all">ทุกสถานะการลงเวลา</option>
                                     <option value="checked">เช็คชื่อแล้ว (สีเขียว)</option>
                                     <option value="pending">ยังไม่ได้เช็ค (สีส้ม)</option>
-                                    <option value="adhoc">เช็คชื่อนอกตาราง (สีฟ้า)</option>
                                 </select>
                             </div>
 
@@ -1559,12 +1574,12 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                     
                                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
                                         {filteredResults.map((slot) => {
-                                            const isChecked = slot.status === 'checked' || slot.status === 'adhoc';
-                                            
+                                            const isChecked = slot.status === 'checked';
+
                                             return (
-                                                <tr 
-                                                    key={slot.id} 
-                                                    className={`hover:bg-gray-50/50 dark:hover:bg-[#202124]/40 transition text-sm ${slot.status === 'adhoc' ? 'bg-sky-500/[0.01]' : ''}`}
+                                                <tr
+                                                    key={slot.id}
+                                                    className="hover:bg-gray-50/50 dark:hover:bg-[#202124]/40 transition text-sm"
                                                 >
                                                     
                                                     {/* PERIOD / TIME */}
@@ -1598,6 +1613,11 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                     {/* TEACHER */}
                                                     <td className="py-4 px-4 font-medium text-gray-800 dark:text-gray-200">
                                                         {slot.teacherName}
+                                                        {slot.substituteTeacherName && (
+                                                            <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                                                                สอนแทนโดย {slot.substituteTeacherName}
+                                                            </div>
+                                                        )}
                                                     </td>
 
                                                     {/* AUDIT STATUS */}
@@ -1607,19 +1627,6 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40 w-fit">
                                                                     <CheckCircle2 size={13} />
                                                                     เช็คแล้ว
-                                                                </span>
-                                                                {slot.checkedAt && (
-                                                                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium mt-1">
-                                                                        เช็คเมื่อ {slot.checkedAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {slot.status === 'adhoc' && (
-                                                            <div className="flex flex-col">
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400 border border-sky-100 dark:border-sky-900/40 w-fit">
-                                                                    <Info size={13} />
-                                                                    เช็คแล้ว (นอกตาราง)
                                                                 </span>
                                                                 {slot.checkedAt && (
                                                                     <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium mt-1">

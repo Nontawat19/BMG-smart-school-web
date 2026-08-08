@@ -892,8 +892,11 @@ const SubstituteManagementPage: React.FC = () => {
 
     const ids = Array.isArray(classId) ? classId : [classId].filter(Boolean);
     return ids.map((id: string) => {
-      const [lvl, rm] = String(id).split('/');
-      return classNames[lvl] ? `${classNames[lvl]}${rm ? `/${rm}` : ''}` : String(id);
+      const raw = String(id);
+      // Class docs use "level-room" (e.g. "p5-2") while some substitute records use
+      // "level/room" (e.g. "p5/2") — handle both so it never falls back to the raw code.
+      const [lvl, rm] = raw.includes('-') ? raw.split('-') : raw.split('/');
+      return classNames[lvl] ? `${classNames[lvl]}${rm ? `/${rm}` : ''}` : raw;
     }).join(', ');
   };
 
@@ -927,6 +930,23 @@ const SubstituteManagementPage: React.FC = () => {
       if (!allClassSchedules.some((item: any) => matchesScheduleYearTerm(item, academicYear, semester))) {
         setAllClassSchedules(termScheduleDocs);
       }
+
+      // 1.1 ดึงข้อมูล "มอบหมายวิชา" (course_assignments) ของปี/เทอมเดียวกัน — ต้องใช้ค่านี้
+      // เป็นตัวชี้ขาด classId/ห้องเรียน "ตัวจริง" ของคาบนั้น เหมือนที่หน้าเช็คชื่อปกติ
+      // (ClassroomAttendancePage) และหน้าตรวจสอบ (ClassroomAttendanceAuditPage) ใช้กัน
+      // ถ้าข้ามขั้นนี้ไป classId ที่บันทึกลง substitutions จะเพี้ยนไปจากค่าที่วิชานั้นถูก
+      // มอบหมายไว้จริง (เช่น กลายเป็น "p5/2" ดิบแทน "p5-2") ทำให้ระบบเช็คชื่อ/รายงาน
+      // มองว่าเป็นคนละคาบ ไม่ลิงค์กับคาบสอนแทนที่จัดไว้
+      const assignmentsSnap = await getDocs(query(
+        collection(firestore, "school-settings", schoolId, "course_assignments"),
+        where("academicYear", "==", academicYear),
+        where("semester", "==", semester),
+      ));
+      const courseAssignmentMap = new Map<string, any>();
+      assignmentsSnap.forEach(assignDoc => {
+        const data = assignDoc.data();
+        if (data.courseId) courseAssignmentMap.set(data.courseId, data);
+      });
 
       // 2.1 ดึงข้อมูลการสอนแทนที่บันทึกไว้แล้ว
       // Query ทั้ง 2 แบบเพื่อรองรับ record เก่า (leaveRequestId) และ record ใหม่ (deterministic ID)
@@ -1173,21 +1193,6 @@ const SubstituteManagementPage: React.FC = () => {
                 const courseKey = typeof course === 'string' ? courseIndex : (course?.instanceId || course?.id || courseIndex);
                 const uniqueScheduleId = `${scheduleData.id}-${dateString}-${slot}-${courseKey}`;
 
-                // Resolve classId: prefer course-level classId (most specific), then fall back
-                // to scheduleData.classId (string or multi-array). Never save [] — use null
-                // instead so matchesClassValueStrict returns true (shows all enrolled students)
-                // which is safer than [] which now returns false (shows no students).
-                const _rawCourseClassId = typeof course !== 'string' ? course?.classId : undefined;
-                const _hasValidCourseClassId = _rawCourseClassId !== undefined && _rawCourseClassId !== null &&
-                  !(Array.isArray(_rawCourseClassId) && _rawCourseClassId.length === 0);
-                const resolvedClassId: string | string[] | null = _hasValidCourseClassId
-                  ? _rawCourseClassId
-                  : (Array.isArray(scheduleData.classId)
-                      ? (scheduleData.classId.length > 0 ? scheduleData.classId : null)
-                      : (typeof scheduleData.classId === 'string' && scheduleData.classId
-                          ? scheduleData.classId
-                          : null));
-
                 // Resolve groupNumber: from course data (matches ClassroomAttendancePage logic)
                 const resolvedGroupNumber = typeof course !== 'string'
                   ? (Number(course?.groupNumber || course?.group || 0) || undefined)
@@ -1197,6 +1202,71 @@ const SubstituteManagementPage: React.FC = () => {
                 const resolvedCourseId = typeof course !== 'string'
                   ? (course?.id || course?.courseId || scheduleData.courseId || '')
                   : '';
+
+                // A. ตรวจสอบว่าวิชานี้ถูก "มอบหมายวิชา" (course_assignments) ไว้หรือไม่ — ต้องเช็ค
+                // ก่อนคำนวณ classId เสมอ เพราะถ้ามีมอบหมายไว้ ค่า classId/ห้องเรียน "ตัวจริง" ที่
+                // ระบบเช็คชื่อและระบบตรวจสอบใช้อ้างอิงคือค่าจากการมอบหมายนี้ ไม่ใช่ค่าดิบในตารางสอน
+                const assignmentDoc = resolvedCourseId ? courseAssignmentMap.get(resolvedCourseId) : undefined;
+                const teacherAssignments = assignmentDoc?.teacherAssignments || [];
+                const matchedAssign = teacherAssignments.find(
+                  (a: any) => Number(a.groupNumber || 1) === (resolvedGroupNumber || 1)
+                );
+
+                // B. Resolve classId: ใช้ classLevels จากการมอบหมายก่อนเสมอถ้ามี (สูตรเดียวกับหน้า
+                // เช็คชื่อปกติและหน้าตรวจสอบ) ไม่เช่นนั้น fallback ไปที่ classId ดิบในตารางสอน —
+                // prefer course-level classId (most specific), then fall back to scheduleData.classId
+                // (string or multi-array). Never save [] — use null instead so
+                // matchesClassValueStrict returns true (shows all enrolled students) which is safer
+                // than [] which now returns false (shows no students).
+                const _rawCourseClassId = typeof course !== 'string' ? course?.classId : undefined;
+                const _hasValidCourseClassId = _rawCourseClassId !== undefined && _rawCourseClassId !== null &&
+                  !(Array.isArray(_rawCourseClassId) && _rawCourseClassId.length === 0);
+                const resolvedClassId: string | string[] | null = (matchedAssign?.classLevels && matchedAssign.classLevels.length > 0)
+                  ? matchedAssign.classLevels
+                  : (_hasValidCourseClassId
+                      ? _rawCourseClassId
+                      : (Array.isArray(scheduleData.classId)
+                          ? (scheduleData.classId.length > 0 ? scheduleData.classId : null)
+                          : (typeof scheduleData.classId === 'string' && scheduleData.classId
+                              ? scheduleData.classId
+                              : null)));
+
+                // C. Resolve room: ใช้ roomIds จากการมอบหมายก่อนเสมอถ้ามี เช่นเดียวกับ classId ข้างบน
+                const assignedRoomIds: string[] = matchedAssign?.roomIds
+                  || (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])));
+
+                // D. Resolve display className: classId ที่มาจากการมอบหมาย (classLevels) เป็นแค่ระดับชั้น
+                // ("p3") ไม่มีเลขห้อง/section ติดมาด้วย — ต้องต่อท้ายด้วย matchedAssign.room/course.room
+                // เอง (สูตรเดียวกับ ClassroomAttendanceAuditPage) ไม่เช่นนั้นการ์ดจะแสดงแค่ "ชั้น ป.3"
+                // โดยไม่มีห้องต่อท้าย
+                const classIdsForDisplay = Array.isArray(resolvedClassId)
+                  ? resolvedClassId
+                  : (resolvedClassId ? [resolvedClassId] : []);
+                const roomSuffixForClass = matchedAssign?.room || (Array.isArray(course?.room) ? undefined : course?.room);
+                const displayClassName = classIdsForDisplay.length > 0
+                  ? classIdsForDisplay.map((cId: string) => {
+                      const formatted = formatClassName(cId);
+                      if (!String(cId).includes('-') && !String(cId).includes('/') && roomSuffixForClass && roomSuffixForClass !== 'all') {
+                        return `${formatted}/${roomSuffixForClass}`;
+                      }
+                      return formatted;
+                    }).join(', ')
+                  : formatClassName(resolvedClassId);
+
+                // eslint-disable-next-line no-console
+                console.debug('[substitute-room-debug]', {
+                  subjectCode: subjectCodeDisplay,
+                  period: periodNumber,
+                  resolvedCourseId,
+                  resolvedGroupNumber,
+                  hasAssignmentDoc: !!assignmentDoc,
+                  teacherAssignments,
+                  matchedAssign,
+                  courseRoom: typeof course !== 'string' ? course?.room : undefined,
+                  resolvedClassId,
+                  roomSuffixForClass,
+                  displayClassName,
+                });
 
                 allSchedules.push({
                   id: uniqueScheduleId,
@@ -1210,7 +1280,7 @@ const SubstituteManagementPage: React.FC = () => {
                   endTime: setting.endTime,
                   subjectName: subjectNameDisplay,
                   subjectCode: subjectCodeDisplay,
-                  className: formatClassName(resolvedClassId),
+                  className: displayClassName,
                   classId: resolvedClassId,
                   groupNumber: resolvedGroupNumber,
                   courseId: resolvedCourseId,
@@ -1218,7 +1288,7 @@ const SubstituteManagementPage: React.FC = () => {
                   substituteTeacherId: existingSub?.substituteTeacherId,
                   substituteTeacherName: existingSub?.substituteTeacherName,
                   substitutionDocId: existingSub?.id,
-                  roomName: (Array.isArray(course?.room) ? course.room : (course?.room ? [course.room] : (scheduleData.roomIds || [])))
+                  roomName: assignedRoomIds
                     .map((id: string) => roomMap[id] || id)
                     .join(', ') || 'ไม่ระบุสถานที่',
                   isCoTeaching,
@@ -1262,6 +1332,7 @@ const SubstituteManagementPage: React.FC = () => {
             academicYear: getScheduleYearTerm(entry.originalDate).academicYear,
             period: entry.period,
             classId: entry.classId ?? null,
+            className: entry.className || '',
             groupNumber: entry.groupNumber ?? null,
             courseId: entry.courseId || null,
             subjectName: entry.subjectName,
@@ -1340,6 +1411,7 @@ const SubstituteManagementPage: React.FC = () => {
               academicYear: getScheduleYearTerm(entry.originalDate).academicYear,
               period: entry.period,
               classId: entry.classId ?? null,
+              className: entry.className || '',
               groupNumber: entry.groupNumber ?? null,
               courseId: entry.courseId || null,
               subjectName: entry.subjectName,
@@ -1582,6 +1654,8 @@ const SubstituteManagementPage: React.FC = () => {
         await updateDoc(substitutionRef, {
           substituteTeacherId: substitute.value,
           substituteTeacherName: substitute.label.replace(/^\[.*?\]\s*/, ''),
+          classId: scheduleEntry.classId ?? null,
+          className: scheduleEntry.className || '',
           roomName: scheduleEntry.roomName || "",
           startTime: scheduleEntry.startTime || "",
           endTime: scheduleEntry.endTime || "",
@@ -1602,6 +1676,7 @@ const SubstituteManagementPage: React.FC = () => {
           academicYear: getScheduleYearTerm(scheduleEntry.originalDate).academicYear,
           period: scheduleEntry.period,
           classId: scheduleEntry.classId ?? null,
+          className: scheduleEntry.className || '',
           groupNumber: scheduleEntry.groupNumber ?? null,
           courseId: scheduleEntry.courseId || null,
           subjectName: scheduleEntry.subjectName,

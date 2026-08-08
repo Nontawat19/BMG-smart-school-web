@@ -84,8 +84,13 @@ const formatClassId = (classId: string | string[] | null | undefined): string =>
   if (!classId) return "-";
   const ids = Array.isArray(classId) ? classId : [classId];
   return ids.map((id) => {
-    const [lvl, rm] = String(id).split("/");
-    return CLASS_NAMES[lvl] ? `${CLASS_NAMES[lvl]}${rm ? `/${rm}` : ""}` : String(id);
+    const raw = String(id);
+    // course_assignments.classLevels (mirrored into substitutions.classId when a course
+    // has been assigned) uses "level-room" (e.g. "p5-2"), while some older/raw schedule
+    // values use "level/room" (e.g. "p5/2") — handle both, or assigned substitute
+    // sessions would print the raw code instead of "ป.5/2".
+    const [lvl, rm] = raw.includes("-") ? raw.split("-") : raw.split("/");
+    return CLASS_NAMES[lvl] ? `${CLASS_NAMES[lvl]}${rm ? `/${rm}` : ""}` : raw;
   }).join(", ");
 };
 

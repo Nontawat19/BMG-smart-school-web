@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { useNavigate } from "react-router-dom";
@@ -18,7 +19,7 @@ const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อ�
 import { CLASSES } from "@/utils/schoolUtils";
 import CanAccess from "@/components/AccessControl/CanAccess";
 import { usePermissions } from "@/hooks/usePermissions";
-import { getThaiYear } from "@/utils/dateUtils";
+import { getThaiYear, getTodayString } from "@/utils/dateUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { fetchStudentReportSummary, syncStudentReportSummary, normalizeStudentReportLevel } from "@/utils/studentReportSummaryUtils";
 import { isArchivedStudentStatus, normalizeStudentStatus } from "@/utils/studentStatusUtils";
@@ -52,6 +53,10 @@ interface ScheduleItem {
     originalTeacherName?: string;
     isDoublePeriod?: boolean;
     periods?: number[];
+    // The substitution's own scheduled date (YYYY-MM-DD), passed through to
+    // ClassroomAttendance/index.tsx via sessionStorage so a check-in launched from this
+    // widget saves under the substitution's real date, not the check-in page's own date state.
+    date?: string;
     _sortIndex?: number;
     _startMinutes?: number;
 }
@@ -134,6 +139,95 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
             <div className="grid grid-cols-7 gap-1 mb-2 text-center">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => <span key={d} className="text-xs font-semibold text-gray-400">{d}</span>)}</div>
             <div className="grid grid-cols-7 gap-y-1 place-items-center">{renderDays()}</div>
         </div>
+    );
+};
+
+const toDateKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// แปลง "YYYY-MM-DD" กลับเป็น Date แบบ local midnight — ใช้คู่กับ getTodayString() (ซึ่งล็อกเป็น Asia/Bangkok)
+// เพื่อไม่ให้ "วันนี้" ของ picker เพี้ยนไปจาก timezone ของเครื่อง client
+const parseDateKey = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const SummaryDatePicker: React.FC<{
+    selectedDate: Date;
+    minDateStr: string;
+    maxDateStr: string;
+    position: { top: number; left: number };
+    onSelect: (date: Date) => void;
+    onClose: () => void;
+}> = ({ selectedDate, minDateStr, maxDateStr, position, onSelect, onClose }) => {
+    const [viewDate, setViewDate] = useState(new Date(selectedDate));
+    const changeMonth = (delta: number) => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1));
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
+    const selectedKey = toDateKey(selectedDate);
+    const todayKey = getTodayString();
+
+    const year = viewDate.getFullYear(), month = viewDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const cells: React.ReactElement[] = Array.from({ length: firstDayOfWeek }, (_, i) => <div key={`empty-${i}`} />);
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateObj = new Date(year, month, d);
+        const dateKey = toDateKey(dateObj);
+        const isDisabled = dateKey < minDateStr || dateKey > maxDateStr;
+        const isSelected = dateKey === selectedKey;
+        const isToday = dateKey === todayKey;
+        cells.push(
+            <button
+                key={d}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => onSelect(dateObj)}
+                className={`w-8 h-8 rounded-full text-sm flex items-center justify-center transition-colors ${isDisabled
+                        ? 'text-gray-300 dark:text-gray-700 cursor-not-allowed'
+                        : isSelected
+                            ? 'bg-indigo-600 text-white font-bold'
+                            : isToday
+                                ? 'border border-indigo-400 text-indigo-600 dark:text-indigo-400 font-bold'
+                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+            >
+                {d}
+            </button>
+        );
+    }
+
+    // Render ผ่าน portal ไปที่ document.body เพื่อไม่ให้ถูก clip โดย overflow-hidden ของการ์ดหัวข้อ
+    return createPortal(
+        <>
+            <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ position: 'absolute', top: position.top, left: position.left }}
+                className="z-[9999] w-72 bg-white dark:bg-[#2a2b2f] rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 p-4"
+            >
+                <div className="flex justify-between items-center mb-3">
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">{thaiMonths[month]} {getThaiYear(viewDate)}</h4>
+                    <div className="flex gap-1">
+                        <button type="button" onClick={() => changeMonth(-1)} aria-label="เดือนก่อนหน้า" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronLeft size={16} /></button>
+                        <button type="button" onClick={() => changeMonth(1)} aria-label="เดือนถัดไป" className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"><ChevronRight size={16} /></button>
+                    </div>
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-1 text-center">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => <span key={d} className="text-[10px] font-semibold text-gray-400">{d}</span>)}</div>
+                <div className="grid grid-cols-7 gap-y-1 place-items-center">{cells}</div>
+                {selectedKey !== todayKey && (
+                    <button
+                        type="button"
+                        onClick={() => onSelect(parseDateKey(getTodayString()))}
+                        className="mt-3 w-full text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                        กลับไปวันนี้
+                    </button>
+                )}
+            </div>
+        </>,
+        document.body
     );
 };
 
@@ -372,6 +466,28 @@ const HomePage = () => {
     const [todayTeacherLeaves, setTodayTeacherLeaves] = useState<any[]>([]);
     const [todayTeacherLeavesLoading, setTodayTeacherLeavesLoading] = useState(true);
 
+    // === Historical summary date selection (สรุปรายงานระบบ ย้อนหลัง) ===
+    const [selectedSummaryDate, setSelectedSummaryDate] = useState<Date>(() => parseDateKey(getTodayString()));
+    const [showSummaryDatePicker, setShowSummaryDatePicker] = useState(false);
+    const [summaryDatePickerPos, setSummaryDatePickerPos] = useState<{ top: number; left: number } | null>(null);
+    const summaryDateButtonRef = useRef<HTMLButtonElement>(null);
+    const toggleSummaryDatePicker = () => {
+        if (!showSummaryDatePicker && summaryDateButtonRef.current) {
+            const rect = summaryDateButtonRef.current.getBoundingClientRect();
+            const popoverWidth = 288; // w-72
+            // clamp ให้ maxLeft ไม่มีวันต่ำกว่า minLeft (จอแคบกว่า popoverWidth+16px)
+            const maxLeft = Math.max(8, document.documentElement.clientWidth + window.scrollX - popoverWidth - 8);
+            const left = Math.min(Math.max(8, rect.right + window.scrollX - popoverWidth), maxLeft);
+            setSummaryDatePickerPos({ top: rect.bottom + window.scrollY + 8, left });
+        }
+        setShowSummaryDatePicker(prev => !prev);
+    };
+    const [historicalStudentSummary, setHistoricalStudentSummary] = useState<any>(null);
+    const [historicalTeacherSummary, setHistoricalTeacherSummary] = useState<any>(null);
+    const [historicalSummaryLoading, setHistoricalSummaryLoading] = useState(false);
+    const selectedSummaryDateStr = toDateKey(selectedSummaryDate);
+    const isViewingHistoricalSummary = selectedSummaryDateStr !== getTodayString();
+
     // === EFFECT: Teacher Leaves Today ===
     useEffect(() => {
         const schoolId = effectiveSchoolId;
@@ -554,6 +670,63 @@ const HomePage = () => {
         return () => unsub();
     }, [effectiveSchoolId]);
 
+    // === EFFECT 3.5: Today's Attendance Summary (Real-time) ===
+    // เดิมดึงด้วย getDoc() ครั้งเดียวตอนโหลดหน้า ทำให้ตัวเลขค้างไม่อัปเดตเมื่อมีคนลงเวลาเพิ่ม
+    // (ไม่ว่าจะสแกนหน้า สแกนบัตร หรือพิมพ์รหัสเอง ก็เขียนไปที่เอกสารเดียวกันนี้) เปลี่ยนเป็น onSnapshot
+    // ให้ตรงกับป้าย "Real-time" ที่ติดไว้ในหน้า UI จริงๆ
+    useEffect(() => {
+        const schoolId = effectiveSchoolId;
+        if (!schoolId) return;
+        const todayStr = getTodayString();
+
+        const unsubStudents = onSnapshot(
+            doc(db, 'school-settings', schoolId, 'Todaysummary', `students_${todayStr}`),
+            (snap) => setStudentTodaySummary(snap.exists() ? snap.data() : null),
+            (error) => console.warn("TodaySummary (students) listener error:", error)
+        );
+        const unsubTeachers = onSnapshot(
+            doc(db, 'school-settings', schoolId, 'Todaysummary', `teachers_${todayStr}`),
+            (snap) => setTeacherTodaySummary(snap.exists() ? snap.data() : null),
+            (error) => console.warn("TodaySummary (teachers) listener error:", error)
+        );
+
+        return () => {
+            unsubStudents();
+            unsubTeachers();
+        };
+    }, [effectiveSchoolId]);
+
+    // === EFFECT 3.6: Historical Attendance Summary (เมื่อเลือกดูวันย้อนหลัง) ===
+    // แยกออกจาก EFFECT 3.5 โดยเจตนา ไม่แตะ onSnapshot ของ "วันนี้" เลย เพื่อไม่ให้กระทบพฤติกรรมเดิม
+    useEffect(() => {
+        const schoolId = effectiveSchoolId;
+        if (!schoolId || !isViewingHistoricalSummary) {
+            setHistoricalStudentSummary(null);
+            setHistoricalTeacherSummary(null);
+            return;
+        }
+        let active = true;
+        const fetchHistoricalSummary = async () => {
+            setHistoricalSummaryLoading(true);
+            try {
+                const [studentSnap, teacherSnap] = await Promise.all([
+                    getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `students_${selectedSummaryDateStr}`)),
+                    getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `teachers_${selectedSummaryDateStr}`))
+                ]);
+                if (!active) return;
+                setHistoricalStudentSummary(studentSnap.exists() ? studentSnap.data() : null);
+                setHistoricalTeacherSummary(teacherSnap.exists() ? teacherSnap.data() : null);
+            } catch (error) {
+                console.error("Error fetching historical summary:", error);
+                if (active) { setHistoricalStudentSummary(null); setHistoricalTeacherSummary(null); }
+            } finally {
+                if (active) setHistoricalSummaryLoading(false);
+            }
+        };
+        fetchHistoricalSummary();
+        return () => { active = false; };
+    }, [effectiveSchoolId, isViewingHistoricalSummary, selectedSummaryDateStr]);
+
     // === EFFECT 4: System Report ===
     useEffect(() => {
         const schoolId = effectiveSchoolId;
@@ -695,17 +868,6 @@ const HomePage = () => {
                         recentLeaves: studentLeaveList.slice(0, 5)
                     }));
                 } catch (e) { console.warn("Leave report fetch (partial):", e); }
-
-                try {
-                    const now = new Date();
-                    const todayStr2 = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    const [stSnap, tSnap] = await Promise.all([
-                        getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `students_${todayStr2}`)),
-                        getDoc(doc(db, 'school-settings', schoolId, 'Todaysummary', `teachers_${todayStr2}`))
-                    ]);
-                    setStudentTodaySummary(stSnap.exists() ? stSnap.data() : null);
-                    setTeacherTodaySummary(tSnap.exists() ? tSnap.data() : null);
-                } catch (e) { console.warn("TodaySummary fetch error:", e); }
 
                 try {
                     const [coursesSnap, clubsSnap, enrollmentsSnap, assignmentSnap] = await Promise.all([
@@ -1183,6 +1345,11 @@ const HomePage = () => {
                                 todaySchedules.push({
                                     id: `sub-${subDoc.id}`,
                                     substitutionId: subDoc.id,
+                                    // The substitution's own scheduled date (YYYY-MM-DD) — carried
+                                    // through sessionStorage into ClassroomAttendance/index.tsx so
+                                    // the eventual save is pinned to this date rather than whatever
+                                    // `currentDate` the check-in page happens to default/drift to.
+                                    date: `${subDate.getFullYear()}-${String(subDate.getMonth() + 1).padStart(2, '0')}-${String(subDate.getDate()).padStart(2, '0')}`,
                                     courseId: data.courseId || data.originalCourseId || '',
                                     period: periodNumber ? `คาบ ${periodNumber}` : 'สอนแทน',
                                     subject: data.subjectName || 'สอนแทน',
@@ -1276,19 +1443,24 @@ const HomePage = () => {
     useEffect(() => { if (showNewsModal && currentNews && !viewedNewsIds.current.has(currentNews.id)) { incrementViewCount(currentNews.id); viewedNewsIds.current.add(currentNews.id); } }, [currentNews, showNewsModal]);
 
     // === DERIVED STATS FOR BMG SMART SCHOOL STYLE REPORT ===
+    // เมื่อกำลังดูข้อมูลย้อนหลัง ใช้ doc สรุปของวันที่เลือก (ครั้งเดียว, ไม่ real-time) แทนของวันนี้
+    // ส่วนอื่นของหน้า (ตารางสอน, ใบลาล่าสุด, ปฏิทิน ฯลฯ) ยังคงอิงวันนี้เหมือนเดิมทุกประการ
     const totalStudents = studentReport.active || 0; // count only studying students (กำลังศึกษาอยู่)
-    const stSummary = studentTodaySummary || {};
+    const stSummary = (isViewingHistoricalSummary ? historicalStudentSummary : studentTodaySummary) || {};
     const sPresent = Math.max(0, stSummary.present || 0);
     const sLate = Math.max(0, stSummary.late || 0);
     const sLeave = Math.max(0, stSummary.leave || 0);
     const sOfficial = Math.max(0, stSummary.officialTravel || 0);
     const sAbsent = Math.max(0, stSummary.absent || 0);
-    
+    // นักเรียนที่สแกนเข้าแล้วแต่ลืมสแกนออก ("ไม่ลงเวลาออก") ยังถือว่ามาเรียนวันนี้
+    // ต้องนับรวมไว้ ไม่งั้นจะหายไปจากทุก bucket แล้วไปโผล่เป็น "ขาด" ผิดๆ ใน fallback ด้านล่าง
+    const sNoCheckout = Math.max(0, stSummary.noCheckout || 0);
+
     // Total scans recorded
-    const sTotalScans = sPresent + sLate + sLeave + sOfficial + sAbsent;
-    
+    const sTotalScans = sPresent + sLate + sLeave + sOfficial + sAbsent + sNoCheckout;
+
     const studentAttendanceStats = {
-        present: sPresent,
+        present: sPresent + sNoCheckout,
         late: sLate,
         leave: sLeave,
         officialTravel: sOfficial,
@@ -1297,23 +1469,28 @@ const HomePage = () => {
     };
 
     const totalTeachers = activeTeachersCount !== null ? activeTeachersCount : (teacherReport.total || 0);
-    const tSummary = teacherTodaySummary || {};
+    const tSummary = (isViewingHistoricalSummary ? historicalTeacherSummary : teacherTodaySummary) || {};
     const tPresent = Math.max(0, tSummary.present || 0);
     const tLate = Math.max(0, tSummary.late || 0);
-    const tLeave = Math.max(tSummary.leave || 0, (leaveReport.teacherSick || 0) + (leaveReport.teacherPersonal || 0));
-    const tOfficial = Math.max(tSummary.officialTravel || 0, leaveReport.teacherOfficial || 0);
+    // leaveReport (ลาป่วย/ลากิจ/ไปราชการ) คำนวณจาก "วันนี้" เท่านั้น จึงใช้ผสมเฉพาะตอนดูข้อมูลวันนี้ เพื่อไม่ให้ตัวเลขวันย้อนหลังเพี้ยน
+    const tLeave = isViewingHistoricalSummary ? Math.max(0, tSummary.leave || 0) : Math.max(tSummary.leave || 0, (leaveReport.teacherSick || 0) + (leaveReport.teacherPersonal || 0));
+    const tOfficial = isViewingHistoricalSummary ? Math.max(0, tSummary.officialTravel || 0) : Math.max(tSummary.officialTravel || 0, leaveReport.teacherOfficial || 0);
     const tAbsent = Math.max(0, tSummary.absent || 0);
-    
-    const tTotalScans = tPresent + tLate + tLeave + tOfficial + tAbsent;
-    
+    // ครูที่สแกนเข้าแล้วแต่ลืมสแกนออก ("ไม่ลงเวลาออก") ยังถือว่ามาปฏิบัติงานวันนี้ (เหตุผลเดียวกับฝั่งนักเรียน)
+    const tNoCheckout = Math.max(0, tSummary.noCheckout || 0);
+
+    const tTotalScans = tPresent + tLate + tLeave + tOfficial + tAbsent + tNoCheckout;
+
     const teacherAttendanceStats = {
-        present: tPresent,
+        present: tPresent + tNoCheckout,
         late: tLate,
         leave: tLeave,
         officialTravel: tOfficial,
         absent: tAbsent + Math.max(0, totalTeachers - tTotalScans),
         total: Math.max(totalTeachers, tTotalScans)
     };
+
+    const summaryLoading = reportLoading || (isViewingHistoricalSummary && historicalSummaryLoading);
 
     const renderStudentStats = (s: any) => (
         <div className="grid grid-cols-5 gap-0.5 mt-2.5">
@@ -1439,16 +1616,24 @@ const HomePage = () => {
                                 </div>
                             </div>
 
-                            {/* Right Side: Compact Premium Date Badge */}
-                            <div className="flex-shrink-0">
-                                <div className="flex items-center gap-2 sm:gap-3.5 px-3 sm:px-4 py-2 bg-gray-50/80 dark:bg-white/[0.03] rounded-[18px] border border-gray-100 dark:border-white/5 shadow-inner backdrop-blur-sm">
+                            {/* Right Side: Compact Premium Date Badge (คลิกเพื่อดูสรุปย้อนหลัง) */}
+                            <div className="flex-shrink-0 relative">
+                                <button
+                                    ref={summaryDateButtonRef}
+                                    type="button"
+                                    onClick={toggleSummaryDatePicker}
+                                    aria-haspopup="dialog"
+                                    aria-expanded={showSummaryDatePicker}
+                                    aria-label="เลือกวันที่ดูสรุปย้อนหลัง"
+                                    className="w-full flex items-center gap-2 sm:gap-3.5 px-3 sm:px-4 py-2 bg-gray-50/80 dark:bg-white/[0.03] rounded-[18px] border border-gray-100 dark:border-white/5 shadow-inner backdrop-blur-sm hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-colors cursor-pointer"
+                                >
                                     <div className="text-right">
                                         <p className="text-[9px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider leading-none mb-0.5 sm:mb-1">
-                                            วันที่ปัจจุบัน
+                                            {isViewingHistoricalSummary ? 'ข้อมูลวันที่ (ย้อนหลัง)' : 'วันที่ปัจจุบัน'}
                                         </p>
                                         {/* Desktop Date */}
                                         <p className="hidden sm:block text-xs sm:text-sm font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                                            {new Date().toLocaleDateString('th-TH', {
+                                            {selectedSummaryDate.toLocaleDateString('th-TH', {
                                                 day: 'numeric',
                                                 month: 'long',
                                                 year: 'numeric'
@@ -1456,13 +1641,23 @@ const HomePage = () => {
                                         </p>
                                         {/* Mobile Date */}
                                         <p className="sm:hidden text-xs font-black text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                                            {new Date().getDate()} {thaiMonths[new Date().getMonth()]} {new Date().getFullYear() + 543}
+                                            {selectedSummaryDate.getDate()} {thaiMonths[selectedSummaryDate.getMonth()]} {selectedSummaryDate.getFullYear() + 543}
                                         </p>
                                     </div>
-                                    <div className="p-1.5 sm:p-2 bg-gradient-to-tr from-indigo-500 to-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform flex-shrink-0">
+                                    <div className={`p-1.5 sm:p-2 rounded-xl text-white shadow-lg transition-transform flex-shrink-0 ${isViewingHistoricalSummary ? 'bg-gradient-to-tr from-amber-500 to-amber-600 shadow-amber-500/20' : 'bg-gradient-to-tr from-indigo-500 to-indigo-600 shadow-indigo-500/20 group-hover:scale-105'}`}>
                                         <CalendarCheck size={18} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
                                     </div>
-                                </div>
+                                </button>
+                                {showSummaryDatePicker && summaryDatePickerPos && (
+                                    <SummaryDatePicker
+                                        selectedDate={selectedSummaryDate}
+                                        minDateStr={calendarState.semesterStartDate || calendarState.terms?.[0]?.startDate || `${new Date().getFullYear() - 1}-01-01`}
+                                        maxDateStr={getTodayString()}
+                                        position={summaryDatePickerPos}
+                                        onSelect={(date) => { setSelectedSummaryDate(date); setShowSummaryDatePicker(false); }}
+                                        onClose={() => setShowSummaryDatePicker(false)}
+                                    />
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1476,9 +1671,27 @@ const HomePage = () => {
                     {/* SYSTEM REPORT - For all roles except Super Admin */}
                     {showSchoolDashboard && (
                         <div className="mb-8">
-                            <div className="flex items-center gap-2 mb-5"><div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" /><h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2><span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span></div>
+                            <div className="flex items-center gap-2 mb-5 flex-wrap">
+                                <div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full" />
+                                <h2 className="text-lg font-bold tracking-tight">สรุปรายงานระบบ</h2>
+                                {isViewingHistoricalSummary ? (
+                                    <>
+                                        <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full font-semibold">
+                                            ย้อนหลัง: {selectedSummaryDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </span>
+                                        <button
+                                            onClick={() => setSelectedSummaryDate(parseDateKey(getTodayString()))}
+                                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                                        >
+                                            กลับไปวันนี้
+                                        </button>
+                                    </>
+                                ) : (
+                                    <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span>
+                                )}
+                            </div>
                             {
-                                reportLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
+                                summaryLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
                                     <div className="grid grid-cols-3 gap-2 mb-6">
                                         {stats.map((s, i) => (
                                             <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 border-none outline-none ring-0 flex flex-col justify-between">
@@ -1516,7 +1729,7 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {reportLoading ? (
+                                        {summaryLoading ? (
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
@@ -1569,7 +1782,7 @@ const HomePage = () => {
                                 </div>
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-4 items-center">
                                     <div className="col-span-1 lg:col-span-3 h-[80px] xs:h-[120px] sm:h-[180px] lg:h-[240px] relative">
-                                        {reportLoading ? (
+                                        {summaryLoading ? (
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <SkeletonLoader variant="circle" className="h-full w-auto max-w-full aspect-square" />
                                             </div>
@@ -1733,6 +1946,7 @@ const HomePage = () => {
                                                                     isChecked: false,
                                                                     isSubstitute: s.isSubstitute || false,
                                                                     substitutionId: s.substitutionId || '',
+                                                                    date: s.date || '',
                                                                     originalTeacherId: s.originalTeacherId || '',
                                                                     originalTeacherName: s.originalTeacherName || '',
                                                                     isDoublePeriod: s.isDoublePeriod || false,

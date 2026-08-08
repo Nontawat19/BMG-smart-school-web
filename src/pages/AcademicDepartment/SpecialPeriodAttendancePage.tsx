@@ -576,8 +576,13 @@ const SpecialPeriodAttendancePage: React.FC = () => {
               const minDate = isOneTimeRange ? selectedPeriod!.eventDate! : undefined;
               const maxDate = isOneTimeRange ? (selectedPeriod!.eventEndDate || selectedPeriod!.eventDate!) : undefined;
               const curStr = toIsoDate(currentDate);
-              const canPrev = !isOneTimeRange || curStr > minDate!;
-              const canNext = !isOneTimeRange || curStr < maxDate!;
+              // Lock the date once a class+room is selected. selectedClassKey/selectedRoom
+              // don't clear when the date changes, so switching dates mid-tick silently
+              // discards unsaved marks (the roster effect below refetches for the new date) —
+              // lock prevents that accidental loss rather than any duplicate/wrong-date write.
+              const isEditingClass = !!selectedClassKey && !!selectedRoom;
+              const canPrev = !isEditingClass && (!isOneTimeRange || curStr > minDate!);
+              const canNext = !isEditingClass && (!isOneTimeRange || curStr < maxDate!);
               return (
                 <div className="flex items-center bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
                   <button
@@ -596,8 +601,9 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                       value={curStr}
                       min={minDate}
                       max={maxDate}
+                      disabled={isEditingClass}
                       onChange={e => { const d = new Date(e.target.value + 'T00:00:00'); if (!isNaN(d.getTime())) setCurrentDate(d); }}
-                      className="absolute inset-0 opacity-0 cursor-pointer" />
+                      className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
                   </div>
                   <button
                     disabled={!canNext}

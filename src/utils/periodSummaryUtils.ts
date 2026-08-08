@@ -1,4 +1,10 @@
-import { doc, increment, WriteBatch, serverTimestamp, collectionGroup, query, where, getDocs, setDoc, writeBatch } from "firebase/firestore";
+import { doc, increment, WriteBatch, Transaction, serverTimestamp, collectionGroup, query, where, getDocs, setDoc, writeBatch } from "firebase/firestore";
+
+// WriteBatch และ Transaction ของ Firestore มี .set()/.update() ที่ทำงานเหมือนกันตอน runtime แต่ TypeScript
+// ไม่ยอมให้เรียก method ผ่าน union ของ overloaded function ตรงๆ (TS2349) จึงต้อง type เป็น any ตรงนี้
+// เพื่อให้ฟังก์ชันกลุ่มนี้ใช้แทนกันได้ทั้งสองแบบ — เรียกผ่าน transaction ได้เพื่ออ่านสดแล้วเขียนแบบ atomic
+// (ป้องกัน TOCTOU/double-fire) โดยไม่ต้องแตกฟังก์ชันซ้ำ
+export type SummaryWriter = WriteBatch | Transaction | any;
 
 /**
  * Calculates the ISO week number for a given date.
@@ -108,7 +114,7 @@ export const classifyLeaveSubType = (leaveTypeText: string | null | undefined): 
  */
 export const updatePeriodSummaries = (
     firestore: any,
-    batch: WriteBatch,
+    batch: SummaryWriter,
     schoolId: string,
     userId: string,
     userType: 'students' | 'teachers',
@@ -165,7 +171,7 @@ export const updatePeriodSummaries = (
  */
 export const updateDailySummary = (
     firestore: any,
-    batch: WriteBatch,
+    batch: SummaryWriter,
     schoolId: string,
     userType: 'students' | 'teachers',
     dateStr: string,
