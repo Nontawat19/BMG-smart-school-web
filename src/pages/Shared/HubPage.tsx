@@ -302,23 +302,6 @@ const HubPage: React.FC = () => {
           path: "/academic/porbor-7",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ACADEMIC_MANAGEMENT
-        },
-        {
-          title: "รายงาน มส.",
-          description: "สรุปการเช็คขาดคาบตามรายวิชารายชั้นเรียน และประเมินผล มส. ตามเกณฑ์เวลาเรียน 80%",
-          icon: <FileWarning size={24} />,
-          path: "/academic/ms-report",
-          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
-        },
-        {
-          title: "รายงานการติด 0 ร มส",
-          description: "รวมรายชื่อนักเรียนที่ติด 0 ร มส จากผลการเรียนทุกรายวิชา",
-          icon: <AlertTriangle size={24} />,
-          path: "/academic/zero-r-ms-report",
-          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: ACADEMIC_MANAGEMENT,
-          featureKey: "showGradeBookMenu"
         }
       ]
     },
@@ -981,6 +964,23 @@ const HubPage: React.FC = () => {
           path: "/academic/sgs-export",
           colorClass: "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400",
           allowedRoles: TEACHER_OPERATIONAL
+        },
+        {
+          title: "รายงาน มส.",
+          description: "สรุปการเช็คขาดคาบตามรายวิชารายชั้นเรียน และประเมินผล มส. ตามเกณฑ์เวลาเรียน 80%",
+          icon: <FileWarning size={24} />,
+          path: "/academic/ms-report",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
+        },
+        {
+          title: "รายงานการติด 0 ร มส",
+          description: "รวมรายชื่อนักเรียนที่ติด 0 ร มส จากผลการเรียนทุกรายวิชา",
+          icon: <AlertTriangle size={24} />,
+          path: "/academic/zero-r-ms-report",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          featureKey: "showGradeBookMenu"
         }
       ]
     },

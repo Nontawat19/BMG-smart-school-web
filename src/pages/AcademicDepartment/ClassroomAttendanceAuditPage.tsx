@@ -42,6 +42,7 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from '@/utils/scheduleDisplayUtils';
+import { resolveScheduleTeacherId } from '@/pages/AcademicDepartment/schedule/scheduleSharedUtils';
 import { CLASSES, CLASS_FULL_NAMES, getGroupPersonnel } from '@/utils/schoolUtils';
 import Swal from 'sweetalert2';
 import {
@@ -782,10 +783,16 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                 return null;
             };
 
+            // Used to recover the schedule doc's real owning teacher when `data.teacherId` is stale/
+            // missing — the schedule module treats this as expected (see resolveScheduleTeacherId),
+            // so trusting `data.teacherId` raw for substitute matching below would silently miss cases.
+            const knownTeacherIds = Object.keys(teacherMap || {});
+
             schedulesSnap.forEach((schedDoc) => {
                 const data = schedDoc.data();
                 const classId = data.classId;
                 const scheduleMap = data.schedule || {};
+                const resolvedScheduleOwnerTeacherId = resolveScheduleTeacherId(schedDoc.id, data.teacherId, knownTeacherIds);
 
                 Object.entries(scheduleMap).forEach(([slot, rawCourse]) => {
                     // Check if slot starts with scheduleDayKey (e.g. mon-1)
@@ -888,10 +895,21 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                             // substitute's recorded classId diverge from the schedule's raw classId,
                             // which is the root cause of substitute check-ins being shown as pending
                             // instead of fulfilling their real slot.
+                            //
+                            // Try every plausible identity for "who this slot's original teacher is":
+                            // the effective/assignment-resolved teacher (matches who'd actually file
+                            // the leave request), and the schedule doc's real owner resolved via
+                            // resolveScheduleTeacherId (covers schedule docs where the raw `teacherId`
+                            // field is stale/missing — a known gap the schedule module already guards
+                            // against elsewhere, but this page previously trusted `data.teacherId` raw).
                             let substituteTeacherName: string | undefined;
                             if (!attRecord) {
-                                const scheduleOwnerTeacherId = data.teacherId || '';
-                                const candidates = subsByOrigTeacherPeriod.get(`${scheduleOwnerTeacherId}_P${periodNum}`) || [];
+                                const teacherIdCandidates = Array.from(new Set(
+                                    [teacherId, resolvedScheduleOwnerTeacherId, data.teacherId].filter(Boolean)
+                                ));
+                                const candidates = teacherIdCandidates.flatMap(
+                                    tId => subsByOrigTeacherPeriod.get(`${tId}_P${periodNum}`) || []
+                                );
                                 const matchedSub = candidates.find(c => !c.courseId || c.courseId === courseId) || candidates[0];
                                 if (matchedSub) {
                                     const subAttRecord = attendanceMap.get(`sub:${matchedSub.id}`);

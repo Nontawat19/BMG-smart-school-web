@@ -75,6 +75,15 @@ interface LeaveRecord {
     description: string;
 }
 
+interface PeriodSetting {
+    id: string;
+    label?: string;
+    startTime: string;
+    endTime: string;
+    isTeachingPeriod?: boolean;
+    isTeaching?: boolean;
+}
+
 type DateReason = 'holiday' | 'special_holiday' | 'weekend' | 'term_break' | 'schoolDay' | 'historical_locked' | 'not_scheduled' | 'specialHoliday';
 
 interface DateMetadata {
@@ -478,6 +487,87 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
     const schoolId = (currentUser as any)?.schoolId;
 
+    // Period settings — needed to normalize raw schedule slot indices (which include
+    // non-teaching slots like homeroom/lunch as array positions) into the same real
+    // period-N numbers that saved attendance records use. Without this, a course
+    // scheduled after a non-teaching slot shows up as two mismatched period columns.
+    const [periodSettings, setPeriodSettings] = useState<PeriodSetting[]>([]);
+    useEffect(() => {
+        const fetchPeriodSettings = async () => {
+            if (!schoolId) return;
+            try {
+                const settingsRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
+                const settingsSnap = await getDoc(settingsRef);
+                const periods = settingsSnap.exists() ? settingsSnap.data().periods : [];
+                setPeriodSettings(Array.isArray(periods) ? periods : []);
+            } catch (error) {
+                console.error("Error fetching period settings:", error);
+                setPeriodSettings([]);
+            }
+        };
+        fetchPeriodSettings();
+    }, [schoolId]);
+
+    const getPeriodNumberFromSlotKey = (periodStr: string): number | null => {
+        if (periodStr === 'homeroom' || periodStr === 'lunch') return null;
+        if (periodStr.startsWith('period-')) {
+            return Number(periodStr.replace('period-', '')) || null;
+        }
+
+        const rawPeriods = periodSettings.length > 0 ? periodSettings : [
+            { id: 'homeroom', label: 'โฮมรูม', startTime: '08:30', endTime: '08:40', isTeachingPeriod: false },
+            { id: 'period-1', label: 'คาบที่ 1', startTime: '08:40', endTime: '09:30', isTeachingPeriod: true },
+            { id: 'period-2', label: 'คาบที่ 2', startTime: '09:30', endTime: '10:20', isTeachingPeriod: true },
+            { id: 'period-3', label: 'คาบที่ 3', startTime: '10:20', endTime: '11:10', isTeachingPeriod: true },
+            { id: 'period-4', label: 'คาบที่ 4', startTime: '11:10', endTime: '12:00', isTeachingPeriod: true },
+            { id: 'lunch', label: 'พักกลางวัน', startTime: '12:00', endTime: '13:00', isTeachingPeriod: false },
+            { id: 'period-5', label: 'คาบที่ 5', startTime: '13:00', endTime: '13:50', isTeachingPeriod: true },
+            { id: 'period-6', label: 'คาบที่ 6', startTime: '13:50', endTime: '14:40', isTeachingPeriod: true },
+            { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true },
+            { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true }
+        ];
+
+        // Normalize indices to make it robust and match school-settings layout perfectly
+        const activePeriods = rawPeriods.map((p: any, arrIdx: number) => {
+            const stableIndex = typeof p.index !== 'undefined'
+                ? p.index
+                : (typeof p.order !== 'undefined' ? p.order : arrIdx);
+            return {
+                ...p,
+                index: stableIndex,
+            };
+        }).sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0));
+
+        const index = Number(periodStr);
+        if (Number.isFinite(index) && activePeriods.length > 0) {
+            const setting = activePeriods.find((p: any) => p.index === index);
+            if (setting) {
+                const isTeachingSlot =
+                    setting.isTeachingPeriod === true ||
+                    setting.isTeaching === true ||
+                    String(setting.id || '').startsWith('period-');
+                if (!isTeachingSlot) {
+                    // The numeric suffix may be a period NUMBER stored in old schedule format
+                    // (before a non-teaching slot was inserted, shifting array indices).
+                    const candidate = `period-${index}`;
+                    const alt = activePeriods.find((p: any) => p.id === candidate);
+                    if (alt && alt.isTeachingPeriod !== false && alt.isTeaching !== false) {
+                        return index;
+                    }
+                    return null;
+                }
+                const match = String(setting.id || '').match(/^period-(\d+)$/);
+                if (match) return Number(match[1]);
+            }
+        }
+
+        const parsed = Number(periodStr);
+        if (Number.isFinite(parsed)) {
+            return parsed === 0 ? 1 : parsed;
+        }
+        return null;
+    };
+
     const classOptions = useMemo(() => {
         return availableClassOptions.map(([val, label]) => ({ value: val, label }));
     }, [availableClassOptions]);
@@ -785,8 +875,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
                         if (isTarget) {
                             const [day, periodStr] = slotKey.split('-');
-                            const period = parseInt(periodStr, 10);
-                            if (scheduleMap[day] !== undefined && !isNaN(period)) {
+                            // Normalize the raw schedule slot index (which counts non-teaching slots like
+                            // homeroom/lunch as array positions) into the real period-N number that saved
+                            // attendance records use — otherwise this shows up as an extra, mismatched
+                            // period column next to the real one.
+                            const period = getPeriodNumberFromSlotKey(periodStr);
+                            if (scheduleMap[day] !== undefined && period !== null) {
                                 addPeriodToScheduleMap(day, period);
                                 if (isPrimaryAnnualMode) {
                                     addPeriodToScheduleMap(`${dataSemester || 'all'}:${day}`, period);
@@ -802,7 +896,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
         };
         fetchSchedule();
-    }, [schoolId, selectedCourse, selectedClass, selectedRoomNumber, academicYear, semester, courses, isPrimaryAnnualMode]);
+    }, [schoolId, selectedCourse, selectedClass, selectedRoomNumber, academicYear, semester, courses, isPrimaryAnnualMode, periodSettings]);
 
     // Generate valid dates
     const generateDates = React.useCallback((acadYearStr: string, monthIdx: number, hasDataDates?: Set<string>) => {
@@ -813,6 +907,20 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const metadata: Record<string, DateMetadata> = {};
 
         const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+        const todayStrLookup = new Date().toISOString().split('T')[0];
+
+        // ช่วงวันที่ใน /academic/settings คือ "ช่วงเวลาปัจจุบัน (วันนี้) ที่อนุญาตให้เข้าไปแก้ไขข้อมูลย้อนหลังได้"
+        // ไม่ใช่ช่วงของวันที่เช็คชื่อ (คอลัมน์ในตาราง) ที่แก้ไขได้ — เทียบกับ "วันนี้" ครั้งเดียว ไม่ใช่เทียบกับ
+        // วันที่ของแต่ละคาบที่แสดงในตาราง
+        const historicalToggle = academicSettings?.allowHistoricalAttendance;
+        const isHistoricalWindowOpen = historicalToggle === undefined
+            ? true // โรงเรียนยังไม่เคยตั้งค่านี้เลย ถือว่าไม่จำกัด (พฤติกรรมเดิมก่อนมีฟีเจอร์นี้)
+            : historicalToggle === false
+                ? false // ปิดสวิตช์ทั้งหมด
+                : (
+                    (!academicSettings.historicalAttendanceStartDate || todayStrLookup >= academicSettings.historicalAttendanceStartDate) &&
+                    (!academicSettings.historicalAttendanceEndDate || todayStrLookup <= academicSettings.historicalAttendanceEndDate)
+                );
 
         // Determine Term Info
         const currentTermKey = semester === '1' ? 'term1' : 'term2';
@@ -918,14 +1026,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         }
                     }
 
-                    // Historical Settings
-                    if (isCheckableLocal && academicSettings?.allowHistoricalAttendance === true) {
-                        const start = academicSettings.historicalAttendanceStartDate;
-                        const end = academicSettings.historicalAttendanceEndDate;
-                        if ((start && dateStrLookup < start) || (end && dateStrLookup > end)) {
-                            isCheckableLocal = false;
-                            reasonLocal = 'historical_locked';
-                        }
+                    // Historical Settings — ล็อกวันที่ผ่านมาแล้วทั้งหมด (ไม่แตะวันนี้/อนาคต) เมื่อ "หน้าต่างเวลา
+                    // ที่อนุญาตให้แก้ย้อนหลัง" ปิดอยู่ ไม่ว่าจะเป็นเพราะปิดสวิตช์ทั้งหมด หรือเปิดสวิตช์แต่ตอนนี้
+                    // อยู่นอกช่วงวันที่กำหนดไว้ก็ตาม
+                    if (isCheckableLocal && dateStrLookup < todayStrLookup && !isHistoricalWindowOpen) {
+                        isCheckableLocal = false;
+                        reasonLocal = 'historical_locked';
                     }
 
                     dates.push(slotKey);

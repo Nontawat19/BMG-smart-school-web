@@ -761,7 +761,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
                         <div className="space-y-1 text-left">
                             <div className="flex items-center gap-3">
-                                <BackButton to="/academic/hub/registration" />
+                                <BackButton to="/academic/hub/evaluation" />
                                 <div className="p-2.5 bg-rose-50 dark:bg-rose-500/10 rounded-2xl shadow-sm border border-rose-100 dark:border-rose-500/20">
                                     <AlertTriangle className="text-rose-600 dark:text-rose-400" size={24} />
                                 </div>
