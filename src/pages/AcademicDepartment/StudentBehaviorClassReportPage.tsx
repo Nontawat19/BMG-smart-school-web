@@ -1361,12 +1361,19 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                 </thead>
                 <tbody>
                   {(loadingReport || loadingStudents) ? (
-                    <tr>
-                      <td colSpan={9} className="p-10 text-center text-slate-500 dark:text-slate-400">
-                        <Loader2 className="mx-auto mb-3 animate-spin text-indigo-500" size={28} />
-                        กำลังโหลดรายงาน...
-                      </td>
-                    </tr>
+                    [...Array(8)].map((_, i) => (
+                      <tr key={`skeleton-${i}`} className="border-b border-slate-100 dark:border-white/5">
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-4 w-4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-6 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="border-r border-slate-200 p-3 dark:border-white/10"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="p-3"><div className="h-6 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      </tr>
+                    ))
                   ) : filteredRows.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="p-10 text-center text-slate-500 dark:text-slate-400">

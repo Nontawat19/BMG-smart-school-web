@@ -55,6 +55,32 @@ export const getTeacherSubjectGroupOrder = (teacher: any) => {
 
 const ATTENDANCE_ONLY_ROLES = ['student_attendance', 'teacher_attendance', 'school_attendance'];
 
+// Device/kiosk accounts (CAM, RFID, ลงเวลา, etc.) are never real personnel — exclude everywhere.
+const isDeviceAccount = (teacher: any) => {
+  const name = String(teacher?.name || '').toLowerCase();
+  const firstName = String(teacher?.firstName || '').toLowerCase();
+  const lastName = String(teacher?.lastName || '').toLowerCase();
+  const id = String(teacher?.id || '').toLowerCase();
+  const teacherId = String(teacher?.teacherId || '').toLowerCase();
+  const email = String(teacher?.email || '').toLowerCase();
+
+  return (
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(name) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(firstName) ||
+    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(lastName) ||
+    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(id) ||
+    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(teacherId) ||
+    /attendance|atthendance|athemdance|athendance/.test(email)
+  );
+};
+
+const getNormalizedRoles = (teacher: any): string[] => {
+  const roleArray: string[] = Array.isArray(teacher?.role)
+    ? teacher.role
+    : teacher?.role ? [String(teacher.role)] : [];
+  return roleArray.map(role => String(role).toLowerCase());
+};
+
 export const isActiveTeacher = (teacher: any) => {
   const status = String(teacher?.status || 'อยู่').trim();
   if (status && status !== 'อยู่') return false;
@@ -64,33 +90,26 @@ export const isActiveTeacher = (teacher: any) => {
   if (teacher?.personnelType === 'user') return false;
 
   // Exclude if ALL roles are attendance-only (device/kiosk accounts, not real teachers)
-  const roleArray: string[] = Array.isArray(teacher?.role)
-    ? teacher.role
-    : teacher?.role ? [String(teacher.role)] : [];
-  const normalizedRoles = roleArray.map(role => String(role).toLowerCase());
+  const normalizedRoles = getNormalizedRoles(teacher);
 
   // Only users explicitly carrying the teacher role can be used as teaching staff
   // in academic workflows such as course assignment, schedules, and gradebook.
   if (normalizedRoles.length > 0 && !normalizedRoles.includes('teacher')) return false;
   if (normalizedRoles.length > 0 && normalizedRoles.every(r => ATTENDANCE_ONLY_ROLES.includes(r))) return false;
 
-  // Exclude device/kiosk accounts identified by name patterns (CAM, RFID, ลงเวลา, etc.)
-  const name = String(teacher?.name || '').toLowerCase();
-  const firstName = String(teacher?.firstName || '').toLowerCase();
-  const lastName = String(teacher?.lastName || '').toLowerCase();
-  const id = String(teacher?.id || '').toLowerCase();
-  const teacherId = String(teacher?.teacherId || '').toLowerCase();
-  const email = String(teacher?.email || '').toLowerCase();
+  return !isDeviceAccount(teacher);
+};
 
-  const isDeviceAccount =
-    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(name) ||
-    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(firstName) ||
-    /attendance|atthendance|athemdance|athendance|ลงเวลา|tendance/.test(lastName) ||
-    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(id) ||
-    /attendance|atthendance|athemdance|athendance|att_cam|att_rfid/.test(teacherId) ||
-    /attendance|atthendance|athemdance|athendance/.test(email);
+// Includes ALL active personnel regardless of role (teacher, director, deputy, admin staff, ...) —
+// for workflows like leave requests that apply to every employee, not just teaching staff.
+export const isActiveStaff = (teacher: any) => {
+  const status = String(teacher?.status || 'อยู่').trim();
+  if (status && status !== 'อยู่') return false;
 
-  return !isDeviceAccount;
+  const normalizedRoles = getNormalizedRoles(teacher);
+  if (normalizedRoles.length > 0 && normalizedRoles.every(r => ATTENDANCE_ONLY_ROLES.includes(r))) return false;
+
+  return !isDeviceAccount(teacher);
 };
 
 export const compareTeacherIds = (first: unknown, second: unknown) => {
@@ -122,3 +141,6 @@ export const compareTeachersByGroupAndId = (first: any, second: any) => {
 
 export const getActiveSortedTeachers = <T extends any>(teachers: T[]) =>
   [...teachers].filter(isActiveTeacher).sort(compareTeachersByGroupAndId);
+
+export const getActiveSortedStaff = <T extends any>(teachers: T[]) =>
+  [...teachers].filter(isActiveStaff).sort(compareTeachersByGroupAndId);

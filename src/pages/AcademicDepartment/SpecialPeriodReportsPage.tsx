@@ -1258,8 +1258,10 @@ const SpecialPeriodReportsPage: React.FC = () => {
 
               {/* Preview table */}
               {docsLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <div className="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-indigo-500" />
+                <div className="space-y-2 py-2">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={`skeleton-${i}`} className="h-6 w-full rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  ))}
                 </div>
               ) : !previewData || visiblePreviewRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-gray-400">

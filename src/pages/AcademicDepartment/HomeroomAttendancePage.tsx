@@ -554,7 +554,15 @@ const HomeroomAttendancePage: React.FC = () => {
                     {isHoliday ? (
                         <HolidayView holidayName={holidayName} />
                     ) : loading ? (
-                        <div className="text-center py-12 text-gray-500">กำลังโหลดข้อมูลโฮมรูม...</div>
+                        <div className="rounded-3xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] p-6 space-y-3">
+                            {[...Array(6)].map((_, i) => (
+                                <div key={`skeleton-${i}`} className="flex items-center gap-3">
+                                    <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                                    <div className="h-3.5 flex-1 max-w-xs rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                    <div className="h-6 w-24 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                                </div>
+                            ))}
+                        </div>
                     ) : !selectedClass ? (
                         <div className="rounded-3xl border border-dashed border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-8 text-center">
                             <Home className="mx-auto mb-4 text-amber-500" size={42} />

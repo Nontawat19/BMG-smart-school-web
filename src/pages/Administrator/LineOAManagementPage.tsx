@@ -410,7 +410,11 @@ const LineOAManagementPage: React.FC = () => {
 
           {/* Teachers Grouped by Grade */}
           {isLoading ? (
-            <div className="text-center py-10 text-gray-500">กำลังโหลดข้อมูล...</div>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={`skeleton-${i}`} className="h-12 w-full rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              ))}
+            </div>
           ) : filteredTeachers.length === 0 ? (
             <div className="text-center py-10 text-gray-500">ไม่พบข้อมูลครูประจำชั้น</div>
           ) : (

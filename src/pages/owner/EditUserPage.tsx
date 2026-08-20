@@ -571,7 +571,26 @@ const EditUserPage: React.FC = () => {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="p-8 text-center">กำลังโหลดข้อมูล...</div>
+        <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+            <div className="mb-8 space-y-2">
+              <div className="h-8 w-56 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              <div className="h-4 w-72 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+              <aside className="md:col-span-3 space-y-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={`skeleton-nav-${i}`} className="h-10 w-full rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                ))}
+              </aside>
+              <div className="md:col-span-9 space-y-4">
+                {[...Array(6)].map((_, i) => (
+                  <div key={`skeleton-field-${i}`} className="h-11 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </MainLayout>
     );
   }

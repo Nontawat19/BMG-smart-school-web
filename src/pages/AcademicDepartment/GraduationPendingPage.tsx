@@ -649,14 +649,17 @@ const GraduationPendingPage: React.FC = () => {
                                 </thead>
                                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
                                     {loading ? (
-                                        <tr>
-                                            <td colSpan={7} className="px-6 py-12 text-center">
-                                                <div className="flex flex-col items-center gap-3">
-                                                    <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                                                    <span className="text-sm text-gray-500">กำลังโหลดข้อมูล...</span>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                        [...Array(8)].map((_, i) => (
+                                            <tr key={`skeleton-${i}`}>
+                                                <td className="px-6 py-4 text-center"><div className="h-5 w-5 mx-auto rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4 text-center"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4"><div className="h-3.5 w-36 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4 text-center"><div className="h-3.5 w-16 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4 text-center"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-6 py-4 text-right"><div className="h-3.5 w-16 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            </tr>
+                                        ))
                                     ) : paginatedStudents.length === 0 ? (
                                         <tr>
                                             <td colSpan={7} className="px-6 py-12 text-center text-gray-400 italic">ไม่พบรายชื่อนักเรียน</td>

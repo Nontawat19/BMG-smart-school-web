@@ -155,6 +155,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   // ──────────────────────────────── วิชาการ - รายงาน ────────────────────────────────
   { key: 'classroom_att_summary',    path: '/academic/classroom-attendance-summary',     label: 'สรุปการมาเรียนรายวิชา',        category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_ATTENDANCE_REPORT_ACCESS },
   { key: 'ms_report',                path: '/academic/ms-report',                       label: 'รายงาน มส.',                    category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_ATTENDANCE_REPORT_ACCESS },
+  { key: 'zero_r_ms_report',         path: '/academic/zero-r-ms-report',                label: 'รายงานการติด 0 ร มส',           category: 'วิชาการ - รายงาน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'classroom_att_audit',      path: '/academic/classroom-attendance-audit',       label: 'ตรวจเช็คการเข้าสอนของครู',    category: 'วิชาการ - รายงาน', defaultRoles: ACADEMIC_MANAGEMENT },
   { key: 'escape_summary',           path: '/academic/escape-summary',                  label: 'สรุปยอดการหนีเรียน',           category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'time_range_attendance',    path: '/academic/time-range-attendance-summary',   label: 'สรุปมาเรียนตามช่วงเวลา',       category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },

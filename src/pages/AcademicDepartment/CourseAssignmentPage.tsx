@@ -1981,9 +1981,14 @@ const CourseAssignmentPage: React.FC = () => {
 
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center h-screen bg-slate-50 dark:bg-[#0b0e14]">
-                <RefreshCw className="text-indigo-500 animate-spin mb-4" size={40} />
-                <p className="text-slate-600 dark:text-slate-400 font-bold">กำลังเตรียมข้อมูลระบบ...</p>
+            <div className="h-screen bg-slate-50 dark:bg-[#0b0e14] p-4 sm:p-6">
+                <div className="max-w-7xl w-full mx-auto space-y-4">
+                    <div className="h-14 w-full rounded-2xl bg-slate-200 dark:bg-white/5 animate-pulse"></div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="h-[70vh] rounded-2xl bg-slate-200 dark:bg-white/5 animate-pulse"></div>
+                        <div className="h-[70vh] rounded-2xl bg-slate-200 dark:bg-white/5 animate-pulse lg:col-span-2"></div>
+                    </div>
+                </div>
             </div>
         );
     }

@@ -9,7 +9,7 @@ import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
-import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock } from 'react-icons/fa';
+import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
 import {
@@ -93,6 +93,9 @@ interface SchoolInfo {
   useEnrollmentSystem?: boolean;
   useFaceScanMode?: boolean;
   allowTeacherSelfCheckin?: boolean;
+  // tri-state: undefined (ยังไม่เคยตั้งค่า) = เปิดใช้งานตามปกติ (โรงเรียนเดิมไม่ถูกกระทบ)
+  // true = เปิดใช้งานชัดเจน, false = ปิดระบบลงเวลาทั้งหมด ให้ไปใช้ระบบเช็คแถวแทน
+  enableCheckinOutSystem?: boolean;
   faceScanConfig?: {
     endpoint?: string;
     confidenceThreshold?: number;
@@ -591,6 +594,7 @@ const SchoolInfoPage: React.FC = () => {
         // เก็บ tri-state ไว้: undefined (ยังไม่เคยตั้งค่า) ต้องไม่ถูกบังคับเป็น false
         // เพราะหน้าลงเวลาใช้ค่า false (ตั้งค่าแล้วปิดจริง) เพื่อบล็อกการลงเวลาทั้งหมด
         // ต่างจาก undefined (โรงเรียนยังไม่เคยใช้ฟีเจอร์นี้ ให้ลงเวลาแบบเดิมได้ปกติ)
+        enableCheckinOutSystem: info.enableCheckinOutSystem === false ? false : true,
       };
       const dataToSaveWithSync = { ...dataToSave, updatedAt: serverTimestamp() };
 
@@ -693,10 +697,14 @@ const SchoolInfoPage: React.FC = () => {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">กำลังโหลดข้อมูล...</p>
+        <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] p-4 sm:p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="h-12 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            <div className="space-y-4">
+              {[...Array(6)].map((_, i) => (
+                <div key={`skeleton-${i}`} className="h-14 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              ))}
+            </div>
           </div>
         </div>
       </MainLayout>
@@ -979,27 +987,6 @@ const SchoolInfoPage: React.FC = () => {
 
                     <div className="pt-4 border-t border-gray-100 dark:border-gray-700 md:col-span-2">
                       <div className="space-y-3">
-                      <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-500/10 rounded-2xl border border-orange-100 dark:border-orange-500/20">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-orange-600 shadow-sm">
-                            <FaGlobe size={20} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-gray-900 dark:text-white">ระบบการลงทะเบียนเรียนรายวิชา</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">เหมาะสำหรับโรงเรียนมัธยมศึกษาและขยายโอกาส (ใช้จัดการรายชื่อนักเรียนแยกตามวิชา)</p>
-                          </div>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="useEnrollmentSystem"
-                            checked={info.useEnrollmentSystem || false}
-                            onChange={handleInputChange}
-                            className="sr-only peer"
-                          />
-                          <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
-                        </label>
-                      </div>
                       <div className="flex items-center justify-between p-4 bg-teal-50 dark:bg-teal-500/10 rounded-2xl border border-teal-100 dark:border-teal-500/20">
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-teal-600 shadow-sm">
@@ -1019,6 +1006,27 @@ const SchoolInfoPage: React.FC = () => {
                             className="sr-only peer"
                           />
                           <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-teal-600"></div>
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between p-4 bg-rose-50 dark:bg-rose-500/10 rounded-2xl border border-rose-100 dark:border-rose-500/20">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-rose-600 shadow-sm">
+                            <FaUserCheck size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">เปิดใช้งานระบบลงเวลา (สแกน/บัตร/พิมพ์รหัส)</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">ปิดสวิตช์นี้สำหรับโรงเรียนที่ไม่ใช้ระบบสแกนหน้า/บัตร/พิมพ์รหัส — จะบล็อกหน้า "ลงเวลาเข้า-ออก" ทั้งหมด (รวมลงเวลาด้วยตนเอง) แล้วให้เช็คชื่อผ่านระบบ "เช็คแถว" (flag-ceremony) แทน</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="enableCheckinOutSystem"
+                            checked={info.enableCheckinOutSystem !== false}
+                            onChange={handleInputChange}
+                            className="sr-only peer"
+                          />
+                          <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-rose-600"></div>
                         </label>
                       </div>
                       {isSuperAdmin && (

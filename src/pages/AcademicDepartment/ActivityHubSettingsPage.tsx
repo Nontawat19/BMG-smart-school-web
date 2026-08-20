@@ -167,8 +167,15 @@ const ActivityHubSettingsPage: React.FC = () => {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="animate-spin text-violet-500" size={40} />
+        <div className="min-h-screen bg-gray-50 dark:bg-[#18191d] p-4 sm:p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="h-40 w-full rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={`skeleton-${i}`} className="h-28 w-full rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              ))}
+            </div>
+          </div>
         </div>
       </MainLayout>
     );

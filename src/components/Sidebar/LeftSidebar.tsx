@@ -98,6 +98,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   const [features, setFeatures] = useState<any>({});
   // ควบคุมโดย super admin ที่หน้า /owner/school-info/:schoolId ("อนุญาตให้ครูลงเวลาเอง")
   const [allowTeacherSelfCheckin, setAllowTeacherSelfCheckin] = useState(false);
+  // สวิตช์หลักเปิด/ปิดระบบลงเวลาทั้งระบบ — undefined/true = เปิดใช้งาน (ค่าเริ่มต้น), false = ปิด (ให้ใช้เช็คแถวแทน)
+  const [enableCheckinOutSystem, setEnableCheckinOutSystem] = useState(true);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -106,6 +108,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
       if (!schoolId || isOwnerRoute) {
         setFeatures({});
         setAllowTeacherSelfCheckin(false);
+        setEnableCheckinOutSystem(true);
         return;
       }
 
@@ -115,6 +118,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           if (!cancelled) {
             setFeatures({});
             setAllowTeacherSelfCheckin(false);
+            setEnableCheckinOutSystem(true);
           }
           return;
         }
@@ -127,11 +131,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
           ...(data?.academicSettings || {})
         });
         setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
+        setEnableCheckinOutSystem(data?.enableCheckinOutSystem !== false);
       } catch (error) {
         if (!cancelled) {
           console.error("Error loading sidebar features:", error);
           setFeatures({});
           setAllowTeacherSelfCheckin(false);
+          setEnableCheckinOutSystem(true);
         }
       }
     };
@@ -298,7 +304,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <FaChalkboardTeacher className="text-lg min-w-[18px]" />
                   <span>ตารางสอน</span>
                 </NavLink>
-                {allowTeacherSelfCheckin && (
+                {allowTeacherSelfCheckin && enableCheckinOutSystem && (
                   <CanAccess roles={STAFF_ACCESS}>
                     <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>
                       <FaUserClock className="text-lg min-w-[18px]" />
@@ -309,9 +315,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
-                <NavLink to="/attendance/checkin-out" className={navLinkClasses}>
+                <NavLink to={enableCheckinOutSystem ? "/attendance/checkin-out" : "/academic/flag-ceremony"} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
-                  <span>ลงเวลาเข้า-ออก</span>
+                  <span>{enableCheckinOutSystem ? "ลงเวลาเข้า-ออก" : "เช็คชื่อเข้าแถว"}</span>
                 </NavLink>
                 <CanAccess roles={STUDENT_SUPPORT_OPERATIONAL_ACCESS}>
                   <NavLink to="/student-support/hub" className={navLinkClasses}>
@@ -389,7 +395,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                 )}
 
                 {/* --- ลงเวลาของฉัน (บุคลากรทุกตำแหน่งลงเวลาเข้า-ออกด้วยตนเอง) — เปิด/ปิดได้ที่ /owner/school-info --- */}
-                {allowTeacherSelfCheckin && (
+                {allowTeacherSelfCheckin && enableCheckinOutSystem && (
                   <CanAccess roles={STAFF_ACCESS}>
                     <div className="flex flex-col gap-1">
                       <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>

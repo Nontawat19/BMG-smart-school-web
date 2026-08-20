@@ -388,9 +388,15 @@ const MapRfidPage: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
                     {isLoading ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-10 text-gray-500">กำลังโหลดข้อมูล{isStudent ? 'นักเรียน' : 'ครู'}...</td>
-                      </tr>
+                      [...Array(8)].map((_, i) => (
+                        <tr key={`skeleton-${i}`}>
+                          <td className="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                          <td className="whitespace-nowrap py-4 pr-3"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                          <td className="whitespace-nowrap px-3 py-4"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                          <td className="whitespace-nowrap px-3 py-4"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                          <td className="whitespace-nowrap px-3 py-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        </tr>
+                      ))
                     ) : filteredPeople.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="text-center py-10 text-gray-500">ไม่พบข้อมูล{isStudent ? 'นักเรียน' : 'ครู'}ที่ตรงกับคำค้นหา</td>

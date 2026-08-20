@@ -992,7 +992,17 @@ const ClubManagementPage: React.FC = () => {
             </h2>
 
             {loading ? (
-              <div className="text-center py-20 text-gray-500">กำลังโหลดข้อมูล...</div>
+              <div className="grid grid-cols-1 gap-2.5">
+                {[...Array(5)].map((_, i) => (
+                  <div key={`skeleton-${i}`} className="bg-white dark:bg-[#2a2b2f] rounded-xl p-2.5 shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-4">
+                    <div className="h-14 w-14 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                    <div className="flex flex-col gap-2 flex-1">
+                      <div className="h-4 w-1/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      <div className="h-3 w-1/2 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : clubs.length === 0 ? (
               <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-16 text-center border border-dashed border-gray-300 dark:border-gray-700">
                 <Users className="mx-auto text-gray-300 mb-4" size={48} />

@@ -1417,14 +1417,19 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {loading ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-20 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-10 h-10 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
-                        <p className="text-gray-500 dark:text-gray-400 font-medium tracking-wide">กำลังประมวลผลข้อมูล...</p>
-                      </div>
-                    </td>
-                  </tr>
+                  [...Array(8)].map((_, i) => (
+                    <tr key={`skeleton-${i}`}>
+                      <td className="px-6 py-4"><div className="h-3.5 w-36 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                    </tr>
+                  ))
                 ) : paginatedData.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-6 py-20 text-center text-gray-500 dark:text-gray-400">

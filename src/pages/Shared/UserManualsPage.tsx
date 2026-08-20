@@ -89,7 +89,17 @@ const UserManualsPage: React.FC = () => {
 
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm dark:shadow-none">
             {isLoading ? (
-              <div className="py-16 text-center text-gray-400 dark:text-gray-500">กำลังโหลดข้อมูล...</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[...Array(4)].map((_, i) => (
+                  <div key={`skeleton-${i}`} className="bg-gray-50 dark:bg-[#1e1f21] rounded-2xl p-4 border border-gray-200 dark:border-gray-700/50 flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      <div className="h-3 w-1/2 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : filteredManuals.length === 0 ? (
               <div className="py-16 text-center text-gray-500 dark:text-gray-400">
                 {manuals.length === 0 ? 'ยังไม่มีคู่มือในระบบ' : 'ไม่พบคู่มือที่ค้นหา'}

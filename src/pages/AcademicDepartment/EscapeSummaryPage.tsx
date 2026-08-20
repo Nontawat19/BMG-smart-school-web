@@ -742,10 +742,21 @@ const EscapeSummaryPage: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {reportGroups.length === 0 ? (
+                                    {loading ? (
+                                        [...Array(6)].map((_, i) => (
+                                            <tr key={`skeleton-${i}`}>
+                                                <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700"><div className="h-3.5 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="border-r border-[#d6dbe0] px-3 py-3 dark:border-slate-700"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="px-3 py-3"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            </tr>
+                                        ))
+                                    ) : reportGroups.length === 0 ? (
                                         <tr>
                                             <td colSpan={6} className="px-3 py-12 text-center text-[13px] text-slate-600 dark:text-slate-400">
-                                                {loading ? 'กำลังโหลดข้อมูล...' : 'ไม่พบข้อมูลการหนีเรียน'}
+                                                ไม่พบข้อมูลการหนีเรียน
                                             </td>
                                         </tr>
                                     ) : (

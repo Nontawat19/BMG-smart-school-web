@@ -542,9 +542,21 @@ const UserManagementPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {isLoading ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td>
-                    </tr>
+                    [...Array(8)].map((_, i) => (
+                      <tr key={`skeleton-${i}`}>
+                        <td className="px-6 py-4 text-center"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                            <div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4"><div className="h-5 w-16 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      </tr>
+                    ))
                   ) : filteredUsers.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-8 text-center text-gray-500">ไม่พบข้อมูล</td>

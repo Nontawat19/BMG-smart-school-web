@@ -21,7 +21,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { isNonOfficialHoliday } from "../../utils/calendarUtils";
 import { getThaiYear, getCurrentThaiYear } from "@/utils/dateUtils";
-import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
+import { getActiveSortedStaff } from "@/utils/teacherSortUtils";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import { CalendarDays, Sunrise, Sunset } from "lucide-react";
 
@@ -237,7 +237,7 @@ const TeacherLeaveRequestPage: React.FC = () => {
       setIsFetchingTeachers(true);
       try {
         const teachersSnapshot = await getDocs(collection(firestore, "school-settings", schoolId, "teachers"));
-        const teacherList: TeacherOption[] = getActiveSortedTeachers(teachersSnapshot.docs.map((doc) => ({
+        const teacherList: TeacherOption[] = getActiveSortedStaff(teachersSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data()
         }))).map((teacher: any) => {

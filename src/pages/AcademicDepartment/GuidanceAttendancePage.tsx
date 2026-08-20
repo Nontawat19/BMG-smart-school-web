@@ -544,9 +544,14 @@ const GuidanceAttendancePage: React.FC = () => {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-          <p className="text-gray-500 dark:text-gray-400 font-bold">กำลังโหลดข้อมูลระบบ...</p>
+        <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+          <div className="h-16 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          <div className="h-12 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          <div className="space-y-2">
+            {[...Array(6)].map((_, i) => (
+              <div key={`skeleton-${i}`} className="h-12 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            ))}
+          </div>
         </div>
       </MainLayout>
     );

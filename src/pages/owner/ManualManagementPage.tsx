@@ -253,7 +253,17 @@ const ManualManagementPage: React.FC = () => {
 
           <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 shadow-sm dark:shadow-none">
             {isLoading ? (
-              <div className="py-16 text-center text-gray-400 dark:text-gray-500">กำลังโหลดข้อมูล...</div>
+              <div className="flex flex-col gap-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={`skeleton-${i}`} className="flex items-center gap-3 bg-gray-50 dark:bg-[#1e1f21] rounded-xl px-4 py-3 border border-gray-200 dark:border-gray-700/50">
+                    <div className="w-11 h-11 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-1/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      <div className="h-3 w-1/4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : manuals.length === 0 ? (
               <div className="py-16 text-center text-gray-500 dark:text-gray-400">
                 ยังไม่มีคู่มือในระบบ กด "เพิ่มคู่มือใหม่" เพื่อเริ่มต้น

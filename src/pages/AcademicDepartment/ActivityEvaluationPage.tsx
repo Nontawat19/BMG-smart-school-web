@@ -643,9 +643,14 @@ const ActivityEvaluationPage: React.FC<ActivityEvaluationPageProps> = ({ mode })
 
             {/* Body */}
             {loading || studentsLoading ? (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                <RefreshCw size={32} className="animate-spin text-indigo-500 mb-3" />
-                <p className="text-sm font-bold">กำลังโหลดรายชื่อนักเรียน...</p>
+              <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[...Array(6)].map((_, i) => (
+                  <div key={`skeleton-${i}`} className="flex items-center gap-4 px-5 py-3">
+                    <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-white/10 animate-pulse shrink-0"></div>
+                    <div className="h-3.5 flex-1 max-w-xs rounded bg-slate-200 dark:bg-white/10 animate-pulse"></div>
+                    <div className="h-7 w-24 rounded-lg bg-slate-200 dark:bg-white/10 animate-pulse shrink-0"></div>
+                  </div>
+                ))}
               </div>
             ) : filteredStudents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-400">

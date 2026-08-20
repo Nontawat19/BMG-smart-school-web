@@ -375,8 +375,16 @@ const StudentPhotoDownloadPage: React.FC = () => {
           )}
 
           {loading ? (
-            <div className="flex justify-center items-center py-20">
-              <Loader2 size={36} className="animate-spin text-indigo-500" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {[...Array(12)].map((_, i) => (
+                <div key={`skeleton-${i}`} className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10">
+                  <div className="aspect-square w-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="p-2 space-y-1.5">
+                    <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    <div className="h-2.5 w-1/2 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (isAdmin || isHomeroomTeacher) ? (
             <>

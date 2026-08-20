@@ -453,10 +453,15 @@ const LearnerActivityStudentManagementPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-slate-50 dark:bg-[#0b0e14]">
-        <RefreshCw className="mb-4 animate-spin text-emerald-500" size={36} />
-        <p className="font-bold text-slate-400">กำลังโหลดระบบ...</p>
-      </div>
+      <MainLayout>
+        <div className="p-4 sm:p-6 space-y-4 bg-slate-50 dark:bg-[#0b0e14] min-h-[calc(100vh-64px)]">
+          <div className="h-14 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="h-64 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            <div className="h-64 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse lg:col-span-2"></div>
+          </div>
+        </div>
+      </MainLayout>
     );
   }
 

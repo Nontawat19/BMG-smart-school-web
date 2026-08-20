@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSelector } from "react-redux";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { firestore, storage } from "../../../firebase";
 import { getTodayString } from "../../../utils/dateUtils";
 import { updatePeriodSummaries, getPeriodKeys } from "../../../utils/periodSummaryUtils";
@@ -237,6 +237,7 @@ const CheckinOutPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
   const schoolId = useEffectiveSchoolId();
   const location = useLocation();
+  const navigate = useNavigate();
   // โหมดลงเวลาด้วยตนเอง (เข้าจากเมนู "ลงเวลา" ของครู/แอดมิน): บังคับใช้รหัสเท่านั้น ไม่มีสแกนใบหน้า
   // และจำกัด 1 คนต่ออุปกรณ์ต่อวัน (คนเดิมยังเข้า-ออกได้ตามปกติ)
   const isSelfServiceMode = new URLSearchParams(location.search).get("mode") === "self";
@@ -525,6 +526,15 @@ const CheckinOutPage: React.FC = () => {
     return () => unsubscribe();
   }, [schoolId]);
 
+  // สวิตช์หลักปิดระบบลงเวลาทั้งหมด (ตั้งค่าที่ /owner/school-info) — ไม่ว่าโหมดไหน (คีออสก์/ลงเวลาด้วยตนเอง)
+  // หรือ role ใดก็ตาม ให้เด้งไปใช้ระบบเช็คแถวแทนทันที
+  useEffect(() => {
+    if (!schoolSettings) return;
+    if (schoolSettings.enableCheckinOutSystem === false) {
+      navigate("/academic/flag-ceremony", { replace: true });
+    }
+  }, [schoolSettings, navigate]);
+
   useEffect(() => {
     const checkUserRole = async () => {
       setCanScanStudents(false);
@@ -547,44 +557,53 @@ const CheckinOutPage: React.FC = () => {
           return;
         }
 
-        const isFullAdmin = roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SUPER_ADMIN);
+        // เจตนา: โหมดสแกน/คีออสก์เต็มรูปแบบ (ค้นหา/ลงเวลาแทนคนอื่นได้) จำกัดเฉพาะ role
+        // teacher_attendance, student_attendance, school_attendance เท่านั้น — role อื่นใดก็ตาม
+        // (รวม school_admin/super_admin) ที่เข้าหน้านี้ตรงๆ (ไม่ใช่ ?mode=self) จะถูกเด้งออกทันที
         const isStudentAdmin = roles.includes(ROLES.STUDENT_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE);
         const isTeacherAdmin = roles.includes(ROLES.TEACHER_ATTENDANCE) || roles.includes(ROLES.SCHOOL_ATTENDANCE) || roles.includes(ROLES.STUDENT_ATTENDANCE);
 
-        if (isFullAdmin || isStudentAdmin || isTeacherAdmin) {
-          setCanScanStudents(isFullAdmin || isStudentAdmin);
-          setCanScanTeachers(isFullAdmin || isTeacherAdmin);
+        if (isStudentAdmin || isTeacherAdmin) {
+          setCanScanStudents(isStudentAdmin);
+          setCanScanTeachers(isTeacherAdmin);
           return;
         }
 
         // 2. FALLBACK: Check from Firestore teachers collection (Role reference)
+        let grantedViaFallback = false;
         if (schoolId) {
           const uid = (currentUser as any).uid || (currentUser as any).id;
-          if (!uid) return;
-          try {
-            const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", uid);
-            const teacherSnap = await getDoc(teacherRef);
-            if (teacherSnap.exists()) {
-              const data = teacherSnap.data();
-              const teacherRoles = normalizeRoleList(data.role);
-              
-              const isFullAdminT = teacherRoles.includes(ROLES.SCHOOL_ADMIN) || teacherRoles.includes(ROLES.SUPER_ADMIN);
-              const isStudentAdminT = teacherRoles.includes(ROLES.STUDENT_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE);
-              const isTeacherAdminT = teacherRoles.includes(ROLES.TEACHER_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE) || teacherRoles.includes(ROLES.STUDENT_ATTENDANCE);
+          if (uid) {
+            try {
+              const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", uid);
+              const teacherSnap = await getDoc(teacherRef);
+              if (teacherSnap.exists()) {
+                const data = teacherSnap.data();
+                const teacherRoles = normalizeRoleList(data.role);
 
-              if (isFullAdminT || isStudentAdminT || isTeacherAdminT) {
-                setCanScanStudents(isFullAdminT || isStudentAdminT);
-                setCanScanTeachers(isFullAdminT || isTeacherAdminT);
+                const isStudentAdminT = teacherRoles.includes(ROLES.STUDENT_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE);
+                const isTeacherAdminT = teacherRoles.includes(ROLES.TEACHER_ATTENDANCE) || teacherRoles.includes(ROLES.SCHOOL_ATTENDANCE) || teacherRoles.includes(ROLES.STUDENT_ATTENDANCE);
+
+                if (isStudentAdminT || isTeacherAdminT) {
+                  setCanScanStudents(isStudentAdminT);
+                  setCanScanTeachers(isTeacherAdminT);
+                  grantedViaFallback = true;
+                }
               }
+            } catch (error) {
+              console.error("Error checking user role:", error);
             }
-          } catch (error) {
-            console.error("Error checking user role:", error);
           }
+        }
+
+        if (!grantedViaFallback) {
+          // ไม่มี role ที่ได้รับอนุญาตให้ใช้โหมดคีออสก์ — เด้งออกจากหน้านี้ (รวม school_admin/super_admin ด้วย)
+          navigate("/home", { replace: true });
         }
       }
     };
     checkUserRole();
-  }, [currentUser, schoolId, isSelfServiceMode, schoolSettings?.allowTeacherSelfCheckin]);
+  }, [currentUser, schoolId, isSelfServiceMode, schoolSettings?.allowTeacherSelfCheckin, navigate]);
 
   useEffect(() => {
     setSearchedUser(null);
@@ -1191,6 +1210,14 @@ const CheckinOutPage: React.FC = () => {
       advisorRole: d.advisorRole || "",
       isHomeroomTeacher: Boolean(d.isHomeroomTeacher || d.homeroomGrade),
       role: d.role,
+      attendanceStats: {
+        present: d.attendanceStats?.present || 0,
+        late: d.attendanceStats?.late || 0,
+        leave: d.attendanceStats?.leave || 0,
+        absent: d.attendanceStats?.absent || 0,
+        noCheckout: d.attendanceStats?.noCheckout || 0,
+        officialTravel: d.attendanceStats?.officialTravel || 0,
+      },
       rfid: d.rfid || "",
       scanMethod,
       faceConfidence,
@@ -1638,11 +1665,50 @@ const CheckinOutPage: React.FC = () => {
       if (!config?.lineChannelAccessToken || config?.enableNotification === false) return;
       const recipientUserIds = adminTeacherLineIdsRef.current;
       if (recipientUserIds.length === 0) return;
-      await sendTeacherLineAttendanceNotification(user, status, time, config, recipientUserIds, actionType);
+
+      // ดึงสรุปสถิติการมาทำงานภาคเรียนปัจจุบัน เหมือนกับที่ทำให้นักเรียน
+      const { semesterKey } = getPeriodKeys(getTodayString(), currentAcademicYear);
+      const semesterRef = doc(
+        firestore,
+        "school-settings",
+        schoolId!,
+        "teachers",
+        user.id,
+        "Semestersummary",
+        semesterKey
+      );
+      let semesterStats = { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
+      try {
+        const semesterSnap = await getDoc(semesterRef);
+        if (semesterSnap.exists()) {
+          const data = semesterSnap.data();
+          semesterStats = {
+            present: data.present || 0,
+            late: data.late || 0,
+            leave: data.leave || 0,
+            absent: data.absent || 0,
+            noCheckout: data.noCheckout || 0,
+            officialTravel: data.officialTravel || 0,
+          };
+        } else {
+          semesterStats = user.attendanceStats || semesterStats;
+        }
+      } catch (err) {
+        console.error("[LINE] Error fetching teacher semester stats:", err);
+      }
+
+      await sendTeacherLineAttendanceNotification(
+        { ...user, attendanceStats: semesterStats },
+        status,
+        time,
+        config,
+        recipientUserIds,
+        actionType
+      );
     } catch (error) {
       console.error("[LINE] Teacher notification error:", error);
     }
-  }, [schoolSettings]);
+  }, [schoolId, currentAcademicYear, schoolSettings]);
 
   const updateAttendance = useCallback(async (
     type: "checkin" | "checkout" | "checkin_and_checkout",

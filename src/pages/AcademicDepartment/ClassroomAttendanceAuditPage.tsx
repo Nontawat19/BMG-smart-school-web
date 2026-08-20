@@ -1530,9 +1530,33 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                     <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
                         
                         {loading ? (
-                            <div className="flex flex-col justify-center items-center py-20 text-gray-400">
-                                <RefreshCw className="animate-spin text-indigo-500 mb-3" size={32} />
-                                <span className="text-sm font-semibold">กำลังดึงข้อมูลการจัดตารางและการเช็คเข้าสอน...</span>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50 dark:bg-[#1e1f22] border-b border-gray-100 dark:border-gray-800 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                            <th className="py-4 px-4 sm:px-6">คาบที่ / เวลา</th>
+                                            <th className="py-4 px-4">ระดับชั้น/ห้อง</th>
+                                            <th className="py-4 px-4">รหัส / รายวิชา</th>
+                                            <th className="py-4 px-4">ครูผู้สอน</th>
+                                            <th className="py-4 px-4">สถานะเข้าสอน</th>
+                                            <th className="py-4 px-4 text-center">สถิติมาเรียน</th>
+                                            <th className="py-4 px-4 sm:px-6 text-right">ดำเนินการ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                        {[...Array(8)].map((_, i) => (
+                                            <tr key={`skeleton-${i}`}>
+                                                <td className="py-4 px-4 sm:px-6"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4"><div className="h-5 w-20 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4 text-center"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                <td className="py-4 px-4 sm:px-6 text-right"><div className="h-4 w-16 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         ) : filteredResults.length === 0 ? (
                             <div className="flex flex-col justify-center items-center py-20 text-center">

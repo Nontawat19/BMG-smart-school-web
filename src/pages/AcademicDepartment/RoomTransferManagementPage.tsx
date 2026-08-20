@@ -569,10 +569,28 @@ const RoomTransferManagementPage: React.FC = () => {
 
                             <div className="">
                                 {loading ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-                                        <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                                        <p className="font-medium animate-pulse">กำลังโหลดข้อมูลนักเรียน...</p>
-                                    </div>
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-50 dark:bg-[#2a2b2f] sticky top-0 shadow-sm z-10">
+                                            <tr>
+                                                <th className="px-4 py-3 w-16 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></th>
+                                                <th className="px-4 py-3"><div className="h-3.5 w-10 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></th>
+                                                <th className="px-4 py-3"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></th>
+                                                <th className="px-4 py-3"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></th>
+                                                <th className="px-4 py-3 text-right"><div className="h-3.5 w-14 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                            {[...Array(6)].map((_, i) => (
+                                                <tr key={`skeleton-${i}`}>
+                                                    <td className="px-4 py-3 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-4 py-3"><div className="h-3.5 w-8 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-4 py-3"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-4 py-3"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-4 py-3 text-right"><div className="h-3.5 w-10 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 ) : filteredStudents.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 animate-in fade-in duration-300">
                                         <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">

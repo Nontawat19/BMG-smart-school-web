@@ -510,9 +510,35 @@ export default function AdvisorManagementPage() {
 
           {/* Main Content Area */}
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-200 dark:border-gray-800">
-              <Loader2 className="animate-spin text-indigo-500 mb-4" size={40} />
-              <p className="text-gray-500 dark:text-gray-400 text-sm">กำลังโหลดข้อมูลและโครงสร้างระดับชั้น...</p>
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      <th className="py-4 px-6 text-center w-16">ลำดับ</th>
+                      <th className="py-4 px-4 min-w-[250px]">ครู / บุคลากร</th>
+                      <th className="py-4 px-4 min-w-[180px]">ประเภทหน้าที่</th>
+                      <th className="py-4 px-4 min-w-[160px]">ระดับชั้นประจำชั้น</th>
+                      <th className="py-4 px-4 min-w-[120px]">ห้อง</th>
+                      <th className="py-4 px-4 min-w-[200px]">ข้อมูล/เพื่อนร่วมสอนประจำชั้น</th>
+                      <th className="py-4 px-6 text-center w-24">สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
+                    {[...Array(8)].map((_, i) => (
+                      <tr key={`skeleton-${i}`}>
+                        <td className="py-4 px-6 text-center"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-4"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-4"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-4"><div className="h-3.5 w-12 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-4"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="py-4 px-6 text-center"><div className="h-5 w-16 mx-auto rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : error ? (
             <div className="text-center py-12 bg-white dark:bg-[#2a2b2f] rounded-2xl border border-gray-200 dark:border-gray-800">

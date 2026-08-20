@@ -25,43 +25,96 @@ export const sendTeacherLineAttendanceNotification = async (
         const isLate = status === "สาย";
         const isLeave = status === "ลา" || (status || "").includes("ลา");
         const isAbsent = status === "ขาด";
-        const isEarlyReturn = status === "กลับก่อน";
-
-        const actionText = isCheckout ? "ลงเวลากลับ" : "ลงเวลาเข้า";
 
         let bubbleBg = "#f0fdf4", bubbleIconBg = "#1db446", bubbleIcon = "✓", bubbleTextColor = "#166534";
         if (isLate)        { bubbleBg = "#fffbeb"; bubbleIconBg = "#fbbf24"; bubbleIcon = "!"; bubbleTextColor = "#92400e"; }
         else if (isLeave)  { bubbleBg = "#eff6ff"; bubbleIconBg = "#3b82f6"; bubbleIcon = "i"; bubbleTextColor = "#1e40af"; }
         else if (isAbsent) { bubbleBg = "#fef2f2"; bubbleIconBg = "#ef4444"; bubbleIcon = "x"; bubbleTextColor = "#7f1d1d"; }
-        else if (isEarlyReturn) { bubbleBg = "#fff7ed"; bubbleIconBg = "#f97316"; bubbleIcon = "<"; bubbleTextColor = "#7c2d12"; }
+
+        const displayStatusText = isCheckout && status !== "กลับก่อน" ? "ลงเวลากลับ" : status;
+        const reportTitle = (isCheckout || status === "กลับก่อน") ? "รายงานการกลับบ้าน (ครู)" : "รายงานการมาทำงาน (ครู)";
+        const bubbleMessage = isCheckout ? "คุณครูลงเวลากลับแล้ว" : (isLate ? "กรุณามาให้ทันเวลาในครั้งถัดไป" : "ทำรายการสำเร็จ");
 
         const profileUrl = (user.profileImageUrl && user.profileImageUrl.startsWith("https://"))
             ? user.profileImageUrl
             : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=4F46E5&color=fff&size=200`;
 
-        const makeStatusBox = (emoji: string, label: string, isActive: boolean, activeBg: string) => ({
+        // สรุปสถิติการมาทำงานภาคเรียนนี้ + กราฟวงกลม (เหมือนของนักเรียน)
+        const rawStats = user.attendanceStats || { present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 };
+        const stats = {
+            present: Math.max(0, rawStats.present || 0),
+            late: Math.max(0, rawStats.late || 0),
+            leave: Math.max(0, rawStats.leave || 0),
+            absent: Math.max(0, rawStats.absent || 0),
+            noCheckout: Math.max(0, rawStats.noCheckout || 0),
+            officialTravel: Math.max(0, rawStats.officialTravel || 0),
+        };
+        const totalDays = stats.present + stats.late + stats.absent + stats.leave + stats.noCheckout + stats.officialTravel;
+
+        const chartConfig = {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [
+                        totalDays === 0 ? 1 : stats.present,
+                        stats.late,
+                        stats.absent,
+                        stats.leave
+                    ],
+                    backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                plugins: {
+                    datalabels: { display: false },
+                    doughnutlabel: {
+                        labels: [
+                            { text: String(totalDays), font: { size: 26, weight: 'bold', family: 'sans-serif' }, color: '#333333' },
+                            { text: 'วัน', font: { size: 14, family: 'sans-serif' }, color: '#666666' }
+                        ]
+                    }
+                }
+            }
+        };
+        const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=200&h=200`;
+
+        // ภาพยืนยันจากการสแกนใบหน้า (เหมือนของนักเรียน) — แนบเฉพาะตอนลงเวลาด้วยการสแกนใบหน้า
+        const faceScanImageUrl = user.scanMethod === "สแกนใบหน้า" &&
+            user.faceScanImageUrl &&
+            user.faceScanImageUrl.startsWith("https://")
+            ? user.faceScanImageUrl
+            : "";
+        const faceScanEvidenceSection = faceScanImageUrl ? {
             type: "box",
             layout: "vertical",
-            alignItems: "center",
-            paddingAll: "8px",
-            cornerRadius: "10px",
-            backgroundColor: isActive ? activeBg : "#f5f5f5",
-            flex: 1,
+            margin: "xl",
+            spacing: "sm",
             contents: [
-                { type: "text", text: emoji, size: "xl", align: "center" },
+                { type: "text", text: "ภาพยืนยันจากการสแกนใบหน้า", weight: "bold", size: "sm", color: "#333333" },
                 {
-                    type: "text", text: label, size: "xs", align: "center", margin: "sm",
-                    color: isActive ? "#333333" : "#999999",
-                    weight: isActive ? "bold" : "regular",
+                    type: "image",
+                    url: faceScanImageUrl,
+                    size: "full",
+                    aspectRatio: "16:9",
+                    aspectMode: "cover",
+                    backgroundColor: "#f3f4f6"
+                },
+                {
+                    type: "text",
+                    text: user.faceConfidence !== undefined
+                        ? `ความมั่นใจในการยืนยันตัวตน ${Math.round(user.faceConfidence * 100)}%`
+                        : "บันทึกจากระบบสแกนใบหน้า",
+                    size: "xs",
+                    color: "#777777"
                 }
             ]
-        });
-
-        const isNormal = !isLate && !isLeave && !isAbsent && !isEarlyReturn;
+        } : null;
 
         const flexMessage = {
             type: "flex",
-            altText: `แจ้งเตือนการลงเวลาครู: ${user.name}`,
+            altText: `${reportTitle}: ${user.name}`,
             contents: {
                 type: "bubble",
                 size: "giga",
@@ -71,6 +124,7 @@ export const sendTeacherLineAttendanceNotification = async (
                     paddingAll: "20px",
                     backgroundColor: "#ffffff",
                     contents: [
+                        // --- ส่วนหัว: ข้อมูลครู ---
                         {
                             type: "box", layout: "horizontal", alignItems: "center",
                             contents: [
@@ -88,23 +142,62 @@ export const sendTeacherLineAttendanceNotification = async (
                                 }
                             ]
                         },
+
+                        // --- สรุปสถิติการมาทำงานภาคเรียนนี้ (กราฟ + สถิติ 6 สถานะ) ---
                         {
-                            type: "box", layout: "vertical", margin: "xl", paddingAll: "15px",
+                            type: "box", layout: "vertical", paddingAll: "15px",
                             backgroundColor: "#fcfcfc", cornerRadius: "15px",
-                            borderWidth: "1px", borderColor: "#eeeeee",
+                            borderWidth: "1px", borderColor: "#eeeeee", margin: "xl",
                             contents: [
-                                { type: "text", text: "สถานะการมาโรงเรียน", weight: "bold", size: "sm", color: "#333333" },
+                                { type: "text", text: "สถานะการมาทำงาน ภาคเรียนนี้", weight: "bold", size: "md", color: "#333333" },
                                 {
-                                    type: "box", layout: "horizontal", margin: "md", spacing: "sm",
+                                    type: "box", layout: "horizontal", margin: "lg", alignItems: "center",
                                     contents: [
-                                        makeStatusBox("🟢", "ปกติ", isNormal || (!isCheckout && !isLate && !isLeave && !isAbsent), "#dcfce7"),
-                                        makeStatusBox("🟡", "สาย", isLate, "#fef3c7"),
-                                        makeStatusBox("🔵", "ลา", isLeave, "#dbeafe"),
-                                        makeStatusBox("🔴", "ขาด", isAbsent, "#fee2e2"),
+                                        {
+                                            type: "box", layout: "vertical", flex: 1, spacing: "sm",
+                                            contents: [
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🟢", size: "xs", flex: 0 },
+                                                    { type: "text", text: "มาทำงาน", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.present || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]},
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🟡", size: "xs", flex: 0 },
+                                                    { type: "text", text: "สาย", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.late || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]},
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🔴", size: "xs", flex: 0 },
+                                                    { type: "text", text: "ขาด", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.absent || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]},
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🔵", size: "xs", flex: 0 },
+                                                    { type: "text", text: "ลา", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.leave || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]},
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🟠", size: "xs", flex: 0 },
+                                                    { type: "text", text: "ไม่ลงเวลาออก", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.noCheckout || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]},
+                                                { type: "box", layout: "horizontal", contents: [
+                                                    { type: "text", text: "🟣", size: "xs", flex: 0 },
+                                                    { type: "text", text: "ไปราชการ", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                    { type: "text", text: String(stats.officialTravel || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
+                                                ]}
+                                            ]
+                                        },
+                                        {
+                                            type: "box", layout: "vertical", width: "110px", height: "110px",
+                                            contents: [{ type: "image", url: chartUrl, size: "full", aspectMode: "fit" }]
+                                        }
                                     ]
                                 }
                             ]
                         },
+
+                        // --- สถานะปัจจุบัน (Bubble) ---
                         {
                             type: "box", layout: "horizontal", margin: "xl",
                             backgroundColor: bubbleBg, cornerRadius: "12px",
@@ -120,12 +213,14 @@ export const sendTeacherLineAttendanceNotification = async (
                                 {
                                     type: "box", layout: "vertical", margin: "md",
                                     contents: [
-                                        { type: "text", text: `${user.name} ${actionText}แล้วเวลา ${time} น.`, size: "sm", color: bubbleTextColor, weight: "bold", wrap: true },
-                                        { type: "text", text: `สถานะ: ${status}`, size: "xs", color: bubbleTextColor, margin: "xs" }
+                                        { type: "text", text: `${user.name} ${displayStatusText}แล้วเวลา ${time} น.`, size: "sm", color: bubbleTextColor, weight: "bold", wrap: true },
+                                        { type: "text", text: bubbleMessage, size: "xs", color: bubbleTextColor, margin: "xs" }
                                     ]
                                 }
                             ]
-                        }
+                        },
+
+                        ...(faceScanEvidenceSection ? [faceScanEvidenceSection] : [])
                     ]
                 }
             }

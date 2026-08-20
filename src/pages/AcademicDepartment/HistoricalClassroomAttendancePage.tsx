@@ -2338,9 +2338,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                         <tr>
                                             <td colSpan={dates.length + 8} className="p-20 text-center text-gray-400">
                                                 {loading ? (
-                                                    <div className="flex flex-col items-center justify-center gap-3">
-                                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                                                        <span className="text-indigo-600 font-medium">กำลังโหลดข้อมูล...</span>
+                                                    <div className="flex flex-col items-center gap-2 w-full max-w-md mx-auto">
+                                                        {[...Array(6)].map((_, i) => (
+                                                            <div key={`skeleton-${i}`} className="h-4 w-full rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                                        ))}
                                                     </div>
                                                 ) : (
                                                     <div className="flex flex-col items-center justify-center gap-3 opacity-60">

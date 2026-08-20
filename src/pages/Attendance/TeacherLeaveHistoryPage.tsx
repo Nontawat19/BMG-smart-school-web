@@ -23,6 +23,7 @@ import BackButton from '@/components/Shared/BackButton';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import { getThaiYear } from '@/utils/dateUtils';
 import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
+import { getGroupPersonnel } from '@/utils/schoolUtils';
 
 interface TeacherLeaveRequest {
   id: string;
@@ -159,6 +160,8 @@ const TeacherLeaveHistoryPage: React.FC = () => {
 
     let schoolName = "........................................";
     let directorName = "........................................";
+    let supervisorName = "";
+    let supervisorLabel = "";
     let logoUrl = "/school-logo.png";
 
     if (schoolId) {
@@ -168,7 +171,11 @@ const TeacherLeaveHistoryPage: React.FC = () => {
           const data = schoolDoc.data();
           schoolName = data.schoolName || schoolName;
           logoUrl = data.logoUrl || logoUrl;
-          if (data.directorName) directorName = data.directorName;
+          const directorFullName = [data.directorPrefix, data.directorName].filter(Boolean).join(' ');
+          if (directorFullName) directorName = directorFullName;
+          const supervisorPersonnel = getGroupPersonnel(data, 'personnel');
+          supervisorName = supervisorPersonnel.name;
+          supervisorLabel = supervisorPersonnel.label;
         }
       } catch (err) {
         console.error("Error fetching school info:", err);
@@ -185,6 +192,8 @@ const TeacherLeaveHistoryPage: React.FC = () => {
         returnDate: thaiDate(r.returnDate),
         schoolName: schoolName,
         directorName: directorName,
+        supervisorName: supervisorName,
+        supervisorLabel: supervisorLabel,
         logoUrl: logoUrl,
       };
 

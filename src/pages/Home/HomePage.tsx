@@ -383,17 +383,28 @@ const HomePage = () => {
     const showSchoolDashboard = !isSuperAdmin || isImpersonatingSchool;
     const navigate = useNavigate();
     const [userProfile, setUserProfile] = useState<any>(null);
+    // สวิตช์หลักเปิด/ปิดระบบลงเวลา — ตั้งค่าที่ /owner/school-info (undefined/true = เปิดใช้งาน)
+    const [enableCheckinOutSystem, setEnableCheckinOutSystem] = useState(true);
+
+    useEffect(() => {
+        if (!effectiveSchoolId) return;
+        getDoc(doc(db, "school-settings", effectiveSchoolId))
+            .then((snap) => {
+                if (snap.exists()) setEnableCheckinOutSystem(snap.data()?.enableCheckinOutSystem !== false);
+            })
+            .catch((error) => console.error("Error loading school settings:", error));
+    }, [effectiveSchoolId]);
 
     useEffect(() => {
         if (isAttendanceEntryOnly(currentUser?.role)) {
-            navigate("/attendance/checkin-out", { replace: true });
+            navigate(enableCheckinOutSystem ? "/attendance/checkin-out" : "/academic/flag-ceremony", { replace: true });
             return;
         }
 
         if (isSuperAdmin && !isImpersonatingSchool) {
             navigate("/owner/hub", { replace: true });
         }
-    }, [currentUser?.role, isSuperAdmin, isImpersonatingSchool, navigate]);
+    }, [currentUser?.role, isSuperAdmin, isImpersonatingSchool, navigate, enableCheckinOutSystem]);
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -431,7 +442,7 @@ const HomePage = () => {
         { title: "บริหารบุคคล", desc: "ข้อมูลครู, การลา, มาสาย", path: "/human-resources", icon: "👥", color: "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400" },
         { title: "บริหารทั่วไป", desc: "อาคารสถานที่, งานสารบรรณ", path: "/general-affairs", icon: "🏢", color: "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400" },
         { title: "กิจการนักเรียน", desc: "ความประพฤติ, ทุนการศึกษา", path: "/student-support", icon: "🎓", color: "bg-pink-50 text-pink-600 dark:bg-pink-900/20 dark:text-pink-400" },
-        { title: "ลงเวลาทำงาน", desc: "เช็คชื่อเข้า-ออกงาน", path: "/attendance/checkin-out", icon: "⏰", color: "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400" },
+        ...(enableCheckinOutSystem ? [{ title: "ลงเวลาทำงาน", desc: "เช็คชื่อเข้า-ออกงาน", path: "/attendance/checkin-out", icon: "⏰", color: "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400" }] : []),
     ];
 
 

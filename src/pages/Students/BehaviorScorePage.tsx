@@ -1111,10 +1111,21 @@ export default function BehaviorScorePage() {
 
             {/* Table */}
             {isLoading ? (
-              <div className="py-20 flex flex-col items-center justify-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mb-2"></div>
-                <p className="text-gray-400 text-sm">กำลังโหลดข้อมูลนักเรียน...</p>
-              </div>
+              <table className="w-full text-left border-collapse">
+                <tbody className="divide-y divide-slate-100 dark:divide-gray-800 text-sm">
+                  {[...Array(8)].map((_, i) => (
+                    <tr key={`skeleton-${i}`}>
+                      <td className="py-3 px-4 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-3 text-center"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-4"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-4"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-4"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-4"><div className="h-3.5 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      <td className="py-3 px-4 text-right pr-6"><div className="h-6 w-16 ml-auto rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : currentStudents.length === 0 ? (
               <div className="py-20 flex flex-col items-center justify-center text-center">
                 <Search className="w-12 h-12 text-gray-300 dark:text-gray-700 mb-3" />

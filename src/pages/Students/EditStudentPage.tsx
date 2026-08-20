@@ -445,8 +445,31 @@ export default function EditStudentPage() {
   if (isFetching) {
     return (
       <MainLayout>
-        <div className="flex justify-center items-center min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
-          กำลังโหลดข้อมูลนักเรียน...
+        <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
+          <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-6">
+            <div className="flex items-center gap-4">
+              <div className="h-9 w-9 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+              <div className="space-y-2">
+                <div className="h-6 w-48 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="h-10 w-full max-w-md rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+            <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm p-6 space-y-5">
+              <div className="flex items-center gap-4">
+                <div className="h-24 w-24 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-1/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="h-3.5 w-1/4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[...Array(8)].map((_, i) => (
+                  <div key={`skeleton-${i}`} className="h-11 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </MainLayout>
     );

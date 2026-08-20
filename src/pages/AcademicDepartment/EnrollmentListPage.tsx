@@ -626,14 +626,23 @@ const EnrollmentListPage: React.FC = () => {
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
                                         <AnimatePresence>
                                             {loading ? (
-                                                <tr>
-                                                    <td colSpan={5} className="py-24 text-center">
-                                                        <div className="flex flex-col items-center gap-4">
-                                                            <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                                                            <p className="text-sm font-bold text-slate-500 animate-pulse uppercase tracking-widest">กำลังโหลดข้อมูล...</p>
-                                                        </div>
-                                                    </td>
-                                                </tr>
+                                                [...Array(8)].map((_, i) => (
+                                                    <tr key={`skeleton-${i}`}>
+                                                        <td className="whitespace-nowrap py-4 pl-6 pr-3"><div className="h-4 w-6 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                        <td className="whitespace-nowrap py-4 px-3">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                                                <div className="flex flex-col gap-1.5">
+                                                                    <div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                                                    <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="whitespace-nowrap py-4 px-3"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                        <td className="whitespace-nowrap py-4 px-3 text-center"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                        <td className="whitespace-nowrap py-4 px-3" style={{ paddingLeft: '10%' }}><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    </tr>
+                                                ))
                                             ) : filteredData.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={5} className="py-24 text-center">

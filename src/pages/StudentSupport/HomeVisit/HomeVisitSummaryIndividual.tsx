@@ -7,7 +7,6 @@ import { collection, getDocs, query, orderBy, doc, getDoc } from "firebase/fires
 import {
     Search,
     ChevronLeft,
-    Loader2,
     User,
     CheckCircle2,
     Clock,
@@ -126,12 +125,18 @@ const HomeVisitSummaryIndividual: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#1a1b1e]">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-sky-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                        <Loader2 className="w-7 h-7 text-white animate-spin" />
-                    </div>
-                    <p className="text-gray-500 dark:text-gray-400 font-semibold text-sm">กำลังโหลดรายชื่อนักเรียน...</p>
+            <div className="min-h-screen bg-gray-50 dark:bg-[#1a1b1e] p-4 sm:p-6">
+                <div className="max-w-5xl w-full mx-auto space-y-4">
+                    <div className="h-10 w-64 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    {[...Array(6)].map((_, i) => (
+                        <div key={`skeleton-${i}`} className="flex items-center gap-4 bg-white dark:bg-[#2a2b2f] rounded-2xl p-4 border border-gray-100 dark:border-gray-700">
+                            <div className="h-12 w-12 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                            <div className="flex-1 space-y-2">
+                                <div className="h-3.5 w-1/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                <div className="h-3 w-1/4 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         );

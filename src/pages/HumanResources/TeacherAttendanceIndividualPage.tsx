@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { firestore } from "@/firebase";
 import { collection, query, where, getDocs, doc, getDoc, documentId } from "firebase/firestore";
 import { RootState } from "../../store";
-import { FaUserCheck, FaSearch, FaCalendarAlt, FaFilePdf, FaAngleLeft, FaAngleRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaClock } from "react-icons/fa";
+import { FaUserCheck, FaSearch, FaCalendarAlt, FaFilePdf, FaAngleLeft, FaAngleRight, FaAngleDoubleLeft, FaAngleDoubleRight } from "react-icons/fa";
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
@@ -1297,14 +1297,16 @@ const TeacherAttendanceIndividualPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                   {loading ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 font-semibold">
-                        <div className="flex flex-col items-center gap-3">
-                          <FaClock className="animate-spin text-indigo-600 w-6 h-6" />
-                          กำลังรวบรวมและวิเคราะห์ข้อมูล...
-                        </div>
-                      </td>
-                    </tr>
+                    [...Array(8)].map((_, i) => (
+                      <tr key={`skeleton-${i}`}>
+                        <td className="px-6 py-4 text-center"><div className="h-3.5 w-6 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4 text-center"><div className="h-3.5 w-12 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4 text-center"><div className="h-3.5 w-12 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4 text-center"><div className="h-5 w-16 mx-auto rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                      </tr>
+                    ))
                   ) : ledgerData.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-gray-400 dark:text-gray-500 font-semibold">

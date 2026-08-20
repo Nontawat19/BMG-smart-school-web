@@ -766,9 +766,19 @@ const LeaveApprovalPage: React.FC = () => {
 
         {/* Content list */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">กำลังโหลดคำขอและประวัติรายการ...</p>
+          <div className="grid grid-cols-1 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={`skeleton-${i}`} className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="flex gap-4 items-start">
+                  <div className="w-14 h-14 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    <div className="h-3 w-56 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  </div>
+                </div>
+                <div className="h-9 w-28 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+              </div>
+            ))}
           </div>
         ) : (
           <div>

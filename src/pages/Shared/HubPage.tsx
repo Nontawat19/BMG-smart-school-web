@@ -310,6 +310,15 @@ const HubPage: React.FC = () => {
           path: "/academic/ms-report",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
           allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
+        },
+        {
+          title: "รายงานการติด 0 ร มส",
+          description: "รวมรายชื่อนักเรียนที่ติด 0 ร มส จากผลการเรียนทุกรายวิชา",
+          icon: <AlertTriangle size={24} />,
+          path: "/academic/zero-r-ms-report",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          featureKey: "showGradeBookMenu"
         }
       ]
     },

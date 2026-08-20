@@ -743,9 +743,16 @@ const GraduationManagementPage: React.FC = () => {
 };
 
 const LoadingState = () => (
-    <div className="h-80 flex flex-col items-center justify-center gap-4">
-        <div className="w-12 h-12 border-4 border-indigo-100 dark:border-indigo-900/30 border-t-indigo-500 rounded-full animate-spin"></div>
-        <p className="text-[12px] font-black text-gray-400 tracking-[0.2em] uppercase animate-pulse">กำลังประมวลผลข้อมูล...</p>
+    <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
+        {[...Array(6)].map((_, i) => (
+            <div key={`skeleton-${i}`} className="flex items-center gap-4 px-6 py-4">
+                <div className="h-5 w-5 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                <div className="h-3.5 w-8 rounded bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                <div className="h-3.5 flex-1 max-w-[220px] rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                <div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                <div className="h-3.5 w-10 rounded bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0 hidden sm:block"></div>
+            </div>
+        ))}
     </div>
 );
 

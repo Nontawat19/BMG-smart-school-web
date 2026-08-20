@@ -617,8 +617,10 @@ const SpecialPeriodAttendancePage: React.FC = () => {
           </div>
 
           {periodsLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500" />
+            <div className="space-y-2 py-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={`skeleton-${i}`} className="h-14 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+              ))}
             </div>
           ) : allPeriods.length === 0 ? (
             <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10 p-10 text-center">
@@ -808,8 +810,14 @@ const SpecialPeriodAttendancePage: React.FC = () => {
                     </div>
 
                     {studentsLoading ? (
-                      <div className="flex items-center justify-center py-16">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-violet-500" />
+                      <div className="grid grid-cols-1 gap-2">
+                        {[...Array(5)].map((_, i) => (
+                          <div key={`skeleton-${i}`} className="flex items-center gap-2 rounded-xl border-2 border-gray-100 dark:border-gray-800 p-2.5">
+                            <div className="h-7 w-7 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                            <div className="h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                            <div className="h-3.5 flex-1 max-w-[160px] rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                          </div>
+                        ))}
                       </div>
                     ) : filteredStudents.length === 0 ? (
                       <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1e1f23] text-center text-gray-400">

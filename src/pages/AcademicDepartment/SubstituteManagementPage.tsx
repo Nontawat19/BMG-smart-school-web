@@ -1823,7 +1823,31 @@ const SubstituteManagementPage: React.FC = () => {
   const handleRemoveManual = async (leaveId: string) => {
     if (schoolId) {
       try {
-        await deleteDoc(doc(firestore, 'school-settings', schoolId, 'manual_substitute_requests', leaveId));
+        const subsRef = collection(firestore, 'school-settings', schoolId, 'substitutions');
+        const relatedDocsMap = new Map<string, any>();
+
+        // Primary: record ใหม่ที่มี leaveRequestId ตรงกัน
+        const byLeaveSnap = await getDocs(query(subsRef, where('leaveRequestId', '==', leaveId)));
+        byLeaveSnap.forEach((subDoc) => relatedDocsMap.set(subDoc.id, subDoc.ref));
+
+        // Fallback: record เก่าที่ไม่มี leaveRequestId แต่ตรงกับครู+ช่วงวันที่ลา
+        const leave = leaveRequests.find(lr => lr.id === leaveId);
+        if (leave?.teacherDocId) {
+          const byTeacherSnap = await getDocs(query(subsRef, where('originalTeacherId', '==', leave.teacherDocId)));
+          const leaveStartKey = formatDateKey(leave.startDate.toDate());
+          const leaveEndKey = formatDateKey(leave.endDate.toDate());
+          byTeacherSnap.forEach((subDoc) => {
+            const subData = subDoc.data();
+            if (subData.leaveRequestId) return; // มี leaveRequestId ของตัวเอง ไม่ใช่ record กำพร้า
+            const dk = formatDateKey(toSafeDate(subData.date));
+            if (dk >= leaveStartKey && dk <= leaveEndKey) relatedDocsMap.set(subDoc.id, subDoc.ref);
+          });
+        }
+
+        const batch = writeBatch(firestore);
+        relatedDocsMap.forEach((ref) => batch.delete(ref));
+        batch.delete(doc(firestore, 'school-settings', schoolId, 'manual_substitute_requests', leaveId));
+        await batch.commit();
       } catch (e) {
         console.error('[ManualSubstitute] ลบรายการล้มเหลว:', e);
       }
@@ -1984,7 +2008,16 @@ const SubstituteManagementPage: React.FC = () => {
                 >ที่ผ่านมา</button>
               </div>
               <div className="space-y-3 max-h-[50vh] overflow-y-auto">
-                {isLoading && <p>กำลังโหลด...</p>}
+                {isLoading && (
+                  <div className="space-y-3">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={`skeleton-${i}`} className="p-3 rounded-lg bg-gray-50 dark:bg-[#1e1f21] space-y-2">
+                        <div className="h-4 w-2/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                        <div className="h-3 w-1/3 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {!isLoading && leaveRequests.length === 0 && <p className="text-gray-500 dark:text-gray-400">ไม่มีคำขอลาที่ต้องการสอนแทน</p>}
                 {leaveRequests.map((leave) => (
                   <div key={leave.id} onClick={() => handleSelectLeave(leave)}

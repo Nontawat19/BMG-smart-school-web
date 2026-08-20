@@ -98,11 +98,14 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 8,
     },
-    directorSignature: {
+    approvalSignatures: {
         marginTop: 56, // ขยับลงมาประมาณ 4 บรรทัดเพื่อให้มีพื้นที่เซ็นชื่อ
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    approvalSignatureBox: {
         alignItems: 'center',
-        alignSelf: 'flex-end',
-        width: '50%',
+        width: '48%',
     },
     bold: {
         fontWeight: 'bold',
@@ -119,6 +122,8 @@ interface TeacherLeaveRequestPdfProps {
         returnDate: string;
         schoolName: string;
         directorName: string;
+        supervisorName?: string;
+        supervisorLabel?: string;
         logoUrl?: string;
     };
     today: {
@@ -183,10 +188,17 @@ const TeacherLeaveRequestPdfDocument: React.FC<TeacherLeaveRequestPdfProps> = ({
                     <Text style={{ width: '100%', marginBottom: 4 }}>...................................................................................................................................................................</Text>
                     <Text style={{ width: '100%', marginBottom: 4 }}>...................................................................................................................................................................</Text>
                     <Text style={{ width: '100%' }}>...................................................................................................................................................................</Text>
-                    <View style={styles.directorSignature}>
-                        <Text>ลงชื่อ ........................................</Text>
-                        <Text style={{ marginTop: 8 }}>( {data.directorName} )</Text>
-                        <Text style={{ marginTop: 4 }}>ผู้อำนวยการ{data.schoolName}</Text>
+                    <View style={styles.approvalSignatures}>
+                        <View style={styles.approvalSignatureBox}>
+                            <Text>ลงชื่อ ........................................</Text>
+                            <Text style={{ marginTop: 8 }}>( {data.supervisorName || "........................................"} )</Text>
+                            <Text style={{ marginTop: 4 }}>{data.supervisorLabel || "ผู้บังคับบัญชา"}</Text>
+                        </View>
+                        <View style={styles.approvalSignatureBox}>
+                            <Text>ลงชื่อ ........................................</Text>
+                            <Text style={{ marginTop: 8 }}>( {data.directorName} )</Text>
+                            <Text style={{ marginTop: 4 }}>ผู้อำนวยการ{data.schoolName}</Text>
+                        </View>
                     </View>
                 </View>
             </Page>

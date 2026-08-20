@@ -1298,8 +1298,10 @@ const SgsExportPage: React.FC = () => {
                                     </div>
                                 </div>
                             ) : isMisLoading ? (
-                                <div className="h-full flex items-center justify-center p-12">
-                                    <Loader2 size={28} className="animate-spin text-sky-500" />
+                                <div className="p-6 space-y-2">
+                                    {[...Array(8)].map((_, i) => (
+                                        <div key={`skeleton-${i}`} className="h-8 w-full rounded bg-slate-200 dark:bg-white/10 animate-pulse"></div>
+                                    ))}
                                 </div>
                             ) : misCourses.length === 0 ? (
                                 <div className="h-full flex items-center justify-center p-12">
@@ -1398,8 +1400,10 @@ const SgsExportPage: React.FC = () => {
                                 </div>
                             </div>
                         ) : isLoading ? (
-                            <div className="h-full flex items-center justify-center p-12">
-                                <Loader2 size={28} className="animate-spin text-indigo-500" />
+                            <div className="p-6 space-y-2">
+                                {[...Array(8)].map((_, i) => (
+                                    <div key={`skeleton-${i}`} className="h-8 w-full rounded bg-slate-200 dark:bg-white/10 animate-pulse"></div>
+                                ))}
                             </div>
                         ) : rows.length === 0 ? (
                             <div className="h-full flex items-center justify-center p-12">

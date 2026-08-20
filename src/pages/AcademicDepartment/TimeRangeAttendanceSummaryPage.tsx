@@ -803,10 +803,20 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {students.length === 0 ? (
+                                        {loading ? (
+                                            <tr>
+                                                <td colSpan={9 + dates.length} className="px-3 py-8">
+                                                    <div className="flex flex-col items-center gap-2 w-full max-w-md mx-auto">
+                                                        {[...Array(5)].map((_, i) => (
+                                                            <div key={`skeleton-${i}`} className="h-4 w-full rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : students.length === 0 ? (
                                             <tr>
                                                 <td colSpan={9 + dates.length} className="px-3 py-12 text-center text-[13px] text-slate-600 dark:text-slate-400">
-                                                    {loading ? 'กำลังโหลดข้อมูล...' : 'ไม่พบข้อมูลการมาเรียน'}
+                                                    ไม่พบข้อมูลการมาเรียน
                                                 </td>
                                             </tr>
                                         ) : (

@@ -7,7 +7,6 @@ import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
 import {
     FileText,
     ChevronLeft,
-    Loader2,
     Users,
     CheckCircle2,
     XCircle,
@@ -231,12 +230,15 @@ const HomeVisitSummaryOBEC: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-[#1a1b1e]">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                        <Loader2 className="w-7 h-7 text-white animate-spin" />
+            <div className="min-h-screen bg-gray-50 dark:bg-[#1a1b1e] p-4 sm:p-6">
+                <div className="max-w-6xl w-full mx-auto space-y-6">
+                    <div className="h-10 w-64 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[...Array(4)].map((_, i) => (
+                            <div key={`skeleton-stat-${i}`} className="h-24 rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                        ))}
                     </div>
-                    <p className="text-gray-500 dark:text-gray-400 font-semibold text-sm">กำลังโหลดข้อมูล สพฐ...</p>
+                    <div className="h-72 w-full rounded-2xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
                 </div>
             </div>
         );

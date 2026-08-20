@@ -1109,8 +1109,10 @@ const SchoolDataExplorerPage: React.FC = () => {
 
                 <div className="flex-1 overflow-y-auto">
                   {loading ? (
-                    <div className="flex items-center justify-center h-32">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500" />
+                    <div className="p-3 space-y-2">
+                      {[...Array(8)].map((_, i) => (
+                        <div key={`skeleton-${i}`} className="h-10 w-full rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                      ))}
                     </div>
                   ) : filteredDocs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-32 text-gray-400 dark:text-gray-500 gap-2">

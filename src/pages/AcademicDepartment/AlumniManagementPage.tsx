@@ -522,12 +522,18 @@ const AlumniManagementPage: React.FC = () => {
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-[#1e1f21]">
                                         {loading ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-20 text-center">
-                                                    <div className="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                                                    <p className="mt-4 text-sm font-bold text-gray-400 uppercase tracking-widest">กำลังโหลดข้อมูล...</p>
-                                                </td>
-                                            </tr>
+                                            [...Array(8)].map((_, i) => (
+                                                <tr key={`skeleton-${i}`}>
+                                                    <td className="py-3 px-2 text-center"><div className="h-4 w-4 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="py-3 px-2"><div className="h-3.5 w-6 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="py-3 px-2"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-2 py-3"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-2 py-3"><div className="h-3.5 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="px-2 py-3"><div className="h-5 w-16 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="hidden lg:table-cell px-2 py-3"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                    <td className="py-3 pl-3 pr-4 sm:pr-6 text-right"><div className="h-4 w-4 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                                </tr>
+                                            ))
                                         ) : currentItems.length === 0 ? (
                                             <tr>
                                                 <td colSpan={8} className="px-6 py-20 text-center">

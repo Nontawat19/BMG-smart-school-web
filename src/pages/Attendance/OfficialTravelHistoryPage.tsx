@@ -175,7 +175,30 @@ const OfficialTravelHistoryPage: React.FC = () => {
                 {/* List Content */}
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
                     {loading ? (
-                        <div className="p-8 text-center text-gray-500">กำลังโหลดข้อมูล...</div>
+                        <div className="table-responsive">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-300 text-sm border-b border-gray-200 dark:border-gray-700">
+                                        <th className="px-6 py-4 font-semibold">วันที่เดินทาง</th>
+                                        <th className="px-6 py-4 font-semibold">เรื่อง</th>
+                                        <th className="px-6 py-4 font-semibold">สถานที่</th>
+                                        <th className="px-6 py-4 font-semibold text-center">สถานะ</th>
+                                        <th className="px-6 py-4 font-semibold text-right">เอกสาร</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                    {[...Array(6)].map((_, i) => (
+                                        <tr key={`skeleton-${i}`}>
+                                            <td className="px-6 py-4"><div className="h-3.5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            <td className="px-6 py-4"><div className="h-3.5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            <td className="px-6 py-4"><div className="h-3.5 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            <td className="px-6 py-4 text-center"><div className="h-5 w-16 mx-auto rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                            <td className="px-6 py-4 text-right"><div className="h-4 w-10 ml-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     ) : filteredRequests.length === 0 ? (
                         <div className="p-12 text-center text-gray-500 dark:text-gray-400 flex flex-col items-center">
                             <FaPlane className="text-4xl mb-3 opacity-30" />

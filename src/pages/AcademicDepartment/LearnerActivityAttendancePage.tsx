@@ -549,7 +549,21 @@ const LearnerActivityAttendancePage: React.FC = () => {
           </div>
 
           {loading ? (
-            <div className="rounded-3xl border border-gray-100 bg-white p-10 text-center text-gray-500 dark:border-gray-700 dark:bg-[#2a2b2f]">กำลังโหลดกิจกรรม...</div>
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+              <div className="lg:col-span-4 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={`skeleton-side-${i}`} className="h-12 w-full rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                ))}
+              </div>
+              <div className="lg:col-span-8 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] space-y-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={`skeleton-main-${i}`} className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse shrink-0"></div>
+                    <div className="h-3.5 flex-1 max-w-xs rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : termActivities.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
               <AlertCircle className="mx-auto mb-4 text-amber-500" size={46} />
