@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, collectionGroup, onSnapshot, QuerySnapshot, DocumentData, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, collectionGroup, onSnapshot, QuerySnapshot, DocumentData, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { Student, Course, GradeRecord, ClassroomAttendanceRecord } from '../types';
 import { CLASSES } from "@/utils/schoolUtils";
@@ -37,7 +37,7 @@ export const useGradeBookData = (
     const [students, setStudents] = useState<Student[]>([]);
     const [grades, setGrades] = useState<Record<string, GradeRecord>>({});
     const [loading, setLoading] = useState(false);
-    const [studentCourseDailyStatus, setStudentCourseDailyStatus] = useState<Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave'>>>({});
+    const [studentCourseDailyStatus, setStudentCourseDailyStatus] = useState<Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>>({});
     const [sdqMap, setSdqMap] = useState<Record<string, SDQAssessment>>({});
 
     // 1. Fetch Students & Grades
@@ -85,10 +85,43 @@ export const useGradeBookData = (
                     }
 
                     const enrollSnap = await getDocs(query(enrollmentsRef, ...constraints));
-                    
+
                     if (!enrollSnap.empty) {
                         const enrolledStudentIds = enrollSnap.docs.map(d => d.data().studentId as string);
-                        
+
+                        // Track when each student joined this course (enrollment doc's own
+                        // createdAt) so attendance % can exclude days before they enrolled —
+                        // e.g. a student who transferred in mid-term. Legacy enrollments made
+                        // before this field existed simply have no enrolledAt (falls back to
+                        // counting the whole term, the previous behavior).
+                        //
+                        // createdAt isn't consistently written the same way across every
+                        // enrollment-creation flow in the app — CourseEnrollmentPage writes
+                        // `new Date().toISOString()` (a string) but SgsExportPage writes
+                        // `serverTimestamp()` (a Firestore Timestamp) — so normalize both shapes
+                        // to an ISO string here rather than assuming the field is always a string.
+                        const toISODateString = (value: unknown): string | undefined => {
+                            if (!value) return undefined;
+                            if (typeof value === 'string') return value;
+                            if (value instanceof Timestamp) return value.toDate().toISOString();
+                            if (value instanceof Date) return value.toISOString();
+                            return undefined;
+                        };
+                        const enrolledAtMap: Record<string, string | undefined> = {};
+                        enrollSnap.docs.forEach(d => {
+                            const data = d.data();
+                            const sid = data.studentId as string;
+                            const createdAt = toISODateString(data.createdAt);
+                            if (!sid || !createdAt) return;
+                            // A student can have more than one enrollment doc for the same
+                            // course/year (re-enrolled after being dropped, or a duplicate from a
+                            // data-entry mistake) — always keep the EARLIEST createdAt, not just
+                            // whichever doc Firestore's snapshot order happens to return first.
+                            if (!enrolledAtMap[sid] || createdAt < enrolledAtMap[sid]!) {
+                                enrolledAtMap[sid] = createdAt;
+                            }
+                        });
+
                         const studentsRef = collection(db, 'school-settings', schoolId, 'students');
                         const batchSize = 30;
                         const studentDetails: Student[] = [];
@@ -96,7 +129,7 @@ export const useGradeBookData = (
                         for (let i = 0; i < enrolledStudentIds.length; i += batchSize) {
                             const batchIds = enrolledStudentIds.slice(i, i + batchSize);
                             if (batchIds.length === 0) continue;
-                            
+
                             // Use documentId() 'in' query to fetch up to 30 students at once
                             const qBatch = query(studentsRef, where('__name__', 'in', batchIds));
                             const batchSnap = await getDocs(qBatch);
@@ -107,7 +140,8 @@ export const useGradeBookData = (
                                     ...data,
                                     studentNumber: String(data.number ?? data.classNumber ?? data.no ?? data.studentNumber ?? ""),
                                     studentId: String(data.studentCode ?? data.studentId ?? snap.id ?? ""),
-                                    room: data.room || ""
+                                    room: data.room || "",
+                                    enrolledAt: enrolledAtMap[snap.id]
                                 } as Student);
                             });
                         }
@@ -241,73 +275,77 @@ export const useGradeBookData = (
         return () => unsubscribe();
     }, [schoolId, selectedCourse, students, calculateGrade, currentCourse]);
 
-    // Fetch Detailed Attendance
+    // Detailed Attendance — real-time listener (not a one-time fetch) so edits made from
+    // the historical attendance editor (or another tab/teacher) while this page stays open
+    // are reflected immediately instead of requiring a remount to pick up.
     useEffect(() => {
-        const fetchDetailedAttendance = async () => {
-            if (!schoolId || !selectedCourse || students.length === 0) {
-                setStudentCourseDailyStatus({});
-                return;
-            }
+        if (!schoolId || !selectedCourse || students.length === 0) {
+            setStudentCourseDailyStatus({});
+            return;
+        }
 
-            const newDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave'>> = {};
-            const allAttendanceRecords: ClassroomAttendanceRecord[] = [];
+        const attendanceRef = collectionGroup(db, 'ClassroomAttendance');
+        const validSubjectCodes = Array.from(new Set([
+            selectedCourse,
+            (currentCourse?.code || "").trim(),
+            (currentCourse?.code || "").replace(/\s/g, ''),
+            currentCourse?.id
+        ])).filter(Boolean).slice(0, 10) as string[];
 
-            const attendanceRef = collectionGroup(db, 'ClassroomAttendance');
-            const validSubjectCodes = Array.from(new Set([
-                selectedCourse,
-                (currentCourse?.code || "").trim(),
-                (currentCourse?.code || "").replace(/\s/g, ''),
-                currentCourse?.id
-            ])).filter(Boolean).slice(0, 10) as string[];
+        const attendanceConstraints = [
+            where('schoolId', '==', schoolId),
+            where('subjectCode', 'in', validSubjectCodes),
+            where('academicYear', '==', academicYear),
+            ...(selectedSemester && selectedSemester !== 'annual' && selectedSemester !== '0'
+                ? [where('semester', '==', selectedSemester)]
+                : [])
+        ];
+        const qSubj = query(attendanceRef, ...attendanceConstraints);
 
-            try {
-                // If we have selectedGroup, we might want to filter attendance by group too if possible,
-                // but usually attendance is keyed by student and subject.
-                const attendanceConstraints = [
-                    where('schoolId', '==', schoolId),
-                    where('subjectCode', 'in', validSubjectCodes),
-                    where('academicYear', '==', academicYear),
-                    ...(selectedSemester && selectedSemester !== 'annual' && selectedSemester !== '0'
-                        ? [where('semester', '==', selectedSemester)]
-                        : [])
-                ];
-                const qSubj = query(attendanceRef, ...attendanceConstraints);
-                const snap = await getDocs(qSubj);
-                snap.forEach(doc => {
-                    const data = doc.data() as ClassroomAttendanceRecord;
-                    allAttendanceRecords.push(data);
-                });
-            } catch (err) { console.error("Attendance query error:", err); }
+        const idToStudentDocId: Record<string, string> = {};
+        students.forEach(s => {
+            idToStudentDocId[s.id] = s.id;
+            if (s.studentId) idToStudentDocId[s.studentId] = s.id;
+        });
 
-            const idToStudentDocId: Record<string, string> = {};
-            students.forEach(s => {
-                idToStudentDocId[s.id] = s.id;
-                if (s.studentId) idToStudentDocId[s.studentId] = s.id;
-            });
+        // Worst-status-wins when multiple periods on the same day disagree:
+        // absent/escape (truancy, treated as at least as severe as absent) > leave > late > present.
+        const STATUS_SEVERITY: Record<string, number> = { absent: 4, escape: 4, leave: 3, late: 2, present: 1 };
 
+        const unsubscribe = onSnapshot(qSubj, (snap: QuerySnapshot<DocumentData>) => {
+            const newDailyStatus: Record<string, Record<string, ClassroomAttendanceRecord['status']>> = {};
             students.forEach(student => {
                 newDailyStatus[student.id] = {};
             });
 
-            allAttendanceRecords.forEach(rec => {
+            snap.forEach(docSnap => {
+                const rec = docSnap.data() as ClassroomAttendanceRecord;
                 if (!rec.date) return;
                 const targetStudentId = idToStudentDocId[rec.studentId];
                 if (!targetStudentId) return;
 
                 const d = rec.date.toDate();
                 const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                const status = rec.status as any;
+                const status = rec.status;
 
                 const current = newDailyStatus[targetStudentId][dateStr];
-                if (!current || status === 'absent' || (status === 'leave' && current !== 'absent') || (status === 'late' && current !== 'absent' && current !== 'leave')) {
+                if (!current || (STATUS_SEVERITY[status] ?? 0) >= (STATUS_SEVERITY[current] ?? 0)) {
                     newDailyStatus[targetStudentId][dateStr] = status;
                 }
             });
 
             setStudentCourseDailyStatus(newDailyStatus);
-        };
+        }, (err) => {
+            console.error("Attendance listener error:", err);
+            // Firestore doesn't auto-resubscribe a listener after it errors (e.g. a
+            // transient permission/rule issue), so without resetting here the page would be
+            // stuck showing stale attendance indefinitely with no visible error. Reset to
+            // empty — the same effective result the old one-time getDocs() had on failure
+            // (its try/catch swallowed the error and fell through to an empty result set).
+            setStudentCourseDailyStatus({});
+        });
 
-        fetchDetailedAttendance();
+        return () => unsubscribe();
     }, [schoolId, students, selectedCourse, currentCourse, academicYear, selectedSemester]);
 
     // Fetch SDQ Map

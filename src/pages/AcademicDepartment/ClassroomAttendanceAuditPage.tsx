@@ -35,7 +35,9 @@ import {
     FileSpreadsheet,
     Printer,
     FileText,
-    ExternalLink
+    ExternalLink,
+    X,
+    FileDown
 } from 'lucide-react';
 import { usePermissions } from "@/hooks/usePermissions";
 import { fetchCalendar } from '@/store/slices/calendarSlice';
@@ -53,7 +55,8 @@ import {
     StyleSheet as PdfStyleSheet,
     Text as PdfText,
     View as PdfView,
-    pdf
+    pdf,
+    PDFViewer
 } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 
@@ -417,6 +420,7 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
     const [academicHeadName, setAcademicHeadName] = useState('');
     const [academicHeadRoleLabel, setAcademicHeadRoleLabel] = useState('หัวหน้ากลุ่มบริหารวิชาการ');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
 
     // Filters State
     const [selectedLevel, setSelectedLevel] = useState<string>('all');
@@ -1253,27 +1257,35 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
     };
 
     // Generate the official-format PDF report (ตามระเบียบงานราชการ)
-    const handleGeneratePdf = async () => {
+    const buildAuditPdfDocument = () => {
+        const holiday = checkIsHoliday(formatDateKey(selectedDate));
+        return (
+            <ClassroomAttendanceAuditPdf
+                schoolName={schoolName}
+                logoUrl={logoBase64}
+                dateLabel={formatDateThai(selectedDate)}
+                holidayNote={holiday.isHoliday ? holiday.description : undefined}
+                slots={filteredResults}
+                metrics={metrics}
+                signerName={String(currentUser?.fullName || '').trim()}
+                academicHeadName={academicHeadName}
+                academicHeadRoleLabel={academicHeadRoleLabel}
+            />
+        );
+    };
+
+    const openPdfPreview = () => {
         if (filteredResults.length === 0) {
             Swal.fire("ไม่พบข้อมูล", "ไม่มีข้อมูลสำหรับสร้างรายงานในหน้านี้", "info");
             return;
         }
+        setShowPdfPreview(true);
+    };
+
+    const handleGeneratePdf = async () => {
         setIsGeneratingPdf(true);
         try {
-            const holiday = checkIsHoliday(formatDateKey(selectedDate));
-            const blob = await pdf(
-                <ClassroomAttendanceAuditPdf
-                    schoolName={schoolName}
-                    logoUrl={logoBase64}
-                    dateLabel={formatDateThai(selectedDate)}
-                    holidayNote={holiday.isHoliday ? holiday.description : undefined}
-                    slots={filteredResults}
-                    metrics={metrics}
-                    signerName={String(currentUser?.fullName || '').trim()}
-                    academicHeadName={academicHeadName}
-                    academicHeadRoleLabel={academicHeadRoleLabel}
-                />
-            ).toBlob();
+            const blob = await pdf(buildAuditPdfDocument()).toBlob();
             saveAs(blob, `รายงานตรวจสอบการเข้าสอน_${formatDateKey(selectedDate)}.pdf`);
         } catch (e) {
             console.error("Error generating PDF:", e);
@@ -1311,11 +1323,10 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2 self-start md:self-center">
                             <button
-                                onClick={handleGeneratePdf}
-                                disabled={isGeneratingPdf}
+                                onClick={openPdfPreview}
                                 className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin text-gray-500 dark:text-gray-400" /> : <Printer size={16} className="text-gray-500 dark:text-gray-400" />}
+                                <Printer size={16} className="text-gray-500 dark:text-gray-400" />
                                 <span>พิมพ์รายงาน (PDF)</span>
                             </button>
                             <button
@@ -1860,6 +1871,48 @@ const ClassroomAttendanceAuditPage: React.FC = () => {
                                 >
                                     ปิดหน้าต่าง
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {showPdfPreview && (
+                    <div
+                        className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowPdfPreview(false)}
+                    >
+                        <div
+                            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                                <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                    ตัวอย่างเอกสาร — รายงานตรวจสอบการเข้าสอน
+                                </h2>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleGeneratePdf}
+                                        disabled={isGeneratingPdf}
+                                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                        {isGeneratingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPdfPreview(false)}
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                                        title="ปิด"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+                                <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                                    {buildAuditPdfDocument()}
+                                </PDFViewer>
                             </div>
                         </div>
                     </div>

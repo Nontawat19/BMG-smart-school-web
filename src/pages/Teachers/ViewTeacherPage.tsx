@@ -5,7 +5,7 @@ import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore } from "@/firebase";
-import { doc, getDoc, Timestamp, collection, query, where, getDocs, orderBy, documentId } from "firebase/firestore";
+import { doc, getDoc, Timestamp, collection, collectionGroup, query, where, getDocs, orderBy, documentId } from "firebase/firestore";
 import Swal from 'sweetalert2';
 import { FaPen, FaArrowLeft, FaBook, FaUser, FaBriefcase, FaInfoCircle, FaChevronRight, FaChevronLeft, FaClock, FaChalkboard, FaExchangeAlt, FaPlane } from "react-icons/fa";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
@@ -193,6 +193,9 @@ export default function ViewTeacherPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
+  // substitution doc id -> whether the substitute teacher actually checked attendance for it.
+  // See ProfilePage.tsx's identical logic for the full rationale.
+  const [substitutionCompletionMap, setSubstitutionCompletionMap] = useState<Record<string, boolean>>({});
   const [substitutionsCurrentPage, setSubstitutionsCurrentPage] = useState(1);
   const [substitutionsItemsPerPage, setSubstitutionsItemsPerPage] = useState(10);
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
@@ -340,6 +343,68 @@ export default function ViewTeacherPage() {
       fetchSubstitutions();
     }
   }, [activeTab, schoolId, teacherId]);
+
+  useEffect(() => {
+    if (activeTab !== 'substitution' || !schoolId || substitutions.length === 0) {
+      if (substitutions.length === 0) setSubstitutionCompletionMap({});
+      return;
+    }
+
+    const toDateObj = (value: Substitution['date']): Date | null => {
+      if (!value) return null;
+      if ((value as any).toDate) return (value as any).toDate();
+      if ((value as any).seconds) return new Date((value as any).seconds * 1000);
+      return new Date(value as any);
+    };
+
+    const fetchCompletionStatus = async () => {
+      try {
+        const now = new Date();
+        const pastSubIds = substitutions
+          .filter(s => {
+            const d = toDateObj(s.date);
+            return d ? d <= now : false;
+          })
+          .map(s => s.id);
+
+        if (pastSubIds.length === 0) {
+          setSubstitutionCompletionMap({});
+          return;
+        }
+
+        const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
+        const completedIds = new Set<string>();
+        const CHUNK_SIZE = 10;
+
+        for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
+          const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+          const q = query(
+            attendanceRef,
+            where('schoolId', '==', schoolId),
+            where('substitutionId', 'in', chunk)
+          );
+          const snap = await getDocs(q);
+          snap.forEach(docSnap => {
+            const subId = docSnap.data().substitutionId;
+            if (subId) completedIds.add(subId);
+          });
+        }
+
+        const map: Record<string, boolean> = {};
+        completedIds.forEach(id => { map[id] = true; });
+        setSubstitutionCompletionMap(map);
+      } catch (err) {
+        console.error("Error fetching substitution completion status:", err);
+      }
+    };
+    fetchCompletionStatus();
+  }, [activeTab, schoolId, substitutions]);
+
+  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' => {
+    const d = sub.date?.toDate ? sub.date.toDate() : ((sub.date as any)?.seconds ? new Date((sub.date as any).seconds * 1000) : (sub.date ? new Date(sub.date as any) : null));
+    if (!d || d > new Date()) return 'upcoming';
+    return substitutionCompletionMap[sub.id] ? 'completed' : 'missed';
+  };
 
   useEffect(() => {
     if (schoolId) {
@@ -917,13 +982,13 @@ export default function ViewTeacherPage() {
                       </div>
                       <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 text-center">
                         <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                          {/* Placeholder or new logic needed */}
+                          {substitutions.filter(s => getSubstitutionStatus(s) === 'completed').length}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">ปฏิบัติหน้าที่สำเร็จ</div>
                       </div>
                       <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 text-center">
                         <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                          {/* Placeholder or new logic needed */}
+                          {substitutions.filter(s => getSubstitutionStatus(s) === 'missed').length}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">ไม่ได้สอน (ลา/ขาด)</div>
                       </div>
@@ -947,13 +1012,15 @@ export default function ViewTeacherPage() {
                                 .map((sub) => {
                                   const date = sub.date.toDate();
                                   const dateStr = date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-                                  const isFuture = date > new Date();
+                                  const subStatus = getSubstitutionStatus(sub);
 
                                   let statusBadge;
-                                  if (isFuture) {
+                                  if (subStatus === 'upcoming') {
                                     statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">รอสอน</span>;
+                                  } else if (subStatus === 'completed') {
+                                    statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">ปฏิบัติหน้าที่สำเร็จ</span>;
                                   } else {
-                                    statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">ไม่ระบุ</span>;
+                                    statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">ไม่ได้สอน (ลา/ขาด)</span>;
                                   }
 
                                   return (

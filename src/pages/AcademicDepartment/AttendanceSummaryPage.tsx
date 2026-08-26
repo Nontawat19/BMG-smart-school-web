@@ -284,7 +284,20 @@ const AttendanceSummaryPage: React.FC = () => {
                 where('academicYear', '==', academicYear),
                 where('semester', '==', semester)
             );
-            const enrollSnap = await getDocs(enrollQ);
+
+            // Query attendance records concurrently with enrollments — it doesn't depend on
+            // enrollment/deep-sync results, only on schoolId/course/year/semester which are
+            // already known here, so there's no reason to wait for the steps below first.
+            const attRef = collectionGroup(db, 'ClassroomAttendance');
+            const attQ = query(
+                attRef,
+                where('schoolId', '==', schoolId),
+                where('subjectCode', '==', selectedCourse.value),
+                where('academicYear', '==', academicYear),
+                where('semester', '==', semester)
+            );
+
+            const [enrollSnap, attSnap] = await Promise.all([getDocs(enrollQ), getDocs(attQ)]);
             const courseData = courses.find(c => c.code === selectedCourse.value);
 
             const enrollmentStudents = enrollSnap.docs.map(doc => {
@@ -347,10 +360,15 @@ const AttendanceSummaryPage: React.FC = () => {
                     const batchSize = 30;
                     const studentsRef = collection(db, 'school-settings', schoolId, 'students');
 
-                    // Fetch by Document ID
+                    // Fetch by Document ID — ยิงทุก chunk พร้อมกันแทนที่จะรอทีละ chunk
+                    const idChunks: string[][] = [];
                     for (let i = 0; i < studentIds.length; i += batchSize) {
-                        const batch = studentIds.slice(i, i + batchSize);
-                        const sSnap = await getDocs(query(studentsRef, where('__name__', 'in', batch)));
+                        idChunks.push(studentIds.slice(i, i + batchSize));
+                    }
+                    const idSnaps = await Promise.all(
+                        idChunks.map(batch => getDocs(query(studentsRef, where('__name__', 'in', batch))))
+                    );
+                    idSnaps.forEach(sSnap => {
                         sSnap.forEach(sDoc => {
                             const sData = sDoc.data();
                             const student = enrollmentStudents.find(s => s.id === sDoc.id);
@@ -365,13 +383,18 @@ const AttendanceSummaryPage: React.FC = () => {
                                 }
                             }
                         });
-                    }
+                    });
 
                     // Fetch by Student Code (as a secondary fallback)
                     if (studentCodes.length > 0) {
+                        const codeChunks: string[][] = [];
                         for (let i = 0; i < studentCodes.length; i += batchSize) {
-                            const batch = studentCodes.slice(i, i + batchSize);
-                            const sSnap = await getDocs(query(studentsRef, where('studentId', 'in', batch)));
+                            codeChunks.push(studentCodes.slice(i, i + batchSize));
+                        }
+                        const codeSnaps = await Promise.all(
+                            codeChunks.map(batch => getDocs(query(studentsRef, where('studentId', 'in', batch))))
+                        );
+                        codeSnaps.forEach(sSnap => {
                             sSnap.forEach(sDoc => {
                                 const sData = sDoc.data();
                                 const student = enrollmentStudents.find(s => s.studentCode === sData.studentId);
@@ -382,7 +405,7 @@ const AttendanceSummaryPage: React.FC = () => {
                                     }
                                 }
                             });
-                        }
+                        });
                     }
                 } catch (err) {
                     console.error("Error deep syncing student data:", err);
@@ -391,17 +414,7 @@ const AttendanceSummaryPage: React.FC = () => {
 
             setStudentsInCourse(enrollmentStudents);
 
-            const attRef = collectionGroup(db, 'ClassroomAttendance');
-            const q = query(
-                attRef,
-                where('schoolId', '==', schoolId),
-                where('subjectCode', '==', selectedCourse.value),
-                where('academicYear', '==', academicYear),
-                where('semester', '==', semester)
-            );
-
-            const snap = await getDocs(q);
-            const records: AttendanceRecord[] = snap.docs.map(doc => doc.data() as AttendanceRecord);
+            const records: AttendanceRecord[] = attSnap.docs.map(doc => doc.data() as AttendanceRecord);
             setAttendanceRecords(records);
 
         } catch (err: any) {

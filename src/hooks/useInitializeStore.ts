@@ -60,6 +60,8 @@ export function useInitializeStore() {
     // Profile ต้องใช้ uid
     useEffect(() => {
         if (!uid) return;
+        const userType = localStorage.getItem('currentUserType');
+        if (userType === 'student' || userType === 'parent') return;
         if (profileStatus === "idle") {
             dispatch(fetchUserProfile(uid) as any);
         }

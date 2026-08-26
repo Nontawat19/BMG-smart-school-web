@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileDown, RefreshCw, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileDown, RefreshCw, Search, X, Loader2 } from "lucide-react";
 import { firestore } from "@/firebase";
 import { RootState, AppDispatch } from "@/store";
 import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
@@ -401,6 +401,7 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [selectedClassLevel, setSelectedClassLevel] = useState("");
@@ -628,28 +629,36 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
     });
   };
 
-  const exportPdf = async () => {
+  const buildAttendanceDatePdfDocument = () => {
+    const filterLabelParts = [
+      selectedClassLevel || "",
+      selectedClassLevel && selectedRoom ? `/${selectedRoom}` : selectedRoom ? `ห้อง ${selectedRoom}` : "",
+    ].filter(Boolean);
+    const filterLabel = filterLabelParts.join("");
+
+    return (
+      <StudentAttendanceDatePdfDocument
+        rows={filteredRows}
+        schoolName={schoolName !== "-" ? schoolName : schoolSettings?.schoolName || ""}
+        logoBase64={logoBase64}
+        dateStr={selectedDate}
+        filterLabel={filterLabel}
+      />
+    );
+  };
+
+  const openPdfPreview = () => {
     if (filteredRows.length === 0) {
       Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลการลงเวลาตามเงื่อนไขที่เลือก", "info");
       return;
     }
+    setShowPdfPreview(true);
+  };
+
+  const exportPdf = async () => {
     setExportingPdf(true);
     try {
-      const filterLabelParts = [
-        selectedClassLevel || "",
-        selectedClassLevel && selectedRoom ? `/${selectedRoom}` : selectedRoom ? `ห้อง ${selectedRoom}` : "",
-      ].filter(Boolean);
-      const filterLabel = filterLabelParts.join("");
-
-      const blob = await pdf(
-        <StudentAttendanceDatePdfDocument
-          rows={filteredRows}
-          schoolName={schoolName !== "-" ? schoolName : schoolSettings?.schoolName || ""}
-          logoBase64={logoBase64}
-          dateStr={selectedDate}
-          filterLabel={filterLabel}
-        />
-      ).toBlob();
+      const blob = await pdf(buildAttendanceDatePdfDocument()).toBlob();
       saveAs(blob, `รายงานการลงเวลานักเรียน_${selectedDate}.pdf`);
     } catch (error) {
       console.error("Error exporting PDF:", error);
@@ -682,12 +691,12 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={exportPdf}
-                disabled={loading || exportingPdf || filteredRows.length === 0}
+                onClick={openPdfPreview}
+                disabled={loading || filteredRows.length === 0}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <FileDown size={16} className={exportingPdf ? "animate-pulse" : ""} />
-                {exportingPdf ? "กำลังสร้างไฟล์..." : "ดาวน์โหลด PDF"}
+                <FileDown size={16} />
+                ดาวน์โหลด PDF
               </button>
             </div>
           </div>
@@ -901,6 +910,48 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                ตัวอย่างเอกสาร — รายงานการลงเวลานักเรียน
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={exportPdf}
+                  disabled={exportingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportingPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {exportingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildAttendanceDatePdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

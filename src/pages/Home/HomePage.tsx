@@ -12,7 +12,7 @@ import { firestore as db } from "../../firebase";
 
 const DonutChart = lazy(() => import('@/components/Shared/DonutChart'));
 
-import { X, ChevronLeft, ChevronRight, Award, CalendarX, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Award, CalendarX, CalendarOff, RefreshCw, CalendarCheck, Table as TableIcon, BarChart3, Users, GraduationCap, BookOpen, ClipboardList, FileText, Clock, TrendingUp, Activity, Check, CheckCircle, MapPin, Briefcase } from "lucide-react";
 
 const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 const DAY_MAP: Record<string, string> = { mon: 'จันทร์', tue: 'อังคาร', wed: 'พุธ', thu: 'พฤหัส', fri: 'ศุกร์', sat: 'เสาร์', sun: 'อาทิตย์' };
@@ -95,6 +95,46 @@ const checkIsWorkingDay = (dateStr: string, events: Record<string, CalendarEvent
     if (dayOfWeek === 0) return { isWorking: false, reason: 'วันอาทิตย์' };
     if (dayOfWeek === 6) return { isWorking: false, reason: 'วันเสาร์' };
     return { isWorking: true, reason: '' };
+};
+
+// Purely additive, display-only helper — does not feed into any attendance/data
+// calculation. Tells the "สรุปรายงานระบบ" cards WHY today (or the historical date being
+// viewed) shows 0 attendance: a real holiday, a make-up school day, or an ordinary weekend.
+// Returns null on an ordinary school day, so no badge renders.
+type DayStatusKind = 'holiday' | 'specialHoliday' | 'makeup' | 'weekend';
+const getDayStatusInfo = (dateStr: string, events: Record<string, CalendarEvent>): { label: string; kind: DayStatusKind } | null => {
+    const event = events[dateStr];
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dayOfWeek = new Date(y, (m || 1) - 1, d || 1).getDay();
+
+    if (event?.type === 'holiday') {
+        return { label: event.description ? `วันหยุดราชการ: ${event.description}` : 'วันหยุดราชการ', kind: 'holiday' };
+    }
+    if (event?.type === 'specialHoliday') {
+        return { label: event.description ? `วันหยุดกรณีพิเศษ: ${event.description}` : 'วันหยุดกรณีพิเศษ', kind: 'specialHoliday' };
+    }
+    if (event?.type === 'schoolDay' && event?.scheduleDay) {
+        const dayName = DAY_MAP[event.scheduleDay] || event.scheduleDay;
+        const base = `วันสอนชดเชย (ใช้ตารางเรียนวัน${dayName})`;
+        return { label: event.description ? `${base}: ${event.description}` : base, kind: 'makeup' };
+    }
+    if (dayOfWeek === 0) return { label: 'วันหยุดสุดสัปดาห์ — วันอาทิตย์', kind: 'weekend' };
+    if (dayOfWeek === 6) return { label: 'วันหยุดสุดสัปดาห์ — วันเสาร์', kind: 'weekend' };
+    return null;
+};
+
+const DAY_STATUS_BADGE_STYLE: Record<DayStatusKind, string> = {
+    holiday: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-500/50',
+    specialHoliday: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/50',
+    makeup: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/50',
+    weekend: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-500/50',
+};
+
+const DayStatusIcon: React.FC<{ kind: DayStatusKind; size?: number }> = ({ kind, size = 12 }) => {
+    if (kind === 'specialHoliday') return <Award size={size} />;
+    if (kind === 'makeup') return <RefreshCw size={size} />;
+    if (kind === 'weekend') return <CalendarOff size={size} />;
+    return <CalendarX size={size} />;
 };
 
 const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ events }) => {
@@ -385,6 +425,7 @@ const HomePage = () => {
     const [userProfile, setUserProfile] = useState<any>(null);
     // สวิตช์หลักเปิด/ปิดระบบลงเวลา — ตั้งค่าที่ /owner/school-info (undefined/true = เปิดใช้งาน)
     const [enableCheckinOutSystem, setEnableCheckinOutSystem] = useState(true);
+    const [remediationEnabled, setRemediationEnabled] = useState<boolean>(true);
 
     useEffect(() => {
         if (!effectiveSchoolId) return;
@@ -393,6 +434,19 @@ const HomePage = () => {
                 if (snap.exists()) setEnableCheckinOutSystem(snap.data()?.enableCheckinOutSystem !== false);
             })
             .catch((error) => console.error("Error loading school settings:", error));
+    }, [effectiveSchoolId]);
+
+    useEffect(() => {
+        if (!effectiveSchoolId) return;
+        const unsub = onSnapshot(doc(db, 'school-settings', effectiveSchoolId, 'configs', 'remediation_settings'), (snap) => {
+            if (snap.exists()) {
+                const data = snap.data();
+                setRemediationEnabled(data.enabled !== false);
+            } else {
+                setRemediationEnabled(true);
+            }
+        });
+        return () => unsub();
     }, [effectiveSchoolId]);
 
     useEffect(() => {
@@ -498,6 +552,10 @@ const HomePage = () => {
     const [historicalSummaryLoading, setHistoricalSummaryLoading] = useState(false);
     const selectedSummaryDateStr = toDateKey(selectedSummaryDate);
     const isViewingHistoricalSummary = selectedSummaryDateStr !== getTodayString();
+    // Display-only: why the summary cards below might show 0 attendance (real holiday,
+    // make-up school day, or weekend) — does not affect how any of the numbers are fetched
+    // or calculated, purely an explanatory badge next to the section header.
+    const summaryDayStatus = getDayStatusInfo(selectedSummaryDateStr, calendarEvents);
 
     // === EFFECT: Teacher Leaves Today ===
     useEffect(() => {
@@ -1700,6 +1758,15 @@ const HomePage = () => {
                                 ) : (
                                     <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full font-semibold">Real-time</span>
                                 )}
+                                {summaryDayStatus && (
+                                    <span
+                                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-semibold ${DAY_STATUS_BADGE_STYLE[summaryDayStatus.kind]}`}
+                                        title={summaryDayStatus.label}
+                                    >
+                                        <DayStatusIcon kind={summaryDayStatus.kind} />
+                                        {summaryDayStatus.label}
+                                    </span>
+                                )}
                             </div>
                             {
                                 summaryLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
@@ -2240,6 +2307,12 @@ const HomePage = () => {
                                 <div className="space-y-3">
                                     <button onClick={() => navigate('/profile')} className="w-full text-left px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center group"><span className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center mr-3 group-hover:bg-blue-200 dark:group-hover:bg-blue-900/50 transition-colors">⚙️</span><span className="font-medium text-sm">ตั้งค่าส่วนตัว</span></button>
                                     <button onClick={() => navigate('/attendance/leave-request')} className="w-full text-left px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center group"><span className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 text-purple-600 flex items-center justify-center mr-3 group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50 transition-colors">📝</span><span className="font-medium text-sm">ยื่นใบลา</span></button>
+                                    {(currentUser?.role?.includes('student')) && remediationEnabled && (
+                                        <button onClick={() => navigate('/my-grade-flags')} className="w-full text-left px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center group">
+                                            <span className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center mr-3 group-hover:bg-amber-200 dark:group-hover:bg-amber-900/50 transition-colors">⚠️</span>
+                                            <span className="font-medium text-sm">ยื่นแก้ตัว 0/ร/มส/มผ</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>

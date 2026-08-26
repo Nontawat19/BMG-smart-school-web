@@ -7,9 +7,9 @@ import { firestore as db } from '../../firebase';
 import MainLayout from "@/layouts/MainLayout";
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
-import { Loader2, FileDown, Calendar, User, Printer, Search } from 'lucide-react';
+import { Loader2, FileDown, Calendar, User, Printer, Search, X } from 'lucide-react';
 import BackButton from '@/components/Shared/BackButton';
-import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Font, Image, PDFViewer } from '@react-pdf/renderer';
 import { TeacherSchedulePDF, BulkTeacherSchedulePDF, Teacher, Course, Schedule, ScheduleEntry, SpecialPeriod, PeriodSetting, SchoolInfo, Club } from '@/components/Pdf/TeacherScheduleDocument';
 import { pdf } from '@react-pdf/renderer';
 import Select, { StylesConfig } from 'react-select';
@@ -122,6 +122,10 @@ const TeacherScheduleViewPage: React.FC = () => {
   const [learnerActivities, setLearnerActivities] = useState<any[]>([]);
   const [bulkData, setBulkData] = useState<any[] | null>(null);
   const [isPreparingBulk, setIsPreparingBulk] = useState(false);
+  const [showTeacherPdfPreview, setShowTeacherPdfPreview] = useState(false);
+  const [isDownloadingTeacherPdf, setIsDownloadingTeacherPdf] = useState(false);
+  const [showBulkPdfPreview, setShowBulkPdfPreview] = useState(false);
+  const [isDownloadingBulkPdf, setIsDownloadingBulkPdf] = useState(false);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
@@ -628,6 +632,52 @@ const TeacherScheduleViewPage: React.FC = () => {
     }
   };
 
+  const buildTeacherPdfDocument = () => (
+    <TeacherSchedulePDF
+      schedule={schedule}
+      periodSettings={periodSettings}
+      schoolInfo={schoolInfo}
+      teacher={selectedTeacherData}
+      academicYear={academicYear}
+      currentTerm={currentTerm}
+      specialPeriods={teacherSpecialPeriods}
+      totalPeriods={totalPeriods}
+      clubs={clubs}
+    />
+  );
+
+  const downloadTeacherPdf = async () => {
+    setIsDownloadingTeacherPdf(true);
+    try {
+      const blob = await pdf(buildTeacherPdfDocument()).toBlob();
+      saveAs(blob, `ตารางสอน_${selectedTeacherData?.name || 'teacher'}.pdf`);
+    } finally {
+      setIsDownloadingTeacherPdf(false);
+    }
+  };
+
+  const buildBulkPdfDocument = () => (
+    <BulkTeacherSchedulePDF
+      data={bulkData || []}
+      periodSettings={periodSettings}
+      schoolInfo={schoolInfo}
+      academicYear={academicYear}
+      currentTerm={currentTerm}
+      specialPeriods={specialPeriods}
+      clubs={clubs}
+    />
+  );
+
+  const downloadBulkPdf = async () => {
+    setIsDownloadingBulkPdf(true);
+    try {
+      const blob = await pdf(buildBulkPdfDocument()).toBlob();
+      saveAs(blob, "ตารางสอนครูทั้งหมด.pdf");
+    } finally {
+      setIsDownloadingBulkPdf(false);
+    }
+  };
+
   /* ===================== RENDER ===================== */
   return (
     <MainLayout>
@@ -707,26 +757,13 @@ const TeacherScheduleViewPage: React.FC = () => {
               {/* Actions */}
               <div className="flex flex-row gap-3 w-full lg:w-auto justify-end mt-4 lg:mt-0">
                 {selectedTeacher && (
-                  <PDFDownloadLink
-                    document={
-                      <TeacherSchedulePDF
-                        schedule={schedule}
-                        periodSettings={periodSettings}
-                        schoolInfo={schoolInfo}
-                        teacher={selectedTeacherData}
-                        academicYear={academicYear}
-                        currentTerm={currentTerm}
-                        specialPeriods={teacherSpecialPeriods}
-                        totalPeriods={totalPeriods}
-                        clubs={clubs}
-                      />
-                    }
-                    fileName={`ตารางสอน_${selectedTeacherData?.name || 'teacher'}.pdf`}
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherPdfPreview(true)}
                     className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 h-12 rounded-xl font-medium transition-all shadow-lg shadow-indigo-200 dark:shadow-none transform hover:-translate-y-0.5 whitespace-nowrap"
                   >
-                    {/* @ts-ignore */}
-                    {({ loading }) => loading ? <><Loader2 className="animate-spin" size={20} /> กำลังสร้าง PDF...</> : <><Printer size={20} /> พิมพ์ตารางสอน</>}
-                  </PDFDownloadLink>
+                    <Printer size={20} /> พิมพ์ตารางสอน
+                  </button>
                 )}
 
                 {!bulkData ? (
@@ -738,24 +775,13 @@ const TeacherScheduleViewPage: React.FC = () => {
                     {isPreparingBulk ? <><Loader2 className="animate-spin" size={20} /> กำลังเตรียมข้อมูล...</> : <><FileDown size={20} /> โหลดรวมทุกท่าน</>}
                   </button>
                 ) : (
-                  <PDFDownloadLink
-                    document={
-                      <BulkTeacherSchedulePDF
-                        data={bulkData}
-                        periodSettings={periodSettings}
-                        schoolInfo={schoolInfo}
-                        academicYear={academicYear}
-                        currentTerm={currentTerm}
-                        specialPeriods={specialPeriods}
-                        clubs={clubs}
-                      />
-                    }
-                    fileName="ตารางสอนครูทั้งหมด.pdf"
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkPdfPreview(true)}
                     className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 h-12 rounded-xl font-medium transition-all shadow-lg shadow-emerald-200 dark:shadow-none transform hover:-translate-y-0.5 whitespace-nowrap"
                   >
-                    {/* @ts-ignore */}
-                    {({ loading }) => loading ? <><Loader2 className="animate-spin" size={20} /> กำลังสร้าง PDF รวม...</> : <><FileDown size={20} /> ดาวน์โหลด PDF รวม</>}
-                  </PDFDownloadLink>
+                    <FileDown size={20} /> ดาวน์โหลด PDF รวม
+                  </button>
                 )}
               </div>
             </div>
@@ -799,6 +825,90 @@ const TeacherScheduleViewPage: React.FC = () => {
 
         </div>
       </div>
+
+      {showTeacherPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowTeacherPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — ตารางสอน {selectedTeacherData?.name || ''}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadTeacherPdf}
+                  disabled={isDownloadingTeacherPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingTeacherPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingTeacherPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTeacherPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildTeacherPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkPdfPreview && bulkData && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowBulkPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — ตารางสอนครูทั้งหมด
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadBulkPdf}
+                  disabled={isDownloadingBulkPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingBulkPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingBulkPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBulkPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildBulkPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

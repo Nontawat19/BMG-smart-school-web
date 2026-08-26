@@ -14,7 +14,7 @@ interface AttendanceRecordPageProps {
   totalCourseHours: number; // จำนวนชั่วโมงเต็ม (เช่น 60)
   studentAttendanceSummaries: Record<string, StudentAttendanceSummary>; // ข้อมูลสรุปเวลาเรียน
   attendancePages: any[]; // ข้อมูลการแบ่งหน้า
-  studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave'>>;
+  studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>;
   selectedRoom?: string;
   curriculumClassDisplay: string;
   curriculumRoomDisplay: string;
@@ -269,7 +269,7 @@ const SecondaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                     const studentSummary = studentAttendanceSummaries[s.id || s.studentId];
                     const termKey = page.term === '2' ? 'term2' : 'term1';
                     const termSummary = studentSummary[termKey as 'term1' | 'term2'];
-                    totalAttended = termSummary.present + termSummary.late;
+                    totalAttended = termSummary.present + termSummary.late + termSummary.leave;
                     percentage = termSummary.totalPossibleHours > 0 ? ((totalAttended / termSummary.totalPossibleHours) * 100).toFixed(0) : "0";
                   }
 
@@ -315,6 +315,13 @@ const SecondaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                                   break;
                                 case 'leave': attendanceMark = 'ล';
                                   textStyle = styles.leaveText;
+                                  break;
+                                case 'escape':
+                                  // Truancy (หนีเรียน) is counted as absent everywhere else in the
+                                  // gradebook (term summaries, attendance %) — mark it the same way
+                                  // here so the printed grid and the summary numbers agree.
+                                  attendanceMark = 'ข';
+                                  textStyle = styles.absentText;
                                   break;
                                 default: attendanceMark = '';
                                   break;

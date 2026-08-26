@@ -436,7 +436,7 @@ const LoginPage: React.FC = () => {
             {loginType === 'parent' ? (
               <form onSubmit={handleParentLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label htmlFor="parent-phone" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เบอร์โทรผู้ปกครอง</label>
+                  <label htmlFor="parent-phone" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">ชื่อผู้ใช้</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <FaPhone className="text-gray-400" aria-hidden="true" />
@@ -447,7 +447,7 @@ const LoginPage: React.FC = () => {
                       value={parentPhone}
                       onChange={(e) => setParentPhone(e.target.value.replace(/[^0-9]/g, ''))}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="เบอร์โทรที่ลงทะเบียนไว้กับโรงเรียน"
+                      placeholder="ชื่อผู้ใช้"
                       maxLength={10}
                       autoComplete="tel"
                       required
@@ -455,7 +455,7 @@ const LoginPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor="parent-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชนผู้ปกครอง (รหัสผ่าน)</label>
+                  <label htmlFor="parent-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสผ่าน</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <FaIdCard className="text-gray-400" aria-hidden="true" />
@@ -466,16 +466,13 @@ const LoginPage: React.FC = () => {
                       value={parentNationalId}
                       onChange={(e) => setParentNationalId(e.target.value.replace(/[^0-9]/g, ''))}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="เลขบัตรประชาชน 13 หลัก"
+                      placeholder="รหัสผ่าน"
                       maxLength={13}
                       autoComplete="current-password"
                       required
                     />
                   </div>
                 </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 ml-1">
-                  ใช้เบอร์โทรและเลขบัตรที่แจ้งไว้กับทางโรงเรียน
-                </p>
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -491,19 +488,19 @@ const LoginPage: React.FC = () => {
             ) : loginType === 'teacher' ? (
               <form onSubmit={handleLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label htmlFor="teacher-email" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">อีเมล</label>
+                  <label htmlFor="teacher-email" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">ชื่อผู้ใช้</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <FaEnvelope className="text-gray-400" aria-hidden="true" />
                     </div>
                     <input
                       id="teacher-email"
-                      type="email"
+                      type="text"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="name@school.ac.th"
-                      autoComplete="email"
+                      placeholder="ชื่อผู้ใช้"
+                      autoComplete="username"
                       required
                     />
                   </div>
@@ -550,7 +547,7 @@ const LoginPage: React.FC = () => {
             ) : (
               <form onSubmit={handleStudentLogin} className="space-y-3 lg:space-y-4">
                 <div className="space-y-1">
-                  <label htmlFor="student-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสนักเรียน</label>
+                  <label htmlFor="student-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">ชื่อผู้ใช้</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <FaUserGraduate className="text-gray-400" aria-hidden="true" />
@@ -561,14 +558,14 @@ const LoginPage: React.FC = () => {
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="ระบุรหัสนักเรียน"
+                      placeholder="ชื่อผู้ใช้"
                       autoComplete="username"
                       required
                     />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor="student-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">เลขบัตรประชาชน (ปปช.)</label>
+                  <label htmlFor="student-national-id" className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">รหัสผ่าน</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <FaIdCard className="text-gray-400" aria-hidden="true" />
@@ -579,7 +576,7 @@ const LoginPage: React.FC = () => {
                       value={nationalId}
                       onChange={(e) => setNationalId(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none text-gray-900 dark:text-white text-sm"
-                      placeholder="เลขบัตรประชาชน 13 หลัก"
+                      placeholder="รหัสผ่าน"
                       autoComplete="current-password"
                       required
                     />

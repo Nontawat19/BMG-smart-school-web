@@ -12,6 +12,7 @@ interface AttendanceCheckViewProps {
     studentLeaves: Record<string, boolean>;
     isSubmitted: boolean;
     isHoliday: boolean;
+    isSaving?: boolean;
     studentsLoading: boolean;
     schoolId: string;
     onBack: () => void;
@@ -35,6 +36,7 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
     studentLeaves,
     isSubmitted,
     isHoliday,
+    isSaving = false,
     studentsLoading,
     schoolId,
     onBack,
@@ -92,11 +94,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                         ) : (
                             <button
                                 onClick={onSave}
-                                disabled={isHoliday}
-                                className={`flex items-center justify-center p-3 rounded-xl font-black transition-all shadow-md shrink-0 active:scale-95 ${isHoliday ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                                disabled={isHoliday || isSaving}
+                                className={`flex items-center justify-center p-3 rounded-xl font-black transition-all shadow-md shrink-0 active:scale-95 ${isHoliday || isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
                                 title="บันทึก"
                             >
-                                <Save size={20} />
+                                <Save size={20} className={isSaving ? 'animate-pulse' : ''} />
                             </button>
                         )}
                     </div>
@@ -138,11 +140,11 @@ const AttendanceCheckView: React.FC<AttendanceCheckViewProps> = ({
                             ) : (
                                 <button
                                     onClick={onSave}
-                                    disabled={isHoliday}
-                                    className={`flex items-center justify-center rounded-xl font-black transition-all shadow-md p-2.5 sm:px-7 sm:py-2.5 text-xs sm:text-base ${isHoliday ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95'}`}
+                                    disabled={isHoliday || isSaving}
+                                    className={`flex items-center justify-center rounded-xl font-black transition-all shadow-md p-2.5 sm:px-7 sm:py-2.5 text-xs sm:text-base ${isHoliday || isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95'}`}
                                 >
-                                    <Save size={20} />
-                                    <span className="hidden sm:inline ml-2.5">บันทึก</span>
+                                    <Save size={20} className={isSaving ? 'animate-pulse' : ''} />
+                                    <span className="hidden sm:inline ml-2.5">{isSaving ? 'กำลังบันทึก...' : 'บันทึก'}</span>
                                 </button>
                             )}
                         </div>

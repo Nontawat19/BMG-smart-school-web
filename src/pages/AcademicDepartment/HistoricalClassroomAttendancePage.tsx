@@ -4,7 +4,7 @@ import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from '@/components/Shared/BackButton';
 import { firestore as db } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc, collectionGroup, writeBatch, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, collectionGroup, writeBatch, Timestamp, runTransaction } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import {
     CheckSquare,
@@ -28,10 +28,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import * as XLSX from 'xlsx';
 import { isNonOfficialHoliday } from '@/utils/calendarUtils';
-import { CLASSES, CLASS_FULL_NAMES } from '@/utils/schoolUtils';
+import { CLASSES } from '@/utils/schoolUtils';
 import Select from 'react-select';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { ACADEMIC_MANAGEMENT } from '@/constants/permissions';
+import { getClassVariants, matchesClassValue, getStableClassKey, matchesAssignmentGroupRoom } from '@/utils/attendanceClassMatching';
+import { calculateClassroomBehaviorScoreChange } from '@/utils/behaviorScoreUtils';
 
 // --- Interfaces ---
 interface Student {
@@ -57,6 +60,8 @@ interface Course {
     credits?: string | number;
     hoursPerWeek?: number;
     teacherAssignments?: any[];
+    teacherId?: string;
+    teacherIds?: string[];
 }
 
 interface CalendarEvent {
@@ -112,37 +117,22 @@ const normalizeRoom = (value: unknown) => {
     return Number.isFinite(numeric) ? String(numeric) : raw.toLowerCase();
 };
 
-const getClassVariants = (classValue: string) => {
-    const value = String(classValue || '').trim();
-    if (!value) return [];
 
-    const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
-    const classKey = fromLabel || value;
-
-    return Array.from(new Set([
-        classKey,
-        CLASSES[classKey],
-        CLASS_FULL_NAMES[classKey],
-        value
-    ].filter(Boolean).map(String)));
+const getAssignmentTeacherIds = (assignment: any): string[] => {
+    const ids = Array.isArray(assignment?.teacherIds) && assignment.teacherIds.length > 0
+        ? assignment.teacherIds
+        : (assignment?.teacherId ? [assignment.teacherId] : []);
+    return Array.from(new Set(ids.filter((id: string) => id && id !== 'pending' && !String(id).startsWith('GHOST'))));
 };
 
-const matchesClassValue = (recordClass: unknown, selectedClass: string): boolean => {
-    if (!selectedClass) return true;
-    if (!recordClass) return false;
-
-    if (Array.isArray(recordClass)) {
-        return recordClass.some(item => matchesClassValue(item, selectedClass));
-    }
-
-    const variants = getClassVariants(selectedClass);
-    const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s/g, ''));
-    const raw = String(recordClass || '').trim();
-    const normalized = raw.toLowerCase().replace(/\s/g, '');
-
-    return normalizedVariants.includes(normalized) ||
-        normalizedVariants.some(v => normalized.startsWith(`${v}_`) || normalized.startsWith(`${v}/`)) ||
-        normalizedVariants.some(v => normalized.includes(v) || v.includes(normalized));
+// Whether a teacher is allowed to view/edit this course's history — either as the
+// course's sole/primary teacher, one of its listed co-teachers, or assigned to it
+// via a group teacherAssignments entry (co-teaching / grouped sections).
+const isCourseOwnedByTeacher = (course: Course, teacherId?: string): boolean => {
+    if (!teacherId) return false;
+    if (String(course.teacherId || '') === String(teacherId)) return true;
+    if (Array.isArray(course.teacherIds) && course.teacherIds.map(String).includes(String(teacherId))) return true;
+    return (course.teacherAssignments || []).some(a => getAssignmentTeacherIds(a).includes(String(teacherId)));
 };
 
 const getDateDisplayPart = (slotKey: string) => slotKey.split('_')[0];
@@ -229,23 +219,39 @@ const selectStyles = {
 const matchesRoomGroup = (data: any, selectedRoom: string): boolean => {
     if (!selectedRoom) return true;
     const normalizedSelected = normalizeRoom(selectedRoom);
+    // A record's own room/roomNumber/roomIds fields — always populated on modern attendance
+    // records (see ClassroomAttendance/index.tsx's save payload: room/roomIds are set from
+    // the schedule slot's own room, not the group index).
     const roomCandidates = [
         data.room,
         data.roomNumber,
-        data.groupNumber,
-        data.group,
         ...(Array.isArray(data.roomIds) ? data.roomIds : [])
     ].map(normalizeRoom).filter(Boolean);
     const groupName = String(data.groupName || '').trim();
     const className = String(data.className || '').trim();
     const classId = String(data.classId || '').trim();
-    
+
     const matchesExact = roomCandidates.includes(normalizedSelected) || roomCandidates.includes('all');
     const matchesGroup = normalizeRoom(groupName.replace(/^กลุ่ม\s*/i, '').replace(/^ก\.\s*/i, '')) === normalizedSelected;
     const matchesClassNameSuffix = className.endsWith('/' + selectedRoom) || className.endsWith('/' + normalizedSelected);
     const matchesClassIdSuffix = classId.endsWith('_' + selectedRoom) || classId.endsWith('_' + normalizedSelected);
 
-    return matchesExact || matchesGroup || matchesClassNameSuffix || matchesClassIdSuffix;
+    if (matchesExact || matchesGroup || matchesClassNameSuffix || matchesClassIdSuffix) return true;
+
+    // Last-resort fallback ONLY when the record has no real room field to check against at
+    // all. `groupNumber`/`group` is a sequential group INDEX, not a room label — comparing it
+    // directly to selectedRoom (as this function used to do unconditionally) is a coincidence
+    // match, not identity, and was pulling a *different* room/group's attendance records
+    // (and their periods) into this room's history grid whenever their groupNumber happened
+    // to equal the room number being viewed (e.g. viewing room "1" incorrectly matching a
+    // different room's record whose groupNumber is 1) — producing extra, wrongly-dated
+    // checkable columns in the date grid built from these records.
+    if (roomCandidates.length === 0) {
+        const legacyGroupCandidates = [data.groupNumber, data.group].map(normalizeRoom).filter(Boolean);
+        if (legacyGroupCandidates.includes(normalizedSelected)) return true;
+    }
+
+    return false;
 };
 
 // Calculate Calendar Year based on Academic Year + Semester + Month + Terms Data
@@ -435,6 +441,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const [studentLeaves, setStudentLeaves] = useState<Record<string, Record<string, LeaveRecord>>>({}); // studentId -> { dateStr -> LeaveRecord }
 
     const [loading, setLoading] = useState(false);
+    // Dedicated flag for handleSave — kept separate from `loading` (used by the unrelated
+    // course/date data-fetch effect) so switching course/date doesn't spuriously disable the
+    // Save button / show "กำลังบันทึก..." while no save is actually in progress.
+    const [isSaving, setIsSaving] = useState(false);
     const [dates, setDates] = useState<string[]>([]);
     const [dateMetadata, setDateMetadata] = useState<Record<string, DateMetadata>>({});
     const [courseSchedule, setCourseSchedule] = useState<Record<string, any>>({});
@@ -443,6 +453,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     // Bulk Selection State
     const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
     const [academicSettings, setAcademicSettings] = useState<any>(null);
+    const [behaviorConfig, setBehaviorConfig] = useState<any>(null);
     const [lastSelectedCell, setLastSelectedCell] = useState<string | null>(null);
     const [activeStatus, setActiveStatus] = useState<string | null>(null);
     const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
@@ -579,6 +590,14 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const currentTeacher = useMemo(() => {
         return Object.values(teacherMap || {}).find((t: any) => t.uid === (currentUser as any)?.uid || t.id === (currentUser as any)?.uid);
     }, [teacherMap, currentUser]);
+
+    // Academic management roles (school admin/director/dept head/academic admin) can edit
+    // history for any course; a plain teacher may only edit courses they're assigned to.
+    const isAcademicManager = useMemo(() => {
+        const rawRoles = Array.isArray((currentUser as any)?.role) ? (currentUser as any).role : [(currentUser as any)?.role];
+        const userRoles = rawRoles.map((r: any) => String(r || '').toLowerCase());
+        return ACADEMIC_MANAGEMENT.some(r => userRoles.includes(r));
+    }, [currentUser]);
 
     useEffect(() => {
         if (allowedMonths.length === 0) return;
@@ -754,6 +773,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 if (data.academicSettings) {
                     setAcademicSettings(data.academicSettings);
                 }
+                if (data.behaviorScoreConfig) {
+                    setBehaviorConfig(data.behaviorScoreConfig);
+                }
             }
         } catch (error) {
             console.error("Error fetching school settings:", error);
@@ -838,39 +860,59 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             const scode = (c.code || c.subjectCode || "").replace(/\s/g, '').toLowerCase();
                             const matchesId = sid === targetId || (scode && targetCode && scode === targetCode);
                             if (!matchesId) return false;
-                            
+
                             if (!selectedRoomNumber) return true;
 
                             // Robust Room/Group matching matching StudentSchedulePage.tsx logic
-                            const latestCourse = courses.find(course => 
-                                course.id === sid || 
+                            const latestCourse = courses.find(course =>
+                                course.id === sid ||
                                 (course.code && scode && course.code.replace(/\s/g, '').toLowerCase() === scode)
                             );
                             const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
-                            
+
                             const rawCourseRooms = c.room || c.roomIds || c.roomNumber || [];
                             const courseRoom = (Array.isArray(rawCourseRooms) ? rawCourseRooms : [rawCourseRooms])
                                 .map((r: any) => normalizeRoom(r))
                                 .filter(Boolean);
                             const selectedRoom = normalizeRoom(selectedRoomNumber);
-                            const courseGroup = normalizeRoom(c.groupNumber || c.group || '');
                             const docRoom = normalizeRoom(data.room || data.roomNumber || '');
+                            // groupNumber is a sequential group INDEX (1, 2, 3...), not a room label —
+                            // it must never be compared directly against selectedRoom (a room label that
+                            // often happens to share the same small-integer range, e.g. "2" == "2" by pure
+                            // coincidence). It's only used below to look up *this specific slot's* group
+                            // assignment, whose own `room` field is then compared instead.
+                            const slotGroupNumber = c.groupNumber ?? c.group;
+                            const hasSlotGroup = slotGroupNumber !== undefined && slotGroupNumber !== null && slotGroupNumber !== '';
 
                             // Class-wide schedule entries often only live inside a teacher document,
                             // so they do not have a top-level room to match against.
-                            const isCommon = courseRoom.includes('all') || (!hasAssignments && courseRoom.length === 0 && !courseGroup && !docRoom);
+                            const isCommon = courseRoom.includes('all') || (!hasAssignments && courseRoom.length === 0 && !hasSlotGroup && !docRoom);
 
-                            const matchesGroup = isCommon || 
-                                courseGroup === selectedRoom ||
-                                docRoom === selectedRoom ||
-                                docRoom === 'all' ||
-                                courseRoom.some((r: string) => r === selectedRoom) ||
-                                (hasAssignments && latestCourse.teacherAssignments?.some((a: any) => 
-                                    normalizeRoom(a.groupNumber || a.room || a.roomNumber || a.group || '') === selectedRoom &&
+                            if (isCommon) return true;
+                            if (docRoom === selectedRoom || docRoom === 'all') return true;
+                            if (courseRoom.some((r: string) => r === selectedRoom)) return true;
+
+                            if (hasAssignments) {
+                                if (hasSlotGroup) {
+                                    // Correlate THIS slot instance's own group to its matching
+                                    // teacherAssignments entry, then check that group's room — never
+                                    // treat "the course has some group assigned to selectedRoom" as a
+                                    // match for every group's slot (that made the room filter a no-op
+                                    // for combined courses, pulling every group's periods together).
+                                    // Shared with GradeBookPage.tsx so this rule can't silently drift.
+                                    return matchesAssignmentGroupRoom(latestCourse!.teacherAssignments, slotGroupNumber, selectedRoomNumber);
+                                }
+                                // No group info on this slot at all — can't disambiguate further.
+                                // (Deliberately NOT falling back to a.groupNumber here — comparing a
+                                // group index against a room label is exactly the conflation bug this
+                                // logic was rewritten to avoid.)
+                                return latestCourse!.teacherAssignments!.some((a: any) =>
+                                    normalizeRoom(a.room || a.roomNumber || (Array.isArray(a.roomIds) ? a.roomIds[0] : a.roomIds) || '') === selectedRoom &&
                                     (String(a.teacherId || '') === String(data.teacherId) || !data.teacherId)
-                                ));
+                                );
+                            }
 
-                            return matchesGroup;
+                            return false;
                         });
 
                         if (isTarget) {
@@ -1068,8 +1110,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         return courses.filter(c => {
             // Handle both string and array formats for classId
             const matchesClass = matchesClassValue(c.classId, selectedClass);
-                
+
             if (!matchesClass) return false;
+
+            // Restrict to courses the current teacher actually teaches — academic
+            // management roles (admin/director/dept head/academic admin) can still see
+            // and correct history for every course.
+            if (!isAcademicManager && !isCourseOwnedByTeacher(c, currentTeacher?.id)) return false;
 
             // If a room is selected, we want to filter courses that belong to that group
             // but also show general courses that might not have specific group assignments.
@@ -1092,7 +1139,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             return true;
         });
-    }, [courses, selectedClass, selectedRoomNumber]);
+    }, [courses, selectedClass, selectedRoomNumber, isAcademicManager, currentTeacher]);
 
     // Auto-select course if only one option available
     useEffect(() => {
@@ -1641,116 +1688,245 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
 
     const handleSave = async () => {
-        if (!schoolId || !selectedClass || !selectedCourse) return;
+        if (!schoolId || !selectedClass || !selectedCourse || isSaving) return;
 
-        setLoading(true);
+        const courseObj = courses.find(c => c.id === selectedCourse || c.code === selectedCourse);
+        const subjectCode = courseObj?.code || selectedCourse;
+        const subjectName = courseObj?.title || '';
+        // Derive the classKey from the course's own classId (which may be an array for a
+        // combined-class course) so the docId matches exactly what the live check-in page
+        // (ClassroomAttendance/index.tsx) would produce for the same course — falling back
+        // to the selected class label only when the course record has no classId.
+        const fallbackClassKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+        const classKey = courseObj?.classId ? getStableClassKey(courseObj.classId) : fallbackClassKey;
+
+        // Dry-run pass: collect every changed cell and its doc refs first, so we can (a) warn
+        // about cells that fall on an approved leave day before writing anything, and (b) know
+        // upfront how many Firestore ops we'll need for batch chunking.
+        const pendingChanges: {
+            studentId: string;
+            dateStr: string;
+            newVal?: string;
+            oldVal?: string;
+            ref: ReturnType<typeof doc>;
+            oldRef: ReturnType<typeof doc>;
+            legacyRoomRef: ReturnType<typeof doc> | null;
+            legacyRoomOldRef: ReturnType<typeof doc> | null;
+        }[] = [];
+        const leaveConflicts: string[] = [];
+
+        students.forEach(student => {
+            dates.forEach(dateStr => {
+                const newVal = attendanceData[student.id]?.[dateStr];
+                const oldVal = initialAttendanceData[student.id]?.[dateStr];
+                if (newVal === oldVal) return;
+
+                const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
+                const datePartForId = dateStr.split('_')[0];
+                const attendanceId = `${datePartForId}_${subjectCode}_${classKey}_P${periodNum}`.replace(/\//g, '-');
+                const oldAttendanceId = `${datePartForId}_${subjectCode}_${classKey}`.replace(/\//g, '-');
+                const legacyRoomAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}_P${periodNum}`.replace(/\//g, '-') : '';
+                const legacyRoomOldAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}`.replace(/\//g, '-') : '';
+
+                const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+                const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldAttendanceId);
+                const legacyRoomRef = legacyRoomAttendanceId
+                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomAttendanceId)
+                    : null;
+                const legacyRoomOldRef = legacyRoomOldAttendanceId
+                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldAttendanceId)
+                    : null;
+
+                pendingChanges.push({ studentId: student.id, dateStr, newVal, oldVal, ref, oldRef, legacyRoomRef, legacyRoomOldRef });
+
+                if (newVal) {
+                    const leaveRec = studentLeaves[student.id]?.[dateStr] || studentLeaves[student.id]?.[getDateDisplayPart(dateStr)];
+                    if (leaveRec) {
+                        leaveConflicts.push(`${student.firstName} ${student.lastName} — ${getDateDisplayPart(dateStr)} (${leaveRec.description || leaveRec.type || 'ลา'})`);
+                    }
+                }
+            });
+        });
+
+        if (pendingChanges.length === 0) {
+            Swal.fire({
+                title: 'ไม่มีการเปลี่ยนแปลง',
+                text: 'ข้อมูลยังเหมือนเดิม',
+                icon: 'info',
+                timer: 1500,
+                showConfirmButton: false,
+                position: 'top-end',
+                toast: true
+            });
+            return;
+        }
+
+        // Unlike the live check-in page (which blocks editing a day the student is on
+        // approved leave outright), this history editor is explicitly a correction tool
+        // used in bulk/drag-select — blocking every cell individually would make that
+        // workflow unusable. Instead, surface every conflicting cell once and require an
+        // explicit confirmation before overwriting any approved leave day.
+        if (leaveConflicts.length > 0) {
+            const shown = leaveConflicts.slice(0, 15);
+            const remaining = leaveConflicts.length - shown.length;
+            const confirmResult = await Swal.fire({
+                icon: 'warning',
+                title: 'พบรายการที่ทับวันลาที่อนุมัติแล้ว',
+                html: `
+                    <div class="text-left text-sm">
+                        <p class="mb-2">การแก้ไข ${leaveConflicts.length} รายการต่อไปนี้จะบันทึกทับสถานะของวันที่นักเรียนมีการลาที่อนุมัติแล้ว:</p>
+                        <ul class="list-disc pl-5 space-y-1 max-h-[35vh] overflow-y-auto">
+                            ${shown.map(l => `<li>${l}</li>`).join('')}
+                        </ul>
+                        ${remaining > 0 ? `<p class="mt-2 italic text-gray-400">...และอีก ${remaining} รายการ</p>` : ''}
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: `ยืนยันบันทึกทับ (${leaveConflicts.length} รายการ)`,
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#dc2626',
+            });
+            if (!confirmResult.isConfirmed) return;
+        }
+
+        setIsSaving(true);
         try {
-            const batch = writeBatch(db);
-            const courseObj = courses.find(c => c.id === selectedCourse || c.code === selectedCourse);
-            const subjectCode = courseObj?.code || selectedCourse;
-            const subjectName = courseObj?.title || '';
-            const classKey = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
+            // Firestore batches cap at 500 ops — spread writes across multiple batches for
+            // large bulk-select edits (e.g. a whole class over a whole month).
+            const MAX_OPS_PER_BATCH = 450;
+            const batches: ReturnType<typeof writeBatch>[] = [writeBatch(db)];
+            let opsInCurrentBatch = 0;
+            const nextBatch = () => {
+                if (opsInCurrentBatch >= MAX_OPS_PER_BATCH) {
+                    batches.push(writeBatch(db));
+                    opsInCurrentBatch = 0;
+                }
+                opsInCurrentBatch++;
+                return batches[batches.length - 1];
+            };
 
-            let changesCount = 0;
+            const scoreChanges: { studentId: string; oldStatus: string; newStatus: string }[] = [];
 
-            students.forEach(student => {
-                dates.forEach(dateStr => {
-                    const newVal = attendanceData[student.id]?.[dateStr];
-                    const oldVal = initialAttendanceData[student.id]?.[dateStr];
+            pendingChanges.forEach(({ studentId, dateStr, newVal, oldVal, ref, oldRef, legacyRoomRef, legacyRoomOldRef }) => {
+                if (!newVal) {
+                    nextBatch().delete(ref);
+                    nextBatch().delete(oldRef); // Clean up old format too
+                    if (legacyRoomRef) nextBatch().delete(legacyRoomRef);
+                    if (legacyRoomOldRef) nextBatch().delete(legacyRoomOldRef);
+                } else {
+                    const datePart = dateStr.split('_')[0];
+                    const [d, m, y] = datePart.split('-').map(Number);
+                    const dateObj = new Date(y, m - 1, d, 12, 0, 0);
+                    const recordISODate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const recordSemester = isPrimaryAnnualMode
+                        ? getSemesterForISODate(recordISODate, terms, semester)
+                        : semester;
 
-                    if (newVal !== oldVal) {
-                        changesCount++;
-                        // Use the shared ClassroomAttendance format. Room stays in its own field.
-                        const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
-                        const datePartForId = dateStr.split('_')[0];
-                        const attendanceId = `${datePartForId}_${subjectCode}_${classKey}_P${periodNum}`;
-                        const oldAttendanceId = `${datePartForId}_${subjectCode}_${classKey}`;
-                        const legacyRoomAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}_P${periodNum}` : '';
-                        const legacyRoomOldAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}` : '';
-                        
-                        const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
-                        const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldAttendanceId);
-                        const legacyRoomRef = legacyRoomAttendanceId
-                            ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomAttendanceId)
-                            : null;
-                        const legacyRoomOldRef = legacyRoomOldAttendanceId
-                            ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldAttendanceId)
-                            : null;
+                    const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
+                    const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
+                    // A record previously existed for this cell (oldVal was loaded from
+                    // Firestore) — this is an edit of someone else's original entry, not a
+                    // brand-new record, so preserve who first recorded it.
+                    const isEditOfExistingRecord = oldVal !== undefined && oldVal !== null && oldVal !== '';
 
-                        if (!newVal) {
-                            batch.delete(ref);
-                            batch.delete(oldRef); // Clean up old format too
-                            if (legacyRoomRef) batch.delete(legacyRoomRef);
-                            if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
-                        } else {
-                            const datePart = dateStr.split('_')[0];
-                            const [d, m, y] = datePart.split('-').map(Number);
-                            const dateObj = new Date(y, m - 1, d, 12, 0, 0);
-                            const recordISODate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                            const recordSemester = isPrimaryAnnualMode
-                                ? getSemesterForISODate(recordISODate, terms, semester)
-                                : semester;
+                    const attendancePayload: Record<string, unknown> = {
+                        schoolId,
+                        studentId,
+                        date: Timestamp.fromDate(dateObj),
+                        classId: classKey,
+                        className: derivedClassName,
+                        room: selectedRoomNumber || null,
+                        period: periodNum,
+                        subjectName,
+                        subjectCode,
+                        courseId: courseObj?.id || null,
+                        status: newVal,
+                        academicYear,
+                        semester: recordSemester,
+                        updatedAt: Timestamp.now()
+                    };
 
-                            const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
+                    if (isEditOfExistingRecord) {
+                        // merge:true leaves the existing teacherId/teacherName (the original
+                        // recorder) untouched — we only layer the edit-audit trail on top.
+                        attendancePayload.previousStatus = oldVal;
+                        attendancePayload.lastEditedBy = currentTeacher?.id || (currentUser as any)?.uid || 'unknown';
+                        attendancePayload.lastEditedByName = currentTeacher?.name || (currentUser as any)?.displayName || '';
+                        attendancePayload.lastEditedAt = Timestamp.now();
+                    } else {
+                        attendancePayload.teacherId = currentTeacher?.id || (currentUser as any)?.uid || 'unknown';
+                        attendancePayload.teacherName = currentTeacher?.name || (currentUser as any)?.displayName || '';
+                    }
 
-                            const attendancePayload = {
-                                schoolId,
-                                studentId: student.id,
-                                date: Timestamp.fromDate(dateObj),
-                                classId: classKey,
-                                className: derivedClassName,
-                                room: selectedRoomNumber || null,
-                                period: periodNum, 
-                                subjectName,
-                                subjectCode,
-                                courseId: courseObj?.id || null,
-                                teacherId: currentTeacher?.id || (currentUser as any)?.uid || 'unknown',
-                                teacherName: currentTeacher?.name || (currentUser as any)?.displayName || '',
-                                status: newVal,
-                                academicYear,
-                                semester: recordSemester,
-                                updatedAt: Timestamp.now()
-                            };
+                    nextBatch().set(ref, attendancePayload, { merge: true });
+                    nextBatch().delete(oldRef);
+                    if (legacyRoomRef) nextBatch().delete(legacyRoomRef);
+                    if (legacyRoomOldRef) nextBatch().delete(legacyRoomOldRef);
 
-                            batch.set(ref, attendancePayload, { merge: true });
-                            batch.delete(oldRef);
-                            if (legacyRoomRef) batch.delete(legacyRoomRef);
-                            if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
+                    if (behaviorConfig) {
+                        const oldStatus = `class:${oldVal || 'present'}`;
+                        const newStatus = `class:${newVal}`;
+                        if (oldStatus !== newStatus) {
+                            scoreChanges.push({ studentId, oldStatus, newStatus });
                         }
                     }
-                });
+                }
             });
 
-            if (changesCount > 0) {
-                await batch.commit();
-                setInitialAttendanceData(JSON.parse(JSON.stringify(attendanceData)));
-                setIsModified(false);
-                Swal.fire({
-                    title: 'บันทึกสำเร็จ',
-                    text: `อัปเดตข้อมูล ${changesCount} รายการเรียบร้อยแล้ว`,
-                    icon: 'success',
-                    timer: 2000,
-                    showConfirmButton: false,
-                    position: 'top-end',
-                    toast: true
-                });
-            } else {
-                Swal.fire({
-                    title: 'ไม่มีการเปลี่ยนแปลง',
-                    text: 'ข้อมูลยังเหมือนเดิม',
-                    icon: 'info',
-                    timer: 1500,
-                    showConfirmButton: false,
-                    position: 'top-end',
-                    toast: true
-                });
+            // Commit attendance first — the source of truth — before touching behavior scores.
+            for (const b of batches) {
+                await b.commit();
             }
 
+            setInitialAttendanceData(JSON.parse(JSON.stringify(attendanceData)));
+            setIsModified(false);
+
+            // Behavior score adjustments are best-effort follow-ups: the attendance records
+            // are already durably saved above, so a failure here is logged but doesn't block
+            // the success flow. It also can't be silently retried by re-saving — once saved,
+            // the next save's oldStatus === newStatus so no score change gets queued again —
+            // so a failure here must be surfaced rather than shown as a plain "success".
+            let scoreUpdateFailed = false;
+            if (scoreChanges.length > 0) {
+                try {
+                    await Promise.all(scoreChanges.map(({ studentId, oldStatus, newStatus }) => {
+                        const studentMainRef = doc(db, 'school-settings', schoolId, 'students', studentId);
+                        return runTransaction(db, async (transaction) => {
+                            const studentSnap = await transaction.get(studentMainRef);
+                            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? 100) : 100;
+                            const result = calculateClassroomBehaviorScoreChange({
+                                currentScore: freshScore,
+                                oldStatus,
+                                newStatus,
+                                config: behaviorConfig,
+                            });
+                            if (result) {
+                                transaction.set(studentMainRef, result.update, { merge: true });
+                            }
+                        });
+                    }));
+                } catch (scoreError) {
+                    console.error("Error applying behavior score changes:", scoreError);
+                    scoreUpdateFailed = true;
+                }
+            }
+
+            Swal.fire({
+                title: scoreUpdateFailed ? 'บันทึกการเช็คชื่อสำเร็จ' : 'บันทึกสำเร็จ',
+                text: scoreUpdateFailed
+                    ? `อัปเดตข้อมูล ${pendingChanges.length} รายการแล้ว แต่ปรับคะแนนพฤติกรรมไม่สำเร็จ กรุณาตรวจสอบด้วยตนเอง`
+                    : `อัปเดตข้อมูล ${pendingChanges.length} รายการเรียบร้อยแล้ว`,
+                icon: scoreUpdateFailed ? 'warning' : 'success',
+                timer: scoreUpdateFailed ? 3500 : 2000,
+                showConfirmButton: false,
+                position: 'top-end',
+                toast: true
+            });
         } catch (error) {
             console.error("Error saving:", error);
             Swal.fire('บันทึกไม่สำเร็จ', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
         } finally {
-            setLoading(false);
+            setIsSaving(false);
         }
     };
 
@@ -2005,8 +2181,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 </button>
                             )}
                             {isModified && (
-                                <button onClick={handleSave} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-md font-bold text-sm transition-all animate-pulse">
-                                    <Save size={16} /> บันทึกการเปลี่ยนแปลง
+                                <button
+                                    onClick={handleSave}
+                                    disabled={isSaving}
+                                    className={`flex items-center gap-2 text-white px-4 py-2 rounded-xl shadow-md font-bold text-sm transition-all ${isSaving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 animate-pulse'}`}
+                                >
+                                    <Save size={16} /> {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
                                 </button>
                             )}
                         </div>

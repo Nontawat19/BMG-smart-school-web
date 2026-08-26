@@ -3,9 +3,9 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from '@/layouts/MainLayout';
 import { firestore as db } from '@/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import { Loader2, Minus, Plus, Printer, RefreshCw, Search } from 'lucide-react';
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
+import { collection, collectionGroup, documentId, getDocs, query, where } from 'firebase/firestore';
+import { Loader2, Minus, Plus, Printer, RefreshCw, Search, X, FileDown } from 'lucide-react';
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import Select from 'react-select';
 import Swal from 'sweetalert2';
@@ -443,6 +443,7 @@ const EscapeSummaryPage: React.FC = () => {
 
     const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
     const [escapeRecords, setEscapeRecords] = useState<EscapeRecord[]>([]);
     const [academicYear, setAcademicYear] = useState(() => reduxAcademicYear);
@@ -504,37 +505,45 @@ const EscapeSummaryPage: React.FC = () => {
         if (!schoolId) return;
         setLoading(true);
         try {
-            const studentsSnapshot = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
-            const students = studentsSnapshot.docs.map((studentDoc) => ({
-                id: studentDoc.id,
-                data: studentDoc.data() as any
+            // สแกนเฉพาะ record สถานะ 'escape' ของปี/ภาคเรียนที่เลือกผ่าน collectionGroup query
+            // (แทนการโหลดนักเรียนทั้งโรงเรียน + ประวัติเช็คชื่อทุกวันทุกปีของทุกคนมาแล้วค่อยกรองฝั่ง client)
+            const escapeQuery = query(
+                collectionGroup(db, 'ClassroomAttendance'),
+                where('schoolId', '==', schoolId),
+                where('status', '==', 'escape'),
+                where('academicYear', '==', academicYear),
+                where('semester', '==', semester)
+            );
+            const attendanceSnapshot = await getDocs(escapeQuery);
+            const rawRecords = attendanceSnapshot.docs.map((attendanceDoc) => ({
+                studentDocId: attendanceDoc.ref.parent.parent?.id || '',
+                data: attendanceDoc.data() as EscapeRecord,
             }));
 
-            const records: EscapeRecord[] = [];
-            for (const studentChunk of chunkArray(students, 20)) {
-                const attendanceSnapshots = await Promise.all(
-                    studentChunk.map((student) =>
-                        getDocs(collection(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance'))
-                            .then((snapshot) => ({ student, snapshot }))
-                    )
-                );
-
-                attendanceSnapshots.forEach(({ student, snapshot }) => {
-                    snapshot.docs.forEach((attendanceDoc) => {
-                        const data = attendanceDoc.data() as EscapeRecord;
-                        if (data.status !== 'escape') return;
-
-                        const studentData = student.data;
-                        const displayStudentCode = getDisplayStudentCode(studentData, data, student.id);
-                        records.push({
-                            ...data,
-                            studentId: displayStudentCode,
-                            studentName: data.studentName || `${studentData.title || studentData.prefix || ''}${studentData.firstName || ''} ${studentData.lastName || ''}`.trim(),
-                            studentNumber: data.studentNumber || studentData.studentNumber || studentData.number || studentData.no || studentData['เลขที่'] || '',
-                        });
-                    });
+            // ดึงข้อมูลนักเรียนเฉพาะคนที่มี record หนีเรียนจริง (ไม่ใช่ทั้งโรงเรียน) มาเสริมชื่อ/เลขที่
+            const studentIds = Array.from(new Set(rawRecords.map((r) => r.studentDocId).filter(Boolean)));
+            const studentDataMap = new Map<string, any>();
+            for (const idChunk of chunkArray(studentIds, 30)) {
+                if (idChunk.length === 0) continue;
+                const studentsSnapshot = await getDocs(query(
+                    collection(db, 'school-settings', schoolId, 'students'),
+                    where(documentId(), 'in', idChunk)
+                ));
+                studentsSnapshot.forEach((studentDoc) => {
+                    studentDataMap.set(studentDoc.id, studentDoc.data());
                 });
             }
+
+            const records: EscapeRecord[] = rawRecords.map(({ studentDocId, data }) => {
+                const studentData = studentDataMap.get(studentDocId) || {};
+                const displayStudentCode = getDisplayStudentCode(studentData, data, studentDocId);
+                return {
+                    ...data,
+                    studentId: displayStudentCode,
+                    studentName: data.studentName || `${studentData.title || studentData.prefix || ''}${studentData.firstName || ''} ${studentData.lastName || ''}`.trim(),
+                    studentNumber: data.studentNumber || studentData.studentNumber || studentData.number || studentData.no || studentData['เลขที่'] || '',
+                };
+            });
 
             setEscapeRecords(records);
             setExpandedRows({});
@@ -548,7 +557,7 @@ const EscapeSummaryPage: React.FC = () => {
 
     useEffect(() => {
         fetchEscapeData();
-    }, [schoolId]);
+    }, [schoolId, academicYear, semester]);
 
     const filteredRecords = useMemo(() => {
         return escapeRecords.filter((record) => {
@@ -597,20 +606,29 @@ const EscapeSummaryPage: React.FC = () => {
         setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
+    const buildEscapeSummaryPdfDocument = () => (
+        <EscapeSummaryPdfDocument
+            groups={reportGroups}
+            schoolName={schoolDisplayName}
+            logoUrl={schoolSettings.logoUrl}
+            academicYear={academicYear}
+            semester={semester}
+            selectedDate={selectedDate}
+        />
+    );
+
+    const openPdfPreview = () => {
+        if (reportGroups.length === 0) {
+            Swal.fire('ไม่มีข้อมูล', 'ไม่พบข้อมูลสำหรับสร้างรายงาน PDF', 'info');
+            return;
+        }
+        setShowPdfPreview(true);
+    };
+
     const handleExportPdf = async () => {
         setPdfGenerating(true);
         try {
-            const document = (
-                <EscapeSummaryPdfDocument
-                    groups={reportGroups}
-                    schoolName={schoolDisplayName}
-                    logoUrl={schoolSettings.logoUrl}
-                    academicYear={academicYear}
-                    semester={semester}
-                    selectedDate={selectedDate}
-                />
-            );
-            const blob = await pdf(document).toBlob();
+            const blob = await pdf(buildEscapeSummaryPdfDocument()).toBlob();
             saveAs(blob, `รายงานสรุปยอดรวมนักเรียนที่หนีเรียน_${academicYear}_${semester}_${selectedDate}.pdf`);
         } catch (error) {
             console.error('Error exporting escape summary PDF:', error);
@@ -653,11 +671,11 @@ const EscapeSummaryPage: React.FC = () => {
                             </button>
                             <button
                                 type="button"
-                                onClick={handleExportPdf}
-                                disabled={pdfGenerating || loading}
+                                onClick={openPdfPreview}
+                                disabled={loading}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold shadow-sm transition disabled:opacity-60"
                             >
-                                {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                                <Printer size={16} />
                                 สร้างรายงาน
                             </button>
                         </div>
@@ -827,6 +845,48 @@ const EscapeSummaryPage: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {showPdfPreview && (
+                <div
+                    className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setShowPdfPreview(false)}
+                >
+                    <div
+                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                ตัวอย่างเอกสาร — สรุปยอดการหนีเรียน
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleExportPdf}
+                                    disabled={pdfGenerating}
+                                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                    {pdfGenerating ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPdfPreview(false)}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                                    title="ปิด"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+                            <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                                {buildEscapeSummaryPdfDocument()}
+                            </PDFViewer>
+                        </div>
+                    </div>
+                </div>
+            )}
         </MainLayout>
     );
 };

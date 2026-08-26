@@ -43,6 +43,23 @@ export const listenToAuthChanges = createAsyncThunk(
       return new Promise<UserProfile | null>((resolve, reject) => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
           if (user) {
+            if (user.isAnonymous) {
+              const userType = localStorage.getItem('currentUserType') || 'student';
+              const profile: UserProfile = {
+                uid: user.uid,
+                email: user.email || '',
+                fullName: userType === 'student' ? 'นักเรียน' : 'ผู้ปกครอง',
+                profileUrl: '',
+                schoolId: null,
+                homeSchoolId: null,
+                homeRole: [userType],
+                role: [userType],
+              };
+              thunkAPI.dispatch(setUser(profile));
+              resolve(profile);
+              return;
+            }
+
             // 💡 ใช้ onSnapshot เพื่อให้สิทธิ์ (role) อัปเดตแบบ Real-time จาก Firestore
             const docRef = doc(firestore, 'users', user.uid);
             onSnapshot(docRef, async (docSnap) => {

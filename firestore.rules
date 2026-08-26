@@ -90,7 +90,8 @@ service cloud.firestore {
         allow write: if isRealAuth();
 
         match /{courseSubPath=**} {
-          allow read, write: if isRealAuth();
+          allow read: if isAuthenticated();
+          allow write: if isRealAuth();
         }
       }
 
@@ -110,7 +111,7 @@ service cloud.firestore {
       }
 
       match /configs/{configId} {
-        allow get: if configId == "club_settings" || configId == "schedule_settings" || isRealAuth();
+        allow get: if configId == "club_settings" || configId == "schedule_settings" || configId == "remediation_settings" || isRealAuth();
         allow list: if isRealAuth();
         allow write: if isRealAuth();
       }
@@ -122,6 +123,14 @@ service cloud.firestore {
         match /members/{studentDocId} {
           allow get: if true;
           allow list: if isRealAuth();
+          allow write: if isRealAuth();
+        }
+
+        // NEW: ระบบแก้ 0/ร/มส/มผ อ่านผลประเมิน "มผ" ของชุมนุมด้วย getDocs(collection(...)) (list query) —
+        // subcollection ไม่ได้รับ rule จาก parent doc ด้านบนอัตโนมัติ ต้องมี match ของตัวเอง (เหตุผลเดียวกับ
+        // members ด้านบน และ learner-activities/{id}/{subPath=**} ด้านล่าง)
+        match /evaluations/{evalId} {
+          allow read: if isAuthenticated();
           allow write: if isRealAuth();
         }
       }
@@ -144,17 +153,33 @@ service cloud.firestore {
         allow read, write: if isRealAuth();
       }
       match /enrollments/{docId} {
-        allow read, write: if isRealAuth();
+        allow read: if isAuthenticated();
+        allow write: if isRealAuth();
+      }
+      // NEW: ระบบยื่นคำร้องขอแก้ 0/ร/มส/มผ — ต้องมี rule ของตัวเองแยกจาก catch-all
+      // (เหตุผลเดียวกับ activities/subject_groups/ฯลฯ ด้านบน: catch-all รองรับแค่ get ไม่รองรับ list)
+      // ไม่จำกัด role เฉพาะ เพราะทั้งนักเรียน (ยื่นคำร้อง), ครู (บันทึกผล), และฝ่ายวิชาการ (ภาพรวม) ต้องอ่าน/เขียนได้
+      match /remediation_requests/{requestId} {
+        allow read, write: if isAuthenticated();
+      }
+      // NEW: ผลประเมินกิจกรรมแนะแนว (guidance) — ระบบแก้ 0/ร/มส/มผ อ่านทั้ง collection ด้วย
+      // getDocs(collection(...)) (list query) เพื่อหาคนที่ "ไม่ผ่าน" ทั้งโรงเรียน จึงต้องมี rule ของตัวเอง
+      // แยกจาก catch-all เหมือนเหตุผลเดียวกับ remediation_requests/clubs/learner-activities ด้านบน
+      match /guidance-evaluations/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isRealAuth();
       }
       match /learner-activities/{docId} {
-        allow read, write: if isRealAuth();
+        allow read: if isAuthenticated();
+        allow write: if isRealAuth();
 
         // Subcollections (members, attendance, ...) need their own explicit rule —
         // the parent-doc rule above does not cascade to them, so queries like
         // learner-activities/{id}/members were being denied with "Missing or
         // insufficient permissions" even for authenticated teachers.
         match /{subPath=**} {
-          allow read, write: if isRealAuth();
+          allow read: if isAuthenticated();
+          allow write: if isRealAuth();
         }
       }
       match /manual_substitute_requests/{docId} {
@@ -223,7 +248,9 @@ service cloud.firestore {
       // LINE-registration session actually needs has its own explicit, narrowly
       // scoped rule above; this catch-all is for real staff logins only.
       match /{allSubcollections=**} {
-        allow read, write: if isRealAuth()
+        allow read: if isAuthenticated()
+          && !(allSubcollections.size() >= 2 && allSubcollections[0] == 'summaries' && allSubcollections[1] == 'license');
+        allow write: if isRealAuth()
           && !(allSubcollections.size() >= 2 && allSubcollections[0] == 'summaries' && allSubcollections[1] == 'license');
       }
     }

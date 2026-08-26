@@ -6,8 +6,8 @@ import { RootState, AppDispatch } from "../../store";
 import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
-import { FaFilePdf, FaSearch, FaCalendarAlt } from "react-icons/fa";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { FaFilePdf, FaSearch, FaCalendarAlt, FaTimes, FaSpinner } from "react-icons/fa";
+import { Document, Font, Image, Page, PDFViewer, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import defaultProfile from "@/assets/profile.png";
@@ -666,12 +666,12 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
     item.fullName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const exportPDF = async () => {
-    if (filteredData.length === 0) {
-      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับส่งออก PDF", "info");
-      return;
-    }
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfDocProps, setPdfDocProps] = useState<TeacherAttendancePdfDocumentProps | null>(null);
 
+  const buildPdfDocProps = async (): Promise<TeacherAttendancePdfDocumentProps> => {
     const getImageDataUrl = async (url: string): Promise<string> => {
       try {
         const response = await fetch(url, { mode: "cors" });
@@ -742,28 +742,51 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
       year: 'numeric'
     });
 
-    try {
-      const pdfBlob = await pdf(
-        <TeacherAttendancePdfDocument
-          chunks={chunks}
-          rowsPerPage={rowsPerPage}
-          schoolName={displaySchoolName}
-          schoolAffiliation={displayAffiliation}
-          schoolLogo={schoolLogo}
-          directorName={directorName}
-          personnelHeadName={personnelHeadName}
-          personnelHeadRoleLabel={personnelHeadRoleLabel}
-          dateText={dateText}
-          filterType={filterType}
-          totalItems={filteredData.length}
-          reportPrintedAt={reportPrintedAt}
-        />
-      ).toBlob();
+    return {
+      chunks,
+      rowsPerPage,
+      schoolName: displaySchoolName,
+      schoolAffiliation: displayAffiliation,
+      schoolLogo,
+      directorName,
+      personnelHeadName,
+      personnelHeadRoleLabel,
+      dateText,
+      filterType,
+      totalItems: filteredData.length,
+      reportPrintedAt,
+    };
+  };
 
+  const handleOpenPdfPreview = async () => {
+    if (filteredData.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับส่งออก PDF", "info");
+      return;
+    }
+    setIsPreparingPdf(true);
+    try {
+      const props = await buildPdfDocProps();
+      setPdfDocProps(props);
+      setShowPdfPreview(true);
+    } catch (err) {
+      console.error("PDF Prepare Error:", err);
+      Swal.fire("Error", "ไม่สามารถเตรียม PDF ได้", "error");
+    } finally {
+      setIsPreparingPdf(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!pdfDocProps) return;
+    setIsDownloadingPdf(true);
+    try {
+      const pdfBlob = await pdf(<TeacherAttendancePdfDocument {...pdfDocProps} />).toBlob();
       saveAs(pdfBlob, `attendance_summary_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
       Swal.fire("Error", "ไม่สามารถส่งออก PDF ได้", "error");
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -787,10 +810,12 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
 
             <div className="flex gap-2">
               <button
-                onClick={exportPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm"
+                onClick={handleOpenPdfPreview}
+                disabled={isPreparingPdf}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <FaFilePdf /> Export PDF
+                {isPreparingPdf ? <FaSpinner className="animate-spin" /> : <FaFilePdf />}
+                {isPreparingPdf ? "กำลังเตรียม PDF..." : "Export PDF"}
               </button>
             </div>
           </div>
@@ -1059,6 +1084,48 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showPdfPreview && pdfDocProps && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — สรุปการลงเวลาครู
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPdf ? <FaSpinner className="animate-spin" /> : <FaFilePdf />}
+                  {isDownloadingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <FaTimes size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                <TeacherAttendancePdfDocument {...pdfDocProps} />
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

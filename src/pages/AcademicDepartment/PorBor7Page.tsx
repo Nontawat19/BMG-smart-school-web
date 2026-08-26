@@ -7,11 +7,12 @@ import { firestore, auth, storage } from "@/firebase";
 import { collection, getDocs, query, orderBy, doc, getDoc, where } from "firebase/firestore";
 import { getBlob, ref as storageRef } from "firebase/storage";
 import { FaSearch, FaFilter, FaFileAlt, FaPrint } from "react-icons/fa";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText, X, FileDown, Loader2 } from "lucide-react";
 import { getLevelsByRange, getGroupPersonnel } from "@/utils/schoolUtils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
-import { pdf } from "@react-pdf/renderer";
+import { pdf, PDFViewer } from "@react-pdf/renderer";
+import { saveAs } from "file-saver";
 import { PorBor7Document, PorBor7GradeDocument } from "@/components/Pdf/porbor7";
 import { getThaiYear } from "@/utils/dateUtils";
 import { compressImage } from "@/utils/imageUtils";
@@ -238,6 +239,8 @@ const PorBor7Page: React.FC = () => {
   const [selectedRoom, setSelectedRoom] = useState<string>('');
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+  const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
 
   // Get school info from Redux
   const { availableClassOptions, classKeys, schoolName, schoolId: reduxSchoolId } = useSelector((state: RootState) => state.schoolSettings);
@@ -508,7 +511,7 @@ const PorBor7Page: React.FC = () => {
       const headOfDeptPosition = schoolInfo.headOfDeptPosition || getGroupPersonnel(schoolInfo, 'general').label;
       const studentForPdf = await prepareStudentPhotoForPdf(student);
 
-      const blob = await pdf(
+      const docToRender = (
         <PorBor7GradeDocument
           student={studentForPdf}
           schoolInfo={schoolInfo}
@@ -522,16 +525,10 @@ const PorBor7Page: React.FC = () => {
           headOfDeptPosition={headOfDeptPosition}
           refNo={config.refNo}
         />
-      ).toBlob();
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ใบรับรองเกรด_${student.firstName}_${student.lastName}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      );
 
       Swal.close();
+      setPdfPreview({ document: docToRender, fileName: `ใบรับรองเกรด_${student.firstName}_${student.lastName}.pdf` });
     } catch (error) {
       console.error("Error exporting grade PDF:", error);
       Swal.fire({
@@ -586,26 +583,7 @@ const PorBor7Page: React.FC = () => {
         />
       );
 
-      const blob = await pdf(docToRender).toBlob();
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ปพ7_${student.firstName}_${student.lastName}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      Swal.fire({
-        icon: 'success',
-        title: 'สำเร็จ',
-        text: 'ออกใบรับรองเรียบร้อยแล้ว',
-        timer: 2000,
-        showConfirmButton: false,
-        background: '#2a2b2f',
-        color: '#ffffff'
-      });
+      setPdfPreview({ document: docToRender, fileName: `ปพ7_${student.firstName}_${student.lastName}.pdf` });
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       Swal.fire({
@@ -617,6 +595,17 @@ const PorBor7Page: React.FC = () => {
       });
     } finally {
       setIsExporting(null);
+    }
+  };
+
+  const downloadPreviewPdf = async () => {
+    if (!pdfPreview) return;
+    setIsDownloadingPreviewPdf(true);
+    try {
+      const blob = await pdf(pdfPreview.document as any).toBlob();
+      saveAs(blob, pdfPreview.fileName);
+    } finally {
+      setIsDownloadingPreviewPdf(false);
     }
   };
 
@@ -831,6 +820,48 @@ const PorBor7Page: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {pdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setPdfPreview(null)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — {pdfPreview.fileName}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadPreviewPdf}
+                  disabled={isDownloadingPreviewPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPreviewPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingPreviewPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfPreview(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {pdfPreview.document as any}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

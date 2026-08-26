@@ -8,7 +8,8 @@ import Navbar from "../../components/Navbar/Navbar";
 import LeftSidebar from "../../components/Sidebar/LeftSidebar";
 import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import { FaFilePdf, FaSearch, FaUsers, FaAngleLeft, FaAngleRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaCalendarAlt } from "react-icons/fa";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { X, FileDown, Loader2 } from "lucide-react";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
@@ -39,6 +40,7 @@ interface StudentStats {
   id: string;
   fullName: string;
   profileUrl?: string;
+  profileThumbUrl?: string;
   present: number;
   late: number;
   leave: number;
@@ -61,6 +63,7 @@ interface CachedClassSummaryRow {
   id: string;
   fullName: string;
   profileUrl?: string;
+  profileThumbUrl?: string;
   present: number;
   late: number;
   leave: number;
@@ -128,6 +131,7 @@ const normalizeSummaryRow = (row: any): CachedClassSummaryRow => ({
   id: String(row?.id || ""),
   fullName: String(row?.fullName || "-"),
   profileUrl: row?.profileUrl || "",
+  profileThumbUrl: row?.profileThumbUrl || "",
   present: Number(row?.present || 0),
   late: Number(row?.late || 0),
   leave: Number(row?.leave || 0),
@@ -532,6 +536,8 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
   const schoolId = currentUser?.schoolId;
 
   const [loading, setLoading] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
   const [students, setStudents] = useState<StudentInfo[]>([]);
   const [summaryData, setSummaryData] = useState<StudentStats[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -849,6 +855,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
               id: row.id,
               fullName: row.fullName,
               profileUrl: row.profileUrl || "",
+              profileThumbUrl: row.profileThumbUrl || "",
               present: row.present,
               late: row.late,
               leave: row.leave,
@@ -961,6 +968,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           return {
             id: student.id, fullName: student.fullName, present, late, leave, absent, noCheckout, official_travel,
             profileUrl: student.profileImageUrl,
+            profileThumbUrl: student.profileImageThumbUrl,
             total: workingDates.length, percentage
           };
         });
@@ -1036,6 +1044,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
             id: student.id, fullName: student.fullName,
             present, late, leave, absent, noCheckout, official_travel: officialTravel,
             profileUrl: student.profileImageUrl,
+            profileThumbUrl: student.profileImageThumbUrl,
             total, percentage
           };
         });
@@ -1083,7 +1092,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
     return pages;
   };
 
-  const exportPDF = async () => {
+  const buildAttendanceSummaryPdfDocument = () => {
     const schoolName = schoolSettings?.schoolName || "";
     const schoolAffiliation = schoolSettings?.affiliation || "";
     const directorName = schoolSettings?.directorName || "";
@@ -1137,11 +1146,10 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
 
     const useLandscape = (filterType === 'daily' || filterType === 'custom') && dailyWorkingDates.length > 0;
 
-    let blob: Blob;
     if (useLandscape) {
       const pdfStartDate = filterType === 'daily' ? selectedDate : startDate;
       const pdfEndDate = filterType === 'daily' ? selectedDate : endDate;
-      const landscapeDoc = (
+      return (
         <LandscapeClassAttendancePdfDocument
           schoolName={schoolName}
           schoolLogo={logoBase64}
@@ -1157,35 +1165,49 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           attendanceMap={dailyAttMap}
         />
       );
-      blob = await pdf(landscapeDoc).toBlob();
-    } else {
-      const rowsPerPage = 20;
-      const chunks: StudentStats[][] = [];
-      for (let i = 0; i < filteredData.length; i += rowsPerPage) {
-        chunks.push(filteredData.slice(i, i + rowsPerPage));
-      }
-      const portraitDoc = (
-        <StudentAttendancePdfDocument
-          chunks={chunks}
-          rowsPerPage={rowsPerPage}
-          schoolName={schoolName}
-          schoolAffiliation={schoolAffiliation}
-          schoolLogo={logoBase64}
-          directorName={directorName}
-          dateText={dateText}
-          filterType={filterType}
-          totalItems={filteredData.length}
-          reportPrintedAt={new Date().toLocaleString('th-TH')}
-          classLevel={selectedClassLevel}
-          room={selectedRoom}
-          specialProgram={selectedSpecialProgram}
-          homeroomTeacherName={homeroomTeacherName}
-        />
-      );
-      blob = await pdf(portraitDoc).toBlob();
     }
 
-    saveAs(blob, `รายงานการมาเรียนนักเรียน_${selectedClassLevel}-${selectedRoom}_${new Date().toISOString().split('T')[0]}.pdf`);
+    const rowsPerPage = 20;
+    const chunks: StudentStats[][] = [];
+    for (let i = 0; i < filteredData.length; i += rowsPerPage) {
+      chunks.push(filteredData.slice(i, i + rowsPerPage));
+    }
+    return (
+      <StudentAttendancePdfDocument
+        chunks={chunks}
+        rowsPerPage={rowsPerPage}
+        schoolName={schoolName}
+        schoolAffiliation={schoolAffiliation}
+        schoolLogo={logoBase64}
+        directorName={directorName}
+        dateText={dateText}
+        filterType={filterType}
+        totalItems={filteredData.length}
+        reportPrintedAt={new Date().toLocaleString('th-TH')}
+        classLevel={selectedClassLevel}
+        room={selectedRoom}
+        specialProgram={selectedSpecialProgram}
+        homeroomTeacherName={homeroomTeacherName}
+      />
+    );
+  };
+
+  const openPdfPreview = () => {
+    if (filteredData.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับสร้างรายงาน PDF", "info");
+      return;
+    }
+    setShowPdfPreview(true);
+  };
+
+  const downloadPreviewPdf = async () => {
+    setIsDownloadingPreviewPdf(true);
+    try {
+      const blob = await pdf(buildAttendanceSummaryPdfDocument()).toBlob();
+      saveAs(blob, `รายงานการมาเรียนนักเรียน_${selectedClassLevel}-${selectedRoom}_${new Date().toISOString().split('T')[0]}.pdf`);
+    } finally {
+      setIsDownloadingPreviewPdf(false);
+    }
   };
 
   return (
@@ -1210,7 +1232,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={exportPDF}
+              onClick={openPdfPreview}
               disabled={loading || filteredData.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-sm font-bold"
             >
@@ -1447,6 +1469,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
                           <ProfileAvatar
                             className="h-11 w-11"
                             src={record.profileUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(record.fullName)}&background=random`}
+                            thumbSrc={record.profileThumbUrl}
                             alt={record.fullName}
                           />
                           <div>
@@ -1567,6 +1590,48 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#2a2b2f]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — รายงานการมาเรียนนักเรียน
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadPreviewPdf}
+                  disabled={isDownloadingPreviewPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPreviewPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingPreviewPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildAttendanceSummaryPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

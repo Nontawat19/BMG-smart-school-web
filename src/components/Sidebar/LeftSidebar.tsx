@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { firestore as db } from "../../firebase";
 import LogoutButton from "@/components/LogoutButton";
 import {
@@ -82,6 +82,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
     !normalizedRoles.includes(ROLES.TEACHER_ATTENDANCE) &&
     !normalizedRoles.includes(ROLES.SCHOOL_ATTENDANCE);
 
+  const isStudent = normalizedRoles.includes(ROLES.STUDENT);
+
   // ฟังก์ชันสำหรับสร้าง className ของ NavLink
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-4 px-4 py-2.5 rounded-lg transition-colors duration-200 text-sm font-medium ${isActive
@@ -100,6 +102,42 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   const [allowTeacherSelfCheckin, setAllowTeacherSelfCheckin] = useState(false);
   // สวิตช์หลักเปิด/ปิดระบบลงเวลาทั้งระบบ — undefined/true = เปิดใช้งาน (ค่าเริ่มต้น), false = ปิด (ให้ใช้เช็คแถวแทน)
   const [enableCheckinOutSystem, setEnableCheckinOutSystem] = useState(true);
+  const [remediationEnabled, setRemediationEnabled] = useState<boolean>(true);
+
+  // ดึง schoolId สำหรับนักเรียน/ผู้ปกครองจาก local session
+  const getSessionSchoolId = () => {
+    try {
+      const type = localStorage.getItem('currentUserType');
+      if (type === 'student') {
+        const studentSessionRaw = localStorage.getItem('studentSession');
+        if (studentSessionRaw) {
+          const session = JSON.parse(studentSessionRaw);
+          return session.schoolId || "";
+        }
+      } else if (type === 'parent') {
+        const parentSessionRaw = localStorage.getItem('parentSession');
+        if (parentSessionRaw) {
+          const session = JSON.parse(parentSessionRaw);
+          return session.children?.[0]?.schoolId || "";
+        }
+      }
+    } catch (_) {}
+    return "";
+  };
+
+  React.useEffect(() => {
+    const finalSchoolId = schoolId || getSessionSchoolId();
+    if (!finalSchoolId) return;
+    const unsub = onSnapshot(doc(db, 'school-settings', finalSchoolId, 'configs', 'remediation_settings'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setRemediationEnabled(data.enabled !== false);
+      } else {
+        setRemediationEnabled(true);
+      }
+    });
+    return () => unsub();
+  }, [schoolId]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -287,12 +325,39 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
 
           {/* เมนู */}
           <nav className="flex flex-col gap-4" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) handleLinkClick() }}>
-            {isGeneralUserOnly ? (
+            {isStudent ? (
               <div className="flex flex-col gap-1">
                 <NavLink to="/profile" className={navLinkClasses}>
                   <FaUserTie className="text-lg min-w-[18px]" />
                   <span>ข้อมูลส่วนตัว</span>
                 </NavLink>
+                <NavLink to="/academic/my-schedule" className={navLinkClasses}>
+                  <FaChalkboardTeacher className="text-lg min-w-[18px]" />
+                  <span>ตารางเรียนของฉัน</span>
+                </NavLink>
+                {remediationEnabled && (
+                  <NavLink to="/my-grade-flags" className={navLinkClasses}>
+                    <FaListAlt className="text-lg min-w-[18px]" />
+                    <span>ยื่นแก้ตัว 0/ร/มส/มผ</span>
+                  </NavLink>
+                )}
+              </div>
+            ) : isGeneralUserOnly ? (
+              <div className="flex flex-col gap-1">
+                <NavLink to="/profile" className={navLinkClasses}>
+                  <FaUserTie className="text-lg min-w-[18px]" />
+                  <span>ข้อมูลส่วนตัว</span>
+                </NavLink>
+                <NavLink to="/academic/my-schedule" className={navLinkClasses}>
+                  <FaChalkboardTeacher className="text-lg min-w-[18px]" />
+                  <span>ตารางเรียนของบุตรหลาน</span>
+                </NavLink>
+                {remediationEnabled && (
+                  <NavLink to="/my-grade-flags" className={navLinkClasses}>
+                    <FaListAlt className="text-lg min-w-[18px]" />
+                    <span>ยื่นแก้ตัว 0/ร/มส/มผ</span>
+                  </NavLink>
+                )}
               </div>
             ) : isPwaMode ? (
               <div className="flex flex-col gap-1">

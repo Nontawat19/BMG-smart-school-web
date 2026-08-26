@@ -23,6 +23,14 @@ import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
 import { calculateClassroomBehaviorScoreChange } from '@/utils/behaviorScoreUtils';
+import {
+    getClassVariants,
+    matchesClassValue,
+    matchesClassValueStrict,
+    formatClassDisplay,
+    getStableClassKey,
+    hasRoomSpecificClass,
+} from '@/utils/attendanceClassMatching';
 
 interface PeriodSetting {
     id: string;
@@ -46,85 +54,6 @@ const normalizeRoom = (value: unknown) => {
     return Number.isFinite(numeric) ? String(numeric) : raw.toLowerCase();
 };
 
-const getClassVariants = (classValue: unknown): string[] => {
-    if (Array.isArray(classValue)) {
-        return Array.from(new Set(classValue.flatMap(getClassVariants)));
-    }
-
-    const value = String(classValue || '').trim();
-    if (!value) return [];
-
-    // Handle room-level codes like 'm1/1' or 'ม.1/2' — generate both Thai and English variants
-    if (value.includes('/')) {
-        const slashIdx = value.indexOf('/');
-        const levelPart = value.substring(0, slashIdx);
-        const roomPart = value.substring(slashIdx + 1);
-        const fromLabel = Object.entries(CLASSES).find(([, label]) => label === levelPart)?.[0];
-        const levelKey = fromLabel || levelPart;
-        const thaiLevel = CLASSES[levelKey] || levelPart;
-        return Array.from(new Set([
-            `${levelKey}/${roomPart}`,
-            `${thaiLevel}/${roomPart}`,
-            value,
-        ].filter(Boolean).map(String)));
-    }
-
-    const fromLabel = Object.entries(CLASSES).find(([, label]) => label === value)?.[0];
-    const classKey = fromLabel || value;
-
-    return Array.from(new Set([
-        classKey,
-        CLASSES[classKey],
-        value
-    ].filter(Boolean).map(String)));
-};
-
-const matchesClassValue = (recordClass: unknown, selectedClass: unknown): boolean => {
-    if (!selectedClass) return true;
-    if (!recordClass) return false;
-
-    if (Array.isArray(recordClass)) {
-        return recordClass.some(item => matchesClassValue(item, selectedClass));
-    }
-
-    const variants = getClassVariants(selectedClass);
-    const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s/g, ''));
-    const raw = String(recordClass || '').trim();
-    const normalized = raw.toLowerCase().replace(/\s/g, '');
-
-    return normalizedVariants.includes(normalized) ||
-        normalizedVariants.some(v => normalized.startsWith(`${v}_`) || normalized.startsWith(`${v}/`)) ||
-        normalizedVariants.some(v => normalized.includes(v) || v.includes(normalized));
-};
-
-// Strict class matching used specifically for substitute classes.
-// Unlike matchesClassValue, this does NOT allow a grade-only variant (e.g. "m1") to match
-// room-specific students (e.g. "m1/1", "m1/2"), preventing multi-room pull when the
-// substitution classId has no room number or was set to the teacher's full class list.
-const matchesClassValueStrict = (recordClass: unknown, classId: unknown): boolean => {
-    if (classId === null || classId === undefined) return true;
-    const ids = (Array.isArray(classId) ? classId : [classId]).filter(Boolean).map(String);
-    // Empty array means classId data is corrupt/missing — return false to show no students
-    // (safer than returning true which would incorrectly match all enrolled students)
-    if (ids.length === 0) return false;
-
-    if (Array.isArray(recordClass)) {
-        return (recordClass as unknown[]).some(item => matchesClassValueStrict(item, classId));
-    }
-
-    const allVariants = Array.from(new Set(ids.flatMap(id => getClassVariants(id))))
-        .map(v => v.toLowerCase().replace(/\s/g, ''));
-    const normalized = String(recordClass || '').toLowerCase().replace(/\s/g, '');
-
-    return allVariants.some(v =>
-        v === normalized ||
-        normalized.startsWith(`${v}_`) ||
-        // Only allow prefix matching when the variant itself has a room number (e.g. "m1/1")
-        // — this prevents grade-only "m1" from matching "m1/1" or "m1/2"
-        (v.includes('/') && normalized.startsWith(`${v}/`))
-    );
-};
-
 const matchesEnrollmentGroup = (data: any, groupNumber?: number | string): boolean => {
     if (!groupNumber) return true;
     const normalizedSelected = normalizeRoom(groupNumber);
@@ -136,26 +65,6 @@ const matchesEnrollmentGroup = (data: any, groupNumber?: number | string): boole
         roomStr === normalizedSelected ||
         groupName === `กลุ่ม ${groupNumber}` ||
         groupName === `ก.${groupNumber}`;
-};
-
-const formatClassDisplay = (value: unknown) => {
-    const values = Array.isArray(value) ? value : [value];
-    const labels = values
-        .flatMap(getClassVariants)
-        .filter(Boolean)
-        .map(v => CLASSES[v] || v);
-
-    return Array.from(new Set(labels)).join(', ') || 'ไม่ระบุชั้น';
-};
-
-const getStableClassKey = (value: unknown) => {
-    if (Array.isArray(value)) return value.map(String).filter(Boolean).join('-');
-    return String(value || '');
-};
-
-const hasRoomSpecificClass = (value: unknown) => {
-    const values = Array.isArray(value) ? value : [value];
-    return values.some(item => String(item || '').includes('/'));
 };
 
 const normalizeRoomIds = (value: unknown): string[] => {
@@ -243,6 +152,7 @@ const ClassroomAttendancePage: React.FC = () => {
     const [originalAttendance, setOriginalAttendance] = useState<Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>({});
     const [studentLeaves, setStudentLeaves] = useState<Record<string, boolean>>({});
     const [isSubmitted, setIsSubmitted] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [studentsLoading, setStudentsLoading] = useState(false);
     const [behaviorConfig, setBehaviorConfig] = useState<any>(null);
@@ -558,7 +468,7 @@ const ClassroomAttendancePage: React.FC = () => {
             const event = calendarEvents[dateStr];
 
             // 1. Determine local semester for this calculation
-            const currentTerm = calendarState.terms.find(t => 
+            const currentTerm = calendarState.terms.find(t =>
                 t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate
             ) || calendarState.terms[0]; // Fallback to term1 if not found in any term
 
@@ -571,12 +481,18 @@ const ClassroomAttendancePage: React.FC = () => {
                 return;
             }
 
+            // Track holiday status in a local variable through this effect run — the
+            // `isHoliday` state var only reflects the previous render (React state updates
+            // don't apply synchronously), so checks below must not read it mid-effect.
+            let holidayDetected = false;
+
             // 2. Term Boundaries: Check if within any term period
-            const isWithinTerm = calendarState.terms.some(t => 
+            const isWithinTerm = calendarState.terms.some(t =>
                 t.startDate && t.endDate && dateStr >= t.startDate && dateStr <= t.endDate
             );
 
             if (!isWithinTerm) {
+                holidayDetected = true;
                 setIsHoliday(true);
                 setHolidayName('อยู่นอกภาคเรียน (ไม่อยู่ในช่วงวันเรียน 100 วัน)');
             }
@@ -584,7 +500,8 @@ const ClassroomAttendancePage: React.FC = () => {
             // 3. Regular Weekend: Saturday (6) and Sunday (0) are non-school days unless schoolDay
             const dayOfWeek = currentDate.getDay();
             if (dayOfWeek === 0 || dayOfWeek === 6) {
-                if (!isHoliday) {
+                if (!holidayDetected) {
+                    holidayDetected = true;
                     setIsHoliday(true);
                     setHolidayName(dayOfWeek === 0 ? 'วันอาทิตย์' : 'วันเสาร์');
                 }
@@ -593,6 +510,7 @@ const ClassroomAttendancePage: React.FC = () => {
             // 4. Calendar Events: Specific holidays or special closures
             if (event) {
                 if (event.type === 'holiday' || event.type === 'specialHoliday') {
+                    holidayDetected = true;
                     setIsHoliday(true);
                     setHolidayName(event.description || 'วันหยุดโรงเรียน');
                 }
@@ -1152,6 +1070,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                 gender: data.gender || '',
                                 prefix: data.title || data.prefix || '',
                                 profileImageUrl: data.profileImageUrl || '',
+                                profileImageThumbUrl: data.profileImageThumbUrl || '',
                                 nickname: data.nickname || '',
                                 status: data.status || '',
                                 studentStatus: data.studentStatus || '',
@@ -1175,6 +1094,7 @@ const ClassroomAttendancePage: React.FC = () => {
                                 gender: data.gender || '',
                                 prefix: data.prefix || data.title || '',
                                 profileImageUrl: data.profileImageUrl || '',
+                                profileImageThumbUrl: data.profileImageThumbUrl || '',
                                 nickname: data.nickname || '',
                                 status: data.status || '',
                                 studentStatus: data.studentStatus || '',
@@ -1224,8 +1144,11 @@ const ClassroomAttendancePage: React.FC = () => {
                         const q = query(leavesRef, where('status', '==', 'approved'));
                         const snap = await getDocs(q);
 
-                        const today = new Date(currentDate); today.setHours(0, 0, 0, 0);
-                        const todayStr = today.toISOString().split('T')[0];
+                        // ห้ามใช้ .toISOString() หลัง setHours(0,0,0,0) — setHours ตั้งเวลาเที่ยงคืนตาม
+                        // timezone เครื่อง (ไทย = UTC+7) แต่ toISOString() แปลงกลับเป็น UTC ทำให้ได้วันที่
+                        // ย้อนหลังไป 1 วันเสมอ (เที่ยงคืนไทยของวันที่ X = 17:00 UTC ของวันที่ X-1) ต้องอ่าน
+                        // ปี/เดือน/วัน แบบ local ตรงๆ แทน เพื่อให้ได้ค่าเป็นวันที่ตามปฏิทินจริงที่ครูเห็นบนจอ
+                        const todayStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
 
                         const validLeave = snap.docs.find(doc => {
                             const data = doc.data();
@@ -1353,8 +1276,9 @@ const ClassroomAttendancePage: React.FC = () => {
     */
 
     const handleSaveAttendance = async () => {
-        if (!schoolId || !selectedClass) return;
+        if (!schoolId || !selectedClass || isSaving) return;
 
+        setIsSaving(true);
         try {
             // For substitute-teaching sessions, always save under the substitution's own
             // scheduled date (selectedClass.date), never the page's currentDate navigator —
@@ -1387,14 +1311,28 @@ const ClassroomAttendancePage: React.FC = () => {
                 ? selectedClass.periods
                 : [periodNum];
 
-            const batch = writeBatch(db);
-            const behaviorScoreUpdates: Promise<void>[] = [];
+            // Firestore batches cap at 500 ops. Rosters for elective/whole-grade courses can
+            // exceed that after set+delete ops, so spread writes across multiple batches.
+            const MAX_OPS_PER_BATCH = 450;
+            const batches: ReturnType<typeof writeBatch>[] = [writeBatch(db)];
+            let opsInCurrentBatch = 0;
+            const nextBatch = () => {
+                if (opsInCurrentBatch >= MAX_OPS_PER_BATCH) {
+                    batches.push(writeBatch(db));
+                    opsInCurrentBatch = 0;
+                }
+                opsInCurrentBatch++;
+                return batches[batches.length - 1];
+            };
+
+            const scoreChanges: { studentId: string; oldStatus: string; newStatus: string }[] = [];
+
             students.forEach(student => {
                 periodsToSave.forEach((pNum: number) => {
                     const attendanceId = `${dateStr}_${stableSubjectCode}_${classKey}_P${pNum}`.replace(/\//g, '-');
                     const studentRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
 
-                    batch.set(studentRef, {
+                    nextBatch().set(studentRef, {
                         schoolId,
                         studentId: student.id,
                         date: Timestamp.fromDate(normalizedDateObj),
@@ -1421,31 +1359,16 @@ const ClassroomAttendancePage: React.FC = () => {
                 });
 
                 // Apply behavior score if changed (once per student, not once per period —
-                // the status is the same across periodsToSave for a given save action)
+                // the status is the same across periodsToSave for a given save action).
+                // The score transactions themselves only run after the attendance batches
+                // commit successfully (see below), so a failed attendance save never leaves
+                // an orphaned score change with no matching record.
                 const newStatus = `class:${attendance[student.id] || 'present'}`;
-                // If no record exists yet, we assume the previous state was neutral (no penalty applied yet).
-                // Or we could compare against "present". Usually, unrecorded defaults to "present" anyway.
                 const originalStatusStr = originalAttendance[student.id];
                 const oldStatus = originalStatusStr ? `class:${originalStatusStr}` : "class:present";
 
                 if (newStatus !== oldStatus && behaviorConfig) {
-                    const studentMainRef = doc(db, 'school-settings', schoolId, 'students', student.id);
-                    // Read the live score fresh inside a transaction so a concurrent write
-                    // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
-                    // silently overwritten by this classroom attendance save.
-                    behaviorScoreUpdates.push(runTransaction(db, async (transaction) => {
-                        const studentSnap = await transaction.get(studentMainRef);
-                        const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? student.behaviorScore ?? 100) : (student.behaviorScore ?? 100);
-                        const result = calculateClassroomBehaviorScoreChange({
-                            currentScore: freshScore,
-                            oldStatus,
-                            newStatus,
-                            config: behaviorConfig,
-                        });
-                        if (result) {
-                            transaction.set(studentMainRef, result.update, { merge: true });
-                        }
-                    }));
+                    scoreChanges.push({ studentId: student.id, oldStatus, newStatus });
                 }
 
                 // Deletes for legacy format or older periods in case they exist
@@ -1453,28 +1376,77 @@ const ClassroomAttendancePage: React.FC = () => {
                     const legacyRoomRef = roomKey
                         ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}_P${pNum}`.replace(/\//g, '-'))
                         : null;
-                    if (legacyRoomRef) batch.delete(legacyRoomRef);
+                    if (legacyRoomRef) nextBatch().delete(legacyRoomRef);
                 });
 
                 const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}`.replace(/\//g, '-'));
-                batch.delete(oldRef);
+                nextBatch().delete(oldRef);
 
                 const legacyRoomOldRef = roomKey
                     ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', `${dateStr}_${stableSubjectCode}_${classKey}_${roomKey}`.replace(/\//g, '-'))
                     : null;
-                if (legacyRoomOldRef) batch.delete(legacyRoomOldRef);
+                if (legacyRoomOldRef) nextBatch().delete(legacyRoomOldRef);
             });
 
-            await Promise.all(behaviorScoreUpdates);
-            await batch.commit();
+            // Commit attendance first — the source of truth — before touching behavior scores.
+            for (const b of batches) {
+                await b.commit();
+            }
 
-            Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: 'บันทึกการเช็คชื่อเรียบร้อยแล้ว', timer: 1500, showConfirmButton: false });
+            // Behavior score adjustments are best-effort follow-ups: the attendance record
+            // is already durably saved above, so a failure here is logged but doesn't block
+            // the success flow. It also can't be silently retried by re-saving — once
+            // attendance is saved, the next save's oldStatus === newStatus so no score change
+            // gets queued again — so a failure here must be surfaced to the user rather than
+            // shown as a plain, misleading "success" message.
+            let scoreUpdateFailed = false;
+            if (scoreChanges.length > 0) {
+                try {
+                    await Promise.all(scoreChanges.map(({ studentId, oldStatus, newStatus }) => {
+                        const student = students.find(s => s.id === studentId);
+                        const studentMainRef = doc(db, 'school-settings', schoolId, 'students', studentId);
+                        // Read the live score fresh inside a transaction so a concurrent write
+                        // (gate check-in, manual adjustment, flag ceremony, etc.) can never be
+                        // silently overwritten by this classroom attendance save.
+                        return runTransaction(db, async (transaction) => {
+                            const studentSnap = await transaction.get(studentMainRef);
+                            const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? student?.behaviorScore ?? 100) : (student?.behaviorScore ?? 100);
+                            const result = calculateClassroomBehaviorScoreChange({
+                                currentScore: freshScore,
+                                oldStatus,
+                                newStatus,
+                                config: behaviorConfig,
+                            });
+                            if (result) {
+                                transaction.set(studentMainRef, result.update, { merge: true });
+                            }
+                        });
+                    }));
+                } catch (scoreError) {
+                    console.error("Error applying behavior score changes:", scoreError);
+                    scoreUpdateFailed = true;
+                }
+            }
+
+            if (scoreUpdateFailed) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'บันทึกการเช็คชื่อสำเร็จ',
+                    text: 'แต่ปรับคะแนนพฤติกรรมไม่สำเร็จ กรุณาตรวจสอบ/ปรับคะแนนด้วยตนเอง',
+                    timer: 3000,
+                    showConfirmButton: false,
+                });
+            } else {
+                Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: 'บันทึกการเช็คชื่อเรียบร้อยแล้ว', timer: 1500, showConfirmButton: false });
+            }
             setIsSubmitted(true);
             setSelectedClass(null);
             sessionStorage.removeItem('attendance_selected_class');
         } catch (error: any) {
             console.error("Error saving attendance:", error);
             Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -1549,6 +1521,7 @@ const ClassroomAttendancePage: React.FC = () => {
                             studentLeaves={studentLeaves}
                             isSubmitted={isSubmitted}
                             isHoliday={isHoliday}
+                            isSaving={isSaving}
                             studentsLoading={studentsLoading}
                             schoolId={schoolId}
                             onBack={() => {

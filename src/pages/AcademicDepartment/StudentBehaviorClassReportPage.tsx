@@ -13,8 +13,10 @@ import {
   Search,
   ShieldAlert,
   Users,
+  X,
+  FileDown,
 } from "lucide-react";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import BackButton from "@/components/Shared/BackButton";
@@ -786,7 +788,8 @@ const StudentBehaviorClassReportPage: React.FC = () => {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   
-  const [printingStudentId, setPrintingStudentId] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string } | null>(null);
+  const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
 
   // PDF Export State
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
@@ -795,7 +798,6 @@ const StudentBehaviorClassReportPage: React.FC = () => {
   const [pdfScoreVal, setPdfScoreVal] = useState<number>(80);
   const [pdfRankMode, setPdfRankMode] = useState<"top" | "bottom">("top");
   const [pdfRankCount, setPdfRankCount] = useState<number>(10);
-  const [isGeneratingClassPdf, setIsGeneratingClassPdf] = useState(false);
 
 
   useEffect(() => {
@@ -1132,14 +1134,19 @@ const StudentBehaviorClassReportPage: React.FC = () => {
       return;
     }
 
-    setIsGeneratingClassPdf(true);
-    try {
-      let classLabel = "ทุกชั้นเรียน";
-      if (selectedClassLevel) {
-        classLabel = selectedRoom ? `${selectedClassLevel}/${selectedRoom}` : selectedClassLevel;
-      }
+    let classLabel = "ทุกชั้นเรียน";
+    if (selectedClassLevel) {
+      classLabel = selectedRoom ? `${selectedClassLevel}/${selectedRoom}` : selectedClassLevel;
+    }
 
-      const pdfBlob = await pdf(
+    let conditionText = "ทั้งหมด";
+    if (pdfFilterMode === "score") conditionText = `คะแนน${pdfScoreOp}${pdfScoreVal}`;
+    if (pdfFilterMode === "rank") conditionText = `${pdfRankMode}${pdfRankCount}`;
+
+    const safeName = `สรุปความประพฤติ_${classLabel}_${conditionText}_${startDate}_${endDate}`.replace(/[\\/:*?"<>|]/g, "");
+
+    setPdfPreview({
+      document: (
         <ClassBehaviorReportPdfDocument
           rows={finalRows}
           schoolName={schoolName}
@@ -1149,28 +1156,17 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           startDate={startDate}
           endDate={endDate}
         />
-      ).toBlob();
-      
-      let conditionText = "ทั้งหมด";
-      if (pdfFilterMode === "score") conditionText = `คะแนน${pdfScoreOp}${pdfScoreVal}`;
-      if (pdfFilterMode === "rank") conditionText = `${pdfRankMode}${pdfRankCount}`;
-
-      const safeName = `สรุปความประพฤติ_${classLabel}_${conditionText}_${startDate}_${endDate}`.replace(/[\\/:*?"<>|]/g, "");
-      saveAs(pdfBlob, `${safeName}.pdf`);
-      setIsPdfModalOpen(false);
-    } catch (error) {
-      console.error("Error generating class PDF:", error);
-      Swal.fire("สร้าง PDF ไม่สำเร็จ", "ไม่สามารถสร้างรายงานรวมได้", "error");
-    } finally {
-      setIsGeneratingClassPdf(false);
-    }
+      ),
+      fileName: `${safeName}.pdf`,
+    });
+    setIsPdfModalOpen(false);
   };
 
-  const printStudent = async (row: ReportRow) => {
+  const printStudent = (row: ReportRow) => {
     const studentName = getStudentName(row.student);
-    setPrintingStudentId(row.student.id);
-    try {
-      const pdfBlob = await pdf(
+    const fileSafeName = studentName.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_") || row.student.studentId || "student";
+    setPdfPreview({
+      document: (
         <BehaviorReportPdfDocument
           row={row}
           academicYear={academicYear}
@@ -1180,14 +1176,22 @@ const StudentBehaviorClassReportPage: React.FC = () => {
           directorName={directorName}
           behaviorScoreConfig={behaviorScoreConfig}
         />
-      ).toBlob();
-      const fileSafeName = studentName.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_") || row.student.studentId || "student";
-      saveAs(pdfBlob, `รายงานความประพฤติ_${fileSafeName}_${startDate}_${endDate}.pdf`);
+      ),
+      fileName: `รายงานความประพฤติ_${fileSafeName}_${startDate}_${endDate}.pdf`,
+    });
+  };
+
+  const downloadPreviewPdf = async () => {
+    if (!pdfPreview) return;
+    setIsDownloadingPreviewPdf(true);
+    try {
+      const blob = await pdf(pdfPreview.document as any).toBlob();
+      saveAs(blob, pdfPreview.fileName);
     } catch (error) {
-      console.error("Error generating behavior PDF:", error);
-      Swal.fire("สร้าง PDF ไม่สำเร็จ", "ไม่สามารถสร้างรายงานความประพฤติได้", "error");
+      console.error("Error generating PDF:", error);
+      Swal.fire("สร้าง PDF ไม่สำเร็จ", "ไม่สามารถสร้างไฟล์ PDF ได้", "error");
     } finally {
-      setPrintingStudentId(null);
+      setIsDownloadingPreviewPdf(false);
     }
   };
 
@@ -1412,10 +1416,9 @@ const StudentBehaviorClassReportPage: React.FC = () => {
                             </button>
                             <button
                               onClick={() => printStudent(row)}
-                              disabled={printingStudentId === row.student.id}
                               className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200"
                             >
-                              {printingStudentId === row.student.id ? <Loader2 className="animate-spin" size={13} /> : <Printer size={13} />}
+                              <Printer size={13} />
                               print รายคน
                             </button>
                           </div>
@@ -1450,10 +1453,9 @@ const StudentBehaviorClassReportPage: React.FC = () => {
               <div className="mb-4 flex justify-end">
                 <button
                   onClick={() => printStudent(activeRow)}
-                  disabled={printingStudentId === activeRow.student.id}
                   className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {printingStudentId === activeRow.student.id ? <Loader2 className="animate-spin" size={13} /> : <Printer size={13} />}
+                  <Printer size={13} />
                   Print
                 </button>
               </div>
@@ -1624,17 +1626,57 @@ const StudentBehaviorClassReportPage: React.FC = () => {
               </button>
               <button
                 onClick={handleGenerateClassPdf}
-                disabled={isGeneratingClassPdf}
                 className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-700 disabled:opacity-70"
               >
-                {isGeneratingClassPdf ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                {isGeneratingClassPdf ? "กำลังสร้าง..." : "ยืนยันและพิมพ์"}
+                <Printer size={16} />
+                ดูตัวอย่างและพิมพ์
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {pdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setPdfPreview(null)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                ตัวอย่างเอกสาร — {pdfPreview.fileName}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadPreviewPdf}
+                  disabled={isDownloadingPreviewPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPreviewPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingPreviewPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfPreview(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {pdfPreview.document as any}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

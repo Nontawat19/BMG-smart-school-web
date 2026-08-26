@@ -14,7 +14,7 @@ interface AttendanceRecordPageProps {
   totalCourseHours: number;
   studentAttendanceSummaries: Record<string, StudentAttendanceSummary>;
   attendancePages: any[];
-  studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave'>>;
+  studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>;
   selectedRoom?: string;
   curriculumClassDisplay: string;
   curriculumRoomDisplay: string;
@@ -259,7 +259,7 @@ const PrimaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                     const studentSummary = studentAttendanceSummaries[s.id || s.studentId];
                     const termKey = page.term === '2' ? 'term2' : 'term1';
                     const termSummary = studentSummary[termKey as 'term1' | 'term2'];
-                    totalAttended = termSummary.present + termSummary.late;
+                    totalAttended = termSummary.present + termSummary.late + termSummary.leave;
                     percentage = termSummary.totalPossibleHours > 0 ? (totalAttended / termSummary.totalPossibleHours) * 100 : 0;
                   }
 
@@ -306,6 +306,13 @@ const PrimaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                                 case 'leave':
                                   attendanceMark = 'ล';
                                   textStyle = styles.leaveText;
+                                  break;
+                                case 'escape':
+                                  // Truancy (หนีเรียน) is counted as absent everywhere else in the
+                                  // gradebook (term summaries, attendance %) — mark it the same way
+                                  // here so the printed grid and the summary numbers agree.
+                                  attendanceMark = 'ข';
+                                  textStyle = styles.absentText;
                                   break;
                                 default: attendanceMark = '';
                                   break;

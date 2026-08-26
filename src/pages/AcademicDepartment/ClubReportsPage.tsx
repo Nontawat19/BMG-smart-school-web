@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore";
-import { ChevronRight, FileText, Printer, RefreshCw, Search, Users, UserX, BarChart3, ClipboardCheck, FolderKanban } from "lucide-react";
+import { ChevronRight, FileText, Printer, RefreshCw, Search, Users, UserX, BarChart3, ClipboardCheck, FolderKanban, X, FileDown } from "lucide-react";
 import {
   Document as PdfDocument,
   Font,
@@ -12,6 +12,7 @@ import {
   Text,
   View,
   pdf,
+  PDFViewer,
 } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import BackButton from "@/components/Shared/BackButton";
@@ -264,6 +265,7 @@ const ClubReportsPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [schoolInfo, setSchoolInfo] = useState<any>({});
   const [schoolName, setSchoolName] = useState("");
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -605,6 +607,12 @@ const ClubReportsPage: React.FC = () => {
     };
   };
 
+  const openPdfPreview = () => {
+    const data = buildPdfData();
+    if (!data) return;
+    setShowPdfPreview(true);
+  };
+
   const handleGeneratePdf = async () => {
     const data = buildPdfData();
     if (!data || isGeneratingPdf) return;
@@ -899,11 +907,11 @@ const ClubReportsPage: React.FC = () => {
                   <RefreshCw size={16} />
                 </button>
                 <button
-                  onClick={handleGeneratePdf}
-                  disabled={isGeneratingPdf || loading}
+                  onClick={openPdfPreview}
+                  disabled={loading}
                   className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-500 px-3 text-sm font-bold text-white hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin" /> : <Printer size={16} />}
+                  <Printer size={16} />
                   PDF
                 </button>
               </div>
@@ -920,6 +928,51 @@ const ClubReportsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — {currentReport?.title || "รายงานชุมนุม"}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleGeneratePdf}
+                  disabled={isGeneratingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isGeneratingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {(() => {
+                  const previewData = buildPdfData();
+                  return previewData ? <ClubReportPdfDocument data={previewData} /> : <PdfDocument />;
+                })()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

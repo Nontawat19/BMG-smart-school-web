@@ -669,7 +669,7 @@ export default function TeacherListPage() {
                 <td className="whitespace-nowrap py-3 px-2 text-xs">
                   <Link to={`/school/${teacher.schoolId}/teachers/view/${teacher.id}`} className="flex items-center group">
                     <ProfileAvatar
-                      className="h-8 w-8 shadow-sm border border-gray-200 dark:border-white/10"
+                      className="h-14 w-14 shadow-sm border border-gray-200 dark:border-white/10"
                       src={teacher.profileImageUrl || `https://ui-avatars.com/api/?name=${teacher.firstName}+${teacher.lastName}&background=random`}
                       alt={`${teacher.firstName} ${teacher.lastName}`}
                     />

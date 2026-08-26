@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore as db } from '../../firebase';
-import { collection, getDocs, doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, Timestamp, query, where } from 'firebase/firestore';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
@@ -248,11 +248,15 @@ const ClubAttendancePage: React.FC = () => {
           return;
         }
 
+        // ดึงเฉพาะนักเรียนที่เป็นสมาชิกชุมนุมนี้ (แบ่งเป็นชุดละ 30 id ตามข้อจำกัดของ Firestore "in")
+        // แทนการโหลดนักเรียนทั้งโรงเรียนแล้วมากรองฝั่ง client
         const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-        const studentSnap = await getDocs(studentsRef);
-        const memberList = studentSnap.docs
-          .filter(doc => memberIds.includes(doc.id))
-          .map(doc => ({ id: doc.id, ...doc.data() } as Student));
+        const memberList: Student[] = [];
+        for (let i = 0; i < memberIds.length; i += 30) {
+          const batchIds = memberIds.slice(i, i + 30);
+          const batchSnap = await getDocs(query(studentsRef, where('__name__', 'in', batchIds)));
+          batchSnap.forEach(doc => memberList.push({ id: doc.id, ...doc.data() } as Student));
+        }
 
         setStudents(memberList);
 

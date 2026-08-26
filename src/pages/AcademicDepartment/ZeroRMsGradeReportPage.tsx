@@ -3,22 +3,32 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
+import * as XLSX from 'xlsx';
 import {
     AlertTriangle,
     Users,
     GraduationCap,
     Loader2,
-    User,
     AlertCircle,
     Download,
     RefreshCw,
-    ListChecks,
-    History
+    History,
+    X,
+    FileDown,
+    Upload,
+    FileWarning,
+    Search,
+    Pencil,
+    Clock,
+    CheckCircle2,
+    MessageSquare,
+    Plus
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
+import AcademicYearSemesterFilter from "@/components/Shared/AcademicYearSemesterFilter";
 import SkeletonLoader from '@/components/SkeletonLoader';
 import Select from 'react-select';
 import { CLASSES, CLASS_FULL_NAMES, getClassLevelRank } from '@/utils/schoolUtils';
@@ -26,10 +36,13 @@ import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import {
-    LearnerActivityTeacherScope,
-    buildLearnerActivityEvaluationDocId,
-    deriveTeacherScopesFromCourse,
-} from '@/utils/learnerActivityUtils';
+    FlagType,
+    FlaggedCourse,
+    StudentFlagRow,
+    fetchFlaggedStudents,
+    isActivityCourseCode,
+    fetchAvailableAcademicYears,
+} from '@/utils/remediationUtils';
 
 Font.register({
     family: 'TH Sarabun PSK',
@@ -39,9 +52,6 @@ Font.register({
     ]
 });
 
-type FlagType = '0' | 'ร' | 'มส' | 'มผ';
-const FLAG_TYPES: FlagType[] = ['0', 'ร', 'มส', 'มผ'];
-
 const THAI_FULL_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
 // วันที่ออกเอกสาร ใช้วันที่ ณ ตอนสร้าง/ส่งออก PDF จริง ไม่ใช่ช่องว่างให้กรอกเอง
@@ -50,66 +60,96 @@ const getThaiExportDateLabel = () => {
     return `วันที่ ${now.getDate()} เดือน ${THAI_FULL_MONTHS[now.getMonth()]} พ.ศ. ${now.getFullYear() + 543}`;
 };
 
-interface Course {
+// ─── ตารางรายชื่อนักเรียนทั้งหมดต่อวิชา (ออกแบบตามหน้าจอ "ผลการเรียน" ของ SGS เดิม) ───────
+interface AssessmentItem {
+    id?: string;
+    name?: string;
+    maxScore?: number;
+}
+
+interface CourseConfig {
     id: string;
     code: string;
     title: string;
-    isActive?: boolean;
     classId?: string | string[];
-    credits?: number;
+    room?: string[];
+    formativeAssessments?: AssessmentItem[];
+    midtermWeight?: number;
+    finalWeight?: number;
 }
 
-interface EnrollmentRecord {
+interface GradeRecord {
+    midterm?: number | string;
+    final?: number | string;
+    status?: string;
+    grade?: string;
+    remark?: string;
+    total?: number;
+    formativeDetails?: Record<string, number | string>;
+}
+
+// สูตรตัดเกรดจากคะแนนรวม — เหมือนกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx
+const calculateGrade = (total: number): string => {
+    if (total >= 80) return '4';
+    if (total >= 75) return '3.5';
+    if (total >= 70) return '3';
+    if (total >= 65) return '2.5';
+    if (total >= 60) return '2';
+    if (total >= 55) return '1.5';
+    if (total >= 50) return '1';
+    return '0';
+};
+
+interface RosterRow {
+    key: string;
     studentId: string;
-    courseId: string;
-    academicYear: string;
-    semester: string;
-}
-
-interface FlaggedCourse {
-    courseId: string;
-    courseCode: string;
-    courseTitle: string;
-    credits: number;
-    grade: FlagType;
-    academicYear: string;
-    semester: string;
-    teacherName: string;
-}
-
-interface StudentFlagRow {
-    id: string;
     studentCode: string;
-    number: string;
     name: string;
     classLevel: string;
     room: string;
-    flags: FlaggedCourse[];
+    number: string;
+    isActivity: boolean;
+    // คะแนนย่อยรายสัปดาห์ (S1-S18) — '' แปลว่าวิชานี้ไม่ได้ตั้งค่าคาบประเมินสัปดาห์นั้นไว้ใน score-configuration
+    weeklyPre?: (number | '')[]; // 1-9 (ก่อนกลางภาค)
+    weeklyPost?: (number | '')[]; // 10-18 (หลังกลางภาค)
+    preMidtermSubtotal?: number;
+    postMidtermSubtotal?: number;
+    midterm?: number;
+    final?: number;
+    total?: number;
+    percent?: number;
+    grade: string; // ตัวเลขเกรด, '0'/'ร'/'มส' หรือ 'ผ่าน'/'มผ' (กิจกรรม)
+    isFlagged: boolean;
+    teacherName: string;
+    responsibleTeacherIds: string[];
+    // address สำหรับเขียนผลใหม่กลับ (เฉพาะกิจกรรม)
+    activityCollectionName?: 'clubs' | 'learner-activities' | 'guidance-evaluations';
+    activityDocId?: string;
+    evalDocId?: string;
+    teacherScopeKey?: string;
+    requestId?: string;
+    requestStatus: 'no_request' | 'pending' | 'resolved';
+    newResult?: string;
+    // หมายเหตุประกอบผล มส/ร (เฉพาะวิชาปกติ) — ถ้ามีค่า จะซ่อนการแสดงเกรดไว้จนกว่าจะลบหมายเหตุออก
+    remark?: string;
 }
 
-// รหัสรายวิชาที่ขึ้นต้นด้วย "ก" คือกิจกรรมพัฒนาผู้เรียน (ชุมนุม, ลูกเสือ-เนตรนารี, แนะแนว, สาธารณประโยชน์ ฯลฯ)
-// ซึ่งประเมินผ่าน/ไม่ผ่าน (มผ) ผ่านระบบ "ประเมินกิจกรรมพัฒนาผู้เรียน" ไม่ใช่เกรด 0/ร/มส เหมือนรายวิชาปกติ
-const isActivityCourseCode = (code?: string) => String(code || '').trim().charAt(0) === 'ก';
-
-const JUNIOR_HIGH_IDS = ['m1', 'm2', 'm3', 'junior_high', 'ม.ต้น', 'ม.1', 'ม.2', 'ม.3'];
-const SENIOR_HIGH_IDS = ['m4', 'm5', 'm6', 'senior_high', 'ม.ปลาย', 'ม.4', 'ม.5', 'ม.6'];
-const THAI_LEVEL_MAPPING: Record<string, string[]> = {
-    m1: ['ม.1'], m2: ['ม.2'], m3: ['ม.3'], m4: ['ม.4'], m5: ['ม.5'], m6: ['ม.6'],
-    p1: ['ป.1'], p2: ['ป.2'], p3: ['ป.3'], p4: ['ป.4'], p5: ['ป.5'], p6: ['ป.6'],
-    k1: ['อ.1', 'อนุบาล 1'], k2: ['อ.2', 'อนุบาล 2'], k3: ['อ.3', 'อนุบาล 3']
-};
-
-const matchesClassLevel = (studentClassLevel: string | undefined, selectedValue: string): boolean => {
-    if (selectedValue === 'all') return true;
-    if (!studentClassLevel) return false;
-    const cid = String(studentClassLevel).toLowerCase().trim();
-    const sid = selectedValue.toLowerCase().trim();
-    if (cid === sid) return true;
-    if (THAI_LEVEL_MAPPING[sid]?.some(label => label.toLowerCase() === cid)) return true;
-    if (sid === 'junior_high' || sid === 'ม.ต้น') return JUNIOR_HIGH_IDS.some(v => v.toLowerCase() === cid);
-    if (sid === 'senior_high' || sid === 'ม.ปลาย') return SENIOR_HIGH_IDS.some(v => v.toLowerCase() === cid);
-    return false;
-};
+// แถวที่จะบันทึกจริงตอนนำเข้าไฟล์ School MIS — เก็บเฉพาะเซลล์ที่แมตช์เป็น 0/ร/มส เท่านั้น
+interface ImportPreviewRow {
+    studentDocId: string;
+    studentCode: string;
+    studentName: string;
+    classLevel: string;
+    room: string;
+    courseId: string;
+    courseCode: string;
+    courseTitle: string;
+    grade: '0' | 'ร' | 'มส';
+    // ตรวจซ้ำ: วิชาเดียวกัน + นักเรียนคนเดียวกัน (ปีการศึกษา/ภาคเรียนเดียวกันอยู่แล้วในตัวเพราะแยก courseId
+    // ตามปี/เทอมเป็นเอกสารคนละใบ) — ถ้าเคยมีเกรดบันทึกไว้แล้วในคอร์สนี้ ให้ทำเครื่องหมายไว้เตือนก่อนทับข้อมูลเดิม
+    isDuplicate?: boolean;
+    existingGrade?: string;
+}
 
 // ข้อมูลนักเรียนจริงเก็บ classLevel เป็น "ป้ายชื่อย่อ" ภาษาไทย (เช่น "ม.2") ไม่ใช่รหัส (เช่น "m2")
 // จึงต้องแปลงกลับเป็นรหัสก่อน เพื่อ lookup ชื่อเต็มจาก CLASS_FULL_NAMES ได้ถูกต้อง
@@ -327,20 +367,55 @@ const ZeroRMsGradeReportPage: React.FC = () => {
     const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
     const teacherMap = useSelector((state: RootState) => (state as any).userMap?.teachers || {});
 
-    const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
+
+    // นำเข้าข้อมูลจากไฟล์ School MIS (ดาวน์โหลดจาก /academic/sgs-export?misSemester=1)
+    const calendarAcademicYear = useSelector((state: RootState) => state.calendar.academicYear);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importAcademicYear, setImportAcademicYear] = useState('');
+    const [importYearOptions, setImportYearOptions] = useState<string[]>([]);
+    const [importSemester, setImportSemester] = useState<'1' | '2'>('1');
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [isParsingImport, setIsParsingImport] = useState(false);
+    const [importPreview, setImportPreview] = useState<ImportPreviewRow[] | null>(null);
+    const [importSkippedColumns, setImportSkippedColumns] = useState<string[]>([]);
+    const [importSkippedCodes, setImportSkippedCodes] = useState<string[]>([]);
+    const [skipDuplicateImports, setSkipDuplicateImports] = useState(true);
+    const [isSavingImport, setIsSavingImport] = useState(false);
+    const [isDraggingImport, setIsDraggingImport] = useState(false);
+    const importFileInputRef = React.useRef<HTMLInputElement>(null);
+    const importDuplicateCount = useMemo(() => importPreview?.filter((p) => p.isDuplicate).length || 0, [importPreview]);
+    const importEffectiveSaveCount = (importPreview?.length || 0) - (skipDuplicateImports ? importDuplicateCount : 0);
 
     const [selectedClassLevel, setSelectedClassLevel] = useState<any>(() => {
         const saved = sessionStorage.getItem('zrm_classLevel');
         return saved ? JSON.parse(saved) : { value: 'all', label: 'ทุกระดับชั้น' };
     });
+    // ห้องเรียนตอนนี้ใช้กรอง "รายชื่อในวิชาที่เลือก" ไม่ใช่กรองรายชื่อที่ติดทั้งโรงเรียนแบบเดิม
     const [selectedRoom, setSelectedRoom] = useState<any>(() => {
         const saved = sessionStorage.getItem('zrm_room');
         return saved ? JSON.parse(saved) : { value: 'all', label: 'ทุกห้องเรียน' };
     });
-    const [activeFlagTypes, setActiveFlagTypes] = useState<Set<FlagType>>(new Set(FLAG_TYPES));
 
-    const [flaggedStudents, setFlaggedStudents] = useState<StudentFlagRow[]>([]);
+    // ปีการศึกษา/ภาคเรียนที่ต้องการย้อนดู — ค่าเริ่มต้นเป็นปีการศึกษาปัจจุบัน (ทั้งปี) อ้างอิงจากหน้า
+    // /academic/school-calendar เลือก "ทุกปีการศึกษา" เพื่อดูสะสมทุกภาคเรียนแบบเดิมได้
+    const [selectedTermYear, setSelectedTermYear] = useState<string>(() => sessionStorage.getItem('zrm_termYear') ?? '');
+    const [selectedTermSemester, setSelectedTermSemester] = useState<string>(() => sessionStorage.getItem('zrm_termSemester') || '');
+
+    // ── รายชื่อนักเรียน "ทั้งหมด" ในวิชาที่เลือก (ไม่เฉพาะคนติด 0/ร/มส/มผ) ──
+    const [courses, setCourses] = useState<CourseConfig[]>([]);
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+    // วิชาที่ "ถูกลงทะเบียนจริง" แล้วเท่านั้น (ผ่าน course-assignment/course-assignment-2 ที่มีครูมอบหมายจริง
+    // หรือ course-enrollment ที่มีนักเรียนลงทะเบียนแล้ว) — courses/{courseId} เป็นแค่รายวิชาหลักสูตรกลาง อาจมี
+    // วิชาที่สร้างไว้แต่ยังไม่เคยมอบหมาย/ลงทะเบียนเลยก็ได้ ดรอปดาวน์นี้จึงต้องกรองซ้ำอีกชั้น (แนวทางเดียวกับ SgsExportPage.tsx)
+    const [registeredCourseIds, setRegisteredCourseIds] = useState<Set<string> | null>(null);
+    const [rosterSearch, setRosterSearch] = useState('');
+    const [rosterRows, setRosterRows] = useState<RosterRow[]>([]);
+    const [rosterLoading, setRosterLoading] = useState(false);
+    const [correctingKey, setCorrectingKey] = useState<string | null>(null);
+    const [remarkSavingKey, setRemarkSavingKey] = useState<string | null>(null);
+
     const [error, setError] = useState<string | null>(null);
     const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
@@ -348,6 +423,18 @@ const ZeroRMsGradeReportPage: React.FC = () => {
         if (selectedClassLevel) sessionStorage.setItem('zrm_classLevel', JSON.stringify(selectedClassLevel));
         if (selectedRoom) sessionStorage.setItem('zrm_room', JSON.stringify(selectedRoom));
     }, [selectedClassLevel, selectedRoom]);
+
+    useEffect(() => {
+        sessionStorage.setItem('zrm_termYear', selectedTermYear);
+        sessionStorage.setItem('zrm_termSemester', selectedTermSemester);
+    }, [selectedTermYear, selectedTermSemester]);
+
+    // ค่าเริ่มต้นครั้งแรกที่ยังไม่เคยเลือกไว้ (ไม่มีใน sessionStorage) = ปีการศึกษาปัจจุบันจาก Redux
+    useEffect(() => {
+        if (sessionStorage.getItem('zrm_termYear') === null && calendarAcademicYear) {
+            setSelectedTermYear(calendarAcademicYear);
+        }
+    }, [calendarAcademicYear]);
 
     useEffect(() => {
         const observer = new MutationObserver((mutations) => {
@@ -408,329 +495,693 @@ const ZeroRMsGradeReportPage: React.FC = () => {
         return options;
     }, [schoolSettings]);
 
-    const getTeacherDisplayName = (teacherId?: string, fallbackName?: string) => {
-        if (fallbackName) return `ครู${fallbackName}`;
-        const t = teacherId ? teacherMap[teacherId] : null;
-        if (t?.firstName) return `ครู${t.firstName}`;
-        if (t?.name) return t.name;
-        return '-';
-    };
-
-    const handleFetchData = async () => {
+    // รายชื่อวิชาทั้งหมด (ทั้งวิชาปกติและกิจกรรม) — โหลดครั้งเดียว ใช้ทำ dropdown "วิชา"
+    useEffect(() => {
         if (!schoolId) return;
-        setLoading(true);
+        getDocs(collection(db, 'school-settings', schoolId, 'courses')).then(snap => {
+            const list: CourseConfig[] = snap.docs.map(d => {
+                const data: any = d.data();
+                return {
+                    id: d.id,
+                    code: data.code || '',
+                    title: data.title || '',
+                    classId: data.classId,
+                    room: data.room,
+                    formativeAssessments: data.formativeAssessments,
+                    midtermWeight: data.midtermWeight,
+                    finalWeight: data.finalWeight,
+                };
+            });
+            setCourses(list);
+        }).catch(err => console.error('Error loading courses:', err));
+    }, [schoolId]);
+
+    // วิชาที่ผ่าน course-assignment (มีครูมอบหมายจริง ไม่ใช่แค่มีเอกสารว่างๆ) หรือ course-enrollment
+    // (มีนักเรียนลงทะเบียนแล้ว) เท่านั้น — ถ้าเลือก "ทุกปีการศึกษา" ไว้ จะรวมทุกปีที่เคยมอบหมาย/ลงทะเบียนมา
+    useEffect(() => {
+        if (!schoolId) { setRegisteredCourseIds(null); return; }
+        let cancelled = false;
+        const fetchRegisteredCourseIds = async () => {
+            try {
+                const yearConstraint = selectedTermYear ? [where('academicYear', '==', selectedTermYear)] : [];
+                const [assignmentSnap, enrollmentSnap] = await Promise.all([
+                    getDocs(query(collection(db, 'school-settings', schoolId, 'course_assignments'), ...yearConstraint)),
+                    getDocs(query(collection(db, 'school-settings', schoolId, 'enrollments'), ...yearConstraint)),
+                ]);
+                const ids = new Set<string>();
+                assignmentSnap.docs.forEach(d => {
+                    const data: any = d.data();
+                    if (Array.isArray(data.teacherAssignments) && data.teacherAssignments.length > 0 && data.courseId) ids.add(data.courseId);
+                });
+                enrollmentSnap.docs.forEach(d => {
+                    const courseId = (d.data() as any)?.courseId;
+                    if (courseId) ids.add(courseId);
+                });
+                if (!cancelled) setRegisteredCourseIds(ids);
+            } catch (err) {
+                console.error('Error loading registered course ids:', err);
+                if (!cancelled) setRegisteredCourseIds(new Set());
+            }
+        };
+        fetchRegisteredCourseIds();
+        return () => { cancelled = true; };
+    }, [schoolId, selectedTermYear]);
+
+    const courseOptions = useMemo(() => {
+        const filterVal = selectedClassLevel.value;
+        const matchesLevel = (classId?: string | string[]) => {
+            if (filterVal === 'all') return true;
+            const ids = Array.isArray(classId) ? classId : classId ? [classId] : [];
+            if (ids.includes(filterVal)) return true;
+            if (filterVal === 'junior_high') return ids.some(i => ['m1', 'm2', 'm3'].includes(i));
+            if (filterVal === 'senior_high') return ids.some(i => ['m4', 'm5', 'm6'].includes(i));
+            return false;
+        };
+        if (!registeredCourseIds) return [];
+        // ไม่แสดงวิชากิจกรรมพัฒนาผู้เรียน (รหัสขึ้นต้นด้วย "ก") ในหน้านี้ — หน้านี้แสดงเฉพาะวิชาปกติที่มี
+        // Total/%/Grade เป็นตัวเลข ส่วนการแก้ มผ ของกิจกรรมมีหน้า "บันทึก 0 ร มส" (เมนูข้อ 4) แยกไว้แล้ว
+        return courses
+            .filter(c => matchesLevel(c.classId) && !isActivityCourseCode(c.code) && registeredCourseIds.has(c.id))
+            .sort((a, b) => a.code.localeCompare(b.code, 'th', { numeric: true }))
+            .map(c => ({ value: c.id, label: `${c.code} ${c.title}` }));
+    }, [courses, selectedClassLevel, registeredCourseIds]);
+
+    useEffect(() => {
+        if (courseOptions.length === 0) { setSelectedCourseId(''); return; }
+        if (!selectedCourseId || !courseOptions.some(o => o.value === selectedCourseId)) {
+            setSelectedCourseId(courseOptions[0].value);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [courseOptions]);
+
+    const requestDedupKey = (studentId: string, idValue: string, academicYear: string, semester: string) =>
+        `${studentId}|${idValue}|${academicYear}|${semester}`;
+
+    // รายชื่อนักเรียน "ทั้งหมด" ที่ลงทะเบียนวิชาที่เลือก พร้อมคำนวณ Total/%/Grade (วิชาปกติ)
+    // หรือสถานะผ่าน/มผ (วิชากิจกรรม) — ตามที่ตกลงกันว่าจะแสดงทุกคนในวิชา ไม่ใช่เฉพาะคนติดผลการเรียน
+    const loadRoster = async () => {
+        if (!schoolId || !selectedCourseId) { setRosterRows([]); return; }
+        const course = courses.find(c => c.id === selectedCourseId);
+        if (!course) { setRosterRows([]); return; }
+
+        setRosterLoading(true);
         setError(null);
         try {
-            // 1. รายชื่อนักเรียนเป้าหมาย — ดึงทั้งหมดแล้วกรองระดับชั้นฝั่ง client ด้วย matchesClassLevel
-            // (ห้ามใช้ where('classLevel','==',...) เทียบกับ selectedClassLevel.value ตรงๆ เพราะ
-            // ค่า classLevel ที่บันทึกจริงในเอกสารนักเรียนเป็น "ป้ายชื่อ" ภาษาไทย เช่น "ม.2"
-            // ไม่ใช่ "รหัส" เช่น "m2" ที่ตัวกรองในหน้านี้ใช้ — เทียบแบบ equality ตรงๆ จะได้ผลลัพธ์ว่างเปล่าเสมอ)
-            const studentsRef = collection(db, 'school-settings', schoolId, 'students');
-            const studentSnap = await getDocs(studentsRef);
+            const isActivity = isActivityCourseCode(course.code);
 
-            const studentInfoMap: Record<string, { code: string; name: string; number: string; classLevel: string; room: string }> = {};
-            studentSnap.docs.forEach(sDoc => {
-                const sData: any = sDoc.data();
-                if (!matchesClassLevel(sData.classLevel, selectedClassLevel.value)) return;
-                const name = sData.firstName
-                    ? `${sData.title || sData.prefix || ''}${sData.firstName} ${sData.lastName || ''}`.trim()
-                    : (sData.name || 'ไม่พบข้อมูลนักเรียน');
-                studentInfoMap[sDoc.id] = {
-                    code: String(sData.studentCode || sData.studentId || sData.code || sData['รหัสนักเรียน'] || '-'),
-                    name,
-                    number: String(sData.studentNumber || sData.number || sData.no || sData['เลขที่'] || '').trim(),
-                    classLevel: sData.classLevel || '',
-                    room: sData.room || '',
-                };
+            const enrollConstraints = [where('courseId', '==', selectedCourseId)];
+            if (selectedTermYear) enrollConstraints.push(where('academicYear', '==', selectedTermYear));
+            if (selectedTermYear && selectedTermSemester) enrollConstraints.push(where('semester', '==', selectedTermSemester));
+            const enrollSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'enrollments'), ...enrollConstraints));
+
+            // เอาปี/เทอมล่าสุดต่อนักเรียน 1 คน กันซ้ำ กรณีเลือก "ทุกปีการศึกษา" แล้วมีหลายเทอม
+            const enrollByStudent = new Map<string, { academicYear: string; semester: string }>();
+            enrollSnap.forEach(d => {
+                const data: any = d.data();
+                const sid = String(data.studentId || '');
+                if (!sid) return;
+                const y = String(data.academicYear || '');
+                const s = String(data.semester || '');
+                const prev = enrollByStudent.get(sid);
+                if (!prev || y > prev.academicYear || (y === prev.academicYear && s > prev.semester)) {
+                    enrollByStudent.set(sid, { academicYear: y, semester: s });
+                }
             });
-            const studentIds = Object.keys(studentInfoMap);
+            const studentIds = Array.from(enrollByStudent.keys());
+            if (studentIds.length === 0) { setRosterRows([]); return; }
 
-            if (studentIds.length === 0) {
-                setFlaggedStudents([]);
-                setLoading(false);
-                return;
+            const studentInfoMap: Record<string, any> = {};
+            for (let i = 0; i < studentIds.length; i += 30) {
+                const chunk = studentIds.slice(i, i + 30);
+                const snap = await getDocs(query(collection(db, 'school-settings', schoolId, 'students'), where('__name__', 'in', chunk)));
+                snap.forEach(d => { studentInfoMap[d.id] = d.data(); });
             }
 
-            // 2. ข้อมูลอ้างอิง: รายวิชา, มอบหมายครู, ชุมนุม, กิจกรรมพัฒนาผู้เรียน (ดึงทั้งหมดครั้งเดียว)
-            const [courseSnap, assignmentSnap, clubSnap, learnerActivitySnap] = await Promise.all([
-                getDocs(collection(db, 'school-settings', schoolId, 'courses')),
-                getDocs(collection(db, 'school-settings', schoolId, 'course_assignments')),
-                getDocs(collection(db, 'school-settings', schoolId, 'clubs')),
-                getDocs(collection(db, 'school-settings', schoolId, 'learner-activities')),
-            ]);
-
-            const courseMap: Record<string, Course> = {};
-            const courseCodeToId: Record<string, string> = {};
-            courseSnap.docs.forEach(d => {
+            const assignSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'course_assignments'), where('courseId', '==', selectedCourseId)));
+            let teacherIds: string[] = [];
+            assignSnap.forEach(d => {
                 const data: any = d.data();
-                courseMap[d.id] = { id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits, isActive: data.isActive ?? true };
-                if (data.code) courseCodeToId[data.code] = d.id;
+                if (selectedTermYear && String(data.academicYear) !== selectedTermYear) return;
+                if (selectedTermYear && selectedTermSemester && String(data.semester) !== selectedTermSemester) return;
+                (data.teacherAssignments || []).forEach((ta: any) => { if (ta.teacherId) teacherIds.push(ta.teacherId); });
             });
+            teacherIds = Array.from(new Set(teacherIds));
+            const teacherName = teacherIds
+                .map(id => (teacherMap?.[id]?.firstName ? `ครู${teacherMap[id].firstName}` : teacherMap?.[id]?.name))
+                .filter(Boolean)
+                .join(', ') || '-';
 
-            const assignmentsByCourse: Record<string, any[]> = {};
-            assignmentSnap.docs.forEach(d => {
-                const data: any = d.data();
-                if (!data.courseId) return;
-                if (!assignmentsByCourse[data.courseId]) assignmentsByCourse[data.courseId] = [];
-                assignmentsByCourse[data.courseId].push(data);
-            });
+            const buildName = (sData: any) => sData.firstName
+                ? `${sData.title || sData.prefix || ''}${sData.firstName} ${sData.lastName || ''}`.trim()
+                : (sData.name || 'ไม่พบข้อมูลนักเรียน');
 
-            const clubDocByCourseId: Record<string, string> = {};
-            clubSnap.docs.forEach(d => {
-                const data: any = d.data();
-                const linked = data.linkedCourseId || data.courseId;
-                if (linked) clubDocByCourseId[linked] = d.id;
-                if (courseMap[d.id]) clubDocByCourseId[d.id] = d.id; // course-based: doc id === course id
-            });
+            const rows: RosterRow[] = [];
 
-            const activityDocByCourseId: Record<string, string> = {};
-            learnerActivitySnap.docs.forEach(d => {
-                const data: any = d.data();
-                const linked = data.courseId;
-                if (linked) activityDocByCourseId[linked] = d.id;
-                if (courseMap[d.id]) activityDocByCourseId[d.id] = d.id; // course-based: doc id === course id
-            });
+            if (!isActivity) {
+                const gradeSnap = await getDocs(collection(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades'));
+                const gradeMap: Record<string, GradeRecord> = {};
+                gradeSnap.forEach(d => { gradeMap[d.id] = d.data() as GradeRecord; });
 
-            // 3. ดึงประวัติการลงทะเบียนทั้งหมดของนักเรียนกลุ่มเป้าหมาย (ทุกปี/ทุกเทอมที่เคยเรียนมา)
-            const enrollRef = collection(db, 'school-settings', schoolId, 'enrollments');
-            const enrollments: EnrollmentRecord[] = [];
-            const batchSize = 30;
-            for (let i = 0; i < studentIds.length; i += batchSize) {
-                const batchIds = studentIds.slice(i, i + batchSize);
-                const eSnap = await getDocs(query(enrollRef, where('studentId', 'in', batchIds)));
-                eSnap.forEach(eDoc => {
-                    const data: any = eDoc.data();
-                    const courseId = data.courseId || (data.courseCode ? courseCodeToId[data.courseCode] : undefined);
-                    if (!courseId || !courseMap[courseId]) return;
-                    if (!data.academicYear || !data.semester) return;
-                    enrollments.push({ studentId: data.studentId, courseId, academicYear: String(data.academicYear), semester: String(data.semester) });
+                const maxTotal = (() => {
+                    const formativeMax = (course.formativeAssessments || []).reduce((sum, a) => sum + (Number(a.maxScore) || 0), 0);
+                    const total = formativeMax + (Number(course.midtermWeight) || 0) + (Number(course.finalWeight) || 0);
+                    return total > 0 ? total : 100;
+                })();
+
+                // แผนที่สัปดาห์ (S1..S18) -> การตั้งค่าคาบประเมิน (จากหน้า score-configuration) เพื่อรู้ว่า
+                // สัปดาห์ไหนถูกเปิดใช้งานจริง — เหมือน SgsExportPage.tsx ทุกประการ
+                const assessmentByWeek: Record<number, AssessmentItem> = {};
+                (course.formativeAssessments || []).forEach(a => {
+                    const key = a.id || a.name;
+                    const match = /^S(\d{1,2})$/.exec(key || '');
+                    if (match) assessmentByWeek[Number(match[1])] = a;
                 });
-            }
 
-            const regularEnrollments = enrollments.filter(e => !isActivityCourseCode(courseMap[e.courseId]?.code));
-            const activityEnrollments = enrollments.filter(e => isActivityCourseCode(courseMap[e.courseId]?.code));
+                studentIds.forEach(sid => {
+                    const sData = studentInfoMap[sid];
+                    if (!sData) return;
+                    const term = enrollByStudent.get(sid)!;
+                    const record = gradeMap[sid] || {};
+                    const details = record.formativeDetails || {};
 
-            // 4. เกรด 0/ร/มส ของวิชาปกติ — อ่าน grades subcollection ของทุกวิชาที่เกี่ยวข้องเพียงครั้งเดียว
-            const uniqueRegularCourseIds = Array.from(new Set(regularEnrollments.map(e => e.courseId)));
-            const regularGradeSnaps = await Promise.all(
-                uniqueRegularCourseIds.map(cid => getDocs(collection(db, 'school-settings', schoolId, 'courses', cid, 'grades')))
-            );
-            const gradesByCourse: Record<string, Record<string, string>> = {};
-            uniqueRegularCourseIds.forEach((cid, idx) => {
-                const map: Record<string, string> = {};
-                regularGradeSnaps[idx].forEach(gDoc => {
-                    const value = String((gDoc.data() as any).grade || '').trim();
-                    if (value) map[gDoc.id] = value;
-                });
-                gradesByCourse[cid] = map;
-            });
+                    const weekValue = (n: number): number | '' => {
+                        const assessment = assessmentByWeek[n];
+                        if (!assessment || !(Number(assessment.maxScore) > 0)) return '';
+                        const raw = details[`S${n}`];
+                        return raw === undefined || raw === '' ? 0 : Number(raw) || 0;
+                    };
 
-            const getTeacherForAssignment = (courseId: string, academicYear: string, semester: string) => {
-                const matches = (assignmentsByCourse[courseId] || []).filter(a => String(a.academicYear) === academicYear && String(a.semester) === semester);
-                const firstAssignment = matches[0]?.teacherAssignments?.[0];
-                if (!firstAssignment) return '-';
-                return getTeacherDisplayName(firstAssignment.teacherId, firstAssignment.teacherName);
-            };
+                    const weeklyPre = Array.from({ length: 9 }, (_, i) => weekValue(i + 1));
+                    const weeklyPost = Array.from({ length: 9 }, (_, i) => weekValue(i + 10));
+                    const preMidtermSubtotal = weeklyPre.reduce((sum: number, v) => sum + (v === '' ? 0 : v), 0);
+                    const postMidtermSubtotal = weeklyPost.reduce((sum: number, v) => sum + (v === '' ? 0 : v), 0);
+                    const midterm = Number(record.midterm) || 0;
+                    const final = Number(record.final) || 0;
+                    const total = preMidtermSubtotal + postMidtermSubtotal + midterm + final;
+                    const percent = Math.round((total / maxTotal) * 10000) / 100;
+                    // ทุกจุดที่บันทึกเกรดในระบบ (ปุ่มแก้ไขตรง/นำเข้าไฟล์/หน้าคำร้องขอแก้ตัว) เขียนลงฟิลด์ "grade"
+                    // เสมอ ไม่เคยเขียน "status" — เช็ค record.grade ก่อน ไม่งั้นเกรดที่บันทึก/แก้ไขไว้แล้วจะถูกมองข้าม
+                    // กลายเป็นคำนวณจากคะแนนดิบ (ซึ่งถ้ายังไม่กรอกคะแนนเลยจะได้ total=0 = "0" ทุกคนโดยไม่จำเป็น)
+                    const grade = record.grade || record.status || calculateGrade(total);
+                    const isFlagged = grade === '0' || grade === 'ร' || grade === 'มส';
 
-            const flaggedByStudent: Record<string, FlaggedCourse[]> = {};
-            const addFlag = (studentId: string, flag: FlaggedCourse) => {
-                if (!flaggedByStudent[studentId]) flaggedByStudent[studentId] = [];
-                flaggedByStudent[studentId].push(flag);
-            };
-
-            regularEnrollments.forEach(e => {
-                const grade = gradesByCourse[e.courseId]?.[e.studentId];
-                if (grade !== '0' && grade !== 'ร' && grade !== 'มส') return;
-                const course = courseMap[e.courseId];
-                addFlag(e.studentId, {
-                    courseId: e.courseId,
-                    courseCode: course.code,
-                    courseTitle: course.title,
-                    credits: course.credits ?? 0,
-                    grade: grade as FlagType,
-                    academicYear: e.academicYear,
-                    semester: e.semester,
-                    teacherName: getTeacherForAssignment(e.courseId, e.academicYear, e.semester),
-                });
-            });
-
-            // 5. ผลประเมิน "มผ" ของวิชากิจกรรมพัฒนาผู้เรียน — รวบรวม path เอกสารประเมินที่ต้องอ่านแบบไม่ซ้ำก่อน แล้วค่อยอ่านพร้อมกัน
-            const evalDocPaths = new Map<string, { collectionName: string; activityDocId: string; evalDocId: string }>();
-            const activityTermKey = (courseId: string, year: string, semester: string) => `${courseId}|${year}|${semester}`;
-            const scopesByTermKey: Record<string, LearnerActivityTeacherScope[]> = {};
-
-            activityEnrollments.forEach(e => {
-                const courseId = e.courseId;
-                const clubDocId = clubDocByCourseId[courseId];
-                const activityDocId = activityDocByCourseId[courseId];
-
-                if (clubDocId) {
-                    const evalDocId = `${e.academicYear}_${e.semester}`;
-                    evalDocPaths.set(`clubs/${clubDocId}/${evalDocId}`, { collectionName: 'clubs', activityDocId: clubDocId, evalDocId });
-                } else if (activityDocId) {
-                    const termKey = activityTermKey(courseId, e.academicYear, e.semester);
-                    if (!scopesByTermKey[termKey]) {
-                        const assignment = (assignmentsByCourse[courseId] || []).find(a => String(a.academicYear) === e.academicYear && String(a.semester) === e.semester);
-                        scopesByTermKey[termKey] = deriveTeacherScopesFromCourse({}, { id: courseId, classId: courseMap[courseId]?.classId, teacherAssignments: assignment?.teacherAssignments || [] }, teacherMap);
-                    }
-                    const scopes = scopesByTermKey[termKey];
-                    const candidateKeys = scopes.length > 0 ? scopes.map(s => s.key) : [undefined];
-                    candidateKeys.forEach(scopeKey => {
-                        const evalDocId = buildLearnerActivityEvaluationDocId(e.academicYear, e.semester, scopeKey);
-                        evalDocPaths.set(`learner-activities/${activityDocId}/${evalDocId}`, { collectionName: 'learner-activities', activityDocId, evalDocId });
+                    rows.push({
+                        key: requestDedupKey(sid, selectedCourseId, term.academicYear, term.semester),
+                        studentId: sid,
+                        studentCode: String(sData.studentCode || sData.studentId || sid),
+                        name: buildName(sData),
+                        classLevel: sData.classLevel || '',
+                        room: String(sData.room || ''),
+                        number: String(sData.studentNumber || sData.number || '').trim(),
+                        isActivity: false,
+                        weeklyPre, weeklyPost, preMidtermSubtotal, postMidtermSubtotal, midterm, final,
+                        total, percent, grade, isFlagged,
+                        teacherName, responsibleTeacherIds: teacherIds,
+                        requestStatus: 'no_request',
+                        remark: record.remark || '',
                     });
+                });
+            } else {
+                const flagRows = await fetchFlaggedStudents(schoolId, teacherMap, {
+                    studentIds, academicYear: selectedTermYear || undefined, semester: selectedTermSemester || undefined,
+                });
+                const failedByStudent = new Map<string, FlaggedCourse>();
+                flagRows.forEach(sr => {
+                    sr.flags.forEach(f => {
+                        if (f.courseId === selectedCourseId && f.flagKind !== 'course') failedByStudent.set(sr.id, f);
+                    });
+                });
+
+                studentIds.forEach(sid => {
+                    const sData = studentInfoMap[sid];
+                    if (!sData) return;
+                    const term = enrollByStudent.get(sid)!;
+                    const failedFlag = failedByStudent.get(sid);
+
+                    rows.push({
+                        key: requestDedupKey(sid, failedFlag?.activityDocId || selectedCourseId, term.academicYear, term.semester),
+                        studentId: sid,
+                        studentCode: String(sData.studentCode || sData.studentId || sid),
+                        name: buildName(sData),
+                        classLevel: sData.classLevel || '',
+                        room: String(sData.room || ''),
+                        number: String(sData.studentNumber || sData.number || '').trim(),
+                        isActivity: true,
+                        grade: failedFlag ? 'มผ' : 'ผ',
+                        isFlagged: !!failedFlag,
+                        teacherName: failedFlag?.teacherName || teacherName,
+                        responsibleTeacherIds: failedFlag?.responsibleTeacherIds?.length ? failedFlag.responsibleTeacherIds : teacherIds,
+                        activityCollectionName: failedFlag?.activityCollectionName,
+                        activityDocId: failedFlag?.activityDocId,
+                        evalDocId: failedFlag?.evalDocId,
+                        teacherScopeKey: failedFlag?.teacherScopeKey,
+                        requestStatus: 'no_request',
+                    });
+                });
+            }
+
+            // เช็คคำร้องขอแก้ตัวที่มีอยู่แล้ว (ทำครั้งเดียวทั้ง collection เหมือนหน้าภาพรวม/คำร้อง) เพื่อโชว์ badge
+            // แทนปุ่มถ้ามีคำร้องค้างอยู่/เสร็จแล้ว
+            const requestSnap = await getDocs(collection(db, 'school-settings', schoolId, 'remediation_requests'));
+            const requestMap: Record<string, { id: string; status: string; newResult?: string }> = {};
+            requestSnap.forEach(d => {
+                const data: any = d.data();
+                if (data.status === 'cancelled') return;
+                const idValue = data.flagType === 'course' ? data.courseId : data.activityId;
+                const key = requestDedupKey(data.studentId, idValue, data.academicYear, data.semester);
+                if (!requestMap[key] || data.status === 'resolved') {
+                    requestMap[key] = { id: d.id, status: data.status, newResult: data.newResult };
+                }
+            });
+            rows.forEach(r => {
+                const req = requestMap[r.key];
+                if (req) {
+                    r.requestId = req.id;
+                    r.requestStatus = req.status as 'pending' | 'resolved';
+                    r.newResult = req.newResult;
                 }
             });
 
-            const evalPathList = Array.from(evalDocPaths.entries());
-            const evalDocs = await Promise.all(
-                evalPathList.map(([, info]) => getDoc(doc(db, 'school-settings', schoolId, info.collectionName, info.activityDocId, 'evaluations', info.evalDocId)))
-            );
-            const evalResultsByPath: Record<string, Record<string, { status: string }>> = {};
-            evalPathList.forEach(([pathKey], idx) => {
-                const snap = evalDocs[idx];
-                if (snap.exists()) evalResultsByPath[pathKey] = (snap.data() as any).results || {};
+            rows.sort((a, b) => {
+                const roomA = Number(a.room) || 999, roomB = Number(b.room) || 999;
+                if (roomA !== roomB) return roomA - roomB;
+                const numA = parseInt(a.number) || 999, numB = parseInt(b.number) || 999;
+                if (numA !== numB) return numA - numB;
+                return a.name.localeCompare(b.name, 'th');
             });
 
-            activityEnrollments.forEach(e => {
-                const courseId = e.courseId;
-                const course = courseMap[courseId];
-                const clubDocId = clubDocByCourseId[courseId];
-                const activityDocId = activityDocByCourseId[courseId];
-                let failed = false;
-                let teacherName = '-';
-
-                if (clubDocId) {
-                    const evalDocId = `${e.academicYear}_${e.semester}`;
-                    const results = evalResultsByPath[`clubs/${clubDocId}/${evalDocId}`];
-                    failed = results?.[e.studentId]?.status === 'failed';
-                    teacherName = getTeacherForAssignment(courseId, e.academicYear, e.semester);
-                } else if (activityDocId) {
-                    const termKey = activityTermKey(courseId, e.academicYear, e.semester);
-                    const scopes = scopesByTermKey[termKey] || [];
-                    const candidateKeys = scopes.length > 0 ? scopes.map(s => s.key) : [undefined];
-                    for (const scopeKey of candidateKeys) {
-                        const evalDocId = buildLearnerActivityEvaluationDocId(e.academicYear, e.semester, scopeKey);
-                        const results = evalResultsByPath[`learner-activities/${activityDocId}/${evalDocId}`];
-                        if (results?.[e.studentId]) {
-                            failed = results[e.studentId].status === 'failed';
-                            const matchedScope = scopes.find(s => s.key === scopeKey);
-                            teacherName = getTeacherDisplayName(matchedScope?.teacherId, matchedScope?.teacherName) !== '-'
-                                ? getTeacherDisplayName(matchedScope?.teacherId, matchedScope?.teacherName)
-                                : getTeacherForAssignment(courseId, e.academicYear, e.semester);
-                            break;
-                        }
-                    }
-                } else {
-                    return; // ไม่พบระบบประเมินที่เชื่อมโยงกับวิชานี้ — ข้าม (ไม่สร้างข้อมูลเดา)
-                }
-
-                if (!failed || !course) return;
-                addFlag(e.studentId, {
-                    courseId,
-                    courseCode: course.code,
-                    courseTitle: course.title,
-                    credits: course.credits ?? 0,
-                    grade: 'มผ',
-                    academicYear: e.academicYear,
-                    semester: e.semester,
-                    teacherName,
-                });
-            });
-
-            const list: StudentFlagRow[] = Object.keys(flaggedByStudent).map(sid => {
-                const info = studentInfoMap[sid];
-                const flags = [...flaggedByStudent[sid]].sort((a, b) => {
-                    if (a.academicYear !== b.academicYear) return a.academicYear.localeCompare(b.academicYear);
-                    if (a.semester !== b.semester) return a.semester.localeCompare(b.semester);
-                    return a.courseCode.localeCompare(b.courseCode, 'th', { numeric: true });
-                });
-                return {
-                    id: sid,
-                    studentCode: info?.code || '-',
-                    number: info?.number || '',
-                    name: info?.name || 'ไม่พบข้อมูลนักเรียน',
-                    classLevel: info?.classLevel || '',
-                    room: info?.room || '',
-                    flags,
-                };
-            });
-
-            setFlaggedStudents(list);
+            setRosterRows(rows);
         } catch (err: any) {
-            console.error('Error fetching 0/ร/มส/มผ report:', err);
+            console.error('Error loading course roster:', err);
             if (err.code === 'failed-precondition' || err.message?.includes('index')) {
                 setError('ระบบต้องการการตั้งค่าดัชนี (Index) กรุณาคลิกลิงก์ใน Console เพื่อสร้าง Index');
             } else {
                 setError('เกิดข้อผิดพลาดในการโหลดข้อมูล');
             }
         } finally {
-            setLoading(false);
+            setRosterLoading(false);
+        }
+    };
+
+    const resetImportState = () => {
+        setImportFile(null);
+        setImportPreview(null);
+        setImportSkippedColumns([]);
+        setImportSkippedCodes([]);
+        setSkipDuplicateImports(true);
+    };
+
+    const openImportModal = async () => {
+        const defaultYear = calendarAcademicYear || String(new Date().getFullYear() + 543);
+        setImportAcademicYear(defaultYear);
+        setImportSemester('1');
+        resetImportState();
+        setShowImportModal(true);
+        // ดึงรายชื่อปีการศึกษาที่ตั้งค่าไว้แล้วที่ /academic/school-calendar มาให้เลือกผ่านดร็อปดาวน์
+        // (แทนที่จะให้พิมพ์เอง) เพื่อกันพิมพ์ผิด/ปีที่ไม่มีอยู่จริงในระบบ
+        if (schoolId) {
+            try {
+                const years = await fetchAvailableAcademicYears(schoolId);
+                const merged = Array.from(new Set([defaultYear, ...years]))
+                    .sort((a, b) => Number(b) - Number(a))
+                    .slice(0, 10);
+                setImportYearOptions(merged);
+            } catch (err) {
+                console.error('Error loading academic years for import:', err);
+                setImportYearOptions([defaultYear]);
+            }
+        }
+    };
+
+    const closeImportModal = () => {
+        if (isParsingImport || isSavingImport) return;
+        setShowImportModal(false);
+        resetImportState();
+    };
+
+    // อ่านไฟล์ CSV/Excel ที่ export มาจากหน้า sgs-export (แท็บ School MIS) แล้วเก็บเฉพาะเซลล์ที่
+    // ค่าเป็น 0/ร/มส ไว้แสดงพรีวิว — โครงสร้างไฟล์: #, รหัสนักเรียน, ชื่อ-สกุล, {รหัสวิชา} {ชื่อวิชา}, ...
+    // รองรับ 2 รูปแบบไฟล์ที่ส่งออกได้จากหน้า sgs-export:
+    // 1) แท็บ "ไฟล์ Excel" (SGS) — .xlsx จริง ตาม SGS_HEADERS 38 คอลัมน์ 1 แถว = นักเรียน 1 คน "ของวิชาที่ระบุใน
+    //    คอลัมน์ วิชา" (ไฟล์ 1 ไฟล์ = 1 วิชา) ค่า 0/ร/มส อยู่ในคอลัมน์ "Grade"
+    // 2) แท็บ "ไฟล์ CSV" (School MIS) — 1 แถว = นักเรียน 1 คน, 1 คอลัมน์ = 1 วิชา (หัวคอลัมน์ "{รหัส} {ชื่อวิชา}")
+    // ตรวจจับอัตโนมัติจากหัวตาราง ไม่ต้องให้ผู้ใช้เลือกเอง
+    const processImportFile = async (file: File) => {
+        if (!schoolId) return;
+
+        setImportFile(file);
+        setIsParsingImport(true);
+        setImportPreview(null);
+        setImportSkippedColumns([]);
+        setImportSkippedCodes([]);
+
+        // ห้ามเชื่อแค่นามสกุลไฟล์ (.xls/.xlsx/.csv) ว่าจะเป็นไฟล์ไบนารีจริง — ระบบ School MIS/SGS รุ่นเก่าหลาย
+        // ระบบ "export เป็น .xls" จริงๆ แล้วเขียนเป็นไฟล์ข้อความ/HTML ธรรมดาแล้วตั้งนามสกุลปลอมเป็น .xls เอง
+        // (พบเคสจริง: "TblTranscripts (1).xls" ที่จับคู่วิชา/รหัสนักเรียนไม่เจอเลยทั้งที่มีข้อมูลอยู่จริง)
+        // จึงต้องดู "magic bytes"/เนื้อหาไฟล์จริงๆ ก่อน แทนที่จะเชื่อนามสกุล:
+        // 1) ไฟล์ .xlsx จริง = ZIP (PK\x03\x04) และไฟล์ .xls ไบนารีจริง = OLE2 Compound File (D0 CF 11 E0)
+        //    → อ่านแบบ readAsBinaryString + type:'binary' ตามเดิม (ไม่มีปัญหาเรื่องตัวอักษรไทย)
+        // 2) ถ้าไม่ใช่ 2 แบบข้างบน แปลว่าเป็นไฟล์ข้อความ (CSV/TSV) หรือ HTML table ปลอมเป็น .xls/.xlsx
+        //    ต้องถอดรหัสเป็น UTF-8 text ก่อนเสมอ ไม่งั้นตัวอักษรไทย (multi-byte UTF-8) จะถูกตีความเป็น
+        //    Latin-1 ทีละไบต์ กลายเป็นตัวอักษรเพี้ยน (mojibake) ทำให้จับคู่รหัสวิชา/รหัสนักเรียนไม่เจอเลย
+        //    2a) ถ้าเนื้อหาที่ถอดแล้วเป็น HTML (ขึ้นต้นด้วย < หรือมี <table>) — SheetJS type:'string' อ่าน
+        //        เป็น CSV ไม่ใช่ HTML จึงต้องใช้ DOMParser ดึงแถว/คอลัมน์จาก <table> เอง
+        //    2b) ถ้าไม่ใช่ HTML ก็เป็น CSV/TSV ธรรมดา ใช้ type:'string' ได้ตามปกติ
+        const headerBuf = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+        const isZip = headerBuf[0] === 0x50 && headerBuf[1] === 0x4B && headerBuf[2] === 0x03 && headerBuf[3] === 0x04; // .xlsx จริง
+        const isOle2 = headerBuf[0] === 0xD0 && headerBuf[1] === 0xCF && headerBuf[2] === 0x11 && headerBuf[3] === 0xE0; // .xls ไบนารีจริง
+        const isRealBinaryFile = isZip || isOle2;
+
+        try {
+            const rows: any[][] = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const raw = evt.target?.result;
+                        if (isRealBinaryFile) {
+                            const wb = XLSX.read(raw, { type: 'binary' });
+                            const ws = wb.Sheets[wb.SheetNames[0]];
+                            resolve(XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]);
+                            return;
+                        }
+                        const text = String(raw || '');
+                        const looksLikeHtml = /^\s*<(!doctype|html|table)/i.test(text) || /<table[\s>]/i.test(text);
+                        if (looksLikeHtml) {
+                            const table = new DOMParser().parseFromString(text, 'text/html').querySelector('table');
+                            if (!table) { reject(new Error('ไม่พบตารางข้อมูลในไฟล์ HTML')); return; }
+                            const htmlRows = Array.from(table.querySelectorAll('tr')).map(tr =>
+                                Array.from(tr.querySelectorAll('td,th')).map(td => (td.textContent || '').trim())
+                            );
+                            resolve(htmlRows);
+                            return;
+                        }
+                        const wb = XLSX.read(text, { type: 'string' });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        resolve(XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+                if (isRealBinaryFile) reader.readAsBinaryString(file);
+                else reader.readAsText(file, 'UTF-8');
+            });
+
+            if (!rows || rows.length < 2) {
+                Swal.fire({ icon: 'warning', title: 'ไฟล์ไม่มีข้อมูล', text: 'กรุณาตรวจสอบไฟล์อีกครั้ง' });
+                return;
+            }
+
+            const header = rows[0].map((h: any) => String(h ?? '').trim());
+
+            // สร้างแผนที่ รหัสวิชา -> วิชา (query ครั้งเดียวทั้งโรงเรียน ใช้ร่วมกันทั้ง 2 รูปแบบไฟล์)
+            const coursesSnap = await getDocs(collection(db, 'school-settings', schoolId, 'courses'));
+            const courseByCode = new Map<string, { id: string; code: string; title: string }>();
+            coursesSnap.forEach((d) => {
+                const data = d.data() as any;
+                const code = String(data.code || '').trim();
+                if (code && !courseByCode.has(code)) {
+                    courseByCode.set(code, { id: d.id, code, title: data.title || '' });
+                }
+            });
+
+            // สร้างแผนที่ นักเรียน (รหัสนักเรียน/รหัสประจำตัว/docId -> ข้อมูลนักเรียน) ทั้งโรงเรียน
+            const studentsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
+            const studentByCode = new Map<string, { docId: string; studentCode: string; name: string; classLevel: string; room: string }>();
+            studentsSnap.forEach((d) => {
+                const data = d.data() as any;
+                const code = String(data.studentCode || data.studentId || d.id || '').trim();
+                const name = `${data.title || ''}${data.firstName || ''} ${data.lastName || ''}`.trim();
+                const rec = { docId: d.id, studentCode: code, name, classLevel: data.classLevel || '', room: String(data.room || '') };
+                if (code) studentByCode.set(code, rec);
+                studentByCode.set(d.id, rec);
+            });
+
+            const preview: ImportPreviewRow[] = [];
+            const skippedCols: string[] = [];
+            const skippedCodes: string[] = [];
+
+            const isSgsExcelFormat = header.includes('วิชา') && header.includes('Grade');
+
+            if (isSgsExcelFormat) {
+                // รูปแบบ SGS (.xlsx 38 คอลัมน์): วิชาเดียวกันทุกแถวในไฟล์ ค่า 0/ร/มส อยู่คอลัมน์ "Grade"
+                // ใช้คอลัมน์ "เลขประจำตัว" (เดี่ยว ไม่ใช่คอลัมน์รวม "เลขประจำตัว ชื่อ-นามสกุล") อ่านรหัสนักเรียนตรงๆ
+                const subjectIdx = header.indexOf('วิชา');
+                const studentCodeIdx = header.indexOf('เลขประจำตัว');
+                const gradeIdx = header.indexOf('Grade');
+                const unmatchedSubjects = new Set<string>();
+
+                for (let r = 1; r < rows.length; r++) {
+                    const row = rows[r];
+                    if (!row || row.length === 0) continue;
+
+                    // เซลล์ "วิชา" ในไฟล์จริงบางไฟล์เก็บเป็น "รหัสวิชา ชื่อวิชา" รวมกัน (เช่น "ท21101 ภาษาไทยพื้นฐาน 1")
+                    // ไม่ใช่แค่รหัสล้วนๆ — ต้องตัดเอาแค่ token แรก (รหัสวิชาไม่มีช่องว่างในตัวเอง) มาจับคู่ให้ตรง
+                    // ไม่งั้นจะจับคู่กับ courseByCode ไม่เจอเลยแม้รหัสวิชาจะมีอยู่จริงในระบบ (เหมือนที่ฝั่ง School MIS
+                    // ทำอยู่แล้วตอนดึงรหัสจากหัวคอลัมน์ "รหัสวิชา ชื่อวิชา") — เก็บข้อความเต็มไว้แสดงตอนข้ามด้วย
+                    const rawSubjectCell = String(row[subjectIdx] ?? '').trim();
+                    const subjectCode = rawSubjectCell.split(/\s+/)[0] || '';
+                    const rawCode = String(row[studentCodeIdx] ?? '').trim();
+                    const gradeValue = String(row[gradeIdx] ?? '').trim();
+                    if (!rawCode || !subjectCode) continue;
+                    if (gradeValue !== '0' && gradeValue !== 'ร' && gradeValue !== 'มส') continue;
+
+                    const course = courseByCode.get(subjectCode);
+                    if (!course) {
+                        unmatchedSubjects.add(rawSubjectCell);
+                        continue;
+                    }
+
+                    const student = studentByCode.get(rawCode);
+                    if (!student) {
+                        skippedCodes.push(rawCode);
+                        continue;
+                    }
+
+                    preview.push({
+                        studentDocId: student.docId,
+                        studentCode: student.studentCode,
+                        studentName: student.name,
+                        classLevel: student.classLevel,
+                        room: student.room,
+                        courseId: course.id,
+                        courseCode: course.code,
+                        courseTitle: course.title,
+                        grade: gradeValue as '0' | 'ร' | 'มส',
+                    });
+                }
+                skippedCols.push(...Array.from(unmatchedSubjects));
+            } else {
+                // รูปแบบ School MIS (.csv): #, รหัสนักเรียน, ชื่อ-สกุล, แล้วค่อยเป็นคอลัมน์วิชา ({รหัส} {ชื่อวิชา})
+                const subjectColStart = 3;
+                const subjectHeaders = header.slice(subjectColStart);
+
+                const subjectColMap: { index: number; course: { id: string; code: string; title: string } }[] = [];
+                subjectHeaders.forEach((h, idx) => {
+                    const trimmed = String(h || '').trim();
+                    if (!trimmed) return;
+                    const code = trimmed.split(/\s+/)[0];
+                    const course = courseByCode.get(code);
+                    if (course) {
+                        subjectColMap.push({ index: subjectColStart + idx, course });
+                    } else {
+                        skippedCols.push(trimmed);
+                    }
+                });
+
+                for (let r = 1; r < rows.length; r++) {
+                    const row = rows[r];
+                    if (!row || row.length === 0) continue;
+                    const rawCode = String(row[1] ?? '').trim();
+                    if (!rawCode) continue;
+
+                    const student = studentByCode.get(rawCode);
+                    if (!student) {
+                        skippedCodes.push(rawCode);
+                        continue;
+                    }
+
+                    subjectColMap.forEach(({ index, course }) => {
+                        const cellValue = String(row[index] ?? '').trim();
+                        if (cellValue === '0' || cellValue === 'ร' || cellValue === 'มส') {
+                            preview.push({
+                                studentDocId: student.docId,
+                                studentCode: student.studentCode,
+                                studentName: student.name,
+                                classLevel: student.classLevel,
+                                room: student.room,
+                                courseId: course.id,
+                                courseCode: course.code,
+                                courseTitle: course.title,
+                                grade: cellValue as '0' | 'ร' | 'มส',
+                            });
+                        }
+                    });
+                }
+            }
+
+            // ตรวจข้อมูลซ้ำ: วิชาเดียวกัน + นักเรียนคนเดียวกัน (courses/{courseId}/grades/{studentId} มีเอกสารเดียว
+            // ต่อคู่นี้อยู่แล้ว จึงเช็คแค่ว่ามีเกรดบันทึกไว้ก่อนหน้านี้หรือยัง — ปีการศึกษา/ภาคเรียนแยกกันอยู่แล้ว
+            // เพราะแต่ละปี/เทอมเป็นคนละ courseId เสมอ ไม่มีทางชนกันข้ามปีได้)
+            const uniqueCourseIdsForDup = Array.from(new Set(preview.map((p) => p.courseId)));
+            const existingGradeByCourse: Record<string, Map<string, string>> = {};
+            await Promise.all(uniqueCourseIdsForDup.map(async (courseId) => {
+                const gradesSnap = await getDocs(collection(db, 'school-settings', schoolId, 'courses', courseId, 'grades'));
+                const m = new Map<string, string>();
+                gradesSnap.forEach((d) => {
+                    const g = String((d.data() as any)?.grade || '').trim();
+                    if (g) m.set(d.id, g);
+                });
+                existingGradeByCourse[courseId] = m;
+            }));
+            const previewWithDup = preview.map((p) => {
+                const existing = existingGradeByCourse[p.courseId]?.get(p.studentDocId);
+                return existing ? { ...p, isDuplicate: true, existingGrade: existing } : p;
+            });
+
+            setImportPreview(previewWithDup);
+            setImportSkippedColumns(Array.from(new Set(skippedCols)));
+            setImportSkippedCodes(Array.from(new Set(skippedCodes)));
+        } catch (err) {
+            console.error('Error parsing import file:', err);
+            Swal.fire({ icon: 'error', title: 'ไม่สามารถอ่านไฟล์ได้', text: 'กรุณาตรวจสอบว่าเป็นไฟล์ที่ได้จากหน้า sgs-export' });
+        } finally {
+            setIsParsingImport(false);
+        }
+    };
+
+    const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (file) processImportFile(file);
+    };
+
+    const handleImportDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDraggingImport(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        if (!/\.(csv|xlsx|xls)$/i.test(file.name)) {
+            Swal.fire({ icon: 'warning', title: 'ไฟล์ไม่ถูกต้อง', text: 'กรุณาอัปโหลดไฟล์ .csv, .xlsx หรือ .xls เท่านั้น' });
+            return;
+        }
+        processImportFile(file);
+    };
+
+    // บันทึกจริง — ตรรกะเดียวกับ handleMisSave ในหน้า sgs-export: สร้าง enrollment ที่ยังไม่มี
+    // แล้วเขียน courses/{courseId}/grades/{studentId}.grade แบบ batch (merge:true)
+    const handleConfirmImport = async () => {
+        if (!schoolId || !importPreview || importPreview.length === 0 || !importAcademicYear) return;
+        // ถ้าเลือก "ข้ามรายการที่ซ้ำ" ไว้ (ค่าเริ่มต้น) ตัดแถวที่ตรวจพบว่ามีเกรดบันทึกไว้แล้วออกก่อนบันทึกจริง
+        const rowsToSave = skipDuplicateImports ? importPreview.filter((p) => !p.isDuplicate) : importPreview;
+        if (rowsToSave.length === 0) {
+            Swal.fire({ icon: 'info', title: 'ไม่มีรายการให้บันทึก', text: 'รายการทั้งหมดถูกข้ามเพราะซ้ำกับข้อมูลที่มีอยู่แล้ว' });
+            return;
+        }
+        setIsSavingImport(true);
+        try {
+            const courseIdsInvolved = Array.from(new Set(rowsToSave.map((p) => p.courseId)));
+            const existingEnrollmentsByCourse: Record<string, Set<string>> = {};
+            await Promise.all(courseIdsInvolved.map(async (courseId) => {
+                const snap = await getDocs(query(
+                    collection(db, 'school-settings', schoolId, 'enrollments'),
+                    where('courseId', '==', courseId),
+                    where('academicYear', '==', importAcademicYear)
+                ));
+                existingEnrollmentsByCourse[courseId] = new Set(snap.docs.map((d) => d.data().studentId));
+            }));
+
+            const seenPairs = new Set<string>();
+            const enrollmentsToCreate: ImportPreviewRow[] = [];
+            rowsToSave.forEach((p) => {
+                const pairKey = `${p.courseId}__${p.studentDocId}`;
+                if (seenPairs.has(pairKey)) return;
+                seenPairs.add(pairKey);
+                if (!existingEnrollmentsByCourse[p.courseId]?.has(p.studentDocId)) {
+                    enrollmentsToCreate.push(p);
+                }
+            });
+
+            await Promise.all(enrollmentsToCreate.map((p) => addDoc(collection(db, 'school-settings', schoolId, 'enrollments'), {
+                studentId: p.studentDocId,
+                courseId: p.courseId,
+                courseCode: p.courseCode,
+                courseTitle: p.courseTitle,
+                academicYear: importAcademicYear,
+                semester: importSemester,
+                classLevel: p.classLevel,
+                room: p.room,
+                createdAt: serverTimestamp(),
+            })));
+
+            for (let i = 0; i < rowsToSave.length; i += 400) {
+                const chunk = rowsToSave.slice(i, i + 400);
+                const batch = writeBatch(db);
+                chunk.forEach((p) => {
+                    const ref = doc(db, 'school-settings', schoolId, 'courses', p.courseId, 'grades', p.studentDocId);
+                    batch.set(ref, {
+                        grade: p.grade,
+                        updatedAt: serverTimestamp(),
+                        updatedBy: (currentUser as any)?.displayName || (currentUser as any)?.email || 'import',
+                    }, { merge: true });
+                });
+                await batch.commit();
+            }
+
+            const skippedCount = importPreview.length - rowsToSave.length;
+            Swal.fire({
+                icon: 'success', title: 'นำเข้าข้อมูลสำเร็จ',
+                text: skippedCount > 0 ? `บันทึก ${rowsToSave.length} รายการ (ข้ามรายการซ้ำ ${skippedCount} รายการ)` : `บันทึก ${rowsToSave.length} รายการ`,
+                timer: 2500, showConfirmButton: false,
+            });
+            setShowImportModal(false);
+            resetImportState();
+            loadRoster();
+        } catch (err) {
+            console.error('Error saving import:', err);
+            Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาดในการบันทึก' });
+        } finally {
+            setIsSavingImport(false);
         }
     };
 
     useEffect(() => {
-        handleFetchData();
+        loadRoster();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [schoolId, selectedClassLevel]);
+    }, [schoolId, selectedCourseId, selectedTermYear, selectedTermSemester]);
 
+    // ห้องเรียน — กรอง "รายชื่อในวิชาที่เลือก" (roster) เท่านั้น ไม่ใช่กรองรายชื่อที่ติดทั้งโรงเรียนแบบเดิม
     const roomOptions = useMemo(() => {
-        const fixedRooms = Array.from({ length: 20 }, (_, i) => String(i + 1));
         const activeRooms = new Set<string>();
-        flaggedStudents.forEach(s => { if (s.room) activeRooms.add(String(s.room)); });
-        const combinedRooms = new Set([...fixedRooms, ...Array.from(activeRooms)]);
-        const sortedList = Array.from(combinedRooms).sort((a, b) => Number(a) - Number(b));
+        rosterRows.forEach(r => { if (r.room) activeRooms.add(String(r.room)); });
+        const sortedList = Array.from(activeRooms).sort((a, b) => Number(a) - Number(b));
         return [{ value: 'all', label: 'ทุกห้องเรียน' }, ...sortedList.map(r => ({ value: r, label: `ห้อง ${r}` }))];
-    }, [flaggedStudents]);
+    }, [rosterRows]);
 
-    const toggleFlagType = (type: FlagType) => {
-        setActiveFlagTypes(prev => {
-            const next = new Set(prev);
-            if (next.has(type)) {
-                if (next.size === 1) return next; // ต้องเปิดอย่างน้อย 1 ประเภทเสมอ
-                next.delete(type);
-            } else {
-                next.add(type);
-            }
-            return next;
+    const filteredRosterRows = useMemo(() => {
+        const kw = rosterSearch.trim().toLowerCase();
+        return rosterRows.filter(r => {
+            if (selectedRoom.value !== 'all' && String(r.room) !== String(selectedRoom.value)) return false;
+            if (!kw) return true;
+            return `${r.name} ${r.studentCode}`.toLowerCase().includes(kw);
         });
-    };
+    }, [rosterRows, selectedRoom, rosterSearch]);
 
-    const filteredStudents = useMemo(() => {
-        const list = flaggedStudents
-            .filter(s => selectedRoom.value === 'all' || String(s.room) === String(selectedRoom.value))
-            .filter(s => matchesClassLevel(s.classLevel, selectedClassLevel.value))
-            .map(s => ({ ...s, flags: s.flags.filter(f => activeFlagTypes.has(f.grade)) }))
-            .filter(s => s.flags.length > 0);
+    const rosterSummary = useMemo(() => {
+        let normalCount = 0, flaggedCount = 0;
+        filteredRosterRows.forEach(r => { if (r.isFlagged) flaggedCount++; else normalCount++; });
+        return { total: filteredRosterRows.length, normalCount, flaggedCount };
+    }, [filteredRosterRows]);
 
-        return list.sort((a, b) => {
-            const rankA = getClassLevelRank(a.classLevel);
-            const rankB = getClassLevelRank(b.classLevel);
-            if (rankA !== rankB) return rankA - rankB;
-            const roomA = Number(a.room) || 999;
-            const roomB = Number(b.room) || 999;
-            if (roomA !== roomB) return roomA - roomB;
-            const numA = parseInt(a.number) || 999;
-            const numB = parseInt(b.number) || 999;
-            if (numA !== numB) return numA - numB;
-            return a.name.localeCompare(b.name, 'th');
-        });
-    }, [flaggedStudents, selectedRoom, selectedClassLevel, activeFlagTypes]);
+    // ── ส่งออก PDF: ประกาศผลรายชื่อที่ติด 0/ร/มส/มผ "ทั้งโรงเรียน" ตามระดับชั้น/ปี/เทอมที่เลือกไว้ด้านบน
+    // (คนละชุดข้อมูลกับตาราง roster ที่กำลังดูอยู่ ซึ่งเป็นรายวิชาเดียว) — โหลดสดตอนกดปุ่มเพื่อไม่ต้อง
+    // ดึงข้อมูลทั้งโรงเรียนซ้ำซ้อนทุกครั้งที่หน้าโหลด
+    const [pdfStudents, setPdfStudents] = useState<StudentFlagRow[]>([]);
+    const [pdfLoading, setPdfLoading] = useState(false);
 
-    const totalStats = useMemo(() => {
-        let zeroCount = 0, rCount = 0, msCount = 0, mpCount = 0;
-        filteredStudents.forEach(s => s.flags.forEach(f => {
-            if (f.grade === '0') zeroCount++;
-            else if (f.grade === 'ร') rCount++;
-            else if (f.grade === 'มส') msCount++;
-            else mpCount++;
-        }));
-        return { studentCount: filteredStudents.length, zeroCount, rCount, msCount, mpCount };
-    }, [filteredStudents]);
-
-    const generateAndSavePdf = async (students: StudentFlagRow[], fileName: string) => {
-        const groups = buildPdfGroups(students);
-        const pdfDoc = (
+    const buildZeroRMsPdfDocument = () => {
+        const groups = buildPdfGroups(pdfStudents);
+        return (
             <ZeroRMsPdfDocument
                 groups={groups}
                 schoolName={schoolSettings.schoolName || 'โรงเรียน'}
@@ -738,14 +1189,32 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                 directorName={[schoolSettings.directorPrefix, schoolSettings.directorName].filter(Boolean).join(' ')}
             />
         );
-        const blob = await pdf(pdfDoc).toBlob();
-        saveAs(blob, fileName);
+    };
+
+    const openPdfPreview = async () => {
+        if (!schoolId) return;
+        setPdfLoading(true);
+        try {
+            const list = await fetchFlaggedStudents(schoolId, teacherMap, {
+                classLevelFilter: selectedClassLevel.value,
+                academicYear: selectedTermYear || undefined,
+                semester: selectedTermSemester || undefined,
+            });
+            setPdfStudents(list);
+            setShowPdfPreview(true);
+        } catch (err) {
+            console.error('Error loading data for PDF export:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถโหลดข้อมูลสำหรับสร้าง PDF ได้', 'error');
+        } finally {
+            setPdfLoading(false);
+        }
     };
 
     const handleExportPdf = async () => {
         setPdfGenerating(true);
         try {
-            await generateAndSavePdf(filteredStudents, `ประกาศผลการเรียน_0_ร_มส_มผ.pdf`);
+            const blob = await pdf(buildZeroRMsPdfDocument()).toBlob();
+            saveAs(blob, `ประกาศผลการเรียน_0_ร_มส_มผ.pdf`);
         } catch (err) {
             console.error('Error exporting 0/ร/มส/มผ report PDF:', err);
             Swal.fire('สร้าง PDF ไม่สำเร็จ', 'ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง', 'error');
@@ -754,14 +1223,162 @@ const ZeroRMsGradeReportPage: React.FC = () => {
         }
     };
 
+    // ── บันทึกผลแก้ตัวตรงจากตารางรายชื่อ (เก็บเข้าระบบคำร้องขอแก้ตัวที่มีอยู่แล้วเสมอ status:'resolved'
+    // เหมือนปุ่ม "แก้ไขผลโดยตรง" ในหน้าภาพรวม/บันทึก 0 ร มส) ───
+    const GRADE_OPTIONS = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0'];
+
+    const handleCorrect = async (row: RosterRow) => {
+        if (!schoolId || !row.isFlagged) return;
+
+        let newValue: string | undefined;
+        if (!row.isActivity) {
+            const { value } = await Swal.fire({
+                title: 'แก้ไขผลการเรียนโดยตรง',
+                html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>${row.grade}</b></div>`,
+                input: 'select',
+                inputOptions: GRADE_OPTIONS.reduce((acc: any, g) => { acc[g] = g; return acc; }, {}),
+                inputPlaceholder: 'เลือกผลการเรียนใหม่',
+                showCancelButton: true,
+                confirmButtonText: 'บันทึก',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#4f46e5',
+            });
+            if (!value) return;
+            newValue = value;
+        } else {
+            const { value } = await Swal.fire({
+                title: 'แก้ไขผลการประเมินโดยตรง',
+                html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>มผ</b></div>`,
+                input: 'select',
+                inputOptions: { passed: 'ผ่าน', failed: 'ไม่ผ่าน' },
+                inputPlaceholder: 'เลือกผลการประเมินใหม่',
+                showCancelButton: true,
+                confirmButtonText: 'บันทึก',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#4f46e5',
+            });
+            if (!value) return;
+            newValue = value;
+        }
+
+        setCorrectingKey(row.key);
+        try {
+            const term = row.key.split('|');
+            const academicYear = term[2], semester = term[3];
+
+            if (!row.isActivity) {
+                await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), { grade: newValue }, { merge: true });
+            } else {
+                // guidance-evaluations เป็น collection ระดับบนสุด (ไม่ใช่ subcollection ของ activityDocId เหมือน clubs/learner-activities)
+                const evalRef = row.activityCollectionName === 'guidance-evaluations'
+                    ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.evalDocId!)
+                    : doc(db, 'school-settings', schoolId, row.activityCollectionName!, row.activityDocId!, 'evaluations', row.evalDocId!);
+                const evalSnap = await getDoc(evalRef);
+                const data: any = evalSnap.exists() ? evalSnap.data() : {};
+                const results: Record<string, any> = { ...(data.results || {}) };
+                results[row.studentId] = { ...(results[row.studentId] || {}), status: newValue };
+                const summary = Object.values(results).reduce((acc: any, r: any) => {
+                    const s = r?.status || 'pending';
+                    acc[s] = (acc[s] || 0) + 1;
+                    return acc;
+                }, { pending: 0, passed: 0, failed: 0 });
+                await setDoc(evalRef, { results, summary, updatedAt: serverTimestamp(), updatedBy: (currentUser as any)?.uid || '' }, { merge: true });
+            }
+
+            const displayValue = row.isActivity ? (newValue === 'passed' ? 'ผ่าน' : 'ไม่ผ่าน') : newValue;
+
+            if (row.requestId) {
+                await updateDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', row.requestId), {
+                    status: 'resolved',
+                    resolvedAt: serverTimestamp(),
+                    resolvedBy: (currentUser as any)?.uid || '',
+                    resolvedByName: (currentUser as any)?.fullName || '',
+                    newResult: displayValue,
+                });
+            } else {
+                const course = courses.find(c => c.id === selectedCourseId);
+                const payload: Record<string, any> = {
+                    studentId: row.studentId,
+                    studentCode: row.studentCode,
+                    studentName: row.name,
+                    classLevel: row.classLevel,
+                    room: row.room,
+                    flagType: row.isActivity ? 'learner-activity' : 'course',
+                    originalGrade: row.grade,
+                    academicYear, semester,
+                    responsibleTeacherIds: row.responsibleTeacherIds || [],
+                    responsibleTeacherNames: row.teacherName ? [row.teacherName] : [],
+                    status: 'resolved',
+                    requestedAt: serverTimestamp(),
+                    requestedBy: (currentUser as any)?.uid || '',
+                    requestNote: 'บันทึกโดยฝ่ายวิชาการ (ไม่ผ่านขั้นตอนคำร้อง)',
+                    resolvedAt: serverTimestamp(),
+                    resolvedBy: (currentUser as any)?.uid || '',
+                    resolvedByName: (currentUser as any)?.fullName || '',
+                    newResult: displayValue,
+                };
+                if (!row.isActivity) {
+                    payload.courseId = selectedCourseId;
+                    payload.courseCode = course?.code || '';
+                    payload.courseTitle = course?.title || '';
+                } else {
+                    payload.activityId = row.activityDocId;
+                    payload.activityName = course?.title || course?.code || '';
+                    payload.evalDocId = row.evalDocId;
+                    if (row.teacherScopeKey) payload.teacherScopeKey = row.teacherScopeKey;
+                }
+                await addDoc(collection(db, 'school-settings', schoolId, 'remediation_requests'), payload);
+            }
+
+            Swal.fire({ icon: 'success', title: 'บันทึกผลสำเร็จ', timer: 1500, showConfirmButton: false });
+            await loadRoster();
+        } catch (err) {
+            console.error('Error correcting grade:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกผลได้', 'error');
+        } finally {
+            setCorrectingKey(null);
+        }
+    };
+
+    // ── Remark ประกอบผล มส/ร (เฉพาะวิชาปกติ) — ตราบใดที่มีข้อความอยู่ในหมายเหตุ จะไม่แสดงเกรดในตาราง
+    // จนกว่าจะลบหมายเหตุออก (พิมพ์ว่างแล้วกดบันทึก) เกรดถึงจะกลับมาแสดงตามปกติ
+    const handleSetRemark = async (row: RosterRow) => {
+        if (!schoolId || row.isActivity || !selectedCourseId) return;
+
+        const { value, isConfirmed } = await Swal.fire({
+            title: row.remark ? 'แก้ไข Remark' : 'เพิ่ม Remark',
+            html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผล: <b>${row.grade}</b></div>`,
+            input: 'text',
+            inputValue: row.remark || '',
+            inputPlaceholder: 'ระบุหมายเหตุ เช่น เหตุผลที่ติด มส/ร (ลบข้อความให้ว่างเพื่อแสดงเกรดกลับคืน)',
+            showCancelButton: true,
+            confirmButtonText: 'บันทึก',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#4f46e5',
+        });
+        if (!isConfirmed) return;
+
+        const newRemark = String(value || '').trim();
+        setRemarkSavingKey(row.key);
+        try {
+            await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), { remark: newRemark }, { merge: true });
+            setRosterRows(prev => prev.map(r => (r.key === row.key ? { ...r, remark: newRemark } : r)));
+        } catch (err) {
+            console.error('Error saving remark:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึก Remark ได้', 'error');
+        } finally {
+            setRemarkSavingKey(null);
+        }
+    };
+
     return (
         <MainLayout>
             <div className="min-h-screen bg-[#f8fafc] dark:bg-[#131417] transition-colors duration-500">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+                <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 pt-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
                         <div className="space-y-1 text-left">
                             <div className="flex items-center gap-3">
-                                <BackButton to="/academic/hub/evaluation" />
+                                <BackButton to="/academic/hub/zero-r-ms" />
                                 <div className="p-2.5 bg-rose-50 dark:bg-rose-500/10 rounded-2xl shadow-sm border border-rose-100 dark:border-rose-500/20">
                                     <AlertTriangle className="text-rose-600 dark:text-rose-400" size={24} />
                                 </div>
@@ -770,74 +1387,101 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                         รายงานการติด 0 ร มส มผ
                                     </h1>
                                     <p className="text-gray-500 dark:text-gray-400 text-xs font-bold pt-0.5 flex items-center gap-1.5">
-                                        <History size={12} /> สะสมทุกภาคเรียนที่ผ่านมา จนถึงปัจจุบัน
+                                        <History size={12} />
+                                        {selectedTermYear
+                                            ? `ปีการศึกษา ${selectedTermYear}${selectedTermSemester ? ` / ภาคเรียนที่ ${selectedTermSemester}` : ' (ตลอดปีการศึกษา)'}`
+                                            : 'สะสมทุกภาคเรียนที่ผ่านมา จนถึงปัจจุบัน'}
                                     </p>
                                 </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-3 w-full md:w-auto">
                             <button
-                                onClick={handleFetchData}
-                                disabled={loading}
+                                onClick={loadRoster}
+                                disabled={rosterLoading}
                                 title="รีเฟรชข้อมูล"
                                 className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 shadow-sm transition disabled:opacity-60"
                             >
-                                {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                                {rosterLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
                             </button>
                             <button
-                                onClick={handleExportPdf}
-                                disabled={filteredStudents.length === 0 || pdfGenerating}
+                                onClick={openImportModal}
+                                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-500/10 transition-all font-black text-xs group"
+                            >
+                                <Upload size={14} />
+                                <span>นำเข้าข้อมูล</span>
+                            </button>
+                            <button
+                                onClick={openPdfPreview}
+                                disabled={pdfLoading}
+                                title="ออกรายงานประกาศผล 0/ร/มส/มผ ทั้งโรงเรียนตามระดับชั้น/ปี/เทอมที่เลือกไว้"
                                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-slate-900 dark:bg-indigo-500 dark:hover:bg-white dark:hover:text-black text-white px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-500/10 transition-all font-black text-xs group disabled:opacity-60"
                             >
-                                {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                                 <span>PDF</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 relative">
+                <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 relative">
                     <div className="bg-white dark:bg-[#1a1b1e] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                        <div className="mb-4">
+                            <AcademicYearSemesterFilter
+                                schoolId={schoolId}
+                                academicYear={selectedTermYear}
+                                onAcademicYearChange={setSelectedTermYear}
+                                semester={selectedTermSemester}
+                                onSemesterChange={setSelectedTermSemester}
+                            />
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 items-end">
-                            <div className="lg:col-span-4 space-y-1.5">
+                            <div className="lg:col-span-3 space-y-1.5">
                                 <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
                                     <GraduationCap size={12} /> ระดับชั้น
                                 </span>
                                 <Select options={classLevelOptions} value={selectedClassLevel} onChange={setSelectedClassLevel} styles={selectStyles} isSearchable={false} />
                             </div>
-                            <div className="lg:col-span-3 space-y-1.5">
+                            <div className="lg:col-span-4 space-y-1.5">
+                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
+                                    <AlertTriangle size={12} /> วิชา
+                                </span>
+                                <select
+                                    value={selectedCourseId}
+                                    onChange={(e) => setSelectedCourseId(e.target.value)}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2b2f] text-sm font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    {courseOptions.length === 0 && <option value="">ไม่พบวิชา</option>}
+                                    {courseOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                            </div>
+                            <div className="lg:col-span-2 space-y-1.5">
                                 <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
                                     <Users size={12} /> ห้องเรียน
                                 </span>
                                 <Select options={roomOptions} value={selectedRoom} onChange={setSelectedRoom} styles={selectStyles} isSearchable={false} />
                             </div>
-                            <div className="lg:col-span-5 space-y-1.5">
+                            <div className="lg:col-span-3 space-y-1.5">
                                 <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 ml-1">
-                                    <ListChecks size={12} /> แสดงเฉพาะผล
+                                    ค้นหาจาก
                                 </span>
-                                <div className="flex gap-2">
-                                    {FLAG_TYPES.map(type => (
-                                        <button
-                                            key={type}
-                                            onClick={() => toggleFlagType(type)}
-                                            className={`flex-1 px-3 py-2.5 rounded-xl text-xs font-black border transition-all ${activeFlagTypes.has(type)
-                                                ? flagColor[type]
-                                                : 'bg-gray-50 dark:bg-white/5 text-gray-300 dark:text-gray-700 border-gray-200 dark:border-gray-800'}`}
-                                        >
-                                            {type}
-                                        </button>
-                                    ))}
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        value={rosterSearch}
+                                        onChange={(e) => setRosterSearch(e.target.value)}
+                                        placeholder="เลขประจำตัว ชื่อ นามสกุล"
+                                        className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2a2b2f] text-sm font-bold text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-                        <SummaryCard title="นักเรียนที่ติด" value={totalStats.studentCount} icon={<Users size={20} />} unit="คน" color="indigo" />
-                        <SummaryCard title="ติด 0" value={totalStats.zeroCount} icon={<AlertTriangle size={20} />} unit="ครั้ง" color="rose" />
-                        <SummaryCard title="ติด ร" value={totalStats.rCount} icon={<AlertTriangle size={20} />} unit="ครั้ง" color="amber" />
-                        <SummaryCard title="ติด มส" value={totalStats.msCount} icon={<AlertTriangle size={20} />} unit="ครั้ง" color="slate" />
-                        <SummaryCard title="ติด มผ" value={totalStats.mpCount} icon={<AlertTriangle size={20} />} unit="ครั้ง" color="purple" />
+                    <div className="grid grid-cols-3 gap-4">
+                        <SummaryCard title="นักเรียนในวิชานี้" value={rosterSummary.total} icon={<Users size={20} />} unit="คน" color="indigo" />
+                        <SummaryCard title="ผลปกติ" value={rosterSummary.normalCount} icon={<Users size={20} />} unit="คน" color="slate" />
+                        <SummaryCard title="ติดผลการเรียน" value={rosterSummary.flaggedCount} icon={<AlertTriangle size={20} />} unit="คน" color="rose" />
                     </div>
 
                     {error && (
@@ -848,65 +1492,154 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     )}
 
                     <div className="bg-white dark:bg-[#1a1b1e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-                        {loading ? (
+                        {rosterLoading ? (
                             <div className="p-8 space-y-6">
                                 <div className="flex gap-4"><SkeletonLoader className="h-4 w-12 rounded-full" /><SkeletonLoader className="h-4 w-48 rounded-full" /></div>
                                 {[1, 2, 3, 4, 5].map(i => <SkeletonLoader key={i} className="h-12 w-full rounded-xl" />)}
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
+                            <div>
+                                <table className="w-full table-fixed text-left border-collapse">
                                     <thead>
                                         <tr className="bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-gray-800">
-                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-12">เลขที่</th>
-                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest min-w-[220px]">ข้อมูลนักเรียน</th>
-                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-28">ชั้น/ห้อง</th>
-                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest min-w-[300px]">รายวิชาที่ติด (ปี/เทอม)</th>
-                                            <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-20">รวม</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[4%]">ห้อง/เลขที่</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest w-[11%]">ข้อมูลนักเรียน</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest w-[6%]">ผู้สอน</th>
+                                            {Array.from({ length: 9 }, (_, i) => (
+                                                <th key={`h-pre-${i}`} className="px-0.5 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 text-center w-[2%]">{i + 1}</th>
+                                            ))}
+                                            <th className="px-0.5 py-3 text-[8px] font-black text-gray-400 dark:text-gray-500 text-center w-[4%] leading-tight">ก่อน<br />กลางภาค</th>
+                                            {Array.from({ length: 9 }, (_, i) => (
+                                                <th key={`h-post-${i}`} className="px-0.5 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 text-center w-[2%]">{i + 10}</th>
+                                            ))}
+                                            <th className="px-0.5 py-3 text-[8px] font-black text-gray-400 dark:text-gray-500 text-center w-[4%] leading-tight">หลัง<br />กลางภาค</th>
+                                            <th className="px-0.5 py-3 text-[8px] font-black text-gray-400 dark:text-gray-500 text-center w-[4%] leading-tight">รวม<br />ตลอดภาค</th>
+                                            <th className="px-0.5 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 text-center w-[4%]">กลางภาค</th>
+                                            <th className="px-0.5 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 text-center w-[4%]">ปลายภาค</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[4%]">Total</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[3%]">%</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[3%]">ปกติ</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[4%]">Grade</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[7%]">แก้ตัว</th>
+                                            <th className="px-1 py-3 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-[8%]">Remark</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
-                                        {filteredStudents.length === 0 ? (
+                                        {filteredRosterRows.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} className="py-20 text-center">
+                                                <td colSpan={29} className="py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
                                                         <Users size={48} />
-                                                        <p className="font-bold text-sm">ไม่พบนักเรียนที่ติด 0 ร มส มผ ตามเงื่อนไขที่เลือก</p>
+                                                        <p className="font-bold text-sm">{courseOptions.length === 0 ? 'ไม่พบวิชาตามเงื่อนไขที่เลือก' : 'ไม่พบนักเรียนในวิชานี้'}</p>
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ) : filteredStudents.map((s) => (
-                                            <tr key={s.id} className="group hover:bg-gray-50/50 dark:hover:bg-indigo-500/[0.02] transition-colors align-top">
-                                                <td className="px-4 py-4 text-center">
-                                                    <span className="text-sm font-black text-gray-400 dark:text-gray-700 group-hover:text-indigo-600 transition-colors tabular-nums">{s.number || '-'}</span>
+                                        ) : filteredRosterRows.map((r) => (
+                                            <tr key={r.key} className={`group hover:bg-gray-50/50 dark:hover:bg-indigo-500/[0.02] transition-colors align-top ${r.isFlagged ? 'bg-rose-50/30 dark:bg-rose-500/[0.03]' : ''}`}>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-xs font-black text-gray-400 dark:text-gray-600 tabular-nums">{r.room || '-'}/{r.number || '-'}</span>
                                                 </td>
-                                                <td className="px-4 py-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm">
-                                                            <User size={18} />
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-[13px] font-bold truncate text-gray-900 dark:text-white">{s.name}</p>
-                                                            <p className="text-[10px] font-bold text-gray-400 dark:text-gray-600 tracking-tight italic">รหัส: {s.studentCode}</p>
-                                                        </div>
-                                                    </div>
+                                                <td className="px-1 py-3">
+                                                    <p className="text-[11px] font-bold truncate text-gray-900 dark:text-white">{r.name}</p>
+                                                    <p className="text-[10px] font-bold text-gray-400 dark:text-gray-600 tracking-tight">{r.studentCode}</p>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <span className="text-[12px] font-bold text-gray-500 dark:text-gray-400">{getFullClassLabel(s.classLevel, s.room)}</span>
+                                                <td className="px-1 py-3">
+                                                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 truncate block">{r.teacherName}</span>
                                                 </td>
-                                                <td className="px-4 py-4">
-                                                    <div className="flex flex-col gap-1">
-                                                        {s.flags.map((f, i) => (
-                                                            <div key={`${f.courseId}-${f.academicYear}-${f.semester}-${i}`} className="flex items-center gap-2">
-                                                                <span className={`shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black border ${flagColor[f.grade]}`}>{f.grade}</span>
-                                                                <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300 truncate" title={f.courseTitle}>{f.courseCode} {f.courseTitle}</span>
-                                                                <span className="shrink-0 text-[10px] font-bold text-gray-400 dark:text-gray-600">{f.academicYear}/{f.semester}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                {Array.from({ length: 9 }, (_, i) => (
+                                                    <td key={`pre-${i}`} className="px-1 py-3 text-center">
+                                                        <span className="text-[11px] font-bold tabular-nums text-gray-500 dark:text-gray-400">{r.weeklyPre?.[i] === '' || r.weeklyPre?.[i] === undefined ? '-' : r.weeklyPre[i]}</span>
+                                                    </td>
+                                                ))}
+                                                <td className="px-1 py-3 text-center bg-gray-50/60 dark:bg-white/[0.02]">
+                                                    <span className="text-[11px] font-black tabular-nums text-gray-600 dark:text-gray-300">{r.isActivity ? '-' : r.preMidtermSubtotal}</span>
                                                 </td>
-                                                <td className="px-4 py-4 text-center">
-                                                    <span className="text-sm font-black tabular-nums text-rose-600 dark:text-rose-400">{s.flags.length}</span>
+                                                {Array.from({ length: 9 }, (_, i) => (
+                                                    <td key={`post-${i}`} className="px-1 py-3 text-center">
+                                                        <span className="text-[11px] font-bold tabular-nums text-gray-500 dark:text-gray-400">{r.weeklyPost?.[i] === '' || r.weeklyPost?.[i] === undefined ? '-' : r.weeklyPost[i]}</span>
+                                                    </td>
+                                                ))}
+                                                <td className="px-1 py-3 text-center bg-gray-50/60 dark:bg-white/[0.02]">
+                                                    <span className="text-[11px] font-black tabular-nums text-gray-600 dark:text-gray-300">{r.isActivity ? '-' : r.postMidtermSubtotal}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center bg-indigo-50/50 dark:bg-indigo-500/[0.04]">
+                                                    <span className="text-[11px] font-black tabular-nums text-indigo-600 dark:text-indigo-400">
+                                                        {r.isActivity ? '-' : (r.preMidtermSubtotal ?? 0) + (r.postMidtermSubtotal ?? 0)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-[11px] font-bold tabular-nums text-gray-500 dark:text-gray-400">{r.isActivity ? '-' : r.midterm}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-[11px] font-bold tabular-nums text-gray-500 dark:text-gray-400">{r.isActivity ? '-' : r.final}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-xs font-black tabular-nums text-gray-700 dark:text-gray-300">{r.isActivity ? '-' : r.total}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-xs font-black tabular-nums text-gray-700 dark:text-gray-300">{r.isActivity ? '-' : r.percent}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{!r.isFlagged ? 'ปกติ' : '-'}</span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    <span
+                                                        className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-black border ${r.remark ? 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700' : r.isFlagged ? (flagColor[r.grade as FlagType] || flagColor['0']) : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/20'}`}
+                                                        title={r.remark ? `มี Remark กำกับอยู่ — ซ่อนเกรดจนกว่าจะลบ Remark ออก: ${r.remark}` : undefined}
+                                                    >
+                                                        {r.remark ? '-' : r.grade}
+                                                    </span>
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    {!r.isFlagged ? (
+                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
+                                                    ) : r.requestStatus === 'resolved' ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                                                            <CheckCircle2 size={11} /> แก้แล้ว{r.newResult ? ` (${r.newResult})` : ''}
+                                                        </span>
+                                                    ) : r.requestStatus === 'pending' ? (
+                                                        <button
+                                                            onClick={() => handleCorrect(r)}
+                                                            disabled={correctingKey === r.key}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1.5 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all"
+                                                        >
+                                                            {correctingKey === r.key ? <RefreshCw size={11} className="animate-spin" /> : <Clock size={11} />}
+                                                            มีคำร้อง
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleCorrect(r)}
+                                                            disabled={correctingKey === r.key}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-all disabled:opacity-50"
+                                                        >
+                                                            {correctingKey === r.key ? <RefreshCw size={11} className="animate-spin" /> : <Pencil size={11} />}
+                                                            แก้ตัว
+                                                        </button>
+                                                    )}
+                                                </td>
+                                                <td className="px-1 py-3 text-center">
+                                                    {r.isActivity || (r.grade !== 'มส' && r.grade !== 'ร') ? (
+                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
+                                                    ) : r.remark ? (
+                                                        <button
+                                                            onClick={() => handleSetRemark(r)}
+                                                            disabled={remarkSavingKey === r.key}
+                                                            title={r.remark}
+                                                            className="inline-flex max-w-[130px] items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 transition-all hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                                                        >
+                                                            {remarkSavingKey === r.key ? <RefreshCw size={11} className="animate-spin shrink-0" /> : <MessageSquare size={11} className="shrink-0" />}
+                                                            <span className="truncate">{r.remark}</span>
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleSetRemark(r)}
+                                                            disabled={remarkSavingKey === r.key}
+                                                            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[10px] font-bold text-gray-400 transition-all hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50 dark:border-gray-600 dark:text-gray-500 dark:hover:border-indigo-400 dark:hover:text-indigo-400"
+                                                        >
+                                                            {remarkSavingKey === r.key ? <RefreshCw size={11} className="animate-spin" /> : <Plus size={11} />}
+                                                            Remark
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
@@ -917,6 +1650,264 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {showPdfPreview && (
+                <div
+                    className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setShowPdfPreview(false)}
+                >
+                    <div
+                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                ตัวอย่างเอกสาร — รายงานการติด 0 ร มส มผ
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleExportPdf}
+                                    disabled={pdfGenerating}
+                                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                    {pdfGenerating ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPdfPreview(false)}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                                    title="ปิด"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+                            <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                                {buildZeroRMsPdfDocument()}
+                            </PDFViewer>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showImportModal && (
+                <div
+                    className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={closeImportModal}
+                >
+                    <div
+                        className="flex h-[calc(100vh-100px)] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                นำเข้าข้อมูล 0/ร/มส จากไฟล์ SGS / School MIS
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={closeImportModal}
+                                disabled={isParsingImport || isSavingImport}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 disabled:opacity-50"
+                                title="ปิด"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                ใช้ไฟล์ที่ดาวน์โหลดจากหน้า <span className="font-bold text-gray-700 dark:text-gray-300">รายงานคะแนน</span> ในเมนู sgs-export ได้ทั้งแท็บ "ไฟล์ Excel" (SGS) และแท็บ "ไฟล์ CSV" (School MIS) — ระบบจะตรวจจับรูปแบบไฟล์ให้อัตโนมัติ และดึงเฉพาะเซลล์ที่มีค่าเป็น 0, ร, หรือ มส มาบันทึก ค่าคะแนนปกติจะไม่ถูกนำเข้า
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-600 dark:text-gray-300">ปีการศึกษาของไฟล์นี้</label>
+                                    <select
+                                        value={importAcademicYear}
+                                        onChange={(e) => setImportAcademicYear(e.target.value)}
+                                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        {importYearOptions.length === 0 && (
+                                            <option value={importAcademicYear}>ปีการศึกษา {importAcademicYear}</option>
+                                        )}
+                                        {importYearOptions.map(y => (
+                                            <option key={y} value={y}>ปีการศึกษา {y}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[11px] text-gray-400">
+                                        ดึงรายชื่อปีการศึกษาจากหน้า <span className="font-bold">school-calendar</span> — ถ้าไม่พบปีที่ต้องการ ให้ไปเพิ่มปีการศึกษาที่นั่นก่อน
+                                    </p>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-600 dark:text-gray-300">ภาคเรียนของไฟล์นี้</label>
+                                    <select
+                                        value={importSemester}
+                                        onChange={(e) => setImportSemester(e.target.value as '1' | '2')}
+                                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="1">ภาคเรียนที่ 1</option>
+                                        <option value="2">ภาคเรียนที่ 2</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-600 dark:text-gray-300">ไฟล์ (.csv / .xlsx / .xls)</label>
+                                <div
+                                    onClick={() => !isParsingImport && importFileInputRef.current?.click()}
+                                    onDragOver={(e) => { e.preventDefault(); if (!isParsingImport) setIsDraggingImport(true); }}
+                                    onDragLeave={() => setIsDraggingImport(false)}
+                                    onDrop={isParsingImport ? undefined : handleImportDrop}
+                                    className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-all ${isParsingImport ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${isDraggingImport
+                                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
+                                        : importFile
+                                            ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-500/5'
+                                            : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 hover:border-indigo-400 dark:hover:border-indigo-500'
+                                        }`}
+                                >
+                                    <input
+                                        ref={importFileInputRef}
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={handleImportFileChange}
+                                        disabled={isParsingImport}
+                                        className="hidden"
+                                    />
+                                    <Upload size={22} className={isDraggingImport ? 'text-indigo-500' : 'text-gray-400 dark:text-gray-500'} />
+                                    {importFile ? (
+                                        <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{importFile.name}</p>
+                                    ) : (
+                                        <>
+                                            <p className="text-sm font-bold text-gray-600 dark:text-gray-300">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+                                            <p className="text-xs text-gray-400 dark:text-gray-500">รองรับไฟล์จากหน้า sgs-export ทั้งแท็บ "ไฟล์ Excel" (SGS) และ "ไฟล์ CSV" (School MIS)</p>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {isParsingImport && (
+                                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                    <Loader2 className="animate-spin" size={16} /> กำลังอ่านไฟล์และตรวจสอบข้อมูล...
+                                </div>
+                            )}
+
+                            {importPreview && !isParsingImport && (
+                                <>
+                                    <div className="grid grid-cols-4 gap-3">
+                                        <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 p-3 text-center">
+                                            <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{importPreview.length}</div>
+                                            <div className="text-[11px] text-gray-500 dark:text-gray-400">รายการที่จะบันทึก</div>
+                                        </div>
+                                        <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 p-3 text-center">
+                                            <div className="text-xl font-black text-amber-600 dark:text-amber-400">{importSkippedColumns.length}</div>
+                                            <div className="text-[11px] text-gray-500 dark:text-gray-400">วิชาที่ไม่พบในระบบ</div>
+                                        </div>
+                                        <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 p-3 text-center">
+                                            <div className="text-xl font-black text-rose-600 dark:text-rose-400">{importSkippedCodes.length}</div>
+                                            <div className="text-[11px] text-gray-500 dark:text-gray-400">รหัสนักเรียนที่ไม่พบ</div>
+                                        </div>
+                                        <div className="rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 p-3 text-center">
+                                            <div className="text-xl font-black text-orange-600 dark:text-orange-400">{importDuplicateCount}</div>
+                                            <div className="text-[11px] text-gray-500 dark:text-gray-400">รายการที่ซ้ำ (มีอยู่แล้ว)</div>
+                                        </div>
+                                    </div>
+
+                                    {importDuplicateCount > 0 && (
+                                        <label className="flex items-start gap-2 rounded-xl bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-900/40 p-3 text-xs text-orange-700 dark:text-orange-400 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={skipDuplicateImports}
+                                                onChange={(e) => setSkipDuplicateImports(e.target.checked)}
+                                                className="mt-0.5 h-4 w-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500"
+                                            />
+                                            <span>
+                                                <span className="font-bold">ข้ามรายการที่ซ้ำ (มีข้อมูลอยู่แล้ว)</span>
+                                                <br />
+                                                เปรียบเทียบจากวิชาเดียวกัน + นักเรียนคนเดียวกันในปีการศึกษา/ภาคเรียนนี้ ถ้าเคยบันทึกเกรดไว้แล้วจะไม่ทับข้อมูลเดิม (ถ้าไม่ติ๊ก ระบบจะบันทึกทับด้วยค่าใหม่ที่นำเข้า)
+                                            </span>
+                                        </label>
+                                    )}
+
+                                    {(importSkippedColumns.length > 0 || importSkippedCodes.length > 0) && (
+                                        <div className="rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40 p-3 text-xs text-amber-700 dark:text-amber-400 space-y-1">
+                                            <div className="flex items-center gap-1.5 font-bold">
+                                                <FileWarning size={14} /> รายการที่ข้ามไป (ไม่ตรงกับข้อมูลในระบบ)
+                                            </div>
+                                            {importSkippedColumns.length > 0 && (
+                                                <p>วิชาที่ไม่พบ: {importSkippedColumns.join(', ')}</p>
+                                            )}
+                                            {importSkippedCodes.length > 0 && (
+                                                <p>รหัสนักเรียนที่ไม่พบ: {importSkippedCodes.join(', ')}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {importPreview.length > 0 ? (
+                                        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                                                <thead className="bg-gray-50 dark:bg-gray-800">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 dark:text-gray-400">นักเรียน</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 dark:text-gray-400">ชั้น/ห้อง</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 dark:text-gray-400">วิชา</th>
+                                                        <th className="px-4 py-2 text-center text-xs font-bold text-gray-500 dark:text-gray-400">ค่าที่จะบันทึก</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                                    {importPreview.map((p, idx) => (
+                                                        <tr key={`${p.courseId}-${p.studentDocId}-${idx}`} className={p.isDuplicate ? 'bg-orange-50/60 dark:bg-orange-900/10' : undefined}>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-gray-900 dark:text-gray-200">
+                                                                {p.studentName} <span className="text-gray-400 text-xs">({p.studentCode})</span>
+                                                            </td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-gray-500 dark:text-gray-400">{p.classLevel}/{p.room}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-gray-900 dark:text-gray-200">{p.courseCode} {p.courseTitle}</td>
+                                                            <td className="px-4 py-2 text-center">
+                                                                <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                                                                    {p.grade}
+                                                                </span>
+                                                                {p.isDuplicate && (
+                                                                    <span className="ml-1.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="มีเกรดบันทึกไว้แล้วในระบบ">
+                                                                        ซ้ำ (เดิม: {p.existingGrade})
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">ไม่พบรายการ 0/ร/มส ในไฟล์นี้</div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-700">
+                            <button
+                                type="button"
+                                onClick={closeImportModal}
+                                disabled={isSavingImport}
+                                className="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 px-4 text-sm font-bold text-gray-600 dark:text-gray-300 transition hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmImport}
+                                disabled={!importPreview || importPreview.length === 0 || !importAcademicYear || isSavingImport}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isSavingImport ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+                                {isSavingImport ? "กำลังบันทึก..." : `ยืนยันบันทึก ${importEffectiveSaveCount} รายการ`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </MainLayout>
     );
 };

@@ -287,7 +287,6 @@ const SpecialPeriodAttendancePage: React.FC = () => {
     const roomVariants = getRoomVariants(selectedRoom);
     const dateStr = toIsoDate(currentDate);
     const docId = buildDocId(selectedPeriodId, activeAcademicYear, activeSemester, dateStr, selectedClassKey, selectedRoom);
-    const studentDocId = buildStudentDocId(selectedPeriodId, activeAcademicYear, activeSemester, dateStr);
 
     setStudentsLoading(true);
     setIsSubmitted(false);
@@ -339,22 +338,16 @@ const SpecialPeriodAttendancePage: React.FC = () => {
         }));
         setStudentLeaves(leaves);
 
-        // Load saved attendance from summary doc
+        // Load saved attendance from summary doc — records ที่บันทึกไว้แล้ว (studentId -> status)
+        // อยู่ใน summary doc นี้อยู่แล้ว (ดู handleSave: batch.set(summaryRef, { records: attendance, ... }))
+        // ไม่ต้องอ่านเอกสาร ClassroomAttendance ของนักเรียนทีละคนซ้ำอีกรอบ
         const summaryRef = doc(db, 'school-settings', schoolId, 'special-period-attendance', docId);
         const summarySnap = await getDoc(summaryRef);
 
-        // Also check individual student docs
-        const existingResults = await Promise.all(list.map(async s => {
-          const ref = doc(db, 'school-settings', schoolId, 'students', s.id, 'ClassroomAttendance', studentDocId);
-          const snap2 = await getDoc(ref);
-          return snap2.exists() ? { id: s.id, status: snap2.data().status as AttendanceStatus } : null;
-        }));
-
-        const hasRecord = existingResults.some(r => r !== null);
+        const savedRecords = summarySnap.exists() ? (summarySnap.data().records as Record<string, AttendanceStatus> | undefined) : undefined;
+        const hasRecord = !!savedRecords && Object.keys(savedRecords).length > 0;
         if (hasRecord) {
-          const loaded = { ...init };
-          existingResults.forEach(r => { if (r) loaded[r.id] = r.status; });
-          setAttendance(loaded);
+          setAttendance({ ...init, ...savedRecords });
           setIsSubmitted(true);
         } else {
           setAttendance(init);
@@ -427,8 +420,9 @@ const SpecialPeriodAttendancePage: React.FC = () => {
 
       const batch = writeBatch(db);
 
-      // Per-student attendance docs
-      for (const student of students) {
+      // Per-student attendance docs — เขียนขนานกันทุกคนแทนการวนรอทีละคน (แต่ละคนแก้เอกสารของตัวเอง
+      // ไม่มีเอกสารร่วมที่ชนกัน จึงขนานได้ปลอดภัย ลด latency สะสมของห้องที่มีนักเรียนเยอะ)
+      await Promise.all(students.map(async (student) => {
         const newStatus = attendance[student.id] || 'present';
         const studentRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', studentDocId);
 
@@ -485,7 +479,7 @@ const SpecialPeriodAttendancePage: React.FC = () => {
             }
           });
         }
-      }
+      }));
 
       // Summary doc
       const summaryRef = doc(db, 'school-settings', schoolId, 'special-period-attendance', docId);

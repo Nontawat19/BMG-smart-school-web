@@ -5,12 +5,13 @@ import {
 } from "firebase/firestore";
 import {
   Document as PdfDocument, Font, Image, Page,
-  StyleSheet, Text, View, pdf,
+  StyleSheet, Text, View, pdf, PDFViewer,
 } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import {
   BarChart3, CalendarClock, ClipboardList,
   FileText, Printer, RefreshCw, Search, Users,
+  X, FileDown,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import BackButton from "@/components/Shared/BackButton";
@@ -425,6 +426,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
   const [filterDateEnd, setFilterDateEnd] = useState("");
 
   const [isPrinting, setIsPrinting] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   const loadCustomAttendanceFallback = async (selectedId: string) => {
     const snap = await getDocs(query(
@@ -946,14 +948,7 @@ const SpecialPeriodReportsPage: React.FC = () => {
   }, [filteredDocs]);
 
   // ── Print PDF ────────────────────────────────────────────────────────────
-  const handlePrint = async () => {
-    if (!previewData || !selectedItemName || isPrinting) return;
-    if (visiblePreviewRows.length === 0) {
-      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับสร้างรายงาน PDF", "info");
-      return;
-    }
-    setIsPrinting(true);
-    try {
+  const buildSpecialPeriodPdfDocument = () => {
       const typeLabel = REPORT_MENUS.find((m) => m.id === reportType)?.title || "รายงาน";
 
       // Full class name (e.g. "ประถมศึกษาปีที่ 1")
@@ -1018,12 +1013,28 @@ const SpecialPeriodReportsPage: React.FC = () => {
         detail: filterLabel,
         schoolName: schoolName || "โรงเรียน",
         logoUrl: schoolLogoUrl || undefined,
-        orientation: reportType === "by-student" && previewData.columns.length > 8 ? "landscape" : "portrait",
-        columns: previewData.columns,
+        orientation: reportType === "by-student" && (previewData?.columns.length || 0) > 8 ? "landscape" : "portrait",
+        columns: previewData?.columns || [],
         rows: visiblePreviewRows,
       };
 
-      const blob = await pdf(<ReportPdfDocument data={pdfData} />).toBlob();
+      return <ReportPdfDocument data={pdfData} />;
+  };
+
+  const openPdfPreview = () => {
+    if (!previewData || !selectedItemName) return;
+    if (visiblePreviewRows.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลสำหรับสร้างรายงาน PDF", "info");
+      return;
+    }
+    setShowPdfPreview(true);
+  };
+
+  const handlePrint = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
+    try {
+      const blob = await pdf(buildSpecialPeriodPdfDocument()).toBlob();
       saveAs(blob, `รายงาน_${sanitizeFileName(selectedItemName)}_${reportType}_${Date.now()}.pdf`);
     } catch (err) {
       console.error("PDF error:", err);
@@ -1225,11 +1236,11 @@ const SpecialPeriodReportsPage: React.FC = () => {
                 )}
                 <div className="col-span-2 sm:col-span-1 xl:col-span-1 flex items-end">
                   <button
-                    onClick={handlePrint}
-                    disabled={isPrinting || !previewData || visiblePreviewRows.length === 0}
+                    onClick={openPdfPreview}
+                    disabled={!previewData || visiblePreviewRows.length === 0}
                     className="inline-flex w-full h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
-                    {isPrinting ? <RefreshCw size={13} className="animate-spin" /> : <Printer size={13} />}
-                    {isPrinting ? "กำลังสร้าง PDF..." : "ดาวน์โหลด PDF"}
+                    <Printer size={13} />
+                    ดาวน์โหลด PDF
                   </button>
                 </div>
               </div>
@@ -1308,6 +1319,48 @@ const SpecialPeriodReportsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#2a2b2f]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — รายงานกิจกรรม{selectedItemName}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={isPrinting}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPrinting ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isPrinting ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildSpecialPeriodPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

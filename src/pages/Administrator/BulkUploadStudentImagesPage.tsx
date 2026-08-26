@@ -37,6 +37,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
         firstName: string;
         lastName: string;
         profileImageUrl?: string;
+        profileImageThumbUrl?: string;
     }
     const [studentsInGroup, setStudentsInGroup] = useState<StudentInfo[]>([]);
     const [loadingStudents, setLoadingStudents] = useState(false);
@@ -243,15 +244,27 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                 await uploadBytes(finalRef, compressedFile);
                 const downloadURL = await getDownloadURL(finalRef);
 
+                // รูปธัมบ์ (ขนาดเล็กสำหรับ avatar) — อัปโหลดแยกจากรูปเต็ม ถ้าล้มเหลวไม่กระทบรูปเต็มที่อัปโหลดสำเร็จแล้ว
+                let thumbDownloadURL: string | undefined;
+                try {
+                    const thumbFile = await compressImage(compressedFile, 128, 0.6, 'image/jpeg');
+                    const thumbRef = ref(storage, `${storagePath}/${studentId}_thumb.jpg`);
+                    await uploadBytes(thumbRef, thumbFile);
+                    thumbDownloadURL = await getDownloadURL(thumbRef);
+                } catch (thumbError) {
+                    console.error(`Thumbnail upload failed for ${studentId}:`, thumbError);
+                }
+
                 // 4. Update Firestore
                 await updateDoc(doc(firestore, "school-settings", schoolId!, "students", studentDocId), {
                     profileImageUrl: downloadURL,
+                    ...(thumbDownloadURL ? { profileImageThumbUrl: thumbDownloadURL } : {}),
                     updatedAt: serverTimestamp()
                 });
 
                 // Update local state to reflect change immediately in UI summary
                 setStudentsInGroup(prev => prev.map(s =>
-                    s.studentId === studentId ? { ...s, profileImageUrl: downloadURL } : s
+                    s.studentId === studentId ? { ...s, profileImageUrl: downloadURL, ...(thumbDownloadURL ? { profileImageThumbUrl: thumbDownloadURL } : {}) } : s
                 ));
 
                 setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));

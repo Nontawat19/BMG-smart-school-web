@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { FileDown, Loader2, Search } from 'lucide-react';
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
+import { FileDown, Loader2, Search, X } from 'lucide-react';
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import Swal from 'sweetalert2';
 import BackButton from '@/components/Shared/BackButton';
@@ -458,6 +458,7 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
     const [attendanceMap, setAttendanceMap] = useState<Record<string, Record<string, AttendanceStatus>>>({});
     const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
 
     const schoolLabel = useMemo(() => {
         const schoolSettingsData = schoolSettings as any;
@@ -613,29 +614,33 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
 
     const selectedClassLabel = getFullClassLabel(selectedClassLevel, selectedRoom);
 
-    const handleExportPdf = async () => {
+    const buildTimeRangeAttendancePdfDocument = () => (
+        <TimeRangeAttendancePdfDocument
+            schoolName={schoolSettings.schoolName || schoolLabel}
+            logoUrl={schoolSettings.logoUrl}
+            academicYear={academicYear}
+            semester={semester}
+            classLabel={selectedClassLabel}
+            startDate={startDate}
+            endDate={endDate}
+            students={students}
+            dates={dates}
+            attendanceMap={attendanceMap}
+        />
+    );
+
+    const openPdfPreview = () => {
         if (students.length === 0) {
             Swal.fire('ไม่มีข้อมูล', 'ไม่มีข้อมูลสำหรับสร้าง PDF', 'warning');
             return;
         }
+        setShowPdfPreview(true);
+    };
 
+    const handleExportPdf = async () => {
         setPdfGenerating(true);
         try {
-            const document = (
-                <TimeRangeAttendancePdfDocument
-                    schoolName={schoolSettings.schoolName || schoolLabel}
-                    logoUrl={schoolSettings.logoUrl}
-                    academicYear={academicYear}
-                    semester={semester}
-                    classLabel={selectedClassLabel}
-                    startDate={startDate}
-                    endDate={endDate}
-                    students={students}
-                    dates={dates}
-                    attendanceMap={attendanceMap}
-                />
-            );
-            const blob = await pdf(document).toBlob();
+            const blob = await pdf(buildTimeRangeAttendancePdfDocument()).toBlob();
             saveAs(blob, `รายงานเช็คมาเรียนรายห้อง_${selectedClassLevel}_${selectedRoom || 'all'}_${startDate}_${endDate}.pdf`);
         } catch (error) {
             console.error('Error exporting time range attendance PDF:', error);
@@ -660,12 +665,12 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                             <div className="flex items-center gap-1.5">
                                 <button
                                     type="button"
-                                    onClick={handleExportPdf}
-                                    disabled={pdfGenerating || loading}
+                                    onClick={openPdfPreview}
+                                    disabled={loading}
                                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    <FileDown size={16} className={pdfGenerating ? "animate-pulse" : ""} />
-                                    {pdfGenerating ? "กำลังสร้างไฟล์..." : "ดาวน์โหลด PDF"}
+                                    <FileDown size={16} />
+                                    ดาวน์โหลด PDF
                                 </button>
                             </div>
                         </div>
@@ -852,6 +857,48 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {showPdfPreview && (
+                <div
+                    className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setShowPdfPreview(false)}
+                >
+                    <div
+                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#171922]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-[#d6dbe0] px-5 py-4 dark:border-slate-700">
+                            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                                ตัวอย่างเอกสาร — รายงานเช็คมาเรียนรายห้อง
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleExportPdf}
+                                    disabled={pdfGenerating}
+                                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                    {pdfGenerating ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPdfPreview(false)}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                                    title="ปิด"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+                            <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                                {buildTimeRangeAttendancePdfDocument()}
+                            </PDFViewer>
+                        </div>
+                    </div>
+                </div>
+            )}
         </MainLayout>
     );
 };

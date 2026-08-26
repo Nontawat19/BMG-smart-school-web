@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { query, where, getDocs, orderBy, limit, collection, Timestamp, doc, getDoc, documentId, updateDoc, onSnapshot, DocumentSnapshot } from "firebase/firestore";
+import { query, where, getDocs, orderBy, limit, collection, collectionGroup, Timestamp, doc, getDoc, documentId, updateDoc, onSnapshot, DocumentSnapshot } from "firebase/firestore";
 import { firestore } from "@/firebase";
 import { ToastContainer, toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
@@ -9,10 +9,10 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import MainLayout from "@/layouts/MainLayout";
 import LogoutButton from "@/components/LogoutButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList, FaQrcode, FaLine, FaCopy, FaExternalLinkAlt, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaPen, FaSun, FaMoon, FaBook, FaUser, FaBriefcase, FaChalkboard, FaChevronRight, FaClock, FaExchangeAlt, FaPlane, FaIdCard, FaUsers, FaMapMarkerAlt, FaHeartbeat, FaSearch, FaEdit, FaChevronDown, FaChevronUp, FaThLarge, FaList, FaQrcode, FaLine, FaCopy, FaExternalLinkAlt, FaEye, FaEyeSlash, FaExclamationTriangle } from "react-icons/fa";
 import { useTheme } from "../../ThemeContext";
 import SkeletonLoader from "@/components/SkeletonLoader";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Cell, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area, ComposedChart } from 'recharts';
 import { Chart } from "react-google-charts";
 import QRCode from "react-qr-code";
 import OfficialTravelPdfButton from "../../components/Pdf/OfficialTravel/OfficialTravelPdfButton";
@@ -27,6 +27,11 @@ import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { getActiveSortedTeachers } from "@/utils/teacherSortUtils";
 import { CLASSES, getGroupPersonnel } from "@/utils/schoolUtils";
 import { getEffectivePeriodEnd, getScheduleSlotCandidates, getTimetableDisplayPeriods, normalizePeriodSettings } from "@/utils/scheduleDisplayUtils";
+import {
+    FlaggedCourse, StudentFlagRow, RemediationWindowConfig,
+    fetchFlaggedStudents, isRemediationWindowOpen,
+} from '@/utils/remediationUtils';
+import { AlertTriangle as LucideAlertTriangle, Clock, CheckCircle2, XCircle, RefreshCw, Send, ClipboardList, AlertCircle } from 'lucide-react';
 
 // 1. สร้าง Interface สำหรับข้อมูลโปรไฟล์
 interface TeacherProfile {
@@ -222,6 +227,15 @@ const InfoCard: React.FC<{ title: string; children: React.ReactNode }> = ({ titl
   </div>
 );
 
+const MONTHLY_STAT_LEGEND: { key: string; label: string; color: string }[] = [
+  { key: 'present', label: 'มาปกติ', color: '#22c55e' },
+  { key: 'late', label: 'สาย', color: '#eab308' },
+  { key: 'leave', label: 'ลา', color: '#3b82f6' },
+  { key: 'absent', label: 'ขาด', color: '#ef4444' },
+  { key: 'early', label: 'กลับก่อน', color: '#f97316' },
+  { key: 'noCheckout', label: 'ไม่ลงเวลาออก', color: '#a855f7' },
+];
+
 const ProfilePageSkeleton: React.FC = () => {
   return (
     <MainLayout>
@@ -350,6 +364,10 @@ const ProfilePage: React.FC = () => {
     return getActiveSortedTeachers(list);
   }, [teacherMap, profile]);
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
+  // substitution doc id -> whether the substitute teacher actually checked attendance for it
+  // (a ClassroomAttendance record with matching substitutionId exists). Used to derive the
+  // "ปฏิบัติหน้าที่สำเร็จ" / "ไม่ได้สอน (ลา/ขาด)" stats and per-row status.
+  const [substitutionCompletionMap, setSubstitutionCompletionMap] = useState<Record<string, boolean>>({});
   const { isDarkMode, toggleTheme } = useTheme(); // เก็บ toggleTheme ไว้ใช้กับปุ่ม
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -383,6 +401,15 @@ const ProfilePage: React.FC = () => {
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [attendanceFetched, setAttendanceFetched] = useState(false);
+  // สถิติสรุปที่การ์ด/กราฟวงกลม/แท่งด้านบนใช้แสดง — ดึงจากเอกสารสรุปยอด Yearsummary เอกสารเดียวกับที่
+  // ใช้คำนวณตัวเลขที่ส่งแจ้งเตือนทาง LINE (ดู sendTeacherLineNotification ใน CheckinOutPage/index.tsx)
+  // เพื่อให้ตัวเลขตรงกันเป๊ะ ไม่ใช่นับสดจาก attendanceRecords ซึ่งมีคนละช่วงเวลา/คนละการจัดกลุ่มสถานะ
+  // (เช่น "กลับก่อน" ถูกนับรวมเป็น "มาปกติ" ในเอกสารสรุปยอด — ดู getPeriodStatusMapping ใน periodSummaryUtils.ts)
+  const [yearSummaryStats, setYearSummaryStats] = useState<{
+    present: number; late: number; leave: number; absent: number; noCheckout: number; officialTravel: number;
+  } | null>(null);
+  const [yearSummaryFetched, setYearSummaryFetched] = useState(false);
+  const [trendMonthFilter, setTrendMonthFilter] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
   const [attendanceCurrentPage, setAttendanceCurrentPage] = useState(1);
@@ -403,6 +430,15 @@ const ProfilePage: React.FC = () => {
   const [editingCourse, setEditingCourse] = useState<CourseData | null>(null);
   const [periodSettings, setPeriodSettings] = useState<any[]>([]);
   const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>([]);
+  const [remediationEnabled, setRemediationEnabled] = useState<boolean>(true);
+
+  // ── Grade Flags (0/ร/มส/มผ) inline data ──
+  const [gradeFlags, setGradeFlags] = useState<StudentFlagRow | null>(null);
+  const [gradeFlagsLoading, setGradeFlagsLoading] = useState(false);
+  const [gradeFlagsError, setGradeFlagsError] = useState<string | null>(null);
+  const [gradeFlagsWindowConfig, setGradeFlagsWindowConfig] = useState<RemediationWindowConfig | null>(null);
+  const [gradeFlagsRequests, setGradeFlagsRequests] = useState<Record<string, { id: string; status: string; newResult?: string }>>({});
+  const [gradeFlagsFetched, setGradeFlagsFetched] = useState(false);
 
   // ✅ ดึง periodSettings และ availableClassOptions จาก Redux (แทนการ fetch ซ้ำ)
   const reduxPeriodSettings = useSelector((state: RootState) => state.periodSettings);
@@ -431,6 +467,65 @@ const ProfilePage: React.FC = () => {
   }, [profile?.schoolId, dispatch]);
 
   useEffect(() => {
+    if (!profile?.schoolId) return;
+    const unsub = onSnapshot(doc(firestore, 'school-settings', profile.schoolId, 'configs', 'remediation_settings'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setRemediationEnabled(data.enabled !== false);
+      } else {
+        setRemediationEnabled(true);
+      }
+    });
+    return () => unsub();
+  }, [profile?.schoolId]);
+
+  useEffect(() => {
+    if (!remediationEnabled && activeTab === 'grade_flags') {
+      setActiveTab('general');
+    }
+  }, [remediationEnabled, activeTab]);
+
+  // ── Fetch grade flags data when profile is ready ──
+  useEffect(() => {
+    if (!profile?.schoolId || !profile?.docId || userRole !== 'student' || gradeFlagsFetched) return;
+    const fetchGradeFlags = async () => {
+      setGradeFlagsLoading(true);
+      setGradeFlagsError(null);
+      try {
+        const schoolId = profile.schoolId;
+        const sid = profile.docId;
+
+        const [rows, configSnap, requestSnap] = await Promise.all([
+          fetchFlaggedStudents(schoolId, teacherMap, { studentIds: [sid] }),
+          getDoc(doc(firestore, 'school-settings', schoolId, 'configs', 'remediation_settings')),
+          getDocs(query(collection(firestore, 'school-settings', schoolId, 'remediation_requests'), where('studentId', '==', sid))),
+        ]);
+
+        setGradeFlags(rows[0] || null);
+        setGradeFlagsWindowConfig(configSnap.exists() ? (configSnap.data() as RemediationWindowConfig) : null);
+
+        const map: Record<string, { id: string; status: string; newResult?: string }> = {};
+        requestSnap.docs.forEach(d => {
+          const data: any = d.data();
+          if (data.status === 'cancelled') return;
+          const key = `${data.flagType}|${data.courseId || data.activityId}|${data.academicYear}|${data.semester}`;
+          if (!map[key] || data.status === 'resolved') {
+            map[key] = { id: d.id, status: data.status, newResult: data.newResult };
+          }
+        });
+        setGradeFlagsRequests(map);
+        setGradeFlagsFetched(true);
+      } catch (err) {
+        console.error('Error fetching grade flags:', err);
+        setGradeFlagsError('เกิดข้อผิดพลาดในการโหลดข้อมูลผลการเรียน');
+      } finally {
+        setGradeFlagsLoading(false);
+      }
+    };
+    fetchGradeFlags();
+  }, [profile?.schoolId, profile?.docId, userRole, gradeFlagsFetched]);
+
+  useEffect(() => {
     let isMounted = true;
     let unsubscribeProfile: (() => void) | null = null;
 
@@ -445,40 +540,52 @@ const ProfilePage: React.FC = () => {
         setProfile(null);
         setUserRole(null);
 
-        const userDocSnap = await getDoc(doc(firestore, "users", currentUser.uid));
-        const userData = userDocSnap.exists() ? userDocSnap.data() : {};
-        const schoolId = String((currentUser as any)?.schoolId || userData.schoolId || "").trim();
+        const currentUserType = localStorage.getItem('currentUserType');
+        let schoolId = "";
+        let studentDocId = "";
+
+        if (currentUserType === 'student') {
+          try {
+            const studentSessionRaw = localStorage.getItem('studentSession');
+            if (studentSessionRaw) {
+              const session = JSON.parse(studentSessionRaw);
+              schoolId = session.schoolId || "";
+              studentDocId = session.studentId || "";
+            }
+          } catch (_) {}
+        } else if (currentUserType === 'parent') {
+          try {
+            const parentSessionRaw = localStorage.getItem('parentSession');
+            if (parentSessionRaw) {
+              const session = JSON.parse(parentSessionRaw);
+              if (session && session.children && session.children.length > 0) {
+                schoolId = session.children[0].schoolId || "";
+                studentDocId = session.children[0].studentDocId || "";
+              }
+            }
+          } catch (_) {}
+        }
+
+        let userDocSnap = null;
+        let userData: any = {};
+
+        if (!currentUserType && currentUser) {
+          try {
+            userDocSnap = await getDoc(doc(firestore, "users", currentUser.uid));
+            userData = userDocSnap.exists() ? userDocSnap.data() : {};
+          } catch (err) {
+            console.warn("Could not fetch user doc:", err);
+          }
+        }
+
+        if (!schoolId) {
+          schoolId = String((currentUser as any)?.schoolId || userData.schoolId || "").trim();
+        }
 
         if (!schoolId) {
           if (isMounted) toast.error("ไม่พบรหัสโรงเรียนของบัญชีผู้ใช้");
           return;
         }
-
-        const findProfileDoc = async (collectionName: "teachers" | "students") => {
-          const baseRef = collection(firestore, "school-settings", schoolId, collectionName);
-
-          const directSnap = await getDoc(doc(firestore, "school-settings", schoolId, collectionName, currentUser.uid));
-          if (directSnap.exists()) return directSnap;
-
-          const byUidSnap = await getDocs(query(baseRef, where("uid", "==", currentUser.uid), limit(1)));
-          if (!byUidSnap.empty) return byUidSnap.docs[0];
-
-          if (currentUser.email) {
-            const byEmailSnap = await getDocs(query(baseRef, where("email", "==", currentUser.email), limit(1)));
-            if (!byEmailSnap.empty) return byEmailSnap.docs[0];
-          }
-
-          const lookupId = collectionName === "teachers"
-            ? userData.teacherId
-            : userData.studentId;
-          if (lookupId) {
-            const idField = collectionName === "teachers" ? "teacherId" : "studentId";
-            const byCodeSnap = await getDocs(query(baseRef, where(idField, "==", lookupId), limit(1)));
-            if (!byCodeSnap.empty) return byCodeSnap.docs[0];
-          }
-
-          return null;
-        };
 
         const subscribeProfileDoc = (profileDoc: any, role: 'teacher' | 'student' | 'user') => {
           unsubscribeProfile?.();
@@ -493,48 +600,88 @@ const ProfilePage: React.FC = () => {
           });
         };
 
-        const teacherDoc = await findProfileDoc("teachers");
-        if (teacherDoc && isMounted) {
-          subscribeProfileDoc(teacherDoc, 'teacher');
-        } else if (isMounted) {
-          const studentDoc = await findProfileDoc("students");
-          if (studentDoc && isMounted) {
-            subscribeProfileDoc(studentDoc, 'student');
-          } else if (userDocSnap.exists()) {
-            const rawRoles = Array.isArray(userData.role) ? userData.role : (userData.role ? [userData.role] : []);
-            const normalizedRoles = rawRoles.map((role: string) => String(role).toLowerCase());
-            const fallbackPosition = userData.position
-              || (normalizedRoles.includes('super_admin')
-                ? 'ผู้ดูแลระบบสูงสุด'
-                : normalizedRoles.includes('school_admin')
-                  ? 'ผู้ดูแลระบบโรงเรียน'
-                  : normalizedRoles.includes('academic_admin')
-                    ? 'ผู้ดูแลระบบงานวิชาการ'
-                    : normalizedRoles.includes('student_affairs')
-                      ? 'เจ้าหน้าที่งานกิจการนักเรียน'
-                      : normalizedRoles.includes('general_user')
-                        ? 'ผู้ใช้ทั่วไป'
-                        : 'บุคลากร');
+        if (currentUserType === 'student' || currentUserType === 'parent') {
+          if (studentDocId) {
+            const studentDocRef = doc(firestore, "school-settings", schoolId, "students", studentDocId);
+            const studentDocSnap = await getDoc(studentDocRef);
+            if (studentDocSnap.exists() && isMounted) {
+              subscribeProfileDoc(studentDocSnap, (currentUserType === 'student' || currentUserType === 'parent') ? 'student' : 'user');
+            } else if (isMounted) {
+              toast.error("ไม่พบข้อมูลนักเรียน");
+            }
+          } else if (isMounted) {
+            toast.error("ไม่พบข้อมูลนักเรียนในเซสชัน");
+          }
+        } else {
+          const findProfileDoc = async (collectionName: "teachers" | "students") => {
+            const baseRef = collection(firestore, "school-settings", schoolId, collectionName);
 
-            setProfile({
-              ...(userData as any),
-              title: userData.title || '',
-              firstName: userData.firstName || '',
-              lastName: userData.lastName || '',
-              email: userData.email || currentUser.email || '',
-              profileImageUrl: userData.profileImageUrl || userData.profileUrl || '',
-              schoolId,
-              docId: currentUser.uid,
-              teacherId: userData.teacherId || '',
-              department: userData.department || 'งานบริหารทั่วไป',
-              contact: userData.contact || '',
-              address: userData.address || '',
-              position: fallbackPosition,
-              personnelType: userData.personnelType || 'user',
-              createdAt: userData.createdAt,
-              updatedAt: userData.updatedAt,
-            });
-            setUserRole('user');
+            const directSnap = await getDoc(doc(firestore, "school-settings", schoolId, collectionName, currentUser.uid));
+            if (directSnap.exists()) return directSnap;
+
+            const byUidSnap = await getDocs(query(baseRef, where("uid", "==", currentUser.uid), limit(1)));
+            if (!byUidSnap.empty) return byUidSnap.docs[0];
+
+            if (currentUser.email) {
+              const byEmailSnap = await getDocs(query(baseRef, where("email", "==", currentUser.email), limit(1)));
+              if (!byEmailSnap.empty) return byEmailSnap.docs[0];
+            }
+
+            const lookupId = collectionName === "teachers"
+              ? userData.teacherId
+              : userData.studentId;
+            if (lookupId) {
+              const idField = collectionName === "teachers" ? "teacherId" : "studentId";
+              const byCodeSnap = await getDocs(query(baseRef, where(idField, "==", lookupId), limit(1)));
+              if (!byCodeSnap.empty) return byCodeSnap.docs[0];
+            }
+
+            return null;
+          };
+
+          const teacherDoc = await findProfileDoc("teachers");
+          if (teacherDoc && isMounted) {
+            subscribeProfileDoc(teacherDoc, 'teacher');
+          } else if (isMounted) {
+            const studentDoc = await findProfileDoc("students");
+            if (studentDoc && isMounted) {
+              subscribeProfileDoc(studentDoc, 'student');
+            } else if (userDocSnap && userDocSnap.exists()) {
+              const rawRoles = Array.isArray(userData.role) ? userData.role : (userData.role ? [userData.role] : []);
+              const normalizedRoles = rawRoles.map((role: string) => String(role).toLowerCase());
+              const fallbackPosition = userData.position
+                || (normalizedRoles.includes('super_admin')
+                  ? 'ผู้ดูแลระบบสูงสุด'
+                  : normalizedRoles.includes('school_admin')
+                    ? 'ผู้ดูแลระบบโรงเรียน'
+                    : normalizedRoles.includes('academic_admin')
+                      ? 'ผู้ดูแลระบบงานวิชาการ'
+                      : normalizedRoles.includes('student_affairs')
+                        ? 'เจ้าหน้าที่งานกิจการนักเรียน'
+                        : normalizedRoles.includes('general_user')
+                          ? 'ผู้ใช้ทั่วไป'
+                          : 'บุคลากร');
+
+              setProfile({
+                ...(userData as any),
+                title: userData.title || '',
+                firstName: userData.firstName || '',
+                lastName: userData.lastName || '',
+                email: userData.email || currentUser.email || '',
+                profileImageUrl: userData.profileImageUrl || userData.profileUrl || '',
+                schoolId,
+                docId: currentUser.uid,
+                teacherId: userData.teacherId || '',
+                department: userData.department || 'งานบริหารทั่วไป',
+                contact: userData.contact || '',
+                address: userData.address || '',
+                position: fallbackPosition,
+                personnelType: userData.personnelType || 'user',
+                createdAt: userData.createdAt,
+                updatedAt: userData.updatedAt,
+              });
+              setUserRole('user');
+            }
           }
         }
       } catch (error) {
@@ -554,7 +701,8 @@ const ProfilePage: React.FC = () => {
   }, [currentUser?.uid, currentUser?.email, (currentUser as any)?.schoolId]);
 
   useEffect(() => {
-    if (profile?.schoolId) {
+    const isStudentOrParent = localStorage.getItem('currentUserType') === 'student' || localStorage.getItem('currentUserType') === 'parent';
+    if (profile?.schoolId && !isStudentOrParent) {
       dispatch(fetchTeachersMap(profile.schoolId) as any);
     }
   }, [profile?.schoolId, dispatch]);
@@ -654,6 +802,78 @@ const ProfilePage: React.FC = () => {
     }
   }, [activeTab, profile]);
 
+  // A substitution has no "status" field of its own (cancelled assignments are deleted
+  // outright — see SubstituteManagementPage.tsx's handleAssignSubstitute), so whether the
+  // substitute teacher actually taught it can only be determined by checking whether a
+  // ClassroomAttendance record was ever saved for it. The live check-in page tags every
+  // attendance record it writes for a substitute session with `substitutionId` set to the
+  // substitution doc's own id (ClassroomAttendance/index.tsx's save payload), so a matching
+  // record's existence is a reliable "did they actually check in and teach" signal.
+  useEffect(() => {
+    if (activeTab !== 'substitution' || !profile?.schoolId || substitutions.length === 0) {
+      if (substitutions.length === 0) setSubstitutionCompletionMap({});
+      return;
+    }
+
+    const toDateObj = (value: Substitution['date']): Date | null => {
+      if (!value) return null;
+      if ((value as any).toDate) return (value as any).toDate();
+      if ((value as any).seconds) return new Date((value as any).seconds * 1000);
+      return new Date(value as any);
+    };
+
+    const fetchCompletionStatus = async () => {
+      try {
+        const now = new Date();
+        const pastSubIds = substitutions
+          .filter(s => {
+            const d = toDateObj(s.date);
+            return d ? d <= now : false;
+          })
+          .map(s => s.id);
+
+        if (pastSubIds.length === 0) {
+          setSubstitutionCompletionMap({});
+          return;
+        }
+
+        const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
+        const completedIds = new Set<string>();
+        const CHUNK_SIZE = 10; // Firestore 'in' query limit safety margin
+
+        for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
+          const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+          const q = query(
+            attendanceRef,
+            where('schoolId', '==', profile.schoolId),
+            where('substitutionId', 'in', chunk)
+          );
+          const snap = await getDocs(q);
+          snap.forEach(docSnap => {
+            const subId = docSnap.data().substitutionId;
+            if (subId) completedIds.add(subId);
+          });
+        }
+
+        const map: Record<string, boolean> = {};
+        completedIds.forEach(id => { map[id] = true; });
+        setSubstitutionCompletionMap(map);
+      } catch (err) {
+        console.error("Error fetching substitution completion status:", err);
+      }
+    };
+    fetchCompletionStatus();
+  }, [activeTab, profile?.schoolId, substitutions]);
+
+  // 'upcoming' = date hasn't happened yet; 'completed' = an attendance record exists for it;
+  // 'missed' = the date has passed with no matching attendance record (teacher never checked
+  // in — most likely on leave/absent that day).
+  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' => {
+    const d = sub.date?.toDate ? sub.date.toDate() : ((sub.date as any)?.seconds ? new Date((sub.date as any).seconds * 1000) : (sub.date ? new Date(sub.date as any) : null));
+    if (!d || d > new Date()) return 'upcoming';
+    return substitutionCompletionMap[sub.id] ? 'completed' : 'missed';
+  };
+
   useEffect(() => {
     if (profile?.schoolId) {
       const fetchSchoolInfo = async () => {
@@ -705,7 +925,8 @@ const ProfilePage: React.FC = () => {
             }
           }
 
-          const attRef = collection(firestore, "school-settings", profile.schoolId, "teachers", profile.docId, "attendance");
+          const collectionName = userRole === 'student' ? 'students' : 'teachers';
+          const attRef = collection(firestore, "school-settings", profile.schoolId, collectionName, profile.docId, "attendance");
           let q;
           if (startDate && endDate) {
             q = query(attRef, where(documentId(), ">=", startDate), where(documentId(), "<=", endDate));
@@ -724,8 +945,9 @@ const ProfilePage: React.FC = () => {
           });
 
           // Fetch leave requests to map leaveType
-          const leaveRef = collection(firestore, "school-settings", profile.schoolId, "teachers", profile.docId, "leave_summary");
-          const leaveQ = query(leaveRef, where("teacherId", "==", profile.docId));
+          const leaveRef = collection(firestore, "school-settings", profile.schoolId, collectionName, profile.docId, "leave_summary");
+          const idField = userRole === 'student' ? 'studentId' : 'teacherId';
+          const leaveQ = query(leaveRef, where(idField, "==", profile.docId));
           const leaveSnapshot = await getDocs(leaveQ);
           const leaveRequests = leaveSnapshot.docs.map(doc => doc.data());
 
@@ -768,7 +990,37 @@ const ProfilePage: React.FC = () => {
       };
       fetchAttendance();
     }
-  }, [activeTab, profile, academicYear]);
+  }, [activeTab, profile, academicYear, userRole]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance' && profile?.schoolId && profile?.docId && academicYear) {
+      const fetchYearSummary = async () => {
+        try {
+          const collectionName = userRole === 'student' ? 'students' : 'teachers';
+          const summaryRef = doc(firestore, "school-settings", profile.schoolId, collectionName, profile.docId, "Yearsummary", String(academicYear));
+          const summarySnap = await getDoc(summaryRef);
+          if (summarySnap.exists()) {
+            const data = summarySnap.data();
+            setYearSummaryStats({
+              present: data.present || 0,
+              late: data.late || 0,
+              leave: data.leave || 0,
+              absent: data.absent || 0,
+              noCheckout: data.noCheckout || 0,
+              officialTravel: data.officialTravel || 0,
+            });
+          } else {
+            setYearSummaryStats({ present: 0, late: 0, leave: 0, absent: 0, noCheckout: 0, officialTravel: 0 });
+          }
+        } catch (err) {
+          console.error("Error fetching year summary:", err);
+        } finally {
+          setYearSummaryFetched(true);
+        }
+      };
+      fetchYearSummary();
+    }
+  }, [activeTab, profile, academicYear, userRole]);
 
   useEffect(() => {
     if (activeTab === 'official_travel' && profile?.schoolId && profile?.docId) {
@@ -786,7 +1038,7 @@ const ProfilePage: React.FC = () => {
       };
       fetchTravelRequests();
     }
-  }, [activeTab, profile]);
+  }, [activeTab, profile, userRole]);
 
   useEffect(() => {
     if (activeTab === 'schedule' && profile?.schoolId && profile?.docId) {
@@ -1103,11 +1355,13 @@ const ProfilePage: React.FC = () => {
     { id: "family", label: "ครอบครัว", icon: <FaUsers /> },
     { id: "address", label: "ที่อยู่", icon: <FaMapMarkerAlt /> },
     { id: "health_welfare", label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
+    ...(remediationEnabled ? [{ id: "grade_flags", label: "ผลการเรียน (0/ร/มส/มผ)", icon: <FaExclamationTriangle /> }] : []),
     { id: "attendance", label: "สถิติการมาเรียน", icon: <FaClock /> },
     { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
   ] : userRole === 'user' ? [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
+    ...(remediationEnabled ? [{ id: "grade_flags", label: "ผลการเรียน (0/ร/มส/มผ)", icon: <FaExclamationTriangle /> }] : []),
   ] : [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
@@ -1120,31 +1374,30 @@ const ProfilePage: React.FC = () => {
   ];
 
   // Prepare Chart Data
-  // คำนวณสถิติจากข้อมูลจริงในชุด attendance records (เหมือนระบบนักเรียน) ถ้ายังไม่ได้โหลด ใช้ข้อมูล pre-aggregated จาก profile
+  // ใช้ตัวเลขจากเอกสารสรุปยอด Yearsummary (yearSummaryStats) — เอกสารเดียวกับระบบที่ใช้คำนวณตัวเลขส่งแจ้งเตือน
+  // ทาง LINE (sendTeacherLineNotification) เพื่อให้ตัวเลขตรงกันเสมอ ไม่นับสดจาก attendanceRecords อีกต่อไป
+  // (การนับสดแยก "กลับก่อน" เป็นหมวดของตัวเอง แต่เอกสารสรุปยอดพับรวมเป็น "มาปกติ" ทำให้ตัวเลขไม่ตรงกับ LINE)
   const stats = (() => {
-    if (attendanceFetched) {
-      const result = { present: 0, late: 0, leave: 0, absent: 0, early: 0, noCheckout: 0, official_travel_days: 0 };
-      for (const record of attendanceRecords) {
-        const s = record.status;
-        if (s === 'มา' || s === 'OnTime') result.present++;
-        else if (s === 'สาย' || s === 'Late') result.late++;
-        else if (s === 'ลา' || s === 'Leave' || s === 'ล') result.leave++;
-        else if (s === 'ขาด' || s === 'Absent') result.absent++;
-        else if (s === 'กลับก่อน' || s === 'Early') result.early++;
-        else if (s === 'ไม่ลงเวลาออก' || s === 'NoCheckout') result.noCheckout++;
-        else if (s === 'ไปราชการ' || s === 'OfficialTravel') result.official_travel_days++;
-      }
-      return result;
+    // clamp เป็น 0 กันค่าติดลบ — ตัวนับสะสมในเอกสารสรุปยอดเป็น increment/decrement สะสม ถ้ามีบั๊คที่จุดใด
+    // จุดหนึ่งเคยหักซ้ำ/หักผิดสถานะ ค่าอาจติดลบได้ ซึ่งไม่มีความหมายสำหรับแสดงผล (และทำให้ pie chart พังด้วย)
+    if (yearSummaryStats) {
+      return {
+        present: Math.max(0, yearSummaryStats.present),
+        late: Math.max(0, yearSummaryStats.late),
+        leave: Math.max(0, yearSummaryStats.leave),
+        absent: Math.max(0, yearSummaryStats.absent),
+        noCheckout: Math.max(0, yearSummaryStats.noCheckout),
+        official_travel_days: Math.max(0, yearSummaryStats.officialTravel),
+      };
     }
     const p = (profile?.attendanceStats || {}) as any;
     return {
-      present: p.present || 0,
-      late: p.late || 0,
-      leave: p.leave || 0,
-      absent: p.absent || 0,
-      early: p.early || 0,
-      noCheckout: p.noCheckout || 0,
-      official_travel_days: p.official_travel_days || 0,
+      present: Math.max(0, p.present || 0),
+      late: Math.max(0, p.late || 0),
+      leave: Math.max(0, p.leave || 0),
+      absent: Math.max(0, p.absent || 0),
+      noCheckout: Math.max(0, p.noCheckout || 0),
+      official_travel_days: Math.max(0, p.official_travel_days || 0),
     };
   })();
   const attendanceChartData = [
@@ -1152,7 +1405,6 @@ const ProfilePage: React.FC = () => {
     { name: 'สาย', value: stats.late || 0, color: '#eab308' },
     { name: 'ลา', value: stats.leave || 0, color: '#3b82f6' },
     { name: 'ขาด', value: stats.absent || 0, color: '#ef4444' },
-    { name: 'กลับก่อน', value: stats.early || 0, color: '#f97316' },
     { name: 'ไม่ลงเวลาออก', value: stats.noCheckout || 0, color: '#a855f7' },
     { name: 'ไปราชการ', value: stats.official_travel_days || 0, color: '#6366f1' },
   ];
@@ -1161,6 +1413,67 @@ const ProfilePage: React.FC = () => {
     ["Status", "Count"],
     ...attendanceChartData.map(d => [d.name, d.value]),
   ];
+
+  // Trend (line chart: check-in time per day, last 30 records) and monthly breakdown —
+  // same derivation ViewTeacherPage.tsx uses for a teacher's attendance tab, just sourced
+  // from attendanceRecords (already fetched above) instead of a separate Firestore query.
+  const { attendanceTrendData, monthlyStats, trendMonths } = (() => {
+    const trendData: { date: string; time: string; checkinValue: number; checkoutValue?: number; status: string }[] = [];
+    const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const monthlyData: Record<string, { present: number; late: number; leave: number; absent: number; early: number; noCheckout: number; name: string }> = {};
+
+    for (const record of attendanceRecords) {
+      const status = record.status;
+      const dateStr: string | undefined = record.date || record.id;
+      const timestamp = record.checkinTime?.toDate ? record.checkinTime : (record.timestamp?.toDate ? record.timestamp : null);
+      if (!timestamp || !dateStr) continue;
+
+      const d = timestamp.toDate();
+
+      if (status === 'มา' || status === 'OnTime' || status === 'สาย' || status === 'Late') {
+        const h = d.getHours();
+        const m = d.getMinutes();
+        const checkoutDate = record.checkoutTime?.toDate ? record.checkoutTime.toDate() : null;
+        trendData.push({
+          date: dateStr,
+          time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+          checkinValue: h + m / 60,
+          checkoutValue: checkoutDate ? checkoutDate.getHours() + checkoutDate.getMinutes() / 60 : undefined,
+          status,
+        });
+      }
+
+      const month = d.getMonth();
+      const year = d.getFullYear();
+      const shortYear = String(year + 543).slice(-2);
+      const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { present: 0, late: 0, leave: 0, absent: 0, early: 0, noCheckout: 0, name: `${thaiMonthsShort[month]}'${shortYear}` };
+      }
+      if (status === 'มา' || status === 'OnTime') monthlyData[monthKey].present++;
+      else if (status === 'สาย' || status === 'Late') monthlyData[monthKey].late++;
+      else if (status === 'ลา' || status === 'Leave' || status === 'ล') monthlyData[monthKey].leave++;
+      else if (status === 'ขาด' || status === 'Absent') monthlyData[monthKey].absent++;
+      else if (status === 'กลับก่อน' || status === 'Early') monthlyData[monthKey].early++;
+      else if (status === 'ไม่ลงเวลาออก' || status === 'NoCheckout') monthlyData[monthKey].noCheckout++;
+    }
+
+    const sortedTrend = trendData.sort((a, b) => a.date.localeCompare(b.date));
+
+    const trendMonthKeys = new Set<string>();
+    sortedTrend.forEach(t => trendMonthKeys.add(t.date.slice(0, 7)));
+    const trendMonths = Array.from(trendMonthKeys).sort().reverse().map(key => {
+      const [y, m] = key.split('-').map(Number);
+      const shortYear = String(y + 543).slice(-2);
+      return { key, label: `${thaiMonthsShort[m - 1] || key} '${shortYear}` };
+    });
+
+    return {
+      attendanceTrendData: trendMonthFilter === 'all' ? sortedTrend.slice(-30) : sortedTrend.filter(t => t.date.startsWith(trendMonthFilter)),
+      monthlyStats: Object.keys(monthlyData).sort().map(key => monthlyData[key]),
+      trendMonths,
+    };
+  })();
 
   const getPieOptions = (data: typeof attendanceChartData) => ({
     is3D: true,
@@ -1373,7 +1686,7 @@ const ProfilePage: React.FC = () => {
     <MainLayout>
       <ToastContainer theme={isDarkMode ? "dark" : "light"} autoClose={2000} />
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-gray-900 dark:text-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-gray-900 dark:text-white">
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
@@ -1962,7 +2275,7 @@ const ProfilePage: React.FC = () => {
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">รายวิชาที่สอน</h2>
                     <div className="flex items-center gap-3">
                       {/* View Mode Toggle */}
-                      <div className="flex items-center bg-gray-100 dark:bg-gray-850 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 border border-gray-200 dark:border-gray-700">
                         <button
                           onClick={() => setViewMode('list')}
                           className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm font-bold' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
@@ -2384,6 +2697,200 @@ const ProfilePage: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === "grade_flags" && (userRole === 'student' || userRole === 'user') && (() => {
+                const flagKeyId = (flag: FlaggedCourse) => flag.flagKind === 'course' ? flag.courseId : (flag.activityDocId || flag.courseId);
+                const requestDedupKey = (flagKind: string, idValue: string, academicYear: string, semester: string) =>
+                  `${flagKind}|${idValue}|${academicYear}|${semester}`;
+                const total = gradeFlags?.flags?.length || 0;
+                const resolvedCount = gradeFlags?.flags?.filter(flag => {
+                  const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
+                  return gradeFlagsRequests[key]?.status === 'resolved';
+                }).length || 0;
+                const pendingCount = gradeFlags?.flags?.filter(flag => {
+                  const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
+                  return gradeFlagsRequests[key]?.status === 'pending';
+                }).length || 0;
+                const windowOpen = isRemediationWindowOpen(gradeFlagsWindowConfig);
+
+                return (
+                  <div className="space-y-4 animate-fade-in">
+                    {/* Header */}
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                          <LucideAlertTriangle size={20} />
+                          <h3 className="text-md font-bold">ผลการเรียนที่ติด 0/ร/มส/มผ</h3>
+                      </div>
+                      {localStorage.getItem('currentUserType') !== 'parent' && (
+                        <button
+                          onClick={() => navigate('/my-grade-flags')}
+                          className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                        >
+                          ไปยื่นคำร้องแก้ตัว <FaChevronRight size={10} />
+                        </button>
+                      )}
+                      </div>
+
+                      {/* Summary Stats */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="rounded-xl bg-slate-50 dark:bg-[#202124] border border-slate-200 dark:border-slate-800 p-3 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-500/10 flex items-center justify-center shrink-0">
+                            <LucideAlertTriangle size={16} className="text-red-600 dark:text-red-400" />
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">ทั้งหมด</p>
+                            <p className="text-xl font-black text-slate-800 dark:text-white leading-none mt-0.5">{total}</p>
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 dark:bg-[#202124] border border-slate-200 dark:border-slate-800 p-3 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
+                            <Clock size={16} className="text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">รอดำเนินการ</p>
+                            <p className="text-xl font-black text-amber-600 dark:text-amber-400 leading-none mt-0.5">{pendingCount}</p>
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 dark:bg-[#202124] border border-slate-200 dark:border-slate-800 p-3 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">แก้ตัวสำเร็จ</p>
+                            <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 leading-none mt-0.5">{resolvedCount}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Window Closed Warning */}
+                    {!windowOpen && (
+                      <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-4 flex items-start gap-3 text-amber-800 dark:text-amber-400">
+                        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="font-black text-sm">ขณะนี้ระบบปิดรับคำร้องขอแก้ตัว</h3>
+                          <p className="text-xs font-semibold mt-0.5 opacity-90">คุณยังดูรายการผลการเรียนที่ต้องแก้ไขได้ แต่จะไม่สามารถยื่นส่งคำร้องใหม่ในเวลานี้</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Flag List */}
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+                      {gradeFlagsLoading ? (
+                        <div className="p-8 flex flex-col items-center justify-center space-y-3">
+                          <RefreshCw size={24} className="animate-spin text-indigo-500" />
+                          <p className="text-slate-400 text-xs font-black">กำลังโหลดข้อมูลผลการเรียน...</p>
+                        </div>
+                      ) : gradeFlagsError ? (
+                        <div className="p-4 flex items-start gap-3 text-rose-800 dark:text-rose-400">
+                          <XCircle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+                          <div>
+                            <h3 className="font-black text-sm">พบข้อผิดพลาด</h3>
+                            <p className="text-xs font-semibold mt-0.5">{gradeFlagsError}</p>
+                          </div>
+                        </div>
+                      ) : !gradeFlags || gradeFlags.flags.length === 0 ? (
+                        <div className="p-12 flex flex-col items-center justify-center text-center">
+                          <div className="w-14 h-14 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center mb-3">
+                            <CheckCircle2 size={26} className="text-emerald-500" />
+                          </div>
+                          <h3 className="font-black text-slate-800 dark:text-white text-sm">ไม่พบผลการเรียนที่ต้องแก้ไข</h3>
+                          <p className="text-slate-400/80 text-xs mt-1 max-w-sm">
+                            ยินดีด้วย! ไม่มีผลการเรียนที่ติด 0, ร, มส, หรือ มผ ในระบบในขณะนี้
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Table header */}
+                          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-white/[0.02]">
+                            <div className="flex items-center gap-2 text-xs font-black text-slate-500 dark:text-slate-400">
+                              <ClipboardList size={15} className="text-indigo-500" />
+                              <span>วิชา / กิจกรรมที่ต้องแก้ไข</span>
+                            </div>
+                            <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
+                              {total} รายการ
+                            </span>
+                          </div>
+
+                          {/* Rows */}
+                          <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {gradeFlags.flags.map((flag, idx) => {
+                              const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
+                              const req = gradeFlagsRequests[key];
+                              const rowBg = req?.status === 'resolved'
+                                ? 'border-l-4 border-l-emerald-500 bg-emerald-50/10 dark:bg-emerald-500/[0.01]'
+                                : req?.status === 'pending'
+                                  ? 'border-l-4 border-l-amber-500 bg-amber-50/10 dark:bg-amber-500/[0.01]'
+                                  : 'border-l-4 border-l-slate-200 dark:border-l-slate-700';
+
+                              return (
+                                <div
+                                  key={`${key}-${idx}`}
+                                  className={`px-4 py-3.5 transition-colors ${rowBg} hover:bg-slate-50/60 dark:hover:bg-white/[0.02]`}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-black text-sm text-slate-900 dark:text-white leading-tight">
+                                        {flag.courseTitle || flag.courseCode}
+                                      </p>
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20 text-[10px] font-black">
+                                          {flag.courseCode}
+                                        </span>
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
+                                          ปีการศึกษา {flag.academicYear}/{flag.semester}
+                                        </span>
+                                        {flag.teacherName && (
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
+                                            อ.{flag.teacherName}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-500/20 text-xs font-black">
+                                        {flag.grade}
+                                      </span>
+                                      {req ? (
+                                        req.status === 'resolved' ? (
+                                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                                            <CheckCircle2 size={12} /> แก้ตัวสำเร็จ{req.newResult ? ` (${req.newResult})` : ''}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+                                            <Clock size={12} /> รอครูบันทึกผล
+                                          </span>
+                                        )
+                                      ) : (
+                                        <span className="text-[11px] font-bold text-slate-400">
+                                          {windowOpen ? 'ยังไม่ยื่น' : 'ปิดรับคำร้อง'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Link to full page */}
+                    {localStorage.getItem('currentUserType') !== 'parent' && (
+                      <div className="text-center">
+                        <button
+                          onClick={() => navigate('/my-grade-flags')}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors inline-flex items-center gap-2"
+                        >
+                          ไปที่หน้ายื่นคำร้องขอแก้ตัว <FaChevronRight size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {activeTab === "official_travel" && (
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -2397,62 +2904,98 @@ const ProfilePage: React.FC = () => {
                   </div>
 
                   {officialTravelRequests.length > 0 ? (
-                    <div className="table-responsive -mx-6 px-6 pb-2">
-                      <table className="min-w-[850px] w-full text-left">
-                        <thead>
-                          <tr className="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider font-bold">
-                            <th className="px-4 py-4 rounded-l-xl w-[20%]">วันที่เดินทาง</th>
-                            <th className="px-4 py-4 w-[25%]">เรื่อง</th>
-                            <th className="px-4 py-4 w-[25%]">สถานที่</th>
-                            <th className="px-4 py-4 text-center w-[10%]">สถานะ</th>
-                            <th className="px-4 py-4 rounded-r-xl text-right w-[20%]">การจัดการ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                          {officialTravelRequests.map((req) => (
-                            <tr key={req.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5 transition-all">
-                              <td className="px-4 py-5 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                <div className="flex flex-col">
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatDate(req.startDate)}</span>
-                                  <span className="text-xs opacity-60">ถึง {formatDate(req.endDate)}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-5">
-                                <p className="text-sm text-gray-900 dark:text-gray-100 font-bold leading-relaxed line-clamp-2" title={req.subject}>
-                                  {req.subject}
-                                </p>
-                              </td>
-                              <td className="px-4 py-5">
-                                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2" title={req.location}>
-                                  {req.location}
-                                </p>
-                              </td>
-                              <td className="px-4 py-5 text-center">
-                                <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20' :
-                                  req.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-500/20' :
-                                    'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-500/20'
-                                  }`}>
-                                  {req.status === 'approved' ? 'อนุมัติ' : req.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-5 text-right">
-                                <div className="flex justify-end opacity-80 group-hover:opacity-100 transition-opacity">
-                                  <OfficialTravelPdfButton
-                                    data={req}
-                                    schoolName={schoolInfo.schoolName}
-                                    schoolAffiliation={schoolInfo.affiliation}
-                                    directorName={schoolInfo.directorName}
-                                    deputyName={schoolInfo.deputyName}
-                                    personnelHeadName={schoolInfo.personnelHeadName}
-                                    personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
-                                  />
-                                </div>
-                              </td>
+                    <>
+                      {/* Mobile: การ์ดเรียงลง ไม่ต้องเลื่อนแนวนอน */}
+                      <div className="sm:hidden space-y-3">
+                        {officialTravelRequests.map((req) => (
+                          <div key={req.id} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-4">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatDate(req.startDate)}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">ถึง {formatDate(req.endDate)}</span>
+                              </div>
+                              <span className={`inline-flex shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20' :
+                                req.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-500/20' :
+                                  'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-500/20'
+                                }`}>
+                                {req.status === 'approved' ? 'อนุมัติ' : req.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-900 dark:text-gray-100 font-bold">{req.subject}</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{req.location}</p>
+                            <div className="flex justify-end mt-3">
+                              <OfficialTravelPdfButton
+                                data={req}
+                                schoolName={schoolInfo.schoolName}
+                                schoolAffiliation={schoolInfo.affiliation}
+                                directorName={schoolInfo.directorName}
+                                deputyName={schoolInfo.deputyName}
+                                personnelHeadName={schoolInfo.personnelHeadName}
+                                personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Desktop: ตาราง */}
+                      <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-300 text-xs uppercase tracking-wider font-bold">
+                              <th className="px-4 py-4 rounded-l-xl w-[20%]">วันที่เดินทาง</th>
+                              <th className="px-4 py-4 w-[25%]">เรื่อง</th>
+                              <th className="px-4 py-4 w-[25%]">สถานที่</th>
+                              <th className="px-4 py-4 text-center w-[10%]">สถานะ</th>
+                              <th className="px-4 py-4 rounded-r-xl text-right w-[20%]">การจัดการ</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                            {officialTravelRequests.map((req) => (
+                              <tr key={req.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-500/5 transition-all">
+                                <td className="px-4 py-5 text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-gray-900 dark:text-gray-100">{formatDate(req.startDate)}</span>
+                                    <span className="text-xs opacity-60">ถึง {formatDate(req.endDate)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-5">
+                                  <p className="text-sm text-gray-900 dark:text-gray-100 font-bold leading-relaxed line-clamp-2" title={req.subject}>
+                                    {req.subject}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-5">
+                                  <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2" title={req.location}>
+                                    {req.location}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-5 text-center">
+                                  <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20' :
+                                    req.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-500/20' :
+                                      'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-500/20'
+                                    }`}>
+                                    {req.status === 'approved' ? 'อนุมัติ' : req.status === 'rejected' ? 'ไม่อนุมัติ' : 'รอพิจารณา'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-5 text-right">
+                                  <div className="flex justify-end opacity-80 group-hover:opacity-100 transition-opacity">
+                                    <OfficialTravelPdfButton
+                                      data={req}
+                                      schoolName={schoolInfo.schoolName}
+                                      schoolAffiliation={schoolInfo.affiliation}
+                                      directorName={schoolInfo.directorName}
+                                      deputyName={schoolInfo.deputyName}
+                                      personnelHeadName={schoolInfo.personnelHeadName}
+                                      personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel}
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   ) : (
                     <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <FaPlane className="mx-auto text-4xl mb-3 opacity-20" />
@@ -2462,24 +3005,24 @@ const ProfilePage: React.FC = () => {
                 </div>
               )}
 
-              {activeTab === "attendance" && userRole === 'teacher' && (
+              {activeTab === "attendance" && (userRole === 'teacher' || userRole === 'student') && (
                 <div className="animate-fade-in space-y-6">
                   <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || getCurrentThaiYear()})`}>
-                    {attendanceFetched && (
+                    {yearSummaryFetched && (
                       <div className="flex items-center gap-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg border border-green-100 dark:border-green-800 font-medium">
-                          ✓ คำนวณจากข้อมูลจริง ({attendanceRecords.length} รายการ)
+                          ✓ ข้อมูลชุดเดียวกับที่แจ้งเตือนทาง LINE
                         </span>
                       </div>
                     )}
-                    {isAttendanceLoading ? (
-                      <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 pb-4">
-                        {Array.from({ length: 7 }).map((_, i) => (
+                    {!yearSummaryFetched ? (
+                      <div className="flex lg:grid lg:grid-cols-6 gap-2 sm:gap-3 pb-4">
+                        {Array.from({ length: 6 }).map((_, i) => (
                           <div key={i} className="flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 animate-pulse" />
                         ))}
                       </div>
                     ) : (
-                    <div className="flex lg:grid lg:grid-cols-7 gap-2 sm:gap-3 table-responsive pb-4 scrollbar-hide -mx-2 px-2 lg:mx-0 lg:px-0">
+                    <div className="flex lg:grid lg:grid-cols-6 gap-2 sm:gap-3 table-responsive pb-4 scrollbar-hide -mx-2 px-2 lg:mx-0 lg:px-0">
                       <div
                         onClick={() => { setSelectedStatus(selectedStatus === 'present' ? null : 'present'); setAttendanceCurrentPage(1); }}
                         className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'present' ? 'ring-2 ring-green-500 bg-green-100 dark:bg-green-900/40 border-green-500' : 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30'}`}
@@ -2509,13 +3052,6 @@ const ProfilePage: React.FC = () => {
                         <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">ขาด</div>
                       </div>
                       <div
-                        onClick={() => { setSelectedStatus(selectedStatus === 'early' ? null : 'early'); setAttendanceCurrentPage(1); }}
-                        className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'early' ? 'ring-2 ring-orange-500 bg-orange-100 dark:bg-orange-900/40 border-orange-500' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-900/30'}`}
-                      >
-                        <div className="text-lg sm:text-xl font-bold text-orange-600 dark:text-orange-400">{stats.early || 0}</div>
-                        <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">กลับก่อน</div>
-                      </div>
-                      <div
                         onClick={() => { setSelectedStatus(selectedStatus === 'noCheckout' ? null : 'noCheckout'); setAttendanceCurrentPage(1); }}
                         className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'noCheckout' ? 'ring-2 ring-purple-500 bg-purple-100 dark:bg-purple-900/40 border-purple-500' : 'bg-purple-50 dark:bg-purple-900/20 border-purple-100 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/30'}`}
                       >
@@ -2533,7 +3069,7 @@ const ProfilePage: React.FC = () => {
                     )}
                   </InfoCard>
 
-                  {attendanceFetched && attendanceChartData.some(d => d.value > 0) && (
+                  {yearSummaryFetched && attendanceChartData.some(d => d.value > 0) && (
                     <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="h-80 bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center overflow-hidden">
                         <h3 className="text-center text-sm font-medium mb-4 text-gray-500 dark:text-gray-400 w-full">สัดส่วนการลงเวลา</h3>
@@ -2569,6 +3105,120 @@ const ProfilePage: React.FC = () => {
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {attendanceTrendData.length > 0 && (
+                        <div className="col-span-1 lg:col-span-2 mt-2 bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 sm:p-6 shadow-sm dark:shadow-none border border-gray-100 dark:border-gray-800">
+                          <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+                            <div className="flex items-center gap-3">
+                              <span className="w-1.5 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                              <div>
+                                <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">แนวโน้มเวลาการมาทำงาน</h3>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">
+                                  {trendMonthFilter === 'all' ? '30 วันล่าสุด' : (trendMonths.find(m => m.key === trendMonthFilter)?.label || trendMonthFilter)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 pl-4">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#6366f1' }} />
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลามา</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลากลับ</span>
+                              </div>
+                              <select
+                                value={trendMonthFilter}
+                                onChange={(e) => setTrendMonthFilter(e.target.value)}
+                                className="text-xs font-medium bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              >
+                                <option value="all">30 วันล่าสุด</option>
+                                {trendMonths.map(m => (
+                                  <option key={m.key} value={m.key}>{m.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="h-80 w-full">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
+                              <ComposedChart data={attendanceTrendData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                                <defs>
+                                  <linearGradient id="attendanceTrendGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                                <XAxis dataKey="date" fontSize={12} tickFormatter={(val) => val.split('-').slice(1).join('/')} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} axisLine={false} tickLine={false} />
+                                <YAxis
+                                  domain={['dataMin - 0.2', 'dataMax + 0.2']}
+                                  tickFormatter={(val) => {
+                                    const h = Math.floor(val);
+                                    const m = Math.round((val - h) * 60);
+                                    return `${h}:${m.toString().padStart(2, '0')}`;
+                                  }}
+                                  stroke={isDarkMode ? "#9ca3af" : "#4b5563"}
+                                  axisLine={false}
+                                  tickLine={false}
+                                  width={50}
+                                />
+                                <RechartsTooltip
+                                  contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000', borderRadius: '12px', border: '1px solid', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}
+                                  formatter={(value: any, name: any) => {
+                                    if (value === undefined || value === null) return ["-", name];
+                                    const h = Math.floor(value);
+                                    const m = Math.round((value - h) * 60);
+                                    return [`${h}:${m.toString().padStart(2, '0')} น.`, name];
+                                  }}
+                                  labelFormatter={(label) => `วันที่ ${label}`}
+                                />
+                                <Area type="monotone" dataKey="checkinValue" stroke="#6366f1" strokeWidth={2.5} fill="url(#attendanceTrendGradient)" dot={{ r: 3, fill: '#6366f1', strokeWidth: 0 }} activeDot={{ r: 6, fill: '#6366f1', stroke: isDarkMode ? '#1f2937' : '#fff', strokeWidth: 2 }} name="เวลามา" connectNulls />
+                                <Line type="monotone" dataKey="checkoutValue" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3, fill: '#f59e0b', strokeWidth: 0 }} activeDot={{ r: 6, fill: '#f59e0b', stroke: isDarkMode ? '#1f2937' : '#fff', strokeWidth: 2 }} name="เวลากลับ" connectNulls />
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {monthlyStats.length > 0 && (
+                    <div className="bg-white dark:bg-[#2a2b2f] p-5 sm:p-6 rounded-2xl shadow-sm dark:shadow-none border border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="w-1.5 h-6 rounded-full bg-gradient-to-b from-emerald-500 to-teal-500" />
+                        <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">สถิติการมาทำงานรายเดือน</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4 pl-4">
+                        {MONTHLY_STAT_LEGEND.map((item) => (
+                          <div key={item.key} className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
+                          <BarChart data={monthlyStats} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} barCategoryGap="30%">
+                            <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                            <XAxis dataKey="name" fontSize={12} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} axisLine={false} tickLine={false} />
+                            <YAxis allowDecimals={false} stroke={isDarkMode ? "#9ca3af" : "#4b5563"} axisLine={false} tickLine={false} width={30} />
+                            <RechartsTooltip
+                              cursor={{ fill: isDarkMode ? '#374151' : '#f3f4f6' }}
+                              contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#fff', borderColor: isDarkMode ? '#374151' : '#e5e7eb', color: isDarkMode ? '#fff' : '#000', borderRadius: '12px', border: '1px solid', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}
+                            />
+                            {MONTHLY_STAT_LEGEND.map((item, idx) => (
+                              <Bar
+                                key={item.key}
+                                dataKey={item.key}
+                                stackId="a"
+                                fill={item.color}
+                                name={item.label}
+                                radius={idx === MONTHLY_STAT_LEGEND.length - 1 ? [4, 4, 0, 0] : undefined}
+                              />
+                            ))}
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -2687,13 +3337,13 @@ const ProfilePage: React.FC = () => {
                     </div>
                     <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 text-center">
                       <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                        {/* Placeholder or new logic needed */}
+                        {substitutions.filter(s => getSubstitutionStatus(s) === 'completed').length}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">ปฏิบัติหน้าที่สำเร็จ</div>
                     </div>
                     <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 text-center">
                       <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                        {/* Placeholder or new logic needed */}
+                        {substitutions.filter(s => getSubstitutionStatus(s) === 'missed').length}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">ไม่ได้สอน (ลา/ขาด)</div>
                     </div>
@@ -2701,51 +3351,81 @@ const ProfilePage: React.FC = () => {
 
                   {substitutions.length > 0 ? (
                     <>
-                      <div className="table-responsive">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                          <thead className="bg-gray-50 dark:bg-gray-800">
-                            <tr>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">วันที่/เวลา</th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">วิชา/ชั้นเรียน</th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">สอนแทนครู</th>
-                              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">สถานะ</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white dark:bg-[#2a2b2f] divide-y divide-gray-200 dark:divide-gray-700">
-                            {substitutions
-                              .slice((substitutionsCurrentPage - 1) * substitutionsItemsPerPage, substitutionsCurrentPage * substitutionsItemsPerPage)
-                              .map((sub) => {
-                                let dateObj: Date | null = null;
-                                if (sub.date?.toDate) {
-                                  dateObj = sub.date.toDate();
-                                } else if (sub.date?.seconds) {
-                                  dateObj = new Date(sub.date.seconds * 1000);
-                                } else if (sub.date) {
-                                  dateObj = new Date(sub.date as any);
-                                }
+                      {(() => {
+                        const pageRows = substitutions
+                          .slice((substitutionsCurrentPage - 1) * substitutionsItemsPerPage, substitutionsCurrentPage * substitutionsItemsPerPage)
+                          .map((sub) => {
+                            let dateObj: Date | null = null;
+                            if (sub.date?.toDate) {
+                              dateObj = sub.date.toDate();
+                            } else if (sub.date?.seconds) {
+                              dateObj = new Date(sub.date.seconds * 1000);
+                            } else if (sub.date) {
+                              dateObj = new Date(sub.date as any);
+                            }
 
-                                const dateStr = dateObj ? dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : "-";
-                                const isFuture = dateObj ? dateObj > new Date() : false;
+                            const dateStr = dateObj ? dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : "-";
+                            const subStatus = getSubstitutionStatus(sub);
 
-                                let statusBadge;
-                                if (isFuture) {
-                                  statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">รอสอน</span>;
-                                } else {
-                                  statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">ไม่ระบุ</span>;
-                                }
+                            let statusBadge;
+                            if (subStatus === 'upcoming') {
+                              statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">รอสอน</span>;
+                            } else if (subStatus === 'completed') {
+                              statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">ปฏิบัติหน้าที่สำเร็จ</span>;
+                            } else {
+                              statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">ไม่ได้สอน (ลา/ขาด)</span>;
+                            }
 
-                                return (
-                                  <tr key={sub.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{dateStr} <span className="text-gray-500 text-xs ml-1">(คาบ {sub.period})</span></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{sub.subjectName} <span className="text-gray-500 text-xs">({formatGradeLevel(sub.classId)})</span></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{sub.originalTeacherName}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{statusBadge}</td>
+                            return { sub, dateStr, statusBadge };
+                          });
+
+                        return (
+                          <>
+                            {/* Mobile: การ์ดเรียงลง ไม่ต้องเลื่อนแนวนอน */}
+                            <div className="sm:hidden space-y-3">
+                              {pageRows.map(({ sub, dateStr, statusBadge }) => (
+                                <div key={sub.id} className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
+                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-200">
+                                      {dateStr} <span className="text-gray-500 text-xs">(คาบ {sub.period})</span>
+                                    </span>
+                                    {statusBadge}
+                                  </div>
+                                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                                    {sub.subjectName} <span className="text-gray-500 text-xs">({formatGradeLevel(sub.classId)})</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">สอนแทน: {sub.originalTeacherName}</div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Desktop: ตาราง — คอลัมน์ปรับความกว้างตามเนื้อหา ให้ข้อความอยู่บรรทัดเดียว
+                                (overflow-x-auto เป็นทางสำรองเผื่อจอแคบมากจริงๆ เท่านั้น ปกติไม่ควรต้องเลื่อน) */}
+                            <div className="hidden sm:block overflow-x-auto">
+                              <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead className="bg-gray-50 dark:bg-gray-800">
+                                  <tr>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">วันที่/เวลา</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">วิชา/ชั้นเรียน</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">สอนแทนครู</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">สถานะ</th>
                                   </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
+                                </thead>
+                                <tbody className="bg-white dark:bg-[#2a2b2f] divide-y divide-gray-200 dark:divide-gray-700">
+                                  {pageRows.map(({ sub, dateStr, statusBadge }) => (
+                                    <tr key={sub.id}>
+                                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{dateStr} <span className="text-gray-500 text-xs">(คาบ {sub.period})</span></td>
+                                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{sub.subjectName} <span className="text-gray-500 text-xs">({formatGradeLevel(sub.classId)})</span></td>
+                                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">{sub.originalTeacherName}</td>
+                                      <td className="px-4 py-4 whitespace-nowrap">{statusBadge}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        );
+                      })()}
                       {substitutions.length > substitutionsItemsPerPage && (
                         <div className="flex flex-col sm:flex-row justify-between items-center mt-8 gap-4">
                           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">

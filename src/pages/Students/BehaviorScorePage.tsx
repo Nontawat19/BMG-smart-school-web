@@ -1375,7 +1375,7 @@ export default function BehaviorScorePage() {
                           className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all ${
                             adjustPoints === pt 
                               ? 'bg-indigo-600 border-indigo-600 text-white' 
-                              : 'bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-850 text-gray-600 dark:text-gray-400'
+                              : 'bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
                           }`}
                         >
                           {pt}
@@ -1384,7 +1384,7 @@ export default function BehaviorScorePage() {
                       <button
                         type="button"
                         onClick={() => setCustomPointsMode(true)}
-                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-850 text-gray-600 dark:text-gray-400 hover:border-indigo-500"
+                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500"
                       >
                         ระบุเอง
                       </button>
@@ -1452,7 +1452,7 @@ export default function BehaviorScorePage() {
                 <button
                   type="button"
                   onClick={() => setActiveAdjustStudent(null)}
-                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 dark:text-gray-400 dark:border-gray-850 rounded-xl text-sm font-bold hover:bg-slate-50"
+                  className="flex-1 py-2.5 border border-gray-300 text-gray-600 dark:text-gray-400 dark:border-gray-700 rounded-xl text-sm font-bold hover:bg-slate-50"
                 >
                   ยกเลิก
                 </button>

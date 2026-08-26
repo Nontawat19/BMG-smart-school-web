@@ -14,7 +14,7 @@ import {
     updateDoc,
     serverTimestamp
 } from 'firebase/firestore';
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import {
     FileWarning,
@@ -26,7 +26,9 @@ import {
     Download,
     RefreshCw,
     Percent,
-    GraduationCap
+    GraduationCap,
+    X,
+    FileDown
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from '@/components/SkeletonLoader';
@@ -417,6 +419,7 @@ const MsReportPage: React.FC = () => {
 
     const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
     const [academicYear, setAcademicYear] = useState<string>(() => sessionStorage.getItem('ms_year') || reduxAcademicYear);
     const [semester, setSemester] = useState<string>(() => sessionStorage.getItem('ms_semester') || '1');
     const [academicHeadName, setAcademicHeadName] = useState('');
@@ -837,27 +840,34 @@ const MsReportPage: React.FC = () => {
         }
     };
 
+    const buildMsReportPdfDocument = () => {
+        const subjectLabel = selectedCourseData ? `${selectedCourseData.code} ${selectedCourseData.title}` : selectedCourse?.label || '';
+        return (
+            <MsReportPdfDocument
+                students={studentSummary}
+                schoolName={schoolSettings.schoolName || 'โรงเรียน'}
+                logoUrl={schoolSettings.logoUrl}
+                academicYear={academicYear}
+                semester={semester}
+                classLabel={classLabelDisplay}
+                subjectLabel={subjectLabel}
+                signerName={String((currentUser as any)?.fullName || '').trim()}
+                academicHeadName={academicHeadName}
+                academicHeadRoleLabel={academicHeadRoleLabel}
+            />
+        );
+    };
+
+    const openPdfPreview = () => {
+        if (!selectedCourse?.value || studentSummary.length === 0) return;
+        setShowPdfPreview(true);
+    };
+
     const handleExportPdf = async () => {
-        if (!selectedCourse?.value) return;
         setPdfGenerating(true);
         try {
-            const subjectLabel = selectedCourseData ? `${selectedCourseData.code} ${selectedCourseData.title}` : selectedCourse.label;
-            const pdfDoc = (
-                <MsReportPdfDocument
-                    students={studentSummary}
-                    schoolName={schoolSettings.schoolName || 'โรงเรียน'}
-                    logoUrl={schoolSettings.logoUrl}
-                    academicYear={academicYear}
-                    semester={semester}
-                    classLabel={classLabelDisplay}
-                    subjectLabel={subjectLabel}
-                    signerName={String((currentUser as any)?.fullName || '').trim()}
-                    academicHeadName={academicHeadName}
-                    academicHeadRoleLabel={academicHeadRoleLabel}
-                />
-            );
-            const blob = await pdf(pdfDoc).toBlob();
-            saveAs(blob, `รายงาน_มส_${selectedCourse.value}_${academicYear}_${semester}.pdf`);
+            const blob = await pdf(buildMsReportPdfDocument()).toBlob();
+            saveAs(blob, `รายงาน_มส_${selectedCourse?.value}_${academicYear}_${semester}.pdf`);
         } catch (err) {
             console.error('Error exporting ms report PDF:', err);
             Swal.fire('สร้าง PDF ไม่สำเร็จ', 'ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง', 'error');
@@ -912,11 +922,11 @@ const MsReportPage: React.FC = () => {
                                 {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
                             </button>
                             <button
-                                onClick={handleExportPdf}
-                                disabled={!selectedCourse?.value || studentSummary.length === 0 || pdfGenerating}
+                                onClick={openPdfPreview}
+                                disabled={!selectedCourse?.value || studentSummary.length === 0}
                                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 hover:bg-slate-900 dark:bg-indigo-500 dark:hover:bg-white dark:hover:text-black text-white px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-500/10 transition-all font-black text-xs group disabled:opacity-60"
                             >
-                                {pdfGenerating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                <Download size={14} />
                                 <span>PDF</span>
                             </button>
                         </div>
@@ -1070,6 +1080,48 @@ const MsReportPage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {showPdfPreview && (
+                <div
+                    className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setShowPdfPreview(false)}
+                >
+                    <div
+                        className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                ตัวอย่างเอกสาร — รายงาน มส.
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleExportPdf}
+                                    disabled={pdfGenerating}
+                                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {pdfGenerating ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                    {pdfGenerating ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPdfPreview(false)}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                                    title="ปิด"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+                            <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                                {buildMsReportPdfDocument()}
+                            </PDFViewer>
+                        </div>
+                    </div>
+                </div>
+            )}
         </MainLayout>
     );
 };

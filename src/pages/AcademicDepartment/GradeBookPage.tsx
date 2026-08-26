@@ -10,6 +10,7 @@ import { pdf } from '@react-pdf/renderer';
 import GradeBookDocument from '@/components/Pdf/gradebook/GradeBookDocument';
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { CLASSES, CLASS_FULL_NAMES } from "@/utils/schoolUtils";
+import { matchesAssignmentGroupRoom } from "@/utils/attendanceClassMatching";
 import Swal from 'sweetalert2';
 
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
@@ -460,6 +461,17 @@ const GradeBookPage: React.FC = () => {
         const targetCode = (currentCourse?.code || "").replace(/\s/g, '');
         const classCandidates = new Set([selectedClass, classTitle]);
 
+        // A course shared across multiple class-groups (e.g. English taught separately to
+        // ม.5/1 and ม.5/2 by the same teacher, one combined course doc with several
+        // teacherAssignments groups) places a *separate* CourseInstance per group into the
+        // teacher's schedule doc, distinguished by groupNumber. Matching only by course
+        // id/code — with no group check — pulls in every group's periods, doubling the
+        // apparent number of periods per day for whichever single room is being viewed.
+        // Shared with HistoricalClassroomAttendancePage.tsx via matchesAssignmentGroupRoom so
+        // the two pages' group/room disambiguation rule can't silently drift apart.
+        const courseMatchesSelectedGroup = (courseInSlot: any): boolean =>
+          matchesAssignmentGroupRoom(currentCourse?.teacherAssignments, courseInSlot?.groupNumber, selectedRoom);
+
         snap.forEach(doc => {
           const data = doc.data();
           const dataSemester = String(data.semester || '');
@@ -468,7 +480,7 @@ const GradeBookPage: React.FC = () => {
           if (matchesClass) {
             Object.entries(data.schedule || {}).forEach(([key, val]: [string, any]) => {
               const coursesInSlot = Array.isArray(val) ? val : [val];
-              if (coursesInSlot.some(c => c && ((c.id === selectedCourse) || (c.code || "").replace(/\s/g, '') === targetCode))) {
+              if (coursesInSlot.some(c => c && ((c.id === selectedCourse) || (c.code || "").replace(/\s/g, '') === targetCode) && courseMatchesSelectedGroup(c))) {
                 const [day, periodStr] = key.split('-');
                 const period = parseInt(periodStr, 10);
                 if (scheduleMap[day] && !isNaN(period)) {
@@ -485,7 +497,7 @@ const GradeBookPage: React.FC = () => {
       } catch (err) { console.error("Schedule error:", err); }
     };
     fetchSchedule();
-  }, [schoolId, selectedClass, selectedCourse, currentCourse, calYear, effectiveSemester]);
+  }, [schoolId, selectedClass, selectedCourse, selectedRoom, currentCourse, calYear, effectiveSemester]);
 
   useEffect(() => {
     if (!currentCourse) {

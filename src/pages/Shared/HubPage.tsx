@@ -16,6 +16,8 @@ import {
   GraduationCap,
   UserCog,
   ClipboardCheck,
+  ClipboardEdit,
+  LayoutDashboard,
   ClipboardList,
   Clock,
   Calculator,
@@ -27,6 +29,7 @@ import {
   ListChecks,
   FileText,
   Home,
+  ArrowLeft,
   ShieldCheck,
   ShieldAlert,
   Search,
@@ -72,6 +75,9 @@ interface HubConfig {
   title: string;
   description: string;
   items: HubItem[];
+  // ถ้ามีค่านี้ = เป็น sub-hub ที่เข้าถึงผ่านการ์ดในหมวดอื่น ปุ่มมุมซ้ายบนจะเปลี่ยนจากไอคอนบ้าน
+  // (กลับหน้าแรก) เป็นไอคอนย้อนกลับ ที่พาไปหน้าหมวดแม่นี้แทน
+  parentPath?: string;
 }
 
 const normalizeStringArray = (value: unknown): string[] => {
@@ -150,6 +156,21 @@ const HubPage: React.FC = () => {
     return () => unsub();
   }, [schoolId]);
 
+  const [remediationEnabled, setRemediationEnabled] = React.useState<boolean>(true);
+
+  React.useEffect(() => {
+    if (!schoolId) return;
+    const unsub = onSnapshot(doc(db, 'school-settings', schoolId, 'configs', 'remediation_settings'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setRemediationEnabled(data.enabled !== false);
+      } else {
+        setRemediationEnabled(true);
+      }
+    });
+    return () => unsub();
+  }, [schoolId]);
+
   const teachingLoadPeriods = React.useMemo(() => {
     const now = new Date();
     return specialPeriods.filter((sp: any) => {
@@ -203,6 +224,19 @@ const HubPage: React.FC = () => {
 
     // 4. Club mode check — only show course-based club pages when clubMode is course-based
     if (item.showOnlyWhenClubCourseBased && clubMode !== 'course-based') {
+      return false;
+    }
+
+    // 5. Remediation status check — ทุกเมนู/หน้าของกลุ่ม "แสดงผล 0 ร มส มผ" ถูกกำหนดโดยการตั้งค่าที่
+    // /academic/remediation-settings เพียงจุดเดียว ปิดจากตรงนั้น = ซ่อนทุกเมนูในกลุ่มนี้พร้อมกัน
+    if (
+      (item.path === "/academic/hub/zero-r-ms" ||
+        item.path === "/academic/zero-r-ms-report" ||
+        item.path === "/academic/remediation-requests" ||
+        item.path === "/academic/remediation-overview" ||
+        item.path === "/academic/remediation-record") &&
+      !remediationEnabled
+    ) {
       return false;
     }
 
@@ -974,13 +1008,54 @@ const HubPage: React.FC = () => {
           allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
         },
         {
-          title: "รายงานการติด 0 ร มส",
-          description: "รวมรายชื่อนักเรียนที่ติด 0 ร มส จากผลการเรียนทุกรายวิชา",
+          title: "แสดงผล 0 ร มส มผ",
+          description: "ผลการเรียน / ตรวจสอบผล / คำร้องขอแก้ตัว 0 ร มส มผ รวมไว้ที่เดียว",
+          icon: <AlertTriangle size={24} />,
+          path: "/academic/hub/zero-r-ms",
+          colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
+          allowedRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT],
+          featureKey: "showGradeBookMenu"
+        }
+      ]
+    },
+    "zero-r-ms": {
+      id: "zero-r-ms",
+      title: "แสดงผล 0 ร มส มผ",
+      description: "ผลการเรียน ตรวจสอบผล และคำร้องขอแก้ตัว 0/ร/มส/มผ",
+      parentPath: "/academic/hub/evaluation",
+      items: [
+        {
+          title: "ผลการเรียน 0 ร มส มผ",
+          description: "รวมรายชื่อนักเรียนที่ติด 0 ร มส มผ จากผลการเรียนทุกรายวิชา",
           icon: <AlertTriangle size={24} />,
           path: "/academic/zero-r-ms-report",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
           allowedRoles: ACADEMIC_MANAGEMENT,
           featureKey: "showGradeBookMenu"
+        },
+        {
+          title: "ตรวจสอบผลการเรียน 0 ร มส มผ",
+          description: "ตารางผลการเรียนทุกวิชาทั้งโรงเรียน รวมนักเรียนที่ไม่มีผลการเรียน แก้ตัว/เรียนซ้ำได้ทันที",
+          icon: <LayoutDashboard size={24} />,
+          path: "/academic/remediation-overview",
+          colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "คำร้องขอแก้ตัว 0 ร มส มผ",
+          description: "ดูคำร้องขอแก้ตัวของวิชา/กิจกรรมที่รับผิดชอบ และบันทึกผลการแก้ตัว",
+          icon: <ClipboardCheck size={24} />,
+          path: "/academic/remediation-requests",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]
+        },
+        {
+          title: "บันทึก 0 ร มส",
+          description: "แก้ \"มผ\" ของวิชากิจกรรมพัฒนาผู้เรียน (ชุมนุม/ลูกเสือ-เนตรนารี/รด. ฯลฯ)",
+          icon: <ClipboardEdit size={24} />,
+          path: "/academic/remediation-record",
+          colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+          allowedRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]
         }
       ]
     },
@@ -995,6 +1070,14 @@ const HubPage: React.FC = () => {
           icon: <Settings size={24} />,
           path: "/academic/settings",
           colorClass: "bg-gray-100 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "ตั้งค่าการยื่นคำร้องขอแก้ตัว",
+          description: "เปิด-ปิดช่วงเวลาให้นักเรียนยื่นคำร้องขอแก้ 0/ร/มส/มผ",
+          icon: <CalendarClock size={24} />,
+          path: "/academic/remediation-settings",
+          colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
           allowedRoles: ACADEMIC_MANAGEMENT
         },
         {
@@ -1365,10 +1448,10 @@ const HubPage: React.FC = () => {
             <div className="flex items-center gap-4">
               {!isPwaMode && (
                 <Link
-                  to="/home"
+                  to={currentHub?.parentPath || "/home"}
                   className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
                 >
-                  <Home size={20} />
+                  {currentHub?.parentPath ? <ArrowLeft size={20} /> : <Home size={20} />}
                 </Link>
               )}
               <div>
@@ -1428,6 +1511,9 @@ const HubPage: React.FC = () => {
             // Show all hubs (excluding owner if not superadmin)
             Object.values(processedHubConfigs)
               .filter(hub => hub.id !== 'owner' || hasRole(OWNER_ONLY))
+              // "zero-r-ms" เป็น sub-hub ที่เข้าถึงผ่านการ์ด "แสดงผล 0 ร มส มผ" ในหน้า evaluation
+              // เท่านั้น ไม่ควรโผล่เป็นหมวดแยกซ้ำในหน้ารวมหมวดหมู่ทั้งหมด
+              .filter(hub => hub.id !== 'zero-r-ms')
               .map(renderHubSection)
           ) : (
             // Show single hub

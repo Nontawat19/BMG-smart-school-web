@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import { CalendarDays, FileDown, RefreshCw } from "lucide-react";
+import { CalendarDays, FileDown, RefreshCw, X, Loader2 } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from "@/components/SkeletonLoader";
@@ -306,6 +306,8 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [rows, setRows] = useState<ClassroomSummaryRow[]>([]);
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [academicYear, setAcademicYear] = useState("");
   const [term, setTerm] = useState("1");
   useEffect(() => {
@@ -445,26 +447,37 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
     [schoolSettings]
   );
 
-  const exportPdf = async () => {
+  const buildPdfDocument = () => (
+    <DailyClassroomSummaryPdfDocument
+      rows={rows}
+      schoolName={schoolSettings?.schoolName || ""}
+      logoBase64={logoBase64}
+      academicYear={academicYear}
+      term={term}
+      dateStr={selectedDate}
+      officerName={officerName}
+      deputyName={deputyName}
+      deputyRoleLabel={deputyRoleLabel}
+      directorName={schoolSettings?.directorName || ""}
+    />
+  );
+
+  const openPdfPreview = () => {
     if (rows.length === 0) {
       Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลนักเรียนสำหรับวันที่เลือก", "info");
       return;
     }
-    const blob = await pdf(
-      <DailyClassroomSummaryPdfDocument
-        rows={rows}
-        schoolName={schoolSettings?.schoolName || ""}
-        logoBase64={logoBase64}
-        academicYear={academicYear}
-        term={term}
-        dateStr={selectedDate}
-        officerName={officerName}
-        deputyName={deputyName}
-        deputyRoleLabel={deputyRoleLabel}
-        directorName={schoolSettings?.directorName || ""}
-      />
-    ).toBlob();
-    saveAs(blob, `รายงานยอดรวมรายวัน_รายห้องเรียน_${selectedDate}.pdf`);
+    setShowPdfPreview(true);
+  };
+
+  const downloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      const blob = await pdf(buildPdfDocument()).toBlob();
+      saveAs(blob, `รายงานยอดรวมรายวัน_รายห้องเรียน_${selectedDate}.pdf`);
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   return (
@@ -483,7 +496,7 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={exportPdf}
+              onClick={openPdfPreview}
               disabled={loading || rows.length === 0}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -601,6 +614,48 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                ตัวอย่างเอกสาร — รายงานยอดรวมรายวัน รายห้องเรียน
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

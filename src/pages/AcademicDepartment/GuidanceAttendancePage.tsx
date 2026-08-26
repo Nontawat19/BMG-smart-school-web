@@ -334,57 +334,59 @@ const GuidanceAttendancePage: React.FC = () => {
         initialAttendance[student.id] = 'present';
       });
 
-      // Fetch Student Leaves dynamically
+      // เดิม: ยิงเป็น 3 รอบทยอยรอทีละรอบ (ใบลา → เช็คว่ามี record เดิม → หัวข้อ/บันทึกประจำวัน)
+      // ทั้งที่ทั้ง 3 อย่างไม่ได้พึ่งพากันเลย รวมเป็นรอบเดียวยิงขนานทั้งหมดแทน
       const todayStr = toIsoDate(currentDate);
-      await Promise.all(studentList.map(async (student) => {
-        try {
-          const leaveQ = query(
-            collection(db, 'school-settings', schoolId, 'students', student.id, 'leave_summary'), 
-            where('status', '==', 'approved')
-          );
-          const leaveSnap = await getDocs(leaveQ);
-          const validLeave = leaveSnap.docs.find(leaveDoc => {
-            const data = leaveDoc.data();
-            const start = normalizeDateValue(data.startDate);
-            const end = normalizeDateValue(data.endDate);
-            return start && end && start <= todayStr && end >= todayStr;
-          });
-
-          if (validLeave) {
-            const lType = validLeave.data().leaveType;
-            initialAttendance[student.id] = lType === 'ไปราชการ/กิจกรรม' ? 'present' : 'leave';
-            initialLeaves[student.id] = { isLeave: true, leaveType: lType };
-          }
-        } catch (err) {
-          console.error(`Error loading leave for student ${student.id}:`, err);
-        }
-      }));
-
-      setStudentLeaves(initialLeaves);
-
-      // Load Saved Attendance if it exists
       const dateId = toThaiDateId(currentDate);
       const attendanceId = `${dateId}_GUIDANCE_${selectedClassKey}_P0`;
-      
-      const existingResults = await Promise.all(studentList.map(async (student) => {
-        const attendanceRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
-        const attendanceSnap = await getDoc(attendanceRef);
-        return attendanceSnap.exists() ? { id: student.id, status: attendanceSnap.data().status } : null;
-      }));
+      const dailyRef = doc(db, 'school-settings', schoolId, 'guidance-attendance', `${dateId}_${selectedClassKey}_${selectedRoom}`);
+
+      const [perStudentResults, dailySnap] = await Promise.all([
+        Promise.all(studentList.map(async (student) => {
+          let leaveResult: { isLeave: boolean; leaveType?: string } | null = null;
+          try {
+            const leaveQ = query(
+              collection(db, 'school-settings', schoolId, 'students', student.id, 'leave_summary'),
+              where('status', '==', 'approved')
+            );
+            const leaveSnap = await getDocs(leaveQ);
+            const validLeave = leaveSnap.docs.find(leaveDoc => {
+              const data = leaveDoc.data();
+              const start = normalizeDateValue(data.startDate);
+              const end = normalizeDateValue(data.endDate);
+              return start && end && start <= todayStr && end >= todayStr;
+            });
+            if (validLeave) {
+              leaveResult = { isLeave: true, leaveType: validLeave.data().leaveType };
+            }
+          } catch (err) {
+            console.error(`Error loading leave for student ${student.id}:`, err);
+          }
+
+          const attendanceRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+          const attendanceSnap = await getDoc(attendanceRef);
+          const existingStatus = attendanceSnap.exists() ? attendanceSnap.data().status : null;
+
+          return { studentId: student.id, leaveResult, existingStatus };
+        })),
+        getDoc(dailyRef),
+      ]);
 
       let hasRecord = false;
       const loadedAttendance = { ...initialAttendance };
-      existingResults.forEach(res => {
-        if (res) {
-          loadedAttendance[res.id] = res.status;
+      perStudentResults.forEach(({ studentId, leaveResult, existingStatus }) => {
+        if (leaveResult) {
+          loadedAttendance[studentId] = leaveResult.leaveType === 'ไปราชการ/กิจกรรม' ? 'present' : 'leave';
+          initialLeaves[studentId] = leaveResult;
+        }
+        if (existingStatus) {
+          loadedAttendance[studentId] = existingStatus;
           hasRecord = true;
         }
       });
+      setStudentLeaves(initialLeaves);
       setAttendance(loadedAttendance);
 
-      // Fetch daily topic & notes summary
-      const dailyRef = doc(db, 'school-settings', schoolId, 'guidance-attendance', `${dateId}_${selectedClassKey}_${selectedRoom}`);
-      const dailySnap = await getDoc(dailyRef);
       if (dailySnap.exists()) {
         const dailyData = dailySnap.data();
         setGuidanceTopic(dailyData.topic || '');

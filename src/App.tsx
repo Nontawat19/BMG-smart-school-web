@@ -103,6 +103,11 @@ const HistoricalClassroomAttendancePage = lazy(() => import("./pages/AcademicDep
 const AttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/AttendanceSummaryPage"));
 const MsReportPage = lazy(() => import("./pages/AcademicDepartment/MsReportPage"));
 const ZeroRMsGradeReportPage = lazy(() => import("./pages/AcademicDepartment/ZeroRMsGradeReportPage"));
+const RemediationSettingsPage = lazy(() => import("./pages/AcademicDepartment/RemediationSettingsPage"));
+const MyGradeFlagsPage = lazy(() => import("./pages/Students/MyGradeFlagsPage"));
+const RemediationRequestsPage = lazy(() => import("./pages/AcademicDepartment/RemediationRequestsPage"));
+const RemediationOverviewPage = lazy(() => import("./pages/AcademicDepartment/RemediationOverviewPage"));
+const RemediationRecordPage = lazy(() => import("./pages/AcademicDepartment/RemediationRecordPage"));
 const ClassroomAttendanceAuditPage = lazy(() => import("./pages/AcademicDepartment/ClassroomAttendanceAuditPage"));
 const EscapeSummaryPage = lazy(() => import("./pages/AcademicDepartment/EscapeSummaryPage"));
 const TimeRangeAttendanceSummaryPage = lazy(() => import("./pages/AcademicDepartment/TimeRangeAttendanceSummaryPage"));
@@ -402,6 +407,11 @@ function App() {
           <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><AttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/ms-report" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><MsReportPage /></ProtectedRoute>} />
           <Route path="/academic/zero-r-ms-report" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ZeroRMsGradeReportPage /></ProtectedRoute>} />
+          <Route path="/academic/remediation-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><RemediationSettingsPage /></ProtectedRoute>} />
+          <Route path="/my-grade-flags" element={<ProtectedRoute allowedRoles={[...STAFF_ACCESS, ROLES.STUDENT]}><MyGradeFlagsPage /></ProtectedRoute>} />
+          <Route path="/academic/remediation-requests" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><RemediationRequestsPage /></ProtectedRoute>} />
+          <Route path="/academic/remediation-overview" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><RemediationOverviewPage /></ProtectedRoute>} />
+          <Route path="/academic/remediation-record" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><RemediationRecordPage /></ProtectedRoute>} />
           <Route path="/academic/classroom-attendance-audit" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClassroomAttendanceAuditPage /></ProtectedRoute>} />
           <Route path="/academic/escape-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><EscapeSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/time-range-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TimeRangeAttendanceSummaryPage /></ProtectedRoute>} />

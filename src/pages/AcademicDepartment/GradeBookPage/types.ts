@@ -8,7 +8,7 @@ export interface ClassroomAttendanceRecord {
     subjectName: string;
     subjectCode: string;
     teacherId: string;
-    status: 'present' | 'absent' | 'late' | 'leave';
+    status: 'present' | 'absent' | 'late' | 'leave' | 'escape';
     updatedAt: Timestamp;
     className?: string;
     semester?: string;
@@ -25,6 +25,10 @@ export interface Student {
     studentId?: string;
     room: string;
     altIds?: string[];
+    // ISO timestamp string from the enrollment doc's createdAt — when this student joined
+    // the course. Used to exclude days before enrollment from their attendance %.
+    // Undefined for legacy enrollments created before this field existed.
+    enrolledAt?: string;
 }
 
 export interface GroupAssignment {

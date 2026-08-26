@@ -9,6 +9,7 @@ export interface Student {
     gender?: string;
     prefix?: string;
     profileImageUrl?: string;
+    profileImageThumbUrl?: string;
     studentId?: string;
     nickname?: string;
     status?: string;

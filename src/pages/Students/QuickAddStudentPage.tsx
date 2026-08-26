@@ -210,6 +210,16 @@ export default function QuickAddStudentPage() {
         const imageRef = ref(storage, storagePath);
         const snapshot = await uploadBytes(imageRef, imageFile);
         dataToSave.profileImageUrl = await getDownloadURL(snapshot.ref);
+
+        // รูปธัมบ์ (ขนาดเล็กสำหรับ avatar) — อัปโหลดแยกจากรูปเต็ม ถ้าล้มเหลวไม่กระทบรูปเต็มที่อัปโหลดสำเร็จแล้ว
+        try {
+          const thumbPath = storagePath.replace(/(\.[^./]+)$/, '_thumb$1');
+          const thumbFile = await compressImage(imageFile, 128, 0.6, 'image/jpeg');
+          const thumbSnapshot = await uploadBytes(ref(storage, thumbPath), thumbFile);
+          dataToSave.profileImageThumbUrl = await getDownloadURL(thumbSnapshot.ref);
+        } catch (thumbError) {
+          console.error("Thumbnail upload failed:", thumbError);
+        }
       }
       const docRef = await addDoc(collection(firestore, "school-settings", formSchoolId, "students"), dataToSave);
       if (isActiveStudentSummaryStatus(studentData.studentStatus)) {

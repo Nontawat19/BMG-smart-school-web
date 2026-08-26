@@ -13,9 +13,12 @@ import {
   Timestamp,
   doc,
   getDoc,
+  updateDoc,
+  limit,
 } from 'firebase/firestore';
-import { FaFilePdf, FaSearch } from 'react-icons/fa';
+import { FaFilePdf, FaSearch, FaEdit } from 'react-icons/fa';
 import { pdf } from '@react-pdf/renderer';
+import Swal from 'sweetalert2';
 import TeacherLeaveRequestPdfDocument from '@/components/Pdf/leave/TeacherLeaveRequestPdfDocument';
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from '@/components/SkeletonLoader';
@@ -24,6 +27,8 @@ import ProfileAvatar from '@/components/Shared/ProfileAvatar';
 import { getThaiYear } from '@/utils/dateUtils';
 import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 import { getGroupPersonnel } from '@/utils/schoolUtils';
+import { usePermissions } from '@/hooks/usePermissions';
+import { ROLES } from '@/constants/roles';
 
 interface TeacherLeaveRequest {
   id: string;
@@ -39,7 +44,26 @@ interface TeacherLeaveRequest {
   createdAt: Timestamp;
   profileImageUrl?: string;
   status?: 'approved' | 'rejected' | 'pending';
+  docPath?: string;
 }
+
+const LEAVE_TYPE_OPTIONS = [
+  'ลาป่วย', 'ลากิจ', 'ลากิจกรรม', 'ลาพักร้อน', 'ลาอุปสมบท', 'ลาฌาปนกิจ',
+  'ลาฝึกอบรม', 'ลาสัมมนา', 'ลาคลอดบุตร', 'ไปราชการ', 'ลาประกอบพิธีฮัจย์',
+  'ลาเข้ารับการระดมพล', 'ลาปฏิบัติงานในองค์กรระหว่างประเทศ', 'ลาไปช่วยภรรยาที่คลอดบุตร',
+];
+
+// yyyy-mm-dd ตามเวลาท้องถิ่น (ห้ามใช้ toISOString ตรงๆ เพราะเป็น UTC อาจได้วันที่คลาดเคลื่อนไป 1 วัน)
+const tsToInputDate = (ts?: Timestamp) => {
+  if (!ts) return '';
+  const d = ts.toDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const inputDateToTimestamp = (value: string) => {
+  const [y, m, d] = value.split('-').map(Number);
+  return Timestamp.fromDate(new Date(y, m - 1, d));
+};
 
 const TeacherLeaveHistoryPageSkeleton: React.FC = () => {
   return (
@@ -84,11 +108,91 @@ const TeacherLeaveHistoryPageSkeleton: React.FC = () => {
 const TeacherLeaveHistoryPage: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
   const schoolId = useEffectiveSchoolId();
+  const { isSuperAdmin, isSchoolAdmin, hasRole } = usePermissions();
+  // "ฝ่ายงานบุคคล" ในระบบนี้ไม่มี role แยกเฉพาะ ใช้ role ชุดเดียวกับที่คุมสิทธิ์เข้าหน้า /attendance/leave-approval
+  // (TEACHER_ATTENDANCE/SCHOOL_ATTENDANCE) ตามที่ routeRegistry.ts กำหนดไว้เป็น "ฝ่ายบุคคล" อยู่แล้ว
+  const isHR = hasRole([ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]);
   const [data, setData] = useState<TeacherLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [ownTeacherDocId, setOwnTeacherDocId] = useState<string | null>(null);
+
+  // แก้ไขรายการลาได้เอง — หา teacherDocId ของผู้ใช้ที่ล็อกอินอยู่ (เจ้าตัวครูที่ลา) เทียบกับ teacherDocId
+  // ของแต่ละรายการ เพราะเอกสารการลาไม่ได้เก็บ uid ของผู้ยื่นไว้โดยตรง
+  useEffect(() => {
+    if (!schoolId || !user?.uid) return;
+    (async () => {
+      try {
+        const byUidSnap = await getDocs(query(
+          collection(firestore, 'school-settings', schoolId, 'teachers'),
+          where('uid', '==', user.uid),
+          limit(1)
+        ));
+        if (!byUidSnap.empty) { setOwnTeacherDocId(byUidSnap.docs[0].id); return; }
+        const directSnap = await getDoc(doc(firestore, 'school-settings', schoolId, 'teachers', user.uid));
+        if (directSnap.exists()) setOwnTeacherDocId(directSnap.id);
+      } catch (err) {
+        console.error('Error resolving own teacher doc id:', err);
+      }
+    })();
+  }, [schoolId, user?.uid]);
+
+  const canEdit = (r: TeacherLeaveRequest) =>
+    isSuperAdmin || isSchoolAdmin || isHR || (!!ownTeacherDocId && !!r.teacherDocId && ownTeacherDocId === r.teacherDocId);
+
+  // ── แก้ไขรายการลา (กรณีลงวันที่ผิด) ──
+  const [editingRow, setEditingRow] = useState<TeacherLeaveRequest | null>(null);
+  const [editLeaveType, setEditLeaveType] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEditModal = (r: TeacherLeaveRequest) => {
+    setEditingRow(r);
+    setEditLeaveType(r.leaveType);
+    setEditStartDate(tsToInputDate(r.startDate));
+    setEditEndDate(tsToInputDate(r.endDate));
+    setEditReason(r.reason || '');
+  };
+
+  const closeEditModal = () => {
+    if (savingEdit) return;
+    setEditingRow(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRow || !editingRow.docPath) return;
+    if (!editStartDate || !editEndDate) {
+      Swal.fire({ icon: 'warning', title: 'กรอกไม่ครบ', text: 'กรุณาระบุวันที่เริ่มลาและวันที่สิ้นสุด' });
+      return;
+    }
+    if (editEndDate < editStartDate) {
+      Swal.fire({ icon: 'warning', title: 'วันที่ไม่ถูกต้อง', text: 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา' });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await updateDoc(doc(firestore, editingRow.docPath), {
+        leaveType: editLeaveType,
+        startDate: inputDateToTimestamp(editStartDate),
+        endDate: inputDateToTimestamp(editEndDate),
+        reason: editReason,
+        updatedAt: Timestamp.now(),
+        updatedBy: user?.uid || '',
+      });
+      Swal.fire({ icon: 'success', title: 'บันทึกการแก้ไขสำเร็จ', timer: 1500, showConfirmButton: false });
+      setEditingRow(null);
+      await fetchLeaveHistory();
+    } catch (err) {
+      console.error('Error updating leave record:', err);
+      Swal.fire({ icon: 'error', title: 'ผิดพลาด', text: 'ไม่สามารถบันทึกการแก้ไขได้' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   /* ---------------- LOAD DATA ---------------- */
   const fetchLeaveHistory = async () => {
@@ -108,11 +212,12 @@ const TeacherLeaveHistoryPage: React.FC = () => {
         const q = query(leavesRef, orderBy('startDate', 'desc'));
         const leavesSnap = await getDocs(q);
 
-        return leavesSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
+        return leavesSnap.docs.map(leaveDoc => ({
+          id: leaveDoc.id,
+          ...leaveDoc.data(),
           // ใช้รูปภาพจากข้อมูลครูเลย
-          profileImageUrl: teacherData.profileImageUrl
+          profileImageUrl: teacherData.profileImageUrl,
+          docPath: leaveDoc.ref.path,
         } as TeacherLeaveRequest));
       });
 
@@ -271,6 +376,7 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">วันที่สิ้นสุด</th>
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-center">สถานะ</th>
                   <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-center">ส่งออก</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 dark:text-gray-300 text-center">แก้ไข</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,6 +421,19 @@ const TeacherLeaveHistoryPage: React.FC = () => {
                         <FaFilePdf />
                       </button>
                     </td>
+                    <td className="text-center px-4 py-3">
+                      {canEdit(r) ? (
+                        <button
+                          onClick={() => openEditModal(r)}
+                          className="text-indigo-500 hover:text-indigo-400"
+                          title="แก้ไขวันที่/รายละเอียดการลา"
+                        >
+                          <FaEdit />
+                        </button>
+                      ) : (
+                        <span className="text-gray-300 dark:text-gray-600">-</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -322,6 +441,80 @@ const TeacherLeaveHistoryPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {editingRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={closeEditModal}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#1e1f23] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-gray-100 dark:border-gray-800 px-5 py-4">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">แก้ไขรายการลา</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{editingRow.teacherName}</p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">ประเภทการลา</label>
+                <select
+                  value={editLeaveType}
+                  onChange={(e) => setEditLeaveType(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {LEAVE_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">วันที่เริ่มลา</label>
+                  <input
+                    type="date"
+                    value={editStartDate}
+                    onChange={(e) => setEditStartDate(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">วันที่สิ้นสุด</label>
+                  <input
+                    type="date"
+                    value={editEndDate}
+                    onChange={(e) => setEditEndDate(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">เหตุผล</label>
+                <textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 dark:border-gray-800 px-5 py-4">
+              <button
+                onClick={closeEditModal}
+                disabled={savingEdit}
+                className="h-10 px-4 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                className="h-10 px-4 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {savingEdit ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

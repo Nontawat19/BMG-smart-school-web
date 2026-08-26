@@ -8,6 +8,20 @@ const DAY_KEY_MAP = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
 const isFilledScore = (value: unknown) => value !== undefined && value !== null && value !== '';
 
+// A student is only responsible for attendance on/after the day they enrolled in this
+// course — e.g. a student who transfers in mid-term shouldn't have days before they even
+// existed in the class counted as "absent" or "missing". Students with no enrolledAt
+// (legacy enrollments predating this field) are treated as enrolled for the whole term,
+// matching the previous behavior.
+const isStudentEnrolledOnDay = (student: Student, dateStr: string) => {
+    // Defensive: enrolledAt is normalized to an ISO string where it's populated
+    // (useGradeBookData.ts), but guard the type here too rather than trust every call
+    // site — a non-string value must never crash the whole attendance calculation.
+    if (!student.enrolledAt || typeof student.enrolledAt !== 'string') return true;
+    const enrolledDateStr = student.enrolledAt.slice(0, 10);
+    return dateStr >= enrolledDateStr;
+};
+
 export const useGradeBookAttendance = (
     calendarData: any,
     courseSchedule: Record<string, number[]>,
@@ -20,7 +34,7 @@ export const useGradeBookAttendance = (
     characteristicsCriteria: CharacteristicCriteria[],
     readingWritingCriteria: ReadingWritingCriteria[],
     grades: Record<string, GradeRecord>,
-    studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave'>>,
+    studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>,
     checkIsHolidayLocal: (dateStr: string, events: Record<string, any>) => { isHoliday: boolean; description: string }
 ) => {
     const SESSIONS_PER_PAGE = 28;
@@ -223,15 +237,19 @@ export const useGradeBookAttendance = (
         const percentChar = totalCharFields > 0 ? Math.round((filledCharFields / totalCharFields) * 100) : 0;
         const percentRW = totalRWFields > 0 ? Math.round((filledRWFields / totalRWFields) * 100) : 0;
 
-        // Attendance Stats: every student must have a recorded status for every course session.
+        // Attendance Stats: every enrolled student must have a recorded status for every
+        // course session that falls on/after the day they enrolled (see isStudentEnrolledOnDay).
         const sessionDays = attendancePages.flatMap(page => (page.days || []).filter((day: any) => day && day.isSession));
-        const totalAttendanceFields = students.length * sessionDays.length;
+        let totalAttendanceFields = 0;
         let filledAttendanceFields = 0;
         let fullyRecordedSessionsCount = 0;
 
         sessionDays.forEach((day: any) => {
-            let isSessionComplete = students.length > 0;
-            students.forEach(student => {
+            const eligibleStudents = students.filter(student => isStudentEnrolledOnDay(student, day.dateStr));
+            if (eligibleStudents.length === 0) return;
+            let isSessionComplete = true;
+            eligibleStudents.forEach(student => {
+                totalAttendanceFields++;
                 const status = studentCourseDailyStatus?.[student.id]?.[day.dateStr];
                 if (isFilledScore(status)) {
                     filledAttendanceFields++;
@@ -245,7 +263,11 @@ export const useGradeBookAttendance = (
         const missingSessionsByMonth: Record<string, string[]> = {};
         attendancePages.forEach(page => {
             page.days.forEach((day: any) => {
-                if (day && day.isSession && students.some(student => !isFilledScore(studentCourseDailyStatus?.[student.id]?.[day.dateStr]))) {
+                if (!day || !day.isSession) return;
+                const hasMissingEnrolledStudent = students.some(student =>
+                    isStudentEnrolledOnDay(student, day.dateStr) && !isFilledScore(studentCourseDailyStatus?.[student.id]?.[day.dateStr])
+                );
+                if (hasMissingEnrolledStudent) {
                     const parts = day.dateStr.split('-');
                     const monthKey = `${parts[1]}-${parts[0]}`;
                     if (!missingSessionsByMonth[monthKey]) missingSessionsByMonth[monthKey] = [];
@@ -372,6 +394,7 @@ export const useGradeBookAttendance = (
 
                 let sessionHasMissingStudent = false;
                 students.forEach(student => {
+                    if (!isStudentEnrolledOnDay(student, day.dateStr)) return;
                     if (!isFilledScore(studentCourseDailyStatus?.[student.id]?.[day.dateStr])) {
                         missingAttendancePoints++;
                         sessionHasMissingStudent = true;
@@ -451,13 +474,17 @@ export const useGradeBookAttendance = (
                 const termKey = page.term === '1' ? 'term1' : 'term2';
                 page.days.forEach((day: any) => {
                     if (day && day.isSession) {
+                        // Days before this student enrolled in the course don't count toward
+                        // either their totalPossibleHours or any status bucket.
+                        if (!isStudentEnrolledOnDay(student, day.dateStr)) return;
+
                         summary[termKey].totalPossibleHours++;
                         summary.annual.totalPossibleHours++;
                         const status = statusMap[day.dateStr];
                         if (status === 'present') { summary[termKey].present++; summary.annual.present++; }
-                        else if (status === 'absent') { summary[termKey].absent++; summary.annual.absent++; }
                         else if (status === 'late') { summary[termKey].late++; summary.annual.late++; }
                         else if (status === 'leave') { summary[termKey].leave++; summary.annual.leave++; }
+                        // 'escape' (truancy) and any other/unrecorded status count as absent.
                         else { summary[termKey].absent++; summary.annual.absent++; }
                     }
                 });

@@ -296,6 +296,15 @@ const CheckinOutPage: React.FC = () => {
   const [timeSyncStatus, setTimeSyncStatus] = useState<"synced" | "stale" | "unverified">(
     "unverified"
   );
+  // เวลาเครื่อง kiosk เชื่อถือไม่ได้ (นาฬิกาเดินเร็ว/ช้า) จึงมี timeOffset แก้ให้ตรงกับเซิร์ฟเวอร์อยู่แล้ว
+  // แต่ getTodayString() (utils/dateUtils.ts) อ่าน new Date() ตรงๆ ไม่ผ่านการแก้ไขนี้ — ถ้าเรียกแยกจาก
+  // เวลาที่ใช้ตัดสินสถานะ (late/early) จะได้ "วันนี้" คนละวันกัน เช่น นาฬิกาเครื่องเดินเร็วข้ามเที่ยงคืนไปแล้ว
+  // แต่เวลาจริงยังเป็นเมื่อวาน ทำให้บันทึกลง attendance/{พรุ่งนี้} ทั้งที่ควรลงวันนี้ ฟังก์ชันนี้คำนวณ
+  // "วันนี้" จากเวลาที่แก้ไขแล้วเสมอ ใช้แทน getTodayString() ทุกจุดที่ต้องอ้างอิงวันที่คู่กับการตัดสินเวลา
+  const getCorrectedTodayString = useCallback(() => {
+    const correctedNow = new Date(Date.now() + timeOffset);
+    return correctedNow.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+  }, [timeOffset]);
   const lastTimeSyncAtRef = useRef<number | null>(
     (() => {
       const stored = localStorage.getItem("timeSyncOffset");
@@ -460,9 +469,10 @@ const CheckinOutPage: React.FC = () => {
     const loadAdminTeacherLineIds = async () => {
       try {
         const teacherRef = collection(firestore, "school-settings", schoolId, "teachers");
+        const adminRoles = [ROLES.SUPER_ADMIN, ROLES.SCHOOL_ADMIN, ROLES.DIRECTOR, ROLES.STUDENT_AFFAIRS];
         const [arrayRoleSnap, stringRoleSnap] = await Promise.all([
-          getDocs(query(teacherRef, where("role", "array-contains-any", ["super_admin", "school_admin"]), limit(20))),
-          getDocs(query(teacherRef, where("role", "in", ["super_admin", "school_admin"]), limit(20))),
+          getDocs(query(teacherRef, where("role", "array-contains-any", adminRoles), limit(20))),
+          getDocs(query(teacherRef, where("role", "in", adminRoles), limit(20))),
         ]);
         const lineIds = new Set<string>();
         [...arrayRoleSnap.docs, ...stringRoleSnap.docs].forEach((d) => {
@@ -943,9 +953,14 @@ const CheckinOutPage: React.FC = () => {
   }, [schoolId]);
 
   useEffect(() => {
-    const todayStr = getTodayString();
+    // ต้องใช้เวลาที่แก้ไขแล้ว (getCorrectedTodayString) ไม่ใช่ getTodayString() ดิบๆ — isHoliday
+    // ที่คำนวณตรงนี้เป็นตัวกำหนดว่า interval ที่เรียก processAbsencesByType/processNoCheckout
+    // (งาน sweep ตัดขาด/ไม่ลงเวลาออกอัตโนมัติตอนท้ายวัน) จะเริ่มทำงานหรือไม่ ถ้าเครื่อง kiosk
+    // นาฬิกาคลาดเคลื่อนข้ามเที่ยงคืนไปแล้วทั้งที่เวลาจริงยังไม่ถึง (หรือกลับกัน) จะได้ isHoliday ผิด
+    // ทำให้ sweep ไม่ทำงานทั้งวัน หรือหยุดทำงานผิดจังหวะ
+    const todayStr = getCorrectedTodayString();
     const todayEvent = calendarEvents[todayStr];
-    const dayOfWeek = new Date().toLocaleString("en-US", {
+    const dayOfWeek = new Date(Date.now() + timeOffset).toLocaleString("en-US", {
       timeZone: "Asia/Bangkok",
       weekday: "short",
     });
@@ -985,7 +1000,7 @@ const CheckinOutPage: React.FC = () => {
     } else {
       setIsHoliday(false);
     }
-  }, [calendarEvents, todayTick]);
+  }, [calendarEvents, todayTick, timeOffset, getCorrectedTodayString]);
 
   // แอดมินโรงเรียนก็เป็นครูคนหนึ่งในโรงเรียน: ตอน "ลงเวลาให้ตัวเอง" ต้องผ่านการเช็ค GPS/IP
   // เหมือนครูทั่วไป ไม่ bypass พิเศษ — แต่ตอนสแกน/ค้นหาให้ "คนอื่น" ที่หน้าคีออสก์ ยัง bypass ตามเดิม
@@ -1328,7 +1343,7 @@ const CheckinOutPage: React.FC = () => {
         leaveData: null,
         flagData: null,
       };
-    const todayStr = getTodayString();
+    const todayStr = getCorrectedTodayString();
     const collectionName = user.type === "student" ? "students" : "teachers";
     const attendanceRef = doc(
       firestore,
@@ -1393,14 +1408,14 @@ const CheckinOutPage: React.FC = () => {
       leaveData,
       flagData,
     };
-  }, [schoolId]);
+  }, [schoolId, getCorrectedTodayString]);
 
   const ATTENDANCE_FETCH_CACHE_TTL_MS = 12_000;
   const getAttLsKey = useCallback((user: FoundUser) =>
-    `att_${schoolId}_${getTodayString()}_${user.type}_${user.id}`, [schoolId]);
+    `att_${schoolId}_${getCorrectedTodayString()}_${user.type}_${user.id}`, [schoolId, getCorrectedTodayString]);
 
   const fetchAttendanceCached = useCallback(async (user: FoundUser) => {
-    const memKey = `${user.type}:${user.id}:${getTodayString()}`;
+    const memKey = `${user.type}:${user.id}:${getCorrectedTodayString()}`;
 
     // 1. ตรวจ in-memory cache (12 วินาที)
     const memEntry = attendanceFetchCacheRef.current.get(memKey);
@@ -1423,7 +1438,7 @@ const CheckinOutPage: React.FC = () => {
     attendanceFetchCacheRef.current.set(memKey, { data, cachedAt: Date.now() });
     try { localStorage.setItem(getAttLsKey(user), JSON.stringify(data)); } catch { /* quota */ }
     return data;
-  }, [fetchAttendance, getAttLsKey]);
+  }, [fetchAttendance, getAttLsKey, getCorrectedTodayString]);
 
   const uploadFaceScanSnapshot = useCallback(async (
     image: Blob,
@@ -1663,7 +1678,18 @@ const CheckinOutPage: React.FC = () => {
     try {
       const config = schoolSettings?.lineOASettings?.school;
       if (!config?.lineChannelAccessToken || config?.enableNotification === false) return;
-      const recipientUserIds = adminTeacherLineIdsRef.current;
+
+      const recipientSet = new Set(adminTeacherLineIdsRef.current);
+      try {
+        const teacherDocRef = doc(firestore, "school-settings", schoolId!, "teachers", user.id);
+        const teacherSnap = await getDoc(teacherDocRef);
+        const selfLineUserId = teacherSnap.exists() ? (teacherSnap.data()?.lineUserId || "").trim() : "";
+        if (selfLineUserId) recipientSet.add(selfLineUserId);
+      } catch (err) {
+        console.error("[LINE] Error fetching teacher's own lineUserId:", err);
+      }
+
+      const recipientUserIds = Array.from(recipientSet);
       if (recipientUserIds.length === 0) return;
 
       // ดึงสรุปสถิติการมาทำงานภาคเรียนปัจจุบัน เหมือนกับที่ทำให้นักเรียน
@@ -1719,7 +1745,7 @@ const CheckinOutPage: React.FC = () => {
     if (!schoolId) return;
 
     const now = new Date(Date.now() + timeOffset);
-    const todayStr = getTodayString();
+    const todayStr = getCorrectedTodayString();
     const timeStr = now.toLocaleTimeString("th-TH", {
       timeZone: "Asia/Bangkok",
       hour: "2-digit",
@@ -2814,7 +2840,7 @@ const CheckinOutPage: React.FC = () => {
   const processAbsencesByType = async (targetType: "student" | "teacher") => {
     if (!schoolId) return;
 
-    const todayStr = getTodayString();
+    const todayStr = getCorrectedTodayString();
     const collName = targetType === "student" ? "students" : "teachers";
 
     try {
@@ -2905,7 +2931,7 @@ const CheckinOutPage: React.FC = () => {
 
   const processNoCheckout = async () => {
     if (!schoolId) return;
-    const todayStr = getTodayString();
+    const todayStr = getCorrectedTodayString();
     try {
       const snap = await getDocs(
         collection(firestore, "school-settings", schoolId, "students")
@@ -3416,7 +3442,7 @@ const CheckinOutPage: React.FC = () => {
             }
           } else {
             faceScanCooldownRef.current.set(user.id, Date.now());
-            attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getTodayString()}`);
+            attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getCorrectedTodayString()}`);
             try { localStorage.removeItem(getAttLsKey(user)); } catch { /* ignore */ }
             setError(null);
             const faceScanImageUrl = await uploadFaceScanSnapshot(image, user, user.faceConfidence);
@@ -3432,7 +3458,7 @@ const CheckinOutPage: React.FC = () => {
 
             try {
               const attData = await fetchAttendance(user);
-              attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getTodayString()}`, { data: attData, cachedAt: Date.now() });
+              attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getCorrectedTodayString()}`, { data: attData, cachedAt: Date.now() });
               try { localStorage.setItem(getAttLsKey(user), JSON.stringify(attData)); } catch { /* quota */ }
               updatedUsers.push({
                 ...processedUser,
@@ -3540,7 +3566,7 @@ const CheckinOutPage: React.FC = () => {
       } catch (err) {}
     } else {
       faceScanCooldownRef.current.set(user.id, Date.now());
-      attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getTodayString()}`);
+      attendanceFetchCacheRef.current.delete(`${user.type}:${user.id}:${getCorrectedTodayString()}`);
       try { localStorage.removeItem(getAttLsKey(user)); } catch { /* ignore */ }
       setError(null);
       const faceScanImageUrl = await uploadFaceScanSnapshot(image, user, confidence || user.faceConfidence);
@@ -3553,7 +3579,7 @@ const CheckinOutPage: React.FC = () => {
       }, isIpCamera);
       try {
         const attData = await fetchAttendance(user);
-        attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getTodayString()}`, { data: attData, cachedAt: Date.now() });
+        attendanceFetchCacheRef.current.set(`${user.type}:${user.id}:${getCorrectedTodayString()}`, { data: attData, cachedAt: Date.now() });
         try { localStorage.setItem(getAttLsKey(user), JSON.stringify(attData)); } catch { /* quota */ }
         checkinTimeStr = attData.checkinTime || undefined;
         checkoutTimeStr = attData.checkoutTime || undefined;

@@ -158,6 +158,7 @@ const StudentGrid: React.FC<StudentGridProps> = ({
                                     <Link to={`/school/${schoolId}/students/view/${student.id}`}>
                                         <ProfileAvatar
                                             src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=random&color=fff&rounded=true&size=64&length=2`}
+                                            thumbSrc={student.profileImageThumbUrl}
                                             alt={student.firstName}
                                             className="w-9 h-9 border-2 border-white dark:border-[#2a2b2f] shadow-sm"
                                             imageClassName="transition-transform group-hover:scale-105"
@@ -238,6 +239,7 @@ const StudentGrid: React.FC<StudentGridProps> = ({
                                                 <div className="absolute -inset-1 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur"></div>
                                                 <ProfileAvatar
                                                     src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=random&color=fff&rounded=true&size=128&length=2`}
+                                                    thumbSrc={student.profileImageThumbUrl}
                                                     alt={student.firstName}
                                                     className={`relative border-4 border-white dark:border-[#2a2b2f] shadow-sm ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
                                                     imageClassName="transition-transform group-hover:scale-105"

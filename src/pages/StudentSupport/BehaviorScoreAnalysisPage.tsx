@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import { AlertTriangle, ChevronDown, Loader2, Printer, Search, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, Printer, Search, TrendingDown, TrendingUp, Users, X, FileDown } from "lucide-react";
 import BackButton from "@/components/Shared/BackButton";
 import MainLayout from "@/layouts/MainLayout";
 import { firestore } from "@/firebase";
@@ -215,6 +215,7 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
   const [isLevelDropdownOpen, setIsLevelDropdownOpen] = useState(false);
@@ -384,24 +385,29 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
     return rows;
   }, [reportRows, rankType, limitCount]);
 
-  const handlePrint = async () => {
+  const buildAnalysisPdfDocument = () => (
+    <AnalysisPdfDocument
+      rows={displayRows}
+      schoolName={schoolName}
+      logoUrl={schoolSettings.logoUrl}
+      academicYear={academicYear}
+      startDate={startDate}
+      endDate={endDate}
+    />
+  );
+
+  const openPdfPreview = () => {
     if (displayRows.length === 0) {
       Swal.fire("ไม่พบข้อมูล", "กรุณาค้นหารายการก่อนพิมพ์รายงาน", "warning");
       return;
     }
+    setShowPdfPreview(true);
+  };
+
+  const handlePrint = async () => {
     setIsGeneratingPdf(true);
     try {
-      const pdfBlob = await pdf(
-        <AnalysisPdfDocument
-          rows={displayRows}
-          schoolName={schoolName}
-          logoUrl={schoolSettings.logoUrl}
-          academicYear={academicYear}
-          startDate={startDate}
-          endDate={endDate}
-        />
-      ).toBlob();
-
+      const pdfBlob = await pdf(buildAnalysisPdfDocument()).toBlob();
       const rankLabel = rankType === "negative" ? "เชิงลบ" : rankType === "positive" ? "เชิงบวก" : "ทั้งหมด";
       const safeName = `วิเคราะห์คะแนนความประพฤติ_${rankLabel}_${startDate}_${endDate}`.replace(/[\\/:*?"<>|]/g, "");
       saveAs(pdfBlob, `${safeName}.pdf`);
@@ -427,11 +433,11 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
             </div>
 
             <button
-              onClick={handlePrint}
-              disabled={isGeneratingPdf || displayRows.length === 0}
+              onClick={openPdfPreview}
+              disabled={displayRows.length === 0}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isGeneratingPdf ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
+              <Printer size={16} />
               Print รายการ
             </button>
           </div>
@@ -646,6 +652,48 @@ const BehaviorScoreAnalysisPage: React.FC = () => {
           </section>
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                ตัวอย่างเอกสาร — วิเคราะห์คะแนนความประพฤติ
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={isGeneratingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isGeneratingPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isGeneratingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildAnalysisPdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

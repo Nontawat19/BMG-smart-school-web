@@ -87,7 +87,8 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
 
   /* -------------------- realtime notification ----โ---------------- */
   useEffect(() => {
-    if (!currentUser?.uid || isOwnerRoute) {
+    const userType = localStorage.getItem('currentUserType');
+    if (!currentUser?.uid || isOwnerRoute || userType === 'student' || userType === 'parent') {
       setNotifications([]);
       setIsLoadingNoti(false);
       return;
@@ -125,7 +126,8 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   }, [currentUser?.uid, isOwnerRoute]);
 
   useEffect(() => {
-    if (!currentUser?.uid || !resolvedSchoolId || isOwnerRoute) {
+    const userType = localStorage.getItem('currentUserType');
+    if (!currentUser?.uid || !resolvedSchoolId || isOwnerRoute || userType === 'student' || userType === 'parent') {
       setClubRequestNotifications([]);
       return;
     }

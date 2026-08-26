@@ -19,7 +19,7 @@ import {
   runTransaction,
   DocumentReference,
 } from "firebase/firestore";
-import { updatePeriodSummaries, syncDailySummary } from "@/utils/periodSummaryUtils";
+import { updatePeriodSummaries } from "@/utils/periodSummaryUtils";
 import { getRulePoints } from "@/utils/behaviorScoreUtils";
 import {
   calculateAttendanceStatus,
@@ -44,6 +44,7 @@ interface Student {
   id: string;
   name: string;
   profileImageUrl: string;
+  profileImageThumbUrl?: string;
   studentId: string;
   class: string;
   attendanceStatus?: "มา" | "สาย" | "ลา" | "ขาด";
@@ -580,6 +581,7 @@ const FlagCeremonyPage: React.FC = () => {
             id: studentData.id,
             name: `${studentData.title || ''}${studentData.firstName} ${studentData.lastName}`.trim(),
             profileImageUrl: studentData.profileImageUrl || "",
+            profileImageThumbUrl: studentData.profileImageThumbUrl || "",
             studentId: studentData.studentId,
             class: `${studentData.classLevel}/${studentData.room}`,
             attendanceStatus: ATTENDANCE_STATUS.PRESENT,
@@ -595,28 +597,131 @@ const FlagCeremonyPage: React.FC = () => {
             studentStatus: studentData.studentStatus,
           }));
 
-        // 2. ดึงข้อมูลการเข้าแถวของนักเรียนทีละคน (วิธีนี้ไม่ต้องสร้าง Index ใน Firebase)
-        let hasBeenSaved = false;
-        const attendanceMapForOriginals = new Map<string, AttendanceStatus>();
-        const attendancePromises = classStudents.map(async (student) => {
-          const attendanceRef = doc(firestore, "school-settings", schoolId, "students", student.id, "flag_ceremony_summary", todayStr);
-          const attendanceSnap = await getDoc(attendanceRef);
-          if (attendanceSnap.exists()) {
-            hasBeenSaved = true;
-            const data = attendanceSnap.data();
-            const status = data.status;
-            const action = data.action || getDefaultFlagAction(status);
-            if (status) {
-              attendanceMapForOriginals.set(student.id, status);
-              return { ...student, attendanceStatus: status, flagAction: action, isLeave: status === ATTENDANCE_STATUS.LEAVE };
-            }
-          }
-          return student;
-        });
+        // 2. เสริมข้อมูลสถานะเช็คแถว/สแกนประตู/ใบลา ของนักเรียนแต่ละคน — ยิง 3 คำขอต่อคนแบบขนานกัน
+        // (เดิมอ่านทีละอย่างเรียงต่อกัน ทำให้รอ latency สะสม และมีการอ่าน flag_ceremony_summary ซ้ำ 2 รอบ)
+        const paramDate = todayStr;
+        let anyAlreadySaved = false;
+        const newOriginalAttendanceMap = new Map<string, AttendanceStatus>();
 
-        const studentsWithAttendance = await Promise.all(attendancePromises);
-        // Pass to additional fetcher
-        fetchAdditionalData(studentsWithAttendance);
+        const enrichedStudents = await Promise.all(classStudents.map(async (student) => {
+          const flagRef = doc(firestore, "school-settings", schoolId, "students", student.id, "flag_ceremony_summary", todayStr);
+          const gateRef = doc(firestore, "school-settings", schoolId, "students", student.id, "attendance", paramDate);
+          // 📌 Query STUDENT's sub-collection, not the global one — this ensures we find the data
+          // saved by LeaveRequestPage (which saves to sub-collection).
+          const leaveQuery = query(
+            collection(firestore, "school-settings", schoolId, "students", student.id, "leave_summary"),
+            where("status", "==", "approved")
+          );
+
+          const [flagSnap, gateSnap, leaveSnap] = await Promise.all([
+            getDoc(flagRef),
+            getDoc(gateRef),
+            getDocs(leaveQuery),
+          ]);
+
+          // 1. Flag Status (Existing)
+          let flagRecord: FlagRecord | null = null;
+          let originalStatus = undefined;
+          let originalAction: FlagAction | undefined;
+          const isFlagSaved = flagSnap.exists();
+          if (isFlagSaved) {
+            const flagData = flagSnap.data();
+            flagRecord = { status: flagData.status };
+            originalStatus = flagData.status;
+            originalAction = flagData.action;
+          }
+
+          // 2. Gate Attendance
+          let gateRecord: GateRecord | null = null;
+          let existingDailyStatus: string | null = null;
+          let existingBehaviorScoreStatus: string | null = null;
+          let existingFlagBehaviorScoreStatus: string | null = null;
+          if (gateSnap.exists()) {
+            const d = gateSnap.data();
+            const checkinSource = d.checkinTime || d.time || null;
+            const checkinTime = checkinSource?.toDate
+              ? checkinSource.toDate().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+              : typeof checkinSource === "string"
+                ? checkinSource
+                : "";
+            gateRecord = { checkinTime, status: d.status };
+            (gateRecord as any).rawCheckinTime = checkinSource;
+            existingDailyStatus = d.status || null;
+            const legacyBehaviorScoreStatus = d.metadata?.behaviorScoreStatus || d.behaviorScoreStatus || null;
+            existingBehaviorScoreStatus = d.metadata?.attendanceBehaviorScoreStatus
+              || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? d.status : legacyBehaviorScoreStatus)
+              || d.status
+              || null;
+            existingFlagBehaviorScoreStatus = d.metadata?.flagBehaviorScoreStatus
+              || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? legacyBehaviorScoreStatus : null)
+              || null;
+          }
+
+          // 3. Leave Data — Manual Filter for Date Range (Firestore requires index for multiple fields)
+          let leaveRecord: LeaveRecord | null = null;
+          const validLeaveDoc = leaveSnap.docs.find(doc => {
+            const data = doc.data();
+            const getDateStr = (val: any) => {
+              if (val?.toDate) return val.toDate().toISOString().split('T')[0];
+              if (typeof val === 'string') return val;
+              return '';
+            };
+            const s = getDateStr(data.startDate);
+            const e = getDateStr(data.endDate);
+            return s && e && s <= paramDate && e >= paramDate;
+          });
+
+          if (validLeaveDoc) {
+            leaveRecord = { type: validLeaveDoc.data().leaveType, id: validLeaveDoc.id };
+          }
+
+          // Calculate Initial Status for Display — ถ้าเคยบันทึกเช็คแถวไว้แล้วให้ใช้ค่านั้น
+          // ถ้ายังไม่เคยบันทึกให้ auto-suggest จากข้อมูลสแกนประตู/ใบลา
+          let displayStatus = originalStatus || ATTENDANCE_STATUS.PRESENT;
+
+          // 📌 Force Status to LEAVE if leave request exists (Overwrite original status)
+          if (leaveRecord) {
+            if (leaveRecord.type === 'ไปราชการ/กิจกรรม') {
+              displayStatus = ATTENDANCE_STATUS.PRESENT;
+            } else {
+              displayStatus = ATTENDANCE_STATUS.LEAVE;
+            }
+          } else if (!originalStatus) {
+            const suggestion = calculateAttendanceStatus(gateRecord, null, leaveRecord, null, { studentLateTime: studentCheckinEnd });
+            // Map suggestion back to Thai status for Dropdown
+            if (suggestion.finalStatus === 'present') displayStatus = ATTENDANCE_STATUS.PRESENT;
+            else if (suggestion.finalStatus === 'late') displayStatus = ATTENDANCE_STATUS.LATE;
+            else if (suggestion.finalStatus === 'leave') displayStatus = ATTENDANCE_STATUS.LEAVE;
+            else if (suggestion.finalStatus === 'officialTravel') displayStatus = ATTENDANCE_STATUS.PRESENT;
+            else displayStatus = ATTENDANCE_STATUS.ABSENT; // 📌 หากไม่มีการลงเวลา ให้เริ่มต้นแสดง ขาด เพื่อให้สอดคล้องกับสถานะจริง
+          }
+
+          if (originalStatus) {
+            newOriginalAttendanceMap.set(student.id, originalStatus);
+            anyAlreadySaved = true;
+          }
+
+          return {
+            ...student,
+            attendanceStatus: displayStatus,
+            flagAction: originalAction || getDefaultFlagAction(displayStatus),
+            existingDailyStatus,
+            existingBehaviorScoreStatus,
+            existingFlagBehaviorScoreStatus,
+            _flagSavedToday: isFlagSaved,
+            // Attach extra data for Save Logic
+            _gateData: gateRecord,
+            _leaveData: leaveRecord,
+            _travelData: null,
+            isLeave: !!leaveRecord // 📌 Critical: Pass this flag to UI to lock buttons
+          };
+        }));
+
+        setStudents(enrichedStudents);
+        if (anyAlreadySaved) {
+          setOriginalAttendanceMap(newOriginalAttendanceMap);
+          setIsAlreadySaved(true);
+        }
 
       } catch (err: any) {
         console.error("Error fetching students:", err);
@@ -628,135 +733,6 @@ const FlagCeremonyPage: React.FC = () => {
       } finally {
         setIsLoading(false);
       }
-    };
-
-    const fetchAdditionalData = async (students: Student[]) => {
-      // Fetch Gate Attendance & Leave Data
-      const enrichedStudents = await Promise.all(students.map(async (student) => {
-        // 1. Get Flag Status (Existing)
-        let flagRecord: FlagRecord | null = null;
-        let originalStatus = undefined;
-        let originalAction: FlagAction | undefined;
-
-        const flagRef = doc(firestore, "school-settings", schoolId, "students", student.id, "flag_ceremony_summary", todayStr);
-        const flagSnap = await getDoc(flagRef);
-        const isFlagSaved = flagSnap.exists();
-        if (isFlagSaved) {
-          const flagData = flagSnap.data();
-          flagRecord = { status: flagData.status };
-          originalStatus = flagData.status;
-          originalAction = flagData.action;
-        }
-
-        // 2. Get Gate Attendance
-        let gateRecord: GateRecord | null = null;
-        let existingDailyStatus: string | null = null;
-        let existingBehaviorScoreStatus: string | null = null;
-        let existingFlagBehaviorScoreStatus: string | null = null;
-        const paramDate = todayStr; // Or use date picker
-        const gateRef = doc(firestore, "school-settings", schoolId, "students", student.id, "attendance", paramDate);
-        const gateSnap = await getDoc(gateRef);
-        if (gateSnap.exists()) {
-          const d = gateSnap.data();
-          const checkinSource = d.checkinTime || d.time || null;
-          const checkinTime = checkinSource?.toDate
-            ? checkinSource.toDate().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
-            : typeof checkinSource === "string"
-              ? checkinSource
-              : "";
-          gateRecord = { checkinTime, status: d.status };
-          (gateRecord as any).rawCheckinTime = checkinSource;
-          existingDailyStatus = d.status || null;
-          const legacyBehaviorScoreStatus = d.metadata?.behaviorScoreStatus || d.behaviorScoreStatus || null;
-          existingBehaviorScoreStatus = d.metadata?.attendanceBehaviorScoreStatus
-            || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? d.status : legacyBehaviorScoreStatus)
-            || d.status
-            || null;
-          existingFlagBehaviorScoreStatus = d.metadata?.flagBehaviorScoreStatus
-            || (String(legacyBehaviorScoreStatus || "").startsWith("flag:") ? legacyBehaviorScoreStatus : null)
-            || null;
-        }
-
-        // 4. Get Leave Data
-        let leaveRecord: LeaveRecord | null = null;
-        // 📌 Fix: Query the STUDENT's sub-collection, not the global one.
-        // This ensures we find the data saved by LeaveRequestPage (which saves to sub-collection).
-        const leaveQuery = query(
-          collection(firestore, "school-settings", schoolId, "students", student.id, "leave_summary"),
-          where("status", "==", "approved")
-          // No need for studentId filter here, and no need for endDate filter (handled manually)
-        );
-        const leaveSnap = await getDocs(leaveQuery);
-
-        // Manual Filter for Date Range (Firestore requires index for multiple fields)
-        const validLeaveDoc = leaveSnap.docs.find(doc => {
-          const data = doc.data();
-          const getDateStr = (val: any) => {
-            if (val?.toDate) return val.toDate().toISOString().split('T')[0];
-            if (typeof val === 'string') return val;
-            return '';
-          };
-          const s = getDateStr(data.startDate);
-          const e = getDateStr(data.endDate);
-          return s && e && s <= paramDate && e >= paramDate;
-        });
-
-        if (validLeaveDoc) {
-          leaveRecord = { type: validLeaveDoc.data().leaveType, id: validLeaveDoc.id };
-        }
-
-        // 4. Get Travel Data
-        // Implementation for travel query if needed...
-
-        // Calculate Initial Status for Display
-        // Ideally we should use the calculated status, but for Flag Ceremony we might want to show what was *selected* previously
-        // or auto-suggest based on logic.
-
-        // If already saved in Flag, use that.
-        // If not, use Logic to suggest.
-
-        let displayStatus = originalStatus || ATTENDANCE_STATUS.PRESENT; // 📌 Default to PRESENT (Checking "Present" first)
-
-        // 📌 Force Status to LEAVE if leave request exists (Overwrite original status)
-        if (leaveRecord) {
-          if (leaveRecord.type === 'ไปราชการ/กิจกรรม') {
-            displayStatus = ATTENDANCE_STATUS.PRESENT;
-          } else {
-            displayStatus = ATTENDANCE_STATUS.LEAVE;
-          }
-        } else if (!originalStatus) {
-          const suggestion = calculateAttendanceStatus(gateRecord, null, leaveRecord, null, { studentLateTime: studentCheckinEnd });
-          // Map suggestion back to Thai status for Dropdown
-          if (suggestion.finalStatus === 'present') displayStatus = ATTENDANCE_STATUS.PRESENT;
-          else if (suggestion.finalStatus === 'late') displayStatus = ATTENDANCE_STATUS.LATE;
-          else if (suggestion.finalStatus === 'leave') displayStatus = ATTENDANCE_STATUS.LEAVE;
-          else if (suggestion.finalStatus === 'officialTravel') displayStatus = ATTENDANCE_STATUS.PRESENT;
-          else displayStatus = ATTENDANCE_STATUS.ABSENT; // 📌 หากไม่มีการลงเวลา ให้เริ่มต้นแสดง ขาด เพื่อให้สอดคล้องกับสถานะจริง
-        }
-
-        // Update local map for change tracking
-        if (originalStatus) {
-          setOriginalAttendanceMap(prev => new Map(prev).set(student.id, originalStatus));
-          setIsAlreadySaved(true);
-        }
-
-        return {
-          ...student,
-          attendanceStatus: displayStatus,
-          flagAction: originalAction || getDefaultFlagAction(displayStatus),
-          existingDailyStatus,
-          existingBehaviorScoreStatus,
-          existingFlagBehaviorScoreStatus,
-          _flagSavedToday: isFlagSaved,
-          // Attach extra data for Save Logic
-          _gateData: gateRecord,
-          _leaveData: leaveRecord,
-          _travelData: null,
-          isLeave: !!leaveRecord // 📌 Critical: Pass this flag to UI to lock buttons
-        };
-      }));
-
-      setStudents(enrichedStudents);
     };
 
     fetchClassData();
@@ -1086,11 +1062,15 @@ const FlagCeremonyPage: React.FC = () => {
 
     if (action === "cancelFlag") {
       // 1. "ยกเลิกการเช็คแถว" (Cancel flag ceremony check ONLY, keep gate check-in time if any)
+      // ถ้าไม่มีสแกนประตูเลย = ไม่เหลือหลักฐานการมาเรียนวันนี้จากกลไกนี้อีกต่อไป ต้องลบ record
+      // ที่เคยเขียนไว้ (เช่น "ขาด" จากการบันทึกครั้งก่อน) และคืนคะแนนพฤติกรรมที่เคยหักไปด้วย
+      // ไม่ใช่ปล่อยค้าง — ก่อนหน้านี้ shouldDeleteDaily เป็น false เสมอ ทำให้กรณีไม่มีสแกนประตู
+      // ไม่เข้าทั้งสาขา shouldDeleteDaily และ shouldWriteDaily เลย จึงไม่มีการคืนคะแนนเกิดขึ้น
       const gateStatus = gateData?.status === "สาย" || gateData?.status === "late" ? "late" : "present";
       return {
         action,
         shouldDeleteFlag: true,
-        shouldDeleteDaily: false,
+        shouldDeleteDaily: !gateData?.checkinTime,
         shouldWriteDaily: !!gateData?.checkinTime,
         shouldNotify: false,
         flagStatus: null as AttendanceStatus | null,
@@ -1248,6 +1228,22 @@ const FlagCeremonyPage: React.FC = () => {
 
     const todayAppliedPenalty = getTodayAppliedPenalty(student);
 
+    // shouldDeleteDaily = ลบ record วันนี้ทั้งหมด (ไม่มีหลักฐานการมาเรียนจากกลไกนี้เหลืออยู่)
+    // ต้องคืนคะแนนที่เคยหักไปทั้งหมด เหมือนที่ handleSaveAll ทำจริงตอนบันทึก (refundDelta = todayAppliedPenalty)
+    // ไม่ใช่คำนวณ delta จาก resolved.behaviorStatus เพราะบาง action (เช่น cancelFlag ไม่มีสแกนประตู)
+    // behaviorStatus ยังเป็น "ขาด" อยู่ทั้งที่จริงแล้วจะถูกลบทิ้ง ทำให้พรีวิวคำนวณผิดถ้าใช้สูตรเดียวกับ shouldWriteDaily
+    if (resolved.shouldDeleteDaily) {
+      const currentScore = student.behaviorScore ?? 100;
+      const nextScore = currentScore + todayAppliedPenalty;
+      const netDelta = nextScore - currentScore;
+      if (netDelta === 0) return null;
+      return {
+        yesterdayScore: currentScore,
+        nextScore,
+        delta: netDelta,
+      };
+    }
+
     const newAttendanceStatus = resolved.action === "noScanPresentDeduct"
       ? ATTENDANCE_STATUS.PRESENT
       : resolved.action === "scannedAbsentDeduct"
@@ -1358,6 +1354,7 @@ const FlagCeremonyPage: React.FC = () => {
         flagBehaviorStatus: string | null;
         checkinTime?: any;
         shouldDeleteDaily?: boolean;
+        shouldDeleteFlag?: boolean;
       }>();
 
       // 📌 เพิ่ม: ดึงข้อมูลครูประจำชั้น (LINE Config) เพียงครั้งเดียว
@@ -1413,6 +1410,7 @@ const FlagCeremonyPage: React.FC = () => {
           flagBehaviorStatus: isFlagDeductionAction(resolved.action) ? getFlagBehaviorStatus(resolved.action) : null,
           checkinTime: resolved.checkinTime,
           shouldDeleteDaily: resolved.shouldDeleteDaily,
+          shouldDeleteFlag: resolved.shouldDeleteFlag,
         });
 
         // 2. Save Flag Ceremony Record (What the teacher selected)
@@ -1602,10 +1600,10 @@ const FlagCeremonyPage: React.FC = () => {
       await Promise.all(promises);
       await batch.commit();
 
-      // Background repair/sync of the daily summary to correct any possible edge cases or history discrepancy
-      syncDailySummary(firestore, schoolId, todayStr).catch(err => {
-        console.warn("Background syncDailySummary failed:", err);
-      });
+      // หมายเหตุ: ไม่เรียก syncDailySummary() อัตโนมัติที่นี่แล้ว — ตัวนับ Todaysummary
+      // ถูกอัปเดตแบบ atomic increment ผ่าน updatePeriodSummaries ใน transaction ของแต่ละคนอยู่แล้ว
+      // การ scan ทั้งโรงเรียนซ้ำทุกครั้งที่บันทึกจะยิ่งช้าลงและเสี่ยงชนกันเมื่อมีคนบันทึกพร้อมกันหลายคน
+      // ถ้าต้องการซ่อมข้อมูลที่คลาดเคลื่อน ให้ใช้ปุ่ม "คำนวณใหม่" ในหน้าตั้งค่าการเช็คชื่อแทน (แบบ manual)
 
       setStudents((prevStudents) =>
         prevStudents.map((student) => {
@@ -1639,6 +1637,10 @@ const FlagCeremonyPage: React.FC = () => {
             existingBehaviorScoreStatus: savedStatus?.attendanceBehaviorStatus ?? student.existingBehaviorScoreStatus,
             existingFlagBehaviorScoreStatus: savedStatus?.flagBehaviorStatus ?? null,
             _gateData: localGateData,
+            // 📌 ต้องอัปเดตด้วย ไม่งั้นถ้าครูแก้ไข/บันทึกซ้ำในเซสชันเดียวกันโดยไม่รีโหลดหน้า
+            // _flagSavedToday จะค้างค่าเก่า ทำให้ getTodayAppliedPenalty คำนวณคะแนนที่ต้องคืนผิด
+            // (เข้าใจผิดว่ายังไม่เคยบันทึกเช็คแถววันนี้ ทั้งที่เพิ่งบันทึกไปเมื่อกี้)
+            _flagSavedToday: savedStatus ? !savedStatus.shouldDeleteFlag : (student as any)._flagSavedToday,
           };
         })
       );
@@ -2004,8 +2006,9 @@ const FlagCeremonyPage: React.FC = () => {
                             <div className="block relative">
                               <div className="absolute -inset-1 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur"></div>
                               <img
-                                src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.name}&background=random`}
+                                src={student.profileImageThumbUrl || student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.name}&background=random`}
                                 alt={student.name}
+                                loading="lazy"
                                 className={`relative rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105 ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
                               />
                             </div>

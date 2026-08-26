@@ -131,6 +131,30 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return <Navigate to="/login" replace />;
   }
 
+  const localUserType = localStorage.getItem('currentUserType');
+  const isLocalStudentOrParent = localUserType === 'student' || localUserType === 'parent';
+
+  if (isLocalStudentOrParent) {
+    const allowedPaths = [
+      '/profile',
+      '/my-grade-flags',
+      '/my-schedule',
+      '/academic/my-schedule',
+      '/academic/student-schedule',
+      '/student-support/sdq/student',
+      '/student-support/screening/student',
+      '/student-support/sdq/parent',
+      '/student-support/screening/parent',
+    ];
+    const isAllowed = allowedPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'));
+    if (!isAllowed) {
+      return <Navigate to="/profile" replace />;
+    }
+    // Path is whitelisted — render immediately, skip role-based checks below
+    // (student/parent users have no roles and would be wrongly blocked)
+    return <>{children}</>;
+  }
+
   const isPwaAttendanceHub = isPwaStandalone() && location.pathname === PWA_ATTENDANCE_HUB_PATH;
 
   const isAllowedPathForAttendanceEntry =

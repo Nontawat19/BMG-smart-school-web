@@ -283,14 +283,7 @@ const LearnerActivityAttendancePage: React.FC = () => {
     const fetchStudentsAndAttendance = async () => {
       setStudentsLoading(true);
       try {
-        const [studentSnap, membersSnap] = await Promise.all([
-          getDocs(collection(db, 'school-settings', schoolId, 'students')),
-          getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members')),
-        ]);
-
-        const allStudents = studentSnap.docs
-          .map(studentDoc => ({ id: studentDoc.id, ...studentDoc.data() } as Student))
-          .filter(student => isActiveStudent(student));
+        const membersSnap = await getDocs(collection(db, 'school-settings', schoolId, 'learner-activities', selectedActivity.id, 'members'));
 
         const allMemberData = membersSnap.docs.map(memberDoc => memberDoc.data() as any);
 
@@ -312,9 +305,24 @@ const LearnerActivityAttendancePage: React.FC = () => {
 
         let activityStudents: Student[];
         if (memberIds.length > 0) {
-          const memberIdSet = new Set(memberIds);
-          activityStudents = allStudents.filter(student => memberIdSet.has(student.id));
+          // ดึงเฉพาะนักเรียนที่เป็นสมาชิกกิจกรรมนี้ (แบ่งเป็นชุดละ 30 id ตามข้อจำกัดของ Firestore "in")
+          // แทนการโหลดนักเรียนทั้งโรงเรียนแล้วมากรองฝั่ง client
+          const studentsRef = collection(db, 'school-settings', schoolId, 'students');
+          const memberStudents: Student[] = [];
+          for (let i = 0; i < memberIds.length; i += 30) {
+            const batchIds = memberIds.slice(i, i + 30);
+            const batchSnap = await getDocs(query(studentsRef, where('__name__', 'in', batchIds)));
+            batchSnap.forEach(studentDoc => memberStudents.push({ id: studentDoc.id, ...studentDoc.data() } as Student));
+          }
+          activityStudents = memberStudents.filter(student => isActiveStudent(student));
         } else if (selectedActivity._isVirtual) {
+          // โหมดนี้ยังไม่มีรายชื่อสมาชิกที่ผูกไว้ (กิจกรรม virtual ที่เพิ่งสร้าง) ต้องหานักเรียนจาก
+          // ชั้น/ห้องที่ครูผู้สอนรับผิดชอบ ซึ่งไม่รู้ล่วงหน้าว่าห้องไหนบ้าง จึงจำเป็นต้องโหลดทั้งโรงเรียน
+          // มากรอง — เกิดเฉพาะกิจกรรมที่ยังไม่เคยจัด roster เท่านั้น ไม่ใช่ทุกครั้งที่เปิดหน้า
+          const studentSnap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
+          const allStudents = studentSnap.docs
+            .map(studentDoc => ({ id: studentDoc.id, ...studentDoc.data() } as Student))
+            .filter(student => isActiveStudent(student));
           // Mode 2: no members yet — load students by class levels from teacher assignment
           const mode2Scopes = deriveTeacherScopesFromCourse(selectedActivity, selectedCourse, teacherMap as any);
           const relevantScope = mode2Scopes.find(scope => scopeIncludesTeacher(scope, currentTeacherId));

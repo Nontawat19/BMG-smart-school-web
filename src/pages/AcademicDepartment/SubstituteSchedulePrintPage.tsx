@@ -9,7 +9,7 @@ import {
   Timestamp,
   where,
 } from "firebase/firestore";
-import { Calendar, CalendarDays, Printer, RefreshCw } from "lucide-react";
+import { Calendar, CalendarDays, Printer, RefreshCw, X, FileDown } from "lucide-react";
 import {
   Document as PdfDocument,
   Font,
@@ -19,6 +19,7 @@ import {
   Text,
   View,
   pdf,
+  PDFViewer,
 } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import BackButton from "@/components/Shared/BackButton";
@@ -290,6 +291,7 @@ const SubstituteSchedulePrintPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [loading, setLoading] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [schoolName, setSchoolName] = useState("");
   const [records, setRecords] = useState<SubstitutionRecord[]>([]);
   const [signerName, setSignerName] = useState("");
@@ -399,20 +401,27 @@ const SubstituteSchedulePrintPage: React.FC = () => {
 
   const dateLabel = formatThaiDate(selectedDate);
 
+  const buildSubstituteSchedulePdfDocument = () => (
+    <SubstituteSchedulePdf
+      schoolName={schoolName}
+      dateLabel={dateLabel}
+      groups={groups}
+      signerName={signerName}
+      academicHeadName={academicHeadName}
+      academicHeadRoleLabel={academicHeadRoleLabel}
+      logoUrl={logoBase64}
+    />
+  );
+
+  const openPdfPreview = () => {
+    if (groups.length === 0) return;
+    setShowPdfPreview(true);
+  };
+
   const handleGeneratePdf = async () => {
     setIsGeneratingPdf(true);
     try {
-      const blob = await pdf(
-        <SubstituteSchedulePdf
-          schoolName={schoolName}
-          dateLabel={dateLabel}
-          groups={groups}
-          signerName={signerName}
-          academicHeadName={academicHeadName}
-          academicHeadRoleLabel={academicHeadRoleLabel}
-          logoUrl={logoBase64}
-        />
-      ).toBlob();
+      const blob = await pdf(buildSubstituteSchedulePdfDocument()).toBlob();
       saveAs(blob, `ตารางสอนแทน_${sanitizeFileName(selectedDate)}.pdf`);
     } finally {
       setIsGeneratingPdf(false);
@@ -437,11 +446,11 @@ const SubstituteSchedulePrintPage: React.FC = () => {
               </div>
             </div>
             <button
-              onClick={handleGeneratePdf}
-              disabled={isGeneratingPdf || groups.length === 0}
+              onClick={openPdfPreview}
+              disabled={groups.length === 0}
               className="flex-shrink-0 px-5 py-2.5 rounded-xl bg-teal-600 dark:bg-teal-500 text-white text-sm font-semibold hover:bg-teal-700 dark:hover:bg-teal-600 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-teal-200 dark:shadow-none"
             >
-              {isGeneratingPdf ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
+              <Printer size={15} />
               ส่งออก PDF
             </button>
           </div>
@@ -578,6 +587,48 @@ const SubstituteSchedulePrintPage: React.FC = () => {
 
         </div>
       </div>
+
+      {showPdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowPdfPreview(false)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                ตัวอย่างเอกสาร — ตารางสอนแทน
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleGeneratePdf}
+                  disabled={isGeneratingPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isGeneratingPdf ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isGeneratingPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfPreview(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-gray-100 dark:bg-gray-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {buildSubstituteSchedulePdfDocument()}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

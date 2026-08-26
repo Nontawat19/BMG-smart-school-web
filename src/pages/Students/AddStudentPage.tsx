@@ -535,6 +535,16 @@ export default function AddStudentPage() {
           const imageRef = ref(storage, storagePath);
           const snapshot = await uploadBytes(imageRef, imageFile);
           dataToSave.profileImageUrl = await getDownloadURL(snapshot.ref);
+
+          // รูปธัมบ์ (ขนาดเล็กสำหรับ avatar) — อัปโหลดแยกจากรูปเต็ม ถ้าล้มเหลวไม่กระทบรูปเต็มที่อัปโหลดสำเร็จแล้ว
+          try {
+            const thumbPath = storagePath.replace(/(\.[^./]+)$/, '_thumb$1');
+            const thumbFile = await compressImage(imageFile, 128, 0.6, 'image/jpeg');
+            const thumbSnapshot = await uploadBytes(ref(storage, thumbPath), thumbFile);
+            dataToSave.profileImageThumbUrl = await getDownloadURL(thumbSnapshot.ref);
+          } catch (thumbError) {
+            console.error("Thumbnail upload failed:", thumbError);
+          }
         } catch (uploadError) {
           console.error("Image upload failed:", uploadError);
           // ตั้งค่าข้อความเตือน แต่ไม่หยุดการทำงาน

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
-import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from "@react-pdf/renderer";
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
-import { AlertTriangle, CalendarDays, CheckCircle, FileDown, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle, FileDown, RefreshCw, Search, X, Loader2 } from "lucide-react";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from "@/components/SkeletonLoader";
@@ -514,6 +514,8 @@ const StudentBK14ReportPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<{ document: React.ReactNode; fileName: string; onDownloaded?: () => void } | null>(null);
+  const [isDownloadingPreviewPdf, setIsDownloadingPreviewPdf] = useState(false);
   const [schoolName, setSchoolName] = useState("-");
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(defaultSchoolInfo);
   const [rows, setRows] = useState<RiskRecord[]>([]);
@@ -660,16 +662,16 @@ const StudentBK14ReportPage: React.FC = () => {
     }
   };
 
-  const exportPdf = async () => {
+  const openBulkPdfPreview = () => {
     if (filteredRows.length === 0) {
       Swal.fire("ไม่มีข้อมูล", "ไม่พบรายการสำหรับส่งออก PDF", "info");
       return;
     }
     const printedAt = new Date().toLocaleString("th-TH");
-    const blob = await pdf(
-      <Bk14PdfDocument rows={filteredRows} schoolName={schoolName} month={selectedMonth} printedAt={printedAt} />
-    ).toBlob();
-    saveAs(blob, `รายงาน_BK14_${selectedMonth}.pdf`);
+    setPdfPreview({
+      document: <Bk14PdfDocument rows={filteredRows} schoolName={schoolName} month={selectedMonth} printedAt={printedAt} />,
+      fileName: `รายงาน_BK14_${selectedMonth}.pdf`,
+    });
   };
 
   const markRowReported = (row: RiskRecord) => {
@@ -682,12 +684,26 @@ const StudentBK14ReportPage: React.FC = () => {
     });
   };
 
-  const exportStudentPdf = async (row: RiskRecord) => {
-    const blob = await pdf(
-      <Bk14NoticePdfDocument row={row} schoolInfo={schoolInfo} month={selectedMonth} />
-    ).toBlob();
-    saveAs(blob, `บค14_${row.studentId}_${selectedMonth}.pdf`);
-    markRowReported(row);
+  const openStudentPdfPreview = (row: RiskRecord) => {
+    setPdfPreview({
+      document: <Bk14NoticePdfDocument row={row} schoolInfo={schoolInfo} month={selectedMonth} />,
+      fileName: `บค14_${row.studentId}_${selectedMonth}.pdf`,
+      // Only mark the row as "reported" once the teacher actually downloads it from the
+      // preview, not just for opening the preview and closing it without saving.
+      onDownloaded: () => markRowReported(row),
+    });
+  };
+
+  const downloadPreviewPdf = async () => {
+    if (!pdfPreview) return;
+    setIsDownloadingPreviewPdf(true);
+    try {
+      const blob = await pdf(pdfPreview.document as any).toBlob();
+      saveAs(blob, pdfPreview.fileName);
+      pdfPreview.onDownloaded?.();
+    } finally {
+      setIsDownloadingPreviewPdf(false);
+    }
   };
 
   return (
@@ -708,7 +724,7 @@ const StudentBK14ReportPage: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={exportPdf}
+              onClick={openBulkPdfPreview}
               disabled={loading || filteredRows.length === 0}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -829,7 +845,7 @@ const StudentBK14ReportPage: React.FC = () => {
                             )}
                             <button
                               type="button"
-                              onClick={() => exportStudentPdf(row)}
+                              onClick={() => openStudentPdfPreview(row)}
                               className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-red-700"
                             >
                               <FileDown size={13} />
@@ -846,6 +862,48 @@ const StudentBK14ReportPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {pdfPreview && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setPdfPreview(null)}
+        >
+          <div
+            className="flex h-[calc(100vh-100px)] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                ตัวอย่างเอกสาร — {pdfPreview.fileName}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadPreviewPdf}
+                  disabled={isDownloadingPreviewPdf}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDownloadingPreviewPdf ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                  {isDownloadingPreviewPdf ? "กำลังบันทึก..." : "ดาวน์โหลด"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfPreview(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                  title="ปิด"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-100 dark:bg-slate-900">
+              <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
+                {pdfPreview.document as any}
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

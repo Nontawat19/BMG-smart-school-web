@@ -28,6 +28,7 @@ import { compressImage } from "@/utils/imageUtils";
 interface Student {
   id: string;
   profileImageUrl?: string;
+  profileImageThumbUrl?: string;
   studentId: string;
   idCardNumber?: string;
   rfid?: string;
@@ -350,12 +351,25 @@ export default function StudentListPage() {
     try {
       const compressedFile = await compressImage(file, 600, 0.82, "image/jpeg");
       const safeStudentId = (student.studentId || student.id).replace(/[^\w-]/g, "_");
-      const imageRef = ref(storage, `students/${schoolId}/${safeStudentId}_${Date.now()}.jpg`);
+      const uploadStamp = Date.now();
+      const imageRef = ref(storage, `students/${schoolId}/${safeStudentId}_${uploadStamp}.jpg`);
       const snapshot = await uploadBytes(imageRef, compressedFile, { contentType: compressedFile.type });
       const profileImageUrl = await getDownloadURL(snapshot.ref);
 
+      // รูปธัมบ์ (ขนาดเล็กสำหรับ avatar) — อัปโหลดแยกจากรูปเต็ม ถ้าล้มเหลวไม่กระทบรูปเต็มที่อัปโหลดสำเร็จแล้ว
+      let profileImageThumbUrl: string | undefined;
+      try {
+        const thumbFile = await compressImage(compressedFile, 128, 0.6, "image/jpeg");
+        const thumbRef = ref(storage, `students/${schoolId}/${safeStudentId}_${uploadStamp}_thumb.jpg`);
+        const thumbSnapshot = await uploadBytes(thumbRef, thumbFile, { contentType: thumbFile.type });
+        profileImageThumbUrl = await getDownloadURL(thumbSnapshot.ref);
+      } catch (thumbError) {
+        console.error("Thumbnail upload failed:", thumbError);
+      }
+
       await updateDoc(doc(firestore, "school-settings", schoolId, "students", student.id), {
         profileImageUrl,
+        ...(profileImageThumbUrl ? { profileImageThumbUrl } : {}),
       });
 
       await updateStudentReportSummaryForChange(
@@ -365,7 +379,7 @@ export default function StudentListPage() {
         { ...student, profileImageUrl }
       );
 
-      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, profileImageUrl } : s));
+      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, profileImageUrl, ...(profileImageThumbUrl ? { profileImageThumbUrl } : {}) } : s));
 
       if (student.profileImageUrl) {
         try {
@@ -857,7 +871,7 @@ export default function StudentListPage() {
                     <CanAccess roles={ACADEMIC_ACCESS} fallback={
                       <Link to={`/school/${student.schoolId}/students/view/${student.id}`}>
                         <ProfileAvatar
-                          className="h-8 w-8"
+                          className="h-14 w-14"
                           src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
                           alt={`${student.firstName} ${student.lastName}`}
                         />
@@ -871,7 +885,7 @@ export default function StudentListPage() {
                         title="คลิกเพื่อเปลี่ยนรูปนักเรียน"
                       >
                         <ProfileAvatar
-                          className="h-8 w-8"
+                          className="h-14 w-14"
                           src={student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.firstName}+${student.lastName}&background=random`}
                           alt={`${student.firstName} ${student.lastName}`}
                           imageClassName="transition-transform group-hover:scale-105"
