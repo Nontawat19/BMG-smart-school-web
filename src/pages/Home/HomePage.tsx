@@ -1567,11 +1567,11 @@ const HomePage = () => {
                 { label: "มา", val: s.present, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
                 { label: "สาย", val: s.late, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
                 { label: "ลา", val: s.leave, text: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10" },
-                { label: "ไปราชการ", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
+                { label: "ไปร่วมกิจกรรม", val: s.officialTravel, text: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10" },
                 { label: "ขาด", val: s.absent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
             ].map(i => (
                 <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
-                    <span className={`${i.label === 'ไปราชการ' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
+                    <span className={`${i.label === 'ไปร่วมกิจกรรม' ? 'text-[5px]' : 'text-[6px]'} sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5`}>{i.label}</span>
                     <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
                 </div>
             ))}
@@ -1617,7 +1617,7 @@ const HomePage = () => {
             { name: isTeacher ? 'มาปฏิบัติงาน' : 'มาเรียน', value: stats.present, color: '#10B981', actualColor: '#10B981', percent: Math.round((stats.present / stats.total) * 100) || 0 },
             { name: 'สาย', value: stats.late, color: '#F59E0B', actualColor: '#F59E0B', percent: Math.round((stats.late / stats.total) * 100) || 0 },
             { name: 'ลา', value: stats.leave, color: '#8B5CF6', actualColor: '#8B5CF6', percent: Math.round((stats.leave / stats.total) * 100) || 0 },
-            { name: 'ไปราชการ', value: stats.officialTravel, color: '#6366F1', actualColor: '#6366F1', percent: Math.round((stats.officialTravel / stats.total) * 100) || 0 },
+            { name: isTeacher ? 'ไปราชการ' : 'ไปร่วมกิจกรรม', value: stats.officialTravel, color: '#6366F1', actualColor: '#6366F1', percent: Math.round((stats.officialTravel / stats.total) * 100) || 0 },
             { name: isTeacher ? 'ขาดงาน' : 'ขาดเรียน', value: stats.absent, color: '#EF4444', actualColor: '#EF4444', percent: Math.round((stats.absent / stats.total) * 100) || 0 }
         ].filter(d => d.value > 0);
     };
@@ -1828,7 +1828,7 @@ const HomePage = () => {
                                             { label: 'มาเรียน', val: studentAttendanceStats?.present || 0, color: 'bg-emerald-500', text: 'text-emerald-500' },
                                             { label: 'สาย', val: studentAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
                                             { label: 'ลา', val: studentAttendanceStats?.leave || 0, color: 'bg-purple-500', text: 'text-purple-500' },
-                                            { label: 'ไปราชการ', val: studentAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
+                                            { label: 'ไปร่วมกิจกรรม', val: studentAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
                                             { label: 'ขาดเรียน', val: studentAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
                                         ].map(item => (
                                             <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">

@@ -13,6 +13,8 @@ interface MainLayoutProps {
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const { user } = useSelector((state: RootState) => state.auth);
+  const userRoles = Array.isArray(user?.role) ? user.role : typeof user?.role === "string" ? [user.role] : [];
+  const isStudentOrParent = userRoles.includes("student") || userRoles.includes("parent");
   const schoolId = useEffectiveSchoolId();
   const { isDarkMode } = useTheme();
   const { isCollapsed: isSidebarCollapsed, toggleSidebar } = useSidebar();
@@ -38,8 +40,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     else if (path.includes("academic/gradebook")) pageName = "ระบบวัดผล";
     else if (path.includes("attendance")) pageName = "ระบบเช็คชื่อ";
     else if (path.includes("human-resources")) pageName = "บริหารงานบุคคล";
-    else if (path.includes("official-travel-request")) pageName = "สร้างคำขอไปราชการ";
-    else if (path.includes("official-travel-history")) pageName = "ประวัติการไปราชการ";
+    else if (path.includes("official-travel-request")) pageName = isStudentOrParent ? "สร้างคำขอไปร่วมกิจกรรม" : "สร้างคำขอไปราชการ";
+    else if (path.includes("official-travel-history")) pageName = isStudentOrParent ? "ประวัติการไปร่วมกิจกรรม" : "ประวัติการไปราชการ";
     else if (path.includes("academic/enrollment-list")) pageName = "สรุปการลงทะเบียนรายวิชา";
     else if (path.includes("profile")) pageName = "โปรไฟล์ส่วนตัว";
     
@@ -49,7 +51,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     } else {
       document.title = "BMG Smart School";
     }
-  }, [isDarkMode, window.location.pathname]);
+  }, [isDarkMode, window.location.pathname, isStudentOrParent]);
 
   return (
     <div className="relative min-h-screen bg-[#f9fafb] dark:bg-[#1e1f21] transition-colors duration-300 flex flex-col">

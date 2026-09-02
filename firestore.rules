@@ -122,7 +122,10 @@ service cloud.firestore {
 
         match /members/{studentDocId} {
           allow get: if true;
-          allow list: if isRealAuth();
+          // NEW: ระบบแก้ 0/ร/มส/มผ (นักเรียนยื่นคำร้องเองแบบ anonymous auth) อ่าน "สมาชิกชุมนุม legacy"
+          // ด้วย getDocs(collection(...)) (list query) เหมือน evaluations ด้านล่าง — เดิมยังค้างที่
+          // isRealAuth() ทำให้นักเรียน (anonymous) โดน Missing or insufficient permissions
+          allow list: if isAuthenticated();
           allow write: if isRealAuth();
         }
 

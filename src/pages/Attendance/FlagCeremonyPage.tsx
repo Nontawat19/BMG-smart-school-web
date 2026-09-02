@@ -180,26 +180,6 @@ const getFlagDisplayLabel = (action?: FlagAction | null, status?: AttendanceStat
   action && action !== "normal" ? getFlagActionLabel(action) : (status || ATTENDANCE_STATUS.ABSENT)
 );
 
-const getNormalAttendanceStatus = (student: any): AttendanceStatus => {
-  const gateData = student._gateData;
-  const leaveData = student._leaveData;
-  
-  if (leaveData) {
-    if (leaveData.type === 'ไปราชการ/กิจกรรม') {
-      return ATTENDANCE_STATUS.PRESENT;
-    } else {
-      return ATTENDANCE_STATUS.LEAVE;
-    }
-  }
-  
-  if (gateData?.checkinTime) {
-    const isLate = gateData.status === "สาย" || gateData.status === "late";
-    return isLate ? ATTENDANCE_STATUS.LATE : ATTENDANCE_STATUS.PRESENT;
-  }
-  
-  return ATTENDANCE_STATUS.ABSENT;
-};
-
 const getStatusFromAction = (action: FlagAction, student?: any): AttendanceStatus => {
   switch (action) {
     case "sickLeave":
@@ -208,11 +188,35 @@ const getStatusFromAction = (action: FlagAction, student?: any): AttendanceStatu
     case "noScanPresentDeduct":
     case "scannedAbsentDeduct":
       return ATTENDANCE_STATUS.LATE;
-    case "normal":
-      if (student) {
-        return getNormalAttendanceStatus(student);
+    case "cancelFlag": {
+      // ต้องตรงกับ resolveFlagActionResult: ถ้ามีสแกนบัตรที่ประตูอยู่แล้วให้คงสถานะ มา/สาย
+      // ตามประตูไว้ ถ้าไม่มีเลยถือว่า "ขาด" เพราะไม่เหลือหลักฐานการมาเรียนวันนี้จากกลไกนี้
+      const gateData = student?._gateData;
+      if (gateData?.checkinTime) {
+        return gateData.status === "สาย" || gateData.status === "late"
+          ? ATTENDANCE_STATUS.LATE
+          : ATTENDANCE_STATUS.PRESENT;
+      }
+      return ATTENDANCE_STATUS.ABSENT;
+    }
+    case "cancelFlagKeepGate":
+      // ลบทั้งการเช็คแถวและเวลาสแกนเข้าออกทิ้งทั้งหมด ไม่เหลือหลักฐานการมาเรียนวันนี้เลย
+      // (ตรงกับ resolveFlagActionResult ที่ finalStatusKey เป็น null) ตัวสรุปด้านบนจึงต้องนับเป็น "ขาด"
+      // ไม่ใช่ "มา" ไม่งั้นยอดสรุปหน้าจอจะไม่ตรงกับข้อมูลจริงหลังบันทึก
+      return ATTENDANCE_STATUS.ABSENT;
+    case "normal": {
+      // ครูเลือก "เข้าแถวปกติ" แปลว่าไม่มีอะไรผิดปกติ ให้ยึดหลักฐานจริงที่มี:
+      // - มีสแกนบัตรที่ประตู -> ใช้สถานะตามประตู (สาย ก็ยังต้องเป็น "สาย" ห้ามฟอกเป็น "มา"
+      //   ไม่งั้นคะแนนที่หักไปตอนเช้าจะถูกคืนโดยไม่ตั้งใจทั้งที่นักเรียนมาสายจริง)
+      // - ไม่มีสแกนบัตรเลย -> ครูยืนยันด้วยสายตาว่ามาจริง นับเป็น "มา" (ไม่ใช่ "ขาด")
+      const gateData = student?._gateData;
+      if (gateData?.checkinTime) {
+        return gateData.status === "สาย" || gateData.status === "late"
+          ? ATTENDANCE_STATUS.LATE
+          : ATTENDANCE_STATUS.PRESENT;
       }
       return ATTENDANCE_STATUS.PRESENT;
+    }
     default:
       return ATTENDANCE_STATUS.PRESENT;
   }
@@ -223,7 +227,7 @@ const toThaiAttendanceStatus = (statusKey?: string | null) => {
     case "present": return ATTENDANCE_STATUS.PRESENT;
     case "late": return ATTENDANCE_STATUS.LATE;
     case "leave": return ATTENDANCE_STATUS.LEAVE;
-    case "officialTravel": return "ไปราชการ";
+    case "officialTravel": return "ไปร่วมกิจกรรม";
     default: return ATTENDANCE_STATUS.ABSENT;
   }
 };
@@ -346,7 +350,10 @@ const FlagCeremonyPage: React.FC = () => {
   const [studentCheckinEnd, setStudentCheckinEnd] = useState("08:00"); // Default fallback
   const [currentAcademicYear, setCurrentAcademicYear] = useState<string>("");
   const [behaviorScoreConfig, setBehaviorScoreConfig] = useState<any>(null);
-  const [selectedFlagAction, setSelectedFlagAction] = useState<FlagAction>("normal");
+  // เริ่มต้นเป็นค่าว่าง (ยังไม่ได้เลือก) โดยตั้งใจ — บังคับให้ครูต้องเลือกสถานะเองก่อนเสมอ
+  // ไม่ให้มี action ที่ถูกเลือกไว้ล่วงหน้าแบบไม่ตั้งใจ (เช่นคลิกการ์ดนักเรียนโดยไม่ทันสังเกตว่า
+  // ดรอปดาวน์รวมยังเป็น "เข้าแถวปกติ" ค้างอยู่ ทำให้เผลอบันทึกสถานะผิดโดยไม่รู้ตัว)
+  const [selectedFlagAction, setSelectedFlagAction] = useState<FlagAction | "">("");
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [selectionSnapshots, setSelectionSnapshots] = useState<Map<string, SelectionSnapshot>>(new Map());
 
@@ -704,7 +711,11 @@ const FlagCeremonyPage: React.FC = () => {
           return {
             ...student,
             attendanceStatus: displayStatus,
-            flagAction: originalAction || getDefaultFlagAction(displayStatus),
+            // ไม่ auto-fill flagAction ให้เป็น "เข้าแถวปกติ"/"ลาป่วย" ล่วงหน้าอีกต่อไป (ปล่อยว่างไว้ถ้ายังไม่เคย
+            // บันทึกจริง) ให้ดรอปดาวน์รายบุคคลขึ้น "กรุณาเลือกสถานะ" สอดคล้องกับดรอปดาวน์รวมด้านบนเสมอ
+            // จนกว่าครูจะเลือกเอง — ตอนบันทึกจริง resolveFlagActionResult จะ fallback ไป
+            // getDefaultFlagAction(attendanceStatus) ให้เองถ้ายังไม่ได้เลือก จึงไม่กระทบผลการบันทึก
+            flagAction: originalAction,
             existingDailyStatus,
             existingBehaviorScoreStatus,
             existingFlagBehaviorScoreStatus,
@@ -948,6 +959,19 @@ const FlagCeremonyPage: React.FC = () => {
       return;
     }
 
+    // บังคับให้ต้องเลือกสถานะจากดรอปดาวน์รวมด้านบนก่อนเสมอ กันไม่ให้เผลอคลิกการ์ดนักเรียน
+    // แล้วโดนใช้ค่าที่ไม่ได้ตั้งใจเลือกไปบันทึกโดยไม่รู้ตัว
+    if (!selectedFlagAction) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'กรุณาเลือกสถานะก่อน',
+        text: 'เลือกคำสั่งจากดรอปดาวน์ "คำสั่งรวมสำหรับเช็คแถว" ด้านบนก่อน แล้วค่อยคลิกการ์ดนักเรียน',
+        background: '#2a2b2f',
+        color: '#ffffff',
+      });
+      return;
+    }
+
     setSelectionSnapshots((prev) => {
       const next = new Map(prev);
       next.set(studentId, {
@@ -964,7 +988,7 @@ const FlagCeremonyPage: React.FC = () => {
         const gateData = (student as any)._gateData;
         const hasGateScan = !!(gateData?.checkinTime);
         const isNoScanAction = selectedFlagAction === "noScanPresentNoDeduct" || selectedFlagAction === "noScanPresentDeduct";
-        
+
         // หากนักเรียนมีการสแกนบัตรที่ประตูแล้ว จะไม่สามารถใช้คำสั่งช่วยเหลือแบบไม่สแกนบัตรได้ ให้เป็น เข้าแถวปกติ แทน
         const targetAction = (hasGateScan && isNoScanAction) ? "normal" : selectedFlagAction;
 
@@ -977,7 +1001,7 @@ const FlagCeremonyPage: React.FC = () => {
     );
   };
 
-  const applyActionToAllStudents = (action: FlagAction = selectedFlagAction) => {
+  const applyActionToAllStudents = (action: FlagAction | "" = selectedFlagAction) => {
     if (students.length === 0 || !action) return;
 
     setSelectionSnapshots((prev) => {
@@ -1181,6 +1205,7 @@ const FlagCeremonyPage: React.FC = () => {
       shouldNotify: !gateData?.checkinTime,
       flagStatus: student.attendanceStatus || ATTENDANCE_STATUS.PRESENT,
       finalStatusKey,
+      dailyStatus,
       behaviorStatus,
       checkinTime: rawGateCheckinTime || (
         finalStatusKey === "present"
@@ -1921,15 +1946,16 @@ const FlagCeremonyPage: React.FC = () => {
                           <select
                             value={selectedFlagAction}
                             onChange={(e) => {
-                              const value = e.target.value as FlagAction;
+                              // แค่ตั้งค่า "แม่แบบ" ที่จะใช้ตอนคลิกการ์ดนักเรียนทีละคน — ไม่ใช้กับทุกคน
+                              // ทันทีที่เลือก ต้องกดปุ่ม "ใช้กับทุกคน" เองถึงจะใช้กับทุกคนจริงๆ
+                              const value = e.target.value as FlagAction | "";
                               setSelectedFlagAction(value);
-                              applyActionToAllStudents(value);
                             }}
                             className={`flex-1 min-w-0 bg-white dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-900 dark:text-white ${isPwaMode ? 'px-3 py-3 text-sm' : 'px-4 py-3 text-base'}`}
                           >
-                            <option value="" disabled>กรุณาเลือกสถานะ</option>
+                            <option value="" disabled className="text-gray-500 dark:text-gray-300">กรุณาเลือกสถานะ</option>
                             {FLAG_ACTION_OPTIONS.map(option => (
-                              <option key={option.value} value={option.value}>
+                              <option key={option.value} value={option.value} className="text-gray-900 dark:text-white">
                                 {getDynamicFlagActionLabel(option.value, behaviorScoreConfig)}
                               </option>
                             ))}
@@ -1959,7 +1985,9 @@ const FlagCeremonyPage: React.FC = () => {
                   </div>
 
                   {/* Student Grid */}
-                  <div className={isPwaMode ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6"}>
+                  {/* items-start กันไม่ให้การ์ดในแถวเดียวกันถูกยืด (stretch) สูงตามการ์ดที่สูงที่สุด
+                      เวลาการ์ดใดการ์ดหนึ่งเปลี่ยนเนื้อหาแล้วสูงขึ้นชั่วขณะ จะได้ไม่ลากการ์ดข้างๆ เด้งตามไปด้วย */}
+                  <div className={isPwaMode ? "grid grid-cols-1 gap-3 items-start" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 items-start"}>
                     {students.map((student) => {
                       const actionTone = getFlagActionTone(student.flagAction, student.attendanceStatus);
                       const actionLabel = getFlagDisplayLabel(student.flagAction, student.attendanceStatus);
@@ -2009,10 +2037,13 @@ const FlagCeremonyPage: React.FC = () => {
                                 src={student.profileImageThumbUrl || student.profileImageUrl || `https://ui-avatars.com/api/?name=${student.name}&background=random`}
                                 alt={student.name}
                                 loading="lazy"
-                                className={`relative rounded-full object-cover border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105 ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
+                                // object-top (0%) ครอปชิดขอบบนสุดของรูปต้นฉบับพอดี ทำให้เหลือพื้นที่ว่าง
+                                // เหนือศีรษะเยอะเกินไปเพราะรูปนักเรียนมักมีพื้นหลังเว้นด้านบนอยู่แล้ว จึงขยับ
+                                // เป็น 18% (ค่อนไปทางบนแต่ไม่ชิดขอบเป๊ะ) ให้ใบหน้าเต็มกรอบขึ้นแต่ยังเว้นพื้นที่นิดหน่อย
+                                className={`relative rounded-full object-cover object-[50%_18%] border-4 border-white dark:border-[#2a2b2f] shadow-sm transition-transform group-hover:scale-105 ${isPwaMode ? 'w-14 h-14' : 'w-16 h-16 sm:w-24 sm:h-24'}`}
                               />
                             </div>
-                            {hasGateScan || isLeaveStudent ? (
+                            {student.attendanceStatus !== ATTENDANCE_STATUS.ABSENT || hasGateScan || isLeaveStudent ? (
                               <div className={`absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm ${actionTone.dot}`}></div>
                             ) : (
                               <div className="absolute bottom-0 right-0 sm:bottom-1 sm:right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 sm:border-4 border-white dark:border-[#2a2b2f] shadow-sm bg-rose-500 flex items-center justify-center">
@@ -2026,7 +2057,9 @@ const FlagCeremonyPage: React.FC = () => {
                             <h3 className={`font-bold text-gray-900 dark:text-white truncate ${isPwaMode ? 'text-base' : 'text-lg sm:text-xl'}`} title={student.name}>
                               {student.name}
                             </h3>
-                            <p className={`${isPwaMode ? 'text-xs' : 'text-sm'} text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-2 flex flex-wrap gap-1 items-center justify-start sm:justify-center`}>
+                            {/* min-h กันไม่ให้การ์ดเปลี่ยนความสูงตอนสลับ badge (เช่น "เวลาสแกนเข้า: HH:MM น." ↔ "ไม่ลงเวลา")
+                                ซึ่งยาวไม่เท่ากันจนทำให้ขึ้น-ลง 1/2 บรรทัดต่างกัน แล้วไปดันทั้งแถวในกริดให้เด้ง/สะดุ้ง */}
+                            <p className={`${isPwaMode ? 'text-xs min-h-[34px]' : 'text-sm min-h-[42px]'} text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-2 flex flex-wrap gap-1 items-center content-start justify-start sm:justify-center`}>
                               <span className={`inline-block bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-md font-mono truncate ${isPwaMode ? 'text-[11px]' : 'text-xs sm:text-sm'}`}>
                                 {student.studentId}
                               </span>
@@ -2037,10 +2070,7 @@ const FlagCeremonyPage: React.FC = () => {
                                   เวลาสแกนเข้า: {gateData.checkinTime} น.
                                 </span>
                               ) : (
-                                !leaveData &&
-                                student.flagAction !== "sickLeave" &&
-                                student.flagAction !== "personalLeave" &&
-                                student.attendanceStatus !== ATTENDANCE_STATUS.LEAVE && (
+                                student.attendanceStatus === ATTENDANCE_STATUS.ABSENT && (
                                   <span className="inline-flex items-center gap-1 rounded bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 px-1.5 py-0.5 text-[10px] font-bold">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                                     ไม่ลงเวลา
@@ -2068,13 +2098,14 @@ const FlagCeremonyPage: React.FC = () => {
                                 <span className="truncate">{actionLabel}</span>
                               </span>
                               <select
-                                value={student.flagAction || "normal"}
+                                value={student.flagAction || ""}
                                 onChange={(e) => {
                                   e.stopPropagation();
                                   handleIndividualActionChange(student.id, e.target.value as FlagAction);
                                 }}
                                 className={`flex-1 min-w-0 bg-transparent border-0 font-bold p-0 text-gray-900 dark:text-white focus:ring-0 cursor-pointer outline-none focus:outline-none ${isPwaMode ? 'text-xs' : 'text-sm'}`}
                               >
+                                <option value="" disabled className="text-gray-500 dark:text-gray-300">กรุณาเลือกสถานะ</option>
                                 {FLAG_ACTION_OPTIONS.filter(option => {
                                   if (hasGateScan) {
                                     return option.value !== "noScanPresentNoDeduct" && option.value !== "noScanPresentDeduct";

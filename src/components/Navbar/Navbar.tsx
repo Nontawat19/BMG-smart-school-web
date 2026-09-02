@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/store";
 import { firestore } from "@/firebase";
+import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 
 import {
@@ -59,14 +60,36 @@ interface NavbarProps {
   schoolId?: string | null;
 }
 
+// ดึง schoolId สำหรับนักเรียน/ผู้ปกครองจาก local session (ไม่มีใน user.schoolId เพราะ login แบบ anonymous)
+const getSessionSchoolId = () => {
+  try {
+    const type = localStorage.getItem('currentUserType');
+    if (type === 'student') {
+      const studentSessionRaw = localStorage.getItem('studentSession');
+      if (studentSessionRaw) {
+        const session = JSON.parse(studentSessionRaw);
+        return session.schoolId || "";
+      }
+    } else if (type === 'parent') {
+      const parentSessionRaw = localStorage.getItem('parentSession');
+      if (parentSessionRaw) {
+        const session = JSON.parse(parentSessionRaw);
+        return session.children?.[0]?.schoolId || "";
+      }
+    }
+  } catch (_) {}
+  return "";
+};
+
 const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useDispatch();
   const notificationRef = useRef<HTMLDivElement>(null);
   const { isDarkMode, toggleTheme } = useTheme();
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
-  const { schoolId: settingsSchoolId, schoolName, logoUrl } = useSelector((state: RootState) => state.schoolSettings);
+  const { schoolId: settingsSchoolId, schoolName, logoUrl, status: schoolSettingsStatus } = useSelector((state: RootState) => state.schoolSettings);
   const { effectiveSchoolId, isImpersonatingSchool, activeSchoolName } = useSchoolScope();
   const profileUrl = currentUser?.profileUrl || defaultProfile;
   const isPwaMode = usePwaMode();
@@ -80,10 +103,19 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
   const [isLoadingNoti, setIsLoadingNoti] = useState(true);
   const [processingNotificationId, setProcessingNotificationId] = useState<string | null>(null);
 
-  const resolvedSchoolId = schoolId || effectiveSchoolId || null;
+  const resolvedSchoolId = schoolId || effectiveSchoolId || getSessionSchoolId() || null;
   const isOwnerRoute = location.pathname.startsWith("/owner/");
   const schoolDisplayName = settingsSchoolId === resolvedSchoolId ? schoolName : "";
   const schoolLogoUrl = settingsSchoolId === resolvedSchoolId ? logoUrl : "";
+
+  // นักเรียน/ผู้ปกครอง login แบบ anonymous จึงไม่มี user.schoolId ทำให้ useInitializeStore
+  // ไม่เคย dispatch fetchSchoolSettings ให้ — ดึงเองที่นี่เมื่อยังไม่มีข้อมูลของโรงเรียนนี้ใน store
+  useEffect(() => {
+    if (!resolvedSchoolId) return;
+    if (settingsSchoolId === resolvedSchoolId) return;
+    if (schoolSettingsStatus === "loading") return;
+    dispatch(fetchSchoolSettings(resolvedSchoolId) as any);
+  }, [resolvedSchoolId, settingsSchoolId, schoolSettingsStatus, dispatch]);
 
   /* -------------------- realtime notification ----โ---------------- */
   useEffect(() => {

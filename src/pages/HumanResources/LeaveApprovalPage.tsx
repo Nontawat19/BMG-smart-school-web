@@ -424,9 +424,13 @@ const LeaveApprovalPage: React.FC = () => {
           const attRef = doc(firestore, "school-settings", schoolId!, "teachers", r.requesterId, "attendance", dateStr);
           batch.set(attRef, {
             date: dateStr,
-            status: "official_travel",
-            checkInTime: "08:00",
-            checkOutTime: "16:30",
+            status: "ไปราชการ",
+            // Field names/casing and Thai status value must match what updateAttendance (the gate-scan
+            // writer) and the absence sweep (AttendanceConfigPage/CheckinOutPage) actually read —
+            // otherwise a teacher who scanned in before travel gets flagged "ไม่ลงเวลาออก" by the sweep,
+            // silently erasing this approved-travel record.
+            checkinTime: Timestamp.fromDate(new Date(`${dateStr}T08:00:00`)),
+            checkoutTime: Timestamp.fromDate(new Date(`${dateStr}T16:30:00`)),
             note: "ไปราชการ: " + r.reason,
             timestamp: Timestamp.now(),
           }, { merge: true });
@@ -460,9 +464,9 @@ const LeaveApprovalPage: React.FC = () => {
                 const advAttRef = doc(firestore, "school-settings", schoolId!, "teachers", adv.id, "attendance", dateStr);
                 batch.set(advAttRef, {
                   date: dateStr,
-                  status: "official_travel",
-                  checkInTime: "08:00",
-                  checkOutTime: "16:30",
+                  status: "ไปราชการ",
+                  checkinTime: Timestamp.fromDate(new Date(`${dateStr}T08:00:00`)),
+                  checkoutTime: Timestamp.fromDate(new Date(`${dateStr}T16:30:00`)),
                   note: `ไปราชการ (ผู้ร่วมเดินทาง): ${r.reason}`,
                   timestamp: Timestamp.now(),
                 }, { merge: true });
@@ -487,9 +491,9 @@ const LeaveApprovalPage: React.FC = () => {
                 const advAttRef = doc(firestore, "school-settings", schoolId!, "students", adv.id, "attendance", dateStr);
                 batch.set(advAttRef, {
                   date: dateStr,
-                  status: "official_travel",
-                  checkInTime: "08:00",
-                  checkOutTime: "16:30",
+                  status: "ไปราชการ",
+                  checkinTime: Timestamp.fromDate(new Date(`${dateStr}T08:00:00`)),
+                  checkoutTime: Timestamp.fromDate(new Date(`${dateStr}T16:30:00`)),
                   note: `ไปราชการ (ผู้ร่วมเดินทาง): ${r.reason}`,
                   timestamp: Timestamp.now(),
                 }, { merge: true });

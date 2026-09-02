@@ -6,7 +6,7 @@ import BackButton from '@/components/Shared/BackButton';
 import AcademicYearSemesterFilter from '@/components/Shared/AcademicYearSemesterFilter';
 import { firestore as db } from '@/firebase';
 import {
-    collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, serverTimestamp,
+    collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, serverTimestamp, deleteField,
 } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -14,7 +14,53 @@ import {
     RefreshCw, Search, CheckCircle2, Clock, ClipboardEdit, AlertCircle, Pencil, RotateCcw, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
-import { FlaggedCourse, fetchFlaggedStudents } from '@/utils/remediationUtils';
+import {
+    FlaggedCourse, fetchFlaggedStudents, calculateRemediationGrade, getMinistryRemediationGradeOptions,
+} from '@/utils/remediationUtils';
+
+// สูตรตัดเกรดจากคะแนนรวม — ใช้ตรงกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx/
+// ZeroRMsGradeReportPage.tsx (คัดลอกตามธรรมเนียมเดิมของโปรเจกต์ ไม่ได้รวมศูนย์เป็นจุดเดียว)
+const calculateGrade = (total: number): string => {
+    if (total >= 80) return '4';
+    if (total >= 75) return '3.5';
+    if (total >= 70) return '3';
+    if (total >= 65) return '2.5';
+    if (total >= 60) return '2';
+    if (total >= 55) return '1.5';
+    if (total >= 50) return '1';
+    return '0';
+};
+
+// รวมคะแนนดิบของนักเรียนคนหนึ่งในวิชาปกติ (คะแนนเก็บทุกรายการที่ตั้งค่าไว้จริงใน formativeAssessments +
+// กลางภาค + ปลายภาค) จากเอกสาร courses/{courseId} (การตั้งค่า) และ courses/{courseId}/grades/{studentId}
+// (คะแนนดิบ) สดตอนนั้นเลย — ต้อง key คะแนนเก็บด้วย assessment.id || assessment.name แบบเดียวกับ
+// getAssessmentKey ใน FormativeScoreEntryPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx
+// (getConfiguredFormativeTotal) ทุกตัวอักษร ห้ามกรองด้วย pattern "S{เลข}" เพราะรายการคะแนนเก็บจริงไม่ได้
+// บังคับตั้งชื่อ/id แบบนั้นเสมอไป (ใช้ assessment.term แยก pre/post-midterm แทน) ไม่งั้นจะได้ total
+// ต่ำกว่าที่ 3 หน้านั้นแสดงจริง ทำให้ตัดเกรดผิดจากคะแนนจริงที่ครูกรอกไว้
+const fetchLiveCourseTotal = async (schoolId: string, courseId: string, studentId: string): Promise<number> => {
+    const [courseSnap, gradeSnap] = await Promise.all([
+        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId)),
+        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', studentId)),
+    ]);
+    const courseData: any = courseSnap.exists() ? courseSnap.data() : {};
+    const record: any = gradeSnap.exists() ? gradeSnap.data() : {};
+
+    if (typeof record.total === 'number' && !isNaN(record.total) && record.total > 0) {
+        return record.total;
+    }
+
+    const details = record.formativeDetails || {};
+    const formativeTotal = (courseData.formativeAssessments || []).reduce((sum: number, a: any) => {
+        const key = a.id || a.name;
+        if (!key) return sum;
+        const raw = details[key];
+        return sum + (raw === undefined || raw === '' ? 0 : Number(raw) || 0);
+    }, 0);
+    const midterm = Number(record.midterm) || 0;
+    const final = Number(record.final) || 0;
+    return formativeTotal + midterm + final;
+};
 
 // หน้า "บันทึก 0 ร มส" (เมนูข้อ 4) — ให้เลือกได้ทั้ง "รายวิชา" (0/ร/มส) และ "กิจกรรม" (มผ ของกิจกรรม
 // พัฒนาผู้เรียน รหัสขึ้นต้นด้วย "ก": ชุมนุม, ลูกเสือ-เนตรนารี, รด., แนะแนว ฯลฯ) จาก dropdown เดียว แบ่งกลุ่ม
@@ -193,20 +239,46 @@ const RemediationRecordPage: React.FC = () => {
 
         if (isCourse) {
             if (mode === 'pass') {
-                const { value } = await Swal.fire({
-                    title: 'บันทึกผลแก้ตัว',
-                    html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.studentName} (${row.studentCode})<br/>วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b> — ผลเดิม: <b>${row.flag.grade}</b></div>`,
-                    input: 'select',
-                    inputOptions: GRADE_OPTIONS.reduce((acc: any, g) => { acc[g] = g; return acc; }, {}),
-                    inputPlaceholder: 'เลือกผลการเรียนใหม่',
-                    showCancelButton: true,
-                    confirmButtonText: 'บันทึก',
-                    cancelButtonText: 'ยกเลิก',
-                    confirmButtonColor: '#4f46e5',
-                });
-                if (!value) return;
-                newGradeValue = value;
-                displayValue = value;
+                if (row.flag.grade === 'ร') {
+                    const freshTotal = await fetchLiveCourseTotal(schoolId, row.flag.courseId, row.studentId);
+                    const resolvedGrade = calculateGrade(freshTotal);
+
+                    const confirm = await Swal.fire({
+                        icon: 'question',
+                        title: `แก้ไข ร ของ${row.studentName}`,
+                        html: `
+                            <div style="text-align:left;font-size:14px;line-height:1.6;margin-top:8px">
+                                นักเรียน: <b>${row.studentName}</b> (${row.studentCode})<br/>
+                                วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b><br/>
+                                คะแนนรวมในสมุดคะแนน (TOTAL): <b style="color:#4f46e5">${freshTotal} คะแนน</b><br/>
+                                เกรดสุทธิที่จะได้รับจาก GradeBook: <b style="color:#16a34a;font-size:17px">${resolvedGrade}</b>
+                            </div>
+                        `,
+                        showCancelButton: true,
+                        confirmButtonText: `บันทึกเกรด (${resolvedGrade})`,
+                        cancelButtonText: 'ยกเลิก',
+                        confirmButtonColor: '#4f46e5',
+                    });
+                    if (!confirm.isConfirmed) return;
+                    newGradeValue = resolvedGrade;
+                    displayValue = resolvedGrade;
+                } else {
+                    const gradeOptions = getMinistryRemediationGradeOptions(row.flag.grade);
+                    const { value } = await Swal.fire({
+                        title: 'บันทึกผลแก้ตัว (ตามระเบียบ ศธ.)',
+                        html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.studentName} (${row.studentCode})<br/>วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b> — ผลเดิม: <b>${row.flag.grade}</b></div>`,
+                        input: 'select',
+                        inputOptions: gradeOptions,
+                        inputPlaceholder: 'เลือกผลการเรียนใหม่',
+                        showCancelButton: true,
+                        confirmButtonText: 'บันทึก',
+                        cancelButtonText: 'ยกเลิก',
+                        confirmButtonColor: '#4f46e5',
+                    });
+                    if (!value) return;
+                    newGradeValue = value;
+                    displayValue = value;
+                }
             } else {
                 const confirm = await Swal.fire({
                     icon: 'warning',
@@ -248,7 +320,15 @@ const RemediationRecordPage: React.FC = () => {
         try {
             if (isCourse) {
                 if (mode === 'pass') {
-                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), { grade: newGradeValue }, { merge: true });
+                    const updateData: Record<string, any> = {
+                        grade: newGradeValue,
+                        status: deleteField(),
+                        originalGrade: row.flag.grade,
+                    };
+                    if (row.flag.grade === 'ร') {
+                        updateData.remark = `เกรด ${newGradeValue}`;
+                    }
+                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), updateData, { merge: true });
                 }
                 // mode === 'repeat' สำหรับวิชาปกติ: ไม่มีค่าเกรด "เรียนซ้ำ" ในระบบ จึงบันทึกเป็นหมายเหตุ
                 // ในคำร้องเท่านั้น ไม่แตะเกรดเดิมในฐานข้อมูล (เหมือนหน้าภาพรวม/zero-r-ms-report)
@@ -334,10 +414,25 @@ const RemediationRecordPage: React.FC = () => {
         const value = rawValue.trim();
         if (value === (row.flag.remark || '')) return;
 
+        // กรณีติด "ร" แล้วลบ Remark ออก (แปลว่างานที่ค้างส่งครบแล้ว) ให้คำนวณเกรดใหม่จากคะแนนรวมสดทันที
+        // แทนที่จะปล่อยให้ค้างเป็น "ร" ต่อไป — คะแนนถึง 50 ขึ้นไปให้ตัดเกรดตามปกติ ต่ำกว่า 50 ให้เป็น "0"
+        const shouldRecalculateGrade = !value && row.flag.flagKind === 'course' && row.flag.grade === 'ร';
+
         setRemarkSavingKey(row.key);
         try {
             if (row.flag.flagKind === 'course') {
-                await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), { remark: value }, { merge: true });
+                const updateData: Record<string, any> = { remark: value };
+                if (shouldRecalculateGrade) {
+                    // อ่านคะแนนสดจาก Firestore ตอนนี้เลย ไม่เดาจากค่าที่ค้างอยู่ในตาราง — กันกรณีครูเพิ่งไป
+                    // กรอกคะแนนที่ค้าง (สมุดคะแนน/คะแนนเก็บ/คะแนนปลายภาค) เสร็จในแท็บอื่นแล้วยังไม่ได้รีเฟรชหน้านี้
+                    const freshTotal = await fetchLiveCourseTotal(schoolId, row.flag.courseId, row.studentId);
+                    const recalculatedGrade = calculateRemediationGrade(row.flag.grade, freshTotal);
+                    updateData.grade = recalculatedGrade;
+                    updateData.status = deleteField();
+                    updateData.originalGrade = row.flag.grade;
+                    updateData.remark = `เกรด ${recalculatedGrade}`;
+                }
+                await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), updateData, { merge: true });
             } else {
                 const evalRef = row.flag.activityCollectionName === 'guidance-evaluations'
                     ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.flag.evalDocId!)
@@ -348,7 +443,13 @@ const RemediationRecordPage: React.FC = () => {
                 results[row.studentId] = { ...(results[row.studentId] || {}), remark: value };
                 await setDoc(evalRef, { results }, { merge: true });
             }
-            setRows(prev => prev.map(r => (r.key === row.key ? { ...r, flag: { ...r.flag, remark: value } } : r)));
+            if (shouldRecalculateGrade) {
+                // เกรดอาจเปลี่ยนจาก "ร" เป็นเกรดที่ผ่านแล้ว ต้องโหลดรายชื่อคนติดผลการเรียนใหม่ทั้งหมด
+                // เพื่อให้แถวนี้หลุดออกจากลิสต์ไปเองถ้าไม่ติดแล้ว (ไม่ใช่แค่แก้ค่าในแถวเดิมเฉยๆ)
+                await loadData();
+            } else {
+                setRows(prev => prev.map(r => (r.key === row.key ? { ...r, flag: { ...r.flag, remark: value } } : r)));
+            }
         } catch (err) {
             console.error('Error saving remark:', err);
             Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึก Remark ได้', 'error');
@@ -586,42 +687,61 @@ const RemediationRecordPage: React.FC = () => {
                                                 <td className="px-2 py-3 text-center font-bold">{row.studentCode}</td>
                                                 <td className="px-2 py-3"><p className="font-bold truncate">{row.studentName}</p></td>
                                                 <td className="px-2 py-3 text-center text-gray-400">-</td>
-                                                <td className="px-2 py-3 text-center text-gray-400">-</td>
-                                                <td className="px-2 py-3 text-center">
-                                                    <span
-                                                        className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md font-black border ${row.flag.remark ? 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700' : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20'}`}
-                                                        title={row.flag.remark ? `มี Remark กำกับอยู่ — ซ่อนเกรดจนกว่าจะลบ Remark ออก: ${row.flag.remark}` : undefined}
-                                                    >
-                                                        {row.flag.remark ? '-' : row.flag.grade}
+                                                <td className="px-2 py-3 text-center whitespace-nowrap">
+                                                    <span className="inline-flex items-center justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md text-rose-600 bg-rose-50 dark:bg-rose-500/10 whitespace-nowrap">
+                                                        ติด {row.flag.grade}
                                                     </span>
                                                 </td>
                                                 <td className="px-2 py-3 text-center">
-                                                    <button
-                                                        onClick={() => handleCorrect(row, 'pass')}
-                                                        disabled={correctingKey === row.key}
-                                                        title="แก้ตัว"
-                                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-all disabled:opacity-50"
-                                                    >
-                                                        {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <Pencil size={13} />}
-                                                    </button>
-                                                </td>
-                                                <td className="px-2 py-3 text-center">
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        {row.requestStatus === 'pending' && (
-                                                            <span title="มีคำร้องรอดำเนินการ" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                                                <Clock size={11} />
-                                                            </span>
-                                                        )}
-                                                        <button
-                                                            onClick={() => handleCorrect(row, 'repeat')}
-                                                            disabled={correctingKey === row.key}
-                                                            title="เรียนซ้ำ"
-                                                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all disabled:opacity-50"
-                                                        >
-                                                            {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-                                                        </button>
-                                                    </div>
-                                                </td>
+                                                     <span
+                                                         className="inline-flex items-center justify-center px-2 py-0.5 rounded-md font-black border bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20"
+                                                         title={row.flag.remark ? `Remark: ${row.flag.remark}` : undefined}
+                                                     >
+                                                         {row.flag.grade}
+                                                     </span>
+                                                 </td>
+                                                 <td className="px-2 py-3 text-center">
+                                                     {row.requestStatus === 'resolved' ? (
+                                                         <span className="inline-flex items-center justify-center font-black text-emerald-600 dark:text-emerald-400 text-sm" title="แก้ตัวเรียบร้อยแล้ว">
+                                                             ✓
+                                                         </span>
+                                                     ) : (
+                                                         <button
+                                                             onClick={() => handleCorrect(row, 'pass')}
+                                                             disabled={correctingKey === row.key}
+                                                             title="แก้ตัว"
+                                                             className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-all disabled:opacity-50"
+                                                         >
+                                                             {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <Pencil size={13} />}
+                                                         </button>
+                                                     )}
+                                                 </td>
+                                                 <td className="px-2 py-3 text-center">
+                                                     <div className="flex items-center justify-center gap-1.5">
+                                                         {row.requestStatus === 'pending' && (
+                                                             <span title="มีคำร้องรอดำเนินการ" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                                                 <Clock size={11} />
+                                                             </span>
+                                                         )}
+                                                         <button
+                                                             onClick={() => handleCorrect(row, 'repeat')}
+                                                             disabled={correctingKey === row.key}
+                                                             title="เรียนซ้ำ"
+                                                             className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all disabled:opacity-50"
+                                                         >
+                                                             {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                                                         </button>
+                                                     </div>
+                                                 </td>
+                                                 <td className="px-2 py-3 text-center">
+                                                     {row.flag.remark ? (
+                                                         <span className="inline-flex max-w-[140px] truncate rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title={row.flag.remark}>
+                                                             {row.flag.remark}
+                                                         </span>
+                                                     ) : (
+                                                         <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
+                                                     )}
+                                                 </td>
                                                 <td className="px-2 py-3 text-center">
                                                     <input
                                                         type="text"

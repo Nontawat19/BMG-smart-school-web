@@ -18,6 +18,7 @@ import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { isActiveTeacherSummaryStatus } from "@/utils/ownerStatsUtils";
+import SkeletonLoader from "@/components/SkeletonLoader";
 
 // Helper สำหรับแปลงสถานะเพื่ออัปเดตสถิติ
 // Helper สำหรับอัปเดต dyasummary (นักเรียน)
@@ -34,6 +35,72 @@ const getStatusKey = (status: string) => {
     default: return null;
   }
 };
+
+const TimeFieldSkeleton: React.FC = () => (
+  <div className="space-y-1.5">
+    <SkeletonLoader className="h-3.5 w-24 rounded" />
+    <SkeletonLoader className="h-12 w-full rounded-xl" />
+  </div>
+);
+
+const AttendanceConfigPageSkeleton: React.FC = () => (
+  <MainLayout>
+    <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl mx-auto bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm p-8 animate-pulse">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
+          <SkeletonLoader className="w-10 h-10 rounded-full shrink-0" />
+          <SkeletonLoader className="w-12 h-12 rounded-full shrink-0" />
+          <div className="flex-1 space-y-2">
+            <SkeletonLoader className="h-6 w-48 rounded" />
+            <SkeletonLoader className="h-4 w-72 rounded" />
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          {/* Student / Teacher time cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[...Array(2)].map((_, cardIdx) => (
+              <div key={cardIdx} className="bg-indigo-50/50 dark:bg-indigo-900/10 p-6 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 space-y-6">
+                <div className="flex items-center gap-3">
+                  <SkeletonLoader className="w-10 h-10 rounded-lg" />
+                  <SkeletonLoader className="h-5 w-28 rounded" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {[...Array(4)].map((_, fieldIdx) => (
+                    <TimeFieldSkeleton key={fieldIdx} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Toggle row (e.g. ระบบอ่านออกเสียง) */}
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/40 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-3">
+              <SkeletonLoader className="w-10 h-10 rounded-lg" />
+              <div className="space-y-2">
+                <SkeletonLoader className="h-4 w-40 rounded" />
+                <SkeletonLoader className="h-3 w-56 rounded" />
+              </div>
+            </div>
+            <SkeletonLoader className="w-11 h-6 rounded-full" />
+          </div>
+
+          {/* Sync button */}
+          <div className="flex justify-end">
+            <SkeletonLoader className="h-10 w-48 rounded-lg" />
+          </div>
+
+          {/* Action buttons */}
+          <div className="pt-4 flex justify-end gap-4">
+            <SkeletonLoader className="h-12 w-36 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </MainLayout>
+);
 
 const AttendanceConfigPage: React.FC = () => {
   const { user: currentUser } = useSelector((state: RootState) => state.auth);
@@ -268,7 +335,11 @@ const AttendanceConfigPage: React.FC = () => {
           const userRef = doc(firestore, "school-settings", schoolId, collectionName, docSnap.id);
 
           const didProcess = await runTransaction(firestore, async (transaction) => {
+            // สำคัญ: Firestore transaction ต้องอ่านให้ครบ (transaction.get) ก่อนเขียนทุกจุดเสมอ
+            // ห้ามสลับไปอ่าน userRef หลังจาก transaction.set/update ไปแล้ว ไม่งั้นจะโดน error
+            // "Firestore transactions require all reads to be executed before all writes."
             const attendanceSnap = await transaction.get(attendanceRef);
+            const studentSnap = collectionName === "students" ? await transaction.get(userRef) : null;
 
             if (!attendanceSnap.exists()) {
               // ถ้าไม่มีเอกสาร ให้สร้างสถานะ "ขาด"
@@ -288,8 +359,7 @@ const AttendanceConfigPage: React.FC = () => {
                   updatedAt: serverTimestamp()
                 }, { merge: true });
 
-                const studentSnap = await transaction.get(userRef);
-                const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
+                const freshScore = studentSnap?.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
                 const result = calculateAttendanceBehaviorScoreChange({
                   currentScore: freshScore,
                   oldStatus: null,
@@ -334,8 +404,7 @@ const AttendanceConfigPage: React.FC = () => {
               }
 
               if (collectionName === "students") {
-                const studentSnap = await transaction.get(userRef);
-                const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
+                const freshScore = studentSnap?.exists() ? Number(studentSnap.data().behaviorScore ?? data.behaviorScore ?? 100) : (data.behaviorScore ?? 100);
                 const behaviorScoreChange = calculateAttendanceBehaviorScoreChange({
                   currentScore: freshScore,
                   oldStatus,
@@ -395,7 +464,7 @@ const AttendanceConfigPage: React.FC = () => {
   };
 
   if (isLoading) {
-    return <div className="p-8 text-center text-gray-500">กำลังโหลดข้อมูล...</div>;
+    return <AttendanceConfigPageSkeleton />;
   }
 
   return (

@@ -28,14 +28,21 @@ Font.register({
   ]
 });
 
-interface AttendanceRecord {
-  id: string;
-  userId: string;
-  fullName: string;
-  checkInTime?: string;
-  status?: string; // 'OnTime', 'Late', 'Leave'
-  date: string;
-}
+// เหมือนกับ TeacherAttendanceDateSelectionPage — ต้องใช้ตัวเดียวกันในการอ่านช่วงวันที่ของคำขอลา/
+// ไปราชการ (leave_summary/travel_summary) ที่ startDate/endDate อาจเป็นได้ทั้ง Firestore Timestamp
+// หรือ string ก็ได้ ให้สองหน้านี้ตีความช่วงวันที่ตรงกันเป๊ะ ไม่งั้นตัวเลขจะไม่ตรงกันอีก
+const getDateValue = (value: any) => {
+  if (!value) return "";
+  if (value?.toDate) return value.toDate().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+  if (typeof value === "string") return value.slice(0, 10);
+  return "";
+};
+
+const isDateInRange = (dateStr: string, start: any, end: any) => {
+  const startStr = getDateValue(start);
+  const endStr = getDateValue(end);
+  return Boolean(startStr && endStr && startStr <= dateStr && endStr >= dateStr);
+};
 
 interface TeacherStats {
   id: string;
@@ -530,29 +537,34 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
       }
 
       if (filterType === 'daily' || filterType === 'custom') {
+        // เหมือนหน้า "ดูบันทึกการลงเวลาแบบเลือกวัน" (TeacherAttendanceDateSelectionPage) — ต้องอ่าน
+        // leave_summary/travel_summary (คำขอลา/ไปราชการ) เป็นแหล่งความจริงของหมวดวันนั้นด้วย ไม่ใช่พึ่ง
+        // attendance/{date}.status อย่างเดียว เพราะ status นี้จะถูกตั้งเป็น "ลา"/"ไปราชการ" ก็ต่อเมื่อ
+        // อนุมัติคำขอแล้วเท่านั้น (LeaveApprovalPage.handleApproveLeave/handleApproveTravel) — วันที่มีคำขอ
+        // ค้างอนุมัติจะไม่มี status ตรงนี้เลย เดิมจึงตกไปนับเป็น "ขาด" (ไม่มีเอกสาร) หรือค้างสถานะเช็คชื่อ
+        // ดิบ (มา/สาย) ทำให้ตัวเลขไม่ตรงกับหน้า date-selection ที่ถูกต้องอยู่แล้ว
         const promises = teachers.map(async (teacher) => {
-          const ref = collection(firestore, "school-settings", schoolId, "teachers", teacher.id, "attendance");
-          const q = query(ref, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
-          const snap = await getDocs(q);
-          return snap.docs.map(doc => {
-            const data = doc.data();
-            let timeStr = "";
-            if (data.checkinTime && data.checkinTime.toDate) {
-              timeStr = data.checkinTime.toDate().toLocaleTimeString("th-TH", { hour: '2-digit', minute: '2-digit' });
-            }
-            return {
-              id: doc.id,
-              userId: teacher.id,
-              fullName: teacher.fullName || `${teacher.firstName} ${teacher.lastName}`.trim(),
-              checkInTime: timeStr,
-              status: data.status,
-              date: doc.id
-            } as AttendanceRecord;
-          });
+          const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacher.id);
+          const attRef = collection(teacherRef, "attendance");
+          const q = query(attRef, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
+          const [attSnap, leaveSnap, travelSnap] = await Promise.all([
+            getDocs(q),
+            getDocs(collection(teacherRef, "leave_summary")),
+            getDocs(collection(teacherRef, "travel_summary")),
+          ]);
+
+          const attendanceByDate: Record<string, any> = {};
+          attSnap.docs.forEach(docSnap => { attendanceByDate[docSnap.id] = docSnap.data(); });
+
+          // กรอง rejected ทิ้ง เหมือน DateSelectionPage — คำขอที่ยัง pending ก็ยังนับเป็นหมวดนั้นได้
+          const leaveRanges = leaveSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
+          const travelRanges = travelSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
+
+          return { teacherId: teacher.id, attendanceByDate, leaveRanges, travelRanges };
         });
 
-        const results = await Promise.all(promises);
-        const records = results.flat();
+        const perTeacherData = await Promise.all(promises);
+        const dataByTeacher = new Map(perTeacherData.map(d => [d.teacherId, d]));
 
         // Calculate Working Dates
         const workingDates: string[] = [];
@@ -566,31 +578,31 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
           cur.setDate(cur.getDate() + 1);
         }
 
-        const baseList = teachers.length > 0 ? teachers :
-          Array.from(new Set(records.map(r => r.userId))).map(id => {
-            const r = records.find(rec => rec.userId === id);
-            return { id, fullName: r?.fullName || "Unknown" };
+        const stats: TeacherStats[] = teachers.map(teacher => {
+          const data = dataByTeacher.get(teacher.id);
+          let present = 0, late = 0, leave = 0, noCheckout = 0, officialTravel = 0, explicitAbsent = 0, missing = 0;
+
+          workingDates.forEach(dateStr => {
+            // ลำดับความสำคัญเดียวกับ DateSelectionPage: ไปราชการ > ลา > สถานะเช็คชื่อดิบ
+            const travelHit = data?.travelRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
+            if (travelHit) { officialTravel++; return; }
+
+            const leaveHit = data?.leaveRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
+            if (leaveHit) { leave++; return; }
+
+            const rec = data?.attendanceByDate[dateStr];
+            if (!rec) { missing++; return; }
+
+            if (rec.status === 'สาย' || rec.status === 'Late') late++;
+            else if (rec.status === 'ลา' || rec.status === 'ล' || rec.status === 'Leave') leave++;
+            else if (rec.status === 'มา' || rec.status === 'OnTime' || rec.status === 'Normal' || rec.status === 'กลับก่อน') present++;
+            else if (rec.status === 'ไม่ลงเวลาออก' || rec.status === 'NoCheckout') noCheckout++;
+            else if (rec.status === 'ไปราชการ' || rec.status === 'officialTravel' || rec.status === 'OfficialTravel') officialTravel++;
+            else if (rec.status === 'ขาด' || rec.status === 'Absent') explicitAbsent++;
+            else missing++;
           });
 
-        const stats: TeacherStats[] = baseList.map(teacher => {
-          const teacherRecords = records.filter(r => r.userId === teacher.id);
-          const uniqueDays = new Set(teacherRecords.map(r => r.date));
-          let present = 0, late = 0, leave = 0, noCheckout = 0, officialTravel = 0, explicitAbsent = 0;
-
-          uniqueDays.forEach(day => {
-            const rec = teacherRecords.find(r => r.date === day);
-            if (rec) {
-              if (rec.status === 'สาย' || rec.status === 'Late') late++;
-              else if (rec.status === 'ลา' || rec.status === 'ล' || rec.status === 'Leave') leave++;
-              else if (rec.status === 'มา' || rec.status === 'OnTime' || rec.status === 'Normal' || rec.status === 'กลับก่อน') present++;
-              else if (rec.status === 'ไม่ลงเวลาออก' || rec.status === 'NoCheckout') noCheckout++;
-              else if (rec.status === 'ไปราชการ' || rec.status === 'officialTravel' || rec.status === 'OfficialTravel') officialTravel++;
-              else if (rec.status === 'ขาด' || rec.status === 'Absent') explicitAbsent++;
-            }
-          });
-
-          const missingRecordDays = workingDates.filter(d => !teacherRecords.find(r => r.date === d)).length;
-          const absent = explicitAbsent + missingRecordDays;
+          const absent = explicitAbsent + missing;
           const attended = present + late + noCheckout + officialTravel;
           const percentage = workingDates.length > 0 ? ((attended / workingDates.length) * 100).toFixed(2) : "0.00";
 

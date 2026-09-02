@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
@@ -42,6 +43,8 @@ import {
     fetchFlaggedStudents,
     isActivityCourseCode,
     fetchAvailableAcademicYears,
+    calculateRemediationGrade,
+    getMinistryRemediationGradeOptions,
 } from '@/utils/remediationUtils';
 
 Font.register({
@@ -100,6 +103,29 @@ const calculateGrade = (total: number): string => {
     return '0';
 };
 
+// รวมคะแนนดิบของนักเรียนคนหนึ่งในวิชาปกติ (คะแนนเก็บทุกรายการที่ตั้งค่าไว้จริงใน formativeAssessments +
+// กลางภาค + ปลายภาค) ใช้ร่วมกันทั้งตอนโหลดตารางรายชื่อ (loadRoster) และตอนคำนวณเกรดใหม่หลังลบ Remark "ร"
+// (handleSetRemark) — ต้อง key คะแนนเก็บด้วย assessment.id || assessment.name แบบเดียวกับ getAssessmentKey
+// ใน FormativeScoreEntryPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx (getConfiguredFormativeTotal)
+// ทุกตัวอักษร ห้ามกรองด้วย pattern "S{เลข}" เหมือนเดิม เพราะรายการคะแนนเก็บจริงไม่ได้บังคับตั้งชื่อ/id
+// แบบนั้นเสมอไป (ใช้ assessment.term แยก pre/post-midterm แทน) — ถ้ากรองด้วย pattern จะได้ total ต่ำกว่าจริง
+// ต่ำกว่าที่ 3 หน้านั้นแสดง ทำให้ตัดเกรดผิดจากคะแนนจริงที่ครูกรอกไว้
+const computeCourseTotal = (course: CourseConfig, record: GradeRecord): number => {
+    if (typeof record.total === 'number' && !isNaN(record.total) && record.total > 0) {
+        return record.total;
+    }
+    const details = record.formativeDetails || {};
+    const formativeTotal = (course.formativeAssessments || []).reduce((sum, a) => {
+        const key = a.id || a.name;
+        if (!key) return sum;
+        const raw = details[key];
+        return sum + (raw === undefined || raw === '' ? 0 : Number(raw) || 0);
+    }, 0);
+    const midterm = Number(record.midterm) || 0;
+    const final = Number(record.final) || 0;
+    return formativeTotal + midterm + final;
+};
+
 interface RosterRow {
     key: string;
     studentId: string;
@@ -127,11 +153,16 @@ interface RosterRow {
     activityDocId?: string;
     evalDocId?: string;
     teacherScopeKey?: string;
+    // ประเภทกิจกรรมจริงตามที่ fetchFlaggedStudents (remediationUtils.ts) จำแนกไว้ — ต้องใช้ค่านี้ตรงๆ ตอนเขียน
+    // remediation_requests.flagType เสมอ ห้าม hardcode เป็น 'learner-activity' เฉยๆ ไม่งั้นชมรม/แนะแนวจะถูกบันทึก
+    // flagType ผิดประเภท ทำให้หน้าอื่น (RemediationRequestsPage ฯลฯ) resolve เอกสารกลับไปผิด collection
+    flagKind?: 'club' | 'learner-activity' | 'guidance';
     requestId?: string;
     requestStatus: 'no_request' | 'pending' | 'resolved';
     newResult?: string;
-    // หมายเหตุประกอบผล มส/ร (เฉพาะวิชาปกติ) — ถ้ามีค่า จะซ่อนการแสดงเกรดไว้จนกว่าจะลบหมายเหตุออก
+    // หมายเหตุประกอบผล มส/ร/มผ — ถ้ามีค่า จะซ่อนการแสดงเกรดไว้จนกว่าจะลบหมายเหตุออก
     remark?: string;
+    originalFlag?: string;
 }
 
 // แถวที่จะบันทึกจริงตอนนำเข้าไฟล์ School MIS — เก็บเฉพาะเซลล์ที่แมตช์เป็น 0/ร/มส เท่านั้น
@@ -364,6 +395,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
     const { user: currentUser } = usePermissions();
     const schoolId = (currentUser as any)?.schoolId;
     const dispatch = useDispatch<AppDispatch>();
+    const navigate = useNavigate();
     const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
     const teacherMap = useSelector((state: RootState) => (state as any).userMap?.teachers || {});
 
@@ -558,10 +590,15 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             return false;
         };
         if (!registeredCourseIds) return [];
-        // ไม่แสดงวิชากิจกรรมพัฒนาผู้เรียน (รหัสขึ้นต้นด้วย "ก") ในหน้านี้ — หน้านี้แสดงเฉพาะวิชาปกติที่มี
-        // Total/%/Grade เป็นตัวเลข ส่วนการแก้ มผ ของกิจกรรมมีหน้า "บันทึก 0 ร มส" (เมนูข้อ 4) แยกไว้แล้ว
+        // รวมวิชากิจกรรมพัฒนาผู้เรียนด้วย (รหัสขึ้นต้นด้วย "ก" — ชุมนุม, ลูกเสือ-เนตรนารี/รด., แนะแนว ฯลฯ)
+        // ให้เลือกดูได้จากดรอปดาวน์เดียวกัน — ตารางจะสลับไปแสดงเฉพาะคนที่ "มผ" เท่านั้นเมื่อเลือกวิชากิจกรรม
+        // (isActivityCourseCode เรียงไว้ก่อนวิชาอื่นตามลำดับตัวอักษรไทยอยู่แล้วเพราะ "ก" ขึ้นต้น)
+        // ⚠️ วิชากิจกรรมไม่ใช้เกณฑ์ "registeredCourseIds" (course_assignments/enrollments) แบบวิชาปกติ เพราะ
+        // การมอบหมายครู/ลงทะเบียนกิจกรรมจริงอยู่ใน collection แยก (clubs/learner-activities/guidance-evaluations)
+        // ตามที่ fetchFlaggedStudents ใน remediationUtils.ts ใช้ตรวจจับอยู่แล้ว — ถ้ากรองด้วย registeredCourseIds
+        // เหมือนวิชาปกติ วิชากิจกรรมแทบทั้งหมดจะถูกกรองออกไปหมดเพราะไม่เคยมี course_assignments/enrollments เอง
         return courses
-            .filter(c => matchesLevel(c.classId) && !isActivityCourseCode(c.code) && registeredCourseIds.has(c.id))
+            .filter(c => matchesLevel(c.classId) && (isActivityCourseCode(c.code) || registeredCourseIds.has(c.id)))
             .sort((a, b) => a.code.localeCompare(b.code, 'th', { numeric: true }))
             .map(c => ({ value: c.id, label: `${c.code} ${c.title}` }));
     }, [courses, selectedClassLevel, registeredCourseIds]);
@@ -577,8 +614,10 @@ const ZeroRMsGradeReportPage: React.FC = () => {
     const requestDedupKey = (studentId: string, idValue: string, academicYear: string, semester: string) =>
         `${studentId}|${idValue}|${academicYear}|${semester}`;
 
-    // รายชื่อนักเรียน "ทั้งหมด" ที่ลงทะเบียนวิชาที่เลือก พร้อมคำนวณ Total/%/Grade (วิชาปกติ)
-    // หรือสถานะผ่าน/มผ (วิชากิจกรรม) — ตามที่ตกลงกันว่าจะแสดงทุกคนในวิชา ไม่ใช่เฉพาะคนติดผลการเรียน
+    // วิชาปกติ: แสดงนักเรียน "ทั้งหมด" ที่ลงทะเบียนวิชาที่เลือก พร้อมคำนวณ Total/%/Grade — ตามที่ตกลงกันว่า
+    // จะแสดงทุกคนในวิชา ไม่ใช่เฉพาะคนติดผลการเรียน
+    // วิชากิจกรรม (รหัสขึ้นต้น "ก"): แสดงเฉพาะคนที่ "มผ" เท่านั้น (ดูฟังก์ชัน fetchFlaggedStudents ด้านล่าง)
+    // เพราะหน้านี้คือรายงานคนติดผลการเรียน การโชว์คนที่ผ่านกิจกรรมทุกคนไม่มีประโยชน์กับรายงานนี้
     const loadRoster = async () => {
         if (!schoolId || !selectedCourseId) { setRosterRows([]); return; }
         const course = courses.find(c => c.id === selectedCourseId);
@@ -677,13 +716,17 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     const postMidtermSubtotal = weeklyPost.reduce((sum: number, v) => sum + (v === '' ? 0 : v), 0);
                     const midterm = Number(record.midterm) || 0;
                     const final = Number(record.final) || 0;
-                    const total = preMidtermSubtotal + postMidtermSubtotal + midterm + final;
+                    const total = computeCourseTotal(course, record);
                     const percent = Math.round((total / maxTotal) * 10000) / 100;
                     // ทุกจุดที่บันทึกเกรดในระบบ (ปุ่มแก้ไขตรง/นำเข้าไฟล์/หน้าคำร้องขอแก้ตัว) เขียนลงฟิลด์ "grade"
                     // เสมอ ไม่เคยเขียน "status" — เช็ค record.grade ก่อน ไม่งั้นเกรดที่บันทึก/แก้ไขไว้แล้วจะถูกมองข้าม
                     // กลายเป็นคำนวณจากคะแนนดิบ (ซึ่งถ้ายังไม่กรอกคะแนนเลยจะได้ total=0 = "0" ทุกคนโดยไม่จำเป็น)
                     const grade = record.grade || record.status || calculateGrade(total);
                     const isFlagged = grade === '0' || grade === 'ร' || grade === 'มส';
+                    const rawStatus = (record as any).originalGrade || record.status || record.grade;
+                    const originalFlag = (rawStatus === '0' || rawStatus === 'ร' || rawStatus === 'มส')
+                        ? rawStatus
+                        : (isFlagged ? grade : undefined);
 
                     rows.push({
                         key: requestDedupKey(sid, selectedCourseId, term.academicYear, term.semester),
@@ -695,7 +738,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                         number: String(sData.studentNumber || sData.number || '').trim(),
                         isActivity: false,
                         weeklyPre, weeklyPost, preMidtermSubtotal, postMidtermSubtotal, midterm, final,
-                        total, percent, grade, isFlagged,
+                        total, percent, grade, isFlagged, originalFlag,
                         teacherName, responsibleTeacherIds: teacherIds,
                         requestStatus: 'no_request',
                         remark: record.remark || '',
@@ -717,9 +760,12 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     if (!sData) return;
                     const term = enrollByStudent.get(sid)!;
                     const failedFlag = failedByStudent.get(sid);
+                    // วิชากิจกรรมแสดงเฉพาะคนที่ "มผ" เท่านั้น (ไม่แสดงคนที่ "ผ่าน" เหมือนวิชาปกติที่โชว์ทุกคน)
+                    // เพราะหน้านี้คือรายงานคนติดผลการเรียน ไม่ใช่รายชื่อทั้งหมดของกิจกรรม
+                    if (!failedFlag) return;
 
                     rows.push({
-                        key: requestDedupKey(sid, failedFlag?.activityDocId || selectedCourseId, term.academicYear, term.semester),
+                        key: requestDedupKey(sid, failedFlag.activityDocId || selectedCourseId, term.academicYear, term.semester),
                         studentId: sid,
                         studentCode: String(sData.studentCode || sData.studentId || sid),
                         name: buildName(sData),
@@ -727,15 +773,18 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                         room: String(sData.room || ''),
                         number: String(sData.studentNumber || sData.number || '').trim(),
                         isActivity: true,
-                        grade: failedFlag ? 'มผ' : 'ผ',
-                        isFlagged: !!failedFlag,
-                        teacherName: failedFlag?.teacherName || teacherName,
-                        responsibleTeacherIds: failedFlag?.responsibleTeacherIds?.length ? failedFlag.responsibleTeacherIds : teacherIds,
-                        activityCollectionName: failedFlag?.activityCollectionName,
-                        activityDocId: failedFlag?.activityDocId,
-                        evalDocId: failedFlag?.evalDocId,
-                        teacherScopeKey: failedFlag?.teacherScopeKey,
+                        grade: 'มผ',
+                        isFlagged: true,
+                        originalFlag: 'มผ',
+                        teacherName: failedFlag.teacherName || teacherName,
+                        responsibleTeacherIds: failedFlag.responsibleTeacherIds?.length ? failedFlag.responsibleTeacherIds : teacherIds,
+                        activityCollectionName: failedFlag.activityCollectionName,
+                        activityDocId: failedFlag.activityDocId,
+                        evalDocId: failedFlag.evalDocId,
+                        teacherScopeKey: failedFlag.teacherScopeKey,
+                        flagKind: failedFlag.flagKind as 'club' | 'learner-activity' | 'guidance',
                         requestStatus: 'no_request',
+                        remark: failedFlag.remark || '',
                     });
                 });
             }
@@ -743,14 +792,14 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             // เช็คคำร้องขอแก้ตัวที่มีอยู่แล้ว (ทำครั้งเดียวทั้ง collection เหมือนหน้าภาพรวม/คำร้อง) เพื่อโชว์ badge
             // แทนปุ่มถ้ามีคำร้องค้างอยู่/เสร็จแล้ว
             const requestSnap = await getDocs(collection(db, 'school-settings', schoolId, 'remediation_requests'));
-            const requestMap: Record<string, { id: string; status: string; newResult?: string }> = {};
+            const requestMap: Record<string, { id: string; status: string; newResult?: string; originalGrade?: string }> = {};
             requestSnap.forEach(d => {
                 const data: any = d.data();
                 if (data.status === 'cancelled') return;
                 const idValue = data.flagType === 'course' ? data.courseId : data.activityId;
                 const key = requestDedupKey(data.studentId, idValue, data.academicYear, data.semester);
                 if (!requestMap[key] || data.status === 'resolved') {
-                    requestMap[key] = { id: d.id, status: data.status, newResult: data.newResult };
+                    requestMap[key] = { id: d.id, status: data.status, newResult: data.newResult, originalGrade: data.originalGrade };
                 }
             });
             rows.forEach(r => {
@@ -759,6 +808,9 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     r.requestId = req.id;
                     r.requestStatus = req.status as 'pending' | 'resolved';
                     r.newResult = req.newResult;
+                    if (req.originalGrade) {
+                        r.originalFlag = req.originalGrade;
+                    }
                 }
             });
 
@@ -906,6 +958,10 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             });
 
             // สร้างแผนที่ นักเรียน (รหัสนักเรียน/รหัสประจำตัว/docId -> ข้อมูลนักเรียน) ทั้งโรงเรียน
+            // ตัดเลข 0 นำหน้าออกด้วยเพื่อจับคู่ให้ตรงในกรณีที่ studentCode ในฐานข้อมูลเก็บเป็นชนิด "ตัวเลข"
+            // (Number) จริงๆ ทำให้ 0 นำหน้าหายไปตอนแปลงเป็น string (เช่น 3686 กลายเป็น "3686" แต่ไฟล์เก่า
+            // เก็บเป็น "03686") ถ้าไม่ตัดเทียบ จะจับคู่รหัสนักเรียนจากไฟล์เก่าไม่เจอทั้งที่มีอยู่จริงในระบบ
+            const stripLeadingZeros = (code: string) => code.replace(/^0+(?=\d)/, '');
             const studentsSnap = await getDocs(collection(db, 'school-settings', schoolId, 'students'));
             const studentByCode = new Map<string, { docId: string; studentCode: string; name: string; classLevel: string; room: string }>();
             studentsSnap.forEach((d) => {
@@ -913,9 +969,15 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                 const code = String(data.studentCode || data.studentId || d.id || '').trim();
                 const name = `${data.title || ''}${data.firstName || ''} ${data.lastName || ''}`.trim();
                 const rec = { docId: d.id, studentCode: code, name, classLevel: data.classLevel || '', room: String(data.room || '') };
-                if (code) studentByCode.set(code, rec);
+                if (code) {
+                    studentByCode.set(code, rec);
+                    const stripped = stripLeadingZeros(code);
+                    if (stripped !== code && !studentByCode.has(stripped)) studentByCode.set(stripped, rec);
+                }
                 studentByCode.set(d.id, rec);
             });
+            const lookupStudentByCode = (rawCode: string) =>
+                studentByCode.get(rawCode) || studentByCode.get(stripLeadingZeros(rawCode));
 
             const preview: ImportPreviewRow[] = [];
             const skippedCols: string[] = [];
@@ -952,7 +1014,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                         continue;
                     }
 
-                    const student = studentByCode.get(rawCode);
+                    const student = lookupStudentByCode(rawCode);
                     if (!student) {
                         skippedCodes.push(rawCode);
                         continue;
@@ -995,7 +1057,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     const rawCode = String(row[1] ?? '').trim();
                     if (!rawCode) continue;
 
-                    const student = studentByCode.get(rawCode);
+                    const student = lookupStudentByCode(rawCode);
                     if (!student) {
                         skippedCodes.push(rawCode);
                         continue;
@@ -1071,7 +1133,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
     // บันทึกจริง — ตรรกะเดียวกับ handleMisSave ในหน้า sgs-export: สร้าง enrollment ที่ยังไม่มี
     // แล้วเขียน courses/{courseId}/grades/{studentId}.grade แบบ batch (merge:true)
     const handleConfirmImport = async () => {
-        if (!schoolId || !importPreview || importPreview.length === 0 || !importAcademicYear) return;
+        if (!schoolId || !importPreview || importPreview.length === 0 || importAcademicYear.length !== 4) return;
         // ถ้าเลือก "ข้ามรายการที่ซ้ำ" ไว้ (ค่าเริ่มต้น) ตัดแถวที่ตรวจพบว่ามีเกรดบันทึกไว้แล้วออกก่อนบันทึกจริง
         const rowsToSave = skipDuplicateImports ? importPreview.filter((p) => !p.isDuplicate) : importPreview;
         if (rowsToSave.length === 0) {
@@ -1136,6 +1198,14 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             });
             setShowImportModal(false);
             resetImportState();
+            // สลับตัวกรองปี/เทอม/วิชาของหน้าหลักไปยังข้อมูลที่เพิ่งนำเข้าให้อัตโนมัติ — เดิมเรียก loadRoster()
+            // เฉยๆ ซึ่งยังใช้ค่าตัวกรองเดิมค้างอยู่ ถ้านำเข้าข้อมูลปีย้อนหลังที่ไม่ตรงกับปีที่กำลังดูอยู่
+            // (เช่น เปิดหน้าค้างที่ปีปัจจุบัน แต่เพิ่งนำเข้าข้อมูลปีเก่า) วิชาที่เพิ่งนำเข้าจะไม่โผล่ในดรอปดาวน์เลย
+            // เพราะ registeredCourseIds ยังผูกกับปีเดิมอยู่ — การเซ็ตค่าที่นี่จะไปกระตุ้น useEffect ที่ผูกกับ
+            // selectedTermYear ให้ดึง registeredCourseIds ของปีใหม่มาใหม่ ทำให้วิชาที่นำเข้าโผล่ขึ้นมาให้เลือกได้ทันที
+            setSelectedTermYear(importAcademicYear);
+            setSelectedTermSemester(importSemester);
+            if (courseIdsInvolved.length > 0) setSelectedCourseId(courseIdsInvolved[0]);
             loadRoster();
         } catch (err) {
             console.error('Error saving import:', err);
@@ -1232,19 +1302,46 @@ const ZeroRMsGradeReportPage: React.FC = () => {
 
         let newValue: string | undefined;
         if (!row.isActivity) {
-            const { value } = await Swal.fire({
-                title: 'แก้ไขผลการเรียนโดยตรง',
-                html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>${row.grade}</b></div>`,
-                input: 'select',
-                inputOptions: GRADE_OPTIONS.reduce((acc: any, g) => { acc[g] = g; return acc; }, {}),
-                inputPlaceholder: 'เลือกผลการเรียนใหม่',
-                showCancelButton: true,
-                confirmButtonText: 'บันทึก',
-                cancelButtonText: 'ยกเลิก',
-                confirmButtonColor: '#4f46e5',
-            });
-            if (!value) return;
-            newValue = value;
+            if (row.grade === 'ร') {
+                const course = courses.find(c => c.id === selectedCourseId);
+                const freshSnap = await getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId));
+                const freshRecord = (freshSnap.exists() ? freshSnap.data() : {}) as GradeRecord;
+                const freshTotal = course ? computeCourseTotal(course, freshRecord) : (row.total || 0);
+                const resolvedGrade = calculateGrade(freshTotal);
+
+                const confirm = await Swal.fire({
+                    icon: 'question',
+                    title: `แก้ไข ร ของ${row.name}`,
+                    html: `
+                        <div style="text-align:left;font-size:14px;line-height:1.6;margin-top:8px">
+                            นักเรียน: <b>${row.name}</b> (${row.studentCode})<br/>
+                            คะแนนรวมในสมุดคะแนน (TOTAL): <b style="color:#4f46e5">${freshTotal} คะแนน</b><br/>
+                            เกรดสุทธิที่จะได้รับจาก GradeBook: <b style="color:#16a34a;font-size:17px">${resolvedGrade}</b>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: `บันทึกเกรด (${resolvedGrade})`,
+                    cancelButtonText: 'ยกเลิก',
+                    confirmButtonColor: '#4f46e5',
+                });
+                if (!confirm.isConfirmed) return;
+                newValue = resolvedGrade;
+            } else {
+                const gradeOptions = getMinistryRemediationGradeOptions(row.grade);
+                const { value } = await Swal.fire({
+                    title: 'แก้ไขผลการเรียนโดยตรง (ตามระเบียบ ศธ.)',
+                    html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>${row.grade}</b></div>`,
+                    input: 'select',
+                    inputOptions: gradeOptions,
+                    inputPlaceholder: 'เลือกผลการเรียนใหม่',
+                    showCancelButton: true,
+                    confirmButtonText: 'บันทึก',
+                    cancelButtonText: 'ยกเลิก',
+                    confirmButtonColor: '#4f46e5',
+                });
+                if (!value) return;
+                newValue = value;
+            }
         } else {
             const { value } = await Swal.fire({
                 title: 'แก้ไขผลการประเมินโดยตรง',
@@ -1266,8 +1363,15 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             const term = row.key.split('|');
             const academicYear = term[2], semester = term[3];
 
+            const autoRemark = row.grade === 'ร' ? `เกรด ${newValue}` : undefined;
             if (!row.isActivity) {
-                await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), { grade: newValue }, { merge: true });
+                const updatePayload: Record<string, any> = {
+                    grade: newValue,
+                    status: deleteField(),
+                    originalGrade: row.originalFlag || row.grade,
+                };
+                if (autoRemark) updatePayload.remark = autoRemark;
+                await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), updatePayload, { merge: true });
             } else {
                 // guidance-evaluations เป็น collection ระดับบนสุด (ไม่ใช่ subcollection ของ activityDocId เหมือน clubs/learner-activities)
                 const evalRef = row.activityCollectionName === 'guidance-evaluations'
@@ -1303,7 +1407,10 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     studentName: row.name,
                     classLevel: row.classLevel,
                     room: row.room,
-                    flagType: row.isActivity ? 'learner-activity' : 'course',
+                    // ต้องใช้ row.flagKind ตรงๆ ห้าม hardcode 'learner-activity' — ชมรม/แนะแนวต้องได้ flagType
+                    // เป็น 'club'/'guidance' ตามจริง ไม่งั้นหน้า RemediationRequestsPage ฯลฯ จะ resolve
+                    // เอกสารกลับไปผิด collection (ดู evalRef ด้านบนที่แยกตาม activityCollectionName)
+                    flagType: row.isActivity ? row.flagKind : 'course',
                     originalGrade: row.grade,
                     academicYear, semester,
                     responsibleTeacherIds: row.responsibleTeacherIds || [],
@@ -1359,10 +1466,34 @@ const ZeroRMsGradeReportPage: React.FC = () => {
         if (!isConfirmed) return;
 
         const newRemark = String(value || '').trim();
+        // กรณีติด "ร" แล้วลบ Remark ออก (แปลว่างานที่ค้างส่งครบแล้ว) ให้คำนวณเกรดใหม่จากคะแนนรวมทันที
+        // แทนที่จะปล่อยให้ค้างเป็น "ร" ต่อไป — คะแนนถึง 50 ขึ้นไปให้ตัดเกรดตามปกติ ต่ำกว่า 50 ให้เป็น "0"
+        const shouldRecalculateGrade = !newRemark && row.grade === 'ร';
+
         setRemarkSavingKey(row.key);
         try {
-            await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), { remark: newRemark }, { merge: true });
-            setRosterRows(prev => prev.map(r => (r.key === row.key ? { ...r, remark: newRemark } : r)));
+            let recalculatedGrade: string | null = null;
+            if (shouldRecalculateGrade) {
+                // อ่านเอกสารคะแนนสดจาก Firestore ตอนนี้เลย ไม่ใช้ row.total ที่มาจากตอนโหลดหน้าครั้งก่อน —
+                // กันกรณีครูเพิ่งไปกรอกคะแนนที่ค้าง (สมุดคะแนน/คะแนนเก็บ/คะแนนปลายภาค) เสร็จในแท็บอื่นแล้ว
+                // ยังไม่ได้กลับมารีเฟรชหน้านี้ ถ้าใช้ค่าเก่าจะคำนวณเกรดผิดจากคะแนนที่ล้าสมัยไปแล้ว
+                const course = courses.find(c => c.id === selectedCourseId);
+                const freshSnap = await getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId));
+                const freshRecord = (freshSnap.exists() ? freshSnap.data() : {}) as GradeRecord;
+                const freshTotal = course ? computeCourseTotal(course, freshRecord) : (row.total || 0);
+                recalculatedGrade = calculateRemediationGrade(row.grade, freshTotal);
+            }
+
+            const updateData: Record<string, any> = { remark: newRemark };
+            if (recalculatedGrade) {
+                updateData.grade = recalculatedGrade;
+                updateData.status = deleteField();
+                updateData.originalGrade = row.originalFlag || row.grade;
+            }
+            await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), updateData, { merge: true });
+            setRosterRows(prev => prev.map(r => (r.key === row.key
+                ? { ...r, remark: newRemark, ...(recalculatedGrade ? { grade: recalculatedGrade, isFlagged: recalculatedGrade === '0' } : {}) }
+                : r)));
         } catch (err) {
             console.error('Error saving remark:', err);
             Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึก Remark ได้', 'error');
@@ -1579,24 +1710,34 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                                 <td className="px-1 py-3 text-center">
                                                     <span className="text-xs font-black tabular-nums text-gray-700 dark:text-gray-300">{r.isActivity ? '-' : r.percent}</span>
                                                 </td>
-                                                <td className="px-1 py-3 text-center">
-                                                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{!r.isFlagged ? 'ปกติ' : '-'}</span>
+                                                <td className="px-1 py-3 text-center whitespace-nowrap">
+                                                    {r.originalFlag ? (
+                                                        <span className={`inline-flex items-center justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md whitespace-nowrap ${r.originalFlag === '0' ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/10' : r.originalFlag === 'ร' ? 'text-amber-600 bg-amber-50 dark:bg-amber-500/10' : r.originalFlag === 'มส' ? 'text-slate-700 bg-slate-100 dark:bg-slate-700 dark:text-slate-300' : 'text-purple-600 bg-purple-50 dark:bg-purple-500/10'}`}>
+                                                            ติด {r.originalFlag}
+                                                        </span>
+                                                    ) : r.isFlagged ? (
+                                                        <span className="inline-flex items-center justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md text-rose-600 bg-rose-50 dark:bg-rose-500/10 whitespace-nowrap">
+                                                            ติด {r.grade}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">ปกติ</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-1 py-3 text-center">
                                                     <span
-                                                        className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-black border ${r.remark ? 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700' : r.isFlagged ? (flagColor[r.grade as FlagType] || flagColor['0']) : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/20'}`}
-                                                        title={r.remark ? `มี Remark กำกับอยู่ — ซ่อนเกรดจนกว่าจะลบ Remark ออก: ${r.remark}` : undefined}
+                                                        className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-black border ${r.isFlagged ? (flagColor[r.grade as FlagType] || flagColor['0']) : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/20'}`}
+                                                        title={r.remark ? `Remark: ${r.remark}` : undefined}
                                                     >
-                                                        {r.remark ? '-' : r.grade}
+                                                        {r.grade}
                                                     </span>
                                                 </td>
                                                 <td className="px-1 py-3 text-center">
-                                                    {!r.isFlagged ? (
-                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
-                                                    ) : r.requestStatus === 'resolved' ? (
-                                                        <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                                                            <CheckCircle2 size={11} /> แก้แล้ว{r.newResult ? ` (${r.newResult})` : ''}
+                                                    {r.requestStatus === 'resolved' ? (
+                                                        <span className="inline-flex items-center justify-center font-black text-emerald-600 dark:text-emerald-400 text-sm" title="แก้ตัวเรียบร้อยแล้ว">
+                                                            ✓
                                                         </span>
+                                                    ) : !r.isFlagged ? (
+                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
                                                     ) : r.requestStatus === 'pending' ? (
                                                         <button
                                                             onClick={() => handleCorrect(r)}
@@ -1618,27 +1759,22 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-1 py-3 text-center">
-                                                    {r.isActivity || (r.grade !== 'มส' && r.grade !== 'ร') ? (
-                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
-                                                    ) : r.remark ? (
+                                                    {r.remark ? (
                                                         <button
                                                             onClick={() => handleSetRemark(r)}
                                                             disabled={remarkSavingKey === r.key}
                                                             title={r.remark}
-                                                            className="inline-flex max-w-[130px] items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 transition-all hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                                                            className="inline-flex w-full max-w-[150px] justify-center items-center gap-1 rounded-lg bg-amber-100 px-1.5 py-1 text-[10px] font-bold text-amber-700 transition-all hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
                                                         >
                                                             {remarkSavingKey === r.key ? <RefreshCw size={11} className="animate-spin shrink-0" /> : <MessageSquare size={11} className="shrink-0" />}
                                                             <span className="truncate">{r.remark}</span>
                                                         </button>
+                                                    ) : !r.isActivity && r.total !== undefined ? (
+                                                        <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+                                                            เกรด {calculateGrade(r.total)}
+                                                        </span>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => handleSetRemark(r)}
-                                                            disabled={remarkSavingKey === r.key}
-                                                            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2 py-1 text-[10px] font-bold text-gray-400 transition-all hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50 dark:border-gray-600 dark:text-gray-500 dark:hover:border-indigo-400 dark:hover:text-indigo-400"
-                                                        >
-                                                            {remarkSavingKey === r.key ? <RefreshCw size={11} className="animate-spin" /> : <Plus size={11} />}
-                                                            Remark
-                                                        </button>
+                                                        <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
                                                     )}
                                                 </td>
                                             </tr>
@@ -1738,7 +1874,14 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                         ))}
                                     </select>
                                     <p className="text-[11px] text-gray-400">
-                                        ดึงรายชื่อปีการศึกษาจากหน้า <span className="font-bold">school-calendar</span> — ถ้าไม่พบปีที่ต้องการ ให้ไปเพิ่มปีการศึกษาที่นั่นก่อน
+                                        ไม่เจอปีที่ต้องการ?{' '}
+                                        <button
+                                            type="button"
+                                            onClick={() => navigate('/academic/school-calendar')}
+                                            className="font-bold text-indigo-500 hover:underline"
+                                        >
+                                            ไปเพิ่มปีการศึกษาที่หน้าปฏิทิน
+                                        </button>
                                     </p>
                                 </div>
                                 <div className="space-y-1.5">
@@ -1898,7 +2041,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={handleConfirmImport}
-                                disabled={!importPreview || importPreview.length === 0 || !importAcademicYear || isSavingImport}
+                                disabled={!importPreview || importPreview.length === 0 || importAcademicYear.length !== 4 || isSavingImport}
                                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {isSavingImport ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}

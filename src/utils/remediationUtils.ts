@@ -25,7 +25,70 @@ export const FLAG_TYPES: FlagType[] = ['0', 'ร', 'มส', 'มผ'];
 // ซึ่งประเมินผ่าน/ไม่ผ่าน (มผ) ผ่านระบบ "ประเมินกิจกรรมพัฒนาผู้เรียน" ไม่ใช่เกรด 0/ร/มส เหมือนรายวิชาปกติ
 export const isActivityCourseCode = (code?: string) => String(code || '').trim().charAt(0) === 'ก';
 
-const JUNIOR_HIGH_IDS = ['m1', 'm2', 'm3', 'junior_high', 'ม.ต้น', 'ม.1', 'ม.2', 'ม.3'];
+// สูตรตัดเกรดจากคะแนนรวม — ใช้ตรงกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx/
+// ZeroRMsGradeReportPage.tsx (คัดลอกตามธรรมเนียมเดิมของโปรเจกต์ ไม่ได้รวมศูนย์เป็นจุดเดียว)
+export const calculateGradeFromTotal = (total: number): string => {
+    if (total >= 80) return '4';
+    if (total >= 75) return '3.5';
+    if (total >= 70) return '3';
+    if (total >= 65) return '2.5';
+    if (total >= 60) return '2';
+    if (total >= 55) return '1.5';
+    if (total >= 50) return '1';
+    return '0';
+};
+
+/**
+ * คำนวณเกรดใหม่จากการแก้ตัวตามระเบียบกระทรวงศึกษาธิการ (ศธ./สพฐ.):
+ * - แก้ตัว "0": ได้ผลการเรียนสูงสุดไม่เกิน "1" (หากคะแนนรวม >= 50 ได้ "1", < 50 ได้ "0")
+ * - แก้ตัว "มส": ได้ผลการเรียนสูงสุดไม่เกิน "1" (หากแก้ผ่านได้ "1", ไม่ผ่านได้ "0")
+ * - แก้ตัว "ร": คำนวณเกรดตามคะแนนรวมสะสมจริง (>= 50 ได้ 1-4 ตามคะแนน, < 50 ได้ "0")
+ */
+export const calculateRemediationGrade = (originalGrade: string, freshTotal: number, selectedValue?: string): string => {
+    const orig = String(originalGrade || '').trim();
+    if (selectedValue) return selectedValue;
+
+    const baseGrade = calculateGradeFromTotal(freshTotal);
+    if (orig === '0' || orig === 'มส') {
+        // ตามระเบียบ ศธ. แก้ตัว 0/มส เมื่อคะแนนผ่านเกณฑ์ (>= 50) ได้เกรดสูงสุด 1
+        return freshTotal >= 50 || baseGrade !== '0' ? '1' : '0';
+    }
+    // กรณีติด 'ร' ได้เกรดจริงตามคะแนนสะสมรวม
+    return baseGrade;
+};
+
+/**
+ * ตัวเลือกเกรดใหม่สำหรับ Swal Select ตามระเบียบกระทรวงศึกษาธิการ:
+ * - ติด 0 / มส: ตัวเลือกเกรดผ่านคือ "1" (สูงสุดไม่เกิน 1) หรือ "0" (ไม่ผ่าน)
+ * - ติด ร: ตัวเลือกเกรด 1 - 4 หรือ 0
+ */
+export const getMinistryRemediationGradeOptions = (originalGrade: string): Record<string, string> => {
+    const orig = String(originalGrade || '').trim();
+    if (orig === '0') {
+        return {
+            '1': '1 (ผ่านการแก้ตัว 0 — ตามระเบียบ ศธ. ได้ไม่เกินเกรด 1)',
+            '0': '0 (ไม่ผ่านการแก้ตัว)',
+        };
+    }
+    if (orig === 'มส') {
+        return {
+            '1': '1 (ผ่านการแก้ตัว มส — ตามระเบียบ ศธ. ได้ไม่เกินเกรด 1)',
+            '0': '0 (ไม่ผ่านการแก้ตัว)',
+        };
+    }
+    return {
+        '4': '4 (80 - 100 คะแนน)',
+        '3.5': '3.5 (75 - 79 คะแนน)',
+        '3': '3 (70 - 74 คะแนน)',
+        '2.5': '2.5 (65 - 69 คะแนน)',
+        '2': '2 (60 - 64 คะแนน)',
+        '1.5': '1.5 (55 - 59 คะแนน)',
+        '1': '1 (50 - 54 คะแนน)',
+        '0': '0 (ต่ำกว่า 50 คะแนน)',
+    };
+};
+
+const JUNIOR_HIGH_IDS =['m1', 'm2', 'm3', 'junior_high', 'ม.ต้น', 'ม.1', 'ม.2', 'ม.3'];
 const SENIOR_HIGH_IDS = ['m4', 'm5', 'm6', 'senior_high', 'ม.ปลาย', 'ม.4', 'ม.5', 'ม.6'];
 const THAI_LEVEL_MAPPING: Record<string, string[]> = {
     m1: ['ม.1'], m2: ['ม.2'], m3: ['ม.3'], m4: ['ม.4'], m5: ['ม.5'], m6: ['ม.6'],
@@ -60,6 +123,7 @@ interface Course {
     isActive?: boolean;
     classId?: string | string[];
     credits?: number;
+    formativeAssessments?: { id?: string; name?: string; maxScore?: number }[];
 }
 
 interface EnrollmentRecord {
@@ -210,7 +274,7 @@ export const fetchFlaggedStudents = async (
     const courseCodeToId: Record<string, string> = {};
     courseSnap.docs.forEach(d => {
         const data: any = d.data();
-        courseMap[d.id] = { id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits, isActive: data.isActive ?? true };
+        courseMap[d.id] = { id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits, isActive: data.isActive ?? true, formativeAssessments: data.formativeAssessments };
         if (data.code) courseCodeToId[data.code] = d.id;
     });
 
@@ -578,19 +642,6 @@ export const matchesAcademicTerm = (
     if (filterYear && recordYear !== filterYear) return false;
     if (filterYear && filterSemester && recordSemester !== filterSemester) return false;
     return true;
-};
-
-// สูตรตัดเกรดจากคะแนนรวม — ใช้ตรงกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx/
-// ZeroRMsGradeReportPage.tsx (คัดลอกตามธรรมเนียมเดิมของโปรเจกต์ ไม่ได้รวมศูนย์เป็นจุดเดียว)
-export const calculateGradeFromTotal = (total: number): string => {
-    if (total >= 80) return '4';
-    if (total >= 75) return '3.5';
-    if (total >= 70) return '3';
-    if (total >= 65) return '2.5';
-    if (total >= 60) return '2';
-    if (total >= 55) return '1.5';
-    if (total >= 50) return '1';
-    return '0';
 };
 
 export interface AssessmentItemLite {

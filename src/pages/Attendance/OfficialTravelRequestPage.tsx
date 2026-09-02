@@ -133,6 +133,8 @@ const OfficialTravelRequestPage: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const requesterType = (searchParams.get("type") as 'teacher' | 'student') || 'teacher';
+    // นักเรียนไม่ใช่ข้าราชการ จึงใช้คำว่า "ไปร่วมกิจกรรม" แทน "ไปราชการ" ที่ใช้กับครู/บุคลากร
+    const activityLabel = requesterType === 'student' ? 'ไปร่วมกิจกรรม' : 'ไปราชการ';
     const editPath = searchParams.get("editPath");
     const isEditMode = !!editPath;
     const { user } = useSelector((state: RootState) => state.auth);
@@ -143,7 +145,7 @@ const OfficialTravelRequestPage: React.FC = () => {
 
     useEffect(() => { if (schoolId) dispatch(fetchCalendar(schoolId) as any); }, [schoolId, dispatch]);
 
-    const [subject, setSubject] = useState("ขออนุญาตไปราชการ");
+    const [subject, setSubject] = useState(`ขออนุญาต${activityLabel}`);
     const [to, setTo] = useState("");
     const [requesterName, setRequesterName] = useState("");
     const [position, setPosition] = useState("");
@@ -431,7 +433,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                     <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center shrink-0">
                         <Plane size={11} className="text-white" />
                     </div>
-                    <h1 className="text-sm font-bold text-gray-900 dark:text-white flex-1">{isEditMode ? "แก้ไขคำขอไปราชการ" : "ขออนุญาตไปราชการ"}</h1>
+                    <h1 className="text-sm font-bold text-gray-900 dark:text-white flex-1">{isEditMode ? `แก้ไขคำขอ${activityLabel}` : `ขออนุญาต${activityLabel}`}</h1>
                     {docNo && (
                         <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded-full">
                             <Hash size={9} className="text-gray-400" />
@@ -545,7 +547,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                             <label className={fl}><MapPin size={9} className="inline mr-1 text-amber-400" />รายละเอียด / เหตุผล *</label>
                             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2}
                                 className={`${fi} resize-none`}
-                                placeholder="ระบุรายละเอียดการไปราชการ เช่น เข้าร่วมประชุม อบรม สัมมนา..." />
+                                placeholder={requesterType === 'student' ? "ระบุรายละเอียดการไปร่วมกิจกรรม เช่น แข่งขันกีฬา ทัศนศึกษา อบรม..." : "ระบุรายละเอียดการไปราชการ เช่น เข้าร่วมประชุม อบรม สัมมนา..."} />
                         </div>
 
                         <div className={div} />

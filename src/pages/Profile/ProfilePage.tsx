@@ -1357,7 +1357,7 @@ const ProfilePage: React.FC = () => {
     { id: "health_welfare", label: "สุขภาพ/สวัสดิการ", icon: <FaHeartbeat /> },
     ...(remediationEnabled ? [{ id: "grade_flags", label: "ผลการเรียน (0/ร/มส/มผ)", icon: <FaExclamationTriangle /> }] : []),
     { id: "attendance", label: "สถิติการมาเรียน", icon: <FaClock /> },
-    { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
+    { id: "official_travel", label: "ไปร่วมกิจกรรม", icon: <FaPlane /> },
   ] : userRole === 'user' ? [
     { id: "general", label: "ข้อมูลส่วนตัว", icon: <FaIdCard /> },
     { id: "work", label: "ข้อมูลการทำงาน", icon: <FaBriefcase /> },
@@ -1372,6 +1372,9 @@ const ProfilePage: React.FC = () => {
     { id: "substitution", label: "สถิติการสอนแทน", icon: <FaExchangeAlt /> },
     { id: "official_travel", label: "ไปราชการ", icon: <FaPlane /> },
   ];
+
+  // นักเรียนไม่ใช่ข้าราชการ จึงใช้คำว่า "ไปร่วมกิจกรรม" แทน "ไปราชการ" ที่ใช้กับครู/บุคลากร
+  const officialTravelLabel = userRole === 'student' ? 'ไปร่วมกิจกรรม' : 'ไปราชการ';
 
   // Prepare Chart Data
   // ใช้ตัวเลขจากเอกสารสรุปยอด Yearsummary (yearSummaryStats) — เอกสารเดียวกับระบบที่ใช้คำนวณตัวเลขส่งแจ้งเตือน
@@ -1406,7 +1409,7 @@ const ProfilePage: React.FC = () => {
     { name: 'ลา', value: stats.leave || 0, color: '#3b82f6' },
     { name: 'ขาด', value: stats.absent || 0, color: '#ef4444' },
     { name: 'ไม่ลงเวลาออก', value: stats.noCheckout || 0, color: '#a855f7' },
-    { name: 'ไปราชการ', value: stats.official_travel_days || 0, color: '#6366f1' },
+    { name: officialTravelLabel, value: stats.official_travel_days || 0, color: '#6366f1' },
   ];
 
   const googleAttendanceData = [
@@ -2894,7 +2897,7 @@ const ProfilePage: React.FC = () => {
               {activeTab === "official_travel" && (
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">ประวัติการขอไปราชการ</h2>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">ประวัติการขอ{officialTravelLabel}</h2>
                     <button
                       onClick={() => navigate(`/school/${profile.schoolId}/official-travel-request?type=${userRole === 'student' ? 'student' : 'teacher'}`)}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
@@ -2999,7 +3002,7 @@ const ProfilePage: React.FC = () => {
                   ) : (
                     <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <FaPlane className="mx-auto text-4xl mb-3 opacity-20" />
-                      <p>ยังไม่มีประวัติการขอไปราชการ</p>
+                      <p>ยังไม่มีประวัติการขอ{officialTravelLabel}</p>
                     </div>
                   )}
                 </div>
@@ -3063,7 +3066,7 @@ const ProfilePage: React.FC = () => {
                         className={`flex-shrink-0 lg:w-full w-24 sm:w-28 min-h-[70px] sm:min-h-[85px] flex flex-col items-center justify-center p-2 rounded-xl border cursor-pointer transition-all ${selectedStatus === 'officialTravel' ? 'ring-2 ring-indigo-500 bg-indigo-100 dark:bg-indigo-900/40 border-indigo-500' : 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30'}`}
                       >
                         <div className="text-lg sm:text-xl font-bold text-indigo-600 dark:text-indigo-400">{stats.official_travel_days || 0}</div>
-                        <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">ไปราชการ</div>
+                        <div className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">{officialTravelLabel}</div>
                       </div>
                     </div>
                     )}
@@ -3235,7 +3238,7 @@ const ProfilePage: React.FC = () => {
                                 selectedStatus === 'absent' ? 'ขาด' :
                                   selectedStatus === 'early' ? 'กลับก่อน' :
                                     selectedStatus === 'noCheckout' ? 'ไม่ลงเวลาออก' :
-                                      'ไปราชการ'
+                                      officialTravelLabel
                         }
                       </h3>
 

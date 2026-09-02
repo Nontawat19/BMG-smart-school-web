@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaArrowLeft, FaSearch, FaUserGraduate, FaChalkboardTeacher, FaSpinner, FaTimes, FaHistory, FaChevronRight, FaTasks, FaFileAlt, FaFilter } from "react-icons/fa";
+import { FaSearch, FaUserGraduate, FaChalkboardTeacher, FaSpinner, FaTimes, FaHistory, FaChevronRight, FaTasks, FaFileAlt, FaCompass } from "react-icons/fa";
 import { useNavigate, useParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { firestore } from '@/firebase';
+import { RootState } from '@/store';
+import ProfileAvatar from '@/components/Shared/ProfileAvatar';
+import { usePermissionContext } from '@/contexts/PermissionContext';
+import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
+import { canAccessRoute, resolveSearchableRoutePath } from '@/utils/routeAccessUtils';
 import * as pdfjsLib from "pdfjs-dist";
 
 // Configure PDF Worker
@@ -96,6 +102,12 @@ const ResultItem: React.FC<{ item: any; onClose: () => void; navigate: any }> = 
       badgeIcon = <FaTasks />;
       badgeBgColor = 'bg-orange-500';
       break;
+    case 'page':
+      icon = <FaCompass size={20} />;
+      iconBgColor = 'bg-gradient-to-br from-violet-400 to-purple-500';
+      badgeIcon = <FaCompass />;
+      badgeBgColor = 'bg-violet-500';
+      break;
 
     default:
       icon = <FaFileAlt size={20} />;
@@ -107,9 +119,18 @@ const ResultItem: React.FC<{ item: any; onClose: () => void; navigate: any }> = 
   return (
     <div onClick={handleNavigate} className="group flex items-center gap-4 p-3 sm:p-4 rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-all border border-transparent hover:border-gray-100 dark:hover:border-gray-700 mb-2">
       <div className="relative flex-shrink-0">
-        <div className={`${item.type === 'assignment' ? 'w-12 h-16 rounded-lg' : 'w-12 h-12 rounded-full'} flex items-center justify-center text-white shadow-sm ${iconBgColor}`}>
-          {icon}
-        </div>
+        {item.image && !imageError ? (
+          <ProfileAvatar
+            src={item.image}
+            alt={item.name}
+            onError={() => setImageError(true)}
+            className="w-12 h-12 shadow-sm"
+          />
+        ) : (
+          <div className={`${item.type === 'assignment' ? 'w-12 h-16 rounded-lg' : 'w-12 h-12 rounded-full'} flex items-center justify-center text-white shadow-sm ${iconBgColor}`}>
+            {icon}
+          </div>
+        )}
         <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-[#1e1f21] flex items-center justify-center text-[10px] text-white ${badgeBgColor}`}>
           {badgeIcon}
         </div>
@@ -139,6 +160,9 @@ const SearchSidebar: React.FC<SearchSidebarProps> = ({ onClose, history, schoolI
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const { routePermissions, isLoaded: permissionsLoaded } = usePermissionContext();
 
   // พยายามดึง schoolId จาก URL หรือ localStorage
   const schoolId = propSchoolId || paramSchoolId || localStorage.getItem('selectedSchoolId');
@@ -227,6 +251,32 @@ const SearchSidebar: React.FC<SearchSidebarProps> = ({ onClose, history, schoolI
           }
         });
 
+        // 4. ค้นหาเมนู/หน้าในระบบ — กรองให้เหลือเฉพาะหน้าที่ผู้ใช้คนนั้นมีสิทธิ์เข้าถึงจริง
+        // (เทียบ role/แผนก/สิทธิ์พิเศษ กับ route_permissions เดียวกับที่ ProtectedRoute ใช้กัน)
+        if (permissionsLoaded) {
+          const lowerTerm = term.toLowerCase();
+          ROUTE_REGISTRY.forEach(route => {
+            if (!route.label.toLowerCase().includes(lowerTerm)) return;
+
+            const resolvedPath = resolveSearchableRoutePath(route, schoolId);
+            if (!resolvedPath) return; // ยังมี :param อื่นที่ต้องระบุ (เช่น :studentId) — ไม่ใช่หน้าเมนูทั่วไป
+
+            if (!canAccessRoute(route, currentUser, routePermissions)) return;
+
+            const resultKey = `page-${route.key}`;
+            if (!resultsMap.has(resultKey)) {
+              resultsMap.set(resultKey, {
+                id: resultKey,
+                name: route.label,
+                sub: `เมนู - ${route.category}`,
+                type: 'page',
+                image: null,
+                url: resolvedPath
+              });
+            }
+          });
+        }
+
 
 
         setSearchResults(Array.from(resultsMap.values()));
@@ -238,7 +288,7 @@ const SearchSidebar: React.FC<SearchSidebarProps> = ({ onClose, history, schoolI
     }, 600); // Debounce 600ms
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, schoolId]);
+  }, [searchTerm, schoolId, currentUser, routePermissions, permissionsLoaded]);
 
   return (
     <div className="fixed inset-0 z-[100] flex justify-start" role="dialog" aria-modal="true">

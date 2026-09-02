@@ -71,13 +71,16 @@ export const getStatusKey = (status: string): string | null => {
     const s = status.toLowerCase();
     if (['มา', 'ontime', 'present'].includes(s)) return 'present';
     if (['สาย', 'late'].includes(s)) return 'late';
-    if (['ลา', 'leave'].includes(s) || s.includes('ลา')) return 'leave';
+    if (['ไม่ลงเวลาออก', 'nocheckout'].includes(s)) return 'noCheckout';
+    // startsWith (not includes) — a plain `includes('ลา')` also matches "ไม่ลงเวลาออก" because
+    // "เวลา" contains the substring "ลา", silently miscounting no-checkout as leave. Catches leave
+    // sub-types like "ลาป่วย"/"ลากิจ" (which always start with ลา) without that false match.
+    if (['ลา', 'leave'].includes(s) || s.startsWith('ลา')) return 'leave';
     if (['ขาด', 'absent'].includes(s)) return 'absent';
     if (['ไปราชการ', 'officialtravel'].includes(s)) return 'officialTravel'; // Updated key
     // NoCheckout, EarlyReturn usually counted as present in summary but tracked separately if needed
     // For standard summary:
     if (['กลับก่อน', 'earlyreturn'].includes(s)) return 'early'; // Return early for logic check if needed, but map to present/late for calculation
-    if (['ไม่ลงเวลาออก', 'nocheckout'].includes(s)) return 'noCheckout';
     return null;
 };
 
@@ -89,10 +92,11 @@ const getDailySummaryField = (status: string): string | null => {
     // Exact mapping to fields in Daily Summary
     if (['มา', 'ontime', 'present', 'earlyreturn', 'กลับก่อน', 'early'].includes(s)) return 'present';
     if (['สาย', 'late'].includes(s)) return 'late';
-    if (['ลา', 'leave'].includes(s) || s.includes('ลา')) return 'leave';
+    if (['ไม่ลงเวลาออก', 'nocheckout'].includes(s)) return 'noCheckout';
+    // startsWith (not includes) — see getStatusKey above for why plain `includes('ลา')` is wrong here.
+    if (['ลา', 'leave'].includes(s) || s.startsWith('ลา')) return 'leave';
     if (['ขาด', 'absent'].includes(s)) return 'absent';
     if (['ไปราชการ', 'officialtravel'].includes(s)) return 'officialTravel';
-    if (['ไม่ลงเวลาออก', 'nocheckout'].includes(s)) return 'noCheckout';
 
     return null;
 };

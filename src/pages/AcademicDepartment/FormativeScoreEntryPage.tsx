@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchCalendar } from "@/store/slices/calendarSlice";
@@ -21,10 +22,9 @@ import {
 } from "firebase/firestore";
 import MainLayout from "@/layouts/MainLayout";
 import { 
-    ChevronLeft, 
-    Save, 
-    Search, 
-    Info, 
+    ChevronLeft,
+    Save,
+    Info,
     AlertCircle, 
     Settings,
     ClipboardCheck,
@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { CLASSES, CLASS_FULL_NAMES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
+import { isActivityCourseCode } from "@/utils/remediationUtils";
 import Swal from "sweetalert2";
 
 interface Student {
@@ -227,8 +228,13 @@ const FormativeScoreEntryPage: React.FC = () => {
     const [grades, setGrades] = useState<Record<string, GradeRecord>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
     const [availableGroups, setAvailableGroups] = useState<{ id: string; label: string }[]>([]);
+    const [courseSearchTerm, setCourseSearchTerm] = useState("");
+    const [isCourseDropdownOpen, setIsCourseDropdownOpen] = useState(false);
+    const [courseDropdownCoords, setCourseDropdownCoords] = useState({ left: 0, top: 0, width: 0, maxHeight: 300 });
+    const courseInputRef = useRef<HTMLInputElement>(null);
+    const courseFieldRef = useRef<HTMLDivElement>(null);
+    const courseBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [bulkValues, setBulkValues] = useState<Record<string, string>>({});
     const [rowBulkValues, setRowBulkValues] = useState<Record<string, string>>({});
     const [availableRooms, setAvailableRooms] = useState<string[]>([]);
@@ -363,6 +369,10 @@ const FormativeScoreEntryPage: React.FC = () => {
 
     const filteredCourses = useMemo(() => {
         return courses.filter(c => {
+            // Activity subjects (โฮมรูม, แนะแนว, ชุมนุม, ลูกเสือ, รด. ฯลฯ — code starting with "ก")
+            // are graded pass/fail through the activity evaluation flow, not formative/midterm scores.
+            if (isActivityCourseCode(c.code)) return false;
+
             if (selectedLevel) {
                 if (!matchesLevel(c.classId, selectedLevel)) return false;
             }
@@ -398,14 +408,66 @@ const FormativeScoreEntryPage: React.FC = () => {
                 if (!isMyCourse) return false;
             }
 
-            if (searchTerm.trim()) {
-                const term = searchTerm.toLowerCase().trim();
-                return c.code.toLowerCase().includes(term) || c.title.toLowerCase().includes(term);
-            }
-
             return true;
         });
-    }, [courses, selectedLevel, selectedRoom, selectedSemester, searchTerm, userPrivileges, semesterAssignments]);
+    }, [courses, selectedLevel, selectedRoom, selectedSemester, userPrivileges, semesterAssignments]);
+
+    const courseSearchResults = useMemo(() => {
+        const term = courseSearchTerm.toLowerCase().trim();
+        if (!term) return filteredCourses;
+        return filteredCourses.filter(c =>
+            c.code.toLowerCase().includes(term) || c.title.toLowerCase().includes(term)
+        );
+    }, [filteredCourses, courseSearchTerm]);
+
+    const selectedCourseObj = useMemo(
+        () => filteredCourses.find(c => c.id === selectedCourseId),
+        [filteredCourses, selectedCourseId]
+    );
+
+    const updateCourseDropdownPosition = () => {
+        if (!courseFieldRef.current) return;
+        const rect = courseFieldRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        setCourseDropdownCoords({
+            left: rect.left,
+            top: rect.bottom + 4,
+            width: rect.width,
+            maxHeight: Math.max(160, Math.min(spaceBelow - 16, 400)),
+        });
+    };
+
+    const openCourseDropdown = () => {
+        if (courseBlurTimeoutRef.current) clearTimeout(courseBlurTimeoutRef.current);
+        updateCourseDropdownPosition();
+        setCourseSearchTerm("");
+        setIsCourseDropdownOpen(true);
+    };
+
+    const closeCourseDropdown = () => {
+        courseBlurTimeoutRef.current = setTimeout(() => setIsCourseDropdownOpen(false), 150);
+    };
+
+    const selectCourseFromSearch = (courseId: string) => {
+        if (courseBlurTimeoutRef.current) clearTimeout(courseBlurTimeoutRef.current);
+        setSelectedCourseId(courseId);
+        setSelectedGroup("");
+        setCourseSearchTerm("");
+        setIsCourseDropdownOpen(false);
+        courseInputRef.current?.blur();
+    };
+
+    // Close instead of leaving the dropdown floating over the wrong spot once the page scrolls/resizes.
+    useEffect(() => {
+        if (!isCourseDropdownOpen) return;
+        const handleScrollOrResize = () => setIsCourseDropdownOpen(false);
+        window.addEventListener('scroll', handleScrollOrResize, true);
+        window.addEventListener('resize', handleScrollOrResize);
+        return () => {
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+            window.removeEventListener('resize', handleScrollOrResize);
+        };
+    }, [isCourseDropdownOpen]);
 
     useEffect(() => {
         const fetchGroups = async () => {
@@ -679,19 +741,6 @@ const FormativeScoreEntryPage: React.FC = () => {
         }
     };
 
-    const filteredStudents = useMemo(() => {
-        const term = searchTerm.toLowerCase().trim();
-        if (!term) return students;
-
-        return students.filter(s => {
-            const fullName = `${s.firstName} ${s.lastName}`.toLowerCase();
-            const studentNumber = String(s.studentNumber || "").toLowerCase();
-            const studentCode = String(s.studentId || "").toLowerCase();
-
-            return fullName.includes(term) || studentNumber.includes(term) || studentCode.includes(term);
-        });
-    }, [students, searchTerm]);
-
     return (
         <MainLayout>
             <div className="min-h-screen bg-slate-50 dark:bg-[#0b0e14] text-slate-600 dark:text-slate-300 font-sans flex flex-col">
@@ -767,22 +816,69 @@ const FormativeScoreEntryPage: React.FC = () => {
                                         <option value="annual" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">รายปี</option>
                                     </select>
                                 </div>
-                                <div className="flex flex-1 items-center gap-1 px-3 py-1.5 min-w-[170px] border-r border-slate-200 dark:border-white/5">
-                                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">วิชา</span>
-                                    <select 
-                                        value={selectedCourseId}
+                                <div className="relative flex flex-1 items-center gap-2 px-4 py-3 min-w-[240px] border-r border-slate-200 dark:border-white/5" ref={courseFieldRef}>
+                                    <span className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter shrink-0">วิชา</span>
+                                    <input
+                                        ref={courseInputRef}
+                                        type="text"
+                                        placeholder="ค้นหารหัส/ชื่อวิชา..."
+                                        value={isCourseDropdownOpen ? courseSearchTerm : (selectedCourseObj ? `${selectedCourseObj.code} - ${selectedCourseObj.title}` : "")}
+                                        onFocus={openCourseDropdown}
                                         onChange={(e) => {
-                                            setSelectedCourseId(e.target.value);
-                                            setSelectedGroup("");
+                                            if (!isCourseDropdownOpen) setIsCourseDropdownOpen(true);
+                                            setCourseSearchTerm(e.target.value);
                                         }}
-                                        className="bg-transparent border-none text-[12px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors w-full"
+                                        onBlur={closeCourseDropdown}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Escape') {
+                                                setIsCourseDropdownOpen(false);
+                                                courseInputRef.current?.blur();
+                                            } else if (e.key === 'Enter' && courseSearchResults.length > 0) {
+                                                e.preventDefault();
+                                                selectCourseFromSearch(courseSearchResults[0].id);
+                                            }
+                                        }}
                                         disabled={!selectedLevel}
-                                    >
-                                        <option value="" className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">เลือกวิชา</option>
-                                        {filteredCourses.map(c => (
-                                            <option key={c.id} value={c.id} className="bg-white dark:bg-[#1e2235] text-slate-900 dark:text-white">{c.code} - {c.title}</option>
-                                        ))}
-                                    </select>
+                                        className="bg-transparent border-none text-[16px] font-black text-slate-900 dark:text-white outline-none cursor-pointer hover:text-indigo-400 transition-colors w-full disabled:opacity-40 disabled:cursor-not-allowed placeholder:text-slate-400 dark:placeholder:text-slate-600 placeholder:font-bold"
+                                    />
+
+                                    {isCourseDropdownOpen && createPortal(
+                                        <div
+                                            className="fixed inset-0 z-[9999]"
+                                            onMouseDown={() => setIsCourseDropdownOpen(false)}
+                                        >
+                                            <div
+                                                style={{
+                                                    position: 'fixed',
+                                                    left: courseDropdownCoords.left,
+                                                    top: courseDropdownCoords.top,
+                                                    width: courseDropdownCoords.width,
+                                                    maxHeight: courseDropdownCoords.maxHeight,
+                                                }}
+                                                className="overflow-y-auto bg-white dark:bg-[#1e2235] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl"
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                            >
+                                                {courseSearchResults.length === 0 ? (
+                                                    <div className="px-4 py-4 text-sm text-slate-400 text-center">ไม่พบรายวิชาที่ตรงกับคำค้นหา</div>
+                                                ) : (
+                                                    courseSearchResults.map(c => (
+                                                        <div
+                                                            key={c.id}
+                                                            role="button"
+                                                            tabIndex={-1}
+                                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); selectCourseFromSearch(c.id); }}
+                                                            className={`px-4 py-3 text-sm cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors ${c.id === selectedCourseId ? 'bg-indigo-50 dark:bg-indigo-500/10 font-bold' : ''}`}
+                                                        >
+                                                            <span className="font-black text-indigo-600 dark:text-indigo-400">{c.code}</span>
+                                                            {' - '}
+                                                            <span className="text-slate-800 dark:text-slate-100">{c.title}</span>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>,
+                                        document.body
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-1 px-3 py-1.5 min-w-0 w-[130px]">
                                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">กลุ่ม</span>
@@ -798,18 +894,6 @@ const FormativeScoreEntryPage: React.FC = () => {
                                         ))}
                                     </select>
                                 </div>
-                            </div>
-
-                            {/* Search */}
-                            <div className="relative group w-[220px] shrink-0">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={14} />
-                                <input 
-                                    type="text"
-                                    placeholder="ค้นหาวิชา/นักเรียน..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl py-2 pl-10 pr-4 text-[12px] font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
-                                />
                             </div>
 
                             {/* Actions */}
@@ -920,7 +1004,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredStudents.map(student => {
+                                        {students.map(student => {
                                             const record = grades[student.id] || {};
                                             const details = record.formativeDetails || {};
                                             const { formativeTotal, part1Total } = calculateRowTotals(student.id);
@@ -1011,7 +1095,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                 <button className="flex items-center gap-2 px-4 py-1.5 bg-slate-100 dark:bg-[#1e2235] hover:bg-slate-200 dark:hover:bg-[#252a41] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-[11px] font-bold transition-all">
                                     ถัดไป <ArrowRight size={14} />
                                 </button>
-                                <span className="text-[12px] font-black text-slate-900 dark:text-white">{filteredStudents.length} รายชื่อ</span>
+                                <span className="text-[12px] font-black text-slate-900 dark:text-white">{students.length} รายชื่อ</span>
                             </div>
                         </div>
                     </div>

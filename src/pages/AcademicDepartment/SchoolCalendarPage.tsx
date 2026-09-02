@@ -10,6 +10,10 @@ import { isNonOfficialHoliday } from '../../utils/calendarUtils';
 import { getThaiYear, getCurrentThaiYear } from '@/utils/dateUtils';
 import { Calendar } from 'lucide-react';
 
+// จำกัดปีการศึกษาที่เพิ่ม/บันทึกใหม่ได้ ย้อนหลังไม่เกิน 10 ปี — ให้ตรงกับ MAX_ACADEMIC_YEAR_OPTIONS
+// ใน src/utils/remediationUtils.ts ที่จำกัด dropdown ปีย้อนหลังไว้ 10 ปีเช่นกัน (จุดเดียวที่ให้เพิ่มปีได้จริง)
+const MAX_ACADEMIC_YEARS_BACK = 10;
+
 type DayType = 'schoolDay' | 'holiday' | 'specialHoliday';
 
 interface CalendarEvent {
@@ -502,6 +506,16 @@ const SchoolCalendarPage: React.FC = () => {
     if (!schoolId) return;
     if (!academicYear) {
       Swal.fire('กรุณาระบุปีการศึกษา', 'เช่น 2568', 'warning');
+      return;
+    }
+
+    const oldestAllowedYear = getCurrentThaiYear() - MAX_ACADEMIC_YEARS_BACK;
+    if (Number(academicYear) < oldestAllowedYear) {
+      Swal.fire(
+        'ปีการศึกษาย้อนหลังเกินกำหนด',
+        `ระบบรองรับการเพิ่มปีการศึกษาย้อนหลังไม่เกิน ${MAX_ACADEMIC_YEARS_BACK} ปี (ตั้งแต่ปีการศึกษา ${oldestAllowedYear} เป็นต้นไป)`,
+        'warning'
+      );
       return;
     }
 

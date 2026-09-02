@@ -41,6 +41,13 @@ interface StudentRow {
 
 const getTodayString = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 
+const ENRICH_BATCH_SIZE = 60;
+const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+};
+
 const formatDateDisplay = (dateStr: string) => {
   if (!dateStr) return "-";
   const [year, month, day] = dateStr.split("-");
@@ -90,7 +97,7 @@ const getAttendanceCategory = (status?: string, hasAttendance?: boolean) => {
   if (!hasAttendance) return "ขาด";
   if (status === "สาย" || status === "Late") return "สาย";
   if (status === "ลา" || status === "Leave") return "ลา";
-  if (status === "ไปราชการ" || status === "OfficialTravel" || status === "officialTravel") return "ไปราชการ";
+  if (status === "ไปราชการ" || status === "OfficialTravel" || status === "officialTravel") return "ไปร่วมกิจกรรม";
   if (status === "กลับก่อน") return "กลับก่อน";
   if (status === "ไม่ลงเวลาออก" || status === "NoCheckout") return "ไม่ลงเวลาออก";
   if (status === "ขาด" || status === "Absent") return "ขาด";
@@ -396,6 +403,10 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
   const [schoolName, setSchoolName] = useState("-");
   const [rows, setRows] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // จำนวนที่ enrich (ดึงเวลาเข้า-ออก/ลา/ราชการ) เสร็จแล้ว vs ทั้งหมด — ใช้แสดง progress
+  // ระหว่างทยอยโหลดทีละชุด แทนที่จะรอครบทั้งโรงเรียนก่อนถึงจะเห็นแถวแรก
+  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  const isEnriching = !!enrichProgress && enrichProgress.done < enrichProgress.total;
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
@@ -474,101 +485,134 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
 
   useEffect(() => {
     if (!schoolId) return;
+    let cancelled = false;
+
+    const sortRows = (list: StudentRow[]) => {
+      const sorted = [...list];
+      sorted.sort((a, b) => {
+        const [aClass, aRoom] = a.classText.split("/");
+        const [bClass, bRoom] = b.classText.split("/");
+        const classCompare = getClassKey(aClass).localeCompare(getClassKey(bClass), "en", { numeric: true });
+        if (classCompare !== 0) return classCompare;
+        const roomCompare = getNumberValue(aRoom).valueOf() - getNumberValue(bRoom).valueOf();
+        if (roomCompare !== 0) return roomCompare;
+        const numberCompare = getNumberValue(a.studentNumber) - getNumberValue(b.studentNumber);
+        if (numberCompare !== 0) return numberCompare;
+        return a.fullName.localeCompare(b.fullName, "th", { numeric: true });
+      });
+      return sorted;
+    };
+
+    // ดึงข้อมูลของนักเรียน 1 คน — เหมือนเดิมทุกประการ (เอกสารที่ query ไม่เปลี่ยน) เพียงแต่แยกออกมา
+    // เป็นฟังก์ชันเพื่อเรียกเป็นชุดๆ (batch) แทนการยิงพร้อมกันทีเดียวทั้งโรงเรียน
+    const enrichStudentRow = async (student: any, currentSchoolName: string): Promise<StudentRow> => {
+      const studentRef = doc(firestore, "school-settings", schoolId, "students", student.id);
+      const [attendanceSnap, leaveSnap, travelSnap] = await Promise.all([
+        getDoc(doc(studentRef, "attendance", selectedDate)),
+        getDocs(collection(studentRef, "leave_summary")),
+        getDocs(collection(studentRef, "travel_summary")),
+      ]);
+
+      const attendance = attendanceSnap.exists() ? attendanceSnap.data() : null;
+      const leaveDoc = leaveSnap.docs.find((leave) => {
+        const data = leave.data();
+        return data.status !== "rejected" && isDateInRange(selectedDate, data.startDate, data.endDate);
+      });
+      const travelDoc = travelSnap.docs.find((travel) => {
+        const data = travel.data();
+        return data.status !== "rejected" && isDateInRange(selectedDate, data.startDate, data.endDate);
+      });
+
+      const leaveData = leaveDoc?.data();
+      const travelData = travelDoc?.data();
+      const hasAttendance = Boolean(attendance);
+      const isPending = (data: any) => data?.status === "pending";
+
+      const category = travelData
+        ? `ไปร่วมกิจกรรม${isPending(travelData) ? " (รออนุมัติ)" : ""}`
+        : leaveData
+          ? `${leaveData.leaveType || "ลา"}${isPending(leaveData) ? " (รออนุมัติ)" : ""}`
+          : getAttendanceCategory(attendance?.status, hasAttendance);
+
+      const rawNote = travelData
+        ? `${isPending(travelData) ? "(รออนุมัติ) " : ""}ไปร่วมกิจกรรม: ${travelData.reason || travelData.subject || "ไปร่วมกิจกรรม"}${travelData.location ? ` [สถานที่: ${travelData.location}]` : ""}`
+        : leaveData
+          ? `${isPending(leaveData) ? "(รออนุมัติ) " : ""}[${leaveData.leaveType || "ลา"}] ${leaveData.reason || "ไม่ได้ระบุเหตุผล"}`
+          : hasAttendance
+            ? (attendance?.metadata?.description || attendance?.note || getAttendanceCategory(attendance?.status, true))
+            : "ยังไม่มีข้อมูลลงเวลา";
+      const scanType = getScanType(attendance, hasAttendance);
+      const note = sanitizeFlagCeremonyNote(rawNote, scanType);
+
+      const classText = `${student.classLevel || student.level || "-"}${student.room || student.roomNumber ? `/${student.room || student.roomNumber}` : ""}`;
+
+      return {
+        id: student.id,
+        studentId: student.studentId || "-",
+        studentNumber: student.studentNumber || student.number || student.no || "-",
+        schoolName: currentSchoolName,
+        date: formatDateDisplay(selectedDate),
+        fullName: `${student.title || ""}${student.firstName || ""} ${student.lastName || ""}`.trim() || student.name || "-",
+        classText,
+        checkInTime: formatTime(attendance?.checkinTime || attendance?.time),
+        checkOutTime: formatTime(attendance?.checkoutTime),
+        lateText: attendance?.status === "สาย" || attendance?.status === "Late" ? "สาย" : "-",
+        category,
+        note,
+        type: scanType,
+      };
+    };
 
     const fetchRows = async () => {
       setLoading(true);
+      setEnrichProgress(null);
       setSelectedIds(new Set());
       try {
         const schoolSnap = await getDoc(doc(firestore, "school-settings", schoolId));
         const schoolData = schoolSnap.exists() ? schoolSnap.data() : {};
         const currentSchoolName = schoolData.schoolName || schoolData.name || "-";
+        if (cancelled) return;
         setSchoolName(currentSchoolName);
 
         const studentSnap = await getDocs(collection(firestore, "school-settings", schoolId, "students"));
         const activeStudents = studentSnap.docs
           .map((studentDoc) => ({ id: studentDoc.id, ...studentDoc.data() } as any))
           .filter((student) => isActiveStudentStatus(student.status || student.studentStatus));
+        if (cancelled) return;
 
-        const nextRows = await Promise.all(activeStudents.map(async (student) => {
-          const studentRef = doc(firestore, "school-settings", schoolId, "students", student.id);
-          const [attendanceSnap, leaveSnap, travelSnap] = await Promise.all([
-            getDoc(doc(studentRef, "attendance", selectedDate)),
-            getDocs(collection(studentRef, "leave_summary")),
-            getDocs(collection(studentRef, "travel_summary")),
-          ]);
+        // ทยอยดึงข้อมูลทีละชุด (แทนที่จะยิง N คน x 3 คำขอพร้อมกันทั้งหมดในทีเดียว ซึ่งเป็นสาเหตุที่
+        // หน้านี้ช้ามากในโรงเรียนที่มีนักเรียนเยอะ) แล้วอัปเดตตารางให้เห็นทันทีตั้งแต่ชุดแรก ไม่ต้องรอ
+        // ครบทั้งโรงเรียนก่อนถึงจะเห็นอะไรเลย — เอกสารที่ query ยังเหมือนเดิมทุกจุด ไม่กระทบความถูกต้อง
+        const batches = chunkArray(activeStudents, ENRICH_BATCH_SIZE);
+        let collected: StudentRow[] = [];
+        setEnrichProgress({ done: 0, total: activeStudents.length });
 
-          const attendance = attendanceSnap.exists() ? attendanceSnap.data() : null;
-          const leaveDoc = leaveSnap.docs.find((leave) => {
-            const data = leave.data();
-            return data.status !== "rejected" && isDateInRange(selectedDate, data.startDate, data.endDate);
-          });
-          const travelDoc = travelSnap.docs.find((travel) => {
-            const data = travel.data();
-            return data.status !== "rejected" && isDateInRange(selectedDate, data.startDate, data.endDate);
-          });
+        for (const batch of batches) {
+          const batchRows = await Promise.all(batch.map((student) => enrichStudentRow(student, currentSchoolName)));
+          if (cancelled) return;
+          collected = collected.concat(batchRows);
+          const sorted = sortRows(collected);
+          setRows(sorted);
+          setEnrichProgress({ done: collected.length, total: activeStudents.length });
+          setLoading(false);
+        }
 
-          const leaveData = leaveDoc?.data();
-          const travelData = travelDoc?.data();
-          const hasAttendance = Boolean(attendance);
-          const isPending = (data: any) => data?.status === "pending";
-
-          const category = travelData
-            ? `ไปราชการ${isPending(travelData) ? " (รออนุมัติ)" : ""}`
-            : leaveData
-              ? `${leaveData.leaveType || "ลา"}${isPending(leaveData) ? " (รออนุมัติ)" : ""}`
-              : getAttendanceCategory(attendance?.status, hasAttendance);
-
-          const rawNote = travelData
-            ? `${isPending(travelData) ? "(รออนุมัติ) " : ""}ไปราชการ: ${travelData.reason || travelData.subject || "ไปราชการ"}${travelData.location ? ` [สถานที่: ${travelData.location}]` : ""}`
-            : leaveData
-              ? `${isPending(leaveData) ? "(รออนุมัติ) " : ""}[${leaveData.leaveType || "ลา"}] ${leaveData.reason || "ไม่ได้ระบุเหตุผล"}`
-              : hasAttendance
-                ? (attendance?.metadata?.description || attendance?.note || getAttendanceCategory(attendance?.status, true))
-                : "ยังไม่มีข้อมูลลงเวลา";
-          const scanType = getScanType(attendance, hasAttendance);
-          const note = sanitizeFlagCeremonyNote(rawNote, scanType);
-
-          const classText = `${student.classLevel || student.level || "-"}${student.room || student.roomNumber ? `/${student.room || student.roomNumber}` : ""}`;
-
-          return {
-            id: student.id,
-            studentId: student.studentId || "-",
-            studentNumber: student.studentNumber || student.number || student.no || "-",
-            schoolName: currentSchoolName,
-            date: formatDateDisplay(selectedDate),
-            fullName: `${student.title || ""}${student.firstName || ""} ${student.lastName || ""}`.trim() || student.name || "-",
-            classText,
-            checkInTime: formatTime(attendance?.checkinTime || attendance?.time),
-            checkOutTime: formatTime(attendance?.checkoutTime),
-            lateText: attendance?.status === "สาย" || attendance?.status === "Late" ? "สาย" : "-",
-            category,
-            note,
-            type: scanType,
-          };
-        }));
-
-        nextRows.sort((a, b) => {
-          const [aClass, aRoom] = a.classText.split("/");
-          const [bClass, bRoom] = b.classText.split("/");
-          const classCompare = getClassKey(aClass).localeCompare(getClassKey(bClass), "en", { numeric: true });
-          if (classCompare !== 0) return classCompare;
-          const roomCompare = getNumberValue(aRoom).valueOf() - getNumberValue(bRoom).valueOf();
-          if (roomCompare !== 0) return roomCompare;
-          const numberCompare = getNumberValue(a.studentNumber) - getNumberValue(b.studentNumber);
-          if (numberCompare !== 0) return numberCompare;
-          return a.fullName.localeCompare(b.fullName, "th", { numeric: true });
-        });
-
-        setRows(nextRows);
+        setEnrichProgress(null);
       } catch (error) {
         console.error("Error fetching student attendance by date:", error);
-        setRows([]);
+        if (!cancelled) setRows([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setEnrichProgress(null);
+        }
       }
     };
 
     fetchRows();
+    return () => {
+      cancelled = true;
+    };
   }, [schoolId, selectedDate, refreshKey]);
 
   const filteredRows = useMemo(() => {
@@ -688,11 +732,17 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
               <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:text-slate-300 dark:ring-slate-700">
                 <CalendarDays size={16} className="text-indigo-500" />
                 จำนวนทั้งหมด : {filteredRows.length}
+                {isEnriching && (
+                  <span className="ml-1 inline-flex items-center gap-1 text-xs font-normal text-slate-400 dark:text-slate-500">
+                    <Loader2 size={12} className="animate-spin" />
+                    กำลังโหลด {enrichProgress!.done}/{enrichProgress!.total}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
                 onClick={openPdfPreview}
-                disabled={loading || filteredRows.length === 0}
+                disabled={loading || isEnriching || filteredRows.length === 0}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FileDown size={16} />

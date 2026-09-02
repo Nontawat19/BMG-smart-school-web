@@ -1413,7 +1413,7 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
               </div>
             </div>
             <div className="bg-white dark:bg-[#2a2b2f] p-5 rounded-2xl shadow-sm border-l-4 border-l-indigo-500 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all group">
-              <div className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">ไปราชการ</div>
+              <div className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">ไปร่วมกิจกรรม</div>
               <div className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">
                 {filteredData.reduce((sum, item) => sum + item.official_travel, 0)}
               </div>

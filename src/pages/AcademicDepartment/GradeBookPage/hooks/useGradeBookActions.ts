@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
-import { doc, writeBatch, Timestamp, collection, getDocs, deleteField } from 'firebase/firestore';
+import { doc, writeBatch, Timestamp, collection, getDoc, getDocs, deleteField } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Student, Course } from '../types';
 import { CLASSES } from '@/utils/schoolUtils';
@@ -338,6 +338,18 @@ export const useGradeBookActions = (
         const currentModifiedIds = Array.from(modifiedStudentIds);
 
         try {
+            // อ่านเอกสารเดิมของทุกคนที่แก้ไขก่อน เพื่อรู้ว่าใครเพิ่ง "หลุด ร" จากการแก้คะแนน (ต้องเทียบกับ
+            // grade เดิมที่บันทึกไว้จริงใน Firestore ไม่ใช่ state ในเครื่องที่อาจถูกคำนวณเป็นเกรดใหม่ไปแล้ว
+            // ตั้งแต่ตอนแก้คะแนน) — ใช้ทำ remark อัตโนมัติอธิบายว่านักเรียนแก้ไขคะแนนจนได้เกรดนี้แล้ว
+            const existingSnaps = await Promise.all(
+                currentModifiedIds.map(studentId => getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', studentId)))
+            );
+            const existingGradeById: Record<string, string> = {};
+            currentModifiedIds.forEach((studentId, idx) => {
+                const snap = existingSnaps[idx];
+                if (snap.exists()) existingGradeById[studentId] = String(snap.data().grade || '').trim();
+            });
+
             const batch = writeBatch(db);
             currentModifiedIds.forEach((studentId) => {
                 const record = grades[studentId];
@@ -363,7 +375,13 @@ export const useGradeBookActions = (
                 });
                 if (!record.status) {
                     dataToSave.status = deleteField();
-                    dataToSave.grade = calculateGrade(Number(record.total || 0));
+                    const resolvedGrade = calculateGrade(Number(record.total || 0));
+                    dataToSave.grade = resolvedGrade;
+                    // เพิ่งหลุดจาก "ร" ด้วยการแก้คะแนน (ไม่ใช่ครูกดปุ่ม 0/ร/มส เอง) — ใส่ remark อธิบายไว้ให้
+                    // อัตโนมัติ เพื่อให้หน้า remediation-record/zero-r-ms-report เห็นเหตุผลตรงกัน
+                    if (existingGradeById[studentId] === 'ร' && resolvedGrade !== 'ร') {
+                        dataToSave.remark = `นักเรียนแก้ไขคะแนนแล้ว ได้เกรด ${resolvedGrade}`;
+                    }
                 }
 
                 batch.set(ref, dataToSave, { merge: true });

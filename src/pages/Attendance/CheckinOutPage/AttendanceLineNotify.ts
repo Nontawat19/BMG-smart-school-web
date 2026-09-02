@@ -23,7 +23,7 @@ export const sendTeacherLineAttendanceNotification = async (
     try {
         const isCheckout = actionType === "checkout" || actionType === "checkin_and_checkout";
         const isLate = status === "สาย";
-        const isLeave = status === "ลา" || (status || "").includes("ลา");
+        const isLeave = status === "ลา" || (status || "").startsWith("ลา");
         const isAbsent = status === "ขาด";
 
         let bubbleBg = "#f0fdf4", bubbleIconBg = "#1db446", bubbleIcon = "✓", bubbleTextColor = "#166534";
@@ -59,9 +59,11 @@ export const sendTeacherLineAttendanceNotification = async (
                         totalDays === 0 ? 1 : stats.present,
                         stats.late,
                         stats.absent,
-                        stats.leave
+                        stats.leave,
+                        stats.noCheckout,
+                        stats.officialTravel
                     ],
-                    backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4'],
+                    backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4', '#FF9800', '#9C27B0'],
                     borderWidth: 2,
                     borderColor: '#ffffff'
                 }]
@@ -302,9 +304,11 @@ export const sendLineAttendanceNotification = async (
                         totalDays === 0 ? 1 : stats.present,
                         stats.late,
                         stats.absent,
-                        stats.leave
+                        stats.leave,
+                        stats.noCheckout,
+                        stats.officialTravel
                     ],
-                    backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4'],
+                    backgroundColor: ['#1DB446', '#FFC107', '#FF5722', '#00BCD4', '#FF9800', '#9C27B0'],
                     borderWidth: 2,
                     borderColor: '#ffffff'
                 }]
@@ -493,7 +497,7 @@ export const sendLineAttendanceNotification = async (
                                                 {
                                                     type: "box", layout: "horizontal", contents: [
                                                         { type: "text", text: "🟣", size: "xs", flex: 0 },
-                                                        { type: "text", text: "ไปราชการ", size: "sm", color: "#666666", margin: "md", flex: 4 },
+                                                        { type: "text", text: "ไปร่วมกิจกรรม", size: "sm", color: "#666666", margin: "md", flex: 4 },
                                                         { type: "text", text: String(stats.officialTravel || 0), size: "sm", weight: "bold", align: "end", flex: 2 }
                                                     ]
                                                 }

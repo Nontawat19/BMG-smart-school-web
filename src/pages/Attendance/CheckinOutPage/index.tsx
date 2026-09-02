@@ -2831,7 +2831,7 @@ const CheckinOutPage: React.FC = () => {
     if (!status) return null;
     if (["มา", "OnTime", "กลับก่อน"].includes(status)) return "present";
     if (["สาย", "Late"].includes(status)) return "late";
-    if (["ลา", "Leave"].includes(status) || status?.includes("ลา")) return "leave";
+    if (["ลา", "Leave"].includes(status) || status?.startsWith("ลา")) return "leave";
     if (["ขาด", "Absent"].includes(status)) return "absent";
     if (["ไปราชการ", "OfficialTravel"].includes(status)) return "officialTravel";
     return null;
@@ -2882,6 +2882,10 @@ const CheckinOutPage: React.FC = () => {
           const freshAttSnap = await transaction.get(attRef);
           if (freshAttSnap.exists()) return false; // มีบันทึกแล้ว (สแกนจริงหรือรอบก่อนหน้าประมวลผลไปแล้ว) ข้าม
 
+          // Firestore transactions require every read to happen before any write in the
+          // same transaction — read the student doc first, then issue all the writes below.
+          const studentSnap = studentRef ? await transaction.get(studentRef) : null;
+
           transaction.set(attRef, {
             status: "ขาด",
             date: todayStr,
@@ -2890,8 +2894,7 @@ const CheckinOutPage: React.FC = () => {
             updatedAt: serverTimestamp(),
           });
 
-          if (studentRef) {
-            const studentSnap = await transaction.get(studentRef);
+          if (studentRef && studentSnap) {
             const freshScore = studentSnap.exists() ? Number(studentSnap.data().behaviorScore ?? userData.behaviorScore ?? 100) : (userData.behaviorScore ?? 100);
             const result = calculateAttendanceBehaviorScoreChange({
               currentScore: freshScore,
@@ -2953,12 +2956,21 @@ const CheckinOutPage: React.FC = () => {
           if (!freshAttSnap.exists()) return false;
           const attData = freshAttSnap.data();
 
+          // ไปราชการ ต้องยกเว้นด้วย — ไม่งั้นครู/นักเรียนที่สแกนเข้าจริงตอนเช้าแล้วได้รับอนุมัติไปราชการ
+          // ระหว่างวัน (checkinTime มีค่าจริงจากตอนสแกน แต่ไม่มี checkoutTime เพราะไปราชการทั้งวัน)
+          // จะโดน sweep นี้ทับสถานะเป็น "ไม่ลงเวลาออก" ทั้งที่จริงได้รับอนุมัติไปราชการแล้ว
+          //
+          // checkinDevice === "FlagCeremony" ต้องยกเว้นด้วย — ระบบเช็คแถว (FlagCeremonyPage) ใส่
+          // checkinTime ปลอมให้นักเรียนที่ครูเช็คว่ามา/สายแม้ไม่ได้สแกนประตูเลย นักเรียนกลุ่มนี้ไม่เคย
+          // ถูกคาดหวังให้ "สแกนออก" ที่ประตูจริง จึงไม่ควรถูกตีความว่า "ลืมลงเวลาออก"
           if (
             !attData.checkinTime ||
             attData.checkoutTime ||
             attData.status === "ลา" ||
             attData.status === "ขาด" ||
-            attData.status === "ไม่ลงเวลาออก"
+            attData.status === "ไม่ลงเวลาออก" ||
+            attData.status === "ไปราชการ" ||
+            attData.checkinDevice === "FlagCeremony"
           ) {
             return false;
           }
@@ -2966,9 +2978,12 @@ const CheckinOutPage: React.FC = () => {
           const oldStatus = attData.status as string;
           const newStatus = "ไม่ลงเวลาออก";
 
+          // Firestore transactions require every read to happen before any write in the
+          // same transaction — read the student doc first, then issue all the writes below.
+          const studentSnap = await transaction.get(studentRef);
+
           transaction.update(attRef, { status: newStatus, remark: "Auto: ไม่ลงเวลาออก" });
 
-          const studentSnap = await transaction.get(studentRef);
           const oldKey = getStatusKey(oldStatus);
           const newKey = getStatusKey(newStatus);
           const statsUpdate: Record<string, any> = {};
