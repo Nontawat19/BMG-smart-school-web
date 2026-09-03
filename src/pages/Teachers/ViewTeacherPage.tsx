@@ -196,6 +196,10 @@ export default function ViewTeacherPage() {
   // substitution doc id -> whether the substitute teacher actually checked attendance for it.
   // See ProfilePage.tsx's identical logic for the full rationale.
   const [substitutionCompletionMap, setSubstitutionCompletionMap] = useState<Record<string, boolean>>({});
+  // true if the completion-check query below errored (most likely a missing composite index for
+  // collectionGroup('ClassroomAttendance') on schoolId==/substitutionId-in) — see ProfilePage.tsx's
+  // identical logic for the full explanation. Must not fall back to "missed" when this is true.
+  const [substitutionCompletionCheckFailed, setSubstitutionCompletionCheckFailed] = useState(false);
   const [substitutionsCurrentPage, setSubstitutionsCurrentPage] = useState(1);
   const [substitutionsItemsPerPage, setSubstitutionsItemsPerPage] = useState(10);
   const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
@@ -346,7 +350,10 @@ export default function ViewTeacherPage() {
 
   useEffect(() => {
     if (activeTab !== 'substitution' || !schoolId || substitutions.length === 0) {
-      if (substitutions.length === 0) setSubstitutionCompletionMap({});
+      if (substitutions.length === 0) {
+        setSubstitutionCompletionMap({});
+        setSubstitutionCompletionCheckFailed(false);
+      }
       return;
     }
 
@@ -358,26 +365,30 @@ export default function ViewTeacherPage() {
     };
 
     const fetchCompletionStatus = async () => {
-      try {
-        const now = new Date();
-        const pastSubIds = substitutions
-          .filter(s => {
-            const d = toDateObj(s.date);
-            return d ? d <= now : false;
-          })
-          .map(s => s.id);
+      setSubstitutionCompletionCheckFailed(false);
+      const now = new Date();
+      const pastSubIds = substitutions
+        .filter(s => {
+          const d = toDateObj(s.date);
+          return d ? d <= now : false;
+        })
+        .map(s => s.id);
 
-        if (pastSubIds.length === 0) {
-          setSubstitutionCompletionMap({});
-          return;
-        }
+      if (pastSubIds.length === 0) {
+        setSubstitutionCompletionMap({});
+        return;
+      }
 
-        const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
-        const completedIds = new Set<string>();
-        const CHUNK_SIZE = 10;
+      const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
+      const completedIds = new Set<string>();
+      const CHUNK_SIZE = 10;
+      let anyChunkFailed = false;
 
-        for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
-          const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+      // See ProfilePage.tsx's identical loop: each chunk runs its own try/catch so one failing
+      // query (e.g. a missing index) doesn't wipe out completion data from unrelated chunks.
+      for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
+        const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+        try {
           const q = query(
             attendanceRef,
             where('schoolId', '==', schoolId),
@@ -388,22 +399,26 @@ export default function ViewTeacherPage() {
             const subId = docSnap.data().substitutionId;
             if (subId) completedIds.add(subId);
           });
+        } catch (err) {
+          console.error("Error fetching substitution completion status (chunk):", err);
+          anyChunkFailed = true;
         }
-
-        const map: Record<string, boolean> = {};
-        completedIds.forEach(id => { map[id] = true; });
-        setSubstitutionCompletionMap(map);
-      } catch (err) {
-        console.error("Error fetching substitution completion status:", err);
       }
+
+      const map: Record<string, boolean> = {};
+      completedIds.forEach(id => { map[id] = true; });
+      setSubstitutionCompletionMap(map);
+      setSubstitutionCompletionCheckFailed(anyChunkFailed);
     };
     fetchCompletionStatus();
   }, [activeTab, schoolId, substitutions]);
 
-  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' => {
+  // See ProfilePage.tsx's identical function for the full explanation of each state.
+  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' | 'unknown' => {
     const d = sub.date?.toDate ? sub.date.toDate() : ((sub.date as any)?.seconds ? new Date((sub.date as any).seconds * 1000) : (sub.date ? new Date(sub.date as any) : null));
     if (!d || d > new Date()) return 'upcoming';
-    return substitutionCompletionMap[sub.id] ? 'completed' : 'missed';
+    if (substitutionCompletionMap[sub.id]) return 'completed';
+    return substitutionCompletionCheckFailed ? 'unknown' : 'missed';
   };
 
   useEffect(() => {
@@ -975,6 +990,12 @@ export default function ViewTeacherPage() {
                   <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                     <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ประวัติการสอนแทน</h2>
 
+                    {substitutionCompletionCheckFailed && (
+                      <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs font-bold text-amber-700 dark:text-amber-300">
+                        ระบบตรวจสอบสถานะการเช็คชื่อไม่สำเร็จบางส่วน (อาจเป็นปัญหาชั่วคราวของระบบ) รายการที่ขึ้น "ยังไม่ยืนยันสถานะ" ด้านล่างอาจสอนแล้วจริงแต่ตรวจสอบไม่ได้ในขณะนี้ ไม่ควรถือเป็นการขาด/ลา
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                       <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center">
                         <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{substitutions.length}</div>
@@ -1019,6 +1040,8 @@ export default function ViewTeacherPage() {
                                     statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">รอสอน</span>;
                                   } else if (subStatus === 'completed') {
                                     statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">ปฏิบัติหน้าที่สำเร็จ</span>;
+                                  } else if (subStatus === 'unknown') {
+                                    statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">ยังไม่ยืนยันสถานะ</span>;
                                   } else {
                                     statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">ไม่ได้สอน (ลา/ขาด)</span>;
                                   }

@@ -11,8 +11,8 @@ import { Document, Font, Image, Page, PDFViewer, StyleSheet, Text, View, pdf } f
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import defaultProfile from "@/assets/profile.png";
-import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
-import { getWeekNumber } from "@/utils/periodSummaryUtils";
+import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
+import { getWeekNumber, classifyLeaveSubType } from "@/utils/periodSummaryUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
@@ -44,20 +44,70 @@ const isDateInRange = (dateStr: string, start: any, end: any) => {
   return Boolean(startStr && endStr && startStr <= dateStr && endStr >= dateStr);
 };
 
+// แปลงรหัสสัปดาห์แบบ ISO 8601 ("YYYY-Www" จาก getWeekNumber) กลับเป็นช่วงวันที่จันทร์-อาทิตย์
+// ต้องใช้อัลกอริทึมกลับด้านของ getWeekNumber เป๊ะๆ (สัปดาห์ที่ 1 = สัปดาห์ที่มีวันพฤหัสแรกของปี)
+// ไม่งั้นวันที่ที่ได้จะไม่ตรงกับสัปดาห์ที่ผู้ใช้เลือกจริง
+const isoWeekToDateRange = (weekStr: string): { start: string; end: string } => {
+  const [yearPart, weekPart] = weekStr.split("-W");
+  const year = parseInt(yearPart, 10);
+  const week = parseInt(weekPart, 10);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4DayOfWeek = jan4.getUTCDay() || 7; // Mon=1..Sun=7
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - jan4DayOfWeek + 1);
+  const monday = new Date(week1Monday);
+  monday.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const toStr = (d: Date) => d.toISOString().split("T")[0];
+  return { start: toStr(monday), end: toStr(sunday) };
+};
+
+const getMonthDateRange = (monthStr: string): { start: string; end: string } => {
+  const [y, m] = monthStr.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return { start: `${monthStr}-01`, end: `${monthStr}-${String(lastDay).padStart(2, "0")}` };
+};
+
+// รายการวันที่ที่เข้าหมวดหนึ่งๆ ของครูคนหนึ่ง — ใช้แสดงตอนคลิกดูรายละเอียด (วัน/เดือน/ปี) ของแต่ละหมวด
+interface DetailEntry {
+  date: string;
+  teacherName?: string;
+  label?: string;
+}
+
 interface TeacherStats {
   id: string;
   fullName: string;
   profileUrl?: string;
   present: number;
   late: number;
-  leave: number;
+  leave: number; // รวม sickLeave + personalLeave + otherLeave — คงไว้เพื่อความเข้ากันได้กับ PDF/โค้ดเดิม
+  sickLeave: number;
+  personalLeave: number;
+  otherLeave: number;
   absent: number;
   noCheckout: number;
   officialTravel: number;
   total: number;
   percentage: string;
   teacherId?: string;
+  // รายวันที่จริงของแต่ละหมวด สำหรับ modal ดูรายละเอียด
+  details: {
+    present: DetailEntry[];
+    late: DetailEntry[];
+    sickLeave: DetailEntry[];
+    personalLeave: DetailEntry[];
+    otherLeave: DetailEntry[];
+    absent: DetailEntry[];
+    noCheckout: DetailEntry[];
+    officialTravel: DetailEntry[];
+  };
 }
+
+const emptyDetails = (): TeacherStats["details"] => ({
+  present: [], late: [], sickLeave: [], personalLeave: [], otherLeave: [], absent: [], noCheckout: [], officialTravel: []
+});
 
 interface TeacherAttendancePdfDocumentProps {
   chunks: TeacherStats[][];
@@ -513,153 +563,136 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
     return true;
   };
 
+  // ทุกรูปแบบรายงาน (รายวัน/สัปดาห์/เดือน/ภาคเรียน/ปี/กำหนดเอง) คำนวณจากข้อมูลดิบระดับวันเหมือนกันหมด
+  // (attendance/{date} + leave_summary/travel_summary ต่อครู) แทนที่จะอ่านเอกสารสรุปสำเร็จรูป
+  // (Weeksummary/Monthsummary/...) เหมือนเดิม เพราะเอกสารสรุปเหล่านั้นเก็บแค่ "ตัวเลขรวม" ไม่มีวันที่
+  // จริงและไม่ได้แยกลาป่วย/ลากิจ — ไม่มีทางรองรับการคลิกดูรายละเอียดวันที่ หรือแยกประเภทการลาได้เลย
+  // ถ้าไม่อ่านข้อมูลดิบ ต้นทุนที่แลกมาคือมุมมองรายภาค/รายปีจะอ่านเอกสารเยอะขึ้น (หลักร้อยแทนที่จะเป็น 1
+  // เอกสารต่อครู) แต่เป็นทางเดียวที่ให้ผลลัพธ์ถูกต้องและรองรับฟีเจอร์ที่ขอมา
   const fetchData = async () => {
     if (!schoolId) return;
     // รอให้โหลดข้อมูลครูเสร็จก่อน
     if (teachers.length === 0) return;
 
+    let startStr = "";
+    let endStr = "";
+
+    if (filterType === "daily") {
+      startStr = selectedDate;
+      endStr = selectedDate;
+    } else if (filterType === "custom") {
+      if (!startDate || !endDate) {
+        Swal.fire("แจ้งเตือน", "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด", "warning");
+        return;
+      }
+      startStr = startDate;
+      endStr = endDate;
+    } else if (filterType === "weekly") {
+      const range = isoWeekToDateRange(selectedWeek);
+      startStr = range.start;
+      endStr = range.end;
+    } else if (filterType === "monthly") {
+      const range = getMonthDateRange(selectedMonth);
+      startStr = range.start;
+      endStr = range.end;
+    } else if (filterType === "term") {
+      const t = selectedTerm === "1" ? terms.term1 : terms.term2;
+      if (!t.start || !t.end) return; // ปฏิทินยังไม่ได้ตั้งค่าภาคเรียนนี้ — รอข้อมูลก่อน ไม่ต้องเตือน
+      startStr = t.start;
+      endStr = t.end;
+    } else if (filterType === "yearly") {
+      if (!terms.term1.start || !terms.term2.end) return; // รอปฏิทินโหลดก่อน
+      startStr = terms.term1.start;
+      endStr = terms.term2.end;
+    }
+
+    if (!startStr || !endStr) return;
+
     setLoading(true);
     try {
-      let startStr = "";
-      let endStr = "";
+      const promises = teachers.map(async (teacher) => {
+        const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacher.id);
+        const attRef = collection(teacherRef, "attendance");
+        const q = query(attRef, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
+        const [attSnap, leaveSnap, travelSnap] = await Promise.all([
+          getDocs(q),
+          getDocs(collection(teacherRef, "leave_summary")),
+          getDocs(collection(teacherRef, "travel_summary")),
+        ]);
 
-      if (filterType === "daily") {
-        startStr = selectedDate;
-        endStr = selectedDate;
-      } else if (filterType === "custom") {
-        if (!startDate || !endDate) {
-          Swal.fire("แจ้งเตือน", "กรุณาเลือกวันที่เริ่มต้นและสิ้นสุด", "warning");
-          setLoading(false);
-          return;
+        const attendanceByDate: Record<string, any> = {};
+        attSnap.docs.forEach(docSnap => { attendanceByDate[docSnap.id] = docSnap.data(); });
+
+        // กรอง rejected ทิ้ง เหมือน DateSelectionPage — คำขอที่ยัง pending ก็ยังนับเป็นหมวดนั้นได้
+        const leaveRanges = leaveSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
+        const travelRanges = travelSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
+
+        return { teacherId: teacher.id, attendanceByDate, leaveRanges, travelRanges };
+      });
+
+      const perTeacherData = await Promise.all(promises);
+      const dataByTeacher = new Map(perTeacherData.map(d => [d.teacherId, d]));
+
+      // Calculate Working Dates
+      const workingDates: string[] = [];
+      const cur = new Date(startStr);
+      const last = new Date(endStr);
+      while (cur <= last) {
+        const dStr = cur.toISOString().split('T')[0];
+        if (isWorkingDay(dStr)) {
+          workingDates.push(dStr);
         }
-        startStr = startDate;
-        endStr = endDate;
+        cur.setDate(cur.getDate() + 1);
       }
 
-      if (filterType === 'daily' || filterType === 'custom') {
-        // เหมือนหน้า "ดูบันทึกการลงเวลาแบบเลือกวัน" (TeacherAttendanceDateSelectionPage) — ต้องอ่าน
-        // leave_summary/travel_summary (คำขอลา/ไปราชการ) เป็นแหล่งความจริงของหมวดวันนั้นด้วย ไม่ใช่พึ่ง
-        // attendance/{date}.status อย่างเดียว เพราะ status นี้จะถูกตั้งเป็น "ลา"/"ไปราชการ" ก็ต่อเมื่อ
-        // อนุมัติคำขอแล้วเท่านั้น (LeaveApprovalPage.handleApproveLeave/handleApproveTravel) — วันที่มีคำขอ
-        // ค้างอนุมัติจะไม่มี status ตรงนี้เลย เดิมจึงตกไปนับเป็น "ขาด" (ไม่มีเอกสาร) หรือค้างสถานะเช็คชื่อ
-        // ดิบ (มา/สาย) ทำให้ตัวเลขไม่ตรงกับหน้า date-selection ที่ถูกต้องอยู่แล้ว
-        const promises = teachers.map(async (teacher) => {
-          const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacher.id);
-          const attRef = collection(teacherRef, "attendance");
-          const q = query(attRef, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
-          const [attSnap, leaveSnap, travelSnap] = await Promise.all([
-            getDocs(q),
-            getDocs(collection(teacherRef, "leave_summary")),
-            getDocs(collection(teacherRef, "travel_summary")),
-          ]);
+      const stats: TeacherStats[] = teachers.map(teacher => {
+        const data = dataByTeacher.get(teacher.id);
+        let present = 0, late = 0, sickLeave = 0, personalLeave = 0, otherLeave = 0,
+          noCheckout = 0, officialTravel = 0, explicitAbsent = 0, missing = 0;
+        const details = emptyDetails();
 
-          const attendanceByDate: Record<string, any> = {};
-          attSnap.docs.forEach(docSnap => { attendanceByDate[docSnap.id] = docSnap.data(); });
+        workingDates.forEach(dateStr => {
+          // ลำดับความสำคัญเดียวกับ DateSelectionPage: ไปราชการ > ลา > สถานะเช็คชื่อดิบ
+          const travelHit = data?.travelRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
+          if (travelHit) { officialTravel++; details.officialTravel.push({ date: dateStr }); return; }
 
-          // กรอง rejected ทิ้ง เหมือน DateSelectionPage — คำขอที่ยัง pending ก็ยังนับเป็นหมวดนั้นได้
-          const leaveRanges = leaveSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
-          const travelRanges = travelSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
-
-          return { teacherId: teacher.id, attendanceByDate, leaveRanges, travelRanges };
-        });
-
-        const perTeacherData = await Promise.all(promises);
-        const dataByTeacher = new Map(perTeacherData.map(d => [d.teacherId, d]));
-
-        // Calculate Working Dates
-        const workingDates: string[] = [];
-        const cur = new Date(startStr);
-        const last = new Date(endStr);
-        while (cur <= last) {
-          const dStr = cur.toISOString().split('T')[0];
-          if (isWorkingDay(dStr)) {
-            workingDates.push(dStr);
+          const leaveHit = data?.leaveRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
+          if (leaveHit) {
+            const subType = classifyLeaveSubType(leaveHit.leaveType);
+            const entry = { date: dateStr, label: leaveHit.leaveType || undefined };
+            if (subType === 'sick') { sickLeave++; details.sickLeave.push(entry); }
+            else if (subType === 'personal') { personalLeave++; details.personalLeave.push(entry); }
+            else { otherLeave++; details.otherLeave.push(entry); }
+            return;
           }
-          cur.setDate(cur.getDate() + 1);
-        }
 
-        const stats: TeacherStats[] = teachers.map(teacher => {
-          const data = dataByTeacher.get(teacher.id);
-          let present = 0, late = 0, leave = 0, noCheckout = 0, officialTravel = 0, explicitAbsent = 0, missing = 0;
+          const rec = data?.attendanceByDate[dateStr];
+          if (!rec) { missing++; details.absent.push({ date: dateStr, label: "ไม่มีบันทึก" }); return; }
 
-          workingDates.forEach(dateStr => {
-            // ลำดับความสำคัญเดียวกับ DateSelectionPage: ไปราชการ > ลา > สถานะเช็คชื่อดิบ
-            const travelHit = data?.travelRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
-            if (travelHit) { officialTravel++; return; }
-
-            const leaveHit = data?.leaveRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
-            if (leaveHit) { leave++; return; }
-
-            const rec = data?.attendanceByDate[dateStr];
-            if (!rec) { missing++; return; }
-
-            if (rec.status === 'สาย' || rec.status === 'Late') late++;
-            else if (rec.status === 'ลา' || rec.status === 'ล' || rec.status === 'Leave') leave++;
-            else if (rec.status === 'มา' || rec.status === 'OnTime' || rec.status === 'Normal' || rec.status === 'กลับก่อน') present++;
-            else if (rec.status === 'ไม่ลงเวลาออก' || rec.status === 'NoCheckout') noCheckout++;
-            else if (rec.status === 'ไปราชการ' || rec.status === 'officialTravel' || rec.status === 'OfficialTravel') officialTravel++;
-            else if (rec.status === 'ขาด' || rec.status === 'Absent') explicitAbsent++;
-            else missing++;
-          });
-
-          const absent = explicitAbsent + missing;
-          const attended = present + late + noCheckout + officialTravel;
-          const percentage = workingDates.length > 0 ? ((attended / workingDates.length) * 100).toFixed(2) : "0.00";
-
-          return {
-            id: teacher.id, fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
-            profileUrl: teacher.profileImageUrl,
-            present, late, leave, absent, noCheckout, officialTravel,
-            total: workingDates.length, percentage,
-            teacherId: teacher.teacherId || ""
-          };
+          if (rec.status === 'สาย' || rec.status === 'Late') { late++; details.late.push({ date: dateStr }); }
+          else if (rec.status === 'ลา' || rec.status === 'ล' || rec.status === 'Leave') { otherLeave++; details.otherLeave.push({ date: dateStr }); }
+          else if (rec.status === 'มา' || rec.status === 'OnTime' || rec.status === 'Normal' || rec.status === 'กลับก่อน') { present++; details.present.push({ date: dateStr }); }
+          else if (rec.status === 'ไม่ลงเวลาออก' || rec.status === 'NoCheckout') { noCheckout++; details.noCheckout.push({ date: dateStr }); }
+          else if (rec.status === 'ไปราชการ' || rec.status === 'officialTravel' || rec.status === 'OfficialTravel') { officialTravel++; details.officialTravel.push({ date: dateStr }); }
+          else if (rec.status === 'ขาด' || rec.status === 'Absent') { explicitAbsent++; details.absent.push({ date: dateStr }); }
+          else { missing++; details.absent.push({ date: dateStr, label: "ไม่มีบันทึก" }); }
         });
-        setSummaryData(stats);
-      } else {
-        // Period Summary Logic
-        let collectionName = "", docId = "";
-        if (filterType === 'weekly') { collectionName = 'Weeksummary'; docId = selectedWeek; }
-        else if (filterType === 'monthly') { collectionName = 'Monthsummary'; docId = selectedMonth; }
-        else if (filterType === 'term') {
-          collectionName = 'Semestersummary';
-          docId = getSemesterKey(currentAcademicYear, selectedTerm);
-        }
-        else if (filterType === 'yearly') { collectionName = 'Yearsummary'; docId = currentAcademicYear; }
 
-        console.log(`[Teacher Summary] Fetching from collection: ${collectionName}, docId: ${docId}`);
+        const absent = explicitAbsent + missing;
+        const leave = sickLeave + personalLeave + otherLeave;
+        const attended = present + late + noCheckout + officialTravel;
+        const percentage = workingDates.length > 0 ? ((attended / workingDates.length) * 100).toFixed(2) : "0.00";
 
-        const promises = teachers.map(async (teacher) => {
-          const ref = doc(firestore, "school-settings", schoolId, "teachers", teacher.id, collectionName, docId);
-          const snap = await getDoc(ref);
-          return { teacher, data: snap.exists() ? snap.data() : {} };
-        });
-        const results = await Promise.all(promises);
-
-        const stats: TeacherStats[] = results.map(({ teacher, data }) => {
-          const present = data.present || 0;
-          const late = data.late || 0;
-          const leave = data.leave || 0;
-          const absent = data.absent || 0;
-          const noCheckout = data.noCheckout || 0;
-          const officialTravel = data.officialTravel || 0;
-
-          const total = present + late + leave + absent + noCheckout + officialTravel;
-          const attended = present + late + noCheckout + officialTravel;
-          const percentage = total > 0 ? ((attended / total) * 100).toFixed(2) : "0.00";
-
-          return {
-            id: teacher.id,
-            fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
-            profileUrl: teacher.profileImageUrl,
-            present, late, leave, absent, noCheckout, officialTravel,
-            total, percentage,
-            teacherId: teacher.teacherId || ""
-          };
-        });
-        console.log(`[Teacher Summary] Fetched ${stats.length} records:`, stats);
-        setSummaryData(stats);
-      }
-
+        return {
+          id: teacher.id, fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
+          profileUrl: teacher.profileImageUrl,
+          present, late, leave, sickLeave, personalLeave, otherLeave, absent, noCheckout, officialTravel,
+          total: workingDates.length, percentage,
+          teacherId: teacher.teacherId || "",
+          details,
+        };
+      });
+      setSummaryData(stats);
     } catch (error) {
       console.error("Error fetching attendance summary:", error);
       Swal.fire("Error", "เกิดข้อผิดพลาดในการดึงข้อมูล", "error");
@@ -672,11 +705,39 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
     if (filterType !== 'custom') {
       fetchData();
     }
-  }, [filterType, selectedDate, selectedMonth, teachers, calendarEvents, selectedTerm, terms]); // Auto fetch on simple filters, manual for custom
+  }, [filterType, selectedDate, selectedWeek, selectedMonth, teachers, calendarEvents, selectedTerm, terms]); // Auto fetch on simple filters, manual for custom
 
-  const filteredData = summaryData.filter(item =>
-    item.fullName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredData = summaryData.filter(item => {
+    const kw = searchTerm.trim().toLowerCase();
+    if (!kw) return true;
+    return item.fullName.toLowerCase().includes(kw) || (item.teacherId || "").toLowerCase().includes(kw);
+  });
+
+  // Modal แสดงรายละเอียดวัน/เดือน/ปี ของหมวดที่คลิก — ใช้ทั้งตอนคลิกที่การ์ดสรุปด้านบน (รวมทุกคนที่กรองอยู่
+  // จึงมี teacherName กำกับแต่ละแถว) และตอนคลิกที่ช่องตัวเลขของครูรายคนในตาราง (ไม่ต้องกำกับชื่อซ้ำ)
+  const [detailModal, setDetailModal] = useState<{ title: string; entries: DetailEntry[] } | null>(null);
+
+  const openTeacherDetail = (teacherName: string, category: keyof TeacherStats["details"], entries: DetailEntry[], label: string) => {
+    if (entries.length === 0) return;
+    setDetailModal({ title: `${label} — ${teacherName}`, entries });
+  };
+
+  const openAggregateDetail = (category: keyof TeacherStats["details"], label: string) => {
+    const entries: DetailEntry[] = [];
+    filteredData.forEach(row => {
+      row.details[category].forEach(e => entries.push({ ...e, teacherName: row.fullName }));
+    });
+    if (entries.length === 0) return;
+    setDetailModal({ title: label, entries });
+  };
+
+  const formatDetailDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
 
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
@@ -950,7 +1011,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                 <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="ค้นหาชื่อครู..."
+                  placeholder="ค้นหาชื่อครู หรือรหัสครู..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none w-full"
@@ -959,46 +1020,44 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Summary Statistics */}
+          {/* Summary Statistics — คำนวณจาก filteredData เสมอ ถ้าค้นหา/เลือกครูคนใดคนหนึ่งอยู่ ตัวเลข
+              การ์ดจะเป็นของคนนั้นเท่านั้น ไม่ใช่ยอดรวมทั้งโรงเรียนเหมือนเดิม — คลิกที่การ์ดเพื่อดูรายละเอียด
+              วัน/เดือน/ปี ของทุกคนที่กำลังกรองอยู่ในหมวดนั้น */}
           {!loading && summaryData.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700/50 rounded-xl p-4">
-                <div className="text-green-600 dark:text-green-400 text-sm font-medium mb-1">มา (ปกติ)</div>
-                <div className="text-2xl font-bold text-green-700 dark:text-green-300">
-                  {summaryData.reduce((sum, item) => sum + item.present, 0)}
-                </div>
+            <>
+              {searchTerm.trim() && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  กำลังแสดงผลรวมเฉพาะ {filteredData.length} คนที่ตรงกับ "{searchTerm}"
+                </p>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+                {([
+                  { key: 'present', label: 'มา (ปกติ)', cardClass: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700/50', labelClass: 'text-green-600 dark:text-green-400', valueClass: 'text-green-700 dark:text-green-300' },
+                  { key: 'late', label: 'สาย', cardClass: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700/50', labelClass: 'text-yellow-600 dark:text-yellow-400', valueClass: 'text-yellow-700 dark:text-yellow-300' },
+                  { key: 'sickLeave', label: 'ลาป่วย', cardClass: 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-700/50', labelClass: 'text-sky-600 dark:text-sky-400', valueClass: 'text-sky-700 dark:text-sky-300' },
+                  { key: 'personalLeave', label: 'ลากิจ', cardClass: 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-700/50', labelClass: 'text-cyan-600 dark:text-cyan-400', valueClass: 'text-cyan-700 dark:text-cyan-300' },
+                  { key: 'absent', label: 'ขาด', cardClass: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700/50', labelClass: 'text-red-600 dark:text-red-400', valueClass: 'text-red-700 dark:text-red-300' },
+                  { key: 'officialTravel', label: 'ไปราชการ', cardClass: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700/50', labelClass: 'text-purple-600 dark:text-purple-400', valueClass: 'text-purple-700 dark:text-purple-300' },
+                  { key: 'noCheckout', label: 'ไม่ลงเวลาออก', cardClass: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-700/50', labelClass: 'text-orange-600 dark:text-orange-400', valueClass: 'text-orange-700 dark:text-orange-300' },
+                ] as const).map(({ key, label, cardClass, labelClass, valueClass }) => {
+                  const total = filteredData.reduce((sum, item) => sum + (item[key] as number), 0);
+                  const hasDetail = filteredData.some(item => item.details[key as keyof TeacherStats["details"]]?.length > 0);
+                  return (
+                    <button
+                      type="button"
+                      key={key}
+                      onClick={() => openAggregateDetail(key as keyof TeacherStats["details"], label)}
+                      disabled={!hasDetail}
+                      title={hasDetail ? "คลิกเพื่อดูรายละเอียดวันที่" : undefined}
+                      className={`text-left border rounded-xl p-4 transition-transform ${cardClass} ${hasDetail ? 'hover:scale-[1.02] cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <div className={`text-sm font-medium mb-1 ${labelClass}`}>{label}</div>
+                      <div className={`text-2xl font-bold ${valueClass}`}>{total}</div>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/50 rounded-xl p-4">
-                <div className="text-yellow-600 dark:text-yellow-400 text-sm font-medium mb-1">สาย</div>
-                <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
-                  {summaryData.reduce((sum, item) => sum + item.late, 0)}
-                </div>
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 rounded-xl p-4">
-                <div className="text-blue-600 dark:text-blue-400 text-sm font-medium mb-1">ลา</div>
-                <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">
-                  {summaryData.reduce((sum, item) => sum + item.leave, 0)}
-                </div>
-              </div>
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/50 rounded-xl p-4">
-                <div className="text-red-600 dark:text-red-400 text-sm font-medium mb-1">ขาด</div>
-                <div className="text-2xl font-bold text-red-700 dark:text-red-300">
-                  {summaryData.reduce((sum, item) => sum + item.absent, 0)}
-                </div>
-              </div>
-              <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/50 rounded-xl p-4">
-                <div className="text-purple-600 dark:text-purple-400 text-sm font-medium mb-1">ไปราชการ</div>
-                <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">
-                  {summaryData.reduce((sum, item) => sum + item.officialTravel, 0)}
-                </div>
-              </div>
-              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/50 rounded-xl p-4">
-                <div className="text-orange-600 dark:text-orange-400 text-sm font-medium mb-1">ไม่ลงเวลาออก</div>
-                <div className="text-2xl font-bold text-orange-700 dark:text-orange-300">
-                  {summaryData.reduce((sum, item) => sum + item.noCheckout, 0)}
-                </div>
-              </div>
-            </div>
+            </>
           )}
 
           {/* Table */}
@@ -1012,7 +1071,8 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                     <th className="px-6 py-4 text-sm font-semibold text-gray-600 dark:text-gray-300 min-w-[320px] whitespace-nowrap">ชื่อ - นามสกุล</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-green-600 dark:text-green-400">มา (ปกติ)</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-yellow-600 dark:text-yellow-400">สาย</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-center text-blue-600 dark:text-blue-400">ลา</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-center text-sky-600 dark:text-sky-400">ลาป่วย</th>
+                    <th className="px-6 py-4 text-sm font-semibold text-center text-cyan-600 dark:text-cyan-400">ลากิจ</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-red-600 dark:text-red-400">ขาด</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-purple-600 dark:text-purple-400">ไปราชการ</th>
                     <th className="px-6 py-4 text-sm font-semibold text-center text-orange-600 dark:text-orange-400">ไม่ลงเวลาออก</th>
@@ -1033,13 +1093,14 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                         <td className="px-6 py-4 text-center"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                         <td className="px-6 py-4 text-center"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                         <td className="px-6 py-4 text-center"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
+                        <td className="px-6 py-4 text-center"><div className="h-3.5 w-8 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                         <td className="px-6 py-4 text-center"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                         <td className="px-6 py-4 text-center"><div className="h-3.5 w-10 mx-auto rounded bg-gray-200 dark:bg-gray-700 animate-pulse"></div></td>
                       </tr>
                     ))
                   ) : filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      <td colSpan={12} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                         ไม่พบข้อมูลในช่วงเวลาที่เลือก
                       </td>
                     </tr>
@@ -1064,22 +1125,74 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-green-600 dark:text-green-400">
-                          {record.present}
+                          <button
+                            type="button"
+                            disabled={record.details.present.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'present', record.details.present, 'มา (ปกติ)')}
+                            className={record.details.present.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.present}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-yellow-600 dark:text-yellow-400">
-                          {record.late}
+                          <button
+                            type="button"
+                            disabled={record.details.late.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'late', record.details.late, 'สาย')}
+                            className={record.details.late.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.late}
+                          </button>
                         </td>
-                        <td className="px-6 py-4 text-center font-medium text-blue-600 dark:text-blue-400">
-                          {record.leave}
+                        <td className="px-6 py-4 text-center font-medium text-sky-600 dark:text-sky-400">
+                          <button
+                            type="button"
+                            disabled={record.details.sickLeave.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'sickLeave', record.details.sickLeave, 'ลาป่วย')}
+                            className={record.details.sickLeave.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.sickLeave}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 text-center font-medium text-cyan-600 dark:text-cyan-400">
+                          <button
+                            type="button"
+                            disabled={record.details.personalLeave.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'personalLeave', record.details.personalLeave, 'ลากิจ')}
+                            className={record.details.personalLeave.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.personalLeave}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-red-600 dark:text-red-400">
-                          {record.absent}
+                          <button
+                            type="button"
+                            disabled={record.details.absent.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'absent', record.details.absent, 'ขาด')}
+                            className={record.details.absent.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.absent}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-purple-600 dark:text-purple-400">
-                          {record.officialTravel}
+                          <button
+                            type="button"
+                            disabled={record.details.officialTravel.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'officialTravel', record.details.officialTravel, 'ไปราชการ')}
+                            className={record.details.officialTravel.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.officialTravel}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-center font-medium text-orange-600 dark:text-orange-400">
-                          {record.noCheckout}
+                          <button
+                            type="button"
+                            disabled={record.details.noCheckout.length === 0}
+                            onClick={() => openTeacherDetail(record.fullName, 'noCheckout', record.details.noCheckout, 'ไม่ลงเวลาออก')}
+                            className={record.details.noCheckout.length > 0 ? "hover:underline cursor-pointer" : "cursor-default"}
+                          >
+                            {record.noCheckout}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                           {record.total}
@@ -1134,6 +1247,48 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
               <PDFViewer width="100%" height="100%" className="h-full w-full border-none" showToolbar={true}>
                 <TeacherAttendancePdfDocument {...pdfDocProps} />
               </PDFViewer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailModal && (
+        <div
+          className="fixed inset-0 top-[60px] z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setDetailModal(null)}
+        >
+          <div
+            className="flex max-h-[calc(100vh-100px)] w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl dark:bg-[#1e1f21]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-white/10">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white truncate pr-4">{detailModal.title}</h2>
+              <button
+                type="button"
+                onClick={() => setDetailModal(null)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10"
+                title="ปิด"
+              >
+                <FaTimes size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+                {[...detailModal.entries]
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .map((entry, idx) => (
+                    <li key={`${entry.date}-${entry.teacherName || ''}-${idx}`} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+                      <span className="text-gray-700 dark:text-gray-300">{formatDetailDate(entry.date)}</span>
+                      <span className="text-right">
+                        {entry.teacherName && <span className="font-medium text-gray-900 dark:text-white mr-2">{entry.teacherName}</span>}
+                        {entry.label && <span className="text-xs text-gray-400 dark:text-gray-500">{entry.label}</span>}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+            <div className="border-t border-gray-100 dark:border-gray-800 px-5 py-3 text-xs text-gray-400 dark:text-gray-500">
+              ทั้งหมด {detailModal.entries.length} รายการ
             </div>
           </div>
         </div>

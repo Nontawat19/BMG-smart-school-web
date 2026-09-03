@@ -24,7 +24,8 @@ import {
   Teacher,
   CharacteristicCriteria,
   ReadingWritingCriteria,
-  GroupAssignment
+  GroupAssignment,
+  GradeRecord
 } from './GradeBookPage/types';
 
 import GradeBookHeader from './GradeBookPage/components/GradeBookHeader';
@@ -221,8 +222,6 @@ const GradeBookPage: React.FC = () => {
     calculateGradeMemoized
   );
 
-  const calculations = useGradeBookCalculations(grades, students, characteristicsCriteria, readingWritingCriteria, activeTab);
-
   const attendance = useGradeBookAttendance(
     calendarData,
     courseSchedule,
@@ -238,6 +237,30 @@ const GradeBookPage: React.FC = () => {
     studentCourseDailyStatus,
     checkIsHolidayLocal
   );
+
+  // ผลการเรียนจริงที่ต้องแสดง/บันทึก: เช็คเวลาเรียนก่อนเสมอ — ถ้าต่ำกว่าร้อยละ 80 ของภาคเรียน/ปี
+  // การศึกษาที่กำลังดูอยู่ (จากระบบเช็คชื่อรายวิชา) ทับเป็น "มส" ทันที ไม่ว่าคะแนนจะได้เท่าไหร่ก็ตาม
+  // ทับสถานะ/เกรดเดิมที่ครูใส่ไว้เสมอ — ถ้าเวลาเรียนผ่านเกณฑ์แล้วค่อยใช้เกรดจากคะแนนตามปกติ (ซึ่ง
+  // calculateGrade คำนวณ "0" อัตโนมัติอยู่แล้วถ้าคะแนนรวม < 50) เป็น derived state เท่านั้น ไม่แตะ
+  // `grades` ดิบที่ใช้ผูกกับช่องกรอกคะแนน — ใช้แสดงผลในตาราง/สถิติ/PDF และเป็นสิ่งที่ handleSave เขียนจริง
+  const effectiveGrades = useMemo(() => {
+    const result: Record<string, GradeRecord> = {};
+    students.forEach(s => {
+      const base = grades[s.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+      const eligibility = attendance.attendanceEligibility[s.id];
+      result[s.id] = eligibility?.belowThreshold
+        ? {
+          ...base,
+          status: 'มส',
+          grade: 'มส',
+          remark: `เวลาเรียนไม่ถึงร้อยละ 80 (${eligibility.presentHours}/${eligibility.totalHours} คาบ = ${eligibility.percentage.toFixed(1)}%)`,
+        }
+        : base;
+    });
+    return result;
+  }, [students, grades, attendance.attendanceEligibility]);
+
+  const calculations = useGradeBookCalculations(effectiveGrades, students, characteristicsCriteria, readingWritingCriteria, activeTab);
 
   // Single source of truth for "ความคืบหน้าการกรอก" so every card on the page shows the same number
   // for the currently open tab, instead of each component deriving it with a slightly different formula.
@@ -273,7 +296,8 @@ const GradeBookPage: React.FC = () => {
     maxScores,
     currentCourse,
     coursesWithAssignments,
-    sdqMap
+    sdqMap,
+    attendance.attendanceEligibility
   );
 
   useEffect(() => {
@@ -732,7 +756,7 @@ const GradeBookPage: React.FC = () => {
 
   const pdfProps = useMemo(() => ({
     students,
-    grades,
+    grades: effectiveGrades,
     maxScores,
     schoolInfo: { ...schoolInfo, schoolName, logoUrl, directorName, directorPrefix, academicYear: calYear },
     currentCourse: pdfCurrentCourse,
@@ -784,7 +808,7 @@ const GradeBookPage: React.FC = () => {
     currentTerm: effectiveSemester,
     specialPeriods: reduxPeriods || [],
   }), [
-    students, grades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, calYear,
+    students, effectiveGrades, maxScores, schoolInfo, schoolName, logoUrl, directorName, directorPrefix, calYear,
     currentCourse, pdfCurrentCourse, courseTeacherName, homeroomTeacher, headOfLearningAreaName, headOfAssessmentName,
     resolvedSubjectGroupName, activeTab, characteristicsCriteria, readingWritingCriteria,
     attendance.studentAttendanceSummaries, attendance.attendancePages, studentChunks, announcementChunks,
@@ -867,7 +891,7 @@ const GradeBookPage: React.FC = () => {
             </div>
           ) : (
             <GradeBookResults
-              loading={loading} activeTab={activeTab} students={students} grades={grades}
+              loading={loading} activeTab={activeTab} students={students} grades={effectiveGrades}
               completenessStats={attendance.completenessStats}
               completenessDisplay={completenessDisplay}
               characteristicsCriteria={characteristicsCriteria} readingWritingCriteria={readingWritingCriteria}

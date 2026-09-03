@@ -108,6 +108,29 @@ export const matchesClassLevel = (studentClassLevel: string | undefined, selecte
     return false;
 };
 
+// เผื่อกรณีมีวิชารหัสเดียวกันซ้ำหลายเอกสารในคอลเลกชัน courses (เช่น ข้อมูลนำเข้าซ้ำ) — การลงทะเบียน
+// ของนักเรียนอาจผูกกับ courseId คนละเอกสารกับที่ครูถูกมอบหมายไว้ ทั้งที่จอแสดงรหัส/ชื่อวิชาเหมือนกันเป๊ะ
+// (เช่น "ค21101 คณิตศาสตร์พื้นฐาน" ทั้งคู่) ทำให้ getTeacherForAssignment หาชื่อครูไม่เจอทั้งที่มอบหมายไว้แล้ว
+// จริง — ฟังก์ชันนี้ mutate assignmentsByCourse ให้ courseId ทุกตัวที่ใช้รหัสวิชาเดียวกัน "มองเห็น" รายการ
+// มอบหมายของกันและกัน โดยไม่กระทบกรณีปกติ (รหัสวิชาไม่ซ้ำ = ไม่มีผลอะไรเลย)
+const mergeAssignmentsAcrossDuplicateCourseCodes = (
+    courseMap: Record<string, { code: string }>,
+    assignmentsByCourse: Record<string, any[]>
+) => {
+    const courseIdsByCode: Record<string, string[]> = {};
+    Object.entries(courseMap).forEach(([id, c]) => {
+        if (!c.code) return;
+        if (!courseIdsByCode[c.code]) courseIdsByCode[c.code] = [];
+        courseIdsByCode[c.code].push(id);
+    });
+    Object.values(courseIdsByCode).forEach(ids => {
+        if (ids.length < 2) return;
+        const merged = ids.flatMap(id => assignmentsByCourse[id] || []);
+        if (merged.length === 0) return;
+        ids.forEach(id => { assignmentsByCourse[id] = merged; });
+    });
+};
+
 export const getTeacherDisplayName = (teacherMap: Record<string, any>, teacherId?: string, fallbackName?: string) => {
     if (fallbackName) return `ครู${fallbackName}`;
     const t = teacherId ? teacherMap[teacherId] : null;
@@ -285,6 +308,7 @@ export const fetchFlaggedStudents = async (
         if (!assignmentsByCourse[data.courseId]) assignmentsByCourse[data.courseId] = [];
         assignmentsByCourse[data.courseId].push(data);
     });
+    mergeAssignmentsAcrossDuplicateCourseCodes(courseMap, assignmentsByCourse);
 
     const clubDocByCourseId: Record<string, string> = {};
     clubSnap.docs.forEach(d => {
@@ -739,6 +763,7 @@ export const fetchFullRoster = async (
         if (!assignmentsByCourse[data.courseId]) assignmentsByCourse[data.courseId] = [];
         assignmentsByCourse[data.courseId].push(data);
     });
+    mergeAssignmentsAcrossDuplicateCourseCodes(courseMap, assignmentsByCourse);
 
     const clubDocByCourseId: Record<string, string> = {};
     clubSnap.docs.forEach(d => {
@@ -1107,6 +1132,7 @@ export const fetchStudentTranscript = async (
         if (!assignmentsByCourse[data.courseId]) assignmentsByCourse[data.courseId] = [];
         assignmentsByCourse[data.courseId].push(data);
     });
+    mergeAssignmentsAcrossDuplicateCourseCodes(courseMap, assignmentsByCourse);
 
     const clubDocByCourseId: Record<string, string> = {};
     clubSnap.docs.forEach(d => {

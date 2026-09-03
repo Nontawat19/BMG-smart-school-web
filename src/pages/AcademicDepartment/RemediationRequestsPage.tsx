@@ -15,15 +15,13 @@ import { ClipboardCheck, RefreshCw, Clock, Search, AlertCircle, Printer, FileDow
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 import {
     matchesAcademicTerm, matchesClassLevel, getTeacherDisplayName, fetchStudentTranscript,
-    fetchFlaggedStudents, FlaggedCourse,
+    fetchFlaggedStudents, FlaggedCourse, getMinistryRemediationGradeOptions,
 } from '@/utils/remediationUtils';
 import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import { RemediationRequestPdfDocument, RemediationRequestPdfBulkDocument } from '@/components/Pdf/remediation';
 import { getThaiYear } from '@/utils/dateUtils';
-
-const GRADE_OPTIONS = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0'];
 
 interface RemediationRequest {
     id: string;
@@ -137,6 +135,9 @@ const RemediationRequestsPage: React.FC = () => {
 
         let newValue: string | undefined;
         if (req.flagType === 'course') {
+            // ตามระเบียบ ศธ./สพฐ.: แก้ตัวจาก "0" หรือ "มส" ได้เกรดสูงสุดไม่เกิน "1" — ใช้ตัวเลือกเดียวกับ
+            // หน้า "บันทึก 0 ร มส" (RemediationRecordPage) เพื่อไม่ให้สองหน้านี้บังคับใช้กฎไม่ตรงกัน
+            const gradeOptions = getMinistryRemediationGradeOptions(req.originalGrade);
             const { value } = await Swal.fire({
                 title: 'บันทึกผลแก้ตัว',
                 html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">
@@ -144,7 +145,7 @@ const RemediationRequestsPage: React.FC = () => {
                     วิชา: <b>${req.courseTitle || req.courseCode}</b> — ผลเดิม: <b>${req.originalGrade}</b>
                 </div>`,
                 input: 'select',
-                inputOptions: GRADE_OPTIONS.reduce((acc: any, g) => { acc[g] = g; return acc; }, {}),
+                inputOptions: gradeOptions,
                 inputPlaceholder: 'เลือกผลการเรียนใหม่',
                 showCancelButton: true,
                 confirmButtonText: 'บันทึก',

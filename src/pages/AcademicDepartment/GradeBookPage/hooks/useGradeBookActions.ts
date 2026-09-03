@@ -20,7 +20,8 @@ export const useGradeBookActions = (
     maxScores: { formative: number; midterm: number; final: number },
     currentCourse: Course | undefined,
     courses: Course[],
-    sdqMap: Record<string, any>
+    sdqMap: Record<string, any>,
+    attendanceEligibility: Record<string, { percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean }>
 ) => {
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(false); // Can be managed externally too
@@ -321,7 +322,16 @@ export const useGradeBookActions = (
     const handleSave = useCallback(async () => {
         if (!selectedCourse || !schoolId) return;
 
-        if (modifiedStudentIds.size === 0) {
+        // ลำดับการตัดสินผล: 1) เช็คเวลาเรียน (จากระบบเช็คชื่อรายวิชา) ก่อนเสมอ — ถ้าต่ำกว่าร้อยละ 80
+        // ติด "มส" ทันที ไม่ว่าคะแนนจะได้เท่าไหร่ก็ตาม 2) ถ้าเวลาเรียนผ่านเกณฑ์แล้วค่อยดูคะแนน (ต่ำกว่า
+        // 50 = "0" ตามที่คำนวณอัตโนมัติอยู่แล้วใน calculateGrade) — เวลาเรียนไม่พอ "ทับ" เกรด/สถานะเดิม
+        // ที่ครูใส่ไว้เสมอ จึงต้องรวมนักเรียนกลุ่มนี้เข้าไปในชุดที่บันทึก แม้ครูจะไม่ได้แก้คะแนนของเขาเลยก็ตาม
+        const attendanceFlaggedIds = students
+            .filter(s => attendanceEligibility[s.id]?.belowThreshold)
+            .map(s => s.id);
+        const currentModifiedIds = Array.from(new Set([...modifiedStudentIds, ...attendanceFlaggedIds]));
+
+        if (currentModifiedIds.length === 0) {
             Swal.fire({
                 icon: 'info',
                 title: 'ไม่มีข้อมูลเปลี่ยนแปลง',
@@ -335,7 +345,6 @@ export const useGradeBookActions = (
         }
 
         setIsSaving(true);
-        const currentModifiedIds = Array.from(modifiedStudentIds);
 
         try {
             // อ่านเอกสารเดิมของทุกคนที่แก้ไขก่อน เพื่อรู้ว่าใครเพิ่ง "หลุด ร" จากการแก้คะแนน (ต้องเทียบกับ
@@ -352,8 +361,18 @@ export const useGradeBookActions = (
 
             const batch = writeBatch(db);
             currentModifiedIds.forEach((studentId) => {
-                const record = grades[studentId];
-                if (!record) return;
+                const baseRecord = grades[studentId] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                const attendanceInfo = attendanceEligibility[studentId];
+
+                // เวลาเรียนไม่ถึงร้อยละ 80 → บังคับ "มส" เสมอ ทับสถานะ/เกรดใดๆ ที่ครูใส่ไว้
+                const record: GradeRecord = attendanceInfo?.belowThreshold
+                    ? {
+                        ...baseRecord,
+                        status: 'มส',
+                        grade: 'มส',
+                        remark: `เวลาเรียนไม่ถึงร้อยละ 80 (${attendanceInfo.presentHours}/${attendanceInfo.totalHours} คาบ = ${attendanceInfo.percentage.toFixed(1)}%)`,
+                    }
+                    : baseRecord;
 
                 const ref = doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', studentId);
 
@@ -375,6 +394,7 @@ export const useGradeBookActions = (
                 });
                 if (!record.status) {
                     dataToSave.status = deleteField();
+                    // เวลาเรียนผ่านเกณฑ์แล้ว จึงมาถึงขั้นดูคะแนน — calculateGrade คืน "0" อัตโนมัติถ้าคะแนนรวม < 50
                     const resolvedGrade = calculateGrade(Number(record.total || 0));
                     dataToSave.grade = resolvedGrade;
                     // เพิ่งหลุดจาก "ร" ด้วยการแก้คะแนน (ไม่ใช่ครูกดปุ่ม 0/ร/มส เอง) — ใส่ remark อธิบายไว้ให้
@@ -410,7 +430,7 @@ export const useGradeBookActions = (
         } finally {
             setIsSaving(false);
         }
-    }, [grades, schoolId, selectedCourse, modifiedStudentIds]);
+    }, [grades, schoolId, selectedCourse, modifiedStudentIds, students, attendanceEligibility]);
 
     const handleImportFromOtherCourse = useCallback(async () => {
         if (!selectedClass || !selectedCourse || !schoolId) return;

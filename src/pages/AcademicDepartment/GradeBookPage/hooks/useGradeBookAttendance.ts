@@ -462,12 +462,20 @@ export const useGradeBookAttendance = (
         const summaries: Record<string, any> = {};
         if (!students.length || !attendancePages.length) return summaries;
 
+        // "Elapsed" = sessions on/before today — used for the 80%-attendance "มส" check so a
+        // term that hasn't finished yet doesn't have its still-untaught future sessions counted
+        // as absences (the annual/term buckets above intentionally cover the WHOLE term for the
+        // ปพ.5 PDF report, which is only generated once every session is already recorded).
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
         students.forEach(student => {
             const statusMap = studentCourseDailyStatus[student.id] || {};
             const summary = {
                 term1: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0 },
                 term2: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0 },
-                annual: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0, percentage: 0, evaluation: 'ปรับปรุง' }
+                annual: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0, percentage: 0, evaluation: 'ปรับปรุง' },
+                elapsed: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0, percentage: 0 }
             };
 
             attendancePages.forEach(page => {
@@ -481,11 +489,22 @@ export const useGradeBookAttendance = (
                         summary[termKey].totalPossibleHours++;
                         summary.annual.totalPossibleHours++;
                         const status = statusMap[day.dateStr];
-                        if (status === 'present') { summary[termKey].present++; summary.annual.present++; }
-                        else if (status === 'late') { summary[termKey].late++; summary.annual.late++; }
-                        else if (status === 'leave') { summary[termKey].leave++; summary.annual.leave++; }
-                        // 'escape' (truancy) and any other/unrecorded status count as absent.
-                        else { summary[termKey].absent++; summary.annual.absent++; }
+                        const isElapsed = day.dateStr <= todayStr;
+                        if (isElapsed) summary.elapsed.totalPossibleHours++;
+                        if (status === 'present') {
+                            summary[termKey].present++; summary.annual.present++;
+                            if (isElapsed) summary.elapsed.present++;
+                        } else if (status === 'late') {
+                            summary[termKey].late++; summary.annual.late++;
+                            if (isElapsed) summary.elapsed.late++;
+                        } else if (status === 'leave') {
+                            summary[termKey].leave++; summary.annual.leave++;
+                            if (isElapsed) summary.elapsed.leave++;
+                        } else {
+                            // 'escape' (truancy) and any other/unrecorded status count as absent.
+                            summary[termKey].absent++; summary.annual.absent++;
+                            if (isElapsed) summary.elapsed.absent++;
+                        }
                     }
                 });
             });
@@ -493,10 +512,40 @@ export const useGradeBookAttendance = (
             const { present, late, leave, totalPossibleHours } = summary.annual;
             summary.annual.percentage = totalPossibleHours > 0 ? ((present + late + leave) / totalPossibleHours) * 100 : 0;
             summary.annual.evaluation = summary.annual.percentage >= 80 ? 'ดีเยี่ยม' : summary.annual.percentage >= 60 ? 'ดี' : summary.annual.percentage >= 50 ? 'ผ่าน' : 'ปรับปรุง';
+
+            const elapsedTotal = summary.elapsed.totalPossibleHours;
+            summary.elapsed.percentage = elapsedTotal > 0
+                ? ((summary.elapsed.present + summary.elapsed.late + summary.elapsed.leave) / elapsedTotal) * 100
+                : 0;
+
             summaries[student.id] = summary;
         });
         return summaries;
     }, [students, attendancePages, studentCourseDailyStatus]);
 
-    return { attendancePages, completenessStats, validateDataCompleteness, studentAttendanceSummaries };
+    // Per-student "เวลาเรียนไม่ถึงร้อยละ 80" check for the current course/term scope (whichever
+    // term(s) selectedSemester/effectiveSemester put into attendancePages — annual for primary
+    // classes forced onto 'annual' upstream, a single semester for secondary). Based on elapsed
+    // sessions only (see studentAttendanceSummaries.elapsed above).
+    //
+    // A course with zero elapsed sessions (no ตารางสอน assigned yet, so the system has no periods
+    // to check attendance against at all) counts as failing the 80% requirement too — 0% is not
+    // ≥80% — rather than silently falling back to the score-only "0" rule, which would hide the
+    // real problem (the course was never scheduled) behind a normal-looking failing grade.
+    const attendanceEligibility = useMemo(() => {
+        const result: Record<string, { percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean }> = {};
+        Object.entries(studentAttendanceSummaries).forEach(([studentId, summary]: [string, any]) => {
+            const elapsed = summary.elapsed;
+            const presentHours = elapsed.present + elapsed.late + elapsed.leave;
+            result[studentId] = {
+                percentage: elapsed.percentage,
+                presentHours,
+                totalHours: elapsed.totalPossibleHours,
+                belowThreshold: elapsed.percentage < 80
+            };
+        });
+        return result;
+    }, [studentAttendanceSummaries]);
+
+    return { attendancePages, completenessStats, validateDataCompleteness, studentAttendanceSummaries, attendanceEligibility };
 };

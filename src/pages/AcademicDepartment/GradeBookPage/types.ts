@@ -83,6 +83,7 @@ export interface GradeRecord {
     characteristicsScores?: Record<string, number>;
     readingWritingScores?: Record<string, number>;
     formativeDetails?: Record<string, number>;
+    remark?: string;
 }
 
 export interface ReadingWritingIndicator {

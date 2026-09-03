@@ -344,7 +344,7 @@ const ProfilePage: React.FC = () => {
   const [isLiffIdVisible, setIsLiffIdVisible] = useState(false);
   const [coursesFetched, setCoursesFetched] = useState(false);
   const dispatch = useDispatch();
-  const { teachers: teacherMap } = useSelector((state: RootState) => state.userMap);
+  const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
   const teachersList = useMemo(() => {
     const list = [...Object.values(teacherMap)];
     if (profile && profile.docId) {
@@ -368,6 +368,11 @@ const ProfilePage: React.FC = () => {
   // (a ClassroomAttendance record with matching substitutionId exists). Used to derive the
   // "ปฏิบัติหน้าที่สำเร็จ" / "ไม่ได้สอน (ลา/ขาด)" stats and per-row status.
   const [substitutionCompletionMap, setSubstitutionCompletionMap] = useState<Record<string, boolean>>({});
+  // true if the Firestore query that checks completion (below) errored out — most likely a
+  // missing composite index for the collectionGroup('ClassroomAttendance') query on
+  // (schoolId ==, substitutionId in). When this happens we must NOT report "ไม่ได้สอน (ลา/ขาด)"
+  // for every substitution, since that would falsely accuse a teacher who actually did check in.
+  const [substitutionCompletionCheckFailed, setSubstitutionCompletionCheckFailed] = useState(false);
   const { isDarkMode, toggleTheme } = useTheme(); // เก็บ toggleTheme ไว้ใช้กับปุ่ม
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -486,8 +491,13 @@ const ProfilePage: React.FC = () => {
   }, [remediationEnabled, activeTab]);
 
   // ── Fetch grade flags data when profile is ready ──
+  // ต้องรอ teacherMap โหลดเสร็จ (สำเร็จหรือพัง ก็ถือว่า "เสร็จ") ก่อนเรียก fetchFlaggedStudents เสมอ
+  // เพราะ fetchGradeFlags ผูก gradeFlagsFetched ไว้ไม่ให้รันซ้ำ — ถ้ายิงตอน teacherMap ยัง idle/loading
+  // (เช่น dispatch(fetchTeachersMap) ใน useEffect ข้างล่างยังไม่ resolve) ชื่อครูจะกลายเป็น "-" ค้างตลอด
+  // ไปโดยไม่มีทางรีเฟรชใหม่อีกเลยนอกจากโหลดหน้าใหม่ทั้งหมด (เจอเป็นบั๊กจริงจาก race condition นี้)
   useEffect(() => {
     if (!profile?.schoolId || !profile?.docId || userRole !== 'student' || gradeFlagsFetched) return;
+    if (teacherMapStatus === 'idle' || teacherMapStatus === 'loading') return;
     const fetchGradeFlags = async () => {
       setGradeFlagsLoading(true);
       setGradeFlagsError(null);
@@ -523,7 +533,7 @@ const ProfilePage: React.FC = () => {
       }
     };
     fetchGradeFlags();
-  }, [profile?.schoolId, profile?.docId, userRole, gradeFlagsFetched]);
+  }, [profile?.schoolId, profile?.docId, userRole, gradeFlagsFetched, teacherMapStatus]);
 
   useEffect(() => {
     let isMounted = true;
@@ -700,9 +710,12 @@ const ProfilePage: React.FC = () => {
     };
   }, [currentUser?.uid, currentUser?.email, (currentUser as any)?.schoolId]);
 
+  // เดิม skip การโหลด teacherMap ตอนเป็นนักเรียน/ผู้ปกครอง ทำให้ทุกจุดที่ต้องใช้ teacherMap
+  // (เช่น ชื่อครูผู้สอนในแท็บ "ผลการเรียน 0/ร/มส/มผ" ผ่าน fetchFlaggedStudents) หาชื่อไม่เจอเสมอ
+  // ทั้งที่ข้อมูลมอบหมายครูถูกต้อง — teachers/{teacherId} เปิด read ให้ทุกคนอยู่แล้ว (firestore.rules)
+  // จึงไม่มีเหตุผลด้านสิทธิ์ที่ต้องกันนักเรียน/ผู้ปกครองออกจากการโหลดนี้
   useEffect(() => {
-    const isStudentOrParent = localStorage.getItem('currentUserType') === 'student' || localStorage.getItem('currentUserType') === 'parent';
-    if (profile?.schoolId && !isStudentOrParent) {
+    if (profile?.schoolId) {
       dispatch(fetchTeachersMap(profile.schoolId) as any);
     }
   }, [profile?.schoolId, dispatch]);
@@ -811,7 +824,10 @@ const ProfilePage: React.FC = () => {
   // record's existence is a reliable "did they actually check in and teach" signal.
   useEffect(() => {
     if (activeTab !== 'substitution' || !profile?.schoolId || substitutions.length === 0) {
-      if (substitutions.length === 0) setSubstitutionCompletionMap({});
+      if (substitutions.length === 0) {
+        setSubstitutionCompletionMap({});
+        setSubstitutionCompletionCheckFailed(false);
+      }
       return;
     }
 
@@ -823,26 +839,32 @@ const ProfilePage: React.FC = () => {
     };
 
     const fetchCompletionStatus = async () => {
-      try {
-        const now = new Date();
-        const pastSubIds = substitutions
-          .filter(s => {
-            const d = toDateObj(s.date);
-            return d ? d <= now : false;
-          })
-          .map(s => s.id);
+      setSubstitutionCompletionCheckFailed(false);
+      const now = new Date();
+      const pastSubIds = substitutions
+        .filter(s => {
+          const d = toDateObj(s.date);
+          return d ? d <= now : false;
+        })
+        .map(s => s.id);
 
-        if (pastSubIds.length === 0) {
-          setSubstitutionCompletionMap({});
-          return;
-        }
+      if (pastSubIds.length === 0) {
+        setSubstitutionCompletionMap({});
+        return;
+      }
 
-        const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
-        const completedIds = new Set<string>();
-        const CHUNK_SIZE = 10; // Firestore 'in' query limit safety margin
+      const attendanceRef = collectionGroup(firestore, 'ClassroomAttendance');
+      const completedIds = new Set<string>();
+      const CHUNK_SIZE = 10; // Firestore 'in' query limit safety margin
+      let anyChunkFailed = false;
 
-        for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
-          const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+      // Run each chunk's query independently — a missing composite index (or any other
+      // per-query error) throws on that ONE query, and a single try/catch around the whole
+      // loop would otherwise abandon every remaining chunk too, wiping out completion data
+      // for substitutions that had nothing to do with the failing chunk.
+      for (let i = 0; i < pastSubIds.length; i += CHUNK_SIZE) {
+        const chunk = pastSubIds.slice(i, i + CHUNK_SIZE);
+        try {
           const q = query(
             attendanceRef,
             where('schoolId', '==', profile.schoolId),
@@ -853,25 +875,30 @@ const ProfilePage: React.FC = () => {
             const subId = docSnap.data().substitutionId;
             if (subId) completedIds.add(subId);
           });
+        } catch (err) {
+          console.error("Error fetching substitution completion status (chunk):", err);
+          anyChunkFailed = true;
         }
-
-        const map: Record<string, boolean> = {};
-        completedIds.forEach(id => { map[id] = true; });
-        setSubstitutionCompletionMap(map);
-      } catch (err) {
-        console.error("Error fetching substitution completion status:", err);
       }
+
+      const map: Record<string, boolean> = {};
+      completedIds.forEach(id => { map[id] = true; });
+      setSubstitutionCompletionMap(map);
+      setSubstitutionCompletionCheckFailed(anyChunkFailed);
     };
     fetchCompletionStatus();
   }, [activeTab, profile?.schoolId, substitutions]);
 
   // 'upcoming' = date hasn't happened yet; 'completed' = an attendance record exists for it;
   // 'missed' = the date has passed with no matching attendance record (teacher never checked
-  // in — most likely on leave/absent that day).
-  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' => {
+  // in — most likely on leave/absent that day); 'unknown' = the completion-check query itself
+  // failed (e.g. a missing Firestore index), so we genuinely don't know — must NOT be shown or
+  // counted as "ไม่ได้สอน (ลา/ขาด)" since that would falsely accuse a teacher who did check in.
+  const getSubstitutionStatus = (sub: Substitution): 'upcoming' | 'completed' | 'missed' | 'unknown' => {
     const d = sub.date?.toDate ? sub.date.toDate() : ((sub.date as any)?.seconds ? new Date((sub.date as any).seconds * 1000) : (sub.date ? new Date(sub.date as any) : null));
     if (!d || d > new Date()) return 'upcoming';
-    return substitutionCompletionMap[sub.id] ? 'completed' : 'missed';
+    if (substitutionCompletionMap[sub.id]) return 'completed';
+    return substitutionCompletionCheckFailed ? 'unknown' : 'missed';
   };
 
   useEffect(() => {
@@ -1795,22 +1822,18 @@ const ProfilePage: React.FC = () => {
                   <div className="space-y-4">
                     {userRole === 'student' ? (
                       <>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
                           <DetailField label="ชื่อ-นามสกุล" value={`${profile.title}${profile.firstName} ${profile.lastName}`} />
-                          <DetailField label="ชื่อเล่น" value={profile.nickname} />
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* รวมทุกฟิลด์ที่เหลือไว้ในกริดเดียว แทนที่จะแยกเป็นกริดย่อยทีละ 2-3 ช่อง — ทำให้
+                            ใช้พื้นที่แนวนอนของการ์ดเต็มที่บนจอกว้าง ไม่เหลือพื้นที่ว่างด้านขวาเหมือนเดิม */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <DetailField label="ชื่อเล่น" value={profile.nickname} />
                           <DetailField label="เลขประจำตัวประชาชน" value={profile.idCardNumber} />
                           <DetailField label="รหัสนักเรียน" value={profile.studentId} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <DetailField label="ชั้น/ห้อง" value={`${profile.classLevel}/${profile.room}`} />
                           <DetailField label="เลขที่" value={profile.studentNumber} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <DetailField label="คะแนนความประพฤติ" value={`${profile.behaviorScore ?? 100} คะแนน`} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <DetailField label="วันเกิด" value={profile.birthDate} />
                           <DetailField label="เพศ" value={profile.gender} />
                           <DetailField label="ศาสนา" value={profile.religion} />
@@ -1821,15 +1844,13 @@ const ProfilePage: React.FC = () => {
                         <div>
                           <DetailField label="ชื่อ-นามสกุล" value={`${profile.title}${profile.firstName} ${profile.lastName}`} />
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* รวมทุกฟิลด์ที่เหลือไว้ในกริดเดียว แทนที่จะแยกเป็นกริดย่อยทีละ 2-3 ช่อง — ทำให้
+                            ใช้พื้นที่แนวนอนของการ์ดเต็มที่บนจอกว้าง ไม่เหลือพื้นที่ว่างด้านขวาเหมือนเดิม */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                           <DetailField label="วันเกิด" value={profile.dob} />
                           <DetailField label="เพศ" value={profile.gender} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <DetailField label="เลขที่ใบประกอบวิชาชีพ" value={profile.licenseNumber} />
                           <DetailField label="วิทยฐานะ" value={profile.academicStanding} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <DetailField label="วันที่เริ่มงาน/บรรจุ" value={profile.startDate} />
                           <DetailField label="วุฒิการศึกษา" value={profile.educationLevel} />
                           <DetailField label="วิชาเอก" value={profile.major} />
@@ -1844,7 +1865,9 @@ const ProfilePage: React.FC = () => {
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ข้อมูลการทำงานและติดต่อ</h2>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* กริดเดียวรวมทุกฟิลด์ (แทนกริด 2 คอลัมน์แคบๆ เดิม) — เพิ่ม lg:grid-cols-3 ให้ใช้พื้นที่
+                        แนวนอนของการ์ดเต็มที่บนจอกว้าง ไม่เหลือพื้นที่ว่างด้านขวาเหมือนเดิม */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <DetailField label={userRole === 'teacher' ? "รหัสครู" : "รหัสบุคลากร"} value={profile.teacherId} />
                       <DetailField label="ตำแหน่ง" value={profile.position} />
                       <DetailField label="ฝ่ายงาน" value={profile.department} />
@@ -1912,7 +1935,9 @@ const ProfilePage: React.FC = () => {
                   ) : (
                     <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_240px]">
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {/* lg:grid-cols-4 ให้ทั้ง 4 ฟิลด์อยู่แถวเดียวบนจอกว้าง แทนที่จะเหลือแค่ 2 คอลัมน์
+                            ซึ่งทิ้งพื้นที่ว่างไว้ในคอลัมน์ minmax(0,1fr) ด้านซ้ายของ QR code */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <DetailField label="ชั้น/ห้อง" value={homeroomLabel} />
                           <DetailField label="LINE OA Basic ID" value={lineOABasicId || "-"} />
                           <div>
@@ -2022,7 +2047,7 @@ const ProfilePage: React.FC = () => {
                     <h3 className="text-md font-bold mb-4 text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
                       <FaUser /> ข้อมูลผู้ปกครอง
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <DetailField label="เกี่ยวข้องเป็น" value={profile.guardianRelationship} />
                       <DetailField label="ชื่อ-นามสกุล ผู้ปกครอง" value={`${profile.guardianTitle || ''}${profile.guardianFirstName || ''} ${profile.guardianLastName || ''}`} />
                       <DetailField label="เบอร์โทรศัพท์ผู้ปกครอง" value={profile.guardianPhone} />
@@ -2035,7 +2060,7 @@ const ProfilePage: React.FC = () => {
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in space-y-8">
                   <div>
                     <h3 className="text-md font-bold mb-4 text-indigo-600 dark:text-indigo-400">ที่อยู่ตามทะเบียนบ้าน</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                       <DetailField label="บ้านเลขที่" value={profile.regAddressNumber} />
                       <DetailField label="หมู่ที่" value={profile.regMoo} />
                       <DetailField label="ตำบล" value={profile.regSubDistrict} />
@@ -2046,7 +2071,7 @@ const ProfilePage: React.FC = () => {
                   </div>
                   <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
                     <h3 className="text-md font-bold mb-4 text-indigo-600 dark:text-indigo-400">ที่อยู่ปัจจุบัน</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                       <DetailField label="บ้านเลขที่" value={profile.curAddressNumber} />
                       <DetailField label="หมู่ที่" value={profile.curMoo} />
                       <DetailField label="ตำบล" value={profile.curSubDistrict} />
@@ -2843,9 +2868,9 @@ const ProfilePage: React.FC = () => {
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
                                           ปีการศึกษา {flag.academicYear}/{flag.semester}
                                         </span>
-                                        {flag.teacherName && (
+                                        {flag.teacherName && flag.teacherName !== '-' && (
                                           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 text-[10px] font-bold">
-                                            อ.{flag.teacherName}
+                                            {flag.teacherName}
                                           </span>
                                         )}
                                       </div>
@@ -3333,6 +3358,12 @@ const ProfilePage: React.FC = () => {
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <h2 className="text-lg font-semibold mb-6 pb-4 border-b border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200">ประวัติการสอนแทน</h2>
 
+                  {substitutionCompletionCheckFailed && (
+                    <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs font-bold text-amber-700 dark:text-amber-300">
+                      ระบบตรวจสอบสถานะการเช็คชื่อไม่สำเร็จบางส่วน (อาจเป็นปัญหาชั่วคราวของระบบ) รายการที่ขึ้น "ยังไม่ยืนยันสถานะ" ด้านล่างอาจสอนแล้วจริงแต่ตรวจสอบไม่ได้ในขณะนี้ ไม่ควรถือเป็นการขาด/ลา
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                     <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center">
                       <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{substitutions.length}</div>
@@ -3375,6 +3406,8 @@ const ProfilePage: React.FC = () => {
                               statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">รอสอน</span>;
                             } else if (subStatus === 'completed') {
                               statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">ปฏิบัติหน้าที่สำเร็จ</span>;
+                            } else if (subStatus === 'unknown') {
+                              statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">ยังไม่ยืนยันสถานะ</span>;
                             } else {
                               statusBadge = <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">ไม่ได้สอน (ลา/ขาด)</span>;
                             }

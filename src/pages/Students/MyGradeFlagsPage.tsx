@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState, AppDispatch } from '@/store';
+import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import MainLayout from '@/layouts/MainLayout';
 import BackButton from '@/components/Shared/BackButton';
 import ProfileAvatar from '@/components/Shared/ProfileAvatar';
@@ -33,6 +34,7 @@ const flagKeyId = (flag: FlaggedCourse) => flag.flagKind === 'course' ? flag.cou
 const MyGradeFlagsPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const teacherMap = useSelector((state: RootState) => (state as any).userMap?.teachers || {});
+    const dispatch = useDispatch<AppDispatch>();
     const isPwaMode = usePwaMode();
 
     const sessionSchoolId = (() => {
@@ -63,6 +65,15 @@ const MyGradeFlagsPage: React.FC = () => {
     })();
 
     const schoolId = (currentUser as any)?.schoolId || sessionSchoolId;
+
+    // ต้องโหลด teacherMap เอง ไม่พึ่งว่าหน้าอื่น (เช่น ProfilePage) เคยโหลดไว้ก่อนแล้ว — ไม่งั้นถ้า
+    // นักเรียน/ผู้ปกครองเข้าหน้านี้ตรงๆ โดยไม่ผ่านโปรไฟล์ก่อน fetchFlaggedStudents จะหาชื่อครูไม่เจอเลย
+    // (teachers/{id} เปิด read ให้ทุกคนอยู่แล้วใน firestore.rules ไม่มีเหตุผลด้านสิทธิ์ที่ต้องข้าม)
+    useEffect(() => {
+        if (schoolId) {
+            dispatch(fetchTeachersMap(schoolId) as any);
+        }
+    }, [schoolId, dispatch]);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

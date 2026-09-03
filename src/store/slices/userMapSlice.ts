@@ -99,20 +99,29 @@ export const fetchTeachersMap = createAsyncThunk(
   async (schoolId: string, { rejectWithValue }) => {
     try {
       const teachersCollectionRef = collection(firestore, 'school-settings', schoolId, 'teachers');
-      const usersCollectionRef = collection(firestore, 'users');
-      const usersQuery = query(usersCollectionRef, where("schoolId", "==", schoolId));
-      
-      const [teachersSnapshot, usersSnapshot] = await Promise.all([
-        getDocs(teachersCollectionRef),
-        getDocs(usersQuery)
-      ]);
-      
+      const teachersSnapshot = await getDocs(teachersCollectionRef);
+
+      // การ query /users แบบกว้าง (where schoolId==) ต้องมีสิทธิ์ isRealAuth() ตาม firestore.rules —
+      // นักเรียน/ผู้ปกครองในระบบนี้ล็อกอินผ่าน session ของตัวเอง (localStorage) ไม่ใช่ Firebase Auth จริง
+      // จึงโดนปฏิเสธเสมอเมื่อเรียกจากฝั่งนั้น ไม่ถือเป็นข้อผิดพลาดร้ายแรง แค่ไม่มีข้อมูลเสริมจาก users
+      // มาช่วย merge — ข้อมูลหลักจาก teachers/{id} ยังอ่านได้ปกติเพราะ rule เปิด read ให้ทุกคนอยู่แล้ว
+      // (แยก try/catch จาก teachersSnapshot ด้านบน ไม่ให้การถูกปฏิเสธ query นี้ทำให้ทั้งฟังก์ชัน reject)
+      let usersDocs: { id: string; data: () => any }[] = [];
+      try {
+        const usersCollectionRef = collection(firestore, 'users');
+        const usersQuery = query(usersCollectionRef, where("schoolId", "==", schoolId));
+        const usersSnapshot = await getDocs(usersQuery);
+        usersDocs = usersSnapshot.docs;
+      } catch (usersError) {
+        console.warn("fetchTeachersMap: skipping /users merge (no permission for this session):", usersError);
+      }
+
       const teachersData: { [id: string]: Teacher } = {};
       const usersData: { [id: string]: any } = {};
-      usersSnapshot.forEach(userDoc => {
+      usersDocs.forEach(userDoc => {
         usersData[userDoc.id] = userDoc.data();
       });
-      
+
       teachersSnapshot.forEach(doc => {
         const data = doc.data();
         const userData = usersData[doc.id] || {};
@@ -149,7 +158,7 @@ export const fetchTeachersMap = createAsyncThunk(
         };
       });
 
-      usersSnapshot.forEach(userDoc => {
+      usersDocs.forEach(userDoc => {
         if (teachersData[userDoc.id]) return;
 
         const userData = userDoc.data();

@@ -188,6 +188,9 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                 <tbody className={`divide-y ${(isCharacteristics || isRW) ? 'divide-gray-100 dark:divide-gray-800 bg-white dark:bg-[#0d0d0d]' : 'divide-gray-100 dark:divide-gray-800'}`}>
                     {filteredStudents.map((student) => {
                         const record = grades[student.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                        // ล็อกเป็น "มส" อัตโนมัติจากเวลาเรียนต่ำกว่าร้อยละ 80 (คำนวณไว้แล้วที่ GradeBookPage.tsx
+                        // ผ่าน effectiveGrades) — ปุ่ม 0/ร/มส แก้ไขไม่ได้จนกว่าเวลาเรียนจะกลับมาผ่านเกณฑ์
+                        const isAttendanceForced = Boolean(record.remark?.startsWith('เวลาเรียนไม่ถึงร้อยละ 80'));
                         return (
                             <tr key={student.id} className={(isCharacteristics || isRW) ? 'hover:bg-gray-50 dark:hover:bg-[#1a1b1e] transition-colors group' : 'hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group'}>
                                 <td className={`px-1 py-3 text-center sticky left-0 z-10 border-r ${(isCharacteristics || isRW) ? 'bg-white dark:bg-[#0d0d0d] border-gray-100 dark:border-gray-800' : 'bg-white dark:bg-[#1a1b1e] dark:border-gray-800'}`}>
@@ -199,8 +202,16 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                     </td>
                                 )}
                                 <td className={`px-4 py-3 sticky z-10 border-r ${(isCharacteristics || isRW) ? 'bg-white dark:bg-[#0d0d0d] border-gray-100 dark:border-gray-800 left-10 w-48' : 'bg-white dark:bg-[#1a1b1e] dark:border-gray-800 left-[104px]'}`}>
-                                    <div className={`font-bold whitespace-nowrap text-[11px] ${(isCharacteristics || isRW) ? 'text-gray-600 dark:text-gray-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                                    <div className={`font-bold whitespace-nowrap text-[11px] flex items-center gap-1.5 ${(isCharacteristics || isRW) ? 'text-gray-600 dark:text-gray-400' : 'text-slate-700 dark:text-slate-200'}`}>
                                         {formatPrefix(student.title)}{student.firstName} {student.lastName}
+                                        {!isCharacteristics && !isRW && isAttendanceForced && (
+                                            <span
+                                                title={record.remark}
+                                                className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0 cursor-help"
+                                            >
+                                                !
+                                            </span>
+                                        )}
                                     </div>
                                 </td>
                                 
@@ -296,18 +307,22 @@ const GradeBookTable: React.FC<GradeBookTableProps> = ({
                                         </td>
                                         <td className="px-4 py-3 text-center sticky right-0 bg-white dark:bg-[#1a1b1e] z-10 border-l border-slate-200 dark:border-slate-800 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.05)]">
                                             <div className="flex flex-col items-center gap-1.5">
-                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-black text-white shadow-md transition-all ${record.status === 'มส' || record.status === '0' || record.grade === '0' ? 'bg-rose-500' : record.status === 'ร' ? 'bg-amber-500' : record.grade === '4' ? 'bg-emerald-500' : 'bg-indigo-500'}`}>
+                                                <div
+                                                    title={isAttendanceForced ? record.remark : undefined}
+                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-black text-white shadow-md transition-all ${record.status === 'มส' || record.status === '0' || record.grade === '0' ? 'bg-rose-500' : record.status === 'ร' ? 'bg-amber-500' : record.grade === '4' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                                >
                                                     {record.status || record.grade}
                                                 </div>
-                                                
-                                                <div className="flex gap-0.5">
+
+                                                <div className="flex gap-0.5" title={isAttendanceForced ? 'ล็อกเป็น "มส" อัตโนมัติเพราะเวลาเรียนไม่ถึงร้อยละ 80 — แก้ไขไม่ได้จนกว่าเวลาเรียนจะผ่านเกณฑ์' : undefined}>
                                                     {['0', 'ร', 'มส'].map((s) => (
                                                         <button
                                                             key={s}
+                                                            disabled={isAttendanceForced}
                                                             onClick={() => handleScoreChange(student.id, 'status', record.status === s ? '' : s)}
-                                                            className={`w-5 h-5 rounded-md text-[9px] font-black transition-all border ${
-                                                                record.status === s 
-                                                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white scale-105' 
+                                                            className={`w-5 h-5 rounded-md text-[9px] font-black transition-all border ${isAttendanceForced ? 'opacity-40 cursor-not-allowed' : ''} ${
+                                                                record.status === s
+                                                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white scale-105'
                                                                 : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-400'
                                                             }`}
                                                         >
