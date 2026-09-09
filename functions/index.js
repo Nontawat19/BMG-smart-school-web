@@ -10,14 +10,6 @@ exports.getServerTime = functions.region("us-central1").https.onCall(async () =>
 });
 
 exports.deleteUser = functions.region("us-central1").https.onCall(async (data, context) => {
-    // เปิดการเช็คสิทธิ์ (คุณอาจต้องการให้แค่ role บางอย่างทำได้ ให้เขียนเพิ่มที่นี่)
-    // if (!context.auth) {
-    //   throw new functions.https.HttpsError(
-    //     "unauthenticated",
-    //     "ต้องเข้าสู่ระบบเพื่อใช้งานฟังก์ชันนี้"
-    //   );
-    // }
-
     const userId = data.userId;
     if (!userId) {
         throw new functions.https.HttpsError(
@@ -25,6 +17,8 @@ exports.deleteUser = functions.region("us-central1").https.onCall(async (data, c
             "กรุณาระบุ userId ที่ต้องการลบ"
         );
     }
+
+    await assertUserManagementAccess(context, userId);
 
     try {
         console.log(`กำลังลบผู้ใช้: ${userId}`);
@@ -50,7 +44,6 @@ exports.deleteUser = functions.region("us-central1").https.onCall(async (data, c
 });
 
 exports.updateUserEmail = functions.region("us-central1").https.onCall(async (data, context) => {
-    // optional permission check
     const userId = data.userId;
     const newEmail = data.email;
 
@@ -60,6 +53,8 @@ exports.updateUserEmail = functions.region("us-central1").https.onCall(async (da
             "กรุณาระบุ userId และ email"
         );
     }
+
+    await assertUserManagementAccess(context, userId);
 
     try {
         console.log(`กำลังอัปเดตอีเมลของผู้ใช้ ${userId} เป็น ${newEmail}`);
@@ -91,6 +86,8 @@ exports.updateUserPassword = functions.region("us-central1").https.onCall(async 
             "กรุณาระบุ userId และ password"
         );
     }
+
+    await assertUserManagementAccess(context, userId);
 
     try {
         console.log(`กำลังอัปเดตรหัสผ่านของผู้ใช้ ${userId}`);
@@ -481,6 +478,33 @@ async function aiGetCallerContext(uid) {
 
 function aiHasAccess(caller, allowedRoles) {
     return caller.roles.includes(AI_ROLES.SUPER_ADMIN) || caller.roles.some((r) => allowedRoles.includes(r));
+}
+
+// สิทธิ์จัดการผู้ใช้ (ลบ/แก้อีเมล/แก้รหัสผ่าน) — ต้องตรงกับ allowedRoles ของหน้า
+// /owner/users และ /school/:schoolId/teachers ใน src/App.tsx (SUPER_ADMIN + ADMIN_ACCESS + ACADEMIC_ACCESS)
+const USER_MANAGEMENT_ROLES = [
+    AI_ROLES.SUPER_ADMIN, AI_ROLES.SCHOOL_ADMIN, AI_ROLES.DIRECTOR, AI_ROLES.DEPT_HEAD, AI_ROLES.ACADEMIC_ADMIN,
+];
+
+// ตรวจสิทธิ์ผู้เรียกก่อนอนุญาตให้ลบ/แก้ไขบัญชีผู้ใช้อื่น — SUPER_ADMIN จัดการได้ทุกโรงเรียน
+// ส่วน role อื่นจัดการได้เฉพาะผู้ใช้ในโรงเรียนเดียวกับตนเอง (กันไม่ให้ admin โรงเรียนหนึ่งลบ/แก้ผู้ใช้โรงเรียนอื่น)
+async function assertUserManagementAccess(context, targetUserId) {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "ต้องเข้าสู่ระบบเพื่อใช้งานฟังก์ชันนี้");
+    }
+    const caller = await aiGetCallerContext(context.auth.uid);
+    if (!caller || !caller.roles.some((r) => USER_MANAGEMENT_ROLES.includes(r))) {
+        throw new functions.https.HttpsError("permission-denied", "คุณไม่มีสิทธิ์จัดการผู้ใช้งานนี้");
+    }
+    if (!caller.roles.includes(AI_ROLES.SUPER_ADMIN) && targetUserId) {
+        const targetSnap = await admin.firestore().collection("users").doc(targetUserId).get();
+        const targetData = targetSnap.exists ? targetSnap.data() : {};
+        const targetSchoolId = targetData.homeSchoolId || targetData.schoolId || null;
+        if (!targetSchoolId || targetSchoolId !== caller.schoolId) {
+            throw new functions.https.HttpsError("permission-denied", "คุณไม่มีสิทธิ์จัดการผู้ใช้งานนอกโรงเรียนของคุณ");
+        }
+    }
+    return caller;
 }
 
 // ค้นหานักเรียนตาม studentCode (ตรงตัว) หรือ studentName (ค้นแบบใกล้เคียงในชื่อ-นามสกุล) ใช้ร่วมกัน

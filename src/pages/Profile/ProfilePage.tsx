@@ -2931,12 +2931,17 @@ const ProfilePage: React.FC = () => {
                 <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-800 animate-fade-in">
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">ประวัติการขอ{officialTravelLabel}</h2>
-                    <button
-                      onClick={() => navigate(`/school/${profile.schoolId}/official-travel-request?type=${userRole === 'student' ? 'student' : 'teacher'}`)}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                    >
-                      <FaPlane /> สร้างคำขอใหม่
-                    </button>
+                    {/* หน้ายื่นคำขอยังรองรับเฉพาะบัญชีครู/บุคลากร (Firebase Auth + Redux user) —
+                        นักเรียน/ผู้ปกครองที่ล็อกอินแบบ local session (studentSession/parentSession) ยังยื่นเองไม่ได้
+                        จึงซ่อนปุ่มนี้ไว้ก่อนจนกว่าจะทำ flow ยื่นเองสำหรับ session แบบนี้โดยเฉพาะ */}
+                    {localStorage.getItem('currentUserType') !== 'student' && localStorage.getItem('currentUserType') !== 'parent' && (
+                      <button
+                        onClick={() => navigate(`/school/${profile.schoolId}/official-travel-request?type=${userRole === 'student' ? 'student' : 'teacher'}`)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      >
+                        <FaPlane /> สร้างคำขอใหม่
+                      </button>
+                    )}
                   </div>
 
                   {officialTravelRequests.length > 0 ? (
