@@ -4,7 +4,7 @@ import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore, auth, storage } from "@/firebase";
-import { collection, getDocs, query, orderBy, doc, getDoc, where } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, doc, getDoc, where, addDoc, limit, Timestamp } from "firebase/firestore";
 import { getBlob, ref as storageRef } from "firebase/storage";
 import { FaSearch, FaFilter, FaFileAlt, FaPrint } from "react-icons/fa";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileText, X, FileDown, Loader2 } from "lucide-react";
@@ -306,10 +306,63 @@ const PorBor7Page: React.FC = () => {
     fetchSchoolInfo();
   }, [reduxSchoolId]);
 
+  const getSuggestedCertNo = async (sId: string): Promise<string> => {
+    const defaultYear = (new Date().getFullYear() + 543).toString();
+    try {
+      let abbr = schoolInfo?.schoolAbbreviation || "";
+      let currentYear = schoolInfo?.currentAcademicYear || "";
+
+      if (!abbr || !currentYear) {
+        try {
+          const schoolSnap = await getDoc(doc(firestore, "school-settings", sId));
+          if (schoolSnap.exists()) {
+            abbr = abbr || schoolSnap.data().schoolAbbreviation || "";
+          }
+        } catch (_) {}
+
+        try {
+          const calSnap = await getDoc(doc(firestore, "school-settings", sId, "main_calendar", "default"));
+          if (calSnap.exists() && calSnap.data().academicYear) {
+            currentYear = calSnap.data().academicYear;
+          }
+        } catch (_) {}
+      }
+
+      currentYear = currentYear || defaultYear;
+
+      let nextNumber = 1;
+      try {
+        const colRef = collection(firestore, "school-settings", sId, "certificates");
+        const snap = await getDocs(query(colRef, orderBy("createdAt", "desc"), limit(1)));
+        if (!snap.empty) {
+          const last = snap.docs[0].data();
+          const lastNo = String(last.certNo || "");
+          const match = lastNo.match(/(\d+)\/(\d{4})/);
+          if (match) {
+            const lastNum = parseInt(match[1], 10);
+            const lastYear = match[2];
+            nextNumber = lastYear === currentYear ? lastNum + 1 : 1;
+          }
+        }
+      } catch (colErr) {
+        console.warn("Could not query last certificate number, defaulting to 1:", colErr);
+      }
+
+      const formattedNum = String(nextNumber).padStart(4, "0");
+      return `${abbr ? abbr + " " : ""}${formattedNum}/${currentYear}`.trim();
+    } catch (e) {
+      console.warn("Could not get suggested certNo:", e);
+      return `0001/${defaultYear}`;
+    }
+  };
+
   const handleIssueCertificate = async (student: Student) => {
     const directorFullName = [schoolInfo?.directorPrefix, schoolInfo?.directorName].filter(Boolean).join(' ');
     const defaultPrincipal = directorFullName || "นายศัตราวุธ ศรีชนะ";
     const defaultHead = getGroupPersonnel(schoolInfo, 'general').name;
+
+    const activeSchoolId = schoolId || reduxSchoolId;
+    const suggestedRefNo = activeSchoolId ? await getSuggestedCertNo(activeSchoolId) : `0001/${getThaiYear(new Date())}`;
 
     const result = await Swal.fire({
       title: 'ออกใบรับรอง (ปพ.7)',
@@ -319,8 +372,9 @@ const PorBor7Page: React.FC = () => {
           
           <div class="space-y-3">
             <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">เลขที่หนังสือ (ถ้ามี)</label>
-              <input id="refNo" type="text" class="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#1e1f21] border border-gray-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ตัวอย่าง: ว 123/2567">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">เลขที่หนังสือ (ทะเบียนหนังสือรับรอง)</label>
+              <input id="refNo" type="text" class="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#1e1f21] border border-gray-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value="${suggestedRefNo}" placeholder="ตัวอย่าง: 0001/2569 หรือ ว 123/2567">
+              <span class="text-[11px] text-gray-400 mt-1 block">* ดึงเลขทะเบียนรับรองถัดไปให้อัตโนมัติ สามารถแก้ไขได้</span>
             </div>
             
             <div>
@@ -352,7 +406,7 @@ const PorBor7Page: React.FC = () => {
     });
 
     if (result.isConfirmed) {
-      handleExportPdf(student, result.value);
+      await handleExportPdf(student, result.value);
     }
   };
 
@@ -360,6 +414,9 @@ const PorBor7Page: React.FC = () => {
     const directorFullName = [schoolInfo?.directorPrefix, schoolInfo?.directorName].filter(Boolean).join(' ');
     const defaultPrincipal = directorFullName || "นายศัตราวุธ ศรีชนะ";
     const defaultHead = getGroupPersonnel(schoolInfo, 'general').name;
+
+    const activeSchoolId = schoolId || reduxSchoolId;
+    const suggestedRefNo = activeSchoolId ? await getSuggestedCertNo(activeSchoolId) : `0001/${getThaiYear(new Date())}`;
 
     const result = await Swal.fire({
       title: 'ออกใบรับรองที่มีเกรด (ปพ.7)',
@@ -383,8 +440,9 @@ const PorBor7Page: React.FC = () => {
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">เลขที่หนังสือ (ถ้ามี)</label>
-              <input id="refNo" type="text" class="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#1e1f21] border border-gray-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ตัวอย่าง: ว 123/2567">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">เลขที่หนังสือ (ทะเบียนหนังสือรับรอง)</label>
+              <input id="refNo" type="text" class="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#1e1f21] border border-gray-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value="${suggestedRefNo}" placeholder="ตัวอย่าง: 0001/2569 หรือ ว 123/2567">
+              <span class="text-[11px] text-gray-400 mt-1 block">* ดึงเลขทะเบียนรับรองถัดไปให้อัตโนมัติ สามารถแก้ไขได้</span>
             </div>
             
             <div>
@@ -418,7 +476,7 @@ const PorBor7Page: React.FC = () => {
     });
 
     if (result.isConfirmed) {
-      handleExportGradePdf(student, result.value);
+      await handleExportGradePdf(student, result.value);
     }
   };
 
@@ -529,6 +587,25 @@ const PorBor7Page: React.FC = () => {
 
       Swal.close();
       setPdfPreview({ document: docToRender, fileName: `ใบรับรองเกรด_${student.firstName}_${student.lastName}.pdf` });
+
+      const activeSchoolId = schoolId || reduxSchoolId;
+      if (activeSchoolId && config.refNo) {
+        try {
+          await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
+            certNo: config.refNo.trim(),
+            subject: `หนังสือรับรองผลการเรียน (ปพ.7)`,
+            certType: "ปพ.7 (ใบรับรองผลการศึกษา)",
+            recipient: `${student.title || ''}${student.firstName} ${student.lastName} (${student.studentId || '-'})`.trim(),
+            purpose: "เพื่อเป็นหลักฐานแสดงผลการเรียน",
+            signedBy: config.principalName || schoolInfo?.directorName || "ผู้อำนวยการโรงเรียน",
+            academicYear: config.academicYear,
+            createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "ฝ่ายวิชาการ",
+            createdAt: Timestamp.now(),
+          });
+        } catch (saveErr) {
+          console.warn("Could not record certificate to registry:", saveErr);
+        }
+      }
     } catch (error) {
       console.error("Error exporting grade PDF:", error);
       Swal.fire({
@@ -544,7 +621,8 @@ const PorBor7Page: React.FC = () => {
   };
 
   const handleExportPdf = async (student: Student, data: any) => {
-    if (!schoolId || !schoolInfo) {
+    const activeSchoolId = schoolId || reduxSchoolId;
+    if (!activeSchoolId || !schoolInfo) {
       Swal.fire({
         icon: 'warning',
         title: 'ไม่พบข้อมูลโรงเรียน',
@@ -584,6 +662,24 @@ const PorBor7Page: React.FC = () => {
       );
 
       setPdfPreview({ document: docToRender, fileName: `ปพ7_${student.firstName}_${student.lastName}.pdf` });
+
+      if (activeSchoolId && data.refNo) {
+        try {
+          await addDoc(collection(firestore, "school-settings", activeSchoolId, "certificates"), {
+            certNo: data.refNo.trim(),
+            subject: `หนังสือรับรองความประพฤติ/สภาพนักเรียน (ปพ.7)`,
+            certType: "ปพ.7 (ใบรับรองสภาพการเป็นนักเรียน)",
+            recipient: `${student.title || ''}${student.firstName} ${student.lastName} (${student.studentId || '-'})`.trim(),
+            purpose: "เพื่อเป็นหลักฐานแสดงสภาพการเป็นนักเรียนและความประพฤติ",
+            signedBy: data.principalName || schoolInfo?.directorName || "ผู้อำนวยการโรงเรียน",
+            academicYear: academicYear,
+            createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "ฝ่ายวิชาการ",
+            createdAt: Timestamp.now(),
+          });
+        } catch (saveErr) {
+          console.warn("Could not record certificate to registry:", saveErr);
+        }
+      }
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       Swal.fire({

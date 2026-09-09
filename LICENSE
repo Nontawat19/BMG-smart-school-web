@@ -1,0 +1,90 @@
+สัญญาอนุญาตและข้อสงวนสิทธิ์ (LICENSE)
+โครงการ "BMG SmartSchool"
+
+Copyright © 2026 ว่าที่ร้อยตรีนนทวัฒน์ สุวรรณบุผา และบริษัท BMG Softtech
+สงวนลิขสิทธิ์ทุกประการ (All Rights Reserved)
+
+1. ทรัพย์สินทางปัญญา
+   งานอันมีลิขสิทธิ์ตามเอกสารฉบับนี้ หมายความรวมถึงแต่ไม่จำกัดเพียง ซอร์สโค้ดต้นฉบับ
+   (Source Code) ซอร์สโค้ดที่แปลแล้ว (Compiled Code) สถาปัตยกรรมและโครงสร้างระบบ
+   การออกแบบส่วนติดต่อผู้ใช้ (UI/UX) โครงสร้างและแบบจำลองฐานข้อมูล เอกสารประกอบ
+   คู่มือการใช้งาน สื่อกราฟิก โลโก้ และทรัพย์สินทางปัญญาอื่นใดที่ปรากฏหรือประกอบอยู่ใน
+   ที่เก็บข้อมูล (Repository) นี้ ("งานอันมีลิขสิทธิ์") เป็นทรัพย์สินทางปัญญาของ
+   ว่าที่ร้อยตรีนนทวัฒน์ สุวรรณบุผา ร่วมกับบริษัท BMG Softtech ("เจ้าของลิขสิทธิ์") แต่เพียงผู้เดียว
+   โดยได้รับความคุ้มครองตามพระราชบัญญัติลิขสิทธิ์ พ.ศ. 2537 (และที่แก้ไขเพิ่มเติม)
+   ตลอดจนกฎหมายทรัพย์สินทางปัญญา สนธิสัญญา และอนุสัญญาระหว่างประเทศที่เกี่ยวข้อง
+
+2. ข้อห้าม
+   ห้ามมิให้บุคคล นิติบุคคล หรือหน่วยงานใด ไม่ว่าจะเป็นการกระทำเพื่อประโยชน์ทางการค้า
+   หรือไม่ก็ตาม กระทำการดังต่อไปนี้กับงานอันมีลิขสิทธิ์ ไม่ว่าทั้งหมดหรือแต่บางส่วน
+   โดยไม่ได้รับความยินยอมเป็นลายลักษณ์อักษรจากเจ้าของลิขสิทธิ์ล่วงหน้า:
+     (ก) ทำซ้ำ คัดลอก หรือบันทึกสำเนาไม่ว่าด้วยวิธีการหรือรูปแบบใด
+     (ข) ดัดแปลง แก้ไข เปลี่ยนแปลง หรือสร้างงานดัดแปลง (Derivative Works)
+     (ค) เผยแพร่ต่อสาธารณะ จำหน่าย ให้เช่า โอน หรืออนุญาตช่วง (Sublicense)
+     (ง) ทำวิศวกรรมย้อนกลับ (Reverse Engineering) ถอดแยกส่วนประกอบ (Decompile)
+         หรือแปลรหัสกลับ (Disassemble)
+     (จ) นำไปใช้ในการพัฒนาต่อยอด ให้บริการ หรือประกอบธุรกิจใด ๆ
+     (ฉ) ลบ ปกปิด หรือเปลี่ยนแปลงประกาศเกี่ยวกับลิขสิทธิ์หรือความเป็นเจ้าของ
+
+3. บทลงโทษ
+   ผู้ใดฝ่าฝืนหรือละเมิดข้อกำหนดในเอกสารฉบับนี้ อาจต้องรับผิดทั้งทางแพ่งและทางอาญา
+   ตามที่กฎหมายว่าด้วยลิขสิทธิ์และกฎหมายอื่นที่เกี่ยวข้องบัญญัติไว้ รวมถึงอาจถูกเรียกร้อง
+   ค่าเสียหาย ค่าขาดประโยชน์ และค่าใช้จ่ายทางกฎหมายจากเจ้าของลิขสิทธิ์
+
+4. ข้อปฏิเสธความรับผิดชอบ
+   ซอฟต์แวร์นี้จัดทำขึ้น "ตามสภาพที่เป็นอยู่" (AS IS) โดยไม่มีการรับประกันใด ๆ ไม่ว่าโดยชัดแจ้ง
+   หรือโดยปริยาย รวมถึงแต่ไม่จำกัดเพียงการรับประกันในเรื่องความเหมาะสมในเชิงพาณิชย์
+   หรือความเหมาะสมสำหรับวัตถุประสงค์เฉพาะอย่างใดอย่างหนึ่ง เจ้าของลิขสิทธิ์จะไม่รับผิด
+   ต่อความเสียหายไม่ว่าประเภทใด อันเกิดจากหรือเกี่ยวเนื่องกับการใช้งานหรือไม่สามารถ
+   ใช้งานซอฟต์แวร์นี้ได้
+
+5. กฎหมายที่ใช้บังคับ
+   เอกสารฉบับนี้อยู่ภายใต้บังคับและตีความตามกฎหมายไทย
+
+---
+
+LICENSE AGREEMENT AND RESERVATION OF RIGHTS
+Project: "BMG SmartSchool"
+
+Copyright © 2026 Acting Sub Lt. Nontawat Suwannabupha and BMG Softtech Co.
+All Rights Reserved.
+
+1. Intellectual Property
+   The copyrighted work under this document ("Licensed Work") includes, without
+   limitation, the source code, compiled code, system architecture, UI/UX design,
+   database structures and schemas, accompanying documentation, user manuals,
+   graphic assets, logos, and any other intellectual property contained in or
+   comprising this repository. The Licensed Work is the sole intellectual property
+   of Acting Sub Lt. Nontawat Suwannabupha, in collaboration with BMG Softtech
+   (the "Copyright Holders"), protected under the Copyright Act B.E. 2537 (1994)
+   of Thailand, as amended, and applicable international intellectual property
+   laws, treaties, and conventions.
+
+2. Restrictions
+   No person, entity, or organization, whether for commercial purposes or
+   otherwise, may, without prior written consent from the Copyright Holders,
+   in whole or in part:
+     (a) reproduce, copy, or duplicate the Licensed Work in any form or medium;
+     (b) modify, adapt, alter, or create derivative works based on the Licensed Work;
+     (c) publish, distribute, sell, lease, transfer, or sublicense the Licensed Work;
+     (d) reverse engineer, decompile, or disassemble the Licensed Work;
+     (e) use the Licensed Work to develop, offer, or operate any product,
+         service, or business; or
+     (f) remove, obscure, or alter any copyright or ownership notices.
+
+3. Enforcement
+   Any violation of this document may result in civil and criminal liability
+   under applicable copyright and other laws, and the Copyright Holders reserve
+   the right to seek damages, lost profits, and legal costs arising from any
+   unauthorized use.
+
+4. Disclaimer of Warranty
+   THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY AND
+   FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE
+   LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+5. Governing Law
+   This document shall be governed by and construed in accordance with the laws
+   of Thailand.

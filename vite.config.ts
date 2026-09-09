@@ -128,6 +128,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: true, // เปิดให้เข้าถึงจากอุปกรณ์อื่นในวงแลนเดียวกันได้ (เช่นมือถือ) ไม่ใช่แค่ localhost
     proxy: {
       '/findface-api': {
         target: 'http://118.172.43.186:8356',

@@ -38,6 +38,7 @@ import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
+import { getCurrentAcademicYear } from '@/utils/academicYearUtils';
 import { getSubjectGroupInfo, normalizeSubjectGroupValue, SubjectGroupLike } from '@/utils/subjectGroupUtils';
 
 interface AttendanceRecord {
@@ -60,6 +61,7 @@ interface StudentStats {
     number: string; // class sequence
     name: string;
     teacherName: string;
+    resolvedTeacherId: string;
     present: number;
     absent: number;
     late: number;
@@ -146,6 +148,20 @@ const AttendanceSummaryPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
+
+    // semester เริ่มต้นเป็นค่าว่าง ('') ถ้ายังไม่เคยเลือกมาก่อน (ไม่มีค่าใน sessionStorage) — handleFetchData
+    // มีเงื่อนไข guard ที่ต้องมี semester ก่อนถึงจะดึงข้อมูล (!semester) ทำให้หน้าไม่ดึงข้อมูลอะไรเลยเงียบๆ
+    // จนกว่าจะกดดร็อปดาวน์เทอมเอง — ต้องตั้งค่าเริ่มต้นให้อัตโนมัติจากปฏิทินการศึกษาปัจจุบันเหมือนหน้าอื่นๆ ในระบบ
+    useEffect(() => {
+        if (!schoolId) return;
+        let isMounted = true;
+        getCurrentAcademicYear(db, schoolId).then((calendarInfo) => {
+            if (!isMounted) return;
+            if (!sessionStorage.getItem('as_year')) setAcademicYear(calendarInfo.academicYear || reduxAcademicYear);
+            if (!sessionStorage.getItem('as_semester')) setSemester(calendarInfo.currentTerm || '1');
+        });
+        return () => { isMounted = false; };
+    }, [schoolId, reduxAcademicYear]);
 
     // Persistent Storage Sync
     useEffect(() => {
@@ -285,6 +301,32 @@ const AttendanceSummaryPage: React.FC = () => {
                 where('semester', '==', semester)
             );
 
+            // ClassroomAttendance เขียน subjectCode เป็น selectedClass.subjectCode ถ้ามี ไม่งั้น fallback เป็น
+            // courseId (ดู ClassroomAttendance/index.tsx: stableSubjectCode) จึงอาจเป็นได้ทั้งรหัสวิชาหรือ
+            // courseId แล้วแต่วิชา — คิวรี่ด้วยรหัสวิชาอย่างเดียวเลยพลาดข้อมูลที่ถูกเขียนด้วย courseId ไป ต้องเช็ค
+            // ทั้งสองแบบเหมือนที่ fetchCourseAttendanceHistory ทำ
+            const courseData = courses.find(c => c.code === selectedCourse.value);
+            const subjectCodeCandidates = Array.from(new Set([selectedCourse.value, courseData?.id].filter(Boolean))) as string[];
+
+            // ข้อมูลมอบหมายครูรายห้อง/กลุ่มที่แท้จริงของปี/เทอมนี้อยู่ใน course_assignments แยกต่างหาก ไม่ใช่
+            // field teacherAssignments ที่ฝังอยู่บนตัวเอกสาร courses เอง (ซึ่งมักไม่มีเลยถ้าวิชานี้มอบหมายผ่านหน้า
+            // มอบหมายวิชา/เทอม) — ถ้าไม่ดึงตรงนี้ก่อน การหา teacherId ของนักเรียนแต่ละคนด้านล่างจะหาไม่เจอเลย
+            // (teacherAssignments ว่างเปล่า) เหมือนที่หน้าอื่นๆ ในระบบ (GradeBookPage.tsx, ms-report) ทำไว้แล้ว
+            let courseAssignments: any[] = courseData?.teacherAssignments || [];
+            if (courseData?.id) {
+                try {
+                    const assignmentSnap = await getDoc(doc(db, 'school-settings', schoolId, 'course_assignments', `${courseData.id}_${academicYear}_${semester}`));
+                    if (assignmentSnap.exists()) {
+                        const assignmentData = assignmentSnap.data() as any;
+                        if (Array.isArray(assignmentData.teacherAssignments) && assignmentData.teacherAssignments.length > 0) {
+                            courseAssignments = assignmentData.teacherAssignments;
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error fetching course_assignments for teacher resolution:', err);
+                }
+            }
+
             // Query attendance records concurrently with enrollments — it doesn't depend on
             // enrollment/deep-sync results, only on schoolId/course/year/semester which are
             // already known here, so there's no reason to wait for the steps below first.
@@ -292,13 +334,12 @@ const AttendanceSummaryPage: React.FC = () => {
             const attQ = query(
                 attRef,
                 where('schoolId', '==', schoolId),
-                where('subjectCode', '==', selectedCourse.value),
+                where('subjectCode', 'in', subjectCodeCandidates),
                 where('academicYear', '==', academicYear),
                 where('semester', '==', semester)
             );
 
             const [enrollSnap, attSnap] = await Promise.all([getDocs(enrollQ), getDocs(attQ)]);
-            const courseData = courses.find(c => c.code === selectedCourse.value);
 
             const enrollmentStudents = enrollSnap.docs.map(doc => {
                 const d = doc.data();
@@ -315,14 +356,21 @@ const AttendanceSummaryPage: React.FC = () => {
                 let tId = d.teacherId || '';
 
                 // Try to find teacher from course assignments if missing in enrollment
-                if (!tId && courseData) {
+                if (!tId) {
                     const room = String(d.room || '');
-                    const assignment = (courseData.teacherAssignments as any[])?.find(a =>
-                        a.roomIds?.map(String).includes(room) || a.classLevels?.includes(d.classLevel)
-                    );
+                    const assignments = courseAssignments;
+                    // จับคู่ด้วยห้อง/แผนกจริงของ assignment (a.room/a.roomNumber เช่น "1" ของ ม.1/1) ก่อน — ไม่ใช่
+                    // a.roomIds ซึ่งเป็นตำแหน่งห้องเรียนทางกายภาพ (เช่น "203") คนละความหมายกับเลขห้อง/แผนกของ
+                    // นักเรียนโดยสิ้นเชิง (บั๊กเดียวกับที่แก้ไปแล้วในหน้าอื่นๆ ของระบบ — เปรียบเทียบผิดฟิลด์ทำให้หา
+                    // ครูไม่เจอ, teacherId ว่างเปล่า, กรองด้วยครูผู้สอนไม่เจอใครเลยแม้จะเลือกครูที่ถูกต้อง) ถ้าวิชานี้
+                    // ไม่ได้แบ่งครูตามห้อง ค่อย fallback ไปเทียบแค่ระดับชั้น (classLevels)
+                    const assignment = assignments.find(a => {
+                        const roomCandidates = [a.room, a.roomNumber].map(v => String(v ?? '')).filter(Boolean);
+                        return roomCandidates.includes(room);
+                    }) || assignments.find(a => Array.isArray(a.classLevels) && a.classLevels.includes(d.classLevel));
                     if (assignment) {
                         tId = assignment.teacherId;
-                    } else if (courseData.teacherId) {
+                    } else if (courseData?.teacherId) {
                         tId = courseData.teacherId;
                     }
                 }
@@ -380,6 +428,13 @@ const AttendanceSummaryPage: React.FC = () => {
                                 // Also sync name if enrollment name is missing
                                 if (!student.name && sData.firstName) {
                                     student.name = `${sData.title || sData.prefix || ''}${sData.firstName} ${sData.lastName || ''}`;
+                                }
+                                // เอกสาร enrollment บางฉบับไม่มี studentCode เลย ทำให้ตอนแรก studentCode ถูก
+                                // fallback ไปเป็น student document ID (UID) แทน — ตอนนี้มีเอกสาร students ตัวจริง
+                                // อยู่ในมือแล้ว (sDoc) ต้องดึงรหัสนักเรียนจริงมาแทนที่ ไม่ใช่ปล่อยให้ UID ค้างอยู่
+                                if (student.studentCode === student.id) {
+                                    const actualCode = sData.studentCode || sData.studentId || sData.code || sData.student_code || sData['รหัสนักเรียน'] || '';
+                                    if (actualCode) student.studentCode = String(actualCode).trim();
                                 }
                             }
                         });
@@ -441,6 +496,42 @@ const AttendanceSummaryPage: React.FC = () => {
         handleFetchData();
     }, [schoolId, academicYear, semester, selectedCourse]);
 
+    // หา "ครูตัวจริง" จาก teacherMap ให้ทั้งฝั่งแสดงชื่อในตารางและฝั่งกรองด้วยดร็อปดาวน์ครูผู้สอนใช้จุดเดียวกัน
+    // เสมอ — s.teacherId (จาก enrollment) กับ selectedTeacher.value (จาก dropdown) อาจเป็นคนละชนิด id กัน
+    // (doc id / uid / รหัสครูแบบมนุษย์อ่าน) เดิมสองจุดนี้เทียบกันคนละแบบ ทำให้เจอเคสเลือกครูที่ชื่อขึ้นในตาราง
+    // อยู่แล้วแต่ตารางกลับว่างเปล่า เพราะ id ที่เทียบกันไม่ตรงรูปแบบ
+    const resolveTeacher = (rawId: string | undefined, allTeachers: any[]) => {
+        if (!rawId) return undefined;
+        return (teacherMap as any)?.[rawId] || allTeachers.find((t: any) => t.uid === rawId || t.teacherId === rawId || t.id === rawId);
+    };
+
+    // ตัวกรองห้อง/ครูผู้สอนค้างอยู่ใน sessionStorage ข้ามการสลับวิชา — ถ้าห้อง/ครูที่เลือกไว้ไม่มีนักเรียนคนไหน
+    // ในวิชาที่เพิ่งโหลดตรงเลย ตารางจะว่างเปล่าไปเงียบๆ ทั้งที่จริงมีข้อมูลนักเรียน (การ์ดสรุปด้านบนจะขึ้นจำนวน
+    // นักเรียน > 0 แต่ตารางว่าง) ดูสับสนว่าดึงข้อมูลไม่ได้ — รีเซ็ตกลับเป็น "ทุกห้อง/ครูทุกคน" อัตโนมัติเมื่อค่าที่
+    // เลือกไว้ไม่ตรงกับข้อมูลจริงของวิชานี้เลยสักคน (เทียบครูผ่าน resolveTeacher เดียวกับตัวกรองจริง กันรีเซ็ต
+    // ผิดพลาดทั้งที่ตัวกรองจริงจะแมตช์ได้)
+    useEffect(() => {
+        if (studentsInCourse.length === 0) return;
+        if (selectedRoom && selectedRoom.value !== 'all') {
+            const hasMatch = studentsInCourse.some(s => String(s.room) === String(selectedRoom.value));
+            if (!hasMatch) setSelectedRoom({ value: 'all', label: 'ทุกห้องเรียน' });
+        }
+        if (selectedTeacher && selectedTeacher.value !== 'all') {
+            const allTeachers = Object.values(teacherMap || {});
+            const selectedMappedTeacher =
+                resolveTeacher(selectedTeacher.value, allTeachers) ||
+                resolveTeacher(selectedTeacher.uid, allTeachers) ||
+                resolveTeacher(selectedTeacher.teacherId, allTeachers);
+            const targetTeacherId = (selectedMappedTeacher as any)?.id || selectedTeacher.value;
+            const hasMatch = studentsInCourse.some(s => {
+                const mapped = resolveTeacher(s.teacherId, allTeachers) as any;
+                return (mapped?.id || s.teacherId) === targetTeacherId;
+            });
+            if (!hasMatch) setSelectedTeacher({ value: 'all', label: 'ครูทุกคน' });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [studentsInCourse]);
+
     const teacherOptions = useMemo(() => {
         const options = getActiveSortedTeachers(Object.values(teacherMap || {})).map((t: any) => {
             const tId = t.teacherId || '';
@@ -477,11 +568,7 @@ const AttendanceSummaryPage: React.FC = () => {
         const statsMap: Record<string, StudentStats> = {};
         const allTeachers = Object.values(teacherMap || {});
         studentsInCourse.forEach(s => {
-            let mappedTeacher = teacherMap[s.teacherId] as any;
-            if (!mappedTeacher && allTeachers.length > 0) {
-                mappedTeacher = allTeachers.find((t: any) => t.uid === s.teacherId || t.teacherId === s.teacherId);
-            }
-
+            const mappedTeacher = resolveTeacher(s.teacherId, allTeachers) as any;
             const teacherDisplayName = mappedTeacher?.name || mappedTeacher?.displayName || s.teacherName || 'ไม่ระบุ';
 
             statsMap[s.id] = {
@@ -491,6 +578,7 @@ const AttendanceSummaryPage: React.FC = () => {
                 name: s.name,
                 number: s.number,
                 teacherName: teacherDisplayName,
+                resolvedTeacherId: mappedTeacher?.id || s.teacherId || '',
                 present: 0,
                 absent: 0,
                 late: 0,
@@ -538,17 +626,15 @@ const AttendanceSummaryPage: React.FC = () => {
         }
 
         if (selectedTeacher && selectedTeacher.value !== 'all') {
-            const tValue = selectedTeacher.value;
-            const tUid = selectedTeacher.uid;
-            const tIdAttr = selectedTeacher.teacherId;
-
-            list = list.filter(item => {
-                const s = studentsInCourse.find(st => st.id === item.id);
-                if (!s) return false;
-                const sid = s.teacherId;
-                // Match by doc id, uid, or custom teacherId attribute
-                return sid === tValue || (tUid && sid === tUid) || (tIdAttr && sid === tIdAttr);
-            });
+            // เทียบผ่าน resolveTeacher เดียวกับที่ใช้หาชื่อครูแสดงในตาราง (ดูคอมเมนต์ตรง resolveTeacher
+            // ด้านบน) ไม่ใช่เทียบ selectedTeacher.value/uid/teacherId ตรงๆ กับ s.teacherId แบบเดิม — กัน
+            // ไม่ให้ id คนละชนิดที่จริงๆ ชี้ถึงครูคนเดียวกันเทียบกันไม่ตรงจนตารางว่างทั้งที่ชื่อครูตรงกันอยู่แล้ว
+            const selectedMappedTeacher =
+                resolveTeacher(selectedTeacher.value, allTeachers) ||
+                resolveTeacher(selectedTeacher.uid, allTeachers) ||
+                resolveTeacher(selectedTeacher.teacherId, allTeachers);
+            const targetTeacherId = (selectedMappedTeacher as any)?.id || selectedTeacher.value;
+            list = list.filter(item => item.resolvedTeacherId === targetTeacherId);
         }
 
         if (searchTerm) {

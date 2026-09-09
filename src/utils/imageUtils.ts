@@ -2,7 +2,7 @@ export const compressImage = (
   file: File,
   maxWidth: number = 800,
   quality: number = 0.8,
-  outputFormat: 'image/jpeg' | 'image/png' = 'image/jpeg'
+  outputFormat: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/jpeg'
 ): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,7 +34,8 @@ export const compressImage = (
             // Change extension based on format
             const extMap = {
               'image/jpeg': 'jpg',
-              'image/png': 'png'
+              'image/png': 'png',
+              'image/webp': 'webp'
             };
             const ext = extMap[outputFormat] || 'jpg';
             const newName = file.name.substring(0, file.name.lastIndexOf('.')) + '.' + ext;

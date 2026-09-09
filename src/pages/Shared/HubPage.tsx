@@ -53,6 +53,7 @@ import {
   FileWarning,
   LogOut,
   FileSpreadsheet,
+  Bot,
 } from "lucide-react";
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
@@ -944,6 +945,15 @@ const HubPage: React.FC = () => {
           featureKey: "showGradeBookMenu"
         },
         {
+          title: "รายงานติดตามการส่ง ปพ.5",
+          description: "สรุปภาพรวมและติดตามสถานะการบันทึกคะแนน ประเมินผล และออกเล่ม ปพ.5 ของครูทุกคนเพื่อรายงานผู้บริหาร",
+          icon: <ClipboardCheck size={24} />,
+          path: "/academic/porbor5-tracking-report",
+          colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
+          allowedRoles: [...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT],
+          featureKey: "showGradeBookMenu"
+        },
+        {
           title: "บันทึกคะแนน (ก่อนกลางภาค)",
           description: "บันทึกคะแนนเก็บและคะแนนกลางภาค",
           icon: <Calculator size={24} />,
@@ -989,7 +999,7 @@ const HubPage: React.FC = () => {
           icon: <Settings size={24} />,
           path: "/academic/score-configuration",
           colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: TEACHER_OPERATIONAL
         },
         {
           title: "ส่งออก Excel (SGS)",
@@ -1221,6 +1231,14 @@ const HubPage: React.FC = () => {
           icon: <BookOpen size={24} />,
           path: "/owner/manuals",
           colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: OWNER_ONLY
+        },
+        {
+          title: "ตั้งค่าผู้ช่วย AI",
+          description: "เปิด/ปิดผู้ช่วย AI และตั้งค่า API key ของโมเดล AI ที่ใช้ในระบบ",
+          icon: <Bot size={24} />,
+          path: "/owner/ai-settings",
+          colorClass: "bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/20 dark:text-fuchsia-400",
           allowedRoles: OWNER_ONLY
         }
       ]

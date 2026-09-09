@@ -7,13 +7,37 @@
         { "fieldPath": "schoolId", "order": "ASCENDING" },
         { "fieldPath": "substitutionId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "ClassroomAttendance",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "academicYear", "order": "ASCENDING" },
+        { "fieldPath": "semester", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "flag_ceremony_summary",
+      "fieldPath": "date",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "teachers",
       "fieldPath": "uid",
       "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"

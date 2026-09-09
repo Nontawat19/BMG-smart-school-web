@@ -1716,7 +1716,7 @@ const ProfilePage: React.FC = () => {
     <MainLayout>
       <ToastContainer theme={isDarkMode ? "dark" : "light"} autoClose={2000} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-gray-900 dark:text-white">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-10 text-gray-900 dark:text-white">
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
@@ -2729,15 +2729,23 @@ const ProfilePage: React.FC = () => {
                 const flagKeyId = (flag: FlaggedCourse) => flag.flagKind === 'course' ? flag.courseId : (flag.activityDocId || flag.courseId);
                 const requestDedupKey = (flagKind: string, idValue: string, academicYear: string, semester: string) =>
                   `${flagKind}|${idValue}|${academicYear}|${semester}`;
-                const total = gradeFlags?.flags?.length || 0;
-                const resolvedCount = gradeFlags?.flags?.filter(flag => {
+                const seenFlags = new Set<string>();
+                const flags = (gradeFlags?.flags || []).filter(flag => {
+                  const id = (flag.courseCode || flag.activityDocId || flag.courseId || '').trim().toUpperCase();
+                  const key = `${flag.flagKind}|${id}|${flag.academicYear}|${flag.semester}`;
+                  if (seenFlags.has(key)) return false;
+                  seenFlags.add(key);
+                  return true;
+                });
+                const total = flags.length;
+                const resolvedCount = flags.filter(flag => {
                   const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
                   return gradeFlagsRequests[key]?.status === 'resolved';
-                }).length || 0;
-                const pendingCount = gradeFlags?.flags?.filter(flag => {
+                }).length;
+                const pendingCount = flags.filter(flag => {
                   const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
                   return gradeFlagsRequests[key]?.status === 'pending';
-                }).length || 0;
+                }).length;
                 const windowOpen = isRemediationWindowOpen(gradeFlagsWindowConfig);
 
                 return (
@@ -2817,7 +2825,7 @@ const ProfilePage: React.FC = () => {
                             <p className="text-xs font-semibold mt-0.5">{gradeFlagsError}</p>
                           </div>
                         </div>
-                      ) : !gradeFlags || gradeFlags.flags.length === 0 ? (
+                      ) : !gradeFlags || flags.length === 0 ? (
                         <div className="p-12 flex flex-col items-center justify-center text-center">
                           <div className="w-14 h-14 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center mb-3">
                             <CheckCircle2 size={26} className="text-emerald-500" />
@@ -2842,7 +2850,7 @@ const ProfilePage: React.FC = () => {
 
                           {/* Rows */}
                           <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {gradeFlags.flags.map((flag, idx) => {
+                            {flags.map((flag, idx) => {
                               const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
                               const req = gradeFlagsRequests[key];
                               const rowBg = req?.status === 'resolved'
@@ -3036,13 +3044,6 @@ const ProfilePage: React.FC = () => {
               {activeTab === "attendance" && (userRole === 'teacher' || userRole === 'student') && (
                 <div className="animate-fade-in space-y-6">
                   <InfoCard title={`สถิติการลงเวลา (ปีการศึกษา ${academicYear || getCurrentThaiYear()})`}>
-                    {yearSummaryFetched && (
-                      <div className="flex items-center gap-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg border border-green-100 dark:border-green-800 font-medium">
-                          ✓ ข้อมูลชุดเดียวกับที่แจ้งเตือนทาง LINE
-                        </span>
-                      </div>
-                    )}
                     {!yearSummaryFetched ? (
                       <div className="flex lg:grid lg:grid-cols-6 gap-2 sm:gap-3 pb-4">
                         {Array.from({ length: 6 }).map((_, i) => (

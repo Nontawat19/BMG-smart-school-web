@@ -112,6 +112,7 @@ const initialState = {
   isHeadOfLearningArea: false,
   isHeadOfAssessment: false,
   isGuidanceTeacher: false,
+  isGeneralAffairsOfficer: false,
   advisorRole: "",
   idCardNumber: "",
   lineId: "",
@@ -266,6 +267,17 @@ export default function AddTeacherPage() {
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
+  }
+
+  function handleSpecialRoleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    setForm((prev) => ({
+      ...prev,
+      isGeneralAffairsOfficer: val === 'isGeneralAffairsOfficer',
+      isHeadOfLearningArea: val === 'isHeadOfLearningArea',
+      isHeadOfAssessment: val === 'isHeadOfAssessment',
+      isGuidanceTeacher: val === 'isGuidanceTeacher',
+    }));
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -829,26 +841,26 @@ export default function AddTeacherPage() {
                       </>
                     )}
                   </div>
-                  {/* บทบาทพิเศษ — แสดงเฉพาะครูผู้สอน */}
-                  {form.personnelType === 'teacher' && (
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">บทบาทพิเศษ</label>
-                    <div className="flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" name="isHeadOfLearningArea" checked={form.isHeadOfLearningArea} onChange={handleChange} className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้ากลุ่มสาระ</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" name="isHeadOfAssessment" checked={form.isHeadOfAssessment} onChange={handleChange} className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้างานวัดและประเมินผล</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input type="checkbox" name="isGuidanceTeacher" checked={form.isGuidanceTeacher} onChange={handleChange} className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นครูแนะแนว</span>
-                      </label>
-                    </div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">บทบาทพิเศษ</label>
+                    <select
+                      name="specialRole"
+                      value={
+                        form.isGeneralAffairsOfficer ? 'isGeneralAffairsOfficer' :
+                        form.isHeadOfAssessment ? 'isHeadOfAssessment' :
+                        form.isGuidanceTeacher ? 'isGuidanceTeacher' :
+                        form.isHeadOfLearningArea ? 'isHeadOfLearningArea' : ''
+                      }
+                      onChange={handleSpecialRoleChange}
+                      className="w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white"
+                    >
+                      <option value="">-- ไม่มีบทบาทพิเศษ --</option>
+                      <option value="isGeneralAffairsOfficer">เจ้าหน้าที่งานธุรการ</option>
+                      <option value="isHeadOfLearningArea">เป็นหัวหน้ากลุ่มสาระ</option>
+                      <option value="isHeadOfAssessment">เป็นหัวหน้างานวัดและประเมินผล</option>
+                      <option value="isGuidanceTeacher">เป็นครูแนะแนว</option>
+                    </select>
                   </div>
-                  )}
                 </div>
               </div>
             </InfoCard>

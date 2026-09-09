@@ -16,6 +16,7 @@ import { AlertCircle, BookOpen, Calendar, CheckCircle2, ChevronLeft, ClipboardCh
 import Swal from 'sweetalert2';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
+import { computeGuidanceEligibilityForRoster, applyActivityEligibilityFailFlags } from '@/utils/activityAttendanceEligibility';
 interface Student {
   id: string;
   firstName?: string;
@@ -506,7 +507,38 @@ const GuidanceAttendancePage: React.FC = () => {
       }, { merge: true });
 
       await batch.commit();
-      
+
+      // เช็คเวลาเข้าร่วมสะสมของแนะแนวห้องนี้ (ไม่ใช่แค่วันนี้) แล้วบังคับติด "มผ" ทันทีให้นักเรียนที่เวลาเข้าร่วม
+      // ต่ำกว่าร้อยละ 80 — best-effort เท่านั้น ไม่บล็อกผลสำเร็จของการบันทึกเช็คชื่อที่เพิ่งเสร็จไปแล้วด้านบน
+      try {
+        const eligibility = await computeGuidanceEligibilityForRoster(
+          db, schoolId, selectedClassKey, selectedRoom, activeAcademicYear, activeSemester,
+          students.map(s => ({ id: s.id })),
+        );
+        const belowThresholdStudents = students
+          .map(s => ({ id: s.id, ...eligibility[s.id] }))
+          .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
+            Boolean(s.belowThreshold));
+        if (belowThresholdStudents.length > 0) {
+          const guidanceEvalDocId = `${activeAcademicYear}_${activeSemester}_${selectedClassKey}_${selectedRoom}`;
+          const evalRef = doc(db, 'school-settings', schoolId, 'guidance-evaluations', guidanceEvalDocId);
+          await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
+            schoolId, flagKind: 'guidance', idValue: guidanceEvalDocId, academicYear: activeAcademicYear, semester: activeSemester,
+          }, {
+            schoolId,
+            type: 'guidance',
+            academicYear: activeAcademicYear,
+            semester: activeSemester,
+            targetId: `${selectedClassKey}/${selectedRoom}`,
+            targetName: `${className}/${selectedRoom}`,
+            classId: selectedClassKey,
+            room: selectedRoom,
+          });
+        }
+      } catch (eligibilityError) {
+        console.error('Error applying guidance attendance-eligibility (มผ) flags:', eligibilityError);
+      }
+
       Swal.fire({
         icon: 'success',
         title: 'บันทึกสำเร็จ',

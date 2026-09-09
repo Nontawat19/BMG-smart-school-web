@@ -127,20 +127,35 @@ const formatThaiDateShort = (isoDate: string) => {
   return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const normalizeSummaryRow = (row: any): CachedClassSummaryRow => ({
-  id: String(row?.id || ""),
-  fullName: String(row?.fullName || "-"),
-  profileUrl: row?.profileUrl || "",
-  profileThumbUrl: row?.profileThumbUrl || "",
-  present: Number(row?.present || 0),
-  late: Number(row?.late || 0),
-  leave: Number(row?.leave || 0),
-  absent: Number(row?.absent || 0),
-  noCheckout: Number(row?.noCheckout || 0),
-  official_travel: Number(row?.official_travel || row?.officialTravel || 0),
-  total: Number(row?.total || 0),
-  percentage: String(row?.percentage || "0.00"),
-});
+const normalizeSummaryRow = (row: any): CachedClassSummaryRow => {
+  // cache document (class_attendance_summary/*) เก็บค่าที่คำนวณไว้ล่วงหน้า ซึ่งอาจติดลบมาจาก
+  // bug ของ increment() ตอนแก้ไข/ย้อนสถานะเช็คชื่อในอดีต — clamp ทุกฟิลด์ที่นี่ (จุดเดียวที่อ่าน
+  // cache) แล้วคำนวณ total/เปอร์เซ็นต์ใหม่จากค่าที่ clamp แล้ว แทนที่จะเชื่อ total/percentage
+  // เดิมที่เก็บไว้ใน cache ซึ่งคำนวณมาจากค่าดิบที่ผิดตั้งแต่ต้น
+  const present = Math.max(0, Number(row?.present || 0));
+  const late = Math.max(0, Number(row?.late || 0));
+  const leave = Math.max(0, Number(row?.leave || 0));
+  const absent = Math.max(0, Number(row?.absent || 0));
+  const noCheckout = Math.max(0, Number(row?.noCheckout || 0));
+  const official_travel = Math.max(0, Number(row?.official_travel || row?.officialTravel || 0));
+  const total = present + late + leave + absent + noCheckout + official_travel;
+  const attended = present + late + noCheckout + official_travel;
+  const percentage = total > 0 ? ((attended / total) * 100).toFixed(2) : "0.00";
+  return {
+    id: String(row?.id || ""),
+    fullName: String(row?.fullName || "-"),
+    profileUrl: row?.profileUrl || "",
+    profileThumbUrl: row?.profileThumbUrl || "",
+    present,
+    late,
+    leave,
+    absent,
+    noCheckout,
+    official_travel,
+    total,
+    percentage,
+  };
+};
 
 const buildClassSummaryCacheKey = ({
   filterType,
@@ -1031,12 +1046,15 @@ const StudentsAttendanceSummaryPage: React.FC = () => {
         const results = await Promise.all(promises);
 
         newStats = results.map(({ student, data }) => {
-          const present = data.present || 0;
-          const late = data.late || 0;
-          const leave = data.leave || 0;
+          // ค่าดิบใน cache document อาจติดลบได้จาก bug ของ increment() ตอนแก้ไข/ย้อนสถานะเช็คชื่อ
+          // (เห็นได้จากที่ 'absent' เคย clamp ไว้ก่อนหน้านี้แล้วตัวเดียว) — clamp ให้ครบทุกฟิลด์
+          // เพื่อไม่ให้ตัวเลขติดลบหลุดออกไปแสดงผล และไม่ให้ total/เปอร์เซ็นต์คำนวณผิดตามไปด้วย
+          const present = Math.max(0, data.present || 0);
+          const late = Math.max(0, data.late || 0);
+          const leave = Math.max(0, data.leave || 0);
           const absent = Math.max(0, data.absent || 0);
-          const officialTravel = data.officialTravel || 0;
-          const noCheckout = data.noCheckout || 0;
+          const officialTravel = Math.max(0, data.officialTravel || 0);
+          const noCheckout = Math.max(0, data.noCheckout || 0);
           const total = present + late + leave + absent + officialTravel + noCheckout;
           const attended = present + late + noCheckout + officialTravel;
           const percentage = total > 0 ? ((attended / total) * 100).toFixed(2) : "0.00";

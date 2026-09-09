@@ -187,16 +187,40 @@
   html.dark .swal2-content {
     color: #d1d5db !important;
   }
-  html.dark .swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top-right), 
+  html.dark .swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top-right),
   html.dark .swal2-container.swal2-noanimation:not(.swal2-top-end):not(.swal2-top-right) {
     background: rgba(0, 0, 0, 0.7) !important;
+  }
+  /* color-scheme บังคับให้ <select>/<option> ที่เบราว์เซอร์วาดเอง (native dropdown — ปกติจะสไตล์ตามธีมของ OS
+     โดยตรง ไม่อ่าน CSS ของหน้าเว็บ) ใช้โทนสีตรงกับธีมของแอปเสมอ ไม่ใช่ตามธีมของระบบปฏิบัติการ ไม่งั้นถ้า OS เป็น
+     dark แต่แอปกำลังอยู่โหมด light (หรือกลับกัน) เมนูตัวเลือกที่กดเปิดจะเพี้ยนสีจนอ่านไม่ออก — ใส่ทั้งที่ <select>
+     เองและที่ <option> แต่ละตัวด้วย เพราะ Chrome/Firefox ใช้สีของ <option> วาดรายการในเมนูที่กดเปิดจริง
+     ⚠️ ข้อจำกัดที่ CSS แก้ไม่ได้: Safari (WebKit) ไม่ยอมให้เว็บกำหนดสีของเมนูที่กดเปิด (ส่วน popup listbox)
+     เลยไม่ว่าจะตั้งค่าอะไร จะได้แค่ตัว <select> ตอนปิดที่ตรงธีม ส่วนเมนูตอนเปิดจะตามธีม OS เสมอ (ข้อจำกัดของ
+     เบราว์เซอร์เอง แก้จากฝั่งเว็บไม่ได้) — ถ้าเจอปัญหานี้ใน Safari ให้ลองเทียบกับ Chrome/Firefox ว่าใช้ได้ปกติ */
+  html:not(.dark) .swal2-input,
+  html:not(.dark) .swal2-textarea,
+  html:not(.dark) .swal2-select {
+    color-scheme: light;
+    background: #ffffff !important;
+    color: #111827 !important;
+    border-color: #d1d5db !important;
+  }
+  html:not(.dark) .swal2-select option {
+    background: #ffffff !important;
+    color: #111827 !important;
   }
   html.dark .swal2-input,
   html.dark .swal2-textarea,
   html.dark .swal2-select {
+    color-scheme: dark;
     background: #374151 !important;
     color: #ffffff !important;
     border-color: #4b5563 !important;
+  }
+  html.dark .swal2-select option {
+    background: #374151 !important;
+    color: #ffffff !important;
   }
   html.dark .swal2-input:focus,
   html.dark .swal2-textarea:focus,
@@ -204,6 +228,11 @@
     border-color: #6366f1 !important;
     box-shadow: 0 0 0 1px #6366f1 !important;
   }
+
+  /* ดร็อปดาวน์ปลอม (แทน <select> จริง ที่เมนูตอนกดเปิดในบางเบราว์เซอร์เพี้ยนสีตามธีม OS แก้ด้วย CSS ไม่ได้)
+     สไตล์ทั้งหมดของ .swal-choice-* อยู่ใน <style> ฝังตัวภายใน src/utils/swalChoiceDialog.ts เอง (ไม่ใช่ที่นี่)
+     — เคยก็อปปี้กฎซ้ำไว้ทั้งสองที่มาก่อนแล้วสองชุดเพี้ยนตกลงกันไม่ได้ (ตำแหน่ง/z-index ขัดกันเอง) จึงรวมไว้จุด
+     เดียวที่ต้นทางแทน ถ้าจะแก้สไตล์ของดร็อปดาวน์นี้ให้ไปแก้ที่ swalChoiceDialog.ts เท่านั้น */
 }
 
 @layer utilities {

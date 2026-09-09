@@ -1,54 +1,34 @@
-# React + TypeScript + Vite
+# BMG SmartSchool
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ระบบบริหารจัดการโรงเรียนแบบครบวงจร (School Management System) พัฒนาด้วย React + TypeScript + Vite
+และ Firebase (Firestore, Storage, Cloud Functions)
 
-Currently, two official plugins are available:
+## เทคโนโลยีที่ใช้
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS
+- **Backend / Data:** Firebase (Firestore, Storage, Authentication, Cloud Functions)
+- **อื่น ๆ:** pdf.js, ZXing (สแกน QR Code), Tesseract.js (OCR), Redux
 
-## Expanding the ESLint configuration
+## การพัฒนา
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+npm install
+npm run dev      # เริ่ม dev server
+npm run build    # build สำหรับ production
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## ลิขสิทธิ์
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+โครงการนี้ ซึ่งรวมถึงแต่ไม่จำกัดเพียงซอร์สโค้ด โครงสร้างระบบ การออกแบบส่วนติดต่อผู้ใช้ (UI/UX)
+ฐานข้อมูล เอกสารประกอบ และทรัพย์สินทางปัญญาอื่นใดที่ปรากฏในที่เก็บข้อมูลนี้ (“งานอันมีลิขสิทธิ์”)
+เป็นทรัพย์สินทางปัญญาของ **ว่าที่ร้อยตรีนนทวัฒน์ สุวรรณบุผา** ร่วมกับ **บริษัท BMG Softtech**
+(“เจ้าของลิขสิทธิ์”) แต่เพียงผู้เดียว โดยได้รับความคุ้มครองตามพระราชบัญญัติลิขสิทธิ์ พ.ศ. 2537
+และกฎหมายทรัพย์สินทางปัญญาที่เกี่ยวข้องทั้งในประเทศและระหว่างประเทศ
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+สงวนลิขสิทธิ์ทุกประการ **ห้ามมิให้ผู้ใดทำการคัดลอก ทำซ้ำ ดัดแปลง แก้ไข เผยแพร่ จำหน่าย ให้เช่า
+โอนสิทธิ์ อนุญาตช่วง ทำวิศวกรรมย้อนกลับ (Reverse Engineering) ถอดแยกส่วนประกอบ (Decompile)
+หรือนำไปใช้ประโยชน์ในทางใด ๆ ไม่ว่าทั้งหมดหรือบางส่วน** ไม่ว่าจะเพื่อวัตถุประสงค์ทางการค้าหรือไม่ก็ตาม
+เว้นแต่จะได้รับความยินยอมเป็นลายลักษณ์อักษรจากเจ้าของลิขสิทธิ์ล่วงหน้าเท่านั้น
+ผู้ใดฝ่าฝืนอาจต้องรับผิดทั้งทางแพ่งและทางอาญาตามที่กฎหมายกำหนด
+
+รายละเอียดเงื่อนไขฉบับสมบูรณ์ดูได้ที่ไฟล์ [LICENSE](./LICENSE)

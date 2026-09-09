@@ -23,6 +23,7 @@ import HolidayView from './components/HolidayView';
 import ScheduleListView from './components/ScheduleListView';
 import AttendanceCheckView from './components/AttendanceCheckView';
 import { calculateClassroomBehaviorScoreChange } from '@/utils/behaviorScoreUtils';
+import { invalidateStaleResolvedRequests } from '@/utils/remediationUtils';
 import {
     getClassVariants,
     matchesClassValue,
@@ -31,6 +32,10 @@ import {
     getStableClassKey,
     hasRoomSpecificClass,
 } from '@/utils/attendanceClassMatching';
+import {
+    isPrimaryClassValue,
+    computeCourseAttendanceEligibilityForRoster,
+} from '@/utils/attendanceEligibilityFirestore';
 
 interface PeriodSetting {
     id: string;
@@ -632,7 +637,14 @@ const ClassroomAttendancePage: React.FC = () => {
                                     ...(Array.isArray(courseAssignments) ? courseAssignments : []),
                                     ...(Array.isArray(inlineAssignments) ? inlineAssignments : []),
                                 ];
+                                // ต้องกรองด้วย groupNumber ของสล็อตนี้ด้วย ไม่ใช่แค่ teacherId — ถ้าครูคนเดียวกัน
+                                // สอนวิชานี้หลายกลุ่ม (เช่น กลุ่ม 1 และกลุ่ม 2) การ find แค่ teacherId จะได้ assignment
+                                // ของกลุ่มแรกที่เจอเสมอ ทำให้ classLevels/room ผิดกลุ่มเมื่อแสดงตารางของกลุ่มอื่น
+                                const slotGroupNumber = Number(course.groupNumber || course.group || 1) || 1;
                                 const myAssignment = assignments.find((assignment: any) =>
+                                    getAssignmentTeacherIds(assignment).includes(String((currentTeacher as any).id)) &&
+                                    (assignment.groupNumber === undefined || assignment.groupNumber === null || Number(assignment.groupNumber) === slotGroupNumber)
+                                ) || assignments.find((assignment: any) =>
                                     getAssignmentTeacherIds(assignment).includes(String((currentTeacher as any).id))
                                 );
                                 const isMyCourse = String(course.teacherId) === String((currentTeacher as any).id) ||
@@ -645,7 +657,11 @@ const ClassroomAttendancePage: React.FC = () => {
                                     const courseClassId = (myAssignment?.classLevels && myAssignment.classLevels.length > 0)
                                         ? myAssignment.classLevels
                                         : (course.classId || fullCourseData?.classId || data.classId);
-                                    const groupNumber = Number(course.groupNumber || course.group || 1) || 1;
+                                    const groupNumber = slotGroupNumber;
+                                    // ห้องเรียน (ม.X/Y) — เลขต่อท้ายต้องเป็นเลขห้อง/แผนก (assignment.room เช่น "1" ของ
+                                    // ม.1/1) ไม่ใช่เลขกลุ่มสอน (groupNumber เช่น "กลุ่ม 2") ซึ่งเป็นคนละความหมายกัน
+                                    // (ดูรูปแบบเดียวกันที่ CourseEnrollmentPage.tsx ใช้: `${label}/${a.room}`)
+                                    const classRoomSuffix = myAssignment?.room || groupNumber;
                                     const roomIds = normalizeRoomIds(myAssignment?.roomIds || course.room || course.roomIds || course.roomNumber || data.room || data.roomNumber);
                                     const displayRoom = roomIds.length > 0 && !roomIds.includes('all')
                                         ? roomIds.map((id: string) => roomMap[id] || id).join(', ')
@@ -663,14 +679,14 @@ const ClassroomAttendancePage: React.FC = () => {
                                         classId: courseClassId,
                                         className: (() => {
                                             const classIdStr = String(Array.isArray(courseClassId) ? courseClassId[0] : courseClassId);
-                                            if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${groupNumber ? `/${groupNumber}` : ''}`;
+                                            if (CLASSES[classIdStr]) return `${CLASSES[classIdStr]}${classRoomSuffix ? `/${classRoomSuffix}` : ''}`;
                                             if (classIdStr.includes('/')) {
                                                 const parts = classIdStr.split('/');
                                                 const levelKey = parts[0];
                                                 const roomNum = parts[parts.length - 1];
                                                 if (CLASSES[levelKey]) return `${CLASSES[levelKey]}/${roomNum}`;
                                             }
-                                            return `${levelName}${groupNumber ? `/${groupNumber}` : ''}`;
+                                            return `${levelName}${classRoomSuffix ? `/${classRoomSuffix}` : ''}`;
                                         })(),
                                         room: displayRoom,
                                         roomIds,
@@ -1275,6 +1291,131 @@ const ClassroomAttendancePage: React.FC = () => {
     }, []);
     */
 
+    // เช็คเวลาเรียนสะสมของวิชานี้ (ไม่ใช่แค่วันนี้) แล้วบังคับติด "มส" ทันทีให้นักเรียนที่เวลาเรียน
+    // ต่ำกว่าร้อยละ 80 — ใช้ตรรกะเดียวกับที่หน้าปพ.5 ใช้ (src/utils/attendanceEligibility.ts) เพื่อไม่ให้
+    // ผลลัพธ์ทั้งสองหน้าขัดแย้งกัน ครูจึงไม่ต้องเปิดปพ.5 อีกต่อไปเพื่อให้ มส ติดอัตโนมัติ
+    // Returns false (and never throws) if this best-effort check itself fails — attendance
+    // is already durably saved by the caller before this runs, so a failure here must not
+    // roll back or block the attendance-save success flow, only surface a separate warning.
+    const applyAttendanceEligibilityFlags = async (courseId: string | undefined, rosterStudents: Student[]): Promise<boolean> => {
+        if (!schoolId || !courseId || !selectedClass || rosterStudents.length === 0) return true;
+        try {
+            const courseSnap = await getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId));
+            const courseData = courseSnap.exists() ? { id: courseSnap.id, ...courseSnap.data() } as any : null;
+
+            // Same threshold calculation ปพ.5 uses ('elapsed' = sessions up to today only) via
+            // the shared helper — fetches this course/room-group's weekly schedule + full
+            // attendance history, then computes each student's cumulative attendance %.
+            const msSemester = isPrimaryClassValue(selectedClass.classId) ? 'annual' : semester;
+            const msCalendarData = { ...(calendarState.rawData || {}), events: calendarEvents };
+            const { eligibility, dailyStatus } = await computeCourseAttendanceEligibilityForRoster(
+                db,
+                schoolId,
+                academicYear,
+                {
+                    courseId,
+                    classId: selectedClass.classId,
+                    className: selectedClass.className,
+                    subjectCode: selectedClass.subjectCode,
+                    courseCode: courseData?.code,
+                    teacherAssignments: courseData?.teacherAssignments,
+                    selectedRoomForMatch: (selectedClass.roomIds && selectedClass.roomIds[0]) || selectedClass.room,
+                },
+                rosterStudents,
+                msCalendarData,
+                msSemester
+            );
+
+            const belowThresholdStudents = rosterStudents.filter(s => eligibility[s.id]?.belowThreshold);
+            if (belowThresholdStudents.length === 0) return true;
+
+            // เวลาเรียนสะสม "elapsed" นับตั้งแต่ต้นภาค/ปี จึงมักยังต่ำกว่า 80% ต่อไปอีกนานแม้แก้ มส สำเร็จ
+            // แล้ว (การแก้ มส แก้ที่เกรด ไม่ได้ย้อนแก้เวลาเรียนที่ขาดไปแล้วในอดีต) — ถ้าไม่กันจุดนี้ไว้ การเช็คชื่อ
+            // ครั้งถัดไปครั้งใดก็ตาม (แม้แค่วันเดียวหลังแก้ มส สำเร็จ) จะเขียนสถานะ มส ทับผลที่แก้ไขไปแล้วทันที ทำให้
+            // ฟีเจอร์แก้ มส ใช้งานจริงไม่ได้เลย จึงต้องข้ามคนที่มีคำร้องแก้ตัว "resolved" อยู่แล้วสำหรับวิชา/ปี/เทอมนี้
+            // ไปก่อน เว้นแต่จะมีวันขาดเรียนใหม่ (absent/escape) เกิดขึ้น "หลัง" วันที่แก้ตัวสำเร็จจริง ๆ ซึ่งแปลว่า
+            // ปัญหายังเกิดต่อเนื่องอยู่จริงไม่ใช่แค่ผลสะสมเก่าที่ค้างมาจากก่อนแก้
+            const resolvedByStudentId: Record<string, Date | null> = {};
+            const idsToCheck = belowThresholdStudents.map(s => s.id);
+            for (let i = 0; i < idsToCheck.length; i += 30) {
+                const idChunk = idsToCheck.slice(i, i + 30);
+                const resolvedSnap = await getDocs(query(
+                    collection(db, 'school-settings', schoolId, 'remediation_requests'),
+                    where('studentId', 'in', idChunk),
+                    where('flagType', '==', 'course'),
+                    where('courseId', '==', courseId),
+                    where('academicYear', '==', academicYear),
+                    where('semester', '==', msSemester),
+                    where('status', '==', 'resolved'),
+                ));
+                resolvedSnap.forEach(d => {
+                    const data = d.data() as any;
+                    const resolvedAt = data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null;
+                    resolvedByStudentId[data.studentId] = resolvedAt;
+                });
+            }
+
+            const toDateKeyLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const studentsToReFlag = belowThresholdStudents.filter(student => {
+                if (!(student.id in resolvedByStudentId)) return true; // ไม่เคยแก้ตัวมาก่อน — ทำงานตามปกติ
+                const resolvedAt = resolvedByStudentId[student.id];
+                if (!resolvedAt) return true; // ไม่มีวันที่แก้ตัวให้เทียบ — เผื่อไว้ก่อน ทำงานตามปกติ
+                const resolvedDateKey = toDateKeyLocal(resolvedAt);
+                const statusMap = dailyStatus[student.id] || {};
+                return Object.entries(statusMap).some(([dateKey, status]) =>
+                    dateKey > resolvedDateKey && (status === 'absent' || status === 'escape')
+                );
+            });
+
+            if (studentsToReFlag.length === 0) return true;
+
+            // Overwrite status/grade -> 'มส' exactly like useGradeBookActions.ts's handleSave —
+            // same remark text, same merge-preserving-scores behavior — so both save paths agree.
+            const existingSnaps = await Promise.all(
+                studentsToReFlag.map(student => getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id)))
+            );
+
+            const msBatch = writeBatch(db);
+            const changedStudentIds: string[] = [];
+            studentsToReFlag.forEach((student, idx) => {
+                const info = eligibility[student.id];
+                const existingSnap = existingSnaps[idx];
+                const existingData = existingSnap.exists() ? existingSnap.data() as any : null;
+                const newRemark = `เวลาเรียนไม่ถึงร้อยละ 80 (${info.presentHours}/${info.totalHours} คาบ = ${info.percentage.toFixed(1)}%)`;
+
+                // Skip if already correctly flagged with the same numbers — teachers may save
+                // attendance many times a day across periods, and re-writing an unchanged มส
+                // record on every save would be pure waste.
+                if (existingData?.status === 'มส' && existingData?.remark === newRemark) return;
+
+                const baseRecord = existingData || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                const gradeRef = doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id);
+                msBatch.set(gradeRef, {
+                    ...baseRecord,
+                    status: 'มส',
+                    grade: 'มส',
+                    remark: newRemark,
+                    updatedAt: Timestamp.now(),
+                }, { merge: true });
+                changedStudentIds.push(student.id);
+            });
+
+            if (changedStudentIds.length > 0) await msBatch.commit();
+
+            // เวลาเรียนยังไม่ถึงเกณฑ์ซ้ำอีกครั้งในภาคเรียนเดียวกัน (เช่น เคยแก้ มส สำเร็จไปแล้วแต่ขาดเรียนใหม่ต่อ
+            // หลังแก้ตัว) — ยกเลิกคำร้องแก้ตัวเดิมที่ resolved ไปแล้ว กันไม่ให้สถานะ "แก้ตัวสำเร็จ" ค้างแสดงทั้งที่
+            // ผลจริงกลับไปติด มส ใหม่แล้ว เช็คเฉพาะกลุ่ม studentsToReFlag ที่ยืนยันแล้วว่ามีวันขาดเรียนใหม่จริง
+            // (ไม่ใช่ belowThresholdStudents ทั้งหมด — คนที่แก้ตัวสำเร็จแล้วและไม่มีวันขาดใหม่ต้องไม่ถูกยกเลิกคำร้อง)
+            await Promise.all(studentsToReFlag.map(student => invalidateStaleResolvedRequests(
+                schoolId, student.id, 'course', courseId, academicYear, msSemester,
+            )));
+            return true;
+        } catch (err) {
+            console.error('Error applying attendance-eligibility (มส) flags:', err);
+            return false;
+        }
+    };
+
     const handleSaveAttendance = async () => {
         if (!schoolId || !selectedClass || isSaving) return;
 
@@ -1393,6 +1534,13 @@ const ClassroomAttendancePage: React.FC = () => {
                 await b.commit();
             }
 
+            // Check cumulative attendance % against the 80% threshold right here, so a student
+            // who just fell below it gets มส immediately — no need for anyone to separately
+            // open ปพ.5 to trigger this. Best-effort like the behavior score adjustments below:
+            // attendance is already durably saved above, so a failure here is only surfaced as
+            // a warning, never rolled back.
+            const msFlagUpdateOk = await applyAttendanceEligibilityFlags(selectedClass.courseId, students);
+
             // Behavior score adjustments are best-effort follow-ups: the attendance record
             // is already durably saved above, so a failure here is logged but doesn't block
             // the success flow. It also can't be silently retried by re-saving — once
@@ -1428,12 +1576,16 @@ const ClassroomAttendancePage: React.FC = () => {
                 }
             }
 
-            if (scoreUpdateFailed) {
+            if (scoreUpdateFailed || !msFlagUpdateOk) {
+                const failureParts = [
+                    scoreUpdateFailed ? 'ปรับคะแนนพฤติกรรมไม่สำเร็จ' : null,
+                    !msFlagUpdateOk ? 'ตรวจสอบเวลาเรียน (มส) ไม่สำเร็จ' : null,
+                ].filter(Boolean).join(' และ');
                 Swal.fire({
                     icon: 'warning',
                     title: 'บันทึกการเช็คชื่อสำเร็จ',
-                    text: 'แต่ปรับคะแนนพฤติกรรมไม่สำเร็จ กรุณาตรวจสอบ/ปรับคะแนนด้วยตนเอง',
-                    timer: 3000,
+                    text: `แต่${failureParts} กรุณาตรวจสอบด้วยตนเอง`,
+                    timer: 3500,
                     showConfirmButton: false,
                 });
             } else {

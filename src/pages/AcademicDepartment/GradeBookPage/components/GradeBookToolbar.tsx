@@ -67,16 +67,20 @@ const GradeBookToolbar: React.FC<GradeBookToolbarProps> = ({
         if (selectedSemester && selectedSemester !== 'annual') params.set('semester', selectedSemester);
         if (selectedClass) params.set('classId', selectedClass);
         
-        // Extract room number from selectedGroup (e.g. "กลุ่ม 1" -> "1")
-        let roomNum = selectedRoom;
-        if (selectedGroup && selectedGroup.includes('กลุ่ม')) {
-            roomNum = selectedGroup.replace('กลุ่ม', '').trim();
-        } else if (selectedGroup) {
-            roomNum = selectedGroup;
+        // selectedGroup คือ "เลขกลุ่มสอน" (เช่น "กลุ่ม 2") ไม่ใช่เลขห้อง — คนละความหมายกัน ห้ามใช้แทนกัน
+        // (บั๊กเดียวกับที่แก้ไปแล้วใน HistoricalClassroomAttendancePage.tsx/ClassroomAttendance/index.tsx)
+        // ห้องที่ถูกต้องคือ selectedRoom เท่านั้น ซึ่งผูกกับพารามิเตอร์ room ในเบราว์เซอร์อยู่แล้ว
+        const roomNum = selectedRoom;
+
+        if (roomNum) {
+            params.set('room', roomNum);
+            params.set('roomNumber', roomNum);
         }
-        
-        if (roomNum) params.set('roomNumber', roomNum);
         if (selectedCourse) params.set('courseId', selectedCourse);
+        if (selectedGroup) {
+            params.set('groupId', selectedGroup);
+            params.set('group', selectedGroup);
+        }
         
         navigate(`/academic/classroom-attendance-history?${params.toString()}`);
     };

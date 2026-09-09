@@ -13,7 +13,7 @@ import Swal from 'sweetalert2';
 import { AlertTriangle, AlertCircle, RefreshCw, Send, Clock, CheckCircle2, XCircle, ClipboardX, ClipboardList } from 'lucide-react';
 import {
     FlaggedCourse, StudentFlagRow, RemediationWindowConfig,
-    fetchFlaggedStudents, isRemediationWindowOpen,
+    fetchFlaggedStudents, isRemediationWindowOpen, notifyResponsibleTeachers,
 } from '@/utils/remediationUtils';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 
@@ -30,6 +30,23 @@ interface RemediationRequestLite {
 const requestDedupKey = (flagKind: string, idValue: string, academicYear: string, semester: string) =>
     `${flagKind}|${idValue}|${academicYear}|${semester}`;
 const flagKeyId = (flag: FlaggedCourse) => flag.flagKind === 'course' ? flag.courseId : (flag.activityDocId || flag.courseId);
+
+// ข้อความคำร้องอัตโนมัติตามประเภทผลการเรียนที่ติด — ให้เป็นข้อความทางการที่ใช้ได้ทันที
+// นักเรียนยังแก้ไขเพิ่มเติมเองได้ก่อนยื่นจริง (ไม่ใช่ค่าบังคับ)
+const getDefaultRequestNote = (grade: string): string => {
+    switch (grade) {
+        case '0':
+            return 'ข้าพเจ้าขอยื่นคำร้องขอสอบแก้ตัว เนื่องจากผลการเรียนที่ได้คือ "0" โดยขอเข้ารับการทดสอบหรือปฏิบัติงานเพิ่มเติมตามที่ครูผู้สอนกำหนด เพื่อขอรับการประเมินผลใหม่ให้เป็นไปตามเกณฑ์ของโรงเรียน';
+        case 'ร':
+            return 'ข้าพเจ้าขอยื่นคำร้องขอแก้ไขผลการเรียน "ร" เนื่องจากมีงาน ชิ้นงาน หรือการประเมินที่ยังไม่สมบูรณ์ โดยขอส่งงานหรือเข้ารับการประเมินเพิ่มเติมให้ครบถ้วนตามที่ครูผู้สอนกำหนด เพื่อขอรับการตัดสินผลการเรียนใหม่';
+        case 'มส':
+            return 'ข้าพเจ้าขอยื่นคำร้องขอแก้ไขผลการเรียน "มส" เนื่องจากมีเวลาเรียนไม่ถึงเกณฑ์ที่กำหนด โดยขอเข้ารับการซ่อมเสริมหรือปฏิบัติงานเพิ่มเติมตามดุลยพินิจของครูผู้สอน เพื่อขอรับการประเมินผลใหม่ให้เป็นไปตามเกณฑ์ของโรงเรียน';
+        case 'มผ':
+            return 'ข้าพเจ้าขอยื่นคำร้องขอแก้ไขผลการประเมิน "มผ" เนื่องจากเข้าร่วมกิจกรรมหรือปฏิบัติงานไม่ครบตามเกณฑ์ที่กำหนด โดยขอเข้าร่วมกิจกรรมหรือปฏิบัติงานเพิ่มเติมตามที่ครูผู้รับผิดชอบกำหนด เพื่อขอรับการประเมินผลใหม่';
+        default:
+            return '';
+    }
+};
 
 const MyGradeFlagsPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -189,6 +206,7 @@ const MyGradeFlagsPage: React.FC = () => {
                 ผลการเรียน: <b>${flag.grade}</b> (${flag.academicYear}/${flag.semester})
             </div>`,
             input: 'textarea',
+            inputValue: getDefaultRequestNote(flag.grade),
             inputPlaceholder: 'หมายเหตุ (ไม่บังคับ)',
             showCancelButton: true,
             confirmButtonText: 'ยื่นคำร้อง',
@@ -244,6 +262,12 @@ const MyGradeFlagsPage: React.FC = () => {
             }
 
             await addDoc(collection(db, 'school-settings', schoolId, 'remediation_requests'), payload);
+            notifyResponsibleTeachers(
+                schoolId,
+                teacherMap,
+                payload.responsibleTeacherIds,
+                `${payload.studentName} ยื่นคำร้องขอสอบแก้ตัว วิชา${payload.courseTitle || payload.activityName || ''}`,
+            ).catch(err => console.error('Failed to notify responsible teachers:', err));
             Swal.fire({ icon: 'success', title: 'ยื่นคำร้องสำเร็จ', timer: 1500, showConfirmButton: false });
             await loadData();
         } catch (err) {
@@ -270,15 +294,27 @@ const MyGradeFlagsPage: React.FC = () => {
         );
     };
 
-    const total = flagRow?.flags?.length || 0;
-    const resolvedCount = flagRow?.flags?.filter(flag => {
+    const flags = React.useMemo(() => {
+        if (!flagRow?.flags) return [];
+        const seen = new Set<string>();
+        return flagRow.flags.filter(flag => {
+            const id = (flag.courseCode || flag.activityDocId || flag.courseId || '').trim().toUpperCase();
+            const key = `${flag.flagKind}|${id}|${flag.academicYear}|${flag.semester}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [flagRow?.flags]);
+
+    const total = flags.length;
+    const resolvedCount = flags.filter(flag => {
         const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
         return requestsByKey[key]?.status === 'resolved';
-    }).length || 0;
-    const pendingCount = flagRow?.flags?.filter(flag => {
+    }).length;
+    const pendingCount = flags.filter(flag => {
         const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
         return requestsByKey[key]?.status === 'pending';
-    }).length || 0;
+    }).length;
 
     return (
         <MainLayout>
@@ -388,7 +424,7 @@ const MyGradeFlagsPage: React.FC = () => {
                                     <p className="text-xs font-semibold mt-0.5 opacity-90">{error}</p>
                                 </div>
                             </div>
-                        ) : !flagRow || flagRow.flags.length === 0 ? (
+                        ) : !flagRow || flags.length === 0 ? (
                             <div className="rounded-xl bg-slate-50 dark:bg-[#202124] border border-slate-200 dark:border-slate-800 p-12 flex flex-col items-center justify-center text-center shadow-sm">
                                 <div className="w-14 h-14 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center mb-3">
                                     <CheckCircle2 size={26} className="text-emerald-500" />
@@ -420,7 +456,7 @@ const MyGradeFlagsPage: React.FC = () => {
 
                                 {/* Rows */}
                                 <div className="divide-y divide-slate-250 dark:divide-slate-700">
-                                    {flagRow.flags.map((flag, idx) => {
+                                    {flags.map((flag, idx) => {
                                         const key = requestDedupKey(flag.flagKind, flagKeyId(flag), flag.academicYear, flag.semester);
                                         const req = requestsByKey[key];
                                         

@@ -1,5 +1,5 @@
 {
-  "name": "tortor",
+  "name": "bmg-smartschool",
   "private": true,
   "version": "0.0.0.7",
   "type": "module",
@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:emulator": "firebase emulators:exec --only firestore \"vitest run src/pages/AcademicDepartment/schedule/__tests__/firestoreEmulator.e2e.test.ts\"",
     "test:emulator:java21": "JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home npm run test:emulator",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "functions:emulator": "firebase emulators:start --only functions"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -29,6 +30,7 @@
     "@reduxjs/toolkit": "^2.7.0",
     "@types/react-select": "^5.0.0",
     "@vladmandic/face-api": "^1.7.15",
+    "@zxing/library": "^0.23.0",
     "browser-image-compression": "^2.0.2",
     "date-fns": "^4.1.0",
     "exceljs": "^4.4.0",
@@ -41,7 +43,6 @@
     "jsbarcode": "^3.12.3",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
-    "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",
     "mammoth": "^1.11.0",
@@ -98,6 +99,6 @@
   "description": "This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.",
   "main": "postcss.config.js",
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "ว่าที่ร้อยตรีนนทวัฒน์ สุวรรณบุผา (BMG Softtech)",
+  "license": "UNLICENSED"
 }

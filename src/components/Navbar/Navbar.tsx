@@ -557,7 +557,7 @@ const Navbar: React.FC<NavbarProps> = ({ schoolId }) => {
                 <FaBell className={navIconSizeClass} aria-hidden="true" />
               </button>
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
                   {unreadCount}
                 </span>
               )}

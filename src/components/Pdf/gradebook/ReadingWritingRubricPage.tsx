@@ -2,6 +2,19 @@ import React from 'react';
 import { Text, View, StyleSheet, Font } from '@react-pdf/renderer';
 import PdfPage from './PdfPage';
 import { READING_WRITING_CRITERIA } from './constants';
+import { buildJustifiedLines } from '../shared/thaiPdfTextUtils';
+
+// ความกว้างที่ใช้ได้จริงของตาราง (pt) คำนวณจาก A4 (595.28pt) - padding หน้า (15mm ซ้าย, 10mm ขวา)
+const TABLE_WIDTH_PT = 524.41;
+const CELL_HORIZONTAL_PADDING_PT = 6.4; // padding: '3 3.2' (ซ้าย+ขวา)
+const CONTENT_FONT_SIZE = 11.85;
+
+// ความกว้างข้อความจริงภายในแต่ละคอลัมน์ (หักระยะขอบซ้าย/ขวาของ cell ออกแล้ว) — สัดส่วนคอลัมน์ต้องตรงกับ
+// colStandard/colIndicator/rubricHeaderGroup ใน styles ด้านล่าง (มาตรฐาน 8.8% / ตัวชี้วัด 20% / ระดับคุณภาพ 17.8%x4)
+const INDICATOR_TEXT_WIDTH_PT = TABLE_WIDTH_PT * 0.20 - CELL_HORIZONTAL_PADDING_PT;
+const RUBRIC_TEXT_WIDTH_PT = TABLE_WIDTH_PT * 0.175 - CELL_HORIZONTAL_PADDING_PT;
+const INDICATOR_NUMBER_WIDTH_PT = 20; // ความกว้างคอลัมน์ย่อยของเลข "N.N" ในช่องตัวชี้วัด
+const SCOPE_TEXT_WIDTH_PT = TABLE_WIDTH_PT - 12; // scopeContainer paddingHorizontal:6 (ซ้าย+ขวา)
 
 // ==========================================
 // 0. GLOBAL CONFIG
@@ -22,80 +35,27 @@ const sanitizeThaiText = (text: string | undefined | null) => {
     .trim();
 };
 
-const getThaiTextParts = (text: string | undefined | null) => {
+// ใช้ตัวตัดคำ/จัดระยะห่างตัวอักษรแบบเดียวกับหน้าตัวชี้วัด (buildJustifiedLines) แทนการประมาณความกว้างแบบหยาบๆ
+// เดิม + textAlign:'justify' ซึ่งทำให้ข้อความไทยที่ไม่มีช่องว่างถูกยืดตัวอักษรจนพังเมื่อบรรทัดสั้น
+// ตัดตามขอบเขตคำเสมอ (ไม่ตัดกลางคำ) — หน้านี้ใช้แนวนอนเพื่อให้แต่ละคอลัมน์กว้างพอสำหรับการตัดคำแบบนี้
+const ThaiText: React.FC<{ text: string | undefined | null; style?: any; maxWidthPt: number; fontSize?: number }> = ({
+  text,
+  style,
+  maxWidthPt,
+  fontSize = CONTENT_FONT_SIZE,
+}) => {
   const clean = sanitizeThaiText(text);
-  if (!clean) return [];
-
-  try {
-    // แยกเป็น Text runs สั้น ๆ แทนการส่ง string ยาวให้ react-pdf hyphenate เอง
-    const segmenter = new Intl.Segmenter('th-TH', { granularity: 'word' });
-    const segments = Array.from(segmenter.segment(clean));
-    return segments
-      .map(s => s.segment.replace(/\s+/g, ' '))
-      .filter(Boolean);
-  } catch (error) {
-    return clean.split('');
-  }
-};
-
-const measureTextUnits = (text: string) => {
-  return Array.from(text).reduce((sum, char) => {
-    if (char === ' ') return sum + 0.35;
-    if (/[0-9A-Za-z()./]/.test(char)) return sum + 0.55;
-    return sum + 1;
-  }, 0);
-};
-
-const wrapThaiText = (text: string | undefined | null, maxUnits: number) => {
-  const parts = getThaiTextParts(text);
-  const lines: string[] = [];
-  let current = '';
-
-  parts.forEach(part => {
-    if (!part) return;
-    if (!current) {
-      current = part.trimStart();
-      return;
-    }
-
-    const next = current + part;
-    if (measureTextUnits(next) <= maxUnits) {
-      current = next;
-    } else {
-      lines.push(current.trimEnd());
-      current = part.trimStart();
-    }
-  });
-
-  if (current) lines.push(current.trimEnd());
-  return lines;
-};
-
-const ThaiText: React.FC<{ text: string | undefined | null; style?: any; maxUnits: number }> = ({ text, style, maxUnits }) => {
-  const lines = wrapThaiText(text, maxUnits);
+  const lines = buildJustifiedLines(clean, maxWidthPt, fontSize);
   return (
     <Text style={style} hyphenationCallback={disableHyphenation}>
-      {lines.map((line, index) => (
-        <Text key={`${line}-${index}`} hyphenationCallback={disableHyphenation}>
-          {line}{index < lines.length - 1 ? '\n' : ''}
+      {lines.map((l, index) => (
+        <Text key={index} style={{ letterSpacing: l.letterSpacing }} hyphenationCallback={disableHyphenation}>
+          {l.line}{index < lines.length - 1 ? '\n' : ''}
         </Text>
       ))}
     </Text>
   );
 };
-
-const getIndicatorRowHeight = (criteriaIndex: number, indicatorIndex: number) => {
-  const heights = [
-    [118, 96],
-    [128, 96],
-    [128],
-  ];
-
-  return heights[criteriaIndex]?.[indicatorIndex] ?? 112;
-};
-
-const getCriteriaRowHeight = (criteria: ReadingWritingCriteria, criteriaIndex: number) =>
-  (criteria.indicators || []).reduce((sum, _indicator, indicatorIndex) => sum + getIndicatorRowHeight(criteriaIndex, indicatorIndex), 0);
 
 // ==========================================
 // 2. INTERFACES
@@ -158,8 +118,6 @@ const styles = StyleSheet.create({
   scopeContent: {
     fontSize: 11.5,
     lineHeight: 1.18,
-    textAlign: 'justify',
-    textIndent: 28,
   },
   tableContainer: {
     width: '100%',
@@ -199,27 +157,26 @@ const styles = StyleSheet.create({
   textContent: {
     fontSize: 11.85,
     lineHeight: 1.09,
-    textAlign: 'justify',
-    letterSpacing: 0,
     hyphens: 'none',
   },
   textRubric: {
     fontSize: 11.85,
     lineHeight: 1.09,
-    textAlign: 'justify',
-    letterSpacing: 0,
     hyphens: 'none',
   },
   
-  // ปรับความกว้างใหม่เพื่อใช้พื้นที่ที่เพิ่มขึ้น (Sum = 100%)
-  colStandard: { width: '8.8%' },
-  colIndicator: { width: '16.5%' },
-  rubricHeaderGroup: { width: '74.7%' },
-  
-  nestedCol: { width: '91.2%', flexDirection: 'column' },
-  nestedRow: { 
-    flexDirection: 'row', 
+  // คอลัมน์ "ตัวชี้วัด" เดิมแคบกว่าคอลัมน์ระดับคุณภาพทั้งที่เนื้อหายาวพอกัน ทำให้ตัดคำถี่ห้วนกว่าคอลัมน์อื่นชัดเจน
+  // จึงยกพื้นที่ให้ตัวชี้วัดเพิ่ม โดยหักจากคอลัมน์ระดับคุณภาพเล็กน้อย (ไม่แตะ "มาตรฐาน" เพราะแคบเกินไปจะทำให้
+  // ข้อความอย่าง "วิเคราะห์"/"การเขียน" ตัดจนแตกเป็นตัวอักษรเดี่ยว) (Sum = 100%)
+  colStandard: { width: '10%' },
+  colIndicator: { width: '20%' },
+  rubricHeaderGroup: { width: '70%' },
+
+  nestedCol: { width: '90%', flexDirection: 'column' },
+  nestedRow: {
+    flexDirection: 'row',
     width: '100%',
+    alignItems: 'stretch',
     borderBottomWidth: 1,
     borderBottomColor: '#000',
     borderStyle: 'dotted',
@@ -262,7 +219,8 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
         <Text style={styles.scopeTitle} hyphenationCallback={disableHyphenation}>ขอบเขตการประเมิน</Text>
         <ThaiText
           style={styles.scopeContent}
-          maxUnits={158}
+          maxWidthPt={SCOPE_TEXT_WIDTH_PT}
+          fontSize={11.5}
           text="การอ่านจากสื่อสิ่งพิมพ์และสื่ออิเล็กทรอนิกส์ที่ให้ข้อมูลสารสนเทศ ข้อคิด ความรู้เกี่ยวกับสังคมและสิ่งแวดล้อมที่เอื้อให้ผู้อ่านนำไปคิดวิเคราะห์ วิจารณ์ สรุปแนวคิดคุณค่าที่นำไปประยุกต์ใช้ด้วยวิจารณญาณและถ่ายทอดเป็นข้อเขียนเชิงสร้างสรรค์ด้วยภาษาที่ถูกต้องเหมาะสม"
         />
       </View>
@@ -306,7 +264,6 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
               styles.row,
               {
                 borderBottomWidth: cIdx === criteriaList.length - 1 ? 0 : 1,
-                height: getCriteriaRowHeight(criteria, cIdx),
               },
             ]}
             wrap={false}
@@ -320,30 +277,33 @@ const ReadingWritingRubricPage: React.FC<ReadingWritingRubricPageProps> = ({
             <View style={styles.nestedCol}>
               {(criteria.indicators || []).map((indicator, iIdx) => (
                 <View key={iIdx} style={[
-                  styles.nestedRow, 
+                  styles.nestedRow,
                   {
                     borderBottomWidth: iIdx === (criteria.indicators?.length || 0) - 1 ? 0 : 1,
                     borderRightWidth: 0,
-                    height: getIndicatorRowHeight(cIdx, iIdx),
                   }
                 ]}>
-                  {/* Indicator Cell */}
-                  <View style={[styles.cell, { width: '18.092%' }]}>
-                    <ThaiText style={styles.textContent} maxUnits={22.8} text={`${cIdx + 1}.${iIdx + 1} ${indicator.text}`} />
+                  {/* Indicator Cell: เลข "N.N" แยกเป็นคอลัมน์ย่อยของตัวเอง ไม่ให้ปนกับข้อความตอนตัดบรรทัด
+                      (เดิมรวมเลขไว้ในข้อความเดียวกัน ทำให้ตอนตัดคำ เลข "N.N" มักโดดเดี่ยวอยู่บรรทัดแรกบรรทัดเดียว) */}
+                  <View style={[styles.cell, { width: '22.222%', flexDirection: 'row' }]}>
+                    <Text style={[styles.textContent, { width: INDICATOR_NUMBER_WIDTH_PT }]}>{cIdx + 1}.{iIdx + 1}</Text>
+                    <View style={{ flex: 1 }}>
+                      <ThaiText style={styles.textContent} maxWidthPt={INDICATOR_TEXT_WIDTH_PT - INDICATOR_NUMBER_WIDTH_PT} text={indicator.text} />
+                    </View>
                   </View>
-                  
+
                   {/* Rubric Cells */}
-                  <View style={[styles.cell, { width: '20.477%' }]}>
-                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[3]} />
+                  <View style={[styles.cell, { width: '19.444%' }]}>
+                    <ThaiText style={styles.textRubric} maxWidthPt={RUBRIC_TEXT_WIDTH_PT} text={indicator.rubric[3]} />
                   </View>
-                  <View style={[styles.cell, { width: '20.477%' }]}>
-                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[2]} />
+                  <View style={[styles.cell, { width: '19.444%' }]}>
+                    <ThaiText style={styles.textRubric} maxWidthPt={RUBRIC_TEXT_WIDTH_PT} text={indicator.rubric[2]} />
                   </View>
-                  <View style={[styles.cell, { width: '20.477%' }]}>
-                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[1]} />
+                  <View style={[styles.cell, { width: '19.444%' }]}>
+                    <ThaiText style={styles.textRubric} maxWidthPt={RUBRIC_TEXT_WIDTH_PT} text={indicator.rubric[1]} />
                   </View>
-                  <View style={[styles.cell, { width: '20.477%', borderRightWidth: 0 }]}>
-                    <ThaiText style={styles.textRubric} maxUnits={25.2} text={indicator.rubric[0]} />
+                  <View style={[styles.cell, { width: '19.444%', borderRightWidth: 0 }]}>
+                    <ThaiText style={styles.textRubric} maxWidthPt={RUBRIC_TEXT_WIDTH_PT} text={indicator.rubric[0]} />
                   </View>
                 </View>
               ))}

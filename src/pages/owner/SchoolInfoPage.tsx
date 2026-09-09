@@ -9,7 +9,7 @@ import { fetchSchoolSettings } from "@/store/slices/schoolSettingsSlice";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Import deleteObject
 import Swal from 'sweetalert2';
 import { compressImage } from "@/utils/imageUtils";
-import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck } from 'react-icons/fa';
+import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck, FaBriefcase } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
 import {
@@ -1052,6 +1052,36 @@ const SchoolInfoPage: React.FC = () => {
                           </label>
                         </div>
                       )}
+                      {isSuperAdmin && (
+                        <div className="flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-500/10 rounded-2xl border border-amber-100 dark:border-amber-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-white dark:bg-[#1e1f21] rounded-xl text-amber-600 shadow-sm">
+                              <FaBriefcase size={20} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white">เปิดใช้งานระบบงานธุรการ (Owner เท่านั้น)</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">เปิด/ปิดโมดูลงานธุรการทั้งหมดของโรงเรียนนี้ — ลงรับ/ส่งหนังสือ, คำสั่ง, ประกาศ, ทะเบียนหนังสือ, มอบหมายงาน ผอ. ปิดสวิตช์นี้จะซ่อนเมนู "งานธุรการ" และบล็อกทุกหน้าของโมดูลนี้ทันที</p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={info.features?.generalAdmin ?? true}
+                              onChange={(e) => {
+                                setInfo(prev => ({
+                                  ...prev,
+                                  features: {
+                                    ...prev.features,
+                                    generalAdmin: e.target.checked,
+                                  },
+                                }));
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-amber-600"></div>
+                          </label>
+                        </div>
+                      )}
                       {info.useFaceScanMode && (
                         <div className="flex flex-col gap-4 rounded-2xl border border-indigo-100 bg-white/70 p-4 dark:border-indigo-500/20 dark:bg-[#1e1f21]/70">
                           {isSuperAdmin && (
@@ -1814,7 +1844,7 @@ const SchoolInfoPage: React.FC = () => {
                       { key: 'studentAffairs', label: 'กลุ่มบริหารงานกิจการนักเรียน', desc: 'ระบบดูแลช่วยเหลือนักเรียน, เช็คชื่อ, คะแนนความประพฤติ, การเยี่ยมบ้าน' },
                       { key: 'personnel', label: 'กลุ่มบริหารงานบุคคล', desc: 'ฐานข้อมูลครูและบุคลากร, การลางาน, การประเมินผลการปฏิบัติงาน' },
                       { key: 'budget', label: 'กลุ่มบริหารงบประมาณ', desc: 'ระบบแผนงาน, การจัดซื้อจัดจ้าง, การเงินและพัสดุ' },
-                      { key: 'generalAdmin', label: 'กลุ่มบริหารงานทั่วไป', desc: 'งานสารบรรณ, งานอาคารสถานที่, งานยานพาหนะ, งานประชาสัมพันธ์' },
+                      // 📌 'generalAdmin' (งานธุรการ) ย้ายไปเป็นสวิตช์เฉพาะ Owner ในหน้า "ข้อมูลทั่วไป" (Step 1) แล้ว — ไม่ให้ school_admin แก้จากตรงนี้
                       { key: 'director', label: 'ส่วนงานผู้อำนวยการ', desc: 'Dashboard ผู้บริหาร, ระบบอนุมัติเอกสาร, รายงานภาพรวม' },
                     ].map((feature) => (
                       <div key={feature.key} className="flex items-center justify-between p-5 bg-gray-50 dark:bg-[#1e1f21] rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all">

@@ -39,6 +39,7 @@ interface TeacherFormState {
     isHeadOfLearningArea?: boolean;
     isHeadOfAssessment?: boolean;
     isGuidanceTeacher?: boolean;
+    isGeneralAffairsOfficer?: boolean;
     licenseNumber: string;
     startDate: string;
     educationLevel: string;
@@ -91,6 +92,7 @@ const initialState: TeacherFormState = {
     isHeadOfAssessment: false,
     isHeadOfLearningArea: false,
     isGuidanceTeacher: false,
+    isGeneralAffairsOfficer: false,
     academicStanding: "",
     licenseNumber: "",
     startDate: "",
@@ -313,6 +315,17 @@ export default function EditTeacherPage() {
         }
     }
 
+    function handleSpecialRoleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+        const val = e.target.value;
+        setForm((prev) => ({
+            ...prev,
+            isGeneralAffairsOfficer: val === 'isGeneralAffairsOfficer',
+            isHeadOfLearningArea: val === 'isHeadOfLearningArea',
+            isHeadOfAssessment: val === 'isHeadOfAssessment',
+            isGuidanceTeacher: val === 'isGuidanceTeacher',
+        }));
+    }
+
     async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
@@ -432,6 +445,10 @@ export default function EditTeacherPage() {
 	                personnelType: form.personnelType || 'teacher',
 	                teacherId: form.teacherId || "",
 	                idCardNumber: form.idCardNumber || "",
+	                isHeadOfLearningArea: !!form.isHeadOfLearningArea,
+	                isHeadOfAssessment: !!form.isHeadOfAssessment,
+	                isGuidanceTeacher: !!form.isGuidanceTeacher,
+	                isGeneralAffairsOfficer: !!form.isGeneralAffairsOfficer,
 	            });
 
             // Sync head of learning area to subject_groups collection
@@ -745,49 +762,30 @@ export default function EditTeacherPage() {
                                         </select>
                                     </div>
                                     )}
-                                    {form.personnelType !== 'user' && (
                                     <div className="sm:col-span-2">
-                                        <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-400">
+                                        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-400">
                                             บทบาทพิเศษ
                                             {isEditingSelf && !canEditSpecialRoles && <span className="ml-2 text-[10px] text-amber-500 font-normal">(คุณไม่สามารถแก้ไขบทบาทพิเศษของตัวเองได้)</span>}
                                         </label>
-                                        <div className={`flex flex-wrap gap-x-6 gap-y-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700`}>
-                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
-                                                <input
-                                                    type="checkbox"
-                                                    name="isHeadOfLearningArea"
-                                                    checked={form.isHeadOfLearningArea || false}
-                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
-                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
-                                                />
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้ากลุ่มสาระ</span>
-                                            </label>
-                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
-                                                <input
-                                                    type="checkbox"
-                                                    name="isHeadOfAssessment"
-                                                    checked={form.isHeadOfAssessment || false}
-                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
-                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
-                                                />
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นหัวหน้างานวัดและประเมินผล</span>
-                                            </label>
-                                            <label className={`flex items-center space-x-2 ${!canEditSpecialRoles ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}>
-                                                <input
-                                                    type="checkbox"
-                                                    name="isGuidanceTeacher"
-                                                    checked={form.isGuidanceTeacher || false}
-                                                    onChange={!canEditSpecialRoles ? () => {} : handleChange}
-                                                    onClick={(e) => !canEditSpecialRoles && e.preventDefault()}
-                                                    className={`w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-[#1e1f21] dark:border-gray-600 ${!canEditSpecialRoles ? 'pointer-events-none' : ''}`}
-                                                />
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">เป็นครูแนะแนว</span>
-                                            </label>
-                                        </div>
+                                        <select
+                                            name="specialRole"
+                                            value={
+                                                form.isGeneralAffairsOfficer ? 'isGeneralAffairsOfficer' :
+                                                form.isHeadOfAssessment ? 'isHeadOfAssessment' :
+                                                form.isGuidanceTeacher ? 'isGuidanceTeacher' :
+                                                form.isHeadOfLearningArea ? 'isHeadOfLearningArea' : ''
+                                            }
+                                            onChange={!canEditSpecialRoles ? () => {} : handleSpecialRoleChange}
+                                            disabled={!canEditSpecialRoles}
+                                            className={`w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-gray-900 dark:text-white ${!canEditSpecialRoles ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                        >
+                                            <option value="">-- ไม่มีบทบาทพิเศษ --</option>
+                                            <option value="isGeneralAffairsOfficer">เจ้าหน้าที่งานธุรการ</option>
+                                            <option value="isHeadOfLearningArea">เป็นหัวหน้ากลุ่มสาระ</option>
+                                            <option value="isHeadOfAssessment">เป็นหัวหน้างานวัดและประเมินผล</option>
+                                            <option value="isGuidanceTeacher">เป็นครูแนะแนว</option>
+                                        </select>
                                     </div>
-                                    )}
                                 </div>
                             </div>
                         </InfoCard>

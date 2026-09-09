@@ -6,18 +6,18 @@ import BackButton from '@/components/Shared/BackButton';
 import AcademicYearSemesterFilter from '@/components/Shared/AcademicYearSemesterFilter';
 import { firestore as db } from '@/firebase';
 import {
-    collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, serverTimestamp,
+    collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, deleteDoc, serverTimestamp, deleteField,
 } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
-    LayoutDashboard, RefreshCw, Search, Pencil, RotateCcw, CheckCircle2, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight,
+    LayoutDashboard, RefreshCw, Search, Pencil, RotateCcw, CheckCircle2, AlertCircle, FileSpreadsheet, ChevronLeft, ChevronRight, Trash2,
 } from 'lucide-react';
-import { FullRosterRow, fetchFullRoster } from '@/utils/remediationUtils';
+import { FullRosterRow, fetchFullRoster, getMinistryRemediationGradeOptions, calculateRemediationGrade } from '@/utils/remediationUtils';
+import { showChoiceDialog } from '@/utils/swalChoiceDialog';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 
-const GRADE_OPTIONS = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0'];
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 interface RequestInfo {
@@ -26,15 +26,45 @@ interface RequestInfo {
     newResult?: string;
     resolvedByName?: string;
     resolvedAt?: any;
+    requestedAt?: any;
+    originalGrade?: string;
 }
 
 type ResultFilter = '' | '0' | 'ร' | 'มส' | 'มผ' | 'normal' | 'none';
+
+// รวมคะแนนดิบของนักเรียนคนหนึ่งในวิชาปกติ (คะแนนเก็บทุกรายการที่ตั้งค่าไว้จริงใน formativeAssessments +
+// กลางภาค + ปลายภาค) จากเอกสาร courses/{courseId} (การตั้งค่า) และ courses/{courseId}/grades/{studentId}
+// (คะแนนดิบ) สดตอนนั้นเลย — ก็อปปี้จาก RemediationRecordPage.tsx/RemediationRequestsPage.tsx ตามธรรมเนียมเดิม
+// ของโปรเจกต์ (ไม่รวมศูนย์เป็นจุดเดียว) ใช้คำนวณเกรดจริงตอนแก้ "ร" ให้ตรงกับที่ GradeBook จะแสดง
+const fetchLiveCourseTotal = async (schoolId: string, courseId: string, studentId: string): Promise<number> => {
+    const [courseSnap, gradeSnap] = await Promise.all([
+        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId)),
+        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', studentId)),
+    ]);
+    const courseData: any = courseSnap.exists() ? courseSnap.data() : {};
+    const record: any = gradeSnap.exists() ? gradeSnap.data() : {};
+
+    if (typeof record.total === 'number' && !isNaN(record.total) && record.total > 0) {
+        return record.total;
+    }
+
+    const details = record.formativeDetails || {};
+    const formativeTotal = (courseData.formativeAssessments || []).reduce((sum: number, a: any) => {
+        const key = a.id || a.name;
+        if (!key) return sum;
+        const raw = details[key];
+        return sum + (raw === undefined || raw === '' ? 0 : Number(raw) || 0);
+    }, 0);
+    const midterm = Number(record.midterm) || 0;
+    const final = Number(record.final) || 0;
+    return formativeTotal + midterm + final;
+};
 
 // หน้าตรวจสอบผลการเรียน 0/ร/มส/มผ และไม่มีผลการเรียน — ตารางเต็มรูปแบบ SGS ครอบคลุมทุก enrollment
 // ทั้งโรงเรียน (ไม่ใช่แค่รายชื่อที่ติด) พร้อมกดแก้ตัว/เรียนซ้ำ ได้ตรงจากตาราง เก็บเข้าระบบคำร้องขอแก้ตัว
 // เดิมเสมอ (status: 'resolved' ทันที) เหมือนหน้า zero-r-ms-report
 const RemediationOverviewPage: React.FC = () => {
-    const { user: currentUser } = usePermissions();
+    const { user: currentUser, isSuperAdmin } = usePermissions();
     const teacherMap = useSelector((state: RootState) => (state as any).userMap?.teachers || {});
     const schoolId = (currentUser as any)?.schoolId;
     const isPwaMode = usePwaMode();
@@ -85,6 +115,7 @@ const RemediationOverviewPage: React.FC = () => {
                     requestMap[key] = {
                         id: d.id, status: data.status, newResult: data.newResult,
                         resolvedByName: data.resolvedByName, resolvedAt: data.resolvedAt,
+                        requestedAt: data.requestedAt, originalGrade: data.originalGrade,
                     };
                 }
             });
@@ -131,6 +162,17 @@ const RemediationOverviewPage: React.FC = () => {
     const handleCorrect = async (row: FullRosterRow, mode: 'pass' | 'repeat') => {
         if (row.status !== 'flag') return;
 
+        // ต้องมีคำร้องขอแก้ตัวที่นักเรียนยื่นมาก่อนเสมอ (สถานะ pending) ห้ามให้ฝ่ายวิชาการบันทึกผลแก้ตัวข้าม
+        // ขั้นตอนคำร้องอีกต่อไป — ให้ไปอนุมัติที่หน้า "คำร้องขอแก้ตัว" (/academic/remediation-requests) แทน
+        if (requestsByKey[row.key]?.status !== 'pending') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'ยังไม่มีคำร้องขอแก้ตัว',
+                html: `${row.name} (${row.studentCode}) ยังไม่ได้ยื่นคำร้องขอแก้ตัววิชา <b>${row.courseTitle || row.courseCode}</b><br/><br/>ต้องให้นักเรียนยื่นคำร้องที่หน้าโปรไฟล์ก่อน (หรือครูยื่นแทนได้) แล้วจึงอนุมัติที่หน้า "คำร้องขอแก้ตัว"`,
+            });
+            return;
+        }
+
         let newValue: string | undefined;
         let displayValue: string;
 
@@ -146,14 +188,37 @@ const RemediationOverviewPage: React.FC = () => {
             });
             if (!confirm.isConfirmed) return;
             displayValue = 'เรียนซ้ำ';
+        } else if (row.flagKind === 'course' && row.grade === 'ร') {
+            // ติด "ร" แก้ตามคะแนนรวมสะสมจริงเสมอ (ไม่ให้เลือกเกรดเองอิสระ) — เหมือน RemediationRequestsPage/
+            // RemediationRecordPage
+            const freshTotal = await fetchLiveCourseTotal(schoolId, row.courseId, row.studentId);
+            const resolvedGrade = calculateRemediationGrade(row.grade, freshTotal);
+            const confirm = await Swal.fire({
+                icon: 'question',
+                title: `แก้ไข ร ของ${row.name}`,
+                html: `<div style="text-align:left;font-size:14px;line-height:1.6;margin-top:8px">
+                    นักเรียน: <b>${row.name}</b> (${row.studentCode})<br/>
+                    วิชา: <b>${row.courseTitle || row.courseCode}</b><br/>
+                    คะแนนรวมในสมุดคะแนน (TOTAL): <b style="color:#4f46e5">${freshTotal} คะแนน</b><br/>
+                    เกรดสุทธิที่จะได้รับจาก GradeBook: <b style="color:#16a34a;font-size:17px">${resolvedGrade}</b>
+                </div>`,
+                showCancelButton: true,
+                confirmButtonText: `บันทึกเกรด (${resolvedGrade})`,
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#4f46e5',
+            });
+            if (!confirm.isConfirmed) return;
+            newValue = resolvedGrade;
+            displayValue = resolvedGrade;
         } else if (row.flagKind === 'course') {
-            const { value } = await Swal.fire({
+            // ตามระเบียบ ศธ./สพฐ.: แก้ตัวจาก "0" หรือ "มส" ได้เกรดสูงสุดไม่เกิน "1" — ต้องใช้ตัวเลือกเดียวกับ
+            // RemediationRequestsPage/RemediationRecordPage ห้ามให้เลือกเกรดอิสระ 0-4 เหมือนเดิม (ผิดระเบียบ)
+            const gradeOptions = getMinistryRemediationGradeOptions(row.grade);
+            const { value } = await showChoiceDialog({
                 title: 'บันทึกผลแก้ตัว',
                 html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>วิชา: <b>${row.courseTitle || row.courseCode}</b> — ผลเดิม: <b>${row.grade}</b></div>`,
-                input: 'select',
-                inputOptions: GRADE_OPTIONS.reduce((acc: any, g) => { acc[g] = g; return acc; }, {}),
-                inputPlaceholder: 'เลือกผลการเรียนใหม่',
-                showCancelButton: true,
+                options: gradeOptions,
+                placeholder: 'เลือกผลการเรียนใหม่',
                 confirmButtonText: 'บันทึก',
                 cancelButtonText: 'ยกเลิก',
                 confirmButtonColor: '#4f46e5',
@@ -170,7 +235,10 @@ const RemediationOverviewPage: React.FC = () => {
         try {
             if (mode === 'pass') {
                 if (row.flagKind === 'course') {
-                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.courseId, 'grades', row.studentId), { grade: newValue }, { merge: true });
+                    // ล้าง remark เดิม (หมายเหตุประกอบผล 0/ร/มส) กับ status เดิม (มส) ทิ้งตอนแก้ตัวสำเร็จ — ให้
+                    // ตรงกับ RemediationRequestsPage/RemediationRecordPage ไม่งั้น GradeBookPage จะยังบังคับ
+                    // แสดง "มส"/ยังดูเหมือนติดค้างอยู่ ทั้งที่เกรดใหม่บันทึกไปแล้ว
+                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.courseId, 'grades', row.studentId), { grade: newValue, remark: deleteField(), status: deleteField() }, { merge: true });
                 } else {
                     // guidance-evaluations เป็น collection ระดับบนสุด (ไม่ใช่ subcollection ของ activityDocId เหมือน clubs/learner-activities)
                     const evalRef = row.activityCollectionName === 'guidance-evaluations'
@@ -243,6 +311,60 @@ const RemediationOverviewPage: React.FC = () => {
         }
     };
 
+    // ── Super Admin เท่านั้น: ลบคำร้อง/ผลการแก้ตัวที่บันทึกผิดพลาด (ทดสอบ/กรอกพลาด) แล้วคืนผลการเรียน
+    // กลับไปเป็นค่าติดเดิม — ต่างจาก remark ที่แค่ซ่อนการแสดงผล นี่คือการย้อนกลับข้อมูลจริงในฐานข้อมูล
+    const handleDeleteRequest = async (row: FullRosterRow, req: RequestInfo) => {
+        if (!schoolId || !isSuperAdmin) return;
+        const isRepeat = req.newResult === 'เรียนซ้ำ';
+        const res = await Swal.fire({
+            title: 'ลบคำร้อง/ผลการแก้ตัว?',
+            html: `<div style="text-align:left;font-size:13px;line-height:1.6">
+                <p><b>${row.name}</b> (${row.studentCode})</p>
+                <p>วิชา/กิจกรรม: <b>${row.courseTitle || row.courseCode}</b></p>
+                <p style="margin-top:8px;color:#ef4444;font-weight:600">
+                    ${isRepeat
+                        ? 'จะลบประวัติคำร้องนี้ทิ้ง (ไม่กระทบเกรด เพราะ "เรียนซ้ำ" ไม่ได้แก้ไขเกรดเดิม)'
+                        : `จะลบประวัติคำร้องนี้ทิ้ง และคืนผลการเรียนกลับเป็น "${req.originalGrade || row.grade}" ทันที`}
+                </p>
+                <p style="margin-top:4px;font-size:12px;color:#9ca3af">ใช้เฉพาะกรณีบันทึกผิดพลาดหรือทดสอบเท่านั้น — การลบนี้ไม่สามารถย้อนกลับได้</p>
+            </div>`,
+            icon: 'warning', showCancelButton: true,
+            confirmButtonText: 'ลบและคืนค่าเดิม', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#ef4444',
+        });
+        if (!res.isConfirmed) return;
+
+        try {
+            if (!isRepeat) {
+                if (row.flagKind === 'course') {
+                    const originalGrade = req.originalGrade || row.grade;
+                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.courseId, 'grades', row.studentId), {
+                        grade: originalGrade,
+                    }, { merge: true });
+                } else {
+                    const evalRef = row.activityCollectionName === 'guidance-evaluations'
+                        ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.evalDocId!)
+                        : doc(db, 'school-settings', schoolId, row.activityCollectionName!, row.activityDocId!, 'evaluations', row.evalDocId!);
+                    const evalSnap = await getDoc(evalRef);
+                    const data: any = evalSnap.exists() ? evalSnap.data() : {};
+                    const results: Record<string, any> = { ...(data.results || {}) };
+                    results[row.studentId] = { ...(results[row.studentId] || {}), status: 'failed' };
+                    const summaryCount = Object.values(results).reduce((acc: any, r: any) => {
+                        const s = r?.status || 'pending';
+                        acc[s] = (acc[s] || 0) + 1;
+                        return acc;
+                    }, { pending: 0, passed: 0, failed: 0 });
+                    await setDoc(evalRef, { results, summary: summaryCount, updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || '' }, { merge: true });
+                }
+            }
+            await deleteDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', req.id));
+            Swal.fire({ icon: 'success', title: 'ลบและคืนค่าเดิมแล้ว', timer: 1500, showConfirmButton: false });
+            await loadData();
+        } catch (err) {
+            console.error('Error deleting remediation request:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถลบคำร้องได้', 'error');
+        }
+    };
+
     const formatDateTime = (ts: any) => {
         if (!ts?.seconds) return '-';
         const d = new Date(ts.seconds * 1000);
@@ -250,16 +372,17 @@ const RemediationOverviewPage: React.FC = () => {
     };
 
     const handleExportExcel = () => {
-        const header = ['ปีการศึกษา', 'ภาคเรียน', 'ระดับชั้น', 'วิชา', 'กลุ่ม', 'ห้อง', 'ผู้สอน', 'เลขที่', 'เลขประจำตัว', 'ชื่อ-นามสกุล', '%', 'ปกติ', 'Grade', 'แก้ตัว', 'เรียนซ้ำ', 'ผู้บันทึก', 'วัน เวลา'];
+        const header = ['ปีการศึกษา', 'ภาคเรียน', 'ระดับชั้น', 'กลุ่มสาระ', 'วิชา', 'กลุ่ม', 'ห้อง', 'ผู้สอน', 'เลขที่', 'เลขประจำตัว', 'ชื่อ-นามสกุล', '%', 'ปกติ', 'Grade', 'แก้ตัว', 'เรียนซ้ำ', 'วันที่ยื่นคำร้อง', 'ผู้บันทึก', 'วันบันทึกผล'];
         const data = filteredRows.map(r => {
             const req = requestsByKey[r.key];
             const isRepeat = req?.status === 'resolved' && req.newResult === 'เรียนซ้ำ';
             const isPass = req?.status === 'resolved' && !isRepeat;
             return [
-                r.academicYear, r.semester, r.classLevel, `${r.courseCode} ${r.courseTitle}`, r.groupName, r.room,
+                r.academicYear, r.semester, r.classLevel, r.subjectGroup || '', `${r.courseCode} ${r.courseTitle}`, r.groupName, r.room,
                 r.teacherName, r.number, r.studentCode, r.name,
                 r.percent ?? '', r.status === 'normal' ? 'ปกติ' : '', r.grade,
                 isPass ? req?.newResult || '' : '', isRepeat ? 'เรียนซ้ำ' : '',
+                formatDateTime(req?.requestedAt),
                 req?.resolvedByName || '', formatDateTime(req?.resolvedAt),
             ];
         });
@@ -434,14 +557,14 @@ const RemediationOverviewPage: React.FC = () => {
                                             <tr className="bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-gray-800">
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[7%]">ปี/เทอม</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[9%]">ชั้น/ห้อง/กลุ่ม</th>
-                                                <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[20%]">วิชา / ผู้สอน</th>
+                                                <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[20%]">กลุ่มสาระ / วิชา / ผู้สอน</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[7%]">เลขที่ / รหัส</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[14%]">ชื่อ-นามสกุล</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[6%]">%</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[6%]">ปกติ</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[6%]">Grade</th>
                                                 <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center w-[13%]">แก้ตัว / เรียนซ้ำ</th>
-                                                <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[12%]">ผู้บันทึก / วันเวลา</th>
+                                                <th className="px-2 py-4 text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[12%]">ยื่นคำร้อง / บันทึกผล</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
@@ -460,6 +583,9 @@ const RemediationOverviewPage: React.FC = () => {
                                                             <p className="text-xs text-gray-400 dark:text-gray-500">กลุ่ม {r.groupName}</p>
                                                         </td>
                                                         <td className="px-2 py-3.5">
+                                                            {r.subjectGroup && (
+                                                                <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 truncate uppercase tracking-wide">{r.subjectGroup}</p>
+                                                            )}
                                                             <p className="text-sm font-bold truncate text-gray-900 dark:text-white">{r.courseCode} {r.courseTitle}</p>
                                                             <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{r.teacherName}</p>
                                                         </td>
@@ -508,8 +634,24 @@ const RemediationOverviewPage: React.FC = () => {
                                                             )}
                                                         </td>
                                                         <td className="px-2 py-3.5">
-                                                            <p className="text-xs font-bold text-gray-500 dark:text-gray-400 truncate">{req?.resolvedByName || '-'}</p>
-                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap">{req?.resolvedAt ? formatDateTime(req.resolvedAt) : ''}</p>
+                                                            <div className="flex items-start justify-between gap-1.5">
+                                                                <div className="min-w-0">
+                                                                    {req?.requestedAt && (
+                                                                        <p className="text-[11px] text-sky-500 dark:text-sky-400 whitespace-nowrap">ยื่น: {formatDateTime(req.requestedAt)}</p>
+                                                                    )}
+                                                                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400 truncate">{req?.resolvedByName || '-'}</p>
+                                                                    <p className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap">{req?.resolvedAt ? `บันทึก: ${formatDateTime(req.resolvedAt)}` : ''}</p>
+                                                                </div>
+                                                                {isSuperAdmin && req?.status === 'resolved' && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteRequest(r, req)}
+                                                                        title="ลบคำร้อง/คืนผลการเรียนเดิม (Super Admin)"
+                                                                        className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 );

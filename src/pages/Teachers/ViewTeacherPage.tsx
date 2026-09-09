@@ -739,10 +739,15 @@ export default function ViewTeacherPage() {
                         <DetailField label="ฝ่ายงาน" value={teacher.department} />
                         <DetailField label="กลุ่มสาระการเรียนรู้" value={teacher.learningArea} />
 
-                        {(teacher.isHeadOfLearningArea || teacher.isHeadOfAssessment || teacher.isGuidanceTeacher) && (
+                        {(teacher.isHeadOfLearningArea || teacher.isHeadOfAssessment || teacher.isGuidanceTeacher || (teacher as any).isGeneralAffairsOfficer) && (
                           <div>
                             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">บทบาทพิเศษ</label>
                             <div className="flex flex-wrap gap-1.5 mt-1">
+                              {(teacher as any).isGeneralAffairsOfficer && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200">
+                                  เจ้าหน้าที่งานธุรการ
+                                </span>
+                              )}
                               {teacher.isHeadOfLearningArea && (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
                                   หัวหน้ากลุ่มสาระ

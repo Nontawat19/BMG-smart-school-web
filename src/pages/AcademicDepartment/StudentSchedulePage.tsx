@@ -16,7 +16,7 @@ import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
 import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { classMatchesSelection, getRoomsForClass, normalizePeriodSettings, parseClassRoom } from '@/utils/scheduleDisplayUtils';
-import { getScheduleDocId, matchesScheduleTerm, resolveScheduleTeacherId } from './schedule/scheduleSharedUtils';
+import { getCanonicalScheduleDocs } from './schedule/scheduleSharedUtils';
 
 // --- Types ---
 interface Course {
@@ -84,28 +84,6 @@ const DEFAULT_PERIODS: (PeriodSetting & { index: number })[] = [
   { id: 'period-7', label: 'คาบที่ 7', startTime: '14:40', endTime: '15:30', isTeachingPeriod: true, index: 8 },
   { id: 'period-8', label: 'คาบที่ 8', startTime: '15:30', endTime: '16:00', isTeachingPeriod: true, index: 9 },
 ];
-
-const getCanonicalScheduleDocs = (
-  docs: Array<{ id: string; data: any }>,
-  knownTeacherIds: string[],
-  year: string,
-  term: string
-) => {
-  const matching = docs
-    .map(({ id, data }) => {
-      if (!matchesScheduleTerm(data, year, term)) return null;
-      const teacherId = resolveScheduleTeacherId(id, data.teacherId, knownTeacherIds);
-      const canonicalId = getScheduleDocId(teacherId, String(data.academicYear || year || ''), String(data.semester || term || '1'));
-      return { id, data, teacherId, isCanonical: id === canonicalId || id.includes('__') };
-    })
-    .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
-
-  const teachersWithCanonicalDocs = new Set(
-    matching.filter(item => item.isCanonical).map(item => item.teacherId)
-  );
-
-  return matching.filter(item => item.isCanonical || !teachersWithCanonicalDocs.has(item.teacherId));
-};
 
 // --- Register Thai Font ---
 Font.register({

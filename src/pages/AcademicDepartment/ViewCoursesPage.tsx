@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import Select from 'react-select';
 import { firestore as db } from '../../firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
-import { useSelector, useDispatch } from 'react-redux';
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
-import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import Swal from 'sweetalert2';
 import BackButton from "@/components/Shared/BackButton";
 import {
@@ -18,7 +16,6 @@ import {
   Clock,
   Calendar,
   Users,
-  MoreHorizontal,
   LayoutGrid,
   ChevronDown,
   ChevronLeft,
@@ -27,9 +24,6 @@ import {
   ChevronsRight,
   Lock,
   Tag,
-
-  Plus,
-  X,
   Check,
   Edit2
 } from 'lucide-react';
@@ -38,6 +32,7 @@ import { EditCourseModal } from './components/EditCourseModal';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { CLASSES, getLevelsByRange } from '@/utils/schoolUtils';
 import { usePermissions } from '@/hooks/usePermissions';
+import { isActivityCourse } from './schedule/utils';
 import { getActiveSortedTeachers } from '@/utils/teacherSortUtils';
 
 // Interfaces
@@ -86,7 +81,6 @@ const ViewCoursesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>('all');
-  const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [selectedSemester, setSelectedSemester] = useState<string>("1");
@@ -100,14 +94,9 @@ const ViewCoursesPage: React.FC = () => {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [subjectGroupMap, setSubjectGroupMap] = useState<Record<string, string>>({});
   const [subjectGroupsList, setSubjectGroupsList] = useState<any[]>([]);
-  const [editingTeacherCourseId, setEditingTeacherCourseId] = useState<string | null>(null);
-  const [teacherSearch, setTeacherSearch] = useState("");
-
-  const [isUpdatingTeacher, setIsUpdatingTeacher] = useState(false);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const schoolId = (currentUser as any)?.schoolId;
-  const dispatch = useDispatch();
   const { hasRole, ACADEMIC_MANAGEMENT } = usePermissions();
   const canManage = hasRole(ACADEMIC_MANAGEMENT);
 
@@ -143,76 +132,6 @@ const ViewCoursesPage: React.FC = () => {
       console.error(error);
       Swal.fire('Error', 'ไม่สามารถปรับปรุงสถานะวิชาเลือกเสรีได้', 'error');
     }
-  };
-  const premiumStyles = {
-    control: (base: any, state: any) => ({
-      ...base,
-      backgroundColor: isDark ? 'rgba(30, 31, 33, 0.5)' : 'rgba(255, 255, 255, 0.5)',
-      backdropFilter: 'blur(8px)',
-      borderColor: state.isFocused ? '#4f46e5' : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-      borderRadius: '12px',
-      fontSize: '9px',
-      minHeight: '26px',
-      boxShadow: state.isFocused ? '0 0 0 2px rgba(79, 70, 229, 0.1)' : 'none',
-      transition: 'all 0.2s ease',
-      '&:hover': {
-        borderColor: '#4f46e5',
-        backgroundColor: isDark ? 'rgba(30, 31, 33, 0.8)' : 'rgba(255, 255, 255, 0.8)',
-      }
-    }),
-    menu: (base: any) => ({
-      backdropFilter: 'blur(12px)',
-      border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.05)',
-      borderRadius: '14px',
-      overflow: 'hidden',
-      zIndex: 100,
-      fontSize: '9px',
-      minWidth: '120px',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
-      padding: '2px'
-    }),
-    menuPortal: (base: any) => ({
-      ...base,
-      zIndex: 9999
-    }),
-    option: (base: any, state: any) => ({
-      ...base,
-      backgroundColor: state.isSelected ? '#4f46e5' : state.isFocused ? isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(79, 70, 229, 0.05)' : 'transparent',
-      color: state.isSelected ? 'white' : isDark ? '#d1d5db' : '#374151',
-      fontSize: '9px',
-      padding: '6px 10px',
-      borderRadius: '8px',
-      margin: '1px 0',
-      transition: 'all 0.15s ease',
-      fontWeight: state.isSelected ? '700' : '500',
-      '&:active': { backgroundColor: '#4f46e5' }
-    }),
-    multiValue: (base: any) => ({
-      ...base,
-      backgroundColor: isDark ? 'rgba(79, 70, 229, 0.15)' : 'rgba(79, 70, 229, 0.1)',
-      borderRadius: '6px',
-      padding: '0px 4px',
-      margin: '1px',
-      border: 'none',
-      display: 'inline-flex',
-      alignItems: 'center'
-    }),
-    multiValueLabel: (base: any) => ({
-      ...base,
-      color: '#6366f1',
-      fontSize: '8px',
-      fontWeight: '800',
-      padding: '1px 2px',
-      letterSpacing: '0.02em'
-    }),
-    multiValueRemove: (base: any) => ({
-      ...base,
-      color: '#9ca3af',
-      ':hover': { backgroundColor: '#ef4444', color: 'white', borderRadius: '4px' },
-    }),
-    placeholder: (base: any) => ({ ...base, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }),
-    input: (base: any) => ({ ...base, color: isDark ? 'white' : 'black' }),
-    singleValue: (base: any) => ({ ...base, color: isDark ? 'white' : 'black' })
   };
 
   // Use teachers map from Redux store
@@ -300,11 +219,24 @@ const ViewCoursesPage: React.FC = () => {
       try {
         const coursesCollectionRef = collection(db, 'school-settings', schoolId, 'courses');
         const coursesSnapshot = await getDocs(coursesCollectionRef);
-        const coursesData = coursesSnapshot.docs.map(doc => ({
+        const rawCoursesData = coursesSnapshot.docs.map(doc => ({
           id: doc.id,
           isActive: doc.data().isActive ?? true, // Default to true if not present
           ...doc.data()
         } as Course));
+
+        // Dedupe duplicate course docs (same code/class/semester entered twice) so they
+        // don't show as repeated rows and don't get double-counted in the stat totals below.
+        const seenCourseKeys = new Set<string>();
+        const coursesData = rawCoursesData.filter(course => {
+          const classKey = Array.isArray(course.classId) ? course.classId.slice().sort().join(',') : (course.classId || '');
+          const dedupeKey = course.code
+            ? `${String(course.code).trim().toLowerCase()}|${classKey}|${course.semester || ''}`
+            : course.id;
+          if (seenCourseKeys.has(dedupeKey)) return false;
+          seenCourseKeys.add(dedupeKey);
+          return true;
+        });
 
         coursesData.sort((a, b) => {
           const classA = Array.isArray(a.classId) ? (a.classId[0] || '') : (a.classId || '');
@@ -323,42 +255,13 @@ const ViewCoursesPage: React.FC = () => {
       }
     };
 
-    const fetchPeriodSettings = async () => {
-      try {
-        const docRef = doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().periods) {
-          setPeriodSettings(docSnap.data().periods.filter((p: any) => p.isTeachingPeriod));
-        } else {
-          const defaultPeriods = [
-            { id: 'period-1', label: 'คาบที่ 1', startTime: '08.40', endTime: '09.30', isTeachingPeriod: true },
-            { id: 'period-2', label: 'คาบที่ 2', startTime: '09.30', endTime: '10.20', isTeachingPeriod: true },
-            { id: 'period-3', label: 'คาบที่ 3', startTime: '10.20', endTime: '11.10', isTeachingPeriod: true },
-            { id: 'period-4', label: 'คาบที่ 4', startTime: '11.10', endTime: '12.00', isTeachingPeriod: true },
-            { id: 'period-5', label: 'คาบที่ 5', startTime: '13.00', endTime: '13.50', isTeachingPeriod: true },
-            { id: 'period-6', label: 'คาบที่ 6', startTime: '13.50', endTime: '14.40', isTeachingPeriod: true },
-            { id: 'period-7', label: 'คาบที่ 7', startTime: '14.40', endTime: '15.30', isTeachingPeriod: true },
-            { id: 'period-8', label: 'คาบที่ 8', startTime: '15.30', endTime: '16.00', isTeachingPeriod: true },
-          ];
-          setPeriodSettings(defaultPeriods);
-        }
-      } catch (error) {
-        console.error("Error fetching period settings:", error);
-      }
-    };
-
-    if (selectedClassFilter && selectedClassFilter !== '') {
-      fetchData();
-    } else {
-      setCourses([]);
-      setLoading(false);
-    }
-  }, [schoolId, dispatch, teacherMapStatus, selectedClassFilter]);
+    fetchData();
+  }, [schoolId]);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedRoomFilter, selectedSemester, selectedSubjectGroupFilter]);
+  }, [searchTerm, selectedClassFilter, selectedTeacherFilter, selectedSemester, selectedSubjectGroupFilter]);
 
   const handleEdit = (course: Course) => {
     setEditingCourse(course);
@@ -450,229 +353,6 @@ const ViewCoursesPage: React.FC = () => {
     }
   };
 
-  const handleTeacherChange = async (courseId: string, newTeacherIds: any) => {
-    if (!schoolId) return;
-    setIsUpdatingTeacher(true);
-    try {
-      const ids = Array.isArray(newTeacherIds) ? newTeacherIds.map((o: any) => o.value) : (newTeacherIds ? [newTeacherIds.value] : []);
-      const primaryTeacherId = ids.length > 0 ? ids[0] : "";
-
-      const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
-
-      const course = courses.find(c => c.id === courseId);
-      let updates: any = {
-        teacherIds: ids,
-        teacherId: primaryTeacherId
-      };
-
-      // Sync teacherAssignments if they exist
-      if (course?.teacherAssignments) {
-        const newAssignments = ids.map((tid: string) => {
-          const existing = course.teacherAssignments?.find(a => a.teacherId === tid);
-          return existing || { teacherId: tid, roomIds: [], classLevels: [] };
-        });
-        updates.teacherAssignments = newAssignments;
-      }
-
-      await updateDoc(courseRef, updates);
-
-      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, ...updates } : c));
-      setEditingTeacherCourseId(null);
-
-      Swal.fire({
-        icon: 'success',
-        title: 'อัปเดตครูผู้สอนสำเร็จ',
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
-        timer: 1500,
-        background: '#2a2b2f',
-        color: '#ffffff'
-      });
-    } catch (error) {
-      console.error("Error updating teacher:", error);
-      Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอัปเดตรายชื่อครูได้', 'error');
-    } finally {
-      setIsUpdatingTeacher(false);
-    }
-  };
-
-  const handleUpdateCourseRooms = async (courseId: string, roomIds: string[], teacherId?: string) => {
-    if (!schoolId) return;
-    try {
-      const course = courses.find(c => c.id === courseId);
-      if (!course) return;
-
-      let updates: any = {};
-
-      if (teacherId) {
-        const currentAssignments = course.teacherAssignments || [];
-        const targetIdx = currentAssignments.findIndex(a => a.teacherId === teacherId);
-        let newAssignments = [...currentAssignments];
-
-        if (targetIdx >= 0) {
-          newAssignments[targetIdx] = { ...newAssignments[targetIdx], roomIds };
-        } else {
-          newAssignments.push({ teacherId, roomIds, classLevels: [] });
-        }
-
-        updates.teacherAssignments = newAssignments;
-        const allRooms = new Set<string>();
-        newAssignments.forEach(a => a.roomIds.forEach(r => allRooms.add(r)));
-        updates.roomIds = Array.from(allRooms);
-        updates.room = updates.roomIds; // Backwards compatibility with the 'room' field in some parts
-      } else {
-        updates.room = roomIds;
-        updates.roomIds = roomIds;
-
-        // Sync all existing teacher assignments to match global
-        if (course.teacherAssignments && course.teacherAssignments.length > 0) {
-          const newAssignments = course.teacherAssignments.map(a => ({
-            ...a,
-            roomIds: roomIds // Force sync
-          }));
-          updates.teacherAssignments = newAssignments;
-        }
-      }
-
-      await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), updates);
-
-      setCourses(prev => prev.map(c =>
-        c.id === courseId ? { ...c, ...updates } : c
-      ));
-
-      Swal.fire({
-        icon: 'success', title: 'อัปเดตห้องเรียนสำเร็จ', timer: 1000, showConfirmButton: false,
-        toast: true, position: 'top-end', background: '#2a2b2f', color: '#ffffff'
-      });
-    } catch (error) {
-      console.error(error);
-      Swal.fire('Error', 'ไม่สามารถอัปเดตห้องเรียนได้', 'error');
-    }
-  };
-
-  const handleUpdateCourseLevels = async (courseId: string, classLevels: string[], teacherId?: string) => {
-    if (!schoolId) return;
-    try {
-      const course = courses.find(c => c.id === courseId);
-      if (!course) return;
-
-      let updates: any = {};
-
-      if (teacherId) {
-        const currentAssignments = course.teacherAssignments || [];
-        const targetIdx = currentAssignments.findIndex(a => a.teacherId === teacherId);
-        let newAssignments = [...currentAssignments];
-
-        if (targetIdx >= 0) {
-          newAssignments[targetIdx] = { ...newAssignments[targetIdx], classLevels };
-        } else {
-          newAssignments.push({ teacherId, classLevels, roomIds: [] });
-        }
-
-        updates.teacherAssignments = newAssignments;
-        const allLevels = new Set<string>();
-        newAssignments.forEach(a => a.classLevels.forEach(l => allLevels.add(l)));
-        updates.classLevels = Array.from(allLevels);
-        updates.classId = updates.classLevels; // Sync with classId for filtering
-      } else {
-        updates.classId = classLevels;
-        updates.classLevels = classLevels;
-
-        // Sync all existing assignments
-        if (course.teacherAssignments && course.teacherAssignments.length > 0) {
-          const newAssignments = course.teacherAssignments.map(a => ({
-            ...a,
-            classLevels: classLevels
-          }));
-          updates.teacherAssignments = newAssignments;
-        }
-      }
-
-      await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), updates);
-
-      setCourses(prev => prev.map(c =>
-        c.id === courseId ? { ...c, ...updates } : c
-      ));
-
-      Swal.fire({
-        icon: 'success', title: 'อัปเดตชั้นเรียนสำเร็จ', timer: 1000, showConfirmButton: false,
-        toast: true, position: 'top-end', background: '#2a2b2f', color: '#ffffff'
-      });
-    } catch (error) {
-      console.error(error);
-      Swal.fire('Error', 'ไม่สามารถอัปเดตชั้นเรียนได้', 'error');
-    }
-  };
-
-  const handleToggleCombined = async (courseId: string, isCombined: boolean) => {
-    if (!schoolId) return;
-    try {
-      await updateDoc(doc(db, 'school-settings', schoolId, 'courses', courseId), { isCombined });
-      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, isCombined } : c));
-
-      Swal.fire({
-        icon: 'success', title: isCombined ? 'เปิดโหมดสอนรวม' : 'โหมดสอนปกติ', timer: 1000, showConfirmButton: false,
-        toast: true, position: 'top-end', background: '#2a2b2f', color: '#ffffff'
-      });
-    } catch (error) {
-      console.error(error);
-      Swal.fire('Error', 'ไม่สามารถปรับปรุงการตั้งค่าสอนรวมห้องได้', 'error');
-    }
-  };
-
-
-
-  const handleTeacherToggle = async (courseId: string, teacherId: string, currentIds: string[]) => {
-    if (!schoolId) return;
-    setIsUpdatingTeacher(true);
-    try {
-      let newIds;
-      if (currentIds.includes(teacherId)) {
-        newIds = currentIds.filter(id => id !== teacherId);
-      } else {
-        newIds = [...currentIds, teacherId];
-      }
-
-      const courseRef = doc(db, 'school-settings', schoolId, 'courses', courseId);
-      const updateData: any = { teacherIds: newIds };
-      if (newIds.length > 0) updateData.teacherId = newIds[0];
-      else updateData.teacherId = "";
-
-      // Sync teacherAssignments
-      const course = courses.find(c => c.id === courseId);
-      if (course) {
-        let newAssignments = [...(course.teacherAssignments || [])];
-        if (currentIds.includes(teacherId)) {
-          // Remove
-          newAssignments = newAssignments.filter(a => a.teacherId !== teacherId);
-        } else {
-          // Add default
-          newAssignments.push({
-            teacherId: teacherId,
-            classLevels: Array.isArray(course.classId) ? course.classId : (course.classId ? [course.classId] : []),
-            roomIds: course.room || []
-          });
-        }
-        updateData.teacherAssignments = newAssignments;
-      }
-
-      await updateDoc(courseRef, updateData);
-      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, ...updateData } : c));
-    } catch (error) {
-      console.error("Error toggling teacher:", error);
-    } finally {
-      setIsUpdatingTeacher(false);
-    }
-  };
-
-  const teacherOptions = useMemo(() => {
-    return teachers.map(t => ({
-      value: t.id,
-      label: `[${t.teacherId || 'N/A'}] ${t.name}`,
-      teacher: t
-    }));
-  }, [teachers]);
 
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
@@ -699,9 +379,6 @@ const ViewCoursesPage: React.FC = () => {
         course.teacherIds?.includes(selectedTeacherFilter) ||
         course.teacherAssignments?.some(a => a.teacherId === selectedTeacherFilter);
 
-      const matchesRoom = selectedRoomFilter === 'all' ||
-        (course.room && (course.room.includes(selectedRoomFilter) || course.room.includes('all')));
-
       const matchesSemester = course.semester === selectedSemester || !course.semester; // Filter by semester
 
       const matchesSubjectGroup = selectedSubjectGroupFilter === 'all' ||
@@ -713,9 +390,9 @@ const ViewCoursesPage: React.FC = () => {
         (selectedActiveFilter === 'active' && course.isActive) ||
         (selectedActiveFilter === 'inactive' && !course.isActive);
 
-      return matchesSearch && matchesClass && matchesTeacher && matchesRoom && matchesSemester && matchesSubjectGroup && matchesActive;
+      return matchesSearch && matchesClass && matchesTeacher && matchesSemester && matchesSubjectGroup && matchesActive;
     });
-  }, [courses, searchTerm, selectedClassFilter, selectedTeacherFilter, teacherMap, selectedRoomFilter, selectedSemester, selectedSubjectGroupFilter, subjectGroupMap, selectedActiveFilter]);
+  }, [courses, searchTerm, selectedClassFilter, selectedTeacherFilter, teacherMap, selectedSemester, selectedSubjectGroupFilter, subjectGroupMap, selectedActiveFilter]);
 
   // Statistics Analysis
   const { totalCourses, totalHours, totalCredits, uniqueTeachers } = useMemo(() => {
@@ -725,21 +402,8 @@ const ViewCoursesPage: React.FC = () => {
     const teachersSet = new Set();
 
     filteredCourses.forEach(course => {
-      // ตรวจสอบว่าเป็นกิจกรรมพัฒนาผู้เรียนหรือไม่ (มักไม่มีหน่วยกิต และอยู่ในกลุ่มกิจกรรม)
-      const group = course.subjectGroup || "";
-      const groupName = (subjectGroupMap[group] || group).toLowerCase();
-      
-      const isActivity = 
-        groupName.includes("กิจกรรม") || 
-        groupName.includes("แนะแนว") || 
-        groupName.includes("ชุมนุม") ||
-        groupName.includes("homeroom") ||
-        groupName.includes("act") ||
-        course.title.includes("กิจกรรม") ||
-        course.title.includes("ชุมนุม");
-
-      // ถ้าเป็นกิจกรรม ไม่นำมานับรวมในภาระงานสอนและหน่วยกิตหลัก
-      if (isActivity) return;
+      // ถ้าเป็นกิจกรรมพัฒนาผู้เรียน ไม่นำมานับรวมในภาระงานสอนและหน่วยกิตหลัก
+      if (isActivityCourse(course)) return;
 
       const c = Number(course.credits || 0);
       const h = course.credits ? Math.round(c * 2) : Number(course.hoursPerWeek || 0);
@@ -756,7 +420,7 @@ const ViewCoursesPage: React.FC = () => {
       totalCredits: creditsSum,
       uniqueTeachers: teachersSet.size
     };
-  }, [filteredCourses, subjectGroupMap]);
+  }, [filteredCourses]);
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;

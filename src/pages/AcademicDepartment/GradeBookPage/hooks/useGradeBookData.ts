@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, collectionGroup, onSnapshot, QuerySnapshot, DocumentData, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 import { Student, Course, GradeRecord, ClassroomAttendanceRecord } from '../types';
@@ -39,6 +39,10 @@ export const useGradeBookData = (
     const [loading, setLoading] = useState(false);
     const [studentCourseDailyStatus, setStudentCourseDailyStatus] = useState<Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>>({});
     const [sdqMap, setSdqMap] = useState<Record<string, SDQAssessment>>({});
+    // When true, the next onSnapshot update from Firestore is suppressed.
+    // Set this before a batch write to avoid the full-table re-render that
+    // would otherwise cause a visible "flash" right after saving.
+    const suppressSnapshotRef = useRef(false);
 
     // 1. Fetch Students & Grades
     useEffect(() => {
@@ -111,14 +115,14 @@ export const useGradeBookData = (
                         enrollSnap.docs.forEach(d => {
                             const data = d.data();
                             const sid = data.studentId as string;
-                            const createdAt = toISODateString(data.createdAt);
-                            if (!sid || !createdAt) return;
-                            // A student can have more than one enrollment doc for the same
-                            // course/year (re-enrolled after being dropped, or a duplicate from a
-                            // data-entry mistake) — always keep the EARLIEST createdAt, not just
-                            // whichever doc Firestore's snapshot order happens to return first.
-                            if (!enrolledAtMap[sid] || createdAt < enrolledAtMap[sid]!) {
-                                enrolledAtMap[sid] = createdAt;
+                            // Only use explicit enrolledDate / enrolledAt (e.g. transfer-in date).
+                            // Generic database document `createdAt` must NOT be used as academic enrollment date,
+                            // otherwise classes enrolled mid/late-semester would have their total course hours
+                            // incorrectly reduced to just the remaining sessions.
+                            const explicitEnrolledAt = toISODateString(data.enrolledDate || data.enrolledAt);
+                            if (!sid || !explicitEnrolledAt) return;
+                            if (!enrolledAtMap[sid] || explicitEnrolledAt < enrolledAtMap[sid]!) {
+                                enrolledAtMap[sid] = explicitEnrolledAt;
                             }
                         });
 
@@ -214,6 +218,13 @@ export const useGradeBookData = (
 
         const gradesRef = collection(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades');
         const unsubscribe = onSnapshot(gradesRef, (gradeSnap: QuerySnapshot<DocumentData>) => {
+            // Skip snapshot updates triggered by our own batch write — the local state
+            // already reflects the saved data, so re-applying the snapshot would only
+            // cause an unnecessary full re-render (the visible "flash").
+            if (suppressSnapshotRef.current) {
+                suppressSnapshotRef.current = false;
+                return;
+            }
             const idToStudentDocId: Record<string, string> = {};
             students.forEach(s => {
                 idToStudentDocId[s.id] = s.id;
@@ -253,6 +264,19 @@ export const useGradeBookData = (
                         const m = Number(bestRecord.midterm || 0);
                         const fn = Number(bestRecord.final || 0);
                         const total = f + m + fn;
+                        // ครูพิมพ์ "ร" ไว้ในช่องคะแนนช่องไหนก็ได้ ต้องเคารพค่านี้ก่อนเสมอ ไม่งั้นตรงนี้จะคำนวณเกรด
+                        // จาก total ทับ "ร" ที่ครูตั้งใจกรอกไว้ทุกครั้ง (เคารพ มส เดิมก่อนสุด เหมือนหน้าบันทึก
+                        // คะแนนทุกหน้า) — เช็คจาก grade ปัจจุบันเท่านั้น ห้ามใช้ incompleteFields ที่นี่ เพราะเป็น
+                        // ประวัติถาวร (เก็บไว้ให้หน้าบันทึกคะแนนใช้ระบายสีเหลือง/เขียวย้อนหลัง) ไม่ใช่สถานะปัจจุบัน
+                        // ถ้าครูแก้ "ร" เป็นคะแนนจริงแล้ว incompleteFields ในเอกสารจะยังมีชื่อฟิลด์นั้นค้างอยู่
+                        // เสมอ ถ้าเอามาเช็คตรงนี้ด้วยจะทำให้เกรดติด "ร" ค้างตลอดไปแม้แก้ไขเสร็จแล้วก็ตาม
+                        const isIncomplete = bestRecord.grade === 'ร';
+                        const naturalGrade = calculateGrade(total);
+                        // แก้ "0" สำเร็จผ่านหน้าคำร้องขอแก้ตัว (เช่น ตามระเบียบ ศธ. ได้เกรดสูงสุดไม่เกิน "1" แม้
+                        // คะแนนสอบซ่อมจริงจะไม่ได้ไปบวกเข้าคะแนนดิบในสมุดคะแนนเลย) — grade ที่บันทึกไว้จะไม่ตรงกับ
+                        // total ที่คำนวณสดอีกต่อไป ถ้า bestRecord.grade ต่างจาก naturalGrade (และไม่ใช่ "ร" ที่
+                        // จัดการแยกไปแล้ว) ถือว่าเป็นผลแก้ตัวที่ตั้งใจบันทึกไว้ ให้เชื่อค่านั้นแทนการคำนวณทับ
+                        const isResolvedOverride = !isIncomplete && !!bestRecord.grade && bestRecord.grade !== naturalGrade;
 
                         newGrades[targetId] = {
                             ...bestRecord,
@@ -260,7 +284,7 @@ export const useGradeBookData = (
                             midterm: m,
                             final: fn,
                             total: total,
-                            grade: bestRecord.status || calculateGrade(total),
+                            grade: bestRecord.status || (isIncomplete ? 'ร' : (isResolvedOverride ? bestRecord.grade : naturalGrade)),
                             formativeDetails: combinedDetails
                         };
                     }
@@ -363,5 +387,5 @@ export const useGradeBookData = (
         fetchSDQ();
     }, [schoolId, students, academicYear]);
 
-    return { students, grades, setGrades, loading, studentCourseDailyStatus, sdqMap };
+    return { students, grades, setGrades, loading, studentCourseDailyStatus, sdqMap, suppressSnapshotRef };
 };

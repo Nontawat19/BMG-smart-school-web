@@ -29,9 +29,10 @@ const DEPARTMENTS = [
 ];
 
 const SPECIAL_ROLES = [
-  { key: 'isSubjectGroupHead', label: 'เป็นหัวหน้ากลุ่มสาระ' },
-  { key: 'isAssessmentHead',   label: 'เป็นหัวหน้างานวัดและประเมินผล' },
-  { key: 'isGuidanceTeacher',  label: 'เป็นครูแนะแนว' },
+  { key: 'isSubjectGroupHead',      label: 'เป็นหัวหน้ากลุ่มสาระ' },
+  { key: 'isAssessmentHead',        label: 'เป็นหัวหน้างานวัดและประเมินผล' },
+  { key: 'isGuidanceTeacher',       label: 'เป็นครูแนะแนว' },
+  { key: 'isGeneralAffairsOfficer', label: 'เจ้าหน้าที่งานธุรการ' },
 ];
 
 const PERSONNEL_TYPES = [

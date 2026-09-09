@@ -66,3 +66,32 @@ export const normalizeRooms = (rooms: string | string[] | undefined): string[] =
     const list = Array.isArray(rooms) ? rooms : (rooms ? [rooms] : []);
     return list.filter(r => r && r.toLowerCase() !== 'all');
 };
+
+/**
+ * A teacher can end up with more than one `schedules` doc matching the same
+ * academicYear+semester (e.g. after a re-generate created a new canonical doc
+ * id without the old one being deleted). Keep only the canonical doc per
+ * teacher for that term — falling back to whatever exists if no canonical doc
+ * is present — so stale/duplicate docs never get merged into a shown schedule.
+ */
+export const getCanonicalScheduleDocs = (
+    docs: Array<{ id: string; data: any }>,
+    knownTeacherIds: string[],
+    year: string,
+    term: string
+) => {
+    const matching = docs
+        .map(({ id, data }) => {
+            if (!matchesScheduleTerm(data, year, term)) return null;
+            const teacherId = resolveScheduleTeacherId(id, data.teacherId, knownTeacherIds);
+            const canonicalId = getScheduleDocId(teacherId, String(data.academicYear || year || ''), String(data.semester || term || '1'));
+            return { id, data, teacherId, isCanonical: id === canonicalId || id.includes('__') };
+        })
+        .filter(Boolean) as Array<{ id: string; data: any; teacherId: string; isCanonical: boolean }>;
+
+    const teachersWithCanonicalDocs = new Set(
+        matching.filter(item => item.isCanonical).map(item => item.teacherId)
+    );
+
+    return matching.filter(item => item.isCanonical || !teachersWithCanonicalDocs.has(item.teacherId));
+};

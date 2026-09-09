@@ -10,9 +10,13 @@ import { usePermissionContext } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 import { canAccessRoute, resolveSearchableRoutePath } from '@/utils/routeAccessUtils';
 import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 // Configure PDF Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+// เอกสารสแกนบางไฟล์ฝังรูปด้วย JPEG2000 (JPX) ซึ่ง pdf.js ต้องใช้ตัวถอดรหัส WASM นี้
+// ถ้าไม่ระบุ wasmUrl หน้าที่มีรูปแบบ JPX จะเรนเดอร์ออกมาว่างเปล่าโดยไม่มี error แจ้งผู้ใช้
+const PDFJS_WASM_URL = "/pdfjs-wasm/";
 
 // --- Sub-component: PdfThumbnail (ดึงหน้าแรกของ PDF มาแสดง) ---
 const PdfThumbnail: React.FC<{ url: string; className?: string }> = ({ url, className }) => {
@@ -24,7 +28,7 @@ const PdfThumbnail: React.FC<{ url: string; className?: string }> = ({ url, clas
     const renderPage = async () => {
       if (!url || !canvasRef.current) return;
       try {
-        const loadingTask = pdfjsLib.getDocument(url);
+        const loadingTask = pdfjsLib.getDocument({ url, wasmUrl: PDFJS_WASM_URL });
         const pdf = await loadingTask.promise;
         if (isCancelled) return;
 

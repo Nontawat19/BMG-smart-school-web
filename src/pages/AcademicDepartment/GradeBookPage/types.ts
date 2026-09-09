@@ -84,6 +84,9 @@ export interface GradeRecord {
     readingWritingScores?: Record<string, number>;
     formativeDetails?: Record<string, number>;
     remark?: string;
+    // ชื่อฟิลด์คะแนน (assessment key, "midterm", "final") ที่ครูพิมพ์ "ร" ไว้จากหน้าบันทึกคะแนน — ใช้เช็คว่า
+    // เกรดควรเป็น "ร" แทนที่จะคำนวณจาก total เฉยๆ (ดู useGradeBookData.ts)
+    incompleteFields?: string[];
 }
 
 export interface ReadingWritingIndicator {

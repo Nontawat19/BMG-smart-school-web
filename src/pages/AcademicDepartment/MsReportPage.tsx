@@ -10,9 +10,7 @@ import {
     getDocs,
     collectionGroup,
     doc,
-    getDoc,
-    updateDoc,
-    serverTimestamp
+    getDoc
 } from 'firebase/firestore';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
@@ -39,6 +37,8 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { getCurrentAcademicYear } from '@/utils/academicYearUtils';
 import { classifyLeaveSubType } from '@/utils/periodSummaryUtils';
+import { isPrimaryClassValue, computeCourseAttendanceEligibilityForRoster } from '@/utils/attendanceEligibilityFirestore';
+import type { AttendanceEligibilityResult } from '@/utils/attendanceEligibility';
 
 Font.register({
     family: 'TH Sarabun PSK',
@@ -87,7 +87,7 @@ interface StudentStats {
     total: number;
     percentage: number;
     evaluation: 'มส.' | 'ปกติ';
-    manualEvaluation?: 'มส.' | 'ปกติ' | null;
+    remark?: string;
 }
 
 const toDate = (value: any): Date | null => {
@@ -111,15 +111,6 @@ const chunkArray = <T,>(items: T[], size: number) => {
     const chunks: T[][] = [];
     for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
     return chunks;
-};
-
-const getTotalPeriods = (course?: Course | null) => {
-    if (!course) return 40;
-    if (course.credits !== undefined && course.credits !== null && course.credits !== 0) {
-        return Math.round(Number(course.credits) * 40);
-    }
-    if (course.hoursPerWeek) return Math.round(Number(course.hoursPerWeek) * 20);
-    return 40;
 };
 
 const getFullClassLabel = (classLevel: string, room: string) => {
@@ -343,13 +334,13 @@ const MsReportPdfDocument: React.FC<{
 
                     <View style={pdfStyles.summaryRow} wrap={false}>
                         <View style={[pdfStyles.summaryCell, { width: '35%' }]}><Text>รวม ({students.length} คน, มส. {totals.msCount} คน)</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colLate]}><Text>{totals.late || ''}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colSick]}><Text>{totals.sick || ''}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colPersonal]}><Text>{totals.personal || ''}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colAbsent]}><Text>{totals.absent || ''}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colEscape]}><Text>{totals.escape || ''}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colPercent]}><Text>{avgPercent}</Text></View>
-                        <View style={[pdfStyles.summaryCell, pdfStyles.colEval]}><Text>{totals.msCount}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colLate]}><Text style={pdfStyles.bodyTextCenter}>{totals.late || ''}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colSick]}><Text style={pdfStyles.bodyTextCenter}>{totals.sick || ''}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colPersonal]}><Text style={pdfStyles.bodyTextCenter}>{totals.personal || ''}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colAbsent]}><Text style={pdfStyles.bodyTextCenter}>{totals.absent || ''}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colEscape]}><Text style={pdfStyles.bodyTextCenter}>{totals.escape || ''}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colPercent]}><Text style={pdfStyles.bodyTextCenter}>{avgPercent}</Text></View>
+                        <View style={[pdfStyles.summaryCell, pdfStyles.colEval]}><Text style={pdfStyles.bodyTextCenter}>{totals.msCount}</Text></View>
                     </View>
                 </View>
 
@@ -415,7 +406,8 @@ const MsReportPage: React.FC = () => {
     const { user: currentUser } = usePermissions();
     const schoolId = (currentUser as any)?.schoolId;
     const schoolSettings = useSelector((state: RootState) => state.schoolSettings);
-    const reduxAcademicYear = useSelector((state: RootState) => state.calendar.academicYear) || String(getCurrentThaiYear());
+    const calendarState = useSelector((state: RootState) => state.calendar);
+    const reduxAcademicYear = calendarState.academicYear || String(getCurrentThaiYear());
 
     const [loading, setLoading] = useState(false);
     const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -442,8 +434,21 @@ const MsReportPage: React.FC = () => {
     const [studentsInCourse, setStudentsInCourse] = useState<any[]>([]);
     const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
     const [leaveMap, setLeaveMap] = useState<Record<string, LeavePeriod[]>>({});
+    // ผลตัดสิน "มส." จริงที่ใช้แสดงในระบบทั้งหมด (สมุดพก, my-grade-flags, หน้าคำร้องขอแก้ตัว) มาจาก
+    // courses/{courseId}/grades/{studentId}.status ที่หน้าเช็คชื่อรายวิชาคำนวณไว้แล้วอย่างถูกต้อง (นับเฉพาะ
+    // คาบที่ผ่านมาแล้วจริงตามตารางสอน หักวันหยุด และนับตั้งแต่วันที่ลงทะเบียนจริง) — หน้านี้เคยคำนวณ % เอง
+    // จากสูตรประมาณการ (หน่วยกิต*40) ซึ่งไม่ตรงกับตัวเลขจริงที่อื่น จึงต้องดึงผลตัดสินที่แท้จริงมาใช้แทน ส่วน
+    // ตัวเลขแยกรายละเอียด (สาย/ลาป่วย/ลากิจ/ขาด/หนี) ในตารางยังคงนับจากประวัติเช็คชื่อสดเหมือนเดิมเพื่อดูบริบท
+    const [authoritativeGrades, setAuthoritativeGrades] = useState<Record<string, { status?: string; grade?: string; remark?: string }>>({});
     const [assignedCourseIds, setAssignedCourseIds] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
+
+    // ร้อยละเวลาเรียนสด ๆ ต่อนักเรียน คำนวณจากตารางสอนจริงของวิชานี้ (จำนวนคาบ/สัปดาห์ตามตารางสอนจริง
+    // ซึ่งอยู่แล้วว่าแต่ละวิชาสอนกี่คาบต่อสัปดาห์ต่างกันตามหน่วยกิต) ด้วยเอนจิ้นเดียวกับที่ใช้ตัดสิน มส.
+    // จริง (attendanceEligibility.ts) เพื่อไม่ให้ % ในรายงานขัดแย้งกับผลตัดสินจริง — ระดับประถมคิดสะสม
+    // ทั้งปี (annual) ส่วนมัธยมคิดเฉพาะภาคเรียนที่เลือก ดูคอมเมนต์ตรง handleFetchData
+    const [liveEligibility, setLiveEligibility] = useState<Record<string, AttendanceEligibilityResult>>({});
+    const [liveScopeLabel, setLiveScopeLabel] = useState('');
 
     const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
@@ -485,6 +490,27 @@ const MsReportPage: React.FC = () => {
         });
         return () => { isMounted = false; };
     }, [schoolId, reduxAcademicYear]);
+
+    // ปฏิทินการศึกษา (วันหยุด/วันเรียนชดเชย) ของปีที่เลือก — ใช้ประกอบการคำนวณร้อยละเวลาเรียนสด ๆ
+    // ด้านล่าง เหมือนรูปแบบเดียวกับ AttendanceMsBackfillPage.tsx (รวม events จากปฏิทิน redux เริ่มต้น
+    // เข้ากับ events เฉพาะปีนี้จากเอกสาร main_calendar/{ปีการศึกษา})
+    const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
+    useEffect(() => {
+        if (!schoolId || !academicYear) return;
+        let isMounted = true;
+        (async () => {
+            try {
+                const yearDocSnap = await getDoc(doc(db, 'school-settings', schoolId, 'main_calendar', String(academicYear)));
+                if (!isMounted) return;
+                const defaultEvents = (calendarState.rawData?.events || {}) as Record<string, any>;
+                const yearEvents = yearDocSnap.exists() ? ((yearDocSnap.data().events || {}) as Record<string, any>) : {};
+                setCalendarEvents({ ...defaultEvents, ...yearEvents });
+            } catch (err) {
+                console.error('Error fetching calendar events for ms-report:', err);
+            }
+        })();
+        return () => { isMounted = false; };
+    }, [schoolId, academicYear, calendarState.rawData]);
 
     const selectStyles = useMemo(() => ({
         control: (base: any, state: any) => ({
@@ -618,7 +644,6 @@ const MsReportPage: React.FC = () => {
         () => courses.find(c => c.code === selectedCourse?.value) || null,
         [courses, selectedCourse]
     );
-    const totalPeriods = useMemo(() => getTotalPeriods(selectedCourseData), [selectedCourseData]);
 
     const handleFetchData = async () => {
         if (!schoolId || !academicYear || !semester || !selectedCourse?.value) {
@@ -654,7 +679,6 @@ const MsReportPage: React.FC = () => {
                     number: getNo(d),
                     classLevel: d.classLevel || '',
                     room: d.room || '',
-                    manualEvaluation: d.manualEvaluation || null,
                 };
             });
 
@@ -691,17 +715,89 @@ const MsReportPage: React.FC = () => {
 
             setStudentsInCourse(enrollmentStudents);
 
+            // ผลตัดสิน "มส." ที่แท้จริง — อ่านจาก courses/{courseId}/grades ที่หน้าเช็คชื่อรายวิชาคำนวณไว้แล้ว
+            // (ดูคอมเมนต์ตรง useState ด้านบน) ต้อง resolve courseId จาก courseCode ที่เลือกไว้เอง เพราะหน้านี้
+            // คิวรี่ทุกอย่างด้วยรหัสวิชา ไม่ใช่ courseId โดยตรง
+            const courseObj = courses.find(c => c.code === selectedCourse.value);
+            const matchedCourseId = courseObj?.id;
+            if (matchedCourseId) {
+                const gradesSnap = await getDocs(collection(db, 'school-settings', schoolId, 'courses', matchedCourseId, 'grades'));
+                const gradesMap: Record<string, { status?: string; grade?: string; remark?: string }> = {};
+                gradesSnap.forEach(d => { gradesMap[d.id] = d.data() as any; });
+                setAuthoritativeGrades(gradesMap);
+            } else {
+                setAuthoritativeGrades({});
+            }
+
+            // ระดับประถม (ป.1-ป.6) ตัดสิน มส. สะสมทั้งปีการศึกษา ส่วนมัธยมตัดสินแยกรายภาคเรียนตามที่เลือก
+            // ไว้ด้านบน — เกณฑ์เดียวกับที่ ClassroomAttendance/index.tsx ใช้ตอนบันทึกเช็คชื่อจริง (ดูคอมเมนต์
+            // ตรง useState liveEligibility) เพื่อไม่ให้ % ในรายงานนี้ขัดแย้งกับผลตัดสิน มส. จริง
+            const semesterScope = isPrimaryClassValue(courseObj?.classId) ? 'annual' : semester;
+            setLiveScopeLabel(semesterScope === 'annual' ? 'ทั้งปีการศึกษา (ระดับประถม)' : `ภาคเรียนที่ ${semester} (ระดับมัธยม)`);
+
+            // ClassroomAttendance เขียน subjectCode เป็น selectedClass.subjectCode ถ้ามี ไม่งั้น fallback เป็น
+            // courseId (ดู ClassroomAttendance/index.tsx: stableSubjectCode) จึงอาจเป็นได้ทั้งรหัสวิชาหรือ
+            // courseId แล้วแต่วิชา — เดิมคิวรี่ด้วยรหัสวิชาอย่างเดียว (selectedCourse.value) เลยพลาดข้อมูลที่ถูก
+            // เขียนด้วย courseId ไป ต้องเช็คทั้งสองแบบเหมือนที่ fetchCourseAttendanceHistory ทำ
+            const subjectCodeCandidates = Array.from(new Set([selectedCourse.value, matchedCourseId].filter(Boolean))) as string[];
             const attRef = collectionGroup(db, 'ClassroomAttendance');
-            const attQ = query(
+            // วิชาระดับประถม (annual) ต้องรวมยอดสาย/ลาป่วย/ลากิจ/ขาด/หนีทั้งสองภาคเรียน ไม่ใช่แค่ภาคเรียนที่
+            // เลือกไว้ตอนนี้ — ยิงคิวรี่แยกทีละภาคเรียน (รูปแบบ where clause เดิมที่มี index รองรับอยู่แล้ว)
+            // แล้วรวมผลฝั่ง client แทนที่จะเปลี่ยนรูปแบบคิวรี่ (จะต้องสร้าง index ใหม่)
+            const semestersToQuery = semesterScope === 'annual' ? ['1', '2'] : [semester];
+            const attSnaps = await Promise.all(semestersToQuery.map(sem => getDocs(query(
                 attRef,
                 where('schoolId', '==', schoolId),
-                where('subjectCode', '==', selectedCourse.value),
+                where('subjectCode', 'in', subjectCodeCandidates),
                 where('academicYear', '==', academicYear),
-                where('semester', '==', semester)
-            );
-            const attSnap = await getDocs(attQ);
-            const records: AttendanceRecord[] = attSnap.docs.map(d => d.data() as AttendanceRecord);
+                where('semester', '==', sem)
+            ))));
+            const records: AttendanceRecord[] = attSnaps.flatMap(snap => snap.docs.map(d => d.data() as AttendanceRecord));
             setAttendanceRecords(records);
+
+            // ร้อยละเวลาเรียนสด ๆ ต่อนักเรียน — คำนวณด้วยเอนจิ้นเดียวกับที่ตัดสิน มส. จริง โดยอิงตารางสอนจริง
+            // ของวิชานี้ (จำนวนคาบ/สัปดาห์ตามตารางสอนจริงที่ตั้งไว้ตามหน่วยกิต ไม่ใช่สูตรประมาณการ) แยกคำนวณ
+            // ทีละกลุ่มห้อง เพราะวิชาเดียวกันอาจสอนหลายห้อง/กลุ่มที่มีตารางสอนต่างกัน (เช่น กลุ่ม 1 เรียนวันจันทร์
+            // กลุ่ม 2 เรียนวันอังคาร) รูปแบบเดียวกับ AttendanceMsBackfillPage.tsx
+            if (matchedCourseId && enrollmentStudents.length > 0) {
+                try {
+                    const roomGroups = new Map<string, { id: string }[]>();
+                    enrollmentStudents.forEach(s => {
+                        const key = String(s.room || '');
+                        if (!roomGroups.has(key)) roomGroups.set(key, []);
+                        roomGroups.get(key)!.push({ id: s.id });
+                    });
+
+                    const msCalendarData = { ...(calendarState.rawData || {}), events: calendarEvents };
+                    const mergedEligibility: Record<string, AttendanceEligibilityResult> = {};
+                    for (const [room, roster] of roomGroups.entries()) {
+                        const { eligibility } = await computeCourseAttendanceEligibilityForRoster(
+                            db,
+                            schoolId,
+                            academicYear,
+                            {
+                                courseId: matchedCourseId,
+                                classId: courseObj?.classId,
+                                subjectCode: courseObj?.code,
+                                courseCode: courseObj?.code,
+                                teacherAssignments: (courseObj as any)?.teacherAssignments,
+                                selectedRoomForMatch: room || undefined,
+                            },
+                            roster,
+                            msCalendarData,
+                            semesterScope,
+                            subjectCodeCandidates
+                        );
+                        Object.assign(mergedEligibility, eligibility);
+                    }
+                    setLiveEligibility(mergedEligibility);
+                } catch (err) {
+                    console.error('Error computing live attendance eligibility for ms-report:', err);
+                    setLiveEligibility({});
+                }
+            } else {
+                setLiveEligibility({});
+            }
 
             const leaveStudentIds = Array.from(new Set(records.filter(r => r.status === 'leave').map(r => r.studentId).filter(Boolean)));
             const newLeaveMap: Record<string, LeavePeriod[]> = {};
@@ -731,8 +827,10 @@ const MsReportPage: React.FC = () => {
 
     useEffect(() => {
         handleFetchData();
+        // calendarEvents ยังโหลดไม่เสร็จ (ค่าเริ่มต้น {}) ตอน mount ครั้งแรก — ต้อง re-run เมื่อโหลดเสร็จ
+        // ไม่งั้นร้อยละสด ๆ รอบแรกจะคำนวณจากปฏิทินว่างเปล่า (ไม่หักวันหยุด)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [schoolId, academicYear, semester, selectedCourse]);
+    }, [schoolId, academicYear, semester, selectedCourse, calendarEvents]);
 
     const roomOptions = useMemo(() => {
         const fixedRooms = Array.from({ length: 20 }, (_, i) => String(i + 1));
@@ -748,6 +846,7 @@ const MsReportPage: React.FC = () => {
 
     const studentSummary = useMemo<StudentStats[]>(() => {
         const statsMap: Record<string, StudentStats> = {};
+        const recordedCount: Record<string, number> = {};
         studentsInCourse.forEach(s => {
             statsMap[s.id] = {
                 id: s.id,
@@ -762,16 +861,16 @@ const MsReportPage: React.FC = () => {
                 personal: 0,
                 absent: 0,
                 escape: 0,
-                total: totalPeriods,
+                total: 0,
                 percentage: 0,
                 evaluation: 'ปกติ',
-                manualEvaluation: s.manualEvaluation
             };
         });
 
         attendanceRecords.forEach(rec => {
             const s = statsMap[rec.studentId];
             if (!s) return;
+            recordedCount[rec.studentId] = (recordedCount[rec.studentId] || 0) + 1;
             if (rec.status === 'late') s.late++;
             else if (rec.status === 'absent') s.absent++;
             else if (rec.status === 'escape') s.escape++;
@@ -785,11 +884,34 @@ const MsReportPage: React.FC = () => {
         });
 
         Object.values(statsMap).forEach(s => {
-            const deduction = s.absent + s.escape;
-            const rawPct = totalPeriods > 0 ? Math.round(((totalPeriods - deduction) / totalPeriods) * 100) : 0;
-            s.percentage = Math.max(0, Math.min(100, rawPct));
-            const autoEval: 'มส.' | 'ปกติ' = s.percentage < 80 ? 'มส.' : 'ปกติ';
-            s.evaluation = s.manualEvaluation || autoEval;
+            const authoritative = authoritativeGrades[s.id];
+            const isMsAuthoritative = authoritative?.status === 'มส' || authoritative?.grade === 'มส';
+            s.evaluation = isMsAuthoritative ? 'มส.' : 'ปกติ';
+
+            // ร้อยละเวลาเรียน — คำนวณด้วยเอนจิ้นเดียวกับที่ใช้ตัดสิน มส. จริง (attendanceEligibility.ts,
+            // ดูคอมเมนต์ตรง useState liveEligibility) โดยอิงตารางสอนจริงของวิชานี้ (จำนวนคาบ/สัปดาห์ตาม
+            // ตารางสอนจริงซึ่งต่างกันตามหน่วยกิตของแต่ละวิชาอยู่แล้ว) และอิงช่วงเวลาที่ถูกต้องตามระดับชั้น
+            // (ประถม = สะสมทั้งปี, มัธยม = เฉพาะภาคเรียนที่เลือก) ทำให้ % ตรงกับผลตัดสิน มส. จริงเป๊ะทั้งสองกรณี
+            // ไม่ใช่แค่ตอนติด มส. แล้วเท่านั้น (ต่างจากเดิมที่กรณียังไม่ติด มส. ใช้สัดส่วนคร่าวๆ จากคาบที่เช็คชื่อ
+            // จริงในระบบ ไม่เกี่ยวกับตารางสอน/หน่วยกิตเลย)
+            const live = liveEligibility[s.id];
+            if (live) {
+                s.percentage = Math.round(live.percentage * 10) / 10;
+                s.total = live.totalHours;
+                s.remark = live.totalHours > 0
+                    ? `เวลาเรียน ${live.presentHours}/${live.totalHours} คาบ = ${live.percentage.toFixed(1)}% (คำนวณจากตารางสอนจริง ${liveScopeLabel})`
+                    : `วิชานี้ยังไม่มีตารางสอนที่จับคู่ได้ในระบบ (${liveScopeLabel})`;
+            } else if (isMsAuthoritative && authoritative?.remark) {
+                // เอนจิ้นสดคำนวณไม่สำเร็จ (เช่น กำลังโหลดปฏิทิน) — ใช้ตัวเลขที่บันทึกไว้ตอนติด มส. แทนชั่วคราว
+                const percentMatch = authoritative.remark.match(/=\s*([\d.]+)\s*%/);
+                if (percentMatch) {
+                    s.percentage = Math.round(parseFloat(percentMatch[1]));
+                    s.remark = authoritative.remark;
+                }
+                s.total = recordedCount[s.id] || 0;
+            } else {
+                s.total = recordedCount[s.id] || 0;
+            }
         });
 
         let list = Object.values(statsMap);
@@ -804,7 +926,7 @@ const MsReportPage: React.FC = () => {
             if (numA !== numB) return numA - numB;
             return a.name.localeCompare(b.name, 'th');
         });
-    }, [attendanceRecords, studentsInCourse, leaveMap, totalPeriods, selectedRoom]);
+    }, [attendanceRecords, studentsInCourse, leaveMap, selectedRoom, authoritativeGrades, liveEligibility, liveScopeLabel]);
 
     const classLabelDisplay = useMemo(() => {
         const pool = selectedRoom.value === 'all'
@@ -826,19 +948,6 @@ const MsReportPage: React.FC = () => {
         return stats;
     }, [studentSummary]);
 
-    const handleToggleStatus = async (studentId: string, enrollId: string, currentStatus: string) => {
-        if (!schoolId || !enrollId) return;
-        const newStatus = currentStatus === 'มส.' ? 'ปกติ' : 'มส.';
-        try {
-            const enrollRef = doc(db, 'school-settings', schoolId, 'enrollments', enrollId);
-            await updateDoc(enrollRef, { manualEvaluation: newStatus, updatedAt: serverTimestamp() });
-            setStudentsInCourse(prev => prev.map(s => s.id === studentId ? { ...s, manualEvaluation: newStatus } : s));
-            Swal.fire({ title: 'สำเร็จ!', text: `เปลี่ยนสถานะเป็น ${newStatus} เรียบร้อยแล้ว`, icon: 'success', timer: 1500, showConfirmButton: false, toast: true, position: 'top-end' });
-        } catch (err) {
-            console.error('Error updating status:', err);
-            Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเปลี่ยนสถานะได้', 'error');
-        }
-    };
 
     const buildMsReportPdfDocument = () => {
         const subjectLabel = selectedCourseData ? `${selectedCourseData.code} ${selectedCourseData.title}` : selectedCourse?.label || '';
@@ -957,7 +1066,7 @@ const MsReportPage: React.FC = () => {
                         </div>
                         {selectedCourseData && (
                             <p className="mt-3 ml-1 text-[11px] font-bold text-gray-400 dark:text-gray-500">
-                                ระดับชั้น {classLabelDisplay} • หน่วยกิต {selectedCourseData.credits ?? '-'} • ฐานคำนวณ {totalPeriods} คาบ/ภาคเรียน
+                                ระดับชั้น {classLabelDisplay} • หน่วยกิต {selectedCourseData.credits ?? '-'} • ผล มส. อ้างอิงจากระบบเช็คชื่อรายวิชาโดยตรง • คิดร้อยละจากตารางสอนจริง{liveScopeLabel ? ` (${liveScopeLabel})` : ''}
                             </p>
                         )}
                     </div>
@@ -979,6 +1088,15 @@ const MsReportPage: React.FC = () => {
                                 <SummaryCard title="ตกเกณฑ์ (มส.)" value={totalStats.msCount} icon={<AlertCircle size={20} />} unit="คน" color="rose" />
                                 <SummaryCard title="ค่าเฉลี่ยการมาเรียน" value={totalStats.avgPercent} icon={<Percent size={20} />} unit="%" color="emerald" />
                             </div>
+
+                            {studentSummary.some(s => s.evaluation === 'มส.' && s.percentage >= 80) && (
+                                <div className="bg-amber-50 border border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-xl flex items-center gap-3">
+                                    <AlertCircle size={20} className="shrink-0" />
+                                    <p className="font-bold text-sm">
+                                        * นักเรียนที่ % ปัจจุบันไม่น้อยกว่า 80% แต่ยังขึ้น "มส." — เวลาเรียนฟื้นกลับมาแล้วหลังจากถูกติดผลไปก่อนหน้านี้ ระบบไม่ปรับผลย้อนหลังให้อัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่ออัปเดตผลให้ตรงกัน
+                                    </p>
+                                </div>
+                            )}
 
                             {error && (
                                 <div className="bg-rose-50 border border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 p-4 rounded-xl flex items-center gap-3">
@@ -1021,6 +1139,10 @@ const MsReportPage: React.FC = () => {
                                                     </tr>
                                                 ) : studentSummary.map((s) => {
                                                     const isMS = s.evaluation === 'มส.';
+                                                    // เวลาเรียนสด ๆ ฟื้นกลับมา ≥80% แล้ว แต่ผลตัดสิน มส. ที่บันทึกไว้ยังไม่ถูกอัปเดต — ผลตัดสิน
+                                                    // จริงเป็น "ค้าง" ไว้ตามตอนที่ถูกติดครั้งแรก ไม่ปรับตามเวลาเรียนที่ดีขึ้นภายหลังโดยอัตโนมัติ
+                                                    // (ต้องแก้ผ่านหน้าคำร้องขอแก้ตัวเท่านั้น) — ต้องแยกแสดงให้ชัดว่านี่ไม่ใช่ระบบคำนวณขัดแย้งกันเอง
+                                                    const hasRecoveredButStillFlagged = isMS && s.percentage >= 80;
                                                     return (
                                                         <tr key={s.id} className="group hover:bg-gray-50/50 dark:hover:bg-indigo-500/[0.02] transition-colors">
                                                             <td className="px-4 py-4 text-center">
@@ -1055,18 +1177,25 @@ const MsReportPage: React.FC = () => {
                                                             <td className="px-2 py-4 text-center">
                                                                 <span className={`text-sm font-black tabular-nums ${s.escape > 0 ? 'text-red-600' : 'text-gray-200 dark:text-gray-800'}`}>{s.escape || '-'}</span>
                                                             </td>
-                                                            <td className="px-2 py-4 text-center">
-                                                                <span className={`text-sm font-black tabular-nums ${s.percentage < 80 ? 'text-rose-600' : 'text-emerald-600'}`}>{s.percentage}%</span>
+                                                            <td
+                                                                className="px-2 py-4 text-center"
+                                                                title={hasRecoveredButStillFlagged
+                                                                    ? `เวลาเรียนล่าสุดฟื้นกลับมา ≥80% แล้ว (${s.remark || ''}) แต่ผลตัดสิน มส. เดิมยังไม่ถูกอัปเดตอัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่อปรับผลให้ตรงกัน`
+                                                                    : (s.remark || 'ยังคำนวณร้อยละเวลาเรียนไม่สำเร็จ ลองรีเฟรชข้อมูลอีกครั้ง')}
+                                                            >
+                                                                <span className={`text-sm font-black tabular-nums ${hasRecoveredButStillFlagged ? 'text-amber-500' : s.percentage < 80 ? 'text-rose-600' : 'text-emerald-600'}`}>{s.percentage}%{hasRecoveredButStillFlagged ? ' *' : ''}</span>
                                                             </td>
                                                             <td className="px-4 py-4 text-center">
-                                                                <button
-                                                                    onClick={() => handleToggleStatus(s.id, s.enrollId, s.evaluation)}
-                                                                    className={`min-w-[70px] px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border shadow-sm ${isMS
-                                                                        ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/20 hover:bg-rose-600 hover:text-white"
-                                                                        : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20 hover:bg-indigo-600 hover:text-white"}`}
+                                                                <span
+                                                                    title={hasRecoveredButStillFlagged
+                                                                        ? "เวลาเรียนล่าสุดฟื้นกลับมาแล้ว แต่ผลตัดสิน มส. นี้ถูกบันทึกไว้ตั้งแต่ตอนที่เวลาเรียนยังไม่ถึงเกณฑ์ — ระบบไม่ปรับผลย้อนหลังให้อัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่ออัปเดตผล"
+                                                                        : "ผลตัดสิน มส. จริงจากระบบเช็คชื่อรายวิชา — แก้ไขได้ที่หน้าคำร้องขอแก้ตัวเท่านั้น"}
+                                                                    className={`inline-block min-w-[70px] px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border shadow-sm ${isMS
+                                                                        ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/20"
+                                                                        : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20"}`}
                                                                 >
                                                                     {s.evaluation}
-                                                                </button>
+                                                                </span>
                                                             </td>
                                                         </tr>
                                                     );

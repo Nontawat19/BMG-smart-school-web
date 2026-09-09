@@ -17,7 +17,8 @@ import {
 // ═══════════════════════════════════════════════════════════════
 // CATEGORIES
 // ═══════════════════════════════════════════════════════════════
-interface CollectionDef { key: string; label: string; }
+interface SubcollectionDef { key: string; label: string; }
+interface CollectionDef { key: string; label: string; subcollections?: SubcollectionDef[]; }
 interface Category { key: string; label: string; collections: CollectionDef[]; }
 
 const CATEGORIES: Category[] = [
@@ -29,7 +30,9 @@ const CATEGORIES: Category[] = [
     { key: 'students', label: 'ข้อมูลนักเรียน' },
   ]},
   { key: 'academic', label: 'วิชาการ', collections: [
-    { key: 'courses', label: 'รายวิชา' },
+    { key: 'courses', label: 'รายวิชา', subcollections: [
+      { key: 'grades', label: 'คะแนน/เกรด นักเรียน (รวม 0/ร/มส)' },
+    ]},
     { key: 'course_assignments', label: 'มอบหมายรายวิชา' },
     { key: 'enrollments', label: 'การลงทะเบียน' },
     { key: 'subject_groups', label: 'กลุ่มสาระ' },
@@ -38,11 +41,17 @@ const CATEGORIES: Category[] = [
     { key: 'special-periods', label: 'คาบพิเศษ' },
     { key: 'configs', label: 'การตั้งค่า' },
     { key: 'special_programs', label: 'โปรแกรมพิเศษ' },
+    { key: 'remediation_requests', label: 'คำร้องขอแก้ตัว 0/ร/มส/มผ' },
   ]},
   { key: 'activities', label: 'กิจกรรมและชุมนุม', collections: [
-    { key: 'clubs', label: 'ชุมนุม' },
+    { key: 'clubs', label: 'ชุมนุม', subcollections: [
+      { key: 'evaluations', label: 'ผลประเมิน (มผ)' },
+      { key: 'members', label: 'สมาชิกชุมนุม' },
+    ]},
     { key: 'club_requests', label: 'คำขอสมัครชุมนุม' },
-    { key: 'learner-activities', label: 'กิจกรรมผู้เรียน' },
+    { key: 'learner-activities', label: 'กิจกรรมผู้เรียน', subcollections: [
+      { key: 'evaluations', label: 'ผลประเมิน (มผ)' },
+    ]},
   ]},
   { key: 'calendar', label: 'ปฏิทินและข่าวสาร', collections: [
     { key: 'main_calendar', label: 'ปฏิทินโรงเรียน' },
@@ -277,6 +286,30 @@ const SCHEMAS: Record<string, Schema> = {
     ]},
   ],
 
+  remediation_requests: [
+    { label: 'ข้อมูลนักเรียน', fields: [
+      { key: 'studentName', label: 'ชื่อนักเรียน', type: 'text' },
+      { key: 'studentCode', label: 'รหัสนักเรียน', type: 'text' },
+      { key: 'classLevel', label: 'ระดับชั้น', type: 'text' },
+      { key: 'room', label: 'ห้อง', type: 'text' },
+    ]},
+    { label: 'รายวิชา/กิจกรรมที่ติด', fields: [
+      { key: 'flagType', label: 'ประเภท', type: 'select', options: ['course', 'club', 'learner-activity', 'guidance'] },
+      { key: 'originalGrade', label: 'ผลเดิมที่ติด', type: 'text', hint: '0 / ร / มส / มผ' },
+      { key: 'courseTitle', label: 'ชื่อวิชา', type: 'text' },
+      { key: 'activityName', label: 'ชื่อกิจกรรม', type: 'text' },
+      { key: 'academicYear', label: 'ปีการศึกษา', type: 'text' },
+      { key: 'semester', label: 'ภาคเรียน', type: 'select', options: ['1', '2'] },
+    ]},
+    { label: 'สถานะคำร้อง', fields: [
+      { key: 'status', label: 'สถานะ', type: 'select', options: ['pending', 'resolved', 'cancelled'] },
+      { key: 'newResult', label: 'ผลใหม่ที่บันทึก', type: 'text' },
+      { key: 'requestedAt', label: 'วันที่ยื่นคำร้อง', type: 'readonly' },
+      { key: 'resolvedAt', label: 'วันที่บันทึกผล', type: 'readonly' },
+      { key: 'resolvedByName', label: 'ผู้บันทึกผล', type: 'text' },
+    ]},
+  ],
+
   'learner-activities': [
     { label: 'ข้อมูลกิจกรรม', fields: [
       { key: 'name', label: 'ชื่อกิจกรรม', type: 'text' },
@@ -301,6 +334,7 @@ const SCHEMAS: Record<string, Schema> = {
 const PAGE_SIZE = 25;
 
 const getDisplayName = (data: Record<string, any>, fallbackId: string): string => {
+  if (data.studentName) return String(data.studentName);
   if (data.fullName) return String(data.fullName);
   const title = data.title ? String(data.title) : '';
   if (data.firstName && data.lastName) return `${title}${data.firstName} ${data.lastName}`.trim();
@@ -345,6 +379,17 @@ const getDisplaySubtitle = (data: Record<string, any>, colKey: string): string =
   } else if (colKey === 'subject_groups') {
     if (data.code) parts.push(`รหัส: ${data.code}`);
     if (data.headTeacherName || data.headName) parts.push(`หัวหน้า: ${data.headTeacherName || data.headName}`);
+  } else if (colKey === 'remediation_requests') {
+    if (data.studentCode) parts.push(data.studentCode);
+    if (data.courseTitle || data.activityName) parts.push(data.courseTitle || data.activityName);
+    if (data.originalGrade) parts.push(`ติด: ${data.originalGrade}`);
+    if (data.status) parts.push(`สถานะ: ${data.status}`);
+  } else if (colKey === 'grades') {
+    if (data.grade) parts.push(`เกรด: ${data.grade}`);
+    if (data.remark) parts.push(`หมายเหตุ: ${data.remark}`);
+    if (data.status) parts.push(`สถานะ: ${data.status}`);
+  } else if (colKey === 'evaluations') {
+    if (data.summary) parts.push(`ผ่าน ${data.summary.passed ?? 0} · ไม่ผ่าน ${data.summary.failed ?? 0} · รอ ${data.summary.pending ?? 0}`);
   }
   return parts.join('  ·  ');
 };
@@ -358,6 +403,9 @@ const AVATAR_COLORS: Record<string, string> = {
   'subject_groups': 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400',
   'physical-rooms': 'bg-sky-100 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400',
   'special-periods': 'bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400',
+  'remediation_requests': 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400',
+  'grades': 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400',
+  'evaluations': 'bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400',
 };
 
 const getInitials = (name: string): string => {
@@ -785,9 +833,11 @@ interface DocRowProps {
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  subcollections?: SubcollectionDef[];
+  onDrill?: (sub: SubcollectionDef) => void;
 }
 
-const DocRow: React.FC<DocRowProps> = ({ docItem, colKey, checked, onToggle, onView, onEdit, onDelete }) => {
+const DocRow: React.FC<DocRowProps> = ({ docItem, colKey, checked, onToggle, onView, onEdit, onDelete, subcollections, onDrill }) => {
   const displayName = getDisplayName(docItem.data, docItem.id);
   const subtitle = getDisplaySubtitle(docItem.data, colKey);
   const isNameSameAsId = displayName === docItem.id;
@@ -822,6 +872,26 @@ const DocRow: React.FC<DocRowProps> = ({ docItem, colKey, checked, onToggle, onV
       </div>
 
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+        {subcollections && subcollections.length > 0 && onDrill && (
+          subcollections.length === 1 ? (
+            <button onClick={() => onDrill(subcollections[0])} title={`ดู${subcollections[0].label}`} className="p-1.5 rounded-lg text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors">
+              <FaChevronRight size={12} />
+            </button>
+          ) : (
+            <div className="relative group/sub">
+              <button title="ดูข้อมูลย่อย" className="p-1.5 rounded-lg text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors">
+                <FaChevronRight size={12} />
+              </button>
+              <div className="hidden group-hover/sub:block absolute right-0 top-full mt-1 z-10 bg-white dark:bg-[#2a2b2f] rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 py-1 min-w-[160px]">
+                {subcollections.map(sub => (
+                  <button key={sub.key} onClick={() => onDrill(sub)} className="block w-full text-left px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap">
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        )}
         <button onClick={onView} title="ดู JSON" className="p-1.5 rounded-lg text-gray-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-colors">
           <FaEye size={12} />
         </button>
@@ -839,9 +909,12 @@ const DocRow: React.FC<DocRowProps> = ({ docItem, colKey, checked, onToggle, onV
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
+interface DrillState { parentDocId: string; parentLabel: string; subCol: SubcollectionDef; }
+
 const SchoolDataExplorerPage: React.FC = () => {
   const { schoolId } = useParams<{ schoolId: string }>();
   const [selectedCollection, setSelectedCollection] = useState<CollectionDef | null>(null);
+  const [drill, setDrill] = useState<DrillState | null>(null);
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     personnel: true, students: true, academic: false, activities: false,
     calendar: false, attendance: false, substitution: false, support: false, system: false,
@@ -867,11 +940,20 @@ const SchoolDataExplorerPage: React.FC = () => {
     });
   }, [schoolId]);
 
-  const loadPage = useCallback(async (colKey: string, cursor: QueryDocumentSnapshot | null) => {
-    if (!schoolId) return;
+  // Path segments ของ collection ที่กำลังดูอยู่ตอนนี้ — ปกติคือ [selectedCollection.key] เดียว
+  // แต่ถ้าไดรลลงไปดู subcollection ซ้อน (เช่น courses/{id}/grades) จะเป็น 3 segments
+  const getPathArgs = useCallback((col: CollectionDef | null, d: DrillState | null): string[] => {
+    if (!col) return [];
+    return d ? [col.key, d.parentDocId, d.subCol.key] : [col.key];
+  }, []);
+
+  const effectiveColKey = drill ? drill.subCol.key : (selectedCollection?.key ?? '');
+
+  const loadPage = useCallback(async (pathArgs: string[], cursor: QueryDocumentSnapshot | null) => {
+    if (!schoolId || pathArgs.length === 0) return;
     setLoading(true);
     try {
-      const colRef = collection(db, 'school-settings', schoolId, colKey);
+      const colRef = collection(db, 'school-settings', schoolId, ...pathArgs);
       const q = cursor
         ? query(colRef, orderBy('__name__'), startAfter(cursor), limit(PAGE_SIZE + 1))
         : query(colRef, orderBy('__name__'), limit(PAGE_SIZE + 1));
@@ -890,8 +972,13 @@ const SchoolDataExplorerPage: React.FC = () => {
     if (!selectedCollection) return;
     setPageStack([null]); setCurrentPage(0);
     setSelectedIds(new Set());
-    loadPage(selectedCollection.key, null);
-  }, [selectedCollection, loadPage]);
+    loadPage(getPathArgs(selectedCollection, drill), null);
+  }, [selectedCollection, drill, loadPage, getPathArgs]);
+
+  const handleDrillInto = (docItem: { id: string; data: Record<string, unknown> }, sub: SubcollectionDef) => {
+    setDrill({ parentDocId: docItem.id, parentLabel: getDisplayName(docItem.data, docItem.id), subCol: sub });
+  };
+  const exitDrill = () => setDrill(null);
 
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => {
@@ -922,18 +1009,19 @@ const SchoolDataExplorerPage: React.FC = () => {
     if (!res.isConfirmed) return;
     setBulkDeleting(true);
     try {
+      const pathArgs = getPathArgs(selectedCollection, drill);
       const ids = Array.from(selectedIds);
       const CHUNK = 400;
       for (let i = 0; i < ids.length; i += CHUNK) {
         const batch = writeBatch(db);
         ids.slice(i, i + CHUNK).forEach(id => {
-          batch.delete(doc(db, 'school-settings', schoolId, selectedCollection.key, id));
+          batch.delete(doc(db, 'school-settings', schoolId, ...pathArgs, id));
         });
         await batch.commit();
       }
       setSelectedIds(new Set());
       Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', html: `<p>ลบ <b>${count} รายการ</b> ออกจากระบบแล้ว</p>`, timer: 2000, showConfirmButton: false });
-      loadPage(selectedCollection.key, pageStack[currentPage]);
+      loadPage(pathArgs, pageStack[currentPage]);
     } catch (err: any) {
       Swal.fire('เกิดข้อผิดพลาด', err?.message || 'ลบไม่สำเร็จ', 'error');
     } finally {
@@ -944,12 +1032,12 @@ const SchoolDataExplorerPage: React.FC = () => {
   const handleNextPage = () => {
     if (!selectedCollection || !lastVisible) return;
     const ns = [...pageStack, lastVisible]; setPageStack(ns); setCurrentPage(p => p + 1);
-    loadPage(selectedCollection.key, lastVisible);
+    loadPage(getPathArgs(selectedCollection, drill), lastVisible);
   };
   const handlePrevPage = () => {
     if (!selectedCollection || currentPage === 0) return;
     const ns = pageStack.slice(0, -1); setPageStack(ns); setCurrentPage(p => p - 1);
-    loadPage(selectedCollection.key, ns[ns.length - 1]);
+    loadPage(getPathArgs(selectedCollection, drill), ns[ns.length - 1]);
   };
 
   const filteredDocs = searchTerm.trim()
@@ -963,19 +1051,21 @@ const SchoolDataExplorerPage: React.FC = () => {
 
   const handleSave = async (data: Record<string, unknown>, customId: string) => {
     if (!schoolId || !selectedCollection) return;
+    const pathArgs = getPathArgs(selectedCollection, drill);
     if (editDoc?.mode === 'edit' && editDoc.doc) {
-      await setDoc(doc(db, 'school-settings', schoolId, selectedCollection.key, editDoc.doc.id), data, { merge: false });
+      await setDoc(doc(db, 'school-settings', schoolId, ...pathArgs, editDoc.doc.id), data, { merge: false });
       Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1200, showConfirmButton: false });
     } else {
-      if (customId.trim()) await setDoc(doc(db, 'school-settings', schoolId, selectedCollection.key, customId.trim()), data);
-      else await addDoc(collection(db, 'school-settings', schoolId, selectedCollection.key), data);
+      if (customId.trim()) await setDoc(doc(db, 'school-settings', schoolId, ...pathArgs, customId.trim()), data);
+      else await addDoc(collection(db, 'school-settings', schoolId, ...pathArgs), data);
       Swal.fire({ icon: 'success', title: 'เพิ่มข้อมูลสำเร็จ', timer: 1200, showConfirmButton: false });
     }
-    loadPage(selectedCollection.key, pageStack[currentPage]);
+    loadPage(pathArgs, pageStack[currentPage]);
   };
 
   const handleDelete = async (docItem: { id: string; data: Record<string, unknown> }) => {
     if (!schoolId || !selectedCollection) return;
+    const pathArgs = getPathArgs(selectedCollection, drill);
     const name = getDisplayName(docItem.data, docItem.id);
     const res = await Swal.fire({
       title: 'ยืนยันการลบ',
@@ -985,9 +1075,9 @@ const SchoolDataExplorerPage: React.FC = () => {
     });
     if (!res.isConfirmed) return;
     try {
-      await deleteDoc(doc(db, 'school-settings', schoolId, selectedCollection.key, docItem.id));
+      await deleteDoc(doc(db, 'school-settings', schoolId, ...pathArgs, docItem.id));
       Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', html: `<p>ลบ <b>${name}</b> ออกแล้ว</p>`, timer: 1500, showConfirmButton: false });
-      loadPage(selectedCollection.key, pageStack[currentPage]);
+      loadPage(pathArgs, pageStack[currentPage]);
     } catch (err: any) { Swal.fire('ข้อผิดพลาด', err?.message, 'error'); }
   };
 
@@ -1029,7 +1119,7 @@ const SchoolDataExplorerPage: React.FC = () => {
                   {openCategories[cat.key] && (
                     <div className="ml-1 mt-0.5 flex flex-col gap-0.5">
                       {cat.collections.map(col => (
-                        <button key={col.key} onClick={() => { setSelectedCollection(col); setSearchTerm(''); }}
+                        <button key={col.key} onClick={() => { setSelectedCollection(col); setDrill(null); setSearchTerm(''); }}
                           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-left transition-colors w-full ${selectedCollection?.key === col.key ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-semibold border-l-2 border-indigo-500' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
                           <FaDatabase size={8} className="flex-shrink-0 opacity-50" />
                           <span className="truncate">{col.label}</span>
@@ -1068,8 +1158,20 @@ const SchoolDataExplorerPage: React.FC = () => {
                       className="w-4 h-4 rounded accent-indigo-500 cursor-pointer"
                     />
                     <div>
-                      <h2 className="font-bold text-sm text-gray-900 dark:text-white">{selectedCollection.label}</h2>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">…/{selectedCollection.key}</p>
+                      {drill ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button onClick={exitDrill} className="text-xs text-indigo-500 hover:underline font-semibold flex items-center gap-1">
+                            <FaChevronLeft size={9} /> {selectedCollection.label}
+                          </button>
+                          <span className="text-gray-300 dark:text-gray-600 text-xs">›</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px]">{drill.parentLabel}</span>
+                          <span className="text-gray-300 dark:text-gray-600 text-xs">›</span>
+                          <h2 className="font-bold text-sm text-gray-900 dark:text-white">{drill.subCol.label}</h2>
+                        </div>
+                      ) : (
+                        <h2 className="font-bold text-sm text-gray-900 dark:text-white">{selectedCollection.label}</h2>
+                      )}
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">…/{getPathArgs(selectedCollection, drill).join('/')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1077,7 +1179,7 @@ const SchoolDataExplorerPage: React.FC = () => {
                       <FaSearch size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="ค้นหา..." className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-[#1e1f21] text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-40" />
                     </div>
-                    <button onClick={() => loadPage(selectedCollection.key, pageStack[currentPage])} className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                    <button onClick={() => loadPage(getPathArgs(selectedCollection, drill), pageStack[currentPage])} className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                       <FaSync size={12} className={loading ? 'animate-spin' : ''} />
                     </button>
                   </div>
@@ -1121,12 +1223,14 @@ const SchoolDataExplorerPage: React.FC = () => {
                     </div>
                   ) : (
                     filteredDocs.map(d => (
-                      <DocRow key={d.id} docItem={d} colKey={selectedCollection.key}
+                      <DocRow key={d.id} docItem={d} colKey={effectiveColKey}
                         checked={selectedIds.has(d.id)}
                         onToggle={() => toggleSelect(d.id)}
                         onView={() => setViewDocItem(d)}
                         onEdit={() => setEditDoc({ doc: d, mode: 'edit' })}
                         onDelete={() => handleDelete(d)}
+                        subcollections={!drill ? selectedCollection.subcollections : undefined}
+                        onDrill={sub => handleDrillInto(d, sub)}
                       />
                     ))
                   )}
@@ -1157,8 +1261,8 @@ const SchoolDataExplorerPage: React.FC = () => {
 
       {editDoc && selectedCollection && (
         <SmartFormModal
-          colKey={selectedCollection.key}
-          colLabel={selectedCollection.label}
+          colKey={effectiveColKey}
+          colLabel={drill ? `${selectedCollection.label} › ${drill.parentLabel} › ${drill.subCol.label}` : selectedCollection.label}
           docItem={editDoc.doc}
           mode={editDoc.mode}
           onSave={handleSave}

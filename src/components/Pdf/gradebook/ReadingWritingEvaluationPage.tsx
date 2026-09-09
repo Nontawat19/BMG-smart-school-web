@@ -260,7 +260,7 @@ const ReadingWritingEvaluationPage: React.FC<ReadingWritingEvaluationPageProps> 
                     const analysisSum = analysisScores.reduce((sum, score) => sum + score, 0);
                     return (
                         <View key={s.id} style={[styles.row, { height: 20 }]} wrap={false}>
-                            <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text style={styles.bodyText}>{index + 1}</Text></View>
+                            <View style={[styles.cell, { width: COL_WIDTHS.NO }]}><Text style={styles.bodyText}>{s.studentNumber || (index + 1)}</Text></View>
                             <View style={[styles.cell, { width: COL_WIDTHS.ID }]}><Text style={styles.bodyTextBold}>{s.studentId}</Text></View>
                             <View style={[styles.cell, styles.studentNameCell, styles.thickRight, { flex: 1 }]}>
                                 <Text style={styles.bodyText}>{`${formatPrefix(s.title)}${s.firstName}      ${s.lastName}`}</Text>

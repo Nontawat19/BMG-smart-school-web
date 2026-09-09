@@ -422,7 +422,8 @@ export const useGradeBookActions = (
                 text: `อัปเดตข้อมูลนักเรียน ${currentModifiedIds.length} คน สำเร็จ`,
                 timer: 2000,
                 showConfirmButton: false,
-                position: 'center'
+                toast: true,
+                position: 'top-end'
             });
         } catch (error) {
             console.error("Error saving grades:", error);

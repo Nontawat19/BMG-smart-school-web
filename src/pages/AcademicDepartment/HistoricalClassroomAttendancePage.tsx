@@ -34,7 +34,10 @@ import { fetchCalendar } from '@/store/slices/calendarSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { ACADEMIC_MANAGEMENT } from '@/constants/permissions';
 import { getClassVariants, matchesClassValue, getStableClassKey, matchesAssignmentGroupRoom } from '@/utils/attendanceClassMatching';
+import { classMatchesSelection, parseClassRoom, normalizeClassLevel } from '@/utils/scheduleDisplayUtils';
 import { calculateClassroomBehaviorScoreChange } from '@/utils/behaviorScoreUtils';
+import { isCurrentStudent } from '@/utils/studentStatusUtils';
+import { computeCourseAttendanceEligibilityForRoster } from '@/utils/attendanceEligibilityFirestore';
 
 // --- Interfaces ---
 interface Student {
@@ -50,6 +53,8 @@ interface Student {
     room?: string;
     groupName?: string;
     classLevel?: string;
+    status?: string;
+    studentStatus?: string;
 }
 
 interface Course {
@@ -62,6 +67,9 @@ interface Course {
     teacherAssignments?: any[];
     teacherId?: string;
     teacherIds?: string[];
+    room?: string;
+    groupNumber?: string | number;
+    [key: string]: any;
 }
 
 interface CalendarEvent {
@@ -98,6 +106,8 @@ interface DateMetadata {
     description?: string;
     periodCount?: number;
     periodNumber?: number;
+    periods?: number[];
+    periodLabel?: string;
     displayDate?: string;
 }
 
@@ -115,6 +125,20 @@ const normalizeRoom = (value: unknown) => {
     if (!raw) return '';
     const numeric = Number(raw);
     return Number.isFinite(numeric) ? String(numeric) : raw.toLowerCase();
+};
+
+const formatPeriodLabel = (periods?: number[]): string => {
+    if (!periods || periods.length === 0) return '';
+    const sorted = Array.from(new Set(periods)).filter(p => p > 0).sort((a, b) => a - b);
+    if (sorted.length === 0) return '';
+    if (sorted.length === 1) return `P${sorted[0]}`;
+    
+    // Check if consecutive
+    const isConsecutive = sorted.every((p, idx) => idx === 0 || p === sorted[idx - 1] + 1);
+    if (isConsecutive) {
+        return `P${sorted[0]}-${sorted[sorted.length - 1]}`;
+    }
+    return sorted.map(p => `P${p}`).join(',');
 };
 
 
@@ -252,6 +276,42 @@ const matchesRoomGroup = (data: any, selectedRoom: string): boolean => {
     }
 
     return false;
+};
+
+// Helper to reliably extract normalized room from student record
+const getStudentRecordRoom = (st: any): string => {
+    const direct = st?.room ?? st?.roomNumber;
+    if (direct !== undefined && direct !== null && String(direct).trim() !== '') {
+        return normalizeRoom(direct);
+    }
+    const fromClassLevel = parseClassRoom(st?.classLevel).room;
+    if (fromClassLevel) return normalizeRoom(fromClassLevel);
+    const fromClassName = parseClassRoom(st?.className).room;
+    if (fromClassName) return normalizeRoom(fromClassName);
+    return '';
+};
+
+const isStudentActive = (st: any): boolean => {
+    const status = st?.status ?? st?.studentStatus;
+    if (!status) return true;
+    return isCurrentStudent(st);
+};
+
+const studentMatchesClassAndRoom = (st: any, selectedClass: string, selectedRoomNumber?: string): boolean => {
+    if (!isStudentActive(st)) return false;
+    if (selectedClass) {
+        const rawClass = st?.classLevel || st?.className;
+        const matchesGrade = matchesClassValue(rawClass, selectedClass) ||
+            classMatchesSelection(rawClass, selectedClass);
+        if (!matchesGrade) return false;
+    }
+    if (selectedRoomNumber && selectedRoomNumber !== 'all') {
+        const sRoom = getStudentRecordRoom(st);
+        if (sRoom) {
+            return sRoom === normalizeRoom(selectedRoomNumber);
+        }
+    }
+    return true;
 };
 
 // Calculate Calendar Year based on Academic Year + Semester + Month + Terms Data
@@ -448,6 +508,8 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const [dates, setDates] = useState<string[]>([]);
     const [dateMetadata, setDateMetadata] = useState<Record<string, DateMetadata>>({});
     const [courseSchedule, setCourseSchedule] = useState<Record<string, any>>({});
+    const [courseAssignmentsMap, setCourseAssignmentsMap] = useState<Record<string, any>>({});
+    const [extraPeriods, setExtraPeriods] = useState<Record<string, number[]>>({});
     const [isModified, setIsModified] = useState(false);
 
     // Bulk Selection State
@@ -742,7 +804,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         // Set initial values from URL if parameters are available
         const urlClass = searchParams.get('classId');
         const urlCourse = searchParams.get('courseId');
-        const urlRoom = searchParams.get('room');
+        const urlRoom = searchParams.get('roomNumber') || searchParams.get('room');
         const urlSem = searchParams.get('semester');
 
         if (urlClass) {
@@ -757,9 +819,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         }
 
         if (urlCourse) {
-            // Check if it's already a code or needs resolution ID -> code
+            // Keep the exact courseId so duplicate courses/sections with the same code don't clash
             const found = courses.find(c => c.id === urlCourse);
-            setSelectedCourse(found?.code || urlCourse);
+            setSelectedCourse(found?.id || urlCourse);
         }
     }, [searchParams, courses]);
 
@@ -805,6 +867,37 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
 
 
+    // Fetch Course Assignments
+    useEffect(() => {
+        const fetchCourseAssignments = async () => {
+            if (!schoolId) return;
+            try {
+                const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+                const constraints = [];
+                if (academicYear) constraints.push(where('academicYear', '==', String(academicYear)));
+                if (semester && !isPrimaryAnnualMode) constraints.push(where('semester', '==', String(semester)));
+
+                const snap = await getDocs(query(assignmentsRef, ...constraints));
+                const mapping: Record<string, any> = {};
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    if (data.courseId) {
+                        mapping[data.courseId] = data;
+                    }
+                });
+                setCourseAssignmentsMap(mapping);
+            } catch (error) {
+                console.error("Error fetching course assignments:", error);
+            }
+        };
+        fetchCourseAssignments();
+    }, [schoolId, academicYear, semester, isPrimaryAnnualMode]);
+
+    // Reset extraPeriods on filter changes
+    useEffect(() => {
+        setExtraPeriods({});
+    }, [selectedCourse, selectedClass, selectedRoomNumber, selectedMonth]);
+
     // Fetch Course Schedule with robust matching
     useEffect(() => {
         const fetchSchedule = async () => {
@@ -842,14 +935,6 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     if (!matchesYearSemester(data)) return;
                     const dataSemester = String(data.semester || "");
 
-                    const docClassId = data.classId;
-
-                    // Robust class matching
-                    const matchesClass = matchesClassValue(docClassId, selectedClass) ||
-                        matchesClassValue(data.className, selectedClass);
-
-                    if (!matchesClass) return;
-
                     const sch = data.schedule || {};
                     Object.entries(sch).forEach(([slotKey, val]: [string, any]) => {
                         if (!val) return;
@@ -861,71 +946,96 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             const matchesId = sid === targetId || (scode && targetCode && scode === targetCode);
                             if (!matchesId) return false;
 
-                            if (!selectedRoomNumber) return true;
-
-                            // Robust Room/Group matching matching StudentSchedulePage.tsx logic
                             const latestCourse = courses.find(course =>
                                 course.id === sid ||
                                 (course.code && scode && course.code.replace(/\s/g, '').toLowerCase() === scode)
                             );
-                            const hasAssignments = latestCourse?.teacherAssignments && latestCourse.teacherAssignments.length > 0;
 
-                            const rawCourseRooms = c.room || c.roomIds || c.roomNumber || [];
-                            const courseRoom = (Array.isArray(rawCourseRooms) ? rawCourseRooms : [rawCourseRooms])
-                                .map((r: any) => normalizeRoom(r))
-                                .filter(Boolean);
-                            const selectedRoom = normalizeRoom(selectedRoomNumber);
-                            const docRoom = normalizeRoom(data.room || data.roomNumber || '');
-                            // groupNumber is a sequential group INDEX (1, 2, 3...), not a room label —
-                            // it must never be compared directly against selectedRoom (a room label that
-                            // often happens to share the same small-integer range, e.g. "2" == "2" by pure
-                            // coincidence). It's only used below to look up *this specific slot's* group
-                            // assignment, whose own `room` field is then compared instead.
+                            const assignmentDoc = courseAssignmentsMap[sid] || (targetId ? courseAssignmentsMap[targetId] : null);
+                            const allAssignments = [
+                                ...(assignmentDoc?.teacherAssignments || []),
+                                ...(latestCourse?.teacherAssignments || [])
+                            ];
+
                             const slotGroupNumber = c.groupNumber ?? c.group;
                             const hasSlotGroup = slotGroupNumber !== undefined && slotGroupNumber !== null && slotGroupNumber !== '';
+                            const relevantAssignments = (hasSlotGroup && allAssignments.length > 0)
+                                ? allAssignments.filter((a: any) => String(a.groupNumber || 1) === String(slotGroupNumber))
+                                : allAssignments;
 
-                            // Class-wide schedule entries often only live inside a teacher document,
-                            // so they do not have a top-level room to match against.
-                            const isCommon = courseRoom.includes('all') || (!hasAssignments && courseRoom.length === 0 && !hasSlotGroup && !docRoom);
+                            const classSources = [
+                                ...(Array.isArray(c.classId) ? c.classId : (c.classId ? [c.classId] : [])),
+                                ...(c.className ? [c.className] : []),
+                                ...(Array.isArray(c.classLevels) ? c.classLevels : (c.classLevels ? [c.classLevels] : [])),
+                                ...relevantAssignments.flatMap((a: any) => Array.isArray(a.classLevels) ? a.classLevels : (a.classLevels ? [a.classLevels] : [])),
+                                ...(relevantAssignments.length === 0 && data.classId ? (Array.isArray(data.classId) ? data.classId : [data.classId]) : []),
+                                ...(latestCourse?.classId ? (Array.isArray(latestCourse.classId) ? latestCourse.classId : [latestCourse.classId]) : [])
+                            ].filter(Boolean);
 
-                            if (isCommon) return true;
-                            if (docRoom === selectedRoom || docRoom === 'all') return true;
-                            if (courseRoom.some((r: string) => r === selectedRoom)) return true;
-
-                            if (hasAssignments) {
-                                if (hasSlotGroup) {
-                                    // Correlate THIS slot instance's own group to its matching
-                                    // teacherAssignments entry, then check that group's room — never
-                                    // treat "the course has some group assigned to selectedRoom" as a
-                                    // match for every group's slot (that made the room filter a no-op
-                                    // for combined courses, pulling every group's periods together).
-                                    // Shared with GradeBookPage.tsx so this rule can't silently drift.
-                                    return matchesAssignmentGroupRoom(latestCourse!.teacherAssignments, slotGroupNumber, selectedRoomNumber);
-                                }
-                                // No group info on this slot at all — can't disambiguate further.
-                                // (Deliberately NOT falling back to a.groupNumber here — comparing a
-                                // group index against a room label is exactly the conflation bug this
-                                // logic was rewritten to avoid.)
-                                return latestCourse!.teacherAssignments!.some((a: any) =>
-                                    normalizeRoom(a.room || a.roomNumber || (Array.isArray(a.roomIds) ? a.roomIds[0] : a.roomIds) || '') === selectedRoom &&
-                                    (String(a.teacherId || '') === String(data.teacherId) || !data.teacherId)
+                            // Check grade / class matching
+                            if (selectedClass) {
+                                const matchesGrade = classSources.length === 0 || classSources.some((cl: any) =>
+                                    matchesClassValue(cl, selectedClass) || classMatchesSelection(cl, selectedClass)
                                 );
+                                if (!matchesGrade) return false;
                             }
+
+                            if (!selectedRoomNumber || selectedRoomNumber === 'all') return true;
+
+                            // Room matching for this slot:
+                            // Check if this schedule slot or its specific group explicitly specifies room(s)
+                            const directSlotSources = [
+                                ...(Array.isArray(c.classId) ? c.classId : (c.classId ? [c.classId] : [])),
+                                ...(c.className ? [c.className] : []),
+                                ...(Array.isArray(c.classLevels) ? c.classLevels : (c.classLevels ? [c.classLevels] : [])),
+                                ...(hasSlotGroup ? relevantAssignments.flatMap((a: any) => Array.isArray(a.classLevels) ? a.classLevels : (a.classLevels ? [a.classLevels] : [])) : [])
+                            ].filter(Boolean);
+
+                            const directSlotRooms = Array.from(new Set(
+                                directSlotSources
+                                    .map(cl => parseClassRoom(cl).room)
+                                    .filter(Boolean)
+                                    .map(normalizeRoom)
+                            ));
+
+                            if (directSlotRooms.length > 0) {
+                                return directSlotRooms.includes(normalizeRoom(selectedRoomNumber)) || directSlotRooms.includes('all');
+                            }
+
+                            // If no rooms in direct level strings, check assignment rooms
+                            if (relevantAssignments.length > 0) {
+                                const assignmentLevelRooms = Array.from(new Set(
+                                    relevantAssignments
+                                        .flatMap((a: any) => (a.classLevels || []).map((cl: string) => parseClassRoom(cl).room))
+                                        .filter(Boolean)
+                                        .map(normalizeRoom)
+                                ));
+                                if (assignmentLevelRooms.length > 0) {
+                                    return assignmentLevelRooms.includes(normalizeRoom(selectedRoomNumber)) || assignmentLevelRooms.includes('all');
+                                }
+                            }
+
+                            // If neither assignments nor course specify any specific room, it applies to all rooms of this grade
+                            const hasAnySpecificRoom = allAssignments.some((a: any) => {
+                                return (a.classLevels || []).some((cl: string) => Boolean(parseClassRoom(cl).room));
+                            });
+
+                            if (!hasAnySpecificRoom && !hasSlotGroup) return true;
 
                             return false;
                         });
 
                         if (isTarget) {
-                            const [day, periodStr] = slotKey.split('-');
-                            // Normalize the raw schedule slot index (which counts non-teaching slots like
-                            // homeroom/lunch as array positions) into the real period-N number that saved
-                            // attendance records use — otherwise this shows up as an extra, mismatched
-                            // period column next to the real one.
-                            const period = getPeriodNumberFromSlotKey(periodStr);
-                            if (scheduleMap[day] !== undefined && period !== null) {
-                                addPeriodToScheduleMap(day, period);
-                                if (isPrimaryAnnualMode) {
-                                    addPeriodToScheduleMap(`${dataSemester || 'all'}:${day}`, period);
+                            const firstDash = slotKey.indexOf('-');
+                            if (firstDash !== -1) {
+                                const day = slotKey.substring(0, firstDash);
+                                const periodStr = slotKey.substring(firstDash + 1);
+                                const period = getPeriodNumberFromSlotKey(periodStr);
+                                if (scheduleMap[day] !== undefined && period !== null) {
+                                    addPeriodToScheduleMap(day, period);
+                                    if (isPrimaryAnnualMode) {
+                                        addPeriodToScheduleMap(`${dataSemester || 'all'}:${day}`, period);
+                                    }
                                 }
                             }
                         }
@@ -938,7 +1048,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             }
         };
         fetchSchedule();
-    }, [schoolId, selectedCourse, selectedClass, selectedRoomNumber, academicYear, semester, courses, isPrimaryAnnualMode, periodSettings]);
+    }, [schoolId, selectedCourse, selectedClass, selectedRoomNumber, academicYear, semester, courses, isPrimaryAnnualMode, periodSettings, courseAssignmentsMap]);
 
     // Generate valid dates
     const generateDates = React.useCallback((acadYearStr: string, monthIdx: number, hasDataDates?: Set<string>) => {
@@ -1024,6 +1134,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 allPeriodsForToday.add(0);
             }
             
+            // Also check extra periods manually added by teacher for makeup classes
+            if (extraPeriods[dateStrDisplay]) {
+                extraPeriods[dateStrDisplay].forEach(pNum => allPeriodsForToday.add(pNum));
+            }
+            
             // Also check hasDataDates for extra periods
             if (hasDataDates) {
                 hasDataDates.forEach(slot => {
@@ -1038,55 +1153,54 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             if (allPeriodsForToday.size > 0) {
                 const sortedPeriods = Array.from(allPeriodsForToday).sort((a, b) => a - b);
-                sortedPeriods.forEach(periodNum => {
-                    const slotKey = periodNum === 0 && !hasDataDates?.has(`${dateStrDisplay}_P0`) && !hasDataDates?.has(dateStrDisplay)
-                                    ? dateStrDisplay 
-                                    : `${dateStrDisplay}_P${periodNum}`;
-                    
-                    let isCheckableLocal = isCheckable;
-                    let reasonLocal: DateReason | undefined = reason;
-                    const isScheduled = scheduledPeriods.includes(periodNum);
-                    const hasData = hasDataDates?.has(slotKey) || (periodNum === 0 && hasDataDates?.has(dateStrDisplay));
+                const hasScheduledPeriod = scheduledPeriods.length > 0;
+                const hasAnyData = hasDataDates ? Array.from(hasDataDates).some(slot => slot.startsWith(dateStrDisplay)) : false;
 
-                    // If there is existing data, it MUST be checkable/visible regardless of calendar
-                    if (hasData) {
-                        isCheckableLocal = true;
-                    }
+                let isCheckableLocal = isCheckable;
+                let reasonLocal: DateReason | undefined = reason;
 
-                    // Apply Term Boundaries to the slot
-                    if (hasTermData) {
-                        const currentStr = dateStrLookup;
-                        const activeTermData = isPrimaryAnnualMode
-                            ? terms[getTermKeyForISODate(currentStr, terms, semester)]
-                            : termData;
-                        if (activeTermData?.startDate && activeTermData?.endDate && (currentStr < activeTermData.startDate || currentStr > activeTermData.endDate)) {
-                            // Explicit makeup school days are allowed even when they extend the 100-day range.
-                            if (!hasData && event?.type !== 'schoolDay') {
-                                isCheckableLocal = false;
-                                if (!reasonLocal) reasonLocal = 'term_break';
-                            }
+                // If there is existing data, it MUST be checkable/visible regardless of calendar
+                if (hasAnyData) {
+                    isCheckableLocal = true;
+                }
+
+                // Apply Term Boundaries to the slot
+                if (hasTermData) {
+                    const currentStr = dateStrLookup;
+                    const activeTermData = isPrimaryAnnualMode
+                        ? terms[getTermKeyForISODate(currentStr, terms, semester)]
+                        : termData;
+                    if (activeTermData?.startDate && activeTermData?.endDate && (currentStr < activeTermData.startDate || currentStr > activeTermData.endDate)) {
+                        // Explicit makeup school days are allowed even when they extend the 100-day range.
+                        if (!hasAnyData && event?.type !== 'schoolDay') {
+                            isCheckableLocal = false;
+                            if (!reasonLocal) reasonLocal = 'term_break';
                         }
                     }
+                }
 
-                    // Historical Settings — ล็อกวันที่ผ่านมาแล้วทั้งหมด (ไม่แตะวันนี้/อนาคต) เมื่อ "หน้าต่างเวลา
-                    // ที่อนุญาตให้แก้ย้อนหลัง" ปิดอยู่ ไม่ว่าจะเป็นเพราะปิดสวิตช์ทั้งหมด หรือเปิดสวิตช์แต่ตอนนี้
-                    // อยู่นอกช่วงวันที่กำหนดไว้ก็ตาม
-                    if (isCheckableLocal && dateStrLookup < todayStrLookup && !isHistoricalWindowOpen) {
-                        isCheckableLocal = false;
-                        reasonLocal = 'historical_locked';
-                    }
+                // Historical Settings — ล็อกวันที่ผ่านมาแล้วทั้งหมด (ไม่แตะวันนี้/อนาคต) เมื่อ "หน้าต่างเวลา
+                // ที่อนุญาตให้แก้ย้อนหลัง" ปิดอยู่ ไม่ว่าจะเป็นเพราะปิดสวิตช์ทั้งหมด หรือเปิดสวิตช์แต่ตอนนี้
+                // อยู่นอกช่วงวันที่กำหนดไว้ก็ตาม
+                if (isCheckableLocal && dateStrLookup < todayStrLookup && !isHistoricalWindowOpen) {
+                    isCheckableLocal = false;
+                    reasonLocal = 'historical_locked';
+                }
 
-                    dates.push(slotKey);
-                    metadata[slotKey] = {
-                        isCheckable: isCheckableLocal,
-                        isRelevant: isScheduled,
-                        reason: reasonLocal,
-                        description,
-                        periodCount: allPeriodsForToday.size,
-                        periodNumber: periodNum,
-                        displayDate: dateStrDisplay
-                    };
-                });
+                const label = formatPeriodLabel(sortedPeriods);
+
+                dates.push(dateStrDisplay);
+                metadata[dateStrDisplay] = {
+                    isCheckable: isCheckableLocal,
+                    isRelevant: hasScheduledPeriod,
+                    reason: reasonLocal,
+                    description,
+                    periodCount: sortedPeriods.filter(p => p > 0).length || 1,
+                    periodNumber: sortedPeriods[0] || 0,
+                    periods: sortedPeriods,
+                    periodLabel: label,
+                    displayDate: dateStrDisplay
+                };
             } else {
                 // If no periods scheduled, still show the day as not relevant/locked
                 dates.push(dateStrDisplay);
@@ -1096,12 +1210,15 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                     reason: reason || 'not_scheduled',
                     description,
                     periodCount: 0,
+                    periodNumber: 0,
+                    periods: [],
+                    periodLabel: '',
                     displayDate: dateStrDisplay
                 };
             }
         }
         return { dates, metadata };
-    }, [semester, terms, calendarEvents, courseSchedule, academicSettings, isPrimaryAnnualMode]);
+    }, [semester, terms, calendarEvents, courseSchedule, academicSettings, isPrimaryAnnualMode, extraPeriods]);
 
     // Filter Courses based on Selected Class
     const filteredCourses = useMemo(() => {
@@ -1113,23 +1230,39 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             if (!matchesClass) return false;
 
+            const assignmentDoc = courseAssignmentsMap[c.id];
+            const currentAssignments = (assignmentDoc?.teacherAssignments && assignmentDoc.teacherAssignments.length > 0)
+                ? assignmentDoc.teacherAssignments
+                : (c.teacherAssignments || []);
+
+            const effectiveCourse = {
+                ...c,
+                teacherAssignments: currentAssignments
+            };
+
             // Restrict to courses the current teacher actually teaches — academic
             // management roles (admin/director/dept head/academic admin) can still see
             // and correct history for every course.
-            if (!isAcademicManager && !isCourseOwnedByTeacher(c, currentTeacher?.id)) return false;
+            if (!isAcademicManager && !isCourseOwnedByTeacher(effectiveCourse, currentTeacher?.id)) return false;
 
             // If a room is selected, we want to filter courses that belong to that group
             // but also show general courses that might not have specific group assignments.
             if (selectedRoomNumber) {
-                const assignments = c.teacherAssignments || [];
-                if (assignments.length > 0) {
+                if (currentAssignments.length > 0) {
                     const selectedRoom = normalizeRoom(selectedRoomNumber);
-                    return assignments.some((a: any) => {
+                    return currentAssignments.some((a: any) => {
+                        const levels = Array.isArray(a.classLevels) ? a.classLevels : [];
+                        const matchesLevelRoom = levels.some((cl: string) => classMatchesSelection(cl, selectedClass, selectedRoomNumber));
+                        if (matchesLevelRoom) return true;
+
+                        // groupNumber/group คือ "ลำดับกลุ่มสอน" ไม่ใช่ห้อง/แผนก — ห้ามใช้เทียบกับ selectedRoom
+                        // โดยตรง เพราะเป็นการจับคู่โดยบังเอิญที่ตัวเลขตรงกัน ไม่ใช่ความหมายเดียวกัน (บั๊กแบบ
+                        // เดียวกับที่แก้ไปแล้วใน matchesRoomGroup ด้านบน และใน ClassroomAttendance/index.tsx)
+                        // ทำให้วิชาที่กลุ่มสอนบังเอิญเลขตรงกับห้องที่กำลังดู แต่จริงๆ สอนคนละห้อง หลุดเข้ามาใน
+                        // ดร็อปดาวน์เลือกวิชาผิดๆ
                         const candidates = [
-                            a.groupNumber,
                             a.room,
                             a.roomNumber,
-                            a.group,
                             ...(Array.isArray(a.roomIds) ? a.roomIds : [])
                         ].map(normalizeRoom).filter(Boolean);
                         return candidates.includes(selectedRoom) || candidates.includes('all');
@@ -1139,17 +1272,17 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             return true;
         });
-    }, [courses, selectedClass, selectedRoomNumber, isAcademicManager, currentTeacher]);
+    }, [courses, selectedClass, selectedRoomNumber, isAcademicManager, currentTeacher, courseAssignmentsMap]);
 
     // Auto-select course if only one option available
     useEffect(() => {
-        if (selectedCourse && filteredCourses.length > 0 && !filteredCourses.some(c => c.code === selectedCourse || c.id === selectedCourse)) {
+        if (selectedCourse && filteredCourses.length > 0 && !filteredCourses.some(c => c.id === selectedCourse || c.code === selectedCourse)) {
             setSelectedCourse('');
             return;
         }
 
-        if (filteredCourses.length === 1) {
-            setSelectedCourse(filteredCourses[0].code);
+        if (!selectedCourse && filteredCourses.length === 1) {
+            setSelectedCourse(filteredCourses[0].id || filteredCourses[0].code);
         }
     }, [filteredCourses, selectedCourse]);
 
@@ -1239,15 +1372,29 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             let filteredEnrollDocs = enrollSnap.docs;
             
-            // In-memory filter for room/group and class
-            if (selectedRoomNumber) {
-                filteredEnrollDocs = filteredEnrollDocs.filter((d: any) => matchesRoomGroup(d.data(), selectedRoomNumber));
+            // In-memory filter for room/group and class on enrollment docs
+            if (selectedRoomNumber && selectedRoomNumber !== 'all') {
+                filteredEnrollDocs = filteredEnrollDocs.filter((d: any) => {
+                    const data = d.data();
+                    const eRoom = normalizeRoom(data.room || data.roomNumber);
+                    if (eRoom) {
+                        return eRoom === 'all' || eRoom === normalizeRoom(selectedRoomNumber);
+                    }
+                    const parsed = parseClassRoom(data.classLevel || data.className);
+                    if (parsed.room) {
+                        return normalizeRoom(parsed.room) === normalizeRoom(selectedRoomNumber);
+                    }
+                    if (data.groupName || data.groupNumber || data.group) {
+                        return matchesRoomGroup(data, selectedRoomNumber);
+                    }
+                    return true;
+                });
             }
             if (selectedClass) {
                 filteredEnrollDocs = filteredEnrollDocs.filter(doc => {
                     const data = doc.data();
                     if (!data.classLevel) return true; 
-                    return matchesClassValue(data.classLevel, selectedClass);
+                    return matchesClassValue(data.classLevel, selectedClass) || classMatchesSelection(data.classLevel, selectedClass);
                 });
             }
 
@@ -1274,13 +1421,18 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             prefix: data.title || data.prefix || '',
                             profileImageUrl: data.profileImageUrl || '',
                             room: data.room || data.roomNumber || '',
+                            roomNumber: data.room || data.roomNumber || '',
                             groupName: data.groupName || '',
-                            classLevel: data.classLevel || ''
+                            classLevel: data.classLevel || '',
+                            status: data.status,
+                            studentStatus: data.studentStatus,
                         } as Student);
                     });
                 }
-                studentList = studentDetails;
-            } else {
+                studentList = studentDetails.filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
+            }
+
+            if (studentList.length === 0) {
                 // Fallback to Class Level
                 const classLevelValues = currentClassVariants.length > 0 ? currentClassVariants : [currentClassKey, currentClassTitle].filter(Boolean);
                 const studentConstraints = [
@@ -1308,21 +1460,22 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             roomNumber: data.room || data.roomNumber || '',
                             room: data.room || data.roomNumber || '',
                             groupName: data.groupName || '',
-                            classLevel: data.classLevel || ''
+                            classLevel: data.classLevel || '',
+                            status: data.status,
+                            studentStatus: data.studentStatus,
                         } as Student & { roomNumber: string };
                     })
-                    .filter(s => matchesClassValue((s as any).classLevel || currentClassKey, selectedClass))
-                    .filter(s => !selectedRoomNumber || normalizeRoom((s as any).room || (s as any).roomNumber) === normalizeRoom(selectedRoomNumber));
+                    .filter(s => studentMatchesClassAndRoom(s, selectedClass, selectedRoomNumber));
             }
 
             studentList.sort((a, b) => {
-                const numA = a.number ? parseInt(a.number, 10) : 9999;
-                const numB = b.number ? parseInt(b.number, 10) : 9999;
-                if (numA !== numB) return numA - numB;
-
                 const roomA = parseInt(a.room || "0", 10) || 0;
                 const roomB = parseInt(b.room || "0", 10) || 0;
                 if (roomA !== roomB) return roomA - roomB;
+
+                const numA = a.number ? parseInt(a.number, 10) : 9999;
+                const numB = b.number ? parseInt(b.number, 10) : 9999;
+                if (numA !== numB) return numA - numB;
 
                 return (a.firstName || "").localeCompare(b.firstName || "", 'th');
             });
@@ -1438,28 +1591,24 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             setDates(finalDates);
             setDateMetadata(finalMetadata);
 
-            // 6. Map Attendance Data to Slots
+            // 6. Map Attendance Data to Day Columns
             const dataMap: Record<string, Record<string, string>> = {};
             const mappedRecordPreference: Record<string, boolean> = {};
             rawAttendanceDocs.forEach(d => {
-                const mapKey = `${d.studentId}:${d.slotKey}`;
+                const dayKey = d.slotKey.split('_')[0];
+                const mapKey = `${d.studentId}:${dayKey}`;
                 if (mappedRecordPreference[mapKey] === false && d.isLegacyRoomRecord) {
                     return;
                 }
 
-                // If the slot is in our final list, map it
-                if (finalDates.includes(d.slotKey)) {
+                if (finalDates.includes(dayKey)) {
                     if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
-                    dataMap[d.studentId][d.slotKey] = d.status;
-                    mappedRecordPreference[mapKey] = d.isLegacyRoomRecord;
-                } else {
-                    // Fallback to day-only if slotKey not found (legacy)
-                    const dayOnly = d.slotKey.split('_')[0];
-                    if (finalDates.includes(dayOnly)) {
-                        if (!dataMap[d.studentId]) dataMap[d.studentId] = {};
-                        dataMap[d.studentId][dayOnly] = d.status;
-                        mappedRecordPreference[`${d.studentId}:${dayOnly}`] = d.isLegacyRoomRecord;
+                    const currentStatus = dataMap[d.studentId][dayKey];
+                    // If any period in the day was late/absent/leave, reflect that status; otherwise present
+                    if (!currentStatus || (currentStatus === 'present' && d.status !== 'present')) {
+                        dataMap[d.studentId][dayKey] = d.status;
                     }
+                    mappedRecordPreference[mapKey] = d.isLegacyRoomRecord;
                 }
             });
             setDates(finalDates);
@@ -1521,6 +1670,53 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         }
     };
 
+    const promptOpenUnscheduledPeriod = (displayDate: string) => {
+        Swal.fire({
+            title: 'บันทึกเวลาเรียนวันนี้นอกตารางสอน',
+            html: `
+                <div class="text-left text-sm">
+                    <p class="mb-3 text-gray-600 dark:text-gray-300">
+                        วันที่ <b>${displayDate}</b> ไม่มีคาบสอนตามตารางปกติของวิชานี้ คุณต้องการระบุคาบเรียนเพื่อเช็คชื่อ (เช่น สอนชดเชย หรือสอนเพิ่มเติม) หรือไม่?
+                    </p>
+                    <label class="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-300">เลือกคาบเรียนที่ต้องการเช็คชื่อ:</label>
+                </div>
+            `,
+            input: 'select',
+            inputOptions: {
+                1: 'คาบที่ 1',
+                2: 'คาบที่ 2',
+                3: 'คาบที่ 3',
+                4: 'คาบที่ 4',
+                5: 'คาบที่ 5',
+                6: 'คาบที่ 6',
+                7: 'คาบที่ 7',
+                8: 'คาบที่ 8'
+            },
+            inputValue: '1',
+            showCancelButton: true,
+            confirmButtonText: 'เปิดให้เช็คชื่อ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#4f46e5'
+        }).then((result) => {
+            if (result.isConfirmed && result.value) {
+                const chosenPeriod = parseInt(result.value, 10) || 1;
+                setExtraPeriods(prev => ({
+                    ...prev,
+                    [displayDate]: Array.from(new Set([...(prev[displayDate] || []), chosenPeriod]))
+                }));
+                Swal.fire({
+                    icon: 'success',
+                    title: `เปิดคาบที่ ${chosenPeriod} เรียบร้อยแล้ว`,
+                    text: 'คุณสามารถคลิกบันทึกเวลาเรียนได้ทันที',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    toast: true,
+                    position: 'top-end'
+                });
+            }
+        });
+    };
+
     const handleCellClick = (studentId: string, date: string, multiSelect: boolean = false) => {
         const meta = dateMetadata[date];
 
@@ -1528,6 +1724,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const isLocked = meta && !meta.isCheckable;
 
         if (isLocked) {
+            // If it's an unscheduled school day, offer to add a period for makeup / unscheduled teaching
+            if (meta?.reason === 'not_scheduled' && !multiSelect) {
+                promptOpenUnscheduledPeriod(meta?.displayDate || date.split('_')[0]);
+                return;
+            }
+
             // Only show warning if trying to interact directly
             // For drag/multi-select we might silently ignore
             if (!multiSelect) {
@@ -1596,7 +1798,12 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const handleColumnSelect = (date: string) => {
         const meta = dateMetadata[date];
         // Check if locked
-        if (!meta?.isCheckable && meta?.reason !== 'schoolDay') return;
+        if (!meta?.isCheckable && meta?.reason !== 'schoolDay') {
+            if (meta?.reason === 'not_scheduled') {
+                promptOpenUnscheduledPeriod(meta?.displayDate || date.split('_')[0]);
+            }
+            return;
+        }
 
         const cellsInColumn = students.map(s => `${s.id}:${date}`);
         const allSelected = cellsInColumn.every(key => selectedCells.has(key));
@@ -1706,6 +1913,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const pendingChanges: {
             studentId: string;
             dateStr: string;
+            periodNum: number;
             newVal?: string;
             oldVal?: string;
             ref: ReturnType<typeof doc>;
@@ -1721,23 +1929,44 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const oldVal = initialAttendanceData[student.id]?.[dateStr];
                 if (newVal === oldVal) return;
 
-                const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
+                const meta = dateMetadata[dateStr];
+                const targetPeriods = (meta?.periods && meta.periods.length > 0)
+                    ? meta.periods.filter(p => p > 0)
+                    : (meta?.periodNumber ? [meta.periodNumber] : [0]);
+
                 const datePartForId = dateStr.split('_')[0];
-                const attendanceId = `${datePartForId}_${subjectCode}_${classKey}_P${periodNum}`.replace(/\//g, '-');
-                const oldAttendanceId = `${datePartForId}_${subjectCode}_${classKey}`.replace(/\//g, '-');
-                const legacyRoomAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}_P${periodNum}`.replace(/\//g, '-') : '';
-                const legacyRoomOldAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}`.replace(/\//g, '-') : '';
 
-                const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
-                const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldAttendanceId);
-                const legacyRoomRef = legacyRoomAttendanceId
-                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomAttendanceId)
-                    : null;
-                const legacyRoomOldRef = legacyRoomOldAttendanceId
-                    ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldAttendanceId)
-                    : null;
+                targetPeriods.forEach(periodNum => {
+                    const attendanceId = periodNum > 0
+                        ? `${datePartForId}_${subjectCode}_${classKey}_P${periodNum}`.replace(/\//g, '-')
+                        : `${datePartForId}_${subjectCode}_${classKey}`.replace(/\//g, '-');
+                    const oldAttendanceId = `${datePartForId}_${subjectCode}_${classKey}`.replace(/\//g, '-');
+                    const legacyRoomAttendanceId = (selectedRoomNumber && periodNum > 0)
+                        ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}_P${periodNum}`.replace(/\//g, '-')
+                        : (selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}`.replace(/\//g, '-') : '');
+                    const legacyRoomOldAttendanceId = selectedRoomNumber ? `${datePartForId}_${subjectCode}_${classKey}_${selectedRoomNumber}`.replace(/\//g, '-') : '';
 
-                pendingChanges.push({ studentId: student.id, dateStr, newVal, oldVal, ref, oldRef, legacyRoomRef, legacyRoomOldRef });
+                    const ref = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', attendanceId);
+                    const oldRef = doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', oldAttendanceId);
+                    const legacyRoomRef = legacyRoomAttendanceId
+                        ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomAttendanceId)
+                        : null;
+                    const legacyRoomOldRef = legacyRoomOldAttendanceId
+                        ? doc(db, 'school-settings', schoolId, 'students', student.id, 'ClassroomAttendance', legacyRoomOldAttendanceId)
+                        : null;
+
+                    pendingChanges.push({
+                        studentId: student.id,
+                        dateStr,
+                        periodNum,
+                        newVal,
+                        oldVal,
+                        ref,
+                        oldRef,
+                        legacyRoomRef,
+                        legacyRoomOldRef
+                    });
+                });
 
                 if (newVal) {
                     const leaveRec = studentLeaves[student.id]?.[dateStr] || studentLeaves[student.id]?.[getDateDisplayPart(dateStr)];
@@ -1807,7 +2036,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
 
             const scoreChanges: { studentId: string; oldStatus: string; newStatus: string }[] = [];
 
-            pendingChanges.forEach(({ studentId, dateStr, newVal, oldVal, ref, oldRef, legacyRoomRef, legacyRoomOldRef }) => {
+            pendingChanges.forEach(({ studentId, dateStr, periodNum, newVal, oldVal, ref, oldRef, legacyRoomRef, legacyRoomOldRef }) => {
                 if (!newVal) {
                     nextBatch().delete(ref);
                     nextBatch().delete(oldRef); // Clean up old format too
@@ -1823,7 +2052,6 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         : semester;
 
                     const derivedClassName = CLASSES[classKey] || classKey || "ไม่ระบุ";
-                    const periodNum = dateMetadata[dateStr]?.periodNumber || 0;
                     // A record previously existed for this cell (oldVal was loaded from
                     // Firestore) — this is an edit of someone else's original entry, not a
                     // brand-new record, so preserve who first recorded it.
@@ -1836,10 +2064,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                         classId: classKey,
                         className: derivedClassName,
                         room: selectedRoomNumber || null,
+                        groupNumber: courseObj?.groupNumber || null,
                         period: periodNum,
                         subjectName,
                         subjectCode,
-                        courseId: courseObj?.id || null,
+                        courseId: courseObj?.id || selectedCourse,
                         status: newVal,
                         academicYear,
                         semester: recordSemester,
@@ -1876,6 +2105,81 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
             // Commit attendance first — the source of truth — before touching behavior scores.
             for (const b of batches) {
                 await b.commit();
+            }
+
+            // Sync course attendance eligibility (มส flags) so that changes in historical attendance
+            // immediately update the student's มส eligibility in grades, matching ClassroomAttendance
+            if (schoolId && (courseObj?.id || selectedCourse) && students.length > 0) {
+                try {
+                    const targetCourseId = courseObj?.id || selectedCourse;
+                    const msSemester = isPrimaryAnnualMode ? 'annual' : semester;
+                    const msCalendarData = { terms, events: calendarEvents };
+                    const { eligibility } = await computeCourseAttendanceEligibilityForRoster(
+                        db,
+                        schoolId,
+                        academicYear,
+                        {
+                            courseId: targetCourseId,
+                            classId: selectedClass,
+                            className: CLASSES[classKey] || selectedClass,
+                            subjectCode: courseObj?.code || subjectCode,
+                            courseCode: courseObj?.code,
+                            teacherAssignments: courseObj?.teacherAssignments,
+                            selectedRoomForMatch: selectedRoomNumber,
+                        },
+                        students,
+                        msCalendarData,
+                        msSemester
+                    );
+
+                    const existingGradesSnap = await Promise.all(
+                        students.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', targetCourseId, 'grades', s.id)))
+                    );
+
+                    const msBatch = writeBatch(db);
+                    let hasGradeUpdates = false;
+
+                    students.forEach((student, sIdx) => {
+                        const info = eligibility[student.id];
+                        if (!info) return;
+                        const existingSnap = existingGradesSnap[sIdx];
+                        const existingData = existingSnap.exists() ? existingSnap.data() as any : null;
+                        const gradeRef = doc(db, 'school-settings', schoolId, 'courses', targetCourseId, 'grades', student.id);
+
+                        if (info.belowThreshold) {
+                            const newRemark = `เวลาเรียนไม่ถึงร้อยละ 80 (${info.presentHours}/${info.totalHours} คาบ = ${info.percentage.toFixed(1)}%)`;
+                            if (existingData?.status !== 'มส' || existingData?.remark !== newRemark) {
+                                const baseRecord = existingData || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                                msBatch.set(gradeRef, {
+                                    ...baseRecord,
+                                    status: 'มส',
+                                    grade: 'มส',
+                                    remark: newRemark,
+                                    updatedAt: Timestamp.now(),
+                                }, { merge: true });
+                                hasGradeUpdates = true;
+                            }
+                        } else if (existingData?.status === 'มส' && typeof existingData?.remark === 'string' && existingData.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80')) {
+                            // Attendance is now >= 80%: unflag auto-applied มส and restore grade from total score
+                            const totalScore = Number(existingData.total ?? 0);
+                            const restoredGrade = totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0";
+                            msBatch.set(gradeRef, {
+                                ...existingData,
+                                status: null,
+                                grade: restoredGrade,
+                                remark: null,
+                                updatedAt: Timestamp.now(),
+                            }, { merge: true });
+                            hasGradeUpdates = true;
+                        }
+                    });
+
+                    if (hasGradeUpdates) {
+                        await msBatch.commit();
+                    }
+                } catch (msErr) {
+                    console.warn("[HistoricalAttendance] Error syncing attendance eligibility flags:", msErr);
+                }
             }
 
             setInitialAttendanceData(JSON.parse(JSON.stringify(attendanceData)));
@@ -1939,9 +2243,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const excelHeaders = dates.map(d => {
             const meta = dateMetadata[d];
             const day = d.split('-')[0];
-            return meta?.periodNumber ? `${day} (ค.${meta.periodNumber})` : day;
+            return meta?.periodLabel ? `${day} (${meta.periodLabel})` : day;
         });
-        const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...excelHeaders, 'มา', 'สาย', 'ลา', 'ขาด', 'หนีเรียน', 'ร้อยละการมาเรียน'];
+        const header = ['เลขที่', 'รหัสนักเรียน', 'ชื่อ - นามสกุล', ...excelHeaders, 'มา (คาบ)', 'สาย (คาบ)', 'ลา (คาบ)', 'ขาด (คาบ)', 'หนีเรียน (คาบ)', 'ร้อยละการมาเรียน'];
         wsData.push(header);
 
         students.forEach(s => {
@@ -1953,16 +2257,17 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const status = attendanceData[s.id]?.[date];
                 const meta = dateMetadata[date];
                 const isCheckable = meta?.isCheckable ?? true;
+                const weight = meta?.periodCount && meta.periodCount > 0 ? meta.periodCount : 1;
 
-                if (isCheckable) totalPossible++; // Only count in denominator if checkable
+                if (isCheckable) totalPossible += weight; // Only count in denominator if checkable
 
                 if (!isCheckable) {
                     row.push(meta?.reason ? `(${meta.reason})` : '-');
-                } else if (status === 'present') { row.push('มา'); p++; }
-                else if (status === 'late') { row.push('สาย'); l++; }
-                else if (status === 'leave') { row.push('ลา'); v++; }
-                else if (status === 'absent') { row.push('ขาด'); a++; }
-                else if (status === 'escape') { row.push('หนีเรียน'); esc++; }
+                } else if (status === 'present') { row.push('มา'); p += weight; }
+                else if (status === 'late') { row.push('สาย'); l += weight; }
+                else if (status === 'leave') { row.push('ลา'); v += weight; }
+                else if (status === 'absent') { row.push('ขาด'); a += weight; }
+                else if (status === 'escape') { row.push('หนีเรียน'); esc += weight; }
                 else row.push('-');
             });
 
@@ -2083,9 +2388,11 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
     const calculateTotalStat = (statusKey: string) => {
         let count = 0;
         students.forEach(s => dates.forEach(d => {
+            const meta = dateMetadata[d];
             // Only count if day is checkable AND matches status
-            if (dateMetadata[d]?.isCheckable && attendanceData[s.id]?.[d] === statusKey) {
-                count++;
+            if (meta?.isCheckable && attendanceData[s.id]?.[d] === statusKey) {
+                const weight = meta.periodCount && meta.periodCount > 0 ? meta.periodCount : 1;
+                count += weight;
             }
         }));
         return count;
@@ -2103,9 +2410,10 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                 const st = attendanceData[s.id]?.[d];
                 // Only include in calculation if mass attendance has actually been recorded for this student/date
                 if (st && ['present', 'late', 'leave', 'absent', 'escape'].sort().includes(st)) {
-                    totalRecorded++;
+                    const weight = meta.periodCount && meta.periodCount > 0 ? meta.periodCount : 1;
+                    totalRecorded += weight;
                     // "Present" and "Late" are counted as attending
-                    if (st === 'present' || st === 'late') presentCount++;
+                    if (st === 'present' || st === 'late') presentCount += weight;
                 }
             }
         }));
@@ -2137,15 +2445,40 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
         const foundCourse = courses.find(c => c.code === selectedCourse || c.id === selectedCourse);
         const levelID = Object.keys(CLASSES).find(key => CLASSES[key] === selectedClass) || selectedClass;
 
+        // groupId ต้องเป็น "เลขกลุ่มสอนจริง" (a.groupNumber) ไม่ใช่เลขห้อง — คนละความหมายกัน (บั๊กแบบเดียวกับที่
+        // แก้ไปแล้วใน filteredCourses/matchesRoomGroup ด้านบน) ห้องกับกลุ่มสอนไม่จำเป็นต้องเลขตรงกันเสมอไป ต้อง
+        // หากลุ่มที่ห้องนี้จริง ๆ จากตารางมอบหมายของวิชานั้น ไม่ใช่เดาว่าเลขห้อง = เลขกลุ่ม — ไม่งั้นตอนกดกลับไป
+        // หน้าสมุดพก (GradeBookPage อ่าน groupId มาใช้กรอง roster โดยตรง) อาจเปิดผิดกลุ่มถ้าเลขห้อง ≠ เลขกลุ่ม
+        let realGroupId = '';
+        if (selectedRoomNumber && foundCourse) {
+            const assignmentDoc = courseAssignmentsMap[foundCourse.id];
+            const assignments = (assignmentDoc?.teacherAssignments && assignmentDoc.teacherAssignments.length > 0)
+                ? assignmentDoc.teacherAssignments
+                : (foundCourse.teacherAssignments || []);
+            const selectedRoomNormalized = normalizeRoom(selectedRoomNumber);
+            const matchedAssignment = assignments.find((a: any) => {
+                const candidates = [a.room, a.roomNumber, ...(Array.isArray(a.roomIds) ? a.roomIds : [])]
+                    .map(normalizeRoom).filter(Boolean);
+                if (candidates.includes(selectedRoomNormalized)) return true;
+                if (Array.isArray(a.classLevels)) {
+                    return a.classLevels.some((cl: string) => classMatchesSelection(cl, selectedClass, selectedRoomNumber));
+                }
+                return false;
+            });
+            if (matchedAssignment?.groupNumber !== undefined && matchedAssignment?.groupNumber !== null) {
+                realGroupId = `กลุ่ม ${matchedAssignment.groupNumber}`;
+            }
+        }
+
         return {
             levelID,
             room: selectedRoomNumber,
-            groupId: selectedRoomNumber ? `กลุ่ม ${selectedRoomNumber}` : '',
+            groupId: realGroupId,
             courseId: foundCourse?.id || selectedCourse,
             semester: semester,
             year: academicYear
         };
-    }, [selectedClass, selectedRoomNumber, selectedCourse, semester, academicYear, courses]);
+    }, [selectedClass, selectedRoomNumber, selectedCourse, semester, academicYear, courses, courseAssignmentsMap]);
 
     return (
         <MainLayout>
@@ -2341,11 +2674,19 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                             <div className="space-y-1.5 min-w-0 sm:col-span-2 xl:col-span-1">
                                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">รายวิชา</label>
                                 <Select
-                                    options={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` }))}
+                                    options={filteredCourses.map(c => {
+                                        const roomLabel = c.room ? ` (ห้อง ${c.room})` : '';
+                                        const groupLabel = c.groupNumber ? ` (กลุ่ม ${c.groupNumber})` : '';
+                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}${roomLabel}` };
+                                    })}
                                     isClearable
                                     placeholder={selectedClass ? 'เลือกรายวิชา...' : 'กรุณาเลือกชั้นเรียนก่อน'}
                                     isDisabled={!selectedClass}
-                                    value={filteredCourses.map(c => ({ value: c.code, label: `${c.code} - ${c.title}` })).find(opt => opt.value === selectedCourse)}
+                                    value={filteredCourses.map(c => {
+                                        const roomLabel = c.room ? ` (ห้อง ${c.room})` : '';
+                                        const groupLabel = c.groupNumber ? ` (กลุ่ม ${c.groupNumber})` : '';
+                                        return { value: c.id || c.code, label: `${c.code} - ${c.title}${groupLabel}${roomLabel}` };
+                                    }).find(opt => opt.value === selectedCourse || filteredCourses.some(c => (c.id === selectedCourse || c.code === selectedCourse) && (c.id === opt.value || c.code === opt.value))) || null}
                                     onChange={(val) => setSelectedCourse(val ? val.value : '')}
                                     styles={selectStyles}
                                     menuPortalTarget={document.body}
@@ -2564,7 +2905,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     key={date}
                                                     onClick={() => handleColumnSelect(date)}
                                                     className={`
-                                                        group relative p-0 text-center min-w-[22px] w-[22px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
+                                                        group relative p-0 text-center min-w-[26px] w-[26px] border-r border-gray-200 dark:border-gray-600/50 last:border-r-0 
                                                         transition-all cursor-pointer select-none
                                                         ${bgClass} hover:bg-opacity-90
                                                         ${opacityClass}
@@ -2574,9 +2915,9 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                     <div className={`flex flex-col items-center justify-center h-full ${textClass} scale-90 pt-1 pb-1.5`}>
                                                         <span className="text-[7px] opacity-70 leading-none">{dayName}</span>
                                                         <span className={`text-[11px] font-black leading-none ${isTeachingDate ? 'text-gray-900 dark:text-white' : ''}`}>{dayNum}</span>
-                                                        {periodNum !== undefined && (
-                                                            <span className={`text-[7px] font-black mt-0.5 leading-none ${isTeachingDate ? 'text-emerald-500 dark:text-emerald-300' : 'text-indigo-500'}`}>P{periodNum}</span>
-                                                        )}
+                                                        {meta?.periodLabel ? (
+                                                            <span className={`text-[7px] font-black mt-0.5 px-0.5 rounded leading-tight ${isTeachingDate ? 'text-emerald-500 dark:text-emerald-300' : 'text-indigo-500'}`}>{meta.periodLabel}</span>
+                                                        ) : null}
                                                         {!isTeachingDate && isCheckable && <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mt-0.5"></div>}
                                                     </div>
 
@@ -2644,11 +2985,13 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                             const stats = { present: 0, late: 0, leave: 0, absent: 0, escape: 0 };
                                             dates.forEach(d => {
                                                 const s = attendanceData[student.id]?.[d];
-                                                if (s === 'present') stats.present++;
-                                                else if (s === 'late') stats.late++;
-                                                else if (s === 'leave') stats.leave++;
-                                                else if (s === 'absent') stats.absent++;
-                                                else if (s === 'escape') stats.escape++;
+                                                const meta = dateMetadata[d];
+                                                const weight = meta?.periodCount && meta.periodCount > 0 ? meta.periodCount : 1;
+                                                if (s === 'present') stats.present += weight;
+                                                else if (s === 'late') stats.late += weight;
+                                                else if (s === 'leave') stats.leave += weight;
+                                                else if (s === 'absent') stats.absent += weight;
+                                                else if (s === 'escape') stats.escape += weight;
                                             });
 
                                             return (
@@ -2692,7 +3035,7 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                                                 key={date}
                                                                 onClick={() => handleCellClick(student.id, date)}
                                                                 className={`
-                                                                    p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[22px] w-[22px]
+                                                                    p-0 text-center border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 select-none transition-all duration-75 min-w-[26px] w-[26px]
                                                                     ${isCheckable ? 'cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50' : 'cursor-not-allowed bg-gray-50/30 dark:bg-gray-800/20'}
                                                                     ${isSelected ? 'bg-indigo-100/30 dark:bg-indigo-900/30 ring-inset ring-1 ring-indigo-500/50 z-10' : ''}
                                                                 `}

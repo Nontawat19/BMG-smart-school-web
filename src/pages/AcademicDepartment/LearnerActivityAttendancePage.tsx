@@ -17,10 +17,12 @@ import { formatSemesterLabel, normalizeSemesterValue } from '@/utils/semesterUti
 import {
   LearnerActivityTeacherScope,
   buildLearnerActivityAttendanceDocId,
+  buildLearnerActivityEvaluationDocId,
   deriveTeacherScopesFromCourse,
   formatTeacherScopeLabel,
   scopeIncludesTeacher,
 } from '@/utils/learnerActivityUtils';
+import { computeWeeklyActivityEligibilityForRoster, applyActivityEligibilityFailFlags } from '@/utils/activityAttendanceEligibility';
 import { isActivityCourse } from './schedule/utils';
 
 interface LearnerActivity {
@@ -508,6 +510,35 @@ const LearnerActivityAttendancePage: React.FC = () => {
         updatedAt: Timestamp.now(),
         updatedBy: (currentUser as any)?.uid || '',
       }, { merge: true });
+
+      // เช็คเวลาเข้าร่วมสะสมของกิจกรรมนี้ (ไม่ใช่แค่วันนี้) แล้วบังคับติด "มผ" ทันทีให้นักเรียนที่เวลาเข้าร่วม
+      // ต่ำกว่าร้อยละ 80 — best-effort เท่านั้น ไม่บล็อกผลสำเร็จของการบันทึกเช็คชื่อที่เพิ่งเสร็จไปแล้วด้านบน
+      try {
+        const weeklyDay = selectedSpecialPeriod?.day || selectedActivity.specialPeriodDay;
+        if (weeklyDay) {
+          const attendanceCollectionRef = collection(db, 'school-settings', schoolId, 'learner-activities', activityId, 'attendance');
+          const { eligibility, dailyStatus } = await computeWeeklyActivityEligibilityForRoster(
+            attendanceCollectionRef,
+            weeklyDay,
+            calendarState.rawData || {},
+            activeSemester,
+            students.map(s => ({ id: s.id })),
+          );
+          const belowThresholdStudents = students
+            .map(s => ({ id: s.id, ...eligibility[s.id] }))
+            .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
+              Boolean(s.belowThreshold));
+          if (belowThresholdStudents.length > 0) {
+            const evalRef = doc(db, 'school-settings', schoolId, 'learner-activities', activityId, 'evaluations',
+              buildLearnerActivityEvaluationDocId(activeAcademicYear, activeSemester, selectedTeacherScope?.key));
+            await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
+              schoolId, flagKind: 'learner-activity', idValue: activityId, academicYear: activeAcademicYear, semester: activeSemester,
+            }, undefined, dailyStatus);
+          }
+        }
+      } catch (eligibilityError) {
+        console.error('Error applying learner-activity attendance-eligibility (มผ) flags:', eligibilityError);
+      }
 
       // After first Mode 2 save, promote virtual activity to real in local state
       if (selectedActivity._isVirtual) {

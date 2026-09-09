@@ -17,6 +17,7 @@ import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode
 import {
     FlaggedCourse, fetchFlaggedStudents, calculateRemediationGrade, getMinistryRemediationGradeOptions,
 } from '@/utils/remediationUtils';
+import { showChoiceDialog } from '@/utils/swalChoiceDialog';
 
 // สูตรตัดเกรดจากคะแนนรวม — ใช้ตรงกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx/
 // ZeroRMsGradeReportPage.tsx (คัดลอกตามธรรมเนียมเดิมของโปรเจกต์ ไม่ได้รวมศูนย์เป็นจุดเดียว)
@@ -83,7 +84,6 @@ interface FlagRowWithStudent {
     requestStatus: 'no_request' | 'pending' | 'resolved';
 }
 
-const GRADE_OPTIONS = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0'];
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const requestDedupKey = (studentId: string, activityId: string, academicYear: string, semester: string) =>
@@ -233,6 +233,17 @@ const RemediationRecordPage: React.FC = () => {
     );
 
     const handleCorrect = async (row: FlagRowWithStudent, mode: 'pass' | 'repeat') => {
+        // ต้องมีคำร้องขอแก้ตัวที่นักเรียนยื่นมาก่อนเสมอ (สถานะ pending) ห้ามบันทึกผลแก้ตัวข้ามขั้นตอนคำร้อง
+        // อีกต่อไป — ให้ไปอนุมัติที่หน้า "คำร้องขอแก้ตัว" (/academic/remediation-requests) แทน
+        if (row.requestStatus !== 'pending') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'ยังไม่มีคำร้องขอแก้ตัว',
+                html: `${row.studentName} (${row.studentCode}) ยังไม่ได้ยื่นคำร้องขอแก้ตัว <b>${row.flag.courseTitle || row.flag.courseCode}</b><br/><br/>ต้องให้นักเรียนยื่นคำร้องที่หน้าโปรไฟล์ก่อน (หรือครูยื่นแทนได้) แล้วจึงอนุมัติที่หน้า "คำร้องขอแก้ตัว"`,
+            });
+            return;
+        }
+
         const isCourse = row.flag.flagKind === 'course';
         let displayValue: string;
         let newGradeValue: string | undefined;
@@ -264,13 +275,11 @@ const RemediationRecordPage: React.FC = () => {
                     displayValue = resolvedGrade;
                 } else {
                     const gradeOptions = getMinistryRemediationGradeOptions(row.flag.grade);
-                    const { value } = await Swal.fire({
+                    const { value } = await showChoiceDialog({
                         title: 'บันทึกผลแก้ตัว (ตามระเบียบ ศธ.)',
                         html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.studentName} (${row.studentCode})<br/>วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b> — ผลเดิม: <b>${row.flag.grade}</b></div>`,
-                        input: 'select',
-                        inputOptions: gradeOptions,
-                        inputPlaceholder: 'เลือกผลการเรียนใหม่',
-                        showCancelButton: true,
+                        options: gradeOptions,
+                        placeholder: 'เลือกผลการเรียนใหม่',
                         confirmButtonText: 'บันทึก',
                         cancelButtonText: 'ยกเลิก',
                         confirmButtonColor: '#4f46e5',
@@ -320,14 +329,14 @@ const RemediationRecordPage: React.FC = () => {
         try {
             if (isCourse) {
                 if (mode === 'pass') {
+                    // remark เดิม (หมายเหตุประกอบผล 0/ร/มส) ต้องล้างทิ้งตอนแก้ตัวสำเร็จ ไม่ใช่เขียนทับใหม่ —
+                    // remark ที่ยังค้างอยู่คือตัวบ่งชี้ว่ายังติดค้าง ถ้าไม่ลบจะดูเหมือนยังไม่ได้แก้
                     const updateData: Record<string, any> = {
                         grade: newGradeValue,
                         status: deleteField(),
+                        remark: deleteField(),
                         originalGrade: row.flag.grade,
                     };
-                    if (row.flag.grade === 'ร') {
-                        updateData.remark = `เกรด ${newGradeValue}`;
-                    }
                     await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), updateData, { merge: true });
                 }
                 // mode === 'repeat' สำหรับวิชาปกติ: ไม่มีค่าเกรด "เรียนซ้ำ" ในระบบ จึงบันทึกเป็นหมายเหตุ
@@ -672,9 +681,14 @@ const RemediationRecordPage: React.FC = () => {
                                         {pagedRows.map(row => (
                                             <tr key={row.key} className="hover:bg-gray-50/60 dark:hover:bg-white/[0.02]">
                                                 <td className="px-2 py-3">
+                                                    {row.flag.subjectGroup && (
+                                                        <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 truncate uppercase tracking-wide">{row.flag.subjectGroup}</p>
+                                                    )}
                                                     <p className="font-bold truncate text-gray-900 dark:text-white">{row.flag.courseCode} {row.flag.courseTitle}</p>
                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                        <p className="text-[10px] text-gray-400 dark:text-gray-500">{row.flag.flagKind === 'course' ? 'รายวิชา' : 'กิจกรรม'}</p>
+                                                        {row.flag.flagKind !== 'course' && (
+                                                            <p className="text-[10px] text-gray-400 dark:text-gray-500">กิจกรรม</p>
+                                                        )}
                                                         {row.requestStatus === 'resolved' && (
                                                             <span title="เคยมีคำร้องแก้ไขแล้วครั้งหนึ่ง แต่ตอนนี้กลับมาติดผลอีก — ตรวจสอบก่อนแก้ไขซ้ำ" className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
                                                                 <AlertCircle size={9} /> เคยแก้ไขแล้ว

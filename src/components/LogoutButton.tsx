@@ -16,8 +16,13 @@ const LogoutButton: React.FC<LogoutButtonProps> = ({ className }) => {
       await signOut(auth);
       toast.success("ออกจากระบบเรียบร้อยแล้ว!");
 
-      // ✅ เคลียร์ session หรืออะไรก็ตามได้เลย (force clean)
+      // ✅ เคลียร์ session หรืออะไรก็ตามได้เลย (force clean) — ยกเว้นธีมมืด/สว่าง (localStorage['theme'])
+      // ซึ่งเป็นค่ากำหนดของเบราว์เซอร์/เครื่อง ไม่ใช่ของบัญชีผู้ใช้ ถ้าเคลียร์ทิ้งไปด้วย พอมี user คนถัดไป
+      // login เข้ามาในเบราว์เซอร์เดียวกัน ThemeContext จะไม่เจอค่าเดิมแล้ว fallback เป็นโหมดมืดเสมอ (ค่า default)
+      // ทำให้ธีมดูเหมือน "รีเซ็ต" ไปเองทุกครั้งที่สลับบัญชี ทั้งที่ไม่มีใครตั้งใจเปลี่ยน
+      const theme = localStorage.getItem('theme');
       localStorage.clear();
+      if (theme) localStorage.setItem('theme', theme);
       sessionStorage.clear();
 
       setTimeout(() => {

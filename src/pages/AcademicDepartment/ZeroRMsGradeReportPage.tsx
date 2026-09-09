@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
 import { firestore as db } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
@@ -26,7 +26,8 @@ import {
     Clock,
     CheckCircle2,
     MessageSquare,
-    Plus
+    Plus,
+    Trash2
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import AcademicYearSemesterFilter from "@/components/Shared/AcademicYearSemesterFilter";
@@ -46,6 +47,7 @@ import {
     calculateRemediationGrade,
     getMinistryRemediationGradeOptions,
 } from '@/utils/remediationUtils';
+import { showChoiceDialog } from '@/utils/swalChoiceDialog';
 
 Font.register({
     family: 'TH Sarabun PSK',
@@ -392,7 +394,7 @@ const SummaryCard = ({ title, value, unit, icon, color }: { title: string, value
 };
 
 const ZeroRMsGradeReportPage: React.FC = () => {
-    const { user: currentUser } = usePermissions();
+    const { user: currentUser, isSuperAdmin } = usePermissions();
     const schoolId = (currentUser as any)?.schoolId;
     const dispatch = useDispatch<AppDispatch>();
     const navigate = useNavigate();
@@ -1295,10 +1297,19 @@ const ZeroRMsGradeReportPage: React.FC = () => {
 
     // ── บันทึกผลแก้ตัวตรงจากตารางรายชื่อ (เก็บเข้าระบบคำร้องขอแก้ตัวที่มีอยู่แล้วเสมอ status:'resolved'
     // เหมือนปุ่ม "แก้ไขผลโดยตรง" ในหน้าภาพรวม/บันทึก 0 ร มส) ───
-    const GRADE_OPTIONS = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0'];
-
     const handleCorrect = async (row: RosterRow) => {
         if (!schoolId || !row.isFlagged) return;
+
+        // ต้องมีคำร้องขอแก้ตัวที่นักเรียนยื่นมาก่อนเสมอ (สถานะ pending) ห้ามบันทึกผลแก้ตัวข้ามขั้นตอนคำร้อง
+        // อีกต่อไป — ให้ไปอนุมัติที่หน้า "คำร้องขอแก้ตัว" (/academic/remediation-requests) แทน
+        if (row.requestStatus !== 'pending') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'ยังไม่มีคำร้องขอแก้ตัว',
+                html: `${row.name} (${row.studentCode}) ยังไม่ได้ยื่นคำร้องขอแก้ตัว<br/><br/>ต้องให้นักเรียนยื่นคำร้องที่หน้าโปรไฟล์ก่อน (หรือครูยื่นแทนได้) แล้วจึงอนุมัติที่หน้า "คำร้องขอแก้ตัว"`,
+            });
+            return;
+        }
 
         let newValue: string | undefined;
         if (!row.isActivity) {
@@ -1328,13 +1339,11 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                 newValue = resolvedGrade;
             } else {
                 const gradeOptions = getMinistryRemediationGradeOptions(row.grade);
-                const { value } = await Swal.fire({
+                const { value } = await showChoiceDialog({
                     title: 'แก้ไขผลการเรียนโดยตรง (ตามระเบียบ ศธ.)',
                     html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>${row.grade}</b></div>`,
-                    input: 'select',
-                    inputOptions: gradeOptions,
-                    inputPlaceholder: 'เลือกผลการเรียนใหม่',
-                    showCancelButton: true,
+                    options: gradeOptions,
+                    placeholder: 'เลือกผลการเรียนใหม่',
                     confirmButtonText: 'บันทึก',
                     cancelButtonText: 'ยกเลิก',
                     confirmButtonColor: '#4f46e5',
@@ -1343,13 +1352,11 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                 newValue = value;
             }
         } else {
-            const { value } = await Swal.fire({
+            const { value } = await showChoiceDialog({
                 title: 'แก้ไขผลการประเมินโดยตรง',
                 html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผลเดิม: <b>มผ</b></div>`,
-                input: 'select',
-                inputOptions: { passed: 'ผ่าน', failed: 'ไม่ผ่าน' },
-                inputPlaceholder: 'เลือกผลการประเมินใหม่',
-                showCancelButton: true,
+                options: { passed: 'ผ่าน', failed: 'ไม่ผ่าน' },
+                placeholder: 'เลือกผลการประเมินใหม่',
                 confirmButtonText: 'บันทึก',
                 cancelButtonText: 'ยกเลิก',
                 confirmButtonColor: '#4f46e5',
@@ -1363,14 +1370,15 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             const term = row.key.split('|');
             const academicYear = term[2], semester = term[3];
 
-            const autoRemark = row.grade === 'ร' ? `เกรด ${newValue}` : undefined;
             if (!row.isActivity) {
+                // ล้าง remark เดิม (หมายเหตุประกอบผล 0/ร/มส) ทิ้งตอนแก้ตัวสำเร็จเสมอ — remark ที่ยังค้างอยู่คือ
+                // ตัวบ่งชี้ว่ายังติดค้าง ถ้าไม่ลบจะยังซ่อนเกรดใหม่ในตารางทั้งที่บันทึกผลไปแล้ว
                 const updatePayload: Record<string, any> = {
                     grade: newValue,
                     status: deleteField(),
+                    remark: deleteField(),
                     originalGrade: row.originalFlag || row.grade,
                 };
-                if (autoRemark) updatePayload.remark = autoRemark;
                 await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), updatePayload, { merge: true });
             } else {
                 // guidance-evaluations เป็น collection ระดับบนสุด (ไม่ใช่ subcollection ของ activityDocId เหมือน clubs/learner-activities)
@@ -1444,6 +1452,52 @@ const ZeroRMsGradeReportPage: React.FC = () => {
             Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกผลได้', 'error');
         } finally {
             setCorrectingKey(null);
+        }
+    };
+
+    // ── Super Admin เท่านั้น: ลบคำร้อง/ผลการแก้ตัวที่บันทึกผิดพลาด (ทดสอบ/กรอกพลาด) แล้วคืนผลการเรียน
+    // กลับไปเป็นค่าติดเดิม — เหมือนปุ่มเดียวกันในหน้าภาพรวม (RemediationOverviewPage)
+    const handleDeleteRequest = async (row: RosterRow) => {
+        if (!schoolId || !isSuperAdmin || !row.requestId) return;
+        const originalGrade = row.originalFlag || row.grade;
+        const res = await Swal.fire({
+            title: 'ลบคำร้อง/ผลการแก้ตัว?',
+            html: `<div style="text-align:left;font-size:13px;line-height:1.6">
+                <p><b>${row.name}</b> (${row.studentCode})</p>
+                <p style="margin-top:8px;color:#ef4444;font-weight:600">จะลบประวัติคำร้องนี้ทิ้ง และคืนผลการเรียนกลับเป็น "${originalGrade}" ทันที</p>
+                <p style="margin-top:4px;font-size:12px;color:#9ca3af">ใช้เฉพาะกรณีบันทึกผิดพลาดหรือทดสอบเท่านั้น — การลบนี้ไม่สามารถย้อนกลับได้</p>
+            </div>`,
+            icon: 'warning', showCancelButton: true,
+            confirmButtonText: 'ลบและคืนค่าเดิม', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#ef4444',
+        });
+        if (!res.isConfirmed) return;
+
+        try {
+            if (!row.isActivity) {
+                await setDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', row.studentId), {
+                    grade: originalGrade,
+                }, { merge: true });
+            } else {
+                const evalRef = row.activityCollectionName === 'guidance-evaluations'
+                    ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.evalDocId!)
+                    : doc(db, 'school-settings', schoolId, row.activityCollectionName!, row.activityDocId!, 'evaluations', row.evalDocId!);
+                const evalSnap = await getDoc(evalRef);
+                const data: any = evalSnap.exists() ? evalSnap.data() : {};
+                const results: Record<string, any> = { ...(data.results || {}) };
+                results[row.studentId] = { ...(results[row.studentId] || {}), status: 'failed' };
+                const summary = Object.values(results).reduce((acc: any, r: any) => {
+                    const s = r?.status || 'pending';
+                    acc[s] = (acc[s] || 0) + 1;
+                    return acc;
+                }, { pending: 0, passed: 0, failed: 0 });
+                await setDoc(evalRef, { results, summary, updatedAt: serverTimestamp(), updatedBy: (currentUser as any)?.uid || '' }, { merge: true });
+            }
+            await deleteDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', row.requestId));
+            Swal.fire({ icon: 'success', title: 'ลบและคืนค่าเดิมแล้ว', timer: 1500, showConfirmButton: false });
+            await loadRoster();
+        } catch (err) {
+            console.error('Error deleting remediation request:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถลบคำร้องได้', 'error');
         }
     };
 
@@ -1733,9 +1787,20 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                                 </td>
                                                 <td className="px-1 py-3 text-center">
                                                     {r.requestStatus === 'resolved' ? (
-                                                        <span className="inline-flex items-center justify-center font-black text-emerald-600 dark:text-emerald-400 text-sm" title="แก้ตัวเรียบร้อยแล้ว">
-                                                            ✓
-                                                        </span>
+                                                        <div className="inline-flex items-center justify-center gap-1">
+                                                            <span className="inline-flex items-center justify-center font-black text-emerald-600 dark:text-emerald-400 text-sm" title="แก้ตัวเรียบร้อยแล้ว">
+                                                                ✓
+                                                            </span>
+                                                            {isSuperAdmin && (
+                                                                <button
+                                                                    onClick={() => handleDeleteRequest(r)}
+                                                                    title="ลบคำร้อง/คืนผลการเรียนเดิม (Super Admin)"
+                                                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     ) : !r.isFlagged ? (
                                                         <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
                                                     ) : r.requestStatus === 'pending' ? (

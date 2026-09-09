@@ -10,7 +10,8 @@
 // ZeroRMsGradeReportPage.tsx อีก เพราะจะทำให้รายงานกับระบบยื่นคำร้องเห็นข้อมูลไม่ตรงกัน
 // ─────────────────────────────────────────────────────────────────────────
 
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { firestore as db } from '@/firebase';
 import {
     LearnerActivityTeacherScope,
@@ -36,6 +37,41 @@ export const calculateGradeFromTotal = (total: number): string => {
     if (total >= 55) return '1.5';
     if (total >= 50) return '1';
     return '0';
+};
+
+// ยกเลิกคำร้องแก้ตัวเดิมที่ "resolved" (แก้ตัวสำเร็จ) ไปแล้ว เมื่อระบบตรวจพบว่านักเรียนติดสถานะเดิมซ้ำอีกครั้งในภาค
+// เรียนเดียวกัน (เช่น ครูเช็คเวลาเรียน/เข้าร่วมกิจกรรมใหม่แล้วยังไม่ถึงเกณฑ์ ทำให้ระบบบังคับติด มส/มผ ทับผลที่เคย
+// แก้ไขสำเร็จไปแล้ว) — ถ้าไม่ยกเลิกคำร้องเดิม MyGradeFlagsPage.tsx จะยังจับคู่คำร้องเก่ากับ flag ใหม่ผ่าน
+// requestDedupKey (flagKind+id+ปี+เทอม เดียวกัน) ทำให้นักเรียนเห็นสถานะ "แก้ตัวสำเร็จ" ค้างอยู่ทั้งที่ผลจริงกลับไป
+// ติดใหม่แล้ว และยื่นคำร้องใหม่ไม่ได้เพราะระบบกันคำร้องซ้ำ (เช็คจาก status !== 'cancelled') — best-effort เสมอ
+// ไม่ throw กันไม่ให้กระทบ flow การบันทึกเช็คชื่อ/คะแนนหลักที่เรียกฟังก์ชันนี้ต่อท้าย
+export const invalidateStaleResolvedRequests = async (
+    schoolId: string,
+    studentId: string,
+    flagKind: 'course' | 'club' | 'learner-activity' | 'guidance',
+    idValue: string,
+    academicYear: string,
+    semester: string,
+): Promise<void> => {
+    try {
+        const idField = flagKind === 'course' ? 'courseId' : 'activityId';
+        const snap = await getDocs(query(
+            collection(db, 'school-settings', schoolId, 'remediation_requests'),
+            where('studentId', '==', studentId),
+            where('flagType', '==', flagKind),
+            where(idField, '==', idValue),
+            where('academicYear', '==', academicYear),
+            where('semester', '==', semester),
+            where('status', '==', 'resolved'),
+        ));
+        await Promise.all(snap.docs.map(d => updateDoc(d.ref, {
+            status: 'cancelled',
+            cancelledAt: serverTimestamp(),
+            cancelledReason: 'ระบบตรวจพบว่าติดสถานะเดิมซ้ำอีกครั้งหลังแก้ไขสำเร็จ (auto re-flag)',
+        })));
+    } catch (err) {
+        console.error('Error invalidating stale resolved remediation requests:', err);
+    }
 };
 
 /**
@@ -139,6 +175,47 @@ export const getTeacherDisplayName = (teacherMap: Record<string, any>, teacherId
     return '-';
 };
 
+// แจ้งเตือนครูผู้รับผิดชอบวิชา/กิจกรรมเมื่อมีคำร้องขอสอบแก้ตัวเข้ามาใหม่ — ใช้ร่วมกันทั้งตอนนักเรียน
+// ยื่นเอง (MyGradeFlagsPage.tsx) และตอนครู/แอดมินยื่นแทนนักเรียน (RemediationRequestsPage.tsx)
+// เพื่อไม่ให้ logic การแจ้งเตือนเพี้ยนไปคนละแบบระหว่างสองจุด — แจ้งทั้งในระบบ (กระดิ่ง) และ Push
+// Notification เหมือนรูปแบบที่ใช้กับระบบสอนแทน/งานธุรการ
+export const notifyResponsibleTeachers = async (
+    schoolId: string,
+    teacherMap: Record<string, any>,
+    responsibleTeacherIds: string[],
+    message: string,
+    link: string = '/academic/remediation-requests',
+) => {
+    const uids = Array.from(new Set(
+        (responsibleTeacherIds || [])
+            .map(id => teacherMap[id]?.uid)
+            .filter(Boolean)
+    ));
+    await Promise.all(uids.map(async (uid) => {
+        try {
+            const notiRef = await addDoc(collection(db, 'school-settings', schoolId, 'notifications'), {
+                userId: uid,
+                message,
+                createdAt: Timestamp.now(),
+                isRead: false,
+                link,
+            });
+            const functions = getFunctions();
+            const processPushNotification = httpsCallable(functions, 'processPushNotification');
+            await processPushNotification({
+                userId: uid,
+                message,
+                link,
+                source: 'remediation',
+                schoolId,
+                notificationId: notiRef.id,
+            });
+        } catch (err) {
+            console.error('Error notifying responsible teacher for remediation request:', err);
+        }
+    }));
+};
+
 interface Course {
     id: string;
     code: string;
@@ -147,6 +224,7 @@ interface Course {
     classId?: string | string[];
     credits?: number;
     formativeAssessments?: { id?: string; name?: string; maxScore?: number }[];
+    subjectGroup?: string;
 }
 
 interface EnrollmentRecord {
@@ -179,6 +257,8 @@ export interface FlaggedCourse {
     // หมายเหตุประกอบผล มส/ร/มผ ที่ครูใส่ไว้ (หน้า "บันทึก 0 ร มส") — มีค่า = ซ่อนการแสดงเกรดไว้ในตาราง
     // จนกว่าจะลบหมายเหตุออก ไม่กระทบสถานะ "ติดผลการเรียน" หรือการนับจำนวนใดๆ
     remark?: string;
+    // กลุ่มสาระการเรียนรู้ — ว่างสำหรับกิจกรรมแนะแนวที่ไม่มีคอร์สผูก
+    subjectGroup?: string;
 }
 
 export interface StudentFlagRow {
@@ -297,7 +377,7 @@ export const fetchFlaggedStudents = async (
     const courseCodeToId: Record<string, string> = {};
     courseSnap.docs.forEach(d => {
         const data: any = d.data();
-        courseMap[d.id] = { id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits, isActive: data.isActive ?? true, formativeAssessments: data.formativeAssessments };
+        courseMap[d.id] = { id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits, isActive: data.isActive ?? true, formativeAssessments: data.formativeAssessments, subjectGroup: data.subjectGroup || '' };
         if (data.code) courseCodeToId[data.code] = d.id;
     });
 
@@ -329,6 +409,7 @@ export const fetchFlaggedStudents = async (
     // 3. ดึงประวัติการลงทะเบียนทั้งหมดของนักเรียนกลุ่มเป้าหมาย (ทุกปี/ทุกเทอมที่เคยเรียนมา)
     const enrollRef = collection(db, 'school-settings', schoolId, 'enrollments');
     const enrollments: EnrollmentRecord[] = [];
+    const seenEnrollments = new Set<string>();
     const batchSize = 30;
     for (let i = 0; i < studentIds.length; i += batchSize) {
         const batchIds = studentIds.slice(i, i + batchSize);
@@ -338,6 +419,9 @@ export const fetchFlaggedStudents = async (
             const courseId = data.courseId || (data.courseCode ? courseCodeToId[data.courseCode] : undefined);
             if (!courseId || !courseMap[courseId]) return;
             if (!data.academicYear || !data.semester) return;
+            const enrollKey = `${data.studentId}|${courseId}|${data.academicYear}|${data.semester}`;
+            if (seenEnrollments.has(enrollKey)) return;
+            seenEnrollments.add(enrollKey);
             enrollments.push({ studentId: data.studentId, courseId, academicYear: String(data.academicYear), semester: String(data.semester) });
         });
     }
@@ -366,7 +450,9 @@ export const fetchFlaggedStudents = async (
         const remarkMap: Record<string, string> = {};
         regularGradeSnaps[idx].forEach(gDoc => {
             const data: any = gDoc.data();
-            const value = String(data.grade || '').trim();
+            const rawStatus = String(data.status || '').trim();
+            const rawGrade = String(data.grade || '').trim();
+            const value = (rawStatus === 'มส' || rawStatus === 'ร' || rawStatus === '0') ? rawStatus : rawGrade;
             if (value) map[gDoc.id] = value;
             const remark = String(data.remark || '').trim();
             if (remark) remarkMap[gDoc.id] = remark;
@@ -384,9 +470,42 @@ export const fetchFlaggedStudents = async (
     };
 
     const flaggedByStudent: Record<string, FlaggedCourse[]> = {};
+    const getFlagDedupKey = (f: FlaggedCourse) => {
+        const identifier = f.flagKind === 'guidance'
+            ? 'guidance'
+            : (f.courseCode || f.activityDocId || f.courseId || '').trim().toUpperCase();
+        return `${f.flagKind}|${identifier}|${f.academicYear}|${f.semester}`;
+    };
+
     const addFlag = (studentId: string, flag: FlaggedCourse) => {
         if (!flaggedByStudent[studentId]) flaggedByStudent[studentId] = [];
-        flaggedByStudent[studentId].push(flag);
+        const dedupKey = getFlagDedupKey(flag);
+        const existingIdx = flaggedByStudent[studentId].findIndex(e => getFlagDedupKey(e) === dedupKey);
+
+        if (existingIdx === -1) {
+            flaggedByStudent[studentId].push(flag);
+        } else {
+            const existing = flaggedByStudent[studentId][existingIdx];
+            if ((!existing.teacherName || existing.teacherName === '-') && flag.teacherName && flag.teacherName !== '-') {
+                existing.teacherName = flag.teacherName;
+                existing.courseId = flag.courseId;
+            }
+            if ((!existing.responsibleTeacherIds || existing.responsibleTeacherIds.length === 0) && flag.responsibleTeacherIds?.length) {
+                existing.responsibleTeacherIds = flag.responsibleTeacherIds;
+            }
+            if (!existing.remark && flag.remark) {
+                existing.remark = flag.remark;
+            }
+            if (!existing.subjectGroup && flag.subjectGroup) {
+                existing.subjectGroup = flag.subjectGroup;
+            }
+            if (!existing.courseTitle && flag.courseTitle) {
+                existing.courseTitle = flag.courseTitle;
+            }
+            if (existing.grade !== 'มส' && flag.grade === 'มส') {
+                existing.grade = 'มส';
+            }
+        }
     };
 
     regularEnrollments.forEach(e => {
@@ -406,6 +525,7 @@ export const fetchFlaggedStudents = async (
             flagKind: 'course',
             responsibleTeacherIds: teacher.ids,
             remark: remarksByCourse[e.courseId]?.[e.studentId] || '',
+            subjectGroup: course.subjectGroup || '',
         });
     });
 
@@ -518,6 +638,7 @@ export const fetchFlaggedStudents = async (
             teacherScopeKey: resolvedScopeKey,
             responsibleTeacherIds,
             remark: resolvedRemark,
+            subjectGroup: course.subjectGroup || '',
         });
     });
 
@@ -685,6 +806,7 @@ export interface FullRosterRow {
     courseId: string;
     courseCode: string;
     courseTitle: string;
+    subjectGroup?: string; // กลุ่มสาระการเรียนรู้ — ว่างสำหรับกิจกรรมแนะแนวที่ไม่มีคอร์สผูก
     groupName: string;
     academicYear: string;
     semester: string;
@@ -743,7 +865,7 @@ export const fetchFullRoster = async (
 
     interface CourseFull {
         id: string; code: string; title: string; classId?: string | string[]; credits?: number;
-        formativeAssessments?: AssessmentItemLite[]; midtermWeight?: number; finalWeight?: number;
+        formativeAssessments?: AssessmentItemLite[]; midtermWeight?: number; finalWeight?: number; subjectGroup?: string;
     }
     const courseMap: Record<string, CourseFull> = {};
     const courseCodeToId: Record<string, string> = {};
@@ -752,6 +874,7 @@ export const fetchFullRoster = async (
         courseMap[d.id] = {
             id: d.id, code: data.code || '', title: data.title || '', classId: data.classId, credits: data.credits,
             formativeAssessments: data.formativeAssessments, midtermWeight: data.midtermWeight, finalWeight: data.finalWeight,
+            subjectGroup: data.subjectGroup || '',
         };
         if (data.code) courseCodeToId[data.code] = d.id;
     });
@@ -864,6 +987,7 @@ export const fetchFullRoster = async (
             courseId: e.courseId,
             courseCode: course.code,
             courseTitle: course.title,
+            subjectGroup: course.subjectGroup,
             groupName: e.groupName,
             academicYear: e.academicYear,
             semester: e.semester,
@@ -981,6 +1105,7 @@ export const fetchFullRoster = async (
             courseId,
             courseCode: course.code,
             courseTitle: course.title,
+            subjectGroup: course.subjectGroup,
             groupName: e.groupName,
             academicYear: e.academicYear,
             semester: e.semester,
@@ -1084,7 +1209,9 @@ export interface TranscriptRow {
     courseTitle: string;
     credits: number;
     grade: string;       // "ปกติ" — ผลตอนยื่นคำร้อง (originalGrade) ถ้ามีคำร้อง มิฉะนั้นผลปัจจุบัน
-    finalGrade: string;  // "เกรด" — ผลใหม่หลัง resolved (newResult) ถ้ามี มิฉะนั้นเท่ากับ grade
+    finalGrade: string;  // "เกรด" — ผลสุดท้ายที่บันทึกจริง (เกรดใหม่ถ้าแก้ตัวสำเร็จ / "ผ" ถ้ากิจกรรมผ่าน / เท่ากับ grade ถ้ายังไม่แก้ไข)
+    passMark: string;    // "แก้ตัว" — เกรดใหม่ที่ได้ (วิชาปกติ) หรือ "ผ" (กิจกรรม) เมื่อแก้ตัวสำเร็จ ไม่งั้นว่าง
+    repeatMark: string;  // "เรียนซ้ำ" — เครื่องหมาย (✓) เมื่อผลคือเรียนซ้ำ/ยังไม่ผ่าน ไม่งั้นว่าง
     teacherName: string;
     flagKind: 'course' | 'club' | 'learner-activity' | 'guidance';
 }
@@ -1190,11 +1317,24 @@ export const fetchStudentTranscript = async (
         if (/ผ่าน/.test(text)) return 'ผ';
         return text;
     };
-    const markRow = (reqKey: string, liveGrade: string) => {
+    // แยกผล resolved ลงช่อง "แก้ตัว" (เกรดใหม่/ผ) หรือ "เรียนซ้ำ" (เครื่องหมาย ✓) ให้ถูกช่อง — newResult ที่
+    // หน้าต่างๆ เขียนไว้มีทั้งเกรดดิบ ("1"), ข้อความเต็ม ("ผ่าน (แก้ตัวสำเร็จ)"/"ไม่ผ่าน (เรียนซ้ำ)") และคำสั้น
+    // ("ผ่าน"/"ไม่ผ่าน"/"เรียนซ้ำ") — เช็คคำว่า "เรียนซ้ำ"/"ไม่ผ่าน" ก่อนเสมอเพื่อจัดเป็นเรียนซ้ำ ไม่งั้นถือว่าแก้ตัวสำเร็จ
+    const markRow = (reqKey: string, liveGrade: string, isActivity: boolean) => {
         const req = requestByKey[reqKey];
         const grade = req?.originalGrade || liveGrade;
-        const finalGrade = req?.status === 'resolved' ? shortenResult(req.newResult || liveGrade) : grade;
-        return { grade, finalGrade };
+        if (req?.status !== 'resolved') {
+            return { grade, finalGrade: grade, passMark: '', repeatMark: '' };
+        }
+        const resultText = req.newResult || '';
+        const isRepeat = /เรียนซ้ำ/.test(resultText) || (isActivity && /ไม่ผ่าน/.test(resultText));
+        if (isActivity) {
+            if (isRepeat) return { grade, finalGrade: 'มผ', passMark: '', repeatMark: '✓' };
+            return { grade, finalGrade: 'ผ', passMark: 'ผ', repeatMark: '' };
+        }
+        if (isRepeat) return { grade, finalGrade: grade, passMark: '', repeatMark: '✓' };
+        const passValue = resultText || shortenResult(resultText) || grade;
+        return { grade, finalGrade: passValue, passMark: passValue, repeatMark: '' };
     };
 
     const rows: TranscriptRow[] = [];
@@ -1211,8 +1351,17 @@ export const fetchStudentTranscript = async (
         if (regularGradeSnaps[idx].exists()) gradeByCourse[cid] = regularGradeSnaps[idx].data();
     });
 
+    // กันแถวซ้ำเวลามีเอกสารวิชา/ลงทะเบียนซ้ำ (courseId ต่างกันแต่ code เดียวกัน หรือ enrollment ซ้ำ) — เทียบด้วย
+    // รหัสวิชา+ปี+เทอม เหมือน getFlagDedupKey ใน fetchFlaggedStudents ด้านบน ไม่งั้นใบคำร้อง/ใบรายงานจะมีวิชา
+    // เดียวกันโผล่ซ้ำสองแถว (เจอจริงกับ ว21101 ที่มีเอกสารวิชาซ้ำ)
+    const regularTranscriptDedupKeys = new Set<string>();
+
     regularEnrollments.forEach(e => {
         const course = courseMap[e.courseId];
+        const dedupKey = `${course.code}|${e.academicYear}|${e.semester}`;
+        if (regularTranscriptDedupKeys.has(dedupKey)) return;
+        regularTranscriptDedupKeys.add(dedupKey);
+
         const record: any = gradeByCourse[e.courseId];
         const teacherName = getTeacherForAssignment(e.courseId, e.academicYear, e.semester);
         let liveGrade = '-';
@@ -1228,7 +1377,7 @@ export const fetchStudentTranscript = async (
                 liveGrade = calculateGradeFromTotal((total / maxTotal) * 100);
             }
         }
-        const mark = markRow(`${e.courseId}|${e.academicYear}|${e.semester}`, liveGrade);
+        const mark = markRow(`${e.courseId}|${e.academicYear}|${e.semester}`, liveGrade, false);
         rows.push({
             key: `${e.courseId}|${e.academicYear}|${e.semester}`,
             academicYear: e.academicYear, semester: e.semester, classLevel: e.classLevel,
@@ -1314,7 +1463,7 @@ export const fetchStudentTranscript = async (
 
         if (!course) return;
         const liveGrade = resultStatus === 'failed' ? 'มผ' : resultStatus === 'passed' ? 'ผ' : '-';
-        const mark = markRow(`${resolvedId}|${e.academicYear}|${e.semester}`, liveGrade);
+        const mark = markRow(`${resolvedId}|${e.academicYear}|${e.semester}`, liveGrade, true);
         rows.push({
             key: `${courseId}|${e.academicYear}|${e.semester}`,
             academicYear: e.academicYear, semester: e.semester, classLevel: e.classLevel,
@@ -1345,7 +1494,7 @@ export const fetchStudentTranscript = async (
                 const r = results[studentId];
                 if (!r) return;
                 const liveGrade = r.status === 'failed' ? 'มผ' : r.status === 'passed' ? 'ผ' : '-';
-                const mark = markRow(`${clubDoc.id}|${evalYear}|${evalSemester}`, liveGrade);
+                const mark = markRow(`${clubDoc.id}|${evalYear}|${evalSemester}`, liveGrade, true);
                 rows.push({
                     key: `legacy-club:${clubDoc.id}|${evalYear}|${evalSemester}`,
                     academicYear: evalYear, semester: evalSemester, classLevel: currentClassLevel || '',
@@ -1375,7 +1524,7 @@ export const fetchStudentTranscript = async (
         const teacherName = teacherNames.length > 0 ? teacherNames.join(', ') : '-';
         const liveGrade = r.status === 'failed' ? 'มผ' : r.status === 'passed' ? 'ผ' : '-';
         const guidanceClassLevel = String(data.targetName || '').split('/')[0] || currentClassLevel || '';
-        const mark = markRow(`${gDoc.id}|${gYear}|${gSemester}`, liveGrade);
+        const mark = markRow(`${gDoc.id}|${gYear}|${gSemester}`, liveGrade, true);
         rows.push({
             key: `guidance:${gDoc.id}|${gYear}|${gSemester}`,
             academicYear: gYear, semester: gSemester, classLevel: guidanceClassLevel,

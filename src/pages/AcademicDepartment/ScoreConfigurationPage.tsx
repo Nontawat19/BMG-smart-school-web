@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useSelector } from "react-redux";
-import { Link } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { Link, useSearchParams } from "react-router-dom";
 import BackButton from "@/components/Shared/BackButton";
 import { RootState } from "@/store";
 import { firestore as db } from "@/firebase";
@@ -21,6 +21,9 @@ import {
 } from "lucide-react";
 import { useSubjectGroups } from "@/hooks/useSubjectGroups";
 import { CLASSES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
+import { usePermissions } from "@/hooks/usePermissions";
+import { ROLES } from "@/constants/roles";
+import { fetchTeachersMap } from "@/store/slices/userMapSlice";
 import Swal from "sweetalert2";
 
 interface FormativeAssessment {
@@ -36,7 +39,11 @@ interface Course {
     title: string;
     subjectGroup: string;
     classId?: string | string[];
+    room?: string | string[];
     semester?: string;
+    teacherId?: string | string[];
+    teacherIds?: string[];
+    teacherAssignments?: { teacherId?: string }[];
     formativeWeight?: number;
     formativeAssessments?: FormativeAssessment[];
     midtermWeight?: number;
@@ -98,19 +105,97 @@ const ScoreConfigurationPage: React.FC = () => {
     const currentUser = useSelector((state: RootState) => state.auth.user);
     const schoolId = (currentUser as any)?.schoolId;
     const academicYear = useSelector((state: RootState) => state.calendar.academicYear);
+    const dispatch = useDispatch();
+
+    const { isSchoolAdmin, isAcademicAdmin, isSuperAdmin, hasRole } = usePermissions();
+    const { teachers: teacherMap, status: teacherMapStatus } = useSelector((state: RootState) => state.userMap);
+    const isSchoolLeadership = hasRole([ROLES.DIRECTOR, ROLES.DEPT_HEAD]);
+
+    const userPrivileges = useMemo(() => {
+        const teacherProfiles = Object.values(teacherMap || {}).filter((t: any) => t.uid === currentUser?.uid);
+        const teacherProfile = teacherProfiles[0] as any;
+        const isHead = teacherProfile?.isHeadOfLearningArea || teacherProfile?.isHeadOfAssessment;
+        const isAdmin = isSchoolAdmin || isSuperAdmin || isAcademicAdmin || isSchoolLeadership;
+
+        return {
+            canSeeAll: isAdmin || isHead,
+            myTeacherIds: teacherProfiles.map((t: any) => t.id)
+        };
+    }, [currentUser, teacherMap, isSchoolAdmin, isSuperAdmin, isAcademicAdmin, isSchoolLeadership]);
+
+    useEffect(() => {
+        if (schoolId && teacherMapStatus === 'idle') {
+            dispatch(fetchTeachersMap(schoolId) as any);
+        }
+    }, [schoolId, teacherMapStatus, dispatch]);
+
+    const [searchParams] = useSearchParams();
+    const urlLevel = searchParams.get('level') || searchParams.get('classId') || "";
+    const urlCourseId = searchParams.get('courseId') || "";
+    const urlSemester = searchParams.get('semester') || "";
 
     const { subjectGroups } = useSubjectGroups(schoolId);
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>("");
-    const [selectedLevel, setSelectedLevel] = useState<string>("");
-    const [selectedSemester, setSelectedSemester] = useState<string>("");
+    const [selectedLevel, setSelectedLevel] = useState<string>(urlLevel);
+    const [selectedSemester, setSelectedSemester] = useState<string>(urlSemester);
     const [availableClassOptions, setAvailableClassOptions] = useState<[string, string][]>(allClassOptions);
-    const [filterScope, setFilterScope] = useState<"group" | "all">("group");
+    const [filterScope, setFilterScope] = useState<"group" | "all">("all");
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [localScores, setLocalScores] = useState<Record<string, any>>({});
     const [dirtyCourseIds, setDirtyCourseIds] = useState<Set<string>>(() => new Set());
     const [currentPage, setCurrentPage] = useState(1);
+
+    // Fetch semester-scoped teacher assignments from course_assignments
+    const [semesterAssignments, setSemesterAssignments] = useState<Record<string, { teacherId?: string }[]>>({});
+    useEffect(() => {
+        if (!schoolId || !academicYear) {
+            setSemesterAssignments({});
+            return;
+        }
+        const assignmentsRef = collection(db, 'school-settings', schoolId, 'course_assignments');
+        const constraints = [
+            where('academicYear', '==', String(academicYear)),
+            ...(selectedSemester && selectedSemester !== 'annual' ? [where('semester', '==', String(selectedSemester))] : [])
+        ];
+        const unsubscribe = onSnapshot(query(assignmentsRef, ...constraints), (snap) => {
+            const mapping: Record<string, { teacherId?: string }[]> = {};
+            snap.docs.forEach(d => {
+                const data = d.data();
+                mapping[data.courseId] = [
+                    ...(mapping[data.courseId] || []),
+                    ...(data.teacherAssignments || [])
+                ];
+            });
+            setSemesterAssignments(mapping);
+        });
+        return () => unsubscribe();
+    }, [schoolId, academicYear, selectedSemester]);
+
+    // Check if course belongs to the logged-in teacher
+    const isTeacherCourse = useCallback((c: Course) => {
+        const courseTeacherIds = new Set<string>();
+        const structuredAssignments = (semesterAssignments[c.id]?.length ? semesterAssignments[c.id] : c.teacherAssignments) || [];
+        if (structuredAssignments.length > 0) {
+            structuredAssignments.forEach((a: any) => {
+                if (a.teacherId) courseTeacherIds.add(String(a.teacherId));
+            });
+        }
+        const toStringArray = (val: any): string[] => {
+            if (!val) return [];
+            if (Array.isArray(val)) return val.map(String).filter(Boolean);
+            return [String(val)].filter(Boolean);
+        };
+        [...toStringArray(c.teacherId), ...toStringArray(c.teacherIds)]
+            .filter(id => id.toLowerCase() !== 'pending')
+            .forEach(id => courseTeacherIds.add(id));
+
+        const myIds = userPrivileges.myTeacherIds || [];
+        const myUid = currentUser?.uid;
+        if (myUid && courseTeacherIds.has(myUid)) return true;
+        return myIds.length > 0 && myIds.some((id: string) => courseTeacherIds.has(id));
+    }, [semesterAssignments, userPrivileges.myTeacherIds, currentUser?.uid]);
 
     // Mirrors dirtyCourseIds without forcing the Firestore listener effect below to
     // re-subscribe on every keystroke (it only needs the latest value inside the callback).
@@ -154,16 +239,28 @@ const ScoreConfigurationPage: React.FC = () => {
     }, [schoolId]);
 
     useEffect(() => {
-        if (!selectedLevel || availableClassOptions.some(([id]) => id === selectedLevel)) return;
+        if (!selectedLevel) return;
+        if (availableClassOptions.some(([id]) => id.toLowerCase() === selectedLevel.toLowerCase())) {
+            const found = availableClassOptions.find(([id]) => id.toLowerCase() === selectedLevel.toLowerCase());
+            if (found && found[0] !== selectedLevel) setSelectedLevel(found[0]);
+            return;
+        }
 
-        setSelectedLevel("");
-    }, [availableClassOptions, selectedLevel]);
+        const foundByName = availableClassOptions.find(([_, name]) => name.toLowerCase() === selectedLevel.toLowerCase());
+        if (foundByName) {
+            setSelectedLevel(foundByName[0]);
+        } else if (availableClassOptions.length > 0 && !urlLevel) {
+            setSelectedLevel("");
+        }
+    }, [availableClassOptions, selectedLevel, urlLevel]);
 
     // Fetch Courses
     useEffect(() => {
         if (!schoolId) return;
 
-        if (filterScope === "group" && !selectedGroup) {
+        // If admin chooses "เฉพาะกลุ่ม" and hasn't chosen a group, show empty
+        const shouldFilterByGroup = userPrivileges.canSeeAll && filterScope === "group";
+        if (shouldFilterByGroup && !selectedGroup) {
             setCourses([]);
             setIsLoading(false);
             return;
@@ -172,7 +269,7 @@ const ScoreConfigurationPage: React.FC = () => {
         setIsLoading(true);
         
         const coursesRef = collection(db, 'school-settings', schoolId, 'courses');
-        const courseQuery = filterScope === "group"
+        const courseQuery = (shouldFilterByGroup && selectedGroup)
             ? query(coursesRef, where('subjectGroup', '==', selectedGroup))
             : query(coursesRef);
 
@@ -205,11 +302,16 @@ const ScoreConfigurationPage: React.FC = () => {
         });
 
         return () => unsubscribe();
-    }, [schoolId, selectedGroup, filterScope]);
+    }, [schoolId, selectedGroup, filterScope, userPrivileges.canSeeAll]);
 
     // Filtered Courses
     const filteredCourses = useMemo(() => {
         return courses.filter(course => {
+            // Teacher restriction: only their own courses
+            if (!userPrivileges.canSeeAll) {
+                if (!isTeacherCourse(course)) return false;
+            }
+
             if (selectedLevel) {
                 const classIds = Array.isArray(course.classId) ? course.classId : [course.classId];
                 if (!classIds.includes(selectedLevel)) return false;
@@ -223,14 +325,13 @@ const ScoreConfigurationPage: React.FC = () => {
                 }
             }
 
-            if (filterScope === "group") {
-                if (!selectedGroup) return false;
-                return course.subjectGroup === selectedGroup;
+            if (selectedGroup) {
+                if (course.subjectGroup !== selectedGroup) return false;
             }
 
             return true;
         });
-    }, [courses, selectedGroup, selectedLevel, selectedSemester, filterScope]);
+    }, [courses, selectedGroup, selectedLevel, selectedSemester, userPrivileges.canSeeAll, isTeacherCourse]);
 
     const dirtyVisibleCourseCount = useMemo(() => {
         return filteredCourses.filter(course => dirtyCourseIds.has(course.id)).length;
@@ -260,6 +361,27 @@ const ScoreConfigurationPage: React.FC = () => {
         if (currentPage <= totalPages) return;
         setCurrentPage(totalPages);
     }, [currentPage, totalPages]);
+
+    // Auto-navigate to target course page if courseId is passed via URL
+    useEffect(() => {
+        if (!urlCourseId || filteredCourses.length === 0) return;
+        const targetIndex = filteredCourses.findIndex(c => c.id === urlCourseId);
+        if (targetIndex !== -1) {
+            const targetPage = Math.floor(targetIndex / PAGE_SIZE) + 1;
+            setCurrentPage(targetPage);
+        }
+    }, [urlCourseId, filteredCourses]);
+
+    useEffect(() => {
+        if (!urlCourseId || isLoading) return;
+        const timer = setTimeout(() => {
+            const el = document.getElementById(`course-row-${urlCourseId}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [urlCourseId, isLoading, currentPage]);
 
     // Handle Score Change
     const handleScoreChange = (courseId: string, type: 's1_9' | 's10_18' | 'midterm' | 'final', index: number, value: string) => {
@@ -518,6 +640,12 @@ const ScoreConfigurationPage: React.FC = () => {
             if (filterScope === "group" && selectedGroup) {
                 list = list.filter(c => c.subjectGroup === selectedGroup);
             }
+            if (!userPrivileges.canSeeAll) {
+                list = list.filter(ac => {
+                    const target = matchCurrentCourse(ac.code);
+                    return target ? isTeacherCourse(target) : false;
+                });
+            }
             list.sort((a, b) => a.code.localeCompare(b.code));
 
             setArchivedCourses(list);
@@ -607,6 +735,15 @@ const ScoreConfigurationPage: React.FC = () => {
                                 <div className="min-w-[260px]">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <h1 className="text-2xl font-black leading-tight tracking-tight text-gray-900 dark:text-white">ตั้งค่าคะแนนเต็มรายวิชา</h1>
+                                        {userPrivileges.canSeeAll ? (
+                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30">
+                                                แอดมิน / วิชาการ (จัดการได้ทุกวิชา)
+                                            </span>
+                                        ) : (
+                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
+                                                ครูผู้สอน (เฉพาะรายวิชาตัวเอง)
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="mt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">กำหนดสัดส่วนคะแนนเก็บ กลางภาค และปลายภาค</p>
                                 </div>
@@ -669,35 +806,42 @@ const ScoreConfigurationPage: React.FC = () => {
                                     onChange={(e) => setSelectedGroup(e.target.value)}
                                     className="min-w-0 flex-1 bg-transparent text-sm font-bold text-gray-900 outline-none dark:text-white"
                                 >
-                                    <option value="" className="bg-white dark:bg-[#252629] text-gray-900 dark:text-white">เลือกกลุ่มสาระการเรียนรู้</option>
+                                    <option value="" className="bg-white dark:bg-[#252629] text-gray-900 dark:text-white">ทุกกลุ่มสาระการเรียนรู้</option>
                                     {subjectGroups.map(g => (
                                         <option key={g.id} value={g.name} className="bg-white dark:bg-[#252629] text-gray-900 dark:text-white">{g.name}</option>
                                     ))}
                                 </select>
                             </label>
 
-                            <div className="grid h-12 grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
-                                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "group" ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}>
-                                    <input 
-                                        type="radio" 
-                                        name="scope" 
-                                        checked={filterScope === "group"} 
-                                        onChange={() => setFilterScope("group")}
-                                        className="sr-only"
-                                    />
-                                    เฉพาะกลุ่ม
-                                </label>
-                                <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "all" ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}>
-                                    <input 
-                                        type="radio" 
-                                        name="scope" 
-                                        checked={filterScope === "all"} 
-                                        onChange={() => setFilterScope("all")}
-                                        className="sr-only"
-                                    />
-                                    ทั้งหมด
-                                </label>
-                            </div>
+                            {userPrivileges.canSeeAll ? (
+                                <div className="grid h-12 grid-cols-2 gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f]">
+                                    <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "group" ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}>
+                                        <input 
+                                            type="radio" 
+                                            name="scope" 
+                                            checked={filterScope === "group"} 
+                                            onChange={() => setFilterScope("group")}
+                                            className="sr-only"
+                                        />
+                                        เฉพาะกลุ่ม
+                                    </label>
+                                    <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition ${filterScope === "all" ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}>
+                                        <input 
+                                            type="radio" 
+                                            name="scope" 
+                                            checked={filterScope === "all"} 
+                                            onChange={() => setFilterScope("all")}
+                                            className="sr-only"
+                                        />
+                                        ทั้งหมด
+                                    </label>
+                                </div>
+                            ) : (
+                                <div className="flex h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                    <CheckSquare size={16} />
+                                    <span>วิชาที่รับผิดชอบสอน ({filteredCourses.length} วิชา)</span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -753,8 +897,14 @@ const ScoreConfigurationPage: React.FC = () => {
                                         <div className="w-20 h-20 bg-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-indigo-500/10">
                                             <Search size={32} className="text-indigo-600 dark:text-indigo-400" />
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">ไม่พบรายวิชาที่ตรงเงื่อนไข</h3>
-                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-bold uppercase tracking-wider">กรุณาเลือกกลุ่มสาระการเรียนรู้ หรือ เปลี่ยนขอบเขตการค้นหา</p>
+                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                                            {!userPrivileges.canSeeAll ? "ไม่พบรายวิชาที่คุณรับผิดชอบสอน" : "ไม่พบรายวิชาที่ตรงเงื่อนไข"}
+                                        </h3>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-bold">
+                                            {!userPrivileges.canSeeAll 
+                                                ? "ระบบไม่พบรายวิชาที่ได้รับมอบหมายสอนในภาคเรียนนี้ หรืออาจยังไม่ได้ตั้งค่าการมอบหมายผู้สอน กรุณาติดต่อฝ่ายวิชาการ"
+                                                : "กรุณาเลือกกลุ่มสาระการเรียนรู้ หรือเปลี่ยนตัวกรองค้นหา"}
+                                        </p>
                                     </div>
                                 </div>
                             ) : (
@@ -762,14 +912,32 @@ const ScoreConfigurationPage: React.FC = () => {
                                     const scores = localScores[course.id];
                                     if (!scores) return null;
                                     const { sum1, sum2, total } = calculateTotals(course.id);
+                                    const isTargetCourse = course.id === urlCourseId;
                                     
                                     return (
-                                        <div key={course.id} className="grid grid-cols-[minmax(170px,1.7fr)_repeat(9,minmax(30px,1fr))_minmax(54px,1.1fr)_repeat(9,minmax(30px,1fr))_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(120px,1.6fr)] border-b border-gray-200 dark:border-gray-800 items-stretch transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] group">
+                                        <div 
+                                            key={course.id} 
+                                            id={`course-row-${course.id}`}
+                                            className={`grid grid-cols-[minmax(170px,1.7fr)_repeat(9,minmax(30px,1fr))_minmax(54px,1.1fr)_repeat(9,minmax(30px,1fr))_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(44px,0.9fr)_minmax(120px,1.6fr)] border-b border-gray-200 dark:border-gray-800 items-stretch transition-colors ${
+                                                isTargetCourse 
+                                                    ? 'bg-amber-500/10 dark:bg-amber-500/15 ring-2 ring-inset ring-amber-500/60'
+                                                    : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
+                                            } group`}
+                                        >
                                             {/* Code & Title */}
-                                            <div className="px-4 py-3 border-r border-gray-200 dark:border-gray-800 sticky left-0 bg-white dark:bg-[#2a2b2f] group-hover:bg-gray-50 dark:group-hover:bg-[#1c2132] z-10">
+                                            <div className={`px-4 py-3 border-r border-gray-200 dark:border-gray-800 sticky left-0 ${
+                                                isTargetCourse
+                                                    ? 'bg-amber-50 dark:bg-[#2e2619]'
+                                                    : 'bg-white dark:bg-[#2a2b2f] group-hover:bg-gray-50 dark:group-hover:bg-[#1c2132]'
+                                            } z-10`}>
                                                 <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{course.code}</span>
+                                                        {isTargetCourse && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500 text-white shadow-sm whitespace-nowrap">
+                                                                วิชาที่เลือก
+                                                            </span>
+                                                        )}
                                                         <div className="relative group/copytpl">
                                                             <button
                                                                 onClick={() => handleCopyTemplate(course.id)}

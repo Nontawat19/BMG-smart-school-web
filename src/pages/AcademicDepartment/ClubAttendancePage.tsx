@@ -4,6 +4,7 @@ import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { firestore as db } from '../../firebase';
 import { collection, getDocs, doc, getDoc, setDoc, Timestamp, query, where } from 'firebase/firestore';
+import { computeWeeklyActivityEligibilityForRoster, applyActivityEligibilityFailFlags } from '@/utils/activityAttendanceEligibility';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from "@/layouts/MainLayout";
@@ -232,6 +233,14 @@ const ClubAttendancePage: React.FC = () => {
       null;
   }, [selectedClub, specialPeriods]);
 
+  // ภาคเรียนปัจจุบัน (ใช้เลือก evaluations doc ที่ถูกต้องตอนติด มผ อัตโนมัติ) — อนุมานจากวันที่กำลังเช็คชื่ออยู่
+  // เทียบกับช่วงวันของแต่ละเทอมในปฏิทิน เหมือนหน้าเช็คชื่อกิจกรรมพัฒนาผู้เรียน (LearnerActivityAttendancePage)
+  const activeSemester = useMemo(() => {
+    const dateStr = toIsoDate(currentDate);
+    const matchedTerm = calendarState.terms.find(term => term.startDate && term.endDate && dateStr >= term.startDate && dateStr <= term.endDate);
+    return matchedTerm?.id === 'term2' ? '2' : '1';
+  }, [calendarState.terms, currentDate]);
+
   useEffect(() => {
     if (!schoolId || !selectedClub) {
       setStudents([]);
@@ -307,6 +316,35 @@ const ClubAttendancePage: React.FC = () => {
         startTime: clubSpecialPeriod?.startTime || '',
         endTime: clubSpecialPeriod?.endTime || ''
       });
+
+      // เช็คเวลาเข้าร่วมสะสมของชุมนุมนี้ (ไม่ใช่แค่วันนี้) แล้วบังคับติด "มผ" ทันทีให้นักเรียนที่เวลาเข้าร่วม
+      // ต่ำกว่าร้อยละ 80 — best-effort เท่านั้น ไม่บล็อกผลสำเร็จของการบันทึกเช็คชื่อที่เพิ่งเสร็จไปแล้วด้านบน
+      try {
+        const academicYear = String(calendarState.academicYear || '');
+        if (academicYear && clubSpecialPeriod?.day) {
+          const attendanceCollectionRef = collection(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'attendance');
+          const eligibilityCalendarData = { ...(calendarState.rawData || {}), events: calendarEvents };
+          const { eligibility, dailyStatus } = await computeWeeklyActivityEligibilityForRoster(
+            attendanceCollectionRef,
+            clubSpecialPeriod.day,
+            eligibilityCalendarData,
+            activeSemester,
+            students.map(s => ({ id: s.id })),
+          );
+          const belowThresholdStudents = students
+            .map(s => ({ id: s.id, ...eligibility[s.id] }))
+            .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
+              Boolean(s.belowThreshold));
+          if (belowThresholdStudents.length > 0) {
+            const evalRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'evaluations', `${academicYear}_${activeSemester}`);
+            await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
+              schoolId, flagKind: 'club', idValue: selectedClub.id, academicYear, semester: activeSemester,
+            }, undefined, dailyStatus);
+          }
+        }
+      } catch (eligibilityError) {
+        console.error('Error applying club attendance-eligibility (มผ) flags:', eligibilityError);
+      }
 
       Swal.fire({
         icon: 'success',

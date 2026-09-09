@@ -1,26 +1,16 @@
 import { useMemo, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import { Student, GradeRecord, CharacteristicCriteria, ReadingWritingCriteria, Course } from '../types';
+import {
+    isStudentEnrolledOnDay,
+    buildAttendancePages,
+    buildStudentAttendanceSummaries,
+    computeAttendanceEligibility,
+} from '../../../../utils/attendanceEligibility';
 
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-const THAI_WEEKDAYS_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-const DAY_KEY_MAP = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const getAssessmentKey = (assessment: { id?: string; name?: string }) => assessment.id || assessment.name || '';
 const isFilledScore = (value: unknown) => value !== undefined && value !== null && value !== '';
-
-// A student is only responsible for attendance on/after the day they enrolled in this
-// course — e.g. a student who transfers in mid-term shouldn't have days before they even
-// existed in the class counted as "absent" or "missing". Students with no enrolledAt
-// (legacy enrollments predating this field) are treated as enrolled for the whole term,
-// matching the previous behavior.
-const isStudentEnrolledOnDay = (student: Student, dateStr: string) => {
-    // Defensive: enrolledAt is normalized to an ISO string where it's populated
-    // (useGradeBookData.ts), but guard the type here too rather than trust every call
-    // site — a non-string value must never crash the whole attendance calculation.
-    if (!student.enrolledAt || typeof student.enrolledAt !== 'string') return true;
-    const enrolledDateStr = student.enrolledAt.slice(0, 10);
-    return dateStr >= enrolledDateStr;
-};
 
 export const useGradeBookAttendance = (
     calendarData: any,
@@ -37,145 +27,14 @@ export const useGradeBookAttendance = (
     studentCourseDailyStatus: Record<string, Record<string, 'present' | 'absent' | 'late' | 'leave' | 'escape'>>,
     checkIsHolidayLocal: (dateStr: string, events: Record<string, any>) => { isHoliday: boolean; description: string }
 ) => {
-    const SESSIONS_PER_PAGE = 28;
-
-    const attendancePages = useMemo(() => {
-        if (!calendarData?.terms || !selectedClass) return [];
-
-        const allPages: any[] = [];
-        let annualHourCounter = 0;
-        let weekCounter = 1;
-
-        const termsToProcess =
-            selectedSemester === '2'
-                ? ['term2']
-                : selectedSemester === '1'
-                    ? ['term1']
-                    : ['term1', 'term2'];
-
-        for (const termKey of termsToProcess) {
-            const termData = calendarData.terms[termKey];
-            if (!termData?.startDate || !termData?.endDate) continue;
-
-            let termSessionBuffer: any[] = [];
-            let termHourCounter = 0;
-            const events = calendarData.events || {};
-
-            const termStartDate = new Date(termData.startDate);
-            const termEndDate = new Date(termData.endDate);
-
-            let currentDay = new Date(termStartDate);
-            const startDayOffset = currentDay.getDay();
-            if (startDayOffset > 0) {
-                currentDay.setUTCDate(currentDay.getUTCDate() - startDayOffset);
-            }
-
-            while (currentDay <= termEndDate) {
-                const y = currentDay.getFullYear();
-                const m = String(currentDay.getMonth() + 1).padStart(2, '0');
-                const d = String(currentDay.getDate()).padStart(2, '0');
-                const dateStr = `${y}-${m}-${d}`;
-                const isBeforeTerm = currentDay < termStartDate;
-
-                const { isHoliday, description } = checkIsHolidayLocal(dateStr, events);
-                const dayOfWeekIndex = currentDay.getDay();
-                let dayKey = DAY_KEY_MAP[dayOfWeekIndex];
-                const event = events[dateStr];
-                if (event?.type === 'schoolDay' && event?.scheduleDay) {
-                    dayKey = event.scheduleDay;
-                }
-
-                const termSemester = termKey === 'term1' ? '1' : '2';
-                const periodsToday = selectedSemester === 'annual'
-                    ? (courseSchedule[`${termSemester}:${dayKey}`] || courseSchedule[`all:${dayKey}`] || [])
-                    : (courseSchedule[dayKey] || []);
-                const hasAttendanceRecord = Object.values(studentCourseDailyStatus || {}).some(dates => dates && dates[dateStr]);
-
-                const isActuallyHoliday = isHoliday;
-                // Allow sessions even outside term boundaries or on holidays IF there is an actual attendance record
-                const isSession = (!isActuallyHoliday && periodsToday.length > 0) || hasAttendanceRecord;
-
-                if (isSession) {
-                    const periodsToSession = periodsToday.length > 0 ? periodsToday : [0];
-
-                    periodsToSession.forEach((p, pIdx) => {
-                        if (pIdx === 0) {
-                            annualHourCounter++;
-                            termHourCounter++;
-
-                            termSessionBuffer.push({
-                                date: new Date(currentDay),
-                                dateStr,
-                                dayOfMonth: currentDay.getDate(),
-                                monthIndex: currentDay.getMonth(),
-                                weekdayLabel: THAI_WEEKDAYS_SHORT[dayOfWeekIndex],
-                                isHoliday: false,
-                                hourLabel: String(annualHourCounter),
-                                period: p,
-                                isSession: true,
-                                eventType: event?.type || 'normal'
-                            });
-                        }
-                    });
-                } else {
-                    termSessionBuffer.push({
-                        date: new Date(currentDay),
-                        dateStr,
-                        dayOfMonth: currentDay.getDate(),
-                        monthIndex: currentDay.getMonth(),
-                        weekdayLabel: THAI_WEEKDAYS_SHORT[dayOfWeekIndex],
-                        isHoliday: isActuallyHoliday,
-                        holidayName: description || (dayOfWeekIndex === 0 || dayOfWeekIndex === 6 ? 'วันหยุดเสาร์-อาทิตย์' : ''),
-                        hourLabel: '',
-                        isSession: false,
-                        eventType: (event?.type || (isActuallyHoliday ? 'holiday' : 'normal'))
-                    });
-                }
-
-                currentDay.setUTCDate(currentDay.getUTCDate() + 1);
-            }
-
-            for (let i = 0; i < termSessionBuffer.length; i += SESSIONS_PER_PAGE) {
-                const chunk = termSessionBuffer.slice(i, i + SESSIONS_PER_PAGE) as any[];
-                const isLastPageOfTerm = (i + SESSIONS_PER_PAGE) >= termSessionBuffer.length;
-
-                while (chunk.length < SESSIONS_PER_PAGE) {
-                    chunk.push(null);
-                }
-
-                const weeks: number[] = [];
-                const months: string[] = [];
-
-                for (let wIdx = 0; wIdx < 4; wIdx++) {
-                    const weekChunk = chunk.slice(wIdx * 7, (wIdx + 1) * 7).filter(s => s);
-                    if (weekChunk.length > 0) {
-                        // Number the visible 7-day blocks sequentially. The first block may begin
-                        // before the official term start so the calendar aligns to Sunday.
-                        weeks.push(Math.floor(i / 7) + wIdx + 1);
-
-                        const firstMonth = weekChunk[0].monthIndex;
-                        const lastMonth = weekChunk[weekChunk.length - 1].monthIndex;
-                        months.push(firstMonth === lastMonth ? THAI_MONTHS_SHORT[firstMonth] : `${THAI_MONTHS_SHORT[firstMonth]}-${THAI_MONTHS_SHORT[lastMonth]}`);
-                    } else {
-                        weeks.push(i / 7 + 1); // Fallback to sequential numbering if chunk is empty
-                        months.push('');
-                    }
-                }
-
-                allPages.push({
-                    weeks,
-                    months,
-                    days: chunk,
-                    term: termKey === 'term1' ? '1' : '2',
-                    termTotalHours: termHourCounter,
-                    isLastPageOfTerm,
-                });
-            }
-            weekCounter += 20;
-        }
-
-        return allPages;
-    }, [calendarData, courseSchedule, selectedSemester, selectedClass, studentCourseDailyStatus, checkIsHolidayLocal]);
+    const attendancePages = useMemo(() => buildAttendancePages(
+        calendarData,
+        courseSchedule,
+        selectedSemester,
+        selectedClass,
+        studentCourseDailyStatus,
+        checkIsHolidayLocal
+    ), [calendarData, courseSchedule, selectedSemester, selectedClass, studentCourseDailyStatus, checkIsHolidayLocal]);
 
     const completenessStats = useMemo(() => {
         if (!students.length || !selectedCourse) return null;
@@ -458,94 +317,19 @@ export const useGradeBookAttendance = (
         return true;
     }, [students, grades, currentCourse, maxScores, characteristicsCriteria, readingWritingCriteria, studentCourseDailyStatus, attendancePages, completenessStats]);
 
-    const studentAttendanceSummaries = useMemo(() => {
-        const summaries: Record<string, any> = {};
-        if (!students.length || !attendancePages.length) return summaries;
-
-        // "Elapsed" = sessions on/before today — used for the 80%-attendance "มส" check so a
-        // term that hasn't finished yet doesn't have its still-untaught future sessions counted
-        // as absences (the annual/term buckets above intentionally cover the WHOLE term for the
-        // ปพ.5 PDF report, which is only generated once every session is already recorded).
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-        students.forEach(student => {
-            const statusMap = studentCourseDailyStatus[student.id] || {};
-            const summary = {
-                term1: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0 },
-                term2: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0 },
-                annual: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0, percentage: 0, evaluation: 'ปรับปรุง' },
-                elapsed: { present: 0, absent: 0, late: 0, leave: 0, totalPossibleHours: 0, percentage: 0 }
-            };
-
-            attendancePages.forEach(page => {
-                const termKey = page.term === '1' ? 'term1' : 'term2';
-                page.days.forEach((day: any) => {
-                    if (day && day.isSession) {
-                        // Days before this student enrolled in the course don't count toward
-                        // either their totalPossibleHours or any status bucket.
-                        if (!isStudentEnrolledOnDay(student, day.dateStr)) return;
-
-                        summary[termKey].totalPossibleHours++;
-                        summary.annual.totalPossibleHours++;
-                        const status = statusMap[day.dateStr];
-                        const isElapsed = day.dateStr <= todayStr;
-                        if (isElapsed) summary.elapsed.totalPossibleHours++;
-                        if (status === 'present') {
-                            summary[termKey].present++; summary.annual.present++;
-                            if (isElapsed) summary.elapsed.present++;
-                        } else if (status === 'late') {
-                            summary[termKey].late++; summary.annual.late++;
-                            if (isElapsed) summary.elapsed.late++;
-                        } else if (status === 'leave') {
-                            summary[termKey].leave++; summary.annual.leave++;
-                            if (isElapsed) summary.elapsed.leave++;
-                        } else {
-                            // 'escape' (truancy) and any other/unrecorded status count as absent.
-                            summary[termKey].absent++; summary.annual.absent++;
-                            if (isElapsed) summary.elapsed.absent++;
-                        }
-                    }
-                });
-            });
-
-            const { present, late, leave, totalPossibleHours } = summary.annual;
-            summary.annual.percentage = totalPossibleHours > 0 ? ((present + late + leave) / totalPossibleHours) * 100 : 0;
-            summary.annual.evaluation = summary.annual.percentage >= 80 ? 'ดีเยี่ยม' : summary.annual.percentage >= 60 ? 'ดี' : summary.annual.percentage >= 50 ? 'ผ่าน' : 'ปรับปรุง';
-
-            const elapsedTotal = summary.elapsed.totalPossibleHours;
-            summary.elapsed.percentage = elapsedTotal > 0
-                ? ((summary.elapsed.present + summary.elapsed.late + summary.elapsed.leave) / elapsedTotal) * 100
-                : 0;
-
-            summaries[student.id] = summary;
-        });
-        return summaries;
-    }, [students, attendancePages, studentCourseDailyStatus]);
+    const studentAttendanceSummaries = useMemo(
+        () => buildStudentAttendanceSummaries(students, attendancePages, studentCourseDailyStatus),
+        [students, attendancePages, studentCourseDailyStatus]
+    );
 
     // Per-student "เวลาเรียนไม่ถึงร้อยละ 80" check for the current course/term scope (whichever
     // term(s) selectedSemester/effectiveSemester put into attendancePages — annual for primary
     // classes forced onto 'annual' upstream, a single semester for secondary). Based on elapsed
-    // sessions only (see studentAttendanceSummaries.elapsed above).
-    //
-    // A course with zero elapsed sessions (no ตารางสอน assigned yet, so the system has no periods
-    // to check attendance against at all) counts as failing the 80% requirement too — 0% is not
-    // ≥80% — rather than silently falling back to the score-only "0" rule, which would hide the
-    // real problem (the course was never scheduled) behind a normal-looking failing grade.
-    const attendanceEligibility = useMemo(() => {
-        const result: Record<string, { percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean }> = {};
-        Object.entries(studentAttendanceSummaries).forEach(([studentId, summary]: [string, any]) => {
-            const elapsed = summary.elapsed;
-            const presentHours = elapsed.present + elapsed.late + elapsed.leave;
-            result[studentId] = {
-                percentage: elapsed.percentage,
-                presentHours,
-                totalHours: elapsed.totalPossibleHours,
-                belowThreshold: elapsed.percentage < 80
-            };
-        });
-        return result;
-    }, [studentAttendanceSummaries]);
+    // sessions only (see attendanceEligibility.ts for the 'elapsed' vs 'annual' modes).
+    const attendanceEligibility = useMemo(
+        () => computeAttendanceEligibility(studentAttendanceSummaries),
+        [studentAttendanceSummaries]
+    );
 
     return { attendancePages, completenessStats, validateDataCompleteness, studentAttendanceSummaries, attendanceEligibility };
 };

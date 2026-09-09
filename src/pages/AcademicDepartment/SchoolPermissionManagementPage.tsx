@@ -29,9 +29,10 @@ const DEPARTMENTS = [
 ];
 
 const SPECIAL_ROLES = [
-  { key: 'isSubjectGroupHead', label: 'เป็นหัวหน้ากลุ่มสาระ' },
-  { key: 'isAssessmentHead',   label: 'เป็นหัวหน้างานวัดและประเมินผล' },
-  { key: 'isGuidanceTeacher',  label: 'เป็นครูแนะแนว' },
+  { key: 'isSubjectGroupHead',      label: 'เป็นหัวหน้ากลุ่มสาระ' },
+  { key: 'isAssessmentHead',        label: 'เป็นหัวหน้างานวัดและประเมินผล' },
+  { key: 'isGuidanceTeacher',       label: 'เป็นครูแนะแนว' },
+  { key: 'isGeneralAffairsOfficer', label: 'เจ้าหน้าที่งานธุรการ' },
 ];
 
 const PERSONNEL_TYPES = [
@@ -62,40 +63,20 @@ const emptyEntry = (): RoutePermissionEntry => ({
   allowedRoles: [], allowedDepartments: [], allowedSpecialRoles: [], allowedPersonnelTypes: [],
 });
 
-/** Initial state = merged (global union school) — what admin sees */
+/** Initial state = merged (global or school) — what admin sees */
 const buildInitial = (routePermissions: Record<string, RoutePermissionEntry>): Record<string, RoutePermissionEntry> => {
   const result: Record<string, RoutePermissionEntry> = {};
   for (const route of ROUTE_REGISTRY) {
     const existing = routePermissions[route.key];
     result[route.key] = {
       allowedRoles:          existing ? [...existing.allowedRoles]                  : [...route.defaultRoles],
-      allowedDepartments:    existing ? [...existing.allowedDepartments]            : [],
-      allowedSpecialRoles:   existing ? [...existing.allowedSpecialRoles]           : [],
+      allowedDepartments:    existing ? [...existing.allowedDepartments]            : [...(route.defaultDepartments ?? [])],
+      allowedSpecialRoles:   existing ? [...existing.allowedSpecialRoles]           : [...(route.defaultSpecialRoles ?? [])],
       allowedPersonnelTypes: existing ? [...(existing.allowedPersonnelTypes ?? [])] : [],
     };
   }
   return result;
 };
-
-/**
- * Compute what the school has ADDED beyond global.
- * Only save additions — global roles are preserved by the union merge automatically.
- */
-const computeSchoolAdditions = (
-  edited: RoutePermissionEntry,
-  global: RoutePermissionEntry | undefined
-): RoutePermissionEntry => ({
-  allowedRoles:          edited.allowedRoles.filter(r =>          !(global?.allowedRoles          ?? []).includes(r)),
-  allowedDepartments:    edited.allowedDepartments.filter(d =>    !(global?.allowedDepartments    ?? []).includes(d)),
-  allowedSpecialRoles:   edited.allowedSpecialRoles.filter(s =>   !(global?.allowedSpecialRoles   ?? []).includes(s)),
-  allowedPersonnelTypes: edited.allowedPersonnelTypes.filter(p => !(global?.allowedPersonnelTypes ?? []).includes(p)),
-});
-
-const hasAnyAddition = (entry: RoutePermissionEntry) =>
-  entry.allowedRoles.length > 0 ||
-  entry.allowedDepartments.length > 0 ||
-  entry.allowedSpecialRoles.length > 0 ||
-  entry.allowedPersonnelTypes.length > 0;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const SchoolPermissionManagementPage: React.FC = () => {
@@ -143,23 +124,13 @@ const SchoolPermissionManagementPage: React.FC = () => {
 
   const isReadOnly = (category: string) => READONLY_CATEGORIES.includes(category);
 
-  /** True if this selector value comes from Super Admin's global settings — cannot be removed */
-  const isLockedByGlobal = (routeKey: string): boolean => {
-    const globalEntry = globalPermissions[routeKey];
-    if (!globalEntry) return false;
-    return (globalEntry[getField()] as string[]).includes(getSelected());
-  };
-
-  /** True if route has any school-specific addition (beyond global) */
+  /** True if route has any school-specific configuration */
   const hasSchoolAddition = (routeKey: string): boolean => {
-    const schoolEntry = schoolPermissions[routeKey];
-    if (!schoolEntry) return false;
-    return hasAnyAddition(schoolEntry);
+    return !!schoolPermissions[routeKey];
   };
 
   const toggleRoute = (routeKey: string, category: string) => {
     if (isReadOnly(category)) return;
-    if (isLockedByGlobal(routeKey)) return; // cannot remove what Super Admin granted
     const field = getField();
     const sel   = getSelected();
     setEditedPerms(prev => {
@@ -178,7 +149,6 @@ const SchoolPermissionManagementPage: React.FC = () => {
     setEditedPerms(prev => {
       const next = { ...prev };
       for (const route of routes) {
-        if (!on && isLockedByGlobal(route.key)) continue; // cannot uncheck global roles
         const entry = next[route.key] ?? emptyEntry();
         const arr   = entry[field] as string[];
         if (on && !arr.includes(sel))  next[route.key] = { ...entry, [field]: [...arr, sel] };
@@ -195,52 +165,40 @@ const SchoolPermissionManagementPage: React.FC = () => {
       return;
     }
 
-    // Compute only what the school is ADDING beyond global
-    const additions: Record<string, RoutePermissionEntry> = {};
-    for (const route of ROUTE_REGISTRY) {
-      if (isReadOnly(route.category)) continue;
-      const addition = computeSchoolAdditions(
-        editedPerms[route.key] ?? emptyEntry(),
-        globalPermissions[route.key]
-      );
-      if (hasAnyAddition(addition)) {
-        additions[route.key] = addition;
-      }
-    }
-
-    // Check what changed vs current school permissions
     const same = (a: string[], b: string[]) =>
       JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
     const changed: Record<string, RoutePermissionEntry> = {};
-    const toRemove: string[] = [];
 
-    // Routes with new/changed additions
-    for (const [key, newAddition] of Object.entries(additions)) {
-      const oldAddition = schoolPermissions[key];
-      if (!oldAddition ||
-          !same(newAddition.allowedRoles, oldAddition.allowedRoles) ||
-          !same(newAddition.allowedDepartments, oldAddition.allowedDepartments) ||
-          !same(newAddition.allowedSpecialRoles, oldAddition.allowedSpecialRoles) ||
-          !same(newAddition.allowedPersonnelTypes, oldAddition.allowedPersonnelTypes ?? [])) {
-        changed[key] = newAddition;
+    for (const route of ROUTE_REGISTRY) {
+      if (isReadOnly(route.category)) continue;
+      const current = editedPerms[route.key] ?? emptyEntry();
+      const existing = schoolPermissions[route.key];
+      const initial = existing ?? {
+        allowedRoles: route.defaultRoles,
+        allowedDepartments: route.defaultDepartments ?? [],
+        allowedSpecialRoles: route.defaultSpecialRoles ?? [],
+        allowedPersonnelTypes: [],
+      };
+      if (
+        !same(current.allowedRoles, initial.allowedRoles) ||
+        !same(current.allowedDepartments, initial.allowedDepartments) ||
+        !same(current.allowedSpecialRoles, initial.allowedSpecialRoles) ||
+        !same(current.allowedPersonnelTypes, initial.allowedPersonnelTypes ?? [])
+      ) {
+        changed[route.key] = current;
       }
     }
 
-    // Routes where school had additions but admin removed them all
-    for (const key of Object.keys(schoolPermissions)) {
-      if (!additions[key]) toRemove.push(key);
-    }
-
-    if (!Object.keys(changed).length && !toRemove.length) {
+    if (!Object.keys(changed).length) {
       Swal.fire({ icon: 'info', title: 'ไม่มีการเปลี่ยนแปลง', confirmButtonColor: '#4f46e5' });
       return;
     }
 
-    const totalRoutes = Object.keys(changed).length + toRemove.length;
+    const totalRoutes = Object.keys(changed).length;
     const result = await Swal.fire({
-      title: 'ยืนยันการบันทึก',
-      html: `จะอัปเดต <b>${totalRoutes}</b> หน้าสำหรับโรงเรียนนี้<br/><span style="font-size:12px;color:#6b7280">สิทธิ์ที่ Super Admin กำหนดไว้ยังคงอยู่เสมอ</span>`,
+      title: 'ยืนยันการบันทึกสิทธิ์',
+      html: `จะอัปเดตการกำหนดสิทธิ์ <b>${totalRoutes}</b> หน้าสำหรับโรงเรียนนี้ตามบทบาทหน้าที่`,
       icon: 'question', showCancelButton: true,
       confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
       confirmButtonColor: '#4f46e5', cancelButtonColor: '#6b7280', reverseButtons: true,
@@ -250,16 +208,8 @@ const SchoolPermissionManagementPage: React.FC = () => {
 
     setIsSaving(true);
     try {
-      if (Object.keys(changed).length) {
-        await batchUpdateSchoolPermissions(schoolId, changed);
-      }
-      // Remove additions that are now empty (admin removed all school-specific additions)
-      if (toRemove.length) {
-        const emptyRemovals: Record<string, RoutePermissionEntry> = {};
-        toRemove.forEach(k => { emptyRemovals[k] = emptyEntry(); });
-        await batchUpdateSchoolPermissions(schoolId, emptyRemovals);
-      }
-      Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: `อัปเดต ${totalRoutes} หน้าเรียบร้อย`, confirmButtonColor: '#4f46e5' });
+      await batchUpdateSchoolPermissions(schoolId, changed);
+      Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: `อัปเดตสิทธิ์ ${totalRoutes} หน้าเรียบร้อย`, confirmButtonColor: '#4f46e5' });
     } catch {
       Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', confirmButtonColor: '#4f46e5' });
     } finally { setIsSaving(false); }
@@ -269,7 +219,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
     if (!schoolId) return;
     const result = await Swal.fire({
       title: 'รีเซ็ตสิทธิ์โรงเรียนทั้งหมด?',
-      html: 'การเพิ่มเติมเฉพาะโรงเรียนจะถูกลบออก<br/><b>สิทธิ์ที่ Super Admin กำหนดไว้จะยังคงอยู่</b>',
+      html: 'การกำหนดสิทธิ์เฉพาะโรงเรียนจะถูกลบออก และกลับไปใช้สิทธิ์เริ่มต้นตามบทบาทหน้าที่ของระบบ',
       icon: 'warning', showCancelButton: true,
       confirmButtonText: 'รีเซ็ต', cancelButtonText: 'ยกเลิก',
       confirmButtonColor: '#ef4444', cancelButtonColor: '#6b7280', reverseButtons: true,
@@ -280,8 +230,8 @@ const SchoolPermissionManagementPage: React.FC = () => {
     try {
       await clearSchoolPermissions(schoolId);
       initialized.current = false;
-      setEditedPerms(buildInitial(routePermissions)); // re-init from global-only state
-      Swal.fire({ icon: 'success', title: 'รีเซ็ตสำเร็จ', text: 'ลบการเพิ่มเติมเฉพาะโรงเรียนเรียบร้อย', confirmButtonColor: '#4f46e5' });
+      setEditedPerms(buildInitial({})); // re-init from defaults
+      Swal.fire({ icon: 'success', title: 'รีเซ็ตสำเร็จ', text: 'คืนค่าสิทธิ์เริ่มต้นเรียบร้อย', confirmButtonColor: '#4f46e5' });
     } catch {
       Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', confirmButtonColor: '#4f46e5' });
     } finally { setIsSaving(false); }
@@ -542,22 +492,20 @@ const SchoolPermissionManagementPage: React.FC = () => {
 
               {/* Legend */}
               <div className="bg-white dark:bg-[#1c1c24] rounded-2xl p-4 border border-gray-100 dark:border-white/5 space-y-2.5">
-                <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">สัญลักษณ์</p>
+                <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">คำอธิบายสิทธิ์</p>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-4 h-4 rounded-md bg-gray-200 dark:bg-white/10 border-2 border-gray-300 dark:border-white/20 flex items-center justify-center flex-shrink-0">
-                    <FaLock size={7} className="text-gray-400" />
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">ล็อคโดย Super Admin — ไม่สามารถยกเลิกได้</p>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-4 h-4 rounded-md bg-indigo-600 border-2 border-transparent flex items-center justify-center flex-shrink-0">
+                  <div className={`w-4 h-4 rounded-md ${activeBg} flex items-center justify-center flex-shrink-0`}>
                     <FaCheck size={7} className="text-white" />
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">เพิ่มโดยโรงเรียน — สามารถยกเลิกได้</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-200 font-medium">เปิดสิทธิ์ — สามารถเข้าใช้งานหน้านี้ได้</p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-4 h-4 rounded-md border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center flex-shrink-0"></div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 font-medium">ปิดสิทธิ์ — ไม่มีสิทธิ์เข้าถึงหน้านี้</p>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">🏫</span>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">หน้านี้มีการเพิ่มเติมเฉพาะโรงเรียน</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">ปรับแต่งเฉพาะโรงเรียนนี้</p>
                 </div>
               </div>
             </div>
@@ -621,7 +569,7 @@ const SchoolPermissionManagementPage: React.FC = () => {
                 {Object.entries(filteredGrouped).map(([category, routes]) => {
                   const { accessible } = getCatStats(category);
                   const readonly = isReadOnly(category);
-                  const allOn  = routes.filter(r => !isLockedByGlobal(r.key)).every(r => isRouteChecked(r.key));
+                  const allOn  = routes.every(r => isRouteChecked(r.key));
                   const noneOn = routes.every(r => !isRouteChecked(r.key));
                   const isCollapsed = collapsed.has(category);
                   return (
@@ -656,32 +604,28 @@ const SchoolPermissionManagementPage: React.FC = () => {
                         <div className="divide-y divide-gray-50 dark:divide-white/[0.03]">
                           {routes.map(route => {
                             const checked  = isRouteChecked(route.key);
-                            const locked   = isLockedByGlobal(route.key);
                             const schoolAdded = hasSchoolAddition(route.key);
                             return (
                               <div key={route.key}
-                                onClick={() => !readonly && !locked && toggleRoute(route.key, category)}
+                                onClick={() => {
+                                  if (readonly) return;
+                                  toggleRoute(route.key, category);
+                                }}
                                 className={`flex items-center gap-4 px-5 py-3.5 transition-colors group ${
-                                  readonly || locked ? 'cursor-not-allowed' : 'cursor-pointer'
+                                  readonly ? 'cursor-not-allowed' : 'cursor-pointer'
                                 } ${checked ? 'hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5' : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'}`}>
 
                                 {/* Checkbox */}
                                 <div className={`w-5 h-5 rounded-lg border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                                  locked
-                                    ? 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10'
-                                    : checked
-                                      ? `${activeBg} border-transparent text-white shadow-sm`
-                                      : 'bg-transparent border-gray-300 dark:border-gray-600 group-hover:border-indigo-400 dark:group-hover:border-indigo-500'
+                                  checked
+                                    ? `${activeBg} border-transparent text-white shadow-sm`
+                                    : 'bg-transparent border-gray-300 dark:border-gray-600 group-hover:border-indigo-400 dark:group-hover:border-indigo-500'
                                 }`}>
-                                  {locked  && <FaLock size={7} className="text-gray-400 dark:text-gray-500" />}
-                                  {!locked && checked && <FaCheck size={9} />}
+                                  {checked && <FaCheck size={9} />}
                                 </div>
 
                                 <span className={`text-sm font-bold flex-1 ${checked ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
                                   {route.label}
-                                  {locked && (
-                                    <span className="ml-2 text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-wide">Super Admin</span>
-                                  )}
                                 </span>
 
                                 {/* Indicators */}

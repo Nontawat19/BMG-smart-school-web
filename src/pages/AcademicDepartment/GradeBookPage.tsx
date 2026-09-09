@@ -8,6 +8,7 @@ import { collection, query, where, getDocs, doc, getDoc, orderBy, onSnapshot } f
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { pdf } from '@react-pdf/renderer';
 import GradeBookDocument from '@/components/Pdf/gradebook/GradeBookDocument';
+import { DESIRED_CHARACTERISTICS } from '@/components/Pdf/gradebook/constants';
 import SkeletonLoader from "@/components/SkeletonLoader";
 import { CLASSES, CLASS_FULL_NAMES } from "@/utils/schoolUtils";
 import { matchesAssignmentGroupRoom } from "@/utils/attendanceClassMatching";
@@ -248,17 +249,22 @@ const GradeBookPage: React.FC = () => {
     students.forEach(s => {
       const base = grades[s.id] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
       const eligibility = attendance.attendanceEligibility[s.id];
-      result[s.id] = eligibility?.belowThreshold
-        ? {
+      if (eligibility?.belowThreshold) {
+        result[s.id] = {
           ...base,
           status: 'มส',
           grade: 'มส',
           remark: `เวลาเรียนไม่ถึงร้อยละ 80 (${eligibility.presentHours}/${eligibility.totalHours} คาบ = ${eligibility.percentage.toFixed(1)}%)`,
-        }
-        : base;
+        };
+      } else {
+        const isAutoMsRemark = base.status === 'มส' && typeof base.remark === 'string' && base.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80');
+        result[s.id] = isAutoMsRemark
+          ? { ...base, status: undefined, grade: calculateGradeMemoized(base.total ?? 0), remark: undefined }
+          : base;
+      }
     });
     return result;
-  }, [students, grades, attendance.attendanceEligibility]);
+  }, [students, grades, attendance.attendanceEligibility, calculateGradeMemoized]);
 
   const calculations = useGradeBookCalculations(effectiveGrades, students, characteristicsCriteria, readingWritingCriteria, activeTab);
 
@@ -550,18 +556,9 @@ const GradeBookPage: React.FC = () => {
         const charSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'desired-characteristics'), orderBy('createdAt', 'asc')));
         let chars = charSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CharacteristicCriteria));
         
-        // Default Characteristics if empty
+        // Default Characteristics if empty (มาตรฐานคุณลักษณะอันพึงประสงค์ 8 ประการ ตามหลักสูตรแกนกลางฯ 2551)
         if (chars.length === 0) {
-          chars = [
-            { id: '1', title: 'รักชาติ ศาสน์ กษัตริย์', indicators: ['', '', '', ''] },
-            { id: '2', title: 'ซื่อสัตย์สุจริต', indicators: ['', '', '', ''] },
-            { id: '3', title: 'มีวินัย', indicators: ['', '', ''] },
-            { id: '4', title: 'ใฝ่เรียนรู้', indicators: ['', '', ''] },
-            { id: '5', title: 'อยู่อย่างพอเพียง', indicators: ['', '', ''] },
-            { id: '6', title: 'มุ่งมั่นในการทำงาน', indicators: ['', '', ''] },
-            { id: '7', title: 'รักความเป็นไทย', indicators: ['', '', '', ''] },
-            { id: '8', title: 'มีจิตสาธารณะ', indicators: ['', '', ''] }
-          ];
+          chars = DESIRED_CHARACTERISTICS;
         }
         setCharacteristicsCriteria(chars);
 

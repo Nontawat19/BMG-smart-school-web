@@ -7,7 +7,7 @@ import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment, Timestamp } from 'firebase/firestore';
 import { firestore as db } from "../../firebase";
 
 const DonutChart = lazy(() => import('@/components/Shared/DonutChart'));
@@ -426,6 +426,12 @@ const HomePage = () => {
     // สวิตช์หลักเปิด/ปิดระบบลงเวลา — ตั้งค่าที่ /owner/school-info (undefined/true = เปิดใช้งาน)
     const [enableCheckinOutSystem, setEnableCheckinOutSystem] = useState(true);
     const [remediationEnabled, setRemediationEnabled] = useState<boolean>(true);
+    // เอกสารงานธุรการที่รอ ผอ. อนุมัติ (stampedDocuments status = pending_approval) แยกตามความเร่งด่วน
+    const [pendingDocsStats, setPendingDocsStats] = useState({ normal: 0, urgent: 0, very_urgent: 0, most_urgent: 0, total: 0 });
+    // เอกสารงานธุรการที่ ผอ. อนุมัติแล้ว (stampedDocuments status = approved) "วันนี้"
+    const [approvedDocsCount, setApprovedDocsCount] = useState(0);
+    // เอกสารงานธุรการที่เสนอเข้ามาทั้งหมด "วันนี้" (ทุกสถานะ) — ใช้เป็นตัวหลังของ "มอบหมายแล้ว/ทั้งหมด" บนการ์ดหน้าแรก
+    const [todaySubmittedDocsCount, setTodaySubmittedDocsCount] = useState(0);
 
     useEffect(() => {
         if (!effectiveSchoolId) return;
@@ -446,6 +452,67 @@ const HomePage = () => {
                 setRemediationEnabled(true);
             }
         });
+        return () => unsub();
+    }, [effectiveSchoolId]);
+
+    useEffect(() => {
+        if (!effectiveSchoolId) return;
+        const q = query(
+            collection(db, "school-settings", effectiveSchoolId, "stampedDocuments"),
+            where("status", "==", "pending_approval")
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            const counts = { normal: 0, urgent: 0, very_urgent: 0, most_urgent: 0, total: 0 };
+            snap.docs.forEach((d) => {
+                const urgency = d.data().urgency;
+                if (urgency === "urgent") counts.urgent += 1;
+                else if (urgency === "very_urgent") counts.very_urgent += 1;
+                else if (urgency === "most_urgent") counts.most_urgent += 1;
+                else counts.normal += 1;
+                counts.total += 1;
+            });
+            setPendingDocsStats(counts);
+        }, (error) => console.error("Error loading pending documents stats:", error));
+        return () => unsub();
+    }, [effectiveSchoolId]);
+
+    useEffect(() => {
+        if (!effectiveSchoolId) return;
+        const q = query(
+            collection(db, "school-settings", effectiveSchoolId, "stampedDocuments"),
+            where("status", "==", "approved")
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            // นับเฉพาะที่ ผอ. อนุมัติ "วันนี้" — กรอง client-side ด้วย approvedAt เพื่อเลี่ยงการสร้าง composite index เพิ่ม
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+            const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            const approvedToday = snap.docs.filter((d) => {
+                const approvedAt = d.data().approvedAt;
+                const approvedDate = approvedAt?.toDate ? approvedAt.toDate() : null;
+                return approvedDate && approvedDate >= todayStart && approvedDate <= todayEnd;
+            });
+            setApprovedDocsCount(approvedToday.length);
+        }, (error) => console.error("Error loading approved documents count:", error));
+        return () => unsub();
+    }, [effectiveSchoolId]);
+
+    useEffect(() => {
+        if (!effectiveSchoolId) return;
+        // เอกสารที่เสนอเข้ามา "วันนี้" ทั้งหมด (ทุกสถานะ) — ใช้ createdAt (ตั้งตอนบันทึกเอกสารครั้งแรก
+        // ใน GeneralAffairsPage.tsx) แทน status เพื่อให้เป็นตัวหาร "ทั้งหมดของวันนี้" ไม่ใช่ยอดค้างสะสม
+        // ข้ามวัน และรีเซ็ตนับใหม่ทุกวันตามที่ต้องการ
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const q = query(
+            collection(db, "school-settings", effectiveSchoolId, "stampedDocuments"),
+            where("createdAt", ">=", Timestamp.fromDate(todayStart)),
+            where("createdAt", "<=", Timestamp.fromDate(todayEnd))
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            setTodaySubmittedDocsCount(snap.size);
+        }, (error) => console.error("Error loading today's submitted documents count:", error));
         return () => unsub();
     }, [effectiveSchoolId]);
 
@@ -658,6 +725,14 @@ const HomePage = () => {
     const dispatch = useDispatch();
     const calendarState = useSelector((state: RootState) => state.calendar);
     const reduxRawData = calendarState.rawData;
+    // วันเริ่มภาคเรียนที่เก่าที่สุด — ใช้เป็นขอบล่างของปฏิทินเลือกวันย้อนหลัง (SummaryDatePicker)
+    // ห้ามใช้ calendarState.terms?.[0]?.startDate ตรงๆ เพราะ Firestore ไม่รับประกันลำดับของฟิลด์
+    // แบบ map (terms: {term1, term2}) เวลาบันทึก/อ่านกลับมา บางโรงเรียนได้ term2 ขึ้นมาเป็นตัวแรก
+    // ทำให้ระบบเข้าใจผิดว่าเทอมเริ่มหลังวันนี้ แล้วล็อกไม่ให้เลือกวันที่ไหนได้เลยทั้งปฏิทิน
+    const earliestTermStartDate = calendarState.terms
+        .map((t) => t.startDate)
+        .filter((d): d is string => !!d)
+        .sort()[0];
 
     useEffect(() => {
         const schoolId = effectiveSchoolId;
@@ -1595,19 +1670,24 @@ const HomePage = () => {
         </div>
     );
 
-    const renderPendingDocs = (u: any) => (
-        <div className="grid grid-cols-4 gap-0.5 mt-2.5">
-            {[
-                { label: "ปกติ", val: u.normal, text: "text-gray-600 dark:text-gray-400", bg: "bg-gray-500/10" },
-                { label: "ด่วน", val: u.urgent, text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10" },
-                { label: "มาก", val: u.very_urgent, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-                { label: "ที่สุด", val: u.most_urgent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
-            ].map(i => (
-                <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
-                    <span className="text-[6px] sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase leading-none mb-0.5">{i.label}</span>
-                    <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
-                </div>
-            ))}
+    const renderPendingDocs = (u: any, approvedCount: number) => (
+        <div>
+            <div className="flex items-center gap-1 mb-1.5">
+                <span className="text-[8px] sm:text-[9px] font-bold text-emerald-600 dark:text-emerald-400">อนุมัติแล้ววันนี้ {approvedCount} ฉบับ</span>
+            </div>
+            <div className="grid grid-cols-4 gap-0.5">
+                {[
+                    { label: "ปกติ", val: u.normal, text: "text-gray-600 dark:text-gray-400", bg: "bg-gray-500/10" },
+                    { label: "ด่วน", val: u.urgent, text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10" },
+                    { label: "ด่วนมาก", val: u.very_urgent, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+                    { label: "ด่วนที่สุด", val: u.most_urgent, text: "text-red-600 dark:text-red-400", bg: "bg-red-500/10" }
+                ].map(i => (
+                    <div key={i.label} className={`flex flex-col items-center py-1 rounded-md ${i.bg} border border-white/5 shadow-sm`}>
+                        <span className="text-[6px] sm:text-[8px] font-bold text-gray-500 dark:text-gray-400 text-center leading-tight mb-0.5">{i.label}</span>
+                        <span className={`text-[9px] sm:text-[11px] font-black ${i.text} leading-none`}>{i.val}</span>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 
@@ -1628,7 +1708,7 @@ const HomePage = () => {
     const stats = [
         { title: "มาเรียนวันนี้", value: `${presentStudentCount}/${totalStudents}`, change: renderStudentStats(studentAttendanceStats), color: "bg-blue-500" },
         { title: "ครูปฏิบัติงาน", value: `${presentTeacherCount}/${totalTeachers}`, change: renderTeacherStats(teacherAttendanceStats), color: "bg-green-500" },
-        { title: "รอการอนุมัติ", value: "0", change: renderPendingDocs({ normal: 0, urgent: 0, very_urgent: 0, most_urgent: 0 }), color: "bg-yellow-500" }
+        { title: "รอการอนุมัติ", value: `${approvedDocsCount}/${todaySubmittedDocsCount}`, change: renderPendingDocs(pendingDocsStats, approvedDocsCount), color: "bg-yellow-500" }
     ];
 
 
@@ -1720,7 +1800,7 @@ const HomePage = () => {
                                 {showSummaryDatePicker && summaryDatePickerPos && (
                                     <SummaryDatePicker
                                         selectedDate={selectedSummaryDate}
-                                        minDateStr={calendarState.semesterStartDate || calendarState.terms?.[0]?.startDate || `${new Date().getFullYear() - 1}-01-01`}
+                                        minDateStr={calendarState.semesterStartDate || earliestTermStartDate || `${new Date().getFullYear() - 1}-01-01`}
                                         maxDateStr={getTodayString()}
                                         position={summaryDatePickerPos}
                                         onSelect={(date) => { setSelectedSummaryDate(date); setShowSummaryDatePicker(false); }}

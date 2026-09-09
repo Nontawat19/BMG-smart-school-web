@@ -303,7 +303,7 @@ const CourseEnrollmentPage: React.FC = () => {
     const [availableYears, setAvailableYears] = useState<string[]>([]);
     const [activeSemester, setActiveSemester] = useState("1");
     const [activeClassLevel, setActiveClassLevel] = useState<string>("ทั้งหมด");
-    const [activeRoom, setActiveRoom] = useState<string>("01");
+    const [activeRoom, setActiveRoom] = useState<string>("1");
     const [activeGroupNum, setActiveGroupNum] = useState<number>(1);
 
     const getLevelLabel = (id: string | undefined) => {
@@ -481,7 +481,7 @@ const CourseEnrollmentPage: React.FC = () => {
         setSelectedCourseId(null);
         setSelectedCourseIds([]);
         setActiveGroupNum(1);
-    }, [subjectGroupFilter, categoryFilter, showOnlyEnrolled, activeClassLevel, activeSemester]);
+    }, [subjectGroupFilter, categoryFilter, showOnlyEnrolled, activeClassLevel, activeSemester, activeYear]);
 
     useEffect(() => {
         if (clubMode !== 'course-based' && categoryFilter === 'ชุมนุม') {

@@ -11,7 +11,7 @@ import { Document, Font, Image, Page, PDFViewer, StyleSheet, Text, View, pdf } f
 import { saveAs } from "file-saver";
 import Swal from "sweetalert2";
 import defaultProfile from "@/assets/profile.png";
-import { getCurrentAcademicYear } from "@/utils/academicYearUtils";
+import { getCurrentAcademicYear, getSemesterKey } from "@/utils/academicYearUtils";
 import { getWeekNumber, classifyLeaveSubType } from "@/utils/periodSummaryUtils";
 import MainLayout from "@/layouts/MainLayout";
 import BackButton from "@/components/Shared/BackButton";
@@ -576,6 +576,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
 
     let startStr = "";
     let endStr = "";
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 
     if (filterType === "daily") {
       startStr = selectedDate;
@@ -610,88 +611,198 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
 
     setLoading(true);
     try {
+      // 📌 ตรวจสอบ collection สรุปที่ตรงกับ LINE (Weeksummary / Monthsummary / Semestersummary / Yearsummary)
+      let summaryCollection = "";
+      let summaryDocId = "";
+
+      if (filterType === "weekly") {
+        summaryCollection = "Weeksummary";
+        summaryDocId = selectedWeek;
+      } else if (filterType === "monthly") {
+        summaryCollection = "Monthsummary";
+        summaryDocId = selectedMonth;
+      } else if (filterType === "term") {
+        summaryCollection = "Semestersummary";
+        summaryDocId = getSemesterKey(currentAcademicYear, selectedTerm);
+      } else if (filterType === "yearly") {
+        summaryCollection = "Yearsummary";
+        summaryDocId = currentAcademicYear;
+      }
+
       const promises = teachers.map(async (teacher) => {
         const teacherRef = doc(firestore, "school-settings", schoolId, "teachers", teacher.id);
         const attRef = collection(teacherRef, "attendance");
         const q = query(attRef, where(documentId(), ">=", startStr), where(documentId(), "<=", endStr));
-        const [attSnap, leaveSnap, travelSnap] = await Promise.all([
+
+        const fetchList: Promise<any>[] = [
           getDocs(q),
           getDocs(collection(teacherRef, "leave_summary")),
           getDocs(collection(teacherRef, "travel_summary")),
-        ]);
+        ];
+
+        if (summaryCollection && summaryDocId) {
+          fetchList.push(getDoc(doc(teacherRef, summaryCollection, summaryDocId)));
+        }
+
+        const [attSnap, leaveSnap, travelSnap, summarySnap] = await Promise.all(fetchList);
 
         const attendanceByDate: Record<string, any> = {};
-        attSnap.docs.forEach(docSnap => { attendanceByDate[docSnap.id] = docSnap.data(); });
+        attSnap.docs.forEach((docSnap: any) => { attendanceByDate[docSnap.id] = docSnap.data(); });
 
-        // กรอง rejected ทิ้ง เหมือน DateSelectionPage — คำขอที่ยัง pending ก็ยังนับเป็นหมวดนั้นได้
-        const leaveRanges = leaveSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
-        const travelRanges = travelSnap.docs.map(d => d.data()).filter(data => data.status !== "rejected");
+        const leaveRanges = leaveSnap.docs.map((d: any) => d.data()).filter((data: any) => data.status !== "rejected");
+        const travelRanges = travelSnap.docs.map((d: any) => d.data()).filter((data: any) => data.status !== "rejected");
+        const summaryData = summarySnap?.exists() ? summarySnap.data() : null;
 
-        return { teacherId: teacher.id, attendanceByDate, leaveRanges, travelRanges };
+        return { teacherId: teacher.id, attendanceByDate, leaveRanges, travelRanges, summaryData };
       });
 
       const perTeacherData = await Promise.all(promises);
       const dataByTeacher = new Map(perTeacherData.map(d => [d.teacherId, d]));
 
-      // Calculate Working Dates
-      const workingDates: string[] = [];
-      const cur = new Date(startStr);
-      const last = new Date(endStr);
-      while (cur <= last) {
-        const dStr = cur.toISOString().split('T')[0];
-        if (isWorkingDay(dStr)) {
-          workingDates.push(dStr);
-        }
-        cur.setDate(cur.getDate() + 1);
-      }
-
       const stats: TeacherStats[] = teachers.map(teacher => {
         const data = dataByTeacher.get(teacher.id);
-        let present = 0, late = 0, sickLeave = 0, personalLeave = 0, otherLeave = 0,
-          noCheckout = 0, officialTravel = 0, explicitAbsent = 0, missing = 0;
         const details = emptyDetails();
 
-        workingDates.forEach(dateStr => {
-          // ลำดับความสำคัญเดียวกับ DateSelectionPage: ไปราชการ > ลา > สถานะเช็คชื่อดิบ
-          const travelHit = data?.travelRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
-          if (travelHit) { officialTravel++; details.officialTravel.push({ date: dateStr }); return; }
+        // รวบรวมรายการวันที่จริงใส่ details สำหรับคลิกดู modal รายละเอียด
+        if (data) {
+          Object.entries(data.attendanceByDate).forEach(([dateStr, rec]: [string, any]) => {
+            const st = rec.status;
+            if (st === 'สาย' || st === 'Late') details.late.push({ date: dateStr });
+            else if (st === 'มา' || st === 'OnTime' || st === 'Normal' || st === 'กลับก่อน') details.present.push({ date: dateStr });
+            else if (st === 'ไม่ลงเวลาออก' || st === 'NoCheckout') details.noCheckout.push({ date: dateStr });
+            else if (st === 'ไปราชการ' || st === 'officialTravel' || st === 'OfficialTravel') details.officialTravel.push({ date: dateStr });
+            else if (st === 'ขาด' || st === 'Absent') details.absent.push({ date: dateStr });
+          });
 
-          const leaveHit = data?.leaveRanges.find(r => isDateInRange(dateStr, r.startDate, r.endDate));
-          if (leaveHit) {
-            const subType = classifyLeaveSubType(leaveHit.leaveType);
-            const entry = { date: dateStr, label: leaveHit.leaveType || undefined };
-            if (subType === 'sick') { sickLeave++; details.sickLeave.push(entry); }
-            else if (subType === 'personal') { personalLeave++; details.personalLeave.push(entry); }
-            else { otherLeave++; details.otherLeave.push(entry); }
-            return;
+          data.travelRanges.forEach((r: any) => {
+            const sVal = getDateValue(r.startDate);
+            const eVal = getDateValue(r.endDate);
+            if (sVal && eVal && (sVal <= endStr && eVal >= startStr)) {
+              details.officialTravel.push({ date: sVal, label: r.destination || r.purpose || "ไปราชการ" });
+            }
+          });
+
+          data.leaveRanges.forEach((r: any) => {
+            const sVal = getDateValue(r.startDate);
+            const eVal = getDateValue(r.endDate);
+            if (sVal && eVal && (sVal <= endStr && eVal >= startStr)) {
+              const subType = classifyLeaveSubType(r.leaveType);
+              const entry = { date: sVal, label: r.leaveType || undefined };
+              if (subType === 'sick') details.sickLeave.push(entry);
+              else if (subType === 'personal') details.personalLeave.push(entry);
+              else details.otherLeave.push(entry);
+            }
+          });
+        }
+
+        let present = 0, late = 0, sickLeave = 0, personalLeave = 0, otherLeave = 0,
+          noCheckout = 0, officialTravel = 0, absent = 0;
+
+        // 📌 กรณีมีข้อมูลสรุปตรงกับ LINE (Weeksummary / Monthsummary / Semestersummary / Yearsummary)
+        if (data?.summaryData) {
+          const s = data.summaryData;
+          present = Math.max(0, s.present || 0);
+          late = Math.max(0, s.late || 0);
+          absent = Math.max(0, s.absent || 0);
+          officialTravel = Math.max(0, s.officialTravel || 0);
+          noCheckout = Math.max(0, s.noCheckout || 0);
+          const rawLeave = Math.max(0, s.leave || 0);
+
+          // แยกลาป่วย/ลากิจตามบันทึกใบลาจริง (ถ้ามี)
+          const detectedSick = details.sickLeave.length;
+          const detectedPersonal = details.personalLeave.length;
+          if (detectedSick + detectedPersonal > 0) {
+            sickLeave = detectedSick;
+            personalLeave = detectedPersonal;
+            otherLeave = Math.max(0, rawLeave - sickLeave - personalLeave);
+          } else if (s.sickLeave !== undefined || s.personalLeave !== undefined) {
+            sickLeave = Math.max(0, s.sickLeave || 0);
+            personalLeave = Math.max(0, s.personalLeave || 0);
+            otherLeave = Math.max(0, rawLeave - sickLeave - personalLeave);
+          } else {
+            sickLeave = rawLeave;
+            personalLeave = 0;
+            otherLeave = 0;
+          }
+        } else if (filterType === "daily") {
+          // รายวัน: ตรวจสอบจากบันทึก attendance ของวันที่เลือก
+          const rec = data?.attendanceByDate[selectedDate];
+          const isTravel = data?.travelRanges.some((r: any) => isDateInRange(selectedDate, r.startDate, r.endDate));
+          const leaveRec = data?.leaveRanges.find((r: any) => isDateInRange(selectedDate, r.startDate, r.endDate));
+
+          if (isTravel) {
+            officialTravel = 1;
+          } else if (leaveRec) {
+            const subType = classifyLeaveSubType(leaveRec.leaveType);
+            if (subType === 'sick') sickLeave = 1;
+            else if (subType === 'personal') personalLeave = 1;
+            else otherLeave = 1;
+          } else if (rec) {
+            const st = rec.status;
+            if (st === 'สาย' || st === 'Late') late = 1;
+            else if (st === 'ไม่ลงเวลาออก' || st === 'NoCheckout') noCheckout = 1;
+            else if (st === 'ไปราชการ' || st === 'officialTravel' || st === 'OfficialTravel') officialTravel = 1;
+            else if (st === 'ลา' || st === 'Leave') sickLeave = 1;
+            else if (st === 'ขาด' || st === 'Absent') absent = 1;
+            else present = 1;
+          } else if (selectedDate <= todayStr && isWorkingDay(selectedDate)) {
+            absent = 1;
+          }
+        } else {
+          // กรณี custom หรือไม่มีเอกสารสรุป: คำนวณจากประวัติดิบเฉพาะวันที่ถึงปัจจุบัน (ไม่นับวันในอนาคตเป็นขาดเด็ดขาด)
+          const limitEnd = endStr <= todayStr ? endStr : todayStr;
+          const workingDates: string[] = [];
+          const cur = new Date(startStr);
+          const last = new Date(limitEnd);
+          while (cur <= last) {
+            const dStr = cur.toISOString().split('T')[0];
+            if (isWorkingDay(dStr)) workingDates.push(dStr);
+            cur.setDate(cur.getDate() + 1);
           }
 
-          const rec = data?.attendanceByDate[dateStr];
-          if (!rec) { missing++; details.absent.push({ date: dateStr, label: "ไม่มีบันทึก" }); return; }
+          workingDates.forEach(dateStr => {
+            const travelHit = data?.travelRanges.find((r: any) => isDateInRange(dateStr, r.startDate, r.endDate));
+            if (travelHit) { officialTravel++; return; }
 
-          if (rec.status === 'สาย' || rec.status === 'Late') { late++; details.late.push({ date: dateStr }); }
-          else if (rec.status === 'ลา' || rec.status === 'ล' || rec.status === 'Leave') { otherLeave++; details.otherLeave.push({ date: dateStr }); }
-          else if (rec.status === 'มา' || rec.status === 'OnTime' || rec.status === 'Normal' || rec.status === 'กลับก่อน') { present++; details.present.push({ date: dateStr }); }
-          else if (rec.status === 'ไม่ลงเวลาออก' || rec.status === 'NoCheckout') { noCheckout++; details.noCheckout.push({ date: dateStr }); }
-          else if (rec.status === 'ไปราชการ' || rec.status === 'officialTravel' || rec.status === 'OfficialTravel') { officialTravel++; details.officialTravel.push({ date: dateStr }); }
-          else if (rec.status === 'ขาด' || rec.status === 'Absent') { explicitAbsent++; details.absent.push({ date: dateStr }); }
-          else { missing++; details.absent.push({ date: dateStr, label: "ไม่มีบันทึก" }); }
-        });
+            const leaveHit = data?.leaveRanges.find((r: any) => isDateInRange(dateStr, r.startDate, r.endDate));
+            if (leaveHit) {
+              const subType = classifyLeaveSubType(leaveHit.leaveType);
+              if (subType === 'sick') sickLeave++;
+              else if (subType === 'personal') personalLeave++;
+              else otherLeave++;
+              return;
+            }
 
-        const absent = explicitAbsent + missing;
+            const rec = data?.attendanceByDate[dateStr];
+            if (!rec) { absent++; return; }
+
+            const st = rec.status;
+            if (st === 'สาย' || st === 'Late') late++;
+            else if (st === 'ลา' || st === 'Leave') sickLeave++;
+            else if (st === 'มา' || st === 'OnTime' || st === 'Normal' || st === 'กลับก่อน') present++;
+            else if (st === 'ไม่ลงเวลาออก' || st === 'NoCheckout') noCheckout++;
+            else if (st === 'ไปราชการ' || st === 'officialTravel' || st === 'OfficialTravel') officialTravel++;
+            else if (st === 'ขาด' || st === 'Absent') absent++;
+            else absent++;
+          });
+        }
+
         const leave = sickLeave + personalLeave + otherLeave;
+        const total = present + late + leave + absent + officialTravel + noCheckout;
         const attended = present + late + noCheckout + officialTravel;
-        const percentage = workingDates.length > 0 ? ((attended / workingDates.length) * 100).toFixed(2) : "0.00";
+        const percentage = total > 0 ? ((attended / total) * 100).toFixed(2) : "0.00";
 
         return {
-          id: teacher.id, fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
+          id: teacher.id,
+          fullName: teacher.fullName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || "ไม่ระบุชื่อ",
           profileUrl: teacher.profileImageUrl,
           present, late, leave, sickLeave, personalLeave, otherLeave, absent, noCheckout, officialTravel,
-          total: workingDates.length, percentage,
+          total, percentage,
           teacherId: teacher.teacherId || "",
           details,
         };
       });
+
       setSummaryData(stats);
     } catch (error) {
       console.error("Error fetching attendance summary:", error);

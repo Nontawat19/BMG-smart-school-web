@@ -6,7 +6,7 @@ import { collection, query, orderBy, limit, getDocs, collectionGroup, where } fr
 import { firestore as db, storage } from '@/firebase';
 import { pdf } from '@react-pdf/renderer';
 
-const GRADEBOOK_PDF_TEMPLATE_VERSION = '2026-05-08-attendance-sequential-week-labels-v18';
+const GRADEBOOK_PDF_TEMPLATE_VERSION = '2026-09-05-student-number-pagination-v19';
 const pdfUploadMetadata = {
     customMetadata: {
         templateVersion: GRADEBOOK_PDF_TEMPLATE_VERSION

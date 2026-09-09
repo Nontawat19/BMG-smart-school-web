@@ -191,11 +191,35 @@ service cloud.firestore {
       match /news/{docId} {
         allow read, write: if isRealAuth();
       }
+      // NEW: e-Saraban / งานธุรการ — เอกสารลงรับ+ประทับตรา (GeneralAffairsPage,
+      // DirectorAssignmentPage, AssignedWorkPage). Explicit rule instead of relying
+      // on the {allSubcollections=**} catch-all below, to avoid any ambiguity.
+      match /stampedDocuments/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      // NEW: ทะเบียนหนังสือ (DocumentRegistryPage) — หนังสือส่ง / คำสั่ง / ประกาศ / หนังสือรับรอง
+      match /sentDocuments/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /orders/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /announcements/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /certificates/{docId} {
+        allow read, write: if isRealAuth();
+      }
       match /notifications/{notificationId} {
         allow read, write: if isRealAuth();
       }
       match /physical-rooms/{docId} {
-        allow read, write: if isRealAuth();
+        // NEW: นักเรียน/ผู้ปกครอง (anonymous auth) ต้องอ่านชื่อห้องเรียนเพื่อแสดงตารางสอนที่
+        // /academic/my-schedule (MySchedulePage.tsx) — เดิม isRealAuth() กันนักเรียนออกไปด้วย ทำให้
+        // Promise.all ทั้งก้อนล้มเหลวและตารางสอนไม่ขึ้นเลย เหมือน schedules/courses/clubs ด้านบนที่
+        // เปิด read ให้ทุกคนอยู่แล้ว
+        allow read: if true;
+        allow write: if isRealAuth();
       }
       match /special-period-attendance/{docId} {
         allow read, write: if isRealAuth();
@@ -285,6 +309,10 @@ service cloud.firestore {
       allow read: if isRealAuth();
       allow write: if isRealAuth();
     }
+    match /{path=**}/travel_summary/{docId} {
+      allow read: if isRealAuth();
+      allow write: if isRealAuth();
+    }
     // FIX: ClassroomAttendanceAuditPage and several other pages (AttendanceSummaryPage,
     // HistoricalClassroomAttendancePage, GuidanceAttendancePage, SpecialPeriodAttendancePage,
     // etc.) run collectionGroup(db, 'ClassroomAttendance') queries — same list-vs-collectionGroup
@@ -311,6 +339,14 @@ service cloud.firestore {
     // 4.2 System manuals (คู่มือการใช้ระบบ) - เอกสารกลาง ใช้ร่วมกันทุกโรงเรียน
     // อ่านได้ทุกคนที่ล็อกอิน แก้ไข/เพิ่ม/ลบได้เฉพาะ Super Admin
     match /system-manuals/{manualId} {
+      allow read: if isRealAuth();
+      allow write: if isSuperAdmin();
+    }
+
+    // 4.3 AI Assistant config — เปิด/ปิดผู้ช่วย AI แบบ rule-based ในระบบ (ไม่มี API key/ความลับใดๆ
+    // เก็บอยู่แล้ว จึงอ่านได้ทุกคนที่ล็อกอินจริง เพื่อให้ปุ่มลอย AI รู้ว่าต้องแสดงหรือไม่ — แก้ไขได้
+    // เฉพาะ Super Admin เท่านั้น)
+    match /ai_config/{configId} {
       allow read: if isRealAuth();
       allow write: if isSuperAdmin();
     }

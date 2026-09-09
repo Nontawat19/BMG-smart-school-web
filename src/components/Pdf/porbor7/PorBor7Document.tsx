@@ -173,6 +173,7 @@ const PorBor7Document: React.FC<PorBor7Props> = ({
     principalPosition = "ผู้อำนวยการโรงเรียน",
     headOfDeptName = "",
     headOfDeptPosition = "หัวหน้าฝ่ายบริหารงานวิชาการ",
+    refNo = "",
 }) => {
     const fullName = `${student.title || ''}${student.firstName || ''} ${student.lastName || ''}`.trim();
 
@@ -225,6 +226,13 @@ const PorBor7Document: React.FC<PorBor7Props> = ({
                 </View>
 
                 <Text style={styles.title}>หนังสือรับรองความประพฤติ</Text>
+
+                {refNo ? (
+                    <View style={[styles.textLine, { top: 213, left: 72 }]}>
+                        <Text style={[styles.labelText, { fontWeight: 'bold' }]}>เลขที่</Text>
+                        <Text style={[styles.fieldText, { marginLeft: 8 }]}>{refNo}</Text>
+                    </View>
+                ) : null}
 
                 <View style={styles.schoolInfoContainer}>
                     <Text style={styles.schoolName}>{schoolName}</Text>

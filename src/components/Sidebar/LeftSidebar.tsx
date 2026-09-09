@@ -279,7 +279,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <div className="flex flex-col min-w-0">
                     <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
                     <span className="text-[10px] text-gray-500 truncate">
-                      {normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
+                      {normalizedRoles.includes('student') || normalizedRoles.includes('parent')
+                        ? ROLE_LABELS[ROLES.STUDENT]
+                        : normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
                     </span>
                   </div>
                 </>
@@ -313,7 +315,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <div className="flex flex-col min-w-0">
                     <span className="font-semibold text-base truncate">{currentUser?.fullName || "ไม่พบข้อมูล"}</span>
                     <span className="text-[10px] text-gray-500 truncate">
-                      {normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
+                      {normalizedRoles.includes('student') || normalizedRoles.includes('parent')
+                        ? ROLE_LABELS[ROLES.STUDENT]
+                        : normalizedRoles.map(r => ROLE_LABELS[r as Role] || r).join(', ')}
                     </span>
                   </div>
                 </>
@@ -429,6 +433,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                         <FaUserCheck className="text-lg min-w-[18px]" />
                         <span>ระบบเช็คชื่อ</span>
                       </NavLink>
+                      {isEnabled('generalAdmin') && (
+                        <NavLink to="/general-affairs/home" className={navLinkClasses}>
+                          <FaBriefcase className="text-lg min-w-[18px]" />
+                          <span>งานธุรการ</span>
+                        </NavLink>
+                      )}
                       <NavLink to="/academic/hub/activities" className={navLinkClasses}>
                         <FaFlag className="text-lg min-w-[18px]" />
                         <span>กิจกรรมและชุมนุม</span>

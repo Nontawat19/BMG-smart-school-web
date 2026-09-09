@@ -14,6 +14,7 @@ import { fetchTeachersMap } from '@/store/slices/userMapSlice';
 import { getCurrentThaiYear } from '@/utils/dateUtils';
 import { CLASSES } from '@/utils/schoolUtils';
 import { getClassDisplayName } from './schedule/utils';
+import { getCanonicalScheduleDocs, resolveScheduleTeacherId } from './schedule/scheduleSharedUtils';
 
 interface PeriodSetting {
   id: string;
@@ -196,14 +197,33 @@ const MySchedulePage: React.FC = () => {
       setIsLoadingProfile(true);
       try {
         const studentSessionRaw = localStorage.getItem('studentSession');
+        const parentSessionRaw = localStorage.getItem('parentSession');
         const currentUserType = localStorage.getItem('currentUserType');
 
-        if (!currentUser && currentUserType === 'student' && studentSessionRaw) {
+        // นักเรียน/ผู้ปกครอง login แบบ anonymous ก็มี currentUser (state.auth.user) เสมอ
+        // (ดู authSlice.ts) จึงเช็คแค่ currentUserType จาก session แทนการเช็ค !currentUser
+        // เดิมเช็ค !currentUser ทำให้ path นี้ไม่เคยทำงาน แล้วไหลไปอ่าน users/{uid} ซึ่งนักเรียน/
+        // ผู้ปกครองไม่มีสิทธิ์ ทำให้ตารางสอนของนักเรียนไม่ขึ้นเลย (Missing or insufficient permissions)
+        if (currentUserType === 'student' && studentSessionRaw) {
           const session = JSON.parse(studentSessionRaw);
           if (session.schoolId && session.studentId) {
             const studentSnap = await getDoc(doc(db, 'school-settings', session.schoolId, 'students', session.studentId));
             if (studentSnap.exists()) {
               setSchoolId(session.schoolId);
+              setMode('student');
+              setPerson({ id: studentSnap.id, docId: studentSnap.id, ...studentSnap.data() });
+              return;
+            }
+          }
+        }
+
+        if (currentUserType === 'parent' && parentSessionRaw) {
+          const parentSession = JSON.parse(parentSessionRaw);
+          const firstChild = parentSession?.children?.[0];
+          if (firstChild?.schoolId && firstChild?.studentDocId) {
+            const studentSnap = await getDoc(doc(db, 'school-settings', firstChild.schoolId, 'students', firstChild.studentDocId));
+            if (studentSnap.exists()) {
+              setSchoolId(firstChild.schoolId);
               setMode('student');
               setPerson({ id: studentSnap.id, docId: studentSnap.id, ...studentSnap.data() });
               return;
@@ -355,10 +375,24 @@ const MySchedulePage: React.FC = () => {
 
         const merged: Record<string, any> = {};
 
-        schedulesSnap.forEach(scheduleDoc => {
-          const data = scheduleDoc.data();
-          if (!matchesYearTerm(data, academicYear, currentTerm)) return;
+        // นักเรียน: ต้องกรอง schedules ที่ซ้ำ/ค้าง (ครูคนเดียวมีได้หลาย doc ถ้าเคยสร้างตารางใหม่ทับของเดิม
+        // โดยไม่ลบ doc เก่า) ด้วย getCanonicalScheduleDocs เหมือน StudentSchedulePage.tsx ไม่งั้น doc เก่าที่
+        // ค้างอยู่จะถูกอ่านปนกับ doc ปัจจุบัน ทำให้วิชา/ครูในบางคาบไม่ตรงกับตารางจริง — ส่วนโหมดครูใช้ query
+        // ที่กรอง teacherId มาแล้วชั้นหนึ่ง จึงยังใช้ raw docs ตามเดิมเพื่อไม่กระทบพฤติกรรมเดิมที่ใช้งานได้อยู่แล้ว
+        const knownTeacherIds = Object.keys(teacherMap);
+        const docsToProcess = mode === 'student'
+          ? getCanonicalScheduleDocs(
+              schedulesSnap.docs.map(d => ({ id: d.id, data: d.data() })),
+              knownTeacherIds,
+              academicYear,
+              currentTerm
+            )
+          : schedulesSnap.docs
+              .map(d => ({ id: d.id, data: d.data() }))
+              .filter(({ data }) => matchesYearTerm(data, academicYear, currentTerm))
+              .map(({ id, data }) => ({ id, data, teacherId: person.docId as string }));
 
+        docsToProcess.forEach(({ data, teacherId }) => {
           const scheduleData = data.schedule || {};
           Object.entries(scheduleData).forEach(([slot, rawCourse]) => {
             const courses = Array.isArray(rawCourse) ? rawCourse : [rawCourse].filter(Boolean);
@@ -369,7 +403,7 @@ const MySchedulePage: React.FC = () => {
               const groupNum = Number(course.groupNumber || 1) || 1;
 
               if (mode === 'teacher') {
-                const assignment = findTeacherAssignment(course, person.docId, groupNum);
+                const assignment = findTeacherAssignment(course, teacherId, groupNum);
                 const roomIds = assignment?.roomIds || course.room || [];
                 const normalizedRoomIds = Array.isArray(roomIds) ? roomIds : [roomIds].filter(Boolean);
                 let roomDisplay = normalizedRoomIds.length > 0 && !normalizedRoomIds.includes('all')
@@ -380,7 +414,7 @@ const MySchedulePage: React.FC = () => {
                 const className = assignment?.classLevels?.length
                   ? formatClassNames(assignment.classLevels, assignment.room)
                   : formatClassNames(data.classId, Array.isArray(course.room) ? undefined : course.room);
-                const teacherPeriodLabel = getTeacherPeriodLabel(assignment, person.docId);
+                const teacherPeriodLabel = getTeacherPeriodLabel(assignment, teacherId);
 
                 mergeScheduleEntry(merged, slot, {
                   course: { ...course, groupNumber: groupNum, teacherPeriodLabel },
@@ -399,36 +433,36 @@ const MySchedulePage: React.FC = () => {
                 ...(latestCourse.teacherAssignments || []),
               ];
 
-              const gradeMatches = [...classIds, ...courseClassIds].some((id: string) => {
-                const normalized = normalizeLevel(id);
-                return normalized === studentClassId || String(id).startsWith(`${studentClassId}/`);
-              });
+              // เอาเฉพาะ assignment ของ "กลุ่ม/กลุ่มเรียน" เดียวกับ course instance นี้เท่านั้น — กันไม่ให้ห้อง/
+              // กลุ่มอื่น (เช่น กลุ่ม 2 ห้อง 2) มาปนกับกลุ่ม 1 ห้อง 1 (เหมือน StudentSchedulePage.tsx)
+              const relevantGroupAssignments = allAssignments.filter(
+                (a: any) => Number(a.groupNumber || 1) === groupNum
+              );
+
+              const classSources = [
+                ...courseClassIds,
+                ...relevantGroupAssignments.flatMap((a: any) => a.classLevels || []),
+                ...(relevantGroupAssignments.length === 0 ? classIds : []),
+              ];
+
+              const gradeMatches = classSources.some((id: string) => normalizeLevel(id) === studentClassId);
               if (!gradeMatches) return;
 
-              const roomMatchesFromClass = [...classIds, ...courseClassIds].some((id: string) => {
+              const roomMatchesFromClass = classSources.some((id: string) => {
                 const text = String(id);
                 if (!text.includes('/')) return true;
                 const [level, room] = text.split('/');
-                return normalizeLevel(level) === studentClassId && (!studentRoom || room === studentRoom);
+                return normalizeLevel(level) === studentClassId && (!studentRoom || room.trim() === studentRoom);
               });
+              if (!roomMatchesFromClass) return;
 
-              const matchingAssignment = allAssignments.find((a: any) => {
-                const teacherMatches = assignmentIncludesTeacher(a, data.teacherId);
-                const levelMatches = (a.classLevels || []).some((level: string) => {
-                  const text = String(level);
-                  if (!text.includes('/')) return normalizeLevel(text) === studentClassId;
-                  const [levelPart, roomPart] = text.split('/');
-                  return normalizeLevel(levelPart) === studentClassId && (!studentRoom || roomPart === studentRoom);
-                });
-                const groupMatches = !course.groupNumber || Number(a.groupNumber || 1) === groupNum;
-                return teacherMatches && levelMatches && groupMatches;
-              });
-
-              if (!roomMatchesFromClass && !matchingAssignment) return;
+              const matchingAssignment = relevantGroupAssignments.find((a: any) =>
+                assignmentIncludesTeacher(a, teacherId)
+              );
 
               const roomIds = matchingAssignment?.roomIds || (course.room?.includes?.('all') ? [] : (Array.isArray(course.room) ? course.room : [course.room].filter(Boolean)));
               const roomCode = roomIds.length > 0 ? roomIds.map((id: string) => roomMap[id] || id).join(', ') : '';
-              const teacher = teacherMap[data.teacherId];
+              const teacher = teacherMap[teacherId];
 
               mergeScheduleEntry(merged, slot, {
                 course: { ...course, groupNumber: groupNum, title: getCourseTitle(course), code: getCourseCode(course) },

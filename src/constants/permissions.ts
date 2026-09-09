@@ -58,6 +58,23 @@ export const CLUB_MEMBER_MANAGEMENT_ACCESS = [ROLES.SCHOOL_ADMIN, ROLES.DIRECTOR
 // สิทธิ์สำหรับบุคลากรโรงเรียนที่เข้าใช้งานระบบได้ทั่วไป
 export const STAFF_ACCESS = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN, ROLES.DIRECTOR, ROLES.DEPT_HEAD, ROLES.ACADEMIC_ADMIN, ROLES.STUDENT_AFFAIRS];
 
+// สิทธิ์สำหรับงานธุรการและสารบรรณ (งานบริหารทั่วไป)
+export const GENERAL_AFFAIRS_ACCESS = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.DIRECTOR,
+    ROLES.DEPT_HEAD,
+    ROLES.GENERAL_USER,
+];
+
+// สิทธิ์สำหรับงานมอบหมาย/ติดตามงานที่ได้รับมอบหมาย (ธุรการ + ผู้บริหาร + บุคลากรที่ได้รับมอบหมาย)
+export const GENERAL_AFFAIRS_WORK_ACCESS = [
+    ROLES.SCHOOL_ADMIN,
+    ROLES.DIRECTOR,
+    ROLES.DEPT_HEAD,
+    ROLES.TEACHER,
+    ROLES.GENERAL_USER,
+];
+
 // สิทธิ์ระดับปฏิบัติการแบบครู - ใช้สำหรับหน้าบันทึกคะแนน/เช็คชื่อ/งานประจำชั้น
 export const TEACHER_OPERATIONAL = [ROLES.TEACHER, ROLES.STUDENT_AFFAIRS, ROLES.SCHOOL_ADMIN, ROLES.DIRECTOR, ROLES.DEPT_HEAD, ROLES.ACADEMIC_ADMIN];
 

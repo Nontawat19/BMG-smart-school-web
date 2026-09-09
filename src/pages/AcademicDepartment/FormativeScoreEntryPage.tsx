@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { CLASSES, CLASS_FULL_NAMES, getClassOptionsBySchoolSettings } from "@/utils/schoolUtils";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
-import { isActivityCourseCode } from "@/utils/remediationUtils";
+import { isActivityCourseCode, invalidateStaleResolvedRequests } from "@/utils/remediationUtils";
 import Swal from "sweetalert2";
 
 interface Student {
@@ -79,6 +79,9 @@ interface GradeRecord {
     midterm?: number | string;
     final?: number | string;
     formativeDetails?: Record<string, number | string>;
+    grade?: string;
+    status?: string;
+    incompleteFields?: string[];
     updatedAt?: any;
     updatedBy?: string;
 }
@@ -156,6 +159,36 @@ const normalizeFormativeDetails = (details?: Record<string, number | string>) =>
         normalized[key] = toScoreNumber(value);
     });
     return normalized;
+};
+// ช่องกรอกคะแนนยอมรับได้แค่ตัวเลข (ว่างได้) หรือตัวอักษร "ร" (หมายถึงงาน/ชิ้นนี้ยังไม่สมบูรณ์) เท่านั้น —
+// ตัวอักษรอื่นพิมพ์ไม่ผ่านเลย คืน null เพื่อไม่ให้ setState เกิดขึ้น
+// ถ้ามี "ร" ปนอยู่ในค่าที่พิมพ์ (เช่น ช่องมีเลขเดิมอยู่แล้วแล้วพิมพ์ ร ทับโดยไม่ได้เลือกลบของเดิมก่อน) ให้ "ร"
+// ชนะเสมอแทนที่ทั้งช่องไปเลย ไม่ต้องให้ครูลบของเดิมออกก่อนถึงจะพิมพ์ ร ได้
+const sanitizeScoreInput = (value: string): string | null => {
+    if (value.includes('ร')) return 'ร';
+    if (value === '' || /^\d*\.?\d*$/.test(value)) return value;
+    return null;
+};
+// นักเรียนติด "ร" ถ้ามีช่องคะแนนช่องใดช่องหนึ่ง (คะแนนเก็บ หรือ กลางภาค) เป็น "ร" — ไม่ว่าจะกี่ช่องก็ตาม
+// สรุปเป็น "ร" เดียวที่สมุดพก ไม่ใช่หลายจุด
+// รายชื่อฟิลด์ที่ครูพิมพ์ "ร" ไว้ (ชื่อ assessment key หรือ "midterm") — ต้องบันทึกแยกเป็น incompleteFields
+// ต่างหาก เพราะฟิลด์คะแนนดิบ (formativeDetails/midterm) ต้องเก็บเป็นตัวเลขเสมอสำหรับคำนวณคะแนนรวมที่อื่น
+// (GradeBookPage ฯลฯ) ถ้าเก็บ "ร" ปนไว้ในนั้นตรงๆ คะแนนรวมจะพังไปด้วย — incompleteFields ใช้แค่ตอนโหลดข้อมูล
+// กลับมาแสดงผลในช่องกรอกให้ตรงกับที่ครูพิมพ์ไว้เท่านั้น
+const collectIncompleteFields = (record: { formativeDetails?: Record<string, number | string>; midterm?: number | string }): string[] => {
+    const fields: string[] = [];
+    Object.entries(record.formativeDetails || {}).forEach(([key, v]) => { if (v === 'ร') fields.push(key); });
+    if (record.midterm === 'ร') fields.push('midterm');
+    return fields;
+};
+// สีช่องคะแนนสำหรับช่องที่ "เคยติด ร" มาก่อน (เทียบจาก incompleteFields ที่เก็บถาวรไว้ ไม่ว่าจะแก้แล้วหรือยัง):
+// ยังไม่แก้ (grade ยังเป็น "ร") = แดง, แก้แล้วแต่ยังไม่ได้คะแนนจริง (0) = เหลือง, แก้แล้วได้คะแนนจริง = เขียว
+// ช่องที่ไม่เคยติด ร เลยคืน null ให้ใช้สีปกติของช่องนั้นต่อไป
+type IncompleteCellColor = 'red' | 'yellow' | 'green' | null;
+const getIncompleteCellColor = (record: { grade?: string; incompleteFields?: string[] }, rawValue: unknown, key: string): IncompleteCellColor => {
+    if (!(record.incompleteFields || []).includes(key)) return null;
+    if (record.grade === 'ร') return 'red';
+    return (Number(rawValue) || 0) > 0 ? 'green' : 'yellow';
 };
 const getClassLevelVariants = (classKey: string) => {
     return Array.from(new Set([
@@ -602,7 +635,28 @@ const FormativeScoreEntryPage: React.FC = () => {
 
                 const gradeMap: Record<string, GradeRecord> = {};
                 gradeSnap.forEach(d => {
-                    gradeMap[d.id] = d.data() as GradeRecord;
+                    const data = d.data() as GradeRecord & { incompleteFields?: string[] };
+                    // แทนที่ค่าตัวเลขดิบ (ที่บันทึกเป็น 0 เสมอ) กลับเป็น "ร" ในช่องที่ครูเคยพิมพ์ "ร" ไว้ ตาม
+                    // incompleteFields ที่บันทึกคู่กันไว้ตอนเซฟครั้งก่อน ไม่งั้นเปิดหน้านี้ใหม่จะเห็นเป็น 0
+                    // ทั้งที่จริงๆ ยังติด "ร" อยู่ (แค่ฟิลด์คะแนนดิบต้องเก็บเป็นตัวเลขไว้คำนวณคะแนนรวมที่อื่น)
+                    // โชว์ป้าย "ร" ทับก็ต่อเมื่อ grade ยังเป็น "ร" อยู่จริงเท่านั้น — ถ้าครูอนุมัติแก้ ร สำเร็จแล้ว
+                    // (grade เปลี่ยนเป็นเกรดจริงจากหน้าคำร้องขอแก้ตัว) เลิกโชว์ป้ายไปเอง กลับไปแสดงเป็น 0 ตาม
+                    // ค่าจริงที่เก็บไว้ (งาน/คะแนนชิ้นที่ไม่เคยได้จริง = 0 ตามระเบียบ) โดยไม่ต้องมาแก้อะไรหน้านี้เอง
+                    const incompleteFields = data.grade === 'ร' ? new Set(data.incompleteFields || []) : new Set<string>();
+                    if (incompleteFields.size > 0) {
+                        const formativeDetails = { ...(data.formativeDetails || {}) };
+                        incompleteFields.forEach(key => {
+                            if (key === 'midterm') return;
+                            formativeDetails[key] = 'ร';
+                        });
+                        gradeMap[d.id] = {
+                            ...data,
+                            formativeDetails,
+                            midterm: incompleteFields.has('midterm') ? 'ร' : data.midterm,
+                        };
+                    } else {
+                        gradeMap[d.id] = data;
+                    }
                 });
 
                 if (requestId !== fetchStudentsRequestRef.current) return;
@@ -621,7 +675,9 @@ const FormativeScoreEntryPage: React.FC = () => {
     }, [schoolId, selectedLevel, selectedRoom, selectedSemester, selectedCourseId, selectedGroup, academicYear, currentCourse]);
 
     // Handlers
-    const handleScoreChange = (studentId: string, assessmentId: string, value: string) => {
+    const handleScoreChange = (studentId: string, assessmentId: string, rawValue: string) => {
+        const value = sanitizeScoreInput(rawValue);
+        if (value === null) return;
         setGrades(prev => {
             const current = prev[studentId] || {};
             const details = { ...(current.formativeDetails || {}), [assessmentId]: value };
@@ -632,7 +688,9 @@ const FormativeScoreEntryPage: React.FC = () => {
         });
     };
 
-    const handleMidtermChange = (studentId: string, value: string) => {
+    const handleMidtermChange = (studentId: string, rawValue: string) => {
+        const value = sanitizeScoreInput(rawValue);
+        if (value === null) return;
         setGrades(prev => {
             const current = prev[studentId] || {};
             return {
@@ -718,20 +776,51 @@ const FormativeScoreEntryPage: React.FC = () => {
         if (!schoolId || !selectedCourseId) return;
         setIsSaving(true);
         try {
+            // คะแนนที่เหลือสูงสุดที่ยังไม่รู้ ณ จุดนี้ (คะแนนเก็บหลังกลางภาค + ปลายภาค) — ใช้เช็คว่า
+            // ต่อให้นักเรียนได้คะแนนเต็มทุกส่วนที่เหลือ ก็ยังไม่มีทางถึง 50 หรือไม่ ("หมดโอกาสเต็มที่")
+            // ก่อนจะติด "0" ทันทีตั้งแต่หน้านี้ — กันไม่ให้ทุกคนที่ยังทำคะแนนไม่ครบถูกติด 0 เกินจริง
+            const maxPostMidFormative = (currentCourse?.formativeAssessments || [])
+                .filter(a => a.term === 'post-midterm')
+                .reduce((sum, a) => sum + (Number(a.maxScore) || 0), 0);
+            const maxRemainingPossible = maxPostMidFormative + (Number(currentCourse?.finalWeight) || 0);
+
             const batch = writeBatch(db);
+            // นักเรียนที่ติด "ร"/"0" อยู่ตอนนี้ (ไม่ถูกทับด้วย มส) — ต้องยกเลิกคำร้องแก้ตัวเดิมที่เคย "resolved"
+            // ไปแล้วให้ด้วย เผื่อกรณีเคยแก้สำเร็จไปแล้วแต่คะแนนจริงยังไม่ถึงเกณฑ์อยู่ดี (ติดซ้ำ) ไม่งั้นนักเรียนจะ
+            // เห็นสถานะ "แก้ตัวสำเร็จ" ค้างอยู่ทั้งที่จริงๆ ติดใหม่แล้ว (เหมือนเคส มส/มผ ที่แก้ไปก่อนหน้านี้)
+            const flaggedStudentIds: string[] = [];
             students.forEach(student => {
                 const record = grades[student.id] || {};
-                
+                const { part1Total } = calculateRowTotals(student.id);
+                const isUnsalvageable = (part1Total + maxRemainingPossible) < 50;
+
+                // ครูพิมพ์ "ร" ลงช่องคะแนนช่องไหนก็ได้ = ยังส่งงาน/สอบไม่ครบ ให้ติด "ร" ทันที แซงหน้าการเดา 0
+                // จากคะแนน (แต่ยังเคารพ มส เดิมก่อนเสมอ เพราะเวลาเรียนไม่ถึงเกณฑ์เป็นเรื่องที่หนักกว่า)
+                const incompleteFields = collectIncompleteFields(record);
+                const incomplete = incompleteFields.length > 0;
+                if (!record.status && (incomplete || isUnsalvageable)) flaggedStudentIds.push(student.id);
+
                 const ref = doc(db, 'school-settings', schoolId, 'courses', selectedCourseId, 'grades', student.id);
                 batch.set(ref, {
                     ...record,
+                    // ฟิลด์คะแนนดิบเก็บเป็นตัวเลขเสมอ (ร -> 0) สำหรับคำนวณคะแนนรวมที่อื่น — ช่องไหนเป็น "ร"
+                    // บันทึกชื่อไว้แยกที่ incompleteFields เพื่อเอาไว้โชว์ "ร" กลับตอนโหลดหน้านี้ใหม่เท่านั้น
                     midterm: toScoreNumber(record.midterm),
                     formativeDetails: normalizeFormativeDetails(record.formativeDetails),
+                    incompleteFields,
+                    // เคารพ มส เดิมก่อนเสมอ (เหมือนหน้าหลังกลางภาค) แล้วค่อยติด ร ถ้าครูพิมพ์ไว้ แล้วค่อยติด 0
+                    // ถ้าหมดโอกาสจริงๆ — ถ้ายังมีโอกาสตามคะแนนคืนได้ ไม่แตะฟิลด์ grade เลย (คงค่าที่มีอยู่เดิมไว้)
+                    ...(record.status ? { grade: record.status } : incomplete ? { grade: 'ร' } : isUnsalvageable ? { grade: '0' } : {}),
                     updatedAt: serverTimestamp(),
                     updatedBy: (currentUser as any)?.displayName || (currentUser as any)?.email
                 }, { merge: true });
             });
             await batch.commit();
+            if (academicYear && selectedSemester) {
+                await Promise.all(flaggedStudentIds.map(studentId => invalidateStaleResolvedRequests(
+                    schoolId, studentId, 'course', selectedCourseId, academicYear, selectedSemester,
+                )));
+            }
             Swal.fire({ icon: 'success', title: 'บันทึกคะแนนสำเร็จ', background: '#1e2235', color: '#fff' });
         } catch (err) {
             console.error(err);
@@ -944,7 +1033,7 @@ const FormativeScoreEntryPage: React.FC = () => {
                                         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">ยังไม่ได้ตั้งค่าสัดส่วนคะแนน</h3>
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-bold uppercase tracking-wider mb-6">วิชานี้ยังไม่มีการกำหนดหัวข้อคะแนนเก็บก่อนกลางภาค</p>
                                         <Link 
-                                            to="/academic/score-config"
+                                            to={`/academic/score-configuration?level=${encodeURIComponent(selectedLevel || searchParams.get('level') || '')}&courseId=${encodeURIComponent(selectedCourseId || searchParams.get('courseId') || '')}`}
                                             className="inline-flex items-center gap-2 px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[12px] font-black transition-all shadow-lg shadow-amber-500/20"
                                         >
                                             <Settings size={16} />
@@ -1036,15 +1125,22 @@ const FormativeScoreEntryPage: React.FC = () => {
 
                                                     {activeAssessments.map(a => {
                                                         const assessmentKey = getAssessmentKey(a);
+                                                        const cellColor = getIncompleteCellColor(record, details[assessmentKey], assessmentKey);
+                                                        const cellBg = cellColor === 'red' ? 'bg-red-500/20'
+                                                            : cellColor === 'yellow' ? 'bg-yellow-400/20'
+                                                            : cellColor === 'green' ? 'bg-emerald-500/20'
+                                                            : ((Number(details[assessmentKey]) || 0) > a.maxScore ? 'bg-red-500/10' : 'bg-white/[0.01]');
+                                                        const cellText = cellColor === 'red' ? 'text-red-600 dark:text-red-400'
+                                                            : cellColor === 'yellow' ? 'text-yellow-700 dark:text-yellow-400'
+                                                            : cellColor === 'green' ? 'text-emerald-700 dark:text-emerald-400'
+                                                            : ((Number(details[assessmentKey]) || 0) > a.maxScore ? 'text-red-500' : 'text-slate-900 dark:text-white');
                                                         return (
-                                                        <td key={`${student.id}-${assessmentKey}`} className={`px-0.5 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(details[assessmentKey]) || 0) > a.maxScore ? 'bg-red-500/10' : 'bg-white/[0.01]' }`}>
-                                                            <input 
+                                                        <td key={`${student.id}-${assessmentKey}`} className={`px-0.5 py-1 border-r border-slate-200 dark:border-white/5 ${cellBg}`}>
+                                                            <input
                                                                 type="text"
                                                                 value={details[assessmentKey] ?? ""}
                                                                 onChange={(e) => handleScoreChange(student.id, assessmentKey, e.target.value)}
-                                                                className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${
-                                                                    (Number(details[assessmentKey]) || 0) > a.maxScore ? 'text-red-500' : 'text-slate-900 dark:text-white'
-                                                                }`}
+                                                                className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${cellText}`}
                                                                 placeholder="0"
                                                             />
                                                         </td>
@@ -1054,17 +1150,27 @@ const FormativeScoreEntryPage: React.FC = () => {
                                                         {formativeTotal}
                                                     </td>
 
-                                                    <td className={`px-1 py-1 border-r border-slate-200 dark:border-white/5 ${ (Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'bg-red-500/10' : 'bg-emerald-500/[0.02]' }`}>
-                                                        <input 
+                                                    {(() => {
+                                                        const midtermCellColor = getIncompleteCellColor(record, record.midterm, 'midterm');
+                                                        const midtermBg = midtermCellColor === 'red' ? 'bg-red-500/20'
+                                                            : midtermCellColor === 'yellow' ? 'bg-yellow-400/20'
+                                                            : midtermCellColor === 'green' ? 'bg-emerald-500/20'
+                                                            : ((Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'bg-red-500/10' : 'bg-emerald-500/[0.02]');
+                                                        const midtermText = midtermCellColor === 'red' ? 'text-red-600 dark:text-red-400'
+                                                            : midtermCellColor === 'yellow' ? 'text-yellow-700 dark:text-yellow-400'
+                                                            : midtermCellColor === 'green' ? 'text-emerald-700 dark:text-emerald-400'
+                                                            : ((Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400');
+                                                        return (
+                                                    <td className={`px-1 py-1 border-r border-slate-200 dark:border-white/5 ${midtermBg}`}>
+                                                        <input
                                                             type="text"
                                                             value={record.midterm ?? ""}
                                                             onChange={(e) => handleMidtermChange(student.id, e.target.value)}
-                                                            className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${
-                                                                (Number(record.midterm) || 0) > (currentCourse?.midtermWeight ?? 0) ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'
-                                                            }`}
+                                                            className={`w-full bg-transparent text-center text-[12px] font-black focus:outline-none transition-all placeholder-slate-300 dark:placeholder-white/5 ${midtermText}`}
                                                             placeholder="0"
                                                         />
                                                     </td>
+                                                    )})()}
 
                                                     <td className={`px-2 py-3 text-center text-[13px] font-black ${ part1Total > 100 ? 'bg-red-500/20 text-red-500' : 'bg-indigo-500/10 text-indigo-900 dark:text-white' }`}>
                                                         {part1Total}

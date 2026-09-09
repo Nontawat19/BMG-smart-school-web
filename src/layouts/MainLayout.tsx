@@ -6,6 +6,7 @@ import { RootState } from '../store'; // 💡 ปรับ path ไปยัง 
 import { useTheme } from "../ThemeContext";
 import { useSidebar } from "../SidebarContext";
 import { useEffectiveSchoolId } from "@/hooks/useEffectiveSchool";
+import AIAssistantWidget from "@/pages/AIAssistant/AIAssistantWidget";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -63,10 +64,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       />
 
       <div
-        className={`flex-1 flex flex-col pt-[60px] transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[280px]'} min-h-[calc(100vh-60px)] bg-[#f9fafb] dark:bg-[#1e1f21] w-full`}
+        className={`flex-1 flex flex-col pt-[60px] transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[280px]'} min-h-[calc(100vh-60px)] bg-[#f9fafb] dark:bg-[#1e1f21] w-full min-w-0 max-w-full`}
       >
         {children}
       </div>
+
+      <AIAssistantWidget />
     </div>
   );
 };

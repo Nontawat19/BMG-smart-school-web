@@ -30,11 +30,11 @@ interface SecondaryExamSummaryPageProps {
   courseTeacherName?: string;
 }
 
-// 1. กำหนดความกว้างที่แน่นอน (หน่วยเป็น Point) เพื่อความแม่นยำสูงสุด
+// 1. กำหนดความกว้างที่แน่นอน (หน่วยเป็น Point) เพื่อความแม่นยำสูงสุด (รวมกันได้ 524pt พอดีกับหน้ากระดาษ A4)
 const COL_WIDTHS = {
   NO: 20,
   ID: 45,
-  NAME: 130,      // ชื่อ-สกุล
+  NAME: 114,      // ชื่อ-สกุล (ปรับจาก 130 เพื่อให้ความกว้างรวม = 524pt พอดีกับ printable area)
   SCORE_ITEM: 20, // คะแนนย่อยแต่ละช่อง
   SCORE_SUM: 20,  // ช่องรวมคะแนนเก็บ
   MIDTERM: 25,    // กลางภาค
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
 
   // --- Table Structure ---
   table: {
-    width: '100%',
+    width: 524,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderColor: '#000',
@@ -354,33 +354,38 @@ const SecondaryExamSummaryPage: React.FC<SecondaryExamSummaryPageProps> = ({
                 </Text>
               </View>
 
-              {/* 4. คะแนนก่อนกลางภาค (5 ช่อง) */}
-              {preSlots.map((_, i) => {
-                const a = preMidtermAssessments[i];
-                return (
-                  <View key={`pre-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !a ? styles.bgGray : {}]}>
-                    <Text style={styles.cellText}>
-                      {a ? (grades[s.id]?.formativeDetails?.[a.id] ?? '') : ''}
-                    </Text>
-                  </View>
-                );
-              })}
+              {/* ส่วนคะแนนเก็บ (จัดโครงสร้างให้ตรงกับหัวตารางแบบเป๊ะๆ 100%) */}
+              <View style={{ width: formativeSectionWidth, flexDirection: 'row', borderRightWidth: 1, borderColor: '#000' }}>
+                <View style={{ width: preWidth, flexDirection: 'row' }}>
+                  {preSlots.map((_, i) => {
+                    const a = preMidtermAssessments[i];
+                    return (
+                      <View key={`pre-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !a ? styles.bgGray : {}]}>
+                        <Text style={styles.cellText}>
+                          {a ? (grades[s.id]?.formativeDetails?.[a.id] ?? '') : ''}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
 
-              {/* 5. คะแนนหลังกลางภาค (5 ช่อง) */}
-              {postSlots.map((_, i) => {
-                const a = postMidtermAssessments[i];
-                return (
-                  <View key={`post-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !a ? styles.bgGray : {}]}>
-                    <Text style={styles.cellText}>
-                      {a ? (grades[s.id]?.formativeDetails?.[a.id] ?? '') : ''}
-                    </Text>
-                  </View>
-                );
-              })}
+                <View style={{ width: postWidth, flexDirection: 'row' }}>
+                  {postSlots.map((_, i) => {
+                    const a = postMidtermAssessments[i];
+                    return (
+                      <View key={`post-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !a ? styles.bgGray : {}]}>
+                        <Text style={styles.cellText}>
+                          {a ? (grades[s.id]?.formativeDetails?.[a.id] ?? '') : ''}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
 
-              {/* 6. รวมเก็บ (พื้นหลังขาวปกติ) */}
-              <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUM }]}>
-                <Text style={styles.cellText}>{totalFormative}</Text>
+                {/* รวมเก็บ */}
+                <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUM, borderRightWidth: 0 }]}>
+                  <Text style={styles.cellText}>{totalFormative}</Text>
+                </View>
               </View>
 
               {/* 7. กลางภาค */}
@@ -419,14 +424,22 @@ const SecondaryExamSummaryPage: React.FC<SecondaryExamSummaryPageProps> = ({
             <View style={[styles.cell, { width: COL_WIDTHS.NAME, alignItems: 'flex-start' }]}><Text style={styles.cellTextLeft}></Text></View>
 
             {/* Empty formative scores */}
-            {preSlots.map((_, i) => (
-              <View key={`empty-pre-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !preMidtermAssessments[i] ? styles.bgGray : {}]} />
-            ))}
-            {postSlots.map((_, i) => (
-              <View key={`empty-post-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !postMidtermAssessments[i] ? styles.bgGray : {}]} />
-            ))}
+            <View style={{ width: formativeSectionWidth, flexDirection: 'row', borderRightWidth: 1, borderColor: '#000' }}>
+              <View style={{ width: preWidth, flexDirection: 'row' }}>
+                {preSlots.map((_, i) => (
+                  <View key={`empty-pre-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !preMidtermAssessments[i] ? styles.bgGray : {}]} />
+                ))}
+              </View>
 
-            <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUM }]} />
+              <View style={{ width: postWidth, flexDirection: 'row' }}>
+                {postSlots.map((_, i) => (
+                  <View key={`empty-post-${i}`} style={[styles.cell, { width: COL_WIDTHS.SCORE_ITEM }, !postMidtermAssessments[i] ? styles.bgGray : {}]} />
+                ))}
+              </View>
+
+              <View style={[styles.cell, { width: COL_WIDTHS.SCORE_SUM, borderRightWidth: 0 }]} />
+            </View>
+
             <View style={[styles.cell, { width: COL_WIDTHS.MIDTERM }]} />
             <View style={[styles.cell, { width: COL_WIDTHS.FINAL }]} />
             <View style={[styles.cell, { width: COL_WIDTHS.TOTAL_SEM }]} />

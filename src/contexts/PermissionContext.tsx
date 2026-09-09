@@ -46,19 +46,13 @@ const isPermissionDeniedError = (err: unknown): boolean =>
   'code' in err &&
   (err as { code?: string }).code === 'permission-denied';
 
-// Union merge: school admin can only ADD to what Super Admin allows, never remove
+// School-specific settings take precedence for that school; otherwise fallback to global
 const unionEntry = (
   global: RoutePermissionEntry | undefined,
   school: RoutePermissionEntry | undefined
 ): RoutePermissionEntry => {
-  const g = global ?? { allowedRoles: [], allowedDepartments: [], allowedSpecialRoles: [], allowedPersonnelTypes: [] };
-  if (!school) return g;
-  return {
-    allowedRoles:          [...new Set([...g.allowedRoles,          ...school.allowedRoles])],
-    allowedDepartments:    [...new Set([...g.allowedDepartments,    ...school.allowedDepartments])],
-    allowedSpecialRoles:   [...new Set([...g.allowedSpecialRoles,   ...school.allowedSpecialRoles])],
-    allowedPersonnelTypes: [...new Set([...g.allowedPersonnelTypes, ...school.allowedPersonnelTypes])],
-  };
+  if (school) return school;
+  return global ?? { allowedRoles: [], allowedDepartments: [], allowedSpecialRoles: [], allowedPersonnelTypes: [] };
 };
 
 export const PermissionProvider: React.FC<{

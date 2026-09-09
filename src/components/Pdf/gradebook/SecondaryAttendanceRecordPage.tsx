@@ -270,7 +270,8 @@ const SecondaryAttendanceRecordPage: React.FC<AttendanceRecordPageProps> = ({
                     const termKey = page.term === '2' ? 'term2' : 'term1';
                     const termSummary = studentSummary[termKey as 'term1' | 'term2'];
                     totalAttended = termSummary.present + termSummary.late + termSummary.leave;
-                    percentage = termSummary.totalPossibleHours > 0 ? ((totalAttended / termSummary.totalPossibleHours) * 100).toFixed(0) : "0";
+                    const baseHours = termTotalHours && termTotalHours > 0 ? termTotalHours : termSummary.totalPossibleHours;
+                    percentage = baseHours > 0 ? ((totalAttended / baseHours) * 100).toFixed(0) : "0";
                   }
 
                   return (

@@ -24,6 +24,7 @@ interface UserProfile {
   isHeadOfAssessment?: boolean;
   isGuidanceTeacher?: boolean;
   isHomeroomTeacher?: boolean;
+  isGeneralAffairsOfficer?: boolean;
 }
 
 interface AuthState {
@@ -41,15 +42,59 @@ export const listenToAuthChanges = createAsyncThunk(
   async (_, thunkAPI) => {
     try {
       return new Promise<UserProfile | null>((resolve, reject) => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
           if (user) {
             if (user.isAnonymous) {
               const userType = localStorage.getItem('currentUserType') || 'student';
+
+              // นักเรียน/ผู้ปกครอง login แบบ anonymous ไม่มี users/{uid} ให้ดึงรูป/ชื่อเหมือนครู
+              // ต้องไปดึงรูปโปรไฟล์และชื่อ-นามสกุลจากเอกสารนักเรียนตรงๆ (session เก็บแค่ schoolId/studentId
+              // ไว้ค้นหา) เพื่อให้ Navbar/LeftSidebar ที่อ่าน state.auth.user.profileUrl/fullName แสดงข้อมูล
+              // จริงได้ — สำหรับผู้ปกครองใช้ชื่อบุตร/หลานคนแรกแทน เพราะผู้ปกครองไม่มีโปรไฟล์ของตัวเองในระบบ
+              let studentProfileImageUrl = '';
+              let studentDisplayName = '';
+              try {
+                if (userType === 'student') {
+                  const studentSessionRaw = localStorage.getItem('studentSession');
+                  if (studentSessionRaw) {
+                    const { schoolId: sSchoolId, studentId } = JSON.parse(studentSessionRaw);
+                    if (sSchoolId && studentId) {
+                      const studentSnap = await getDoc(doc(firestore, 'school-settings', sSchoolId, 'students', studentId));
+                      if (studentSnap.exists()) {
+                        const sd = studentSnap.data();
+                        studentProfileImageUrl = sd.profileImageUrl || '';
+                        studentDisplayName = `${sd.title || ''}${sd.firstName || ''} ${sd.lastName || ''}`.trim();
+                      }
+                    }
+                  }
+                } else if (userType === 'parent') {
+                  const parentSessionRaw = localStorage.getItem('parentSession');
+                  if (parentSessionRaw) {
+                    const parentSession = JSON.parse(parentSessionRaw);
+                    const firstChild = parentSession?.children?.[0];
+                    if (firstChild?.schoolId && firstChild?.studentDocId) {
+                      const studentSnap = await getDoc(doc(firestore, 'school-settings', firstChild.schoolId, 'students', firstChild.studentDocId));
+                      if (studentSnap.exists()) {
+                        const sd = studentSnap.data();
+                        studentProfileImageUrl = sd.profileImageUrl || '';
+                        studentDisplayName = `${sd.title || ''}${sd.firstName || ''} ${sd.lastName || ''}`.trim();
+                      } else {
+                        studentProfileImageUrl = firstChild.profileImageUrl || '';
+                        studentDisplayName = firstChild.name || '';
+                      }
+                    } else {
+                      studentProfileImageUrl = firstChild?.profileImageUrl || '';
+                      studentDisplayName = firstChild?.name || '';
+                    }
+                  }
+                }
+              } catch (_) {}
+
               const profile: UserProfile = {
                 uid: user.uid,
                 email: user.email || '',
-                fullName: userType === 'student' ? 'นักเรียน' : 'ผู้ปกครอง',
-                profileUrl: '',
+                fullName: studentDisplayName || (userType === 'student' ? 'นักเรียน' : 'ผู้ปกครอง'),
+                profileUrl: studentProfileImageUrl,
                 schoolId: null,
                 homeSchoolId: null,
                 homeRole: [userType],
@@ -98,6 +143,7 @@ export const listenToAuthChanges = createAsyncThunk(
                         isHeadOfAssessment: !!td.isHeadOfAssessment,
                         isGuidanceTeacher: !!td.isGuidanceTeacher,
                         isHomeroomTeacher: !!td.isHomeroomTeacher,
+                        isGeneralAffairsOfficer: !!td.isGeneralAffairsOfficer,
                       };
                     }
                   } catch (_) {}
@@ -166,6 +212,7 @@ export const listenToAuthChanges = createAsyncThunk(
                       isHeadOfAssessment: !!td.isHeadOfAssessment,
                       isGuidanceTeacher: !!td.isGuidanceTeacher,
                       isHomeroomTeacher: !!td.isHomeroomTeacher,
+                      isGeneralAffairsOfficer: !!td.isGeneralAffairsOfficer,
                     };
 
                     thunkAPI.dispatch(setUser(profile));

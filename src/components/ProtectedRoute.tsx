@@ -236,7 +236,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       !!user.department && effectiveDepts.includes(user.department);
 
     const hasSpecialRoleAccess = effectiveSpecialRoles.length > 0 &&
-      effectiveSpecialRoles.some(sr => (user as unknown as Record<string, unknown>)[sr] === true);
+      effectiveSpecialRoles.some(sr => {
+        const u = user as unknown as Record<string, unknown>;
+        if (sr === 'isSubjectGroupHead') return u.isSubjectGroupHead === true || u.isHeadOfLearningArea === true;
+        if (sr === 'isAssessmentHead') return u.isAssessmentHead === true || u.isHeadOfAssessment === true;
+        return u[sr] === true;
+      });
 
     const hasPersonnelTypeAccess = effectivePersonnelTypes.length > 0 &&
       !!(user as unknown as Record<string, unknown>).personnelType &&
