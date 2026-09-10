@@ -254,18 +254,6 @@ const TeacherScheduleViewPage: React.FC = () => {
 
   const selectedTeacherData = (teacherMap[selectedTeacher] as Teacher) || null;
 
-  // Special periods that belong to this teacher's learner activities (Mode 1)
-  const teacherSpecialPeriods = useMemo(() => {
-    if (!selectedTeacher) return specialPeriods;
-    const spIds = new Set(
-      learnerActivities
-        .filter(a => Array.isArray(a.responsibleTeacherIds) && a.responsibleTeacherIds.includes(selectedTeacher) && a.specialPeriodId)
-        .map(a => a.specialPeriodId)
-    );
-    if (spIds.size === 0) return specialPeriods;
-    return specialPeriods.filter(sp => spIds.has(sp.id));
-  }, [selectedTeacher, learnerActivities, specialPeriods]);
-
   const formatClassNames = (classIds: any, groupNum?: number, roomNum?: string | number): string => {
     const ids = Array.isArray(classIds) ? classIds : [classIds].filter(Boolean);
     const groupSuffix = groupNum ? ` (กลุ่ม ${groupNum})` : '';
@@ -640,7 +628,7 @@ const TeacherScheduleViewPage: React.FC = () => {
       teacher={selectedTeacherData}
       academicYear={academicYear}
       currentTerm={currentTerm}
-      specialPeriods={teacherSpecialPeriods}
+      specialPeriods={specialPeriods}
       totalPeriods={totalPeriods}
       clubs={clubs}
     />
@@ -814,7 +802,7 @@ const TeacherScheduleViewPage: React.FC = () => {
                     teacher={selectedTeacherData}
                     academicYear={academicYear}
                     currentTerm={currentTerm}
-                    specialPeriods={teacherSpecialPeriods}
+                    specialPeriods={specialPeriods}
                     totalPeriods={totalPeriods}
                     clubs={clubs}
                   />

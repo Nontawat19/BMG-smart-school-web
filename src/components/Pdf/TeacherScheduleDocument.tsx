@@ -77,6 +77,18 @@ export interface PeriodSetting {
 
 export type Schedule = Record<string, ScheduleEntry | null>;
 
+const normalizeScheduleTime = (value?: string) => String(value || '').trim().replace('.', ':');
+
+const matchesSpecialPeriod = (sp: SpecialPeriod, day: string, periodSetting: PeriodSetting) => {
+    const dayMatches = !sp.day || sp.day === 'all' || sp.day === day;
+    if (!dayMatches) return false;
+    if (sp.linkedPeriodId && sp.linkedPeriodId !== 'custom') {
+        return sp.linkedPeriodId === periodSetting.id;
+    }
+    return normalizeScheduleTime(sp.startTime) === normalizeScheduleTime(periodSetting.startTime) &&
+        normalizeScheduleTime(sp.endTime) === normalizeScheduleTime(periodSetting.endTime);
+};
+
 const getScheduleEntry = (schedule: Schedule, dayKey: string, period: PeriodSetting, periodIndex: number) => {
     const candidates = getScheduleSlotCandidates(dayKey, period, periodIndex);
     const slot = candidates.find(key => schedule[key]);
@@ -604,12 +616,8 @@ export const TeacherSchedulePDF = ({
 
                             const { slot, entry } = getScheduleEntry(schedule, dayKey, period, i);
                             
-                            const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
-                                const { id } = periodSetting;
-                                return specialPeriods.find(sp =>
-                                    sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)
-                                );
-                            };
+                            const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) =>
+                                specialPeriods.find(sp => matchesSpecialPeriod(sp, day, periodSetting));
                             const special = getSpecialPeriod(dayKey, period);
                             const specialTitle = special?.title;
                             const isUnavailable = slot && teacher?.preferences?.unavailableSlots?.includes(slot);
@@ -712,11 +720,6 @@ export const TeacherSchedulePDF = ({
                                                         }}>
                                                             {displayText}
                                                         </Text>
-                                                        {teacher?.teacherId && (
-                                                            <Text style={{ fontSize: 9, marginTop: 1, color: '#444' }}>
-                                                                {teacher.teacherId}
-                                                            </Text>
-                                                        )}
                                                     </View>
                                                 ) : null}
                                             </View>
@@ -839,12 +842,8 @@ export const BulkTeacherSchedulePDF = ({
 
                                         const { slot, entry } = getScheduleEntry(item.schedule, dayKey, period, i);
                                         
-                                        const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) => {
-                                            const { id } = periodSetting;
-                                            return specialPeriods.find(sp =>
-                                                sp.linkedPeriodId === id && (!sp.day || sp.day === 'all' || sp.day === day)
-                                            );
-                                        };
+                                        const getSpecialPeriod = (day: string, periodSetting: PeriodSetting) =>
+                                            specialPeriods.find(sp => matchesSpecialPeriod(sp, day, periodSetting));
                                         const special = getSpecialPeriod(dayKey, period);
                                         const specialTitle = special?.title;
                                         const isUnavailable = slot && item.teacher?.preferences?.unavailableSlots?.includes(slot);
@@ -939,11 +938,6 @@ export const BulkTeacherSchedulePDF = ({
                                                                     }}>
                                                                         {displayText}
                                                                     </Text>
-                                                                    {item.teacher?.teacherId && (
-                                                                        <Text style={{ fontSize: 9, marginTop: 1, color: '#444' }}>
-                                                                            {item.teacher.teacherId}
-                                                                        </Text>
-                                                                    )}
                                                                 </View>
                                                             ) : null}
                                                         </View>
