@@ -1,0 +1,108 @@
+{
+  "events": {
+    "2026-07-29": {
+      "type": "holiday",
+      "description": "วันอาสาฬหบูชา"
+    },
+    "2026-07-30": {
+      "description": "วันเข้าพรรษา",
+      "type": "holiday"
+    },
+    "2026-12-31": {
+      "type": "holiday",
+      "description": "วันสิ้นปี"
+    },
+    "2026-03-03": {
+      "description": "วันมาฆบูชา",
+      "type": "holiday"
+    },
+    "2026-10-23": {
+      "type": "holiday",
+      "description": "วันปิยมหาราช"
+    },
+    "2026-04-13": {
+      "description": "วันสงกรานต์",
+      "type": "holiday"
+    },
+    "2026-05-04": {
+      "type": "holiday",
+      "description": "วันฉัตรมงคล"
+    },
+    "2026-12-10": {
+      "description": "​วันรัฐธรรมนูญ",
+      "type": "holiday"
+    },
+    "2026-07-31": {
+      "description": "หยุดกรณีพิเศษ",
+      "type": "specialHoliday"
+    },
+    "2026-04-06": {
+      "type": "holiday",
+      "description": "วันจักรี"
+    },
+    "2026-04-14": {
+      "description": "วันสงกรานต์",
+      "type": "holiday"
+    },
+    "2026-06-02": {
+      "description": "หยุดกรณีพิเศษ",
+      "type": "specialHoliday"
+    },
+    "2026-07-25": {
+      "type": "schoolDay",
+      "scheduleDay": "fri",
+      "description": "สอนชดเชย"
+    },
+    "2026-01-01": {
+      "description": "วันขื้นปีใหม่",
+      "type": "holiday"
+    },
+    "2026-04-15": {
+      "description": "วันสงกรานต์",
+      "type": "holiday"
+    },
+    "2026-07-28": {
+      "type": "holiday",
+      "description": "วันเฉลิมพระชนมพรรษา สมเด็จพระเจ้าอยู่หัวมหาวชิราลงกรณ บดินทรเทพยวรางกูร"
+    },
+    "2026-05-31": {
+      "description": "วันวิสาขบูชา",
+      "type": "holiday"
+    },
+    "2026-08-12": {
+      "type": "holiday",
+      "description": "วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าสิริกิติ์ พระบรมราชินีนาถ พระบรมราชชนนีพันปีหลวง และวันแม่แห่งชาติ"
+    },
+    "2026-01-02": {
+      "description": "วันหยุดราชการธันวาคม",
+      "type": "holiday"
+    },
+    "2026-06-03": {
+      "description": "วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าสุทิดา",
+      "type": "holiday"
+    },
+    "2026-07-24": {
+      "type": "schoolDay"
+    },
+    "2026-06-27": {
+      "type": "schoolDay",
+      "scheduleDay": "tue",
+      "description": "สอนชดเชย"
+    },
+    "2026-10-13": {
+      "type": "holiday",
+      "description": "วันคล้ายวันสวรรคตของพระบาทสมเด็จพระปรมินทรมหาภูมิพลอดุลยเดชบรมนาถบพิตร"
+    }
+  },
+  "academicYear": "2569",
+  "terms": {
+    "term2": {
+      "startDate": null,
+      "endDate": null
+    },
+    "term1": {
+      "startDate": "2026-05-18",
+      "endDate": "2026-10-09"
+    }
+  }
+}
