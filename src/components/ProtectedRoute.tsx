@@ -12,6 +12,7 @@ import { usePermissionContext } from '@/contexts/PermissionContext';
 import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 import { ROLES } from '@/constants/roles';
 import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
+import { resolveEffectiveRouteAccess, userHasRouteAccess } from '@/utils/routeAccess';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -34,23 +35,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return found?.key;
   }, [location.pathname]);
 
-  const matchedEntry = useMemo(() => {
-    if (permissionsLoaded && matchedRouteKey && routePermissions[matchedRouteKey] !== undefined) {
-      return routePermissions[matchedRouteKey];
-    }
-    return null;
-  }, [permissionsLoaded, matchedRouteKey, routePermissions]);
-
-  let effectiveRoles: string[] | undefined = allowedRoles;
-  let effectiveDepts: string[] = [];
-  let effectiveSpecialRoles: string[] = [];
-  let effectivePersonnelTypes: string[] = [];
-  if (matchedEntry) {
-    effectiveRoles = matchedEntry.allowedRoles;
-    effectiveDepts = matchedEntry.allowedDepartments;
-    effectiveSpecialRoles = matchedEntry.allowedSpecialRoles;
-    effectivePersonnelTypes = matchedEntry.allowedPersonnelTypes ?? [];
-  }
+  const { effectiveRoles, effectiveDepts, effectiveSpecialRoles, effectivePersonnelTypes } = useMemo(
+    () => resolveEffectiveRouteAccess(permissionsLoaded ? matchedRouteKey : undefined, allowedRoles, routePermissions),
+    [permissionsLoaded, matchedRouteKey, allowedRoles, routePermissions]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -228,26 +216,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     // CheckinOutPage เมื่อเข้าด้วย ?mode=self) จึงปลอดภัยพอที่จะไม่ต้องพึ่งสวิตช์ตั้งค่าต่อโรงเรียน
     const hasTeacherSelfCheckinAccess = matchedRouteKey === 'checkin_out' && userRoles.includes(ROLES.TEACHER);
 
-    const hasRoleAccess = !effectiveRoles || effectiveRoles.length === 0 ||
-      effectiveRoles.some(r => userRoles.includes(normalizeRole(r))) ||
-      hasTeacherSelfCheckinAccess;
+    const hasAccess = hasTeacherSelfCheckinAccess || userHasRouteAccess(user, {
+      effectiveRoles, effectiveDepts, effectiveSpecialRoles, effectivePersonnelTypes,
+    });
 
-    const hasDeptAccess = effectiveDepts.length > 0 &&
-      !!user.department && effectiveDepts.includes(user.department);
-
-    const hasSpecialRoleAccess = effectiveSpecialRoles.length > 0 &&
-      effectiveSpecialRoles.some(sr => {
-        const u = user as unknown as Record<string, unknown>;
-        if (sr === 'isSubjectGroupHead') return u.isSubjectGroupHead === true || u.isHeadOfLearningArea === true;
-        if (sr === 'isAssessmentHead') return u.isAssessmentHead === true || u.isHeadOfAssessment === true;
-        return u[sr] === true;
-      });
-
-    const hasPersonnelTypeAccess = effectivePersonnelTypes.length > 0 &&
-      !!(user as unknown as Record<string, unknown>).personnelType &&
-      effectivePersonnelTypes.includes((user as unknown as Record<string, unknown>).personnelType as string);
-
-    if (!hasRoleAccess && !hasDeptAccess && !hasSpecialRoleAccess && !hasPersonnelTypeAccess) {
+    if (!hasAccess) {
       console.warn(`Access denied. Required: roles=${effectiveRoles}, depts=${effectiveDepts}, specialRoles=${effectiveSpecialRoles}, personnelTypes=${effectivePersonnelTypes}. User: roles=${userRoles}, dept=${user.department}`);
       return <Navigate to="/home" replace />;
     }

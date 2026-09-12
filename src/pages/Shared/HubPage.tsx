@@ -58,6 +58,11 @@ import {
 import { ROLES } from "@/constants/roles";
 import { usePwaMode } from "@/hooks/usePwaMode";
 import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
+import { usePermissionContext } from "@/contexts/PermissionContext";
+import { ROUTE_REGISTRY } from "@/constants/routeRegistry";
+import { resolveEffectiveRouteAccess, userHasRouteAccess } from "@/utils/routeAccess";
+
+const ROUTE_KEY_BY_PATH = new Map(ROUTE_REGISTRY.map(r => [r.path, r.key]));
 
 interface HubItem {
   title: string;
@@ -92,6 +97,7 @@ const HubPage: React.FC = () => {
   const { hubType: paramHubType } = useParams<{ hubType: string }>();
   const location = useLocation();
   const { user: currentUser, hasRole, STAFF_ACCESS, ACADEMIC_ACCESS, ACADEMIC_MANAGEMENT, TEACHER_OPERATIONAL, STUDENT_AFFAIRS_ACCESS, STUDENT_AFFAIRS_MANAGEMENT, STUDENT_SUPPORT_OPERATIONAL_ACCESS, STUDENT_ATTENDANCE_REPORT_ACCESS, CLUB_MEMBER_MANAGEMENT_ACCESS, OWNER_ONLY, ADMIN_ACCESS } = usePermissions();
+  const { routePermissions, isLoaded: permissionsLoaded } = usePermissionContext();
   const isPwaMode = usePwaMode();
   
   // Handle static routes and "all" mode
@@ -210,8 +216,14 @@ const HubPage: React.FC = () => {
   }, [currentUser]);
 
   const checkAccess = (item: HubItem) => {
-    // 1. Role Check
-    if (item.allowedRoles && !hasRole(item.allowedRoles)) return false;
+    // 1. Role Check — resolves through the same Firestore route_permissions override that
+    // ProtectedRoute uses (see routeAccess.ts), so a grant made at
+    // /academic/permission-management actually shows the tile, not just makes the page
+    // reachable by direct URL. Falls back to the hardcoded allowedRoles when no override exists
+    // or permissions haven't loaded yet.
+    const routeKey = ROUTE_KEY_BY_PATH.get(item.path);
+    const access = resolveEffectiveRouteAccess(permissionsLoaded ? routeKey : undefined, item.allowedRoles, routePermissions);
+    if (!userHasRouteAccess(currentUser, access)) return false;
 
     // 2. Feature Check
     if (item.featureKey && features[item.featureKey] === false) {
