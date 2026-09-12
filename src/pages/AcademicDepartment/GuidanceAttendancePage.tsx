@@ -515,26 +515,20 @@ const GuidanceAttendancePage: React.FC = () => {
           db, schoolId, selectedClassKey, selectedRoom, activeAcademicYear, activeSemester,
           students.map(s => ({ id: s.id })),
         );
-        const belowThresholdStudents = students
-          .map(s => ({ id: s.id, ...eligibility[s.id] }))
-          .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
-            Boolean(s.belowThreshold));
-        if (belowThresholdStudents.length > 0) {
-          const guidanceEvalDocId = `${activeAcademicYear}_${activeSemester}_${selectedClassKey}_${selectedRoom}`;
-          const evalRef = doc(db, 'school-settings', schoolId, 'guidance-evaluations', guidanceEvalDocId);
-          await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
-            schoolId, flagKind: 'guidance', idValue: guidanceEvalDocId, academicYear: activeAcademicYear, semester: activeSemester,
-          }, {
-            schoolId,
-            type: 'guidance',
-            academicYear: activeAcademicYear,
-            semester: activeSemester,
-            targetId: `${selectedClassKey}/${selectedRoom}`,
-            targetName: `${className}/${selectedRoom}`,
-            classId: selectedClassKey,
-            room: selectedRoom,
-          });
-        }
+        const guidanceEvalDocId = `${activeAcademicYear}_${activeSemester}_${selectedClassKey}_${selectedRoom}`;
+        const evalRef = doc(db, 'school-settings', schoolId, 'guidance-evaluations', guidanceEvalDocId);
+        await applyActivityEligibilityFailFlags(db, evalRef, students.map(s => ({ id: s.id })), eligibility, {
+          schoolId, flagKind: 'guidance', idValue: guidanceEvalDocId, academicYear: activeAcademicYear, semester: activeSemester,
+        }, {
+          schoolId,
+          type: 'guidance',
+          academicYear: activeAcademicYear,
+          semester: activeSemester,
+          targetId: `${selectedClassKey}/${selectedRoom}`,
+          targetName: `${className}/${selectedRoom}`,
+          classId: selectedClassKey,
+          room: selectedRoom,
+        });
       } catch (eligibilityError) {
         console.error('Error applying guidance attendance-eligibility (มผ) flags:', eligibilityError);
       }

@@ -524,17 +524,11 @@ const LearnerActivityAttendancePage: React.FC = () => {
             activeSemester,
             students.map(s => ({ id: s.id })),
           );
-          const belowThresholdStudents = students
-            .map(s => ({ id: s.id, ...eligibility[s.id] }))
-            .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
-              Boolean(s.belowThreshold));
-          if (belowThresholdStudents.length > 0) {
-            const evalRef = doc(db, 'school-settings', schoolId, 'learner-activities', activityId, 'evaluations',
-              buildLearnerActivityEvaluationDocId(activeAcademicYear, activeSemester, selectedTeacherScope?.key));
-            await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
-              schoolId, flagKind: 'learner-activity', idValue: activityId, academicYear: activeAcademicYear, semester: activeSemester,
-            }, undefined, dailyStatus);
-          }
+          const evalRef = doc(db, 'school-settings', schoolId, 'learner-activities', activityId, 'evaluations',
+            buildLearnerActivityEvaluationDocId(activeAcademicYear, activeSemester, selectedTeacherScope?.key));
+          await applyActivityEligibilityFailFlags(db, evalRef, students.map(s => ({ id: s.id })), eligibility, {
+            schoolId, flagKind: 'learner-activity', idValue: activityId, academicYear: activeAcademicYear, semester: activeSemester,
+          }, undefined, dailyStatus);
         }
       } catch (eligibilityError) {
         console.error('Error applying learner-activity attendance-eligibility (มผ) flags:', eligibilityError);

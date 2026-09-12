@@ -103,13 +103,16 @@ export const computeGuidanceEligibilityForRoster = async (
 };
 
 // เขียนผล "มผ" ลง evaluations doc จริง (ใช้ร่วมกันได้ทั้ง clubs/{id}/evaluations, learner-activities/{id}/evaluations
-// และ guidance-evaluations) — บังคับทับผลเดิมเสมอถ้าเวลาไม่ถึงเกณฑ์ เหมือนหลักการ มส ของวิชาปกติ (ไม่ auto-clear
-// เองแม้เวลาจะกลับมาถึงเกณฑ์ภายหลัง แก้ไขผ่านระบบคำร้องขอแก้ตัวเท่านั้น) best-effort เสมอ ไม่ throw กันไม่ให้
-// การเช็คชื่อที่บันทึกสำเร็จแล้วถูกมองว่าล้มเหลวไปด้วย
+// และ guidance-evaluations) — บังคับทับผลเดิมเสมอถ้าเวลาไม่ถึงเกณฑ์ เหมือนหลักการ มส ของวิชาปกติ และ**ถอน มผ
+// อัตโนมัติคืนเป็น "ผ่าน"** เมื่อเวลาเข้าร่วมกลับมาครบ 80% แล้ว (ไม่ใช่ผ่านคำร้องขอแก้ตัว — คำร้องขอแก้ตัวสงวนไว้
+// สำหรับกรณีขาดจริงแล้วมาสอบ/ประเมินแก้ตัวเท่านั้น) ตรรกะเดียวกับที่ใช้แก้ มส ของวิชาปกติใน
+// ClassroomAttendance/index.tsx — best-effort เสมอ ไม่ throw กันไม่ให้การเช็คชื่อที่บันทึกสำเร็จแล้วถูกมองว่า
+// ล้มเหลวไปด้วย
 export const applyActivityEligibilityFailFlags = async (
     db: Firestore,
     evalRef: DocumentReference,
-    belowThresholdStudents: Array<{ id: string; presentHours: number; totalHours: number; percentage: number }>,
+    rosterStudents: Array<{ id: string }>,
+    eligibility: Record<string, AttendanceEligibilityResult>,
     // ระบุ (schoolId, flagKind, idValue, academicYear, semester) เพื่อยกเลิกคำร้องแก้ตัวเดิมที่ "resolved"
     // ไปแล้วของนักเรียนที่ถูกบังคับติด มผ ซ้ำรอบนี้ — กันไม่ให้สถานะ "แก้ตัวสำเร็จ" ค้างแสดงทั้งที่ผลจริงกลับไป
     // ติดใหม่แล้ว (ดู invalidateStaleResolvedRequests ใน remediationUtils.ts) ไม่ระบุ = ข้ามขั้นตอนนี้
@@ -124,7 +127,14 @@ export const applyActivityEligibilityFailFlags = async (
     // (เช่น แนะแนวที่นับแค่จำนวนครั้งรวม ไม่ได้เก็บวันที่) จะถือว่าผลแก้ตัวเป็นที่สุด ไม่เขียนทับซ้ำ
     dailyStatus?: Record<string, Record<string, AttendanceStatus>>
 ): Promise<boolean> => {
-    if (belowThresholdStudents.length === 0) return true;
+    const belowThresholdStudents = rosterStudents
+        .map(s => ({ id: s.id, ...eligibility[s.id] }))
+        .filter((s): s is { id: string; presentHours: number; totalHours: number; percentage: number; belowThreshold: boolean } =>
+            Boolean(s?.belowThreshold));
+    const recoveredCandidateIds = new Set(
+        rosterStudents.filter(s => eligibility[s.id] && !eligibility[s.id].belowThreshold).map(s => s.id)
+    );
+    if (belowThresholdStudents.length === 0 && recoveredCandidateIds.size === 0) return true;
     try {
         // เวลาเข้าร่วมสะสม "elapsed" นับตั้งแต่ต้นภาค/ปี จึงมักยังต่ำกว่า 80% ต่อไปอีกนานแม้แก้ มผ สำเร็จแล้ว
         // (การแก้ มผ แก้ที่ผลประเมิน ไม่ได้ย้อนแก้เวลาที่ขาดไปแล้วในอดีต) — ถ้าไม่กันจุดนี้ไว้ การเช็คชื่อครั้งถัดไป
@@ -166,7 +176,7 @@ export const applyActivityEligibilityFailFlags = async (
             });
         }
 
-        if (studentsToApply.length === 0) return true;
+        if (studentsToApply.length === 0 && recoveredCandidateIds.size === 0) return true;
 
         const snap = await getDoc(evalRef);
         const data: any = snap.exists() ? snap.data() : {};
@@ -181,6 +191,19 @@ export const applyActivityEligibilityFailFlags = async (
             // fetchFlaggedStudents ใน remediationUtils.ts อ่านจริงตอนแสดงหมายเหตุของ มผ ให้นักเรียน/ครูเห็น)
             results[info.id] = { ...(existing || {}), status: 'failed', note, remark: note };
             changedStudentIds.push(info.id);
+        });
+
+        // เวลาเข้าร่วมกลับมาครบ 80% แล้ว และเคยติด มผ. อัตโนมัติไว้ (note ขึ้นต้นด้วยข้อความมาตรฐานนี้ — ไม่ใช่
+        // ครูตั้งใจกดไม่ผ่านเองด้วยเหตุผลอื่น) — ถอนกลับเป็น "ผ่าน" อัตโนมัติทันที เหมือนที่แก้ให้ มส ของวิชาปกติ
+        // ไปแล้วใน ClassroomAttendance/index.tsx (เดิมจุดนี้ไม่มีเลย ทำให้ มผ ค้างตลอดไปแม้เข้าร่วมครบแล้วก็ตาม)
+        recoveredCandidateIds.forEach(id => {
+            const existing = results[id];
+            const isStaleAutoFail = existing?.status === 'failed' && typeof existing?.note === 'string' && existing.note.startsWith('เวลาเข้าร่วมไม่ถึงร้อยละ 80');
+            if (!isStaleAutoFail) return;
+            const info = eligibility[id];
+            const note = info ? `เวลาเข้าร่วมกลับมาครบร้อยละ 80 แล้ว (${info.presentHours}/${info.totalHours} ครั้ง = ${info.percentage.toFixed(1)}%) — ถอน มผ อัตโนมัติ` : 'เวลาเข้าร่วมกลับมาครบร้อยละ 80 แล้ว — ถอน มผ อัตโนมัติ';
+            results[id] = { ...existing, status: 'passed', note, remark: note };
+            changedStudentIds.push(id);
         });
 
         if (changedStudentIds.length > 0) {

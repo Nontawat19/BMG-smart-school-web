@@ -331,16 +331,10 @@ const ClubAttendancePage: React.FC = () => {
             activeSemester,
             students.map(s => ({ id: s.id })),
           );
-          const belowThresholdStudents = students
-            .map(s => ({ id: s.id, ...eligibility[s.id] }))
-            .filter((s): s is { id: string; percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean } =>
-              Boolean(s.belowThreshold));
-          if (belowThresholdStudents.length > 0) {
-            const evalRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'evaluations', `${academicYear}_${activeSemester}`);
-            await applyActivityEligibilityFailFlags(db, evalRef, belowThresholdStudents, {
-              schoolId, flagKind: 'club', idValue: selectedClub.id, academicYear, semester: activeSemester,
-            }, undefined, dailyStatus);
-          }
+          const evalRef = doc(db, 'school-settings', schoolId, 'clubs', selectedClub.id, 'evaluations', `${academicYear}_${activeSemester}`);
+          await applyActivityEligibilityFailFlags(db, evalRef, students.map(s => ({ id: s.id })), eligibility, {
+            schoolId, flagKind: 'club', idValue: selectedClub.id, academicYear, semester: activeSemester,
+          }, undefined, dailyStatus);
         }
       } catch (eligibilityError) {
         console.error('Error applying club attendance-eligibility (มผ) flags:', eligibilityError);
