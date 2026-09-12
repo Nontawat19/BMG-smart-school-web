@@ -21,6 +21,13 @@ interface RosterStudent {
     studentNumber: string;
 }
 
+interface RecoveredStudent {
+    id: string;
+    name: string;
+    studentNumber: string;
+    percentage: number;
+}
+
 interface CourseGroupResult {
     courseId: string;
     courseTitle: string;
@@ -30,6 +37,11 @@ interface CourseGroupResult {
     eligibility: Record<string, AttendanceEligibilityResult>;
     flaggedIds: string[];
     alreadyFlaggedCount: number;
+    // เวลาเรียนกลับมาครบ 80% แล้ว แต่ยังติด มส. ค้างอยู่จากการติดครั้งก่อน — เครื่องมือนี้ไม่เขียนแก้ให้
+    // อัตโนมัติโดยตั้งใจ (ต่างกับการ "จะติด มส" ด้านบนซึ่งเขียนทับได้เพราะไม่กระทบคะแนนที่ครูให้ไว้) เพราะการ
+    // ถอน มส. ต้องคืนเป็นเกรดจริงจากคะแนนของนักเรียนคนนั้น ซึ่งควรให้ครูประจำวิชาเป็นคนตรวจสอบและกดบันทึก
+    // เองที่หน้า ปพ.5 ของวิชานั้น (ระบบจะถอน มส. ให้อัตโนมัติทันทีที่ครูกดบันทึกที่หน้านั้น) ทีละคนแทน
+    recoveredStudents: RecoveredStudent[];
 }
 
 // A "course" doc's own `semester` field decides its grading scope — undefined/'1-2'/'annual'/'0'
@@ -77,6 +89,8 @@ const AttendanceMsBackfillPage: React.FC = () => {
     }, [schoolId, academicYear, calendarState.rawData]);
 
     const totalFlagged = results.reduce((sum, r) => sum + r.flaggedIds.length, 0);
+    const totalRecovered = results.reduce((sum, r) => sum + r.recoveredStudents.length, 0);
+    const recoveredGroups = results.filter(r => r.recoveredStudents.length > 0);
 
     const runScan = async () => {
         if (!schoolId || !academicYear) return;
@@ -160,7 +174,8 @@ const AttendanceMsBackfillPage: React.FC = () => {
                     );
 
                     const flaggedIds = roster.filter(s => eligibility[s.id]?.belowThreshold).map(s => s.id);
-                    if (flaggedIds.length === 0) continue;
+                    const recoveredCandidates = roster.filter(s => !eligibility[s.id]?.belowThreshold);
+                    if (flaggedIds.length === 0 && recoveredCandidates.length === 0) continue;
 
                     // Check which of the flagged students are already correctly marked มส with
                     // the same remark — same "skip unchanged" guard as the live attendance-save
@@ -176,6 +191,30 @@ const AttendanceMsBackfillPage: React.FC = () => {
                         if (existingData?.status === 'มส' && existingData?.remark === expectedRemark) alreadyFlaggedCount++;
                     });
 
+                    // เวลาเรียนไม่ต่ำกว่า 80% แล้วในการคำนวณสดตอนนี้ — เช็คว่าใครยังติด มส. ค้างจากการติด
+                    // อัตโนมัติครั้งก่อน (ไม่แตะคนที่ครูตั้งใจกด มส. เองด้วยเหตุผลอื่น) เพื่อรายงานให้ครูประจำวิชา
+                    // ไปกดบันทึกที่หน้า ปพ.5 เอง — ดูคอมเมนต์ที่ recoveredStudents ด้านบนว่าทำไมไม่เขียนแก้ที่นี่
+                    const recoveredSnaps = recoveredCandidates.length > 0
+                        ? await Promise.all(
+                            recoveredCandidates.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', course.id, 'grades', s.id)))
+                        )
+                        : [];
+                    const recoveredStudents: RecoveredStudent[] = [];
+                    recoveredSnaps.forEach((snap, idx) => {
+                        const existingData = snap.exists() ? snap.data() as any : null;
+                        const isStaleAutoMs = existingData?.status === 'มส' && typeof existingData?.remark === 'string' && existingData.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80');
+                        if (!isStaleAutoMs) return;
+                        const s = recoveredCandidates[idx];
+                        recoveredStudents.push({
+                            id: s.id,
+                            name: s.name,
+                            studentNumber: s.studentNumber,
+                            percentage: eligibility[s.id]?.percentage ?? 0,
+                        });
+                    });
+
+                    if (flaggedIds.length === 0 && recoveredStudents.length === 0) continue;
+
                     collected.push({
                         courseId: course.id,
                         courseTitle: course.title || course.code || course.id,
@@ -185,6 +224,7 @@ const AttendanceMsBackfillPage: React.FC = () => {
                         eligibility,
                         flaggedIds,
                         alreadyFlaggedCount,
+                        recoveredStudents,
                     });
                 }
             }
@@ -271,6 +311,8 @@ const AttendanceMsBackfillPage: React.FC = () => {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     เครื่องมือนี้จะสแกนข้อมูลเช็คชื่อของทุกวิชาในระบบ แล้วตรวจสอบว่านักเรียนคนใดมีเวลาเรียนสะสมต่ำกว่าร้อยละ 80 —
                     ใช้ตรรกะเดียวกับที่หน้าปพ.5 และหน้าเช็คชื่อรายวิชาใช้ เพื่อจับเคสที่เวลาเรียนต่ำกว่าเกณฑ์อยู่แล้วแต่ยังไม่เคยถูกบันทึก มส
+                    (กดยืนยันด้านล่างเพื่อบันทึกได้เลย) และจะรายงาน (ไม่บันทึกให้อัตโนมัติ) รายชื่อนักเรียนที่เวลาเรียนฟื้นกลับมาครบแล้วแต่ยังติด มส.
+                    ค้างอยู่ ให้ครูประจำวิชาไปตรวจสอบและกดบันทึกทีละคนที่หน้า ปพ.5 เอง
                 </p>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 md:p-6 mb-6 flex flex-wrap items-end gap-4">
@@ -362,6 +404,41 @@ const AttendanceMsBackfillPage: React.FC = () => {
                                 </table>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {(phase === 'reviewed' || phase === 'applying' || phase === 'applied') && totalRecovered > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 md:p-6 mt-6">
+                        <p className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
+                            เวลาเรียนฟื้นกลับมาครบร้อยละ 80 แล้ว แต่ยังติด มส. ค้างอยู่ {totalRecovered} รายการ
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                            เครื่องมือนี้<b>จะไม่เขียนแก้ให้อัตโนมัติ</b> เพราะการถอน มส. ต้องคืนเป็นเกรดจริงจากคะแนนที่ครูให้ไว้ ซึ่งครูประจำวิชาควรเป็นคนตรวจสอบและกดบันทึกเองทีละคนที่หน้า ปพ.5 ของวิชานั้น — พอกดบันทึกที่หน้านั้น ระบบจะถอน มส. คืนเป็นเกรดจริงให้อัตโนมัติทันที
+                        </p>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left border-b border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400">
+                                        <th className="py-2 pr-4">วิชา</th>
+                                        <th className="py-2 pr-4">ชั้น/กลุ่ม</th>
+                                        <th className="py-2 pr-4">นักเรียน</th>
+                                        <th className="py-2 pr-4">เลขที่</th>
+                                        <th className="py-2 pr-4">เวลาเรียนล่าสุด</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {recoveredGroups.flatMap(group => group.recoveredStudents.map(s => (
+                                        <tr key={`${group.courseId}-${s.id}`} className="border-b border-gray-100 dark:border-gray-700/50">
+                                            <td className="py-2 pr-4 text-gray-800 dark:text-gray-100">{group.courseTitle}</td>
+                                            <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">{group.classDisplay} / {group.room}</td>
+                                            <td className="py-2 pr-4 text-gray-800 dark:text-gray-100">{s.name}</td>
+                                            <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">{s.studentNumber}</td>
+                                            <td className="py-2 pr-4 font-semibold text-emerald-600 dark:text-emerald-400">{s.percentage.toFixed(1)}%</td>
+                                        </tr>
+                                    )))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
             </div>

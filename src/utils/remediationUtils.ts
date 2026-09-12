@@ -452,7 +452,16 @@ export const fetchFlaggedStudents = async (
             const data: any = gDoc.data();
             const rawStatus = String(data.status || '').trim();
             const rawGrade = String(data.grade || '').trim();
-            const value = (rawStatus === 'มส' || rawStatus === 'ร' || rawStatus === '0') ? rawStatus : rawGrade;
+            // ตรวจสอบว่าเกรด 0 นั้นมีคะแนนประเมินจริงหรือไม่ หากไม่มีคะแนนใดๆ เลย (placeholder ที่ยังไม่ตัดเกรด) จะไม่นับเป็นติด 0
+            const hasAnyScore = (data.formativeDetails && Object.keys(data.formativeDetails).length > 0) ||
+                Number(data.formative || 0) > 0 ||
+                Number(data.midterm || 0) > 0 ||
+                Number(data.final || 0) > 0 ||
+                Number(data.total || 0) > 0;
+            const isZero = (rawStatus === '0' || rawGrade === '0') && hasAnyScore;
+            const value = (rawStatus === 'มส' || rawStatus === 'ร')
+                ? rawStatus
+                : (isZero ? '0' : (rawGrade === '0' ? '' : rawGrade));
             if (value) map[gDoc.id] = value;
             const remark = String(data.remark || '').trim();
             if (remark) remarkMap[gDoc.id] = remark;

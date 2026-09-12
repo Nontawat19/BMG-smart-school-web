@@ -1320,39 +1320,41 @@ const ClassroomAttendancePage: React.FC = () => {
                     courseCode: courseData?.code,
                     teacherAssignments: courseData?.teacherAssignments,
                     selectedRoomForMatch: (selectedClass.roomIds && selectedClass.roomIds[0]) || selectedClass.room,
+                    semester: msSemester,
                 },
                 rosterStudents,
                 msCalendarData,
                 msSemester
             );
 
-            const belowThresholdStudents = rosterStudents.filter(s => eligibility[s.id]?.belowThreshold);
-            if (belowThresholdStudents.length === 0) return true;
+            // Fetch existing grade documents for all roster students to handle both flagging and unflagging
+            const existingSnaps = await Promise.all(
+                rosterStudents.map(student => getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id)))
+            );
 
-            // เวลาเรียนสะสม "elapsed" นับตั้งแต่ต้นภาค/ปี จึงมักยังต่ำกว่า 80% ต่อไปอีกนานแม้แก้ มส สำเร็จ
-            // แล้ว (การแก้ มส แก้ที่เกรด ไม่ได้ย้อนแก้เวลาเรียนที่ขาดไปแล้วในอดีต) — ถ้าไม่กันจุดนี้ไว้ การเช็คชื่อ
-            // ครั้งถัดไปครั้งใดก็ตาม (แม้แค่วันเดียวหลังแก้ มส สำเร็จ) จะเขียนสถานะ มส ทับผลที่แก้ไขไปแล้วทันที ทำให้
-            // ฟีเจอร์แก้ มส ใช้งานจริงไม่ได้เลย จึงต้องข้ามคนที่มีคำร้องแก้ตัว "resolved" อยู่แล้วสำหรับวิชา/ปี/เทอมนี้
-            // ไปก่อน เว้นแต่จะมีวันขาดเรียนใหม่ (absent/escape) เกิดขึ้น "หลัง" วันที่แก้ตัวสำเร็จจริง ๆ ซึ่งแปลว่า
-            // ปัญหายังเกิดต่อเนื่องอยู่จริงไม่ใช่แค่ผลสะสมเก่าที่ค้างมาจากก่อนแก้
+            const belowThresholdStudents = rosterStudents.filter(s => eligibility[s.id]?.belowThreshold);
+
+            // Check remediation requests for students below threshold
             const resolvedByStudentId: Record<string, Date | null> = {};
-            const idsToCheck = belowThresholdStudents.map(s => s.id);
-            for (let i = 0; i < idsToCheck.length; i += 30) {
-                const idChunk = idsToCheck.slice(i, i + 30);
-                const resolvedSnap = await getDocs(query(
-                    collection(db, 'school-settings', schoolId, 'remediation_requests'),
-                    where('studentId', 'in', idChunk),
-                    where('flagType', '==', 'course'),
-                    where('courseId', '==', courseId),
-                    where('academicYear', '==', academicYear),
-                    where('semester', '==', msSemester),
-                    where('status', '==', 'resolved'),
-                ));
-                resolvedSnap.forEach(d => {
-                    const data = d.data() as any;
-                    const resolvedAt = data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null;
-                    resolvedByStudentId[data.studentId] = resolvedAt;
-                });
+            if (belowThresholdStudents.length > 0) {
+                const idsToCheck = belowThresholdStudents.map(s => s.id);
+                for (let i = 0; i < idsToCheck.length; i += 30) {
+                    const idChunk = idsToCheck.slice(i, i + 30);
+                    const resolvedSnap = await getDocs(query(
+                        collection(db, 'school-settings', schoolId, 'remediation_requests'),
+                        where('studentId', 'in', idChunk),
+                        where('flagType', '==', 'course'),
+                        where('courseId', '==', courseId),
+                        where('academicYear', '==', academicYear),
+                        where('semester', '==', msSemester),
+                        where('status', '==', 'resolved'),
+                    ));
+                    resolvedSnap.forEach(d => {
+                        const data = d.data() as any;
+                        const resolvedAt = data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null;
+                        resolvedByStudentId[data.studentId] = resolvedAt;
+                    });
+                }
             }
 
             const toDateKeyLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1367,37 +1369,53 @@ const ClassroomAttendancePage: React.FC = () => {
                 );
             });
 
-            if (studentsToReFlag.length === 0) return true;
-
-            // Overwrite status/grade -> 'มส' exactly like useGradeBookActions.ts's handleSave —
-            // same remark text, same merge-preserving-scores behavior — so both save paths agree.
-            const existingSnaps = await Promise.all(
-                studentsToReFlag.map(student => getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id)))
-            );
-
+            const studentsToReFlagIds = new Set(studentsToReFlag.map(s => s.id));
             const msBatch = writeBatch(db);
             const changedStudentIds: string[] = [];
-            studentsToReFlag.forEach((student, idx) => {
+
+            rosterStudents.forEach((student, idx) => {
                 const info = eligibility[student.id];
                 const existingSnap = existingSnaps[idx];
                 const existingData = existingSnap.exists() ? existingSnap.data() as any : null;
-                const newRemark = `เวลาเรียนไม่ถึงร้อยละ 80 (${info.presentHours}/${info.totalHours} คาบ = ${info.percentage.toFixed(1)}%)`;
-
-                // Skip if already correctly flagged with the same numbers — teachers may save
-                // attendance many times a day across periods, and re-writing an unchanged มส
-                // record on every save would be pure waste.
-                if (existingData?.status === 'มส' && existingData?.remark === newRemark) return;
-
-                const baseRecord = existingData || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
                 const gradeRef = doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id);
-                msBatch.set(gradeRef, {
-                    ...baseRecord,
-                    status: 'มส',
-                    grade: 'มส',
-                    remark: newRemark,
-                    updatedAt: Timestamp.now(),
-                }, { merge: true });
-                changedStudentIds.push(student.id);
+
+                if (studentsToReFlagIds.has(student.id)) {
+                    // Student has attendance < 80% and should be flagged มส
+                    const newRemark = `เวลาเรียนไม่ถึงร้อยละ 80 (${info.presentHours}/${info.totalHours} คาบ = ${info.percentage.toFixed(1)}%)`;
+                    if (existingData?.status === 'มส' && existingData?.remark === newRemark) return;
+
+                    const baseRecord = existingData || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
+                    msBatch.set(gradeRef, {
+                        ...baseRecord,
+                        status: 'มส',
+                        grade: 'มส',
+                        remark: newRemark,
+                        updatedAt: Timestamp.now(),
+                    }, { merge: true });
+                    changedStudentIds.push(student.id);
+                } else if (!info?.belowThreshold && existingData?.status === 'มส' && typeof existingData?.remark === 'string' && existingData.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80')) {
+                    // Student now has attendance >= 80%: unflag auto-applied มส
+                    const totalScore = Number(existingData.total ?? 0);
+                    const hasAnyScores = (existingData.formativeDetails && Object.keys(existingData.formativeDetails).length > 0) ||
+                        Number(existingData.formative ?? 0) > 0 ||
+                        Number(existingData.midterm ?? 0) > 0 ||
+                        Number(existingData.final ?? 0) > 0 ||
+                        totalScore > 0;
+                    if (hasAnyScores) {
+                        const restoredGrade = totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0";
+                        msBatch.set(gradeRef, {
+                            ...existingData,
+                            status: null,
+                            grade: restoredGrade,
+                            remark: null,
+                            updatedAt: Timestamp.now(),
+                        }, { merge: true });
+                    } else {
+                        // Document was a placeholder created solely for 'มส' with no teacher scores: delete it so student isn't falsely marked 'ติด 0'
+                        msBatch.delete(gradeRef);
+                    }
+                    changedStudentIds.push(student.id);
+                }
             });
 
             if (changedStudentIds.length > 0) await msBatch.commit();
@@ -1405,10 +1423,11 @@ const ClassroomAttendancePage: React.FC = () => {
             // เวลาเรียนยังไม่ถึงเกณฑ์ซ้ำอีกครั้งในภาคเรียนเดียวกัน (เช่น เคยแก้ มส สำเร็จไปแล้วแต่ขาดเรียนใหม่ต่อ
             // หลังแก้ตัว) — ยกเลิกคำร้องแก้ตัวเดิมที่ resolved ไปแล้ว กันไม่ให้สถานะ "แก้ตัวสำเร็จ" ค้างแสดงทั้งที่
             // ผลจริงกลับไปติด มส ใหม่แล้ว เช็คเฉพาะกลุ่ม studentsToReFlag ที่ยืนยันแล้วว่ามีวันขาดเรียนใหม่จริง
-            // (ไม่ใช่ belowThresholdStudents ทั้งหมด — คนที่แก้ตัวสำเร็จแล้วและไม่มีวันขาดใหม่ต้องไม่ถูกยกเลิกคำร้อง)
-            await Promise.all(studentsToReFlag.map(student => invalidateStaleResolvedRequests(
-                schoolId, student.id, 'course', courseId, academicYear, msSemester,
-            )));
+            if (studentsToReFlag.length > 0) {
+                await Promise.all(studentsToReFlag.map(student => invalidateStaleResolvedRequests(
+                    schoolId, student.id, 'course', courseId, academicYear, msSemester,
+                )));
+            }
             return true;
         } catch (err) {
             console.error('Error applying attendance-eligibility (มส) flags:', err);

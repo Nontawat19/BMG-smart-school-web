@@ -17,6 +17,7 @@ import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import { buildLineRegistrationResolvedUpdate, buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
+import { fetchFlaggedStudents } from '@/utils/remediationUtils';
 
 interface Student {
     id: string;
@@ -285,10 +286,51 @@ const GraduationPendingPage: React.FC = () => {
         setBulkAction('');
     };
 
+    // เช็คว่านักเรียนคนไหนใน docIds ยังติด 0/ร/มส/มผ ค้างอยู่จริง (ยังไม่ได้แก้ตัวสำเร็จ) ก่อนอนุมัติจบขั้น
+    // สุดท้าย — ใช้ fetchFlaggedStudents ตัวเดียวกับที่หน้านักเรียน (MyGradeFlagsPage) และหน้าบริหารการจบ
+    // การศึกษา (GraduationManagementPage) ใช้ เพื่อไม่ให้มีตรรกะ "ยังติดผลอยู่ไหม" คนละชุดกันหลายจุด — นี่คือ
+    // ด่านสุดท้ายก่อนสถานะกลายเป็น "สำเร็จการศึกษา" แบบถาวร จึงสำคัญที่สุดที่ต้องเช็คตรงนี้ แม้
+    // GraduationManagementPage จะเตือนไปแล้วรอบหนึ่งตอนตั้งสถานะ "รออนุมัติจบ" ก็ตาม (เผื่อผลเปลี่ยนแปลง
+    // ระหว่างสองขั้นตอน หรือมีทางอื่นที่ทำให้นักเรียนมาอยู่สถานะนี้โดยไม่ผ่านการเตือนนั้นมาก่อน)
+    const findStudentsWithUnresolvedFlags = async (docIds: string[]) => {
+        try {
+            const rows = await fetchFlaggedStudents(schoolId, {}, { studentIds: docIds });
+            return rows.filter(r => r.flags.length > 0);
+        } catch (err) {
+            console.error('Error checking 0/ร/มส/มผ before final graduation approval:', err);
+            return [];
+        }
+    };
+
+    const confirmProceedDespiteFlags = async (flaggedRows: Awaited<ReturnType<typeof findStudentsWithUnresolvedFlags>>) => {
+        if (flaggedRows.length === 0) return true;
+        const listHtml = flaggedRows.map(r => {
+            const flagSummary = r.flags.map(f => `${f.courseTitle} (${f.grade})`).join(', ');
+            return `<li><b>${r.name}</b> — ${flagSummary}</li>`;
+        }).join('');
+        const result = await Swal.fire({
+            title: 'ยังติดผลการเรียนค้างอยู่',
+            html: `นักเรียน ${flaggedRows.length} คนนี้ยังมีผลการเรียนติด 0/ร/มส/มผ ที่ยังไม่ได้แก้ตัวสำเร็จ:<ul style="text-align:left;margin-top:8px;">${listHtml}</ul>ยืนยันจะอนุมัติจบต่อถ้าแน่ใจ`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'ยืนยันอนุมัติจบต่อ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#dc2626',
+            customClass: { popup: 'rounded-[2rem]' }
+        });
+        return result.isConfirmed;
+    };
+
     const handleSingleUpdate = async (student: Student) => {
         if (!schoolId) return;
         const action = individualActions[student.docId];
         if (!action) return;
+
+        if (action === 'approve' || action === 'approve_exit') {
+            const flaggedRows = await findStudentsWithUnresolvedFlags([student.docId]);
+            const shouldProceed = await confirmProceedDespiteFlags(flaggedRows);
+            if (!shouldProceed) return;
+        }
 
         const options = getStudentActionOptions(student);
         const actionLabel = options.find(o => o.value === action)?.label;
@@ -453,6 +495,18 @@ const GraduationPendingPage: React.FC = () => {
         if (selectedStudents.size === 0) {
             Swal.fire('แจ้งเตือน', 'กรุณาเลือกนักเรียนที่ต้องการอนุมัติ', 'warning');
             return;
+        }
+
+        // เฉพาะคนที่ผล resolve เป็น approve/approve_exit จริง (จบการศึกษาถาวร) เท่านั้นที่ต้องเช็ค — คนที่เลือก
+        // ซ้ำชั้น/เลื่อนชั้น/จำหน่ายไปโรงเรียนอื่นไม่ใช่การ "จบการศึกษา" ที่ผลติดค้างจะมีผลกระทบแบบเดียวกัน
+        const graduatingDocIds = Array.from(selectedStudents).filter(docId => {
+            const action = individualActions[docId] || 'approve_exit';
+            return action === 'approve' || action === 'approve_exit';
+        });
+        if (graduatingDocIds.length > 0) {
+            const flaggedRows = await findStudentsWithUnresolvedFlags(graduatingDocIds);
+            const shouldProceed = await confirmProceedDespiteFlags(flaggedRows);
+            if (!shouldProceed) return;
         }
 
         const result = await Swal.fire({

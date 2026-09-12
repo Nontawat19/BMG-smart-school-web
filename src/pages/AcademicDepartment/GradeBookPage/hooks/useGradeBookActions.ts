@@ -329,7 +329,30 @@ export const useGradeBookActions = (
         const attendanceFlaggedIds = students
             .filter(s => attendanceEligibility[s.id]?.belowThreshold)
             .map(s => s.id);
-        const currentModifiedIds = Array.from(new Set([...modifiedStudentIds, ...attendanceFlaggedIds]));
+
+        // อ่านเอกสารเดิมของ "ทุกคนในวิชานี้" ก่อนเสมอ (ไม่ใช่แค่คนที่ครูแก้คะแนน) — เพื่อตรวจหาใครที่เคย
+        // ติด มส. อัตโนมัติไว้ (เวลาเรียนต่ำกว่า 80% ตอนนั้น) แต่ตอนนี้เวลาเรียนกลับมาครบ 80% แล้ว โดยที่ครู
+        // ไม่ได้แก้คะแนนของเขาเลย — ถ้าไม่เช็คตรงนี้ทุกครั้งที่กด "บันทึก" มส. เดิมจะค้างอยู่ตลอดไปแม้เวลาเรียน
+        // จะฟื้นแล้วก็ตาม (เหมือนที่แก้ไปแล้วในหน้าเช็คชื่อรายวิชา/เช็คชื่อย้อนหลัง — ต้องทำงานสอดคล้องกันทั้ง
+        // 3 หน้า ไม่งั้นผลตัดสินจะขัดแย้งกันขึ้นอยู่กับว่าครูบันทึกจากหน้าไหนล่าสุด)
+        const allExistingSnaps = await Promise.all(
+            students.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', s.id)))
+        );
+        const existingDataById: Record<string, any> = {};
+        students.forEach((s, idx) => {
+            const snap = allExistingSnaps[idx];
+            if (snap.exists()) existingDataById[s.id] = snap.data();
+        });
+
+        const unflagCandidateIds = students
+            .filter(s => {
+                if (attendanceEligibility[s.id]?.belowThreshold) return false; // ยังติดอยู่จริง ไม่ใช่ผู้สมัครถอน มส.
+                const existing = existingDataById[s.id];
+                return existing?.status === 'มส' && typeof existing?.remark === 'string' && existing.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80');
+            })
+            .map(s => s.id);
+
+        const currentModifiedIds = Array.from(new Set([...modifiedStudentIds, ...attendanceFlaggedIds, ...unflagCandidateIds]));
 
         if (currentModifiedIds.length === 0) {
             Swal.fire({
@@ -347,22 +370,48 @@ export const useGradeBookActions = (
         setIsSaving(true);
 
         try {
-            // อ่านเอกสารเดิมของทุกคนที่แก้ไขก่อน เพื่อรู้ว่าใครเพิ่ง "หลุด ร" จากการแก้คะแนน (ต้องเทียบกับ
-            // grade เดิมที่บันทึกไว้จริงใน Firestore ไม่ใช่ state ในเครื่องที่อาจถูกคำนวณเป็นเกรดใหม่ไปแล้ว
-            // ตั้งแต่ตอนแก้คะแนน) — ใช้ทำ remark อัตโนมัติอธิบายว่านักเรียนแก้ไขคะแนนจนได้เกรดนี้แล้ว
-            const existingSnaps = await Promise.all(
-                currentModifiedIds.map(studentId => getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', studentId)))
-            );
+            // ใช้เอกสารเดิมที่อ่านไปแล้วด้านบน (ครอบคลุมทั้งวิชาอยู่แล้ว) เพื่อรู้ว่าใครเพิ่ง "หลุด ร" จากการ
+            // แก้คะแนน (ต้องเทียบกับ grade เดิมที่บันทึกไว้จริงใน Firestore ไม่ใช่ state ในเครื่องที่อาจถูก
+            // คำนวณเป็นเกรดใหม่ไปแล้วตั้งแต่ตอนแก้คะแนน) — ใช้ทำ remark อัตโนมัติอธิบายว่านักเรียนแก้ไขคะแนน
+            // จนได้เกรดนี้แล้ว
             const existingGradeById: Record<string, string> = {};
-            currentModifiedIds.forEach((studentId, idx) => {
-                const snap = existingSnaps[idx];
-                if (snap.exists()) existingGradeById[studentId] = String(snap.data().grade || '').trim();
+            currentModifiedIds.forEach((studentId) => {
+                const existing = existingDataById[studentId];
+                if (existing) existingGradeById[studentId] = String(existing.grade || '').trim();
             });
 
+            const unflagCandidateIdSet = new Set(unflagCandidateIds);
             const batch = writeBatch(db);
             currentModifiedIds.forEach((studentId) => {
                 const baseRecord = grades[studentId] || { formative: 0, midterm: 0, final: 0, total: 0, grade: '0' };
                 const attendanceInfo = attendanceEligibility[studentId];
+                const ref = doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', studentId);
+
+                // เวลาเรียนกลับมาครบ 80% แล้ว และเคยติด มส. อัตโนมัติไว้ (ไม่ใช่ครูตั้งใจกดเอง) — ถอน มส.
+                // คืนเป็นเกรดจริงจากคะแนนที่มีอยู่ ถ้ายังไม่เคยมีคะแนนใดๆ เลย (เอกสารที่ถูกสร้างไว้เพื่อ มส.
+                // อย่างเดียว) ให้ลบทิ้งแทนเพื่อไม่ให้นักเรียนติด "0" หลอกๆ — ตรรกะเดียวกับหน้าเช็คชื่อรายวิชา/
+                // เช็คชื่อย้อนหลัง
+                if (unflagCandidateIdSet.has(studentId) && !attendanceInfo?.belowThreshold) {
+                    const existing = existingDataById[studentId] || {};
+                    const totalScore = Number(existing.total ?? 0);
+                    const hasAnyScores = (existing.formativeDetails && Object.keys(existing.formativeDetails).length > 0) ||
+                        Number(existing.formative ?? 0) > 0 ||
+                        Number(existing.midterm ?? 0) > 0 ||
+                        Number(existing.final ?? 0) > 0 ||
+                        totalScore > 0;
+                    if (hasAnyScores) {
+                        batch.set(ref, {
+                            ...existing,
+                            status: deleteField(),
+                            grade: calculateGrade(totalScore),
+                            remark: deleteField(),
+                            updatedAt: Timestamp.now(),
+                        }, { merge: true });
+                    } else {
+                        batch.delete(ref);
+                    }
+                    return;
+                }
 
                 // เวลาเรียนไม่ถึงร้อยละ 80 → บังคับ "มส" เสมอ ทับสถานะ/เกรดใดๆ ที่ครูใส่ไว้
                 const record: GradeRecord = attendanceInfo?.belowThreshold
@@ -373,8 +422,6 @@ export const useGradeBookActions = (
                         remark: `เวลาเรียนไม่ถึงร้อยละ 80 (${attendanceInfo.presentHours}/${attendanceInfo.totalHours} คาบ = ${attendanceInfo.percentage.toFixed(1)}%)`,
                     }
                     : baseRecord;
-
-                const ref = doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', studentId);
 
                 // Sanitize score data
                 const sanitizedRecord = {

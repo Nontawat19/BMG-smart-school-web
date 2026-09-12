@@ -2160,16 +2160,26 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 hasGradeUpdates = true;
                             }
                         } else if (existingData?.status === 'มส' && typeof existingData?.remark === 'string' && existingData.remark.startsWith('เวลาเรียนไม่ถึงร้อยละ 80')) {
-                            // Attendance is now >= 80%: unflag auto-applied มส and restore grade from total score
+                            // Attendance is now >= 80%: unflag auto-applied มส
                             const totalScore = Number(existingData.total ?? 0);
-                            const restoredGrade = totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0";
-                            msBatch.set(gradeRef, {
-                                ...existingData,
-                                status: null,
-                                grade: restoredGrade,
-                                remark: null,
-                                updatedAt: Timestamp.now(),
-                            }, { merge: true });
+                            const hasAnyScores = (existingData.formativeDetails && Object.keys(existingData.formativeDetails).length > 0) ||
+                                Number(existingData.formative ?? 0) > 0 ||
+                                Number(existingData.midterm ?? 0) > 0 ||
+                                Number(existingData.final ?? 0) > 0 ||
+                                totalScore > 0;
+                            if (hasAnyScores) {
+                                const restoredGrade = totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0";
+                                msBatch.set(gradeRef, {
+                                    ...existingData,
+                                    status: null,
+                                    grade: restoredGrade,
+                                    remark: null,
+                                    updatedAt: Timestamp.now(),
+                                }, { merge: true });
+                            } else {
+                                // Document was a placeholder created solely for 'มส' with no teacher scores: delete it so student isn't falsely marked 'ติด 0'
+                                msBatch.delete(gradeRef);
+                            }
                             hasGradeUpdates = true;
                         }
                     });

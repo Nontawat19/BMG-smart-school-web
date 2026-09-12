@@ -35,6 +35,7 @@ export interface CourseGroupIdentity {
     courseCode?: string;
     teacherAssignments?: any[];
     selectedRoomForMatch?: unknown;
+    semester?: string;
 }
 
 // Builds the day-of-week -> period-numbers map for one course+room/group, scanning every
@@ -45,7 +46,8 @@ export const fetchCourseWeeklySchedule = async (
     db: Firestore,
     schoolId: string,
     academicYear: string,
-    identity: CourseGroupIdentity
+    identity: CourseGroupIdentity,
+    semesterScope?: string
 ): Promise<Record<string, number[]>> => {
     const scheduleMap: Record<string, number[]> = { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] };
     const addPeriod = (key: string, period: number) => {
@@ -53,30 +55,90 @@ export const fetchCourseWeeklySchedule = async (
         if (!scheduleMap[key].includes(period)) scheduleMap[key].push(period);
     };
 
+    const targetSemester = semesterScope || identity.semester;
+    let resolvedAssignments = identity.teacherAssignments || [];
+    if (resolvedAssignments.length === 0 && identity.courseId) {
+        try {
+            const caSnap = await getDocs(query(
+                collection(db, 'school-settings', schoolId, 'course_assignments'),
+                where('courseId', '==', identity.courseId),
+                where('academicYear', '==', String(academicYear))
+            ));
+            caSnap.forEach(doc => {
+                const data = doc.data();
+                const assignments = data.teacherAssignments;
+                if (Array.isArray(assignments) && assignments.length > 0) {
+                    if (!targetSemester || targetSemester === 'annual' || String(data.semester || '') === String(targetSemester)) {
+                        resolvedAssignments = assignments;
+                    }
+                }
+            });
+        } catch (err) {
+            console.warn('[attendanceEligibilityFirestore] Error fetching fallback course_assignments:', err);
+        }
+    }
+
     const classKey = getStableClassKey(identity.classId);
     const classTitle = CLASSES[classKey] || identity.className || '';
     const targetCode = (identity.subjectCode || identity.courseCode || '').replace(/\s/g, '');
     const classCandidates = new Set([classKey, classTitle].filter(Boolean));
 
-    const schedulesSnap = await getDocs(query(
-        collection(db, 'school-settings', schoolId, 'schedules'),
-        where('academicYear', '==', String(academicYear))
-    ));
+    const scheduleConstraints = [
+        where('academicYear', '==', String(academicYear)),
+        ...(targetSemester && targetSemester !== 'annual' ? [where('semester', '==', String(targetSemester))] : [])
+    ];
+    let schedulesSnap;
+    try {
+        schedulesSnap = await getDocs(query(
+            collection(db, 'school-settings', schoolId, 'schedules'),
+            ...scheduleConstraints
+        ));
+    } catch {
+        // Fallback without semester query constraint if composite index is missing
+        schedulesSnap = await getDocs(query(
+            collection(db, 'school-settings', schoolId, 'schedules'),
+            where('academicYear', '==', String(academicYear))
+        ));
+    }
 
     schedulesSnap.forEach(scheduleDoc => {
         const data = scheduleDoc.data();
+        const dataSemester = String(data.semester || data.term || '');
+        if (targetSemester && targetSemester !== 'annual') {
+            const matchesSemester = !dataSemester || dataSemester === targetSemester || dataSemester.startsWith(`${targetSemester}/`) || targetSemester.startsWith(`${dataSemester}/`) || dataSemester.includes(targetSemester);
+            if (!matchesSemester) return;
+        }
+
         const classIds = Array.isArray(data.classId) ? data.classId : [data.classId];
         const matchesClass = classIds.some((id: string) => classCandidates.has(String(id))) || (classTitle && String(data.className || '').includes(classTitle));
         if (!matchesClass) return;
+
         Object.entries(data.schedule || {}).forEach(([key, val]: [string, any]) => {
             const coursesInSlot = Array.isArray(val) ? val : [val];
-            const matchesSlot = coursesInSlot.some((c: any) => c && ((c.id === identity.courseId) || (c.code || '').replace(/\s/g, '') === targetCode) &&
-                matchesAssignmentGroupRoom(identity.teacherAssignments, c?.groupNumber, identity.selectedRoomForMatch));
-            if (matchesSlot) {
+            coursesInSlot.forEach((c: any) => {
+                if (!c) return;
+                const cCode = (c.code || '').replace(/\s/g, '');
+                const matchesCourse = (c.id === identity.courseId) || (cCode === targetCode);
+                if (!matchesCourse) return;
+
+                const effectiveAssignments = (resolvedAssignments.length > 0)
+                    ? resolvedAssignments
+                    : (c.teacherAssignments && Array.isArray(c.teacherAssignments) && c.teacherAssignments.length > 0)
+                        ? c.teacherAssignments
+                        : [];
+
+                const matchesGroup = matchesAssignmentGroupRoom(effectiveAssignments, c?.groupNumber, identity.selectedRoomForMatch);
+                if (!matchesGroup) return;
+
                 const [day, periodStr] = key.split('-');
                 const period = parseInt(periodStr, 10);
-                if (scheduleMap[day] && !isNaN(period)) addPeriod(day, period);
-            }
+                if (scheduleMap[day] && !isNaN(period)) {
+                    addPeriod(day, period);
+                    if (targetSemester === 'annual') {
+                        addPeriod(`${dataSemester || 'all'}:${day}`, period);
+                    }
+                }
+            });
         });
     });
 
@@ -140,12 +202,24 @@ export const computeCourseAttendanceEligibilityForRoster = async (
     semesterScope: string,
     subjectCodeCandidatesOverride?: string[]
 ): Promise<CourseGroupEligibilityResult> => {
-    const scheduleMap = await fetchCourseWeeklySchedule(db, schoolId, academicYear, identity);
+    const scheduleMap = await fetchCourseWeeklySchedule(db, schoolId, academicYear, identity, semesterScope);
     const subjectCodeCandidates = subjectCodeCandidatesOverride || ([identity.subjectCode, identity.courseId, identity.courseCode].filter(Boolean) as string[]);
     const dailyStatus = await fetchCourseAttendanceHistory(db, schoolId, academicYear, subjectCodeCandidates);
 
+    // CRITICAL: Scope dailyStatus passed to buildAttendancePages to ONLY the rosterStudents of this group/room!
+    // If dailyStatus contains attendance records from students in OTHER rooms (e.g. Room 2 taught on Thursday),
+    // buildAttendancePages's hasAttendanceRecord check would mark Thursday as a session for Room 1 students as well,
+    // falsely counting Room 1 students as absent every Thursday and inflating total possible hours to 32+!
+    const rosterIdSet = new Set(rosterStudents.map(s => s.id));
+    const scopedDailyStatus: Record<string, Record<string, AttendanceStatus>> = {};
+    Object.entries(dailyStatus).forEach(([sid, dates]) => {
+        if (rosterIdSet.has(sid)) {
+            scopedDailyStatus[sid] = dates;
+        }
+    });
+
     const classKey = getStableClassKey(identity.classId) || identity.courseId;
-    const attendancePages = buildAttendancePages(calendarData, scheduleMap, semesterScope, classKey, dailyStatus, checkIsHolidayLocal);
+    const attendancePages = buildAttendancePages(calendarData, scheduleMap, semesterScope, classKey, scopedDailyStatus, checkIsHolidayLocal);
     const summaries = buildStudentAttendanceSummaries(rosterStudents, attendancePages, dailyStatus);
     const eligibility = computeAttendanceEligibility(summaries);
 

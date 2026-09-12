@@ -18,6 +18,7 @@ import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
 import { isActiveStudentStatus } from '@/utils/studentStatusUtils';
 import { buildLineRegistrationResolvedUpdate, buildLineRegistrationReviewUpdate } from '@/utils/lineRegistrationUtils';
+import { fetchFlaggedStudents } from '@/utils/remediationUtils';
 
 const compactSelectStyles = {
     control: (base: any, state: any) => ({
@@ -288,10 +289,51 @@ const GraduationManagementPage: React.FC = () => {
         setIndividualActions(prev => ({ ...prev, [docId]: action }));
     };
 
+    // เช็คว่านักเรียนคนไหนใน docIds ยังติด 0/ร/มส/มผ ค้างอยู่จริง (ยังไม่ได้แก้ตัวสำเร็จ) ก่อนจะอนุมัติ
+    // "สำเร็จการศึกษา" — ใช้ fetchFlaggedStudents ตัวเดียวกับที่หน้านักเรียน (MyGradeFlagsPage) ใช้เช็คผลตัวเอง
+    // เพื่อไม่ให้มีตรรกะ "ยังติดผลอยู่ไหม" คนละชุดกันระหว่างสองหน้า — เดิมหน้านี้พึ่งพาให้เจ้าหน้าที่จำเองว่า
+    // ต้องเลือก "รออนุมัติจบ (ติด 0,ร,มส)" แทน "สำเร็จการศึกษา" ด้วยตัวเอง ไม่มีการตรวจสอบอัตโนมัติเลย
+    const findStudentsWithUnresolvedFlags = async (docIds: string[]) => {
+        try {
+            const rows = await fetchFlaggedStudents(schoolId!, {}, { studentIds: docIds });
+            return rows.filter(r => r.flags.length > 0);
+        } catch (err) {
+            console.error('Error checking 0/ร/มส/มผ before graduation:', err);
+            return []; // เช็คไม่สำเร็จ ปล่อยผ่านไปก่อน ดีกว่าบล็อกเจ้าหน้าที่ไม่ให้ทำงานได้เลยเพราะปัญหาเครือข่ายชั่วคราว
+        }
+    };
+
+    // แสดงคำเตือนถ้ามีคนติดผลค้างอยู่ — ไม่บล็อกเด็ดขาด (เจ้าหน้าที่อาจรู้เหตุผลที่ต้องอนุมัติต่อจริงๆ) แต่ต้อง
+    // กดยืนยันเพิ่มอีกครั้งเห็นรายชื่อ/วิชาที่ยังติดชัดๆ ก่อน คืน true ถ้าให้ไปต่อได้ (ไม่มีคนติด หรือกดยืนยันจะไปต่อ)
+    const confirmProceedDespiteFlags = async (flaggedRows: Awaited<ReturnType<typeof findStudentsWithUnresolvedFlags>>) => {
+        if (flaggedRows.length === 0) return true;
+        const listHtml = flaggedRows.map(r => {
+            const flagSummary = r.flags.map(f => `${f.courseTitle} (${f.grade})`).join(', ');
+            return `<li><b>${r.name}</b> — ${flagSummary}</li>`;
+        }).join('');
+        const result = await Swal.fire({
+            title: 'ยังติดผลการเรียนค้างอยู่',
+            html: `นักเรียน ${flaggedRows.length} คนนี้ยังมีผลการเรียนติด 0/ร/มส/มผ ที่ยังไม่ได้แก้ตัวสำเร็จ:<ul style="text-align:left;margin-top:8px;">${listHtml}</ul>แนะนำให้เลือก "รออนุมัติจบ (ติด 0,ร,มส)" แทน หรือยืนยันอนุมัติจบต่อถ้าแน่ใจ`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'ยืนยันอนุมัติจบต่อ',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#dc2626',
+            customClass: { popup: 'rounded-[2rem]' }
+        });
+        return result.isConfirmed;
+    };
+
     const handleSingleUpdate = async (student: Student) => {
         if (!schoolId) return;
         const action = individualActions[student.docId];
         if (!action) return;
+
+        if (action === 'graduate') {
+            const flaggedRows = await findStudentsWithUnresolvedFlags([student.docId]);
+            const shouldProceed = await confirmProceedDespiteFlags(flaggedRows);
+            if (!shouldProceed) return;
+        }
 
         const actionLabel = actionOptions.find(o => o.value === action)?.label;
         const confirm = await Swal.fire({
@@ -336,6 +378,13 @@ const GraduationManagementPage: React.FC = () => {
 
     const handleBatchTransition = async () => {
         if (!schoolId || selectedStudents.size === 0) return;
+
+        if (batchActionType === 'graduate') {
+            const flaggedRows = await findStudentsWithUnresolvedFlags(Array.from(selectedStudents));
+            const shouldProceed = await confirmProceedDespiteFlags(flaggedRows);
+            if (!shouldProceed) return;
+        }
+
         const confirm = await Swal.fire({
             title: 'ยืนยันดำเนินการ?',
             text: `ปรับปรุงข้อมูลนักเรียน ${selectedStudents.size} คน`,
