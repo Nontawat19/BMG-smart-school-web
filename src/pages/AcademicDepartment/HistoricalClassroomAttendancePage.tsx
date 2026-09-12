@@ -2168,10 +2168,16 @@ const HistoricalClassroomAttendancePage: React.FC = () => {
                                 Number(existingData.final ?? 0) > 0 ||
                                 totalScore > 0;
                             if (hasAnyScores) {
-                                const restoredGrade = totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0";
+                                // เวลาเรียนผ่านเกณฑ์แล้ว แต่ถ้ายังมีช่องคะแนนที่ครูพิมพ์ "ร" ค้างไว้ (incompleteFields
+                                // จาก FormativeScoreEntryPage/PostMidtermScoreEntryPage) ต้องคืนเป็น "ร" ไม่ใช่
+                                // คำนวณเกรดจาก total ตรงๆ — total ที่นับ "ร" เป็น 0 ไปแล้วจะให้เกรดผิดเพี้ยน
+                                // (เช่น "0" ทั้งที่ยังรอครูให้คะแนนจริงอยู่) ตรงกับลำดับการตัดสินผลที่ใช้ทั้งระบบ:
+                                // เวลาเรียนก่อน แล้วค่อย ร แล้วค่อยคะแนน
+                                const stillIncomplete = (existingData.incompleteFields || []).length > 0;
+                                const restoredGrade = stillIncomplete ? 'ร' : (totalScore >= 80 ? "4" : totalScore >= 75 ? "3.5" : totalScore >= 70 ? "3" : totalScore >= 65 ? "2.5" : totalScore >= 60 ? "2" : totalScore >= 55 ? "1.5" : totalScore >= 50 ? "1" : "0");
                                 msBatch.set(gradeRef, {
                                     ...existingData,
-                                    status: null,
+                                    status: stillIncomplete ? 'ร' : null,
                                     grade: restoredGrade,
                                     remark: null,
                                     updatedAt: Timestamp.now(),

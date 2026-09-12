@@ -400,10 +400,15 @@ export const useGradeBookActions = (
                         Number(existing.final ?? 0) > 0 ||
                         totalScore > 0;
                     if (hasAnyScores) {
+                        // เวลาเรียนผ่านเกณฑ์แล้ว แต่ถ้ายังมีช่องคะแนนที่ครูพิมพ์ "ร" ค้างไว้ (incompleteFields จาก
+                        // FormativeScoreEntryPage/PostMidtermScoreEntryPage) ต้องคืนเป็น "ร" ไม่ใช่คำนวณเกรดจาก
+                        // total ตรงๆ — total ที่นับ "ร" เป็น 0 ไปแล้วจะให้เกรดผิดเพี้ยน (เช่น "0" ทั้งที่ยังรอครูให้
+                        // คะแนนจริงอยู่) ตรงกับลำดับการตัดสินผลที่ใช้ทั้งระบบ: เวลาเรียนก่อน แล้วค่อย ร แล้วค่อยคะแนน
+                        const stillIncomplete = (existing.incompleteFields || []).length > 0;
                         batch.set(ref, {
                             ...existing,
-                            status: deleteField(),
-                            grade: calculateGrade(totalScore),
+                            status: stillIncomplete ? 'ร' : deleteField(),
+                            grade: stillIncomplete ? 'ร' : calculateGrade(totalScore),
                             remark: deleteField(),
                             updatedAt: Timestamp.now(),
                         }, { merge: true });
