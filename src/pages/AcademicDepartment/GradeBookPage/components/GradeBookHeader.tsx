@@ -8,6 +8,7 @@ interface GradeBookHeaderProps {
     curriculumClassDisplay: string;
     curriculumRoomDisplay: string;
     academicYear: string;
+    isRealTimeConnected?: boolean;
 }
 
 const GradeBookHeader: React.FC<GradeBookHeaderProps> = ({
@@ -15,6 +16,7 @@ const GradeBookHeader: React.FC<GradeBookHeaderProps> = ({
     curriculumClassDisplay,
     curriculumRoomDisplay,
     academicYear,
+    isRealTimeConnected,
 }) => {
     return (
         <div className="flex items-center justify-between mb-3 gap-3">
@@ -29,6 +31,12 @@ const GradeBookHeader: React.FC<GradeBookHeaderProps> = ({
             </div>
             {currentCourse && (
                 <div className="flex items-center gap-2 flex-shrink-0 animate-in fade-in duration-300">
+                    {isRealTimeConnected && (
+                        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-sm" title="ระบบเชื่อมต่อข้อมูลแบบเรียลไทม์ (ประหยัดค่าอ่านเขียน)">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            เรียลไทม์
+                        </div>
+                    )}
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-black rounded-lg border border-indigo-100 dark:border-indigo-800">
                         <Sparkles size={10} />
                         {curriculumClassDisplay} {curriculumRoomDisplay ? `ห้อง ${curriculumRoomDisplay}` : '(ทุกห้อง)'}

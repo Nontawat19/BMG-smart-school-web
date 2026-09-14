@@ -21,11 +21,25 @@ export const useGradeBookActions = (
     currentCourse: Course | undefined,
     courses: Course[],
     sdqMap: Record<string, any>,
-    attendanceEligibility: Record<string, { percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean }>
+    attendanceEligibility: Record<string, { percentage: number; presentHours: number; totalHours: number; belowThreshold: boolean }>,
+    lastServerGradesRef?: React.MutableRefObject<Record<string, any>>,
+    suppressSnapshotRef?: React.MutableRefObject<boolean>,
+    modifiedStudentIdsRef?: React.MutableRefObject<Set<string>>
 ) => {
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(false); // Can be managed externally too
     const [modifiedStudentIds, setModifiedStudentIds] = useState<Set<string>>(new Set());
+
+    const markStudentsModified = useCallback((studentIds: string[]) => {
+        setModifiedStudentIds(prev => {
+            const updated = new Set(prev);
+            studentIds.forEach(id => {
+                updated.add(id);
+                if (modifiedStudentIdsRef) modifiedStudentIdsRef.current.add(id);
+            });
+            return updated;
+        });
+    }, [modifiedStudentIdsRef]);
 
     const calculateGrade = (total: number): string => {
         if (total >= 80) return '4';
@@ -143,10 +157,10 @@ export const useGradeBookActions = (
                 updated.total = (updated.formative || 0) + (updated.midterm || 0) + (updated.final || 0);
                 updated.grade = updated.status || calculateGrade(updated.total);
             }
-            setModifiedStudentIds(prev => new Set(prev).add(studentId));
+            markStudentsModified([studentId]);
             return { ...prev, [studentId]: updated };
         });
-    }, [maxScores, setGrades, currentCourse]);
+    }, [maxScores, setGrades, currentCourse, markStudentsModified]);
 
     const handleBulkFill = useCallback((value: number) => {
         setGrades(prev => {
@@ -166,15 +180,11 @@ export const useGradeBookActions = (
                 }
                 newGrades[student.id] = updated;
             });
-            setModifiedStudentIds(prev => {
-                const updated = new Set(prev);
-                students.forEach(s => updated.add(s.id));
-                return updated;
-            });
+            markStudentsModified(students.map(s => s.id));
             return newGrades;
         });
         Swal.fire({ icon: 'success', title: `เติมคะแนน ${value} ให้ทุกคนแล้ว`, timer: 1000, showConfirmButton: false, position: 'top-end', toast: true });
-    }, [activeTab, students, characteristicsCriteria, readingWritingCriteria, setGrades]);
+    }, [activeTab, students, characteristicsCriteria, readingWritingCriteria, setGrades, markStudentsModified]);
 
     const handleBulkFillColumn = useCallback((value: string, key: string, isCharOrRW: boolean = false, criteriaId?: string) => {
         let numValue = (parseInt(value) || 0);
@@ -209,14 +219,10 @@ export const useGradeBookActions = (
 
                 newGrades[student.id] = updated;
             });
-            setModifiedStudentIds(prev => {
-                const updated = new Set(prev);
-                students.forEach(s => updated.add(s.id));
-                return updated;
-            });
+            markStudentsModified(students.map(s => s.id));
             return newGrades;
         });
-    }, [activeTab, maxScores, students, setGrades, currentCourse]);
+    }, [activeTab, maxScores, students, setGrades, currentCourse, markStudentsModified]);
 
     const handleSyncSDQColumn = useCallback(async (criteriaTitle: string, criteriaId: string) => {
         if (!selectedClass || !selectedCourse) return;
@@ -244,11 +250,11 @@ export const useGradeBookActions = (
         setGrades(prev => {
             const { newGrades, updatedStudentIds } = applySDQToCriteria(prev, [criteriaObj], students, sdqMap);
             updateCount = updatedStudentIds.size;
-            setModifiedStudentIds(prevIds => new Set([...prevIds, ...updatedStudentIds]));
+            markStudentsModified(Array.from(updatedStudentIds));
             return newGrades;
         });
         Swal.fire({ icon: 'success', title: `อัปเดตข้อมูลแล้ว ${updateCount} คน`, toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
-    }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades]);
+    }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades, markStudentsModified]);
 
     const handleSyncSDQAll = useCallback(async () => {
         if (!selectedClass || !selectedCourse) return;
@@ -279,11 +285,11 @@ export const useGradeBookActions = (
         setGrades(prev => {
             const { newGrades, updatedStudentIds } = applySDQToCriteria(prev, sdqCriteria, students, sdqMap);
             updateCount = updatedStudentIds.size;
-            setModifiedStudentIds(prevIds => new Set([...prevIds, ...updatedStudentIds]));
+            markStudentsModified(Array.from(updatedStudentIds));
             return newGrades;
         });
         Swal.fire({ icon: 'success', title: `อัปเดตข้อมูลแล้ว ${updateCount} คน`, toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
-    }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades]);
+    }, [sdqMap, selectedClass, selectedCourse, students, characteristicsCriteria, setGrades, markStudentsModified]);
 
     const handleClearScores = useCallback(() => {
         Swal.fire({
@@ -307,17 +313,13 @@ export const useGradeBookActions = (
                         else if (activeTab === 'readingWriting') updated.readingWritingScores = {};
                         newGrades[student.id] = updated;
                     });
-                    setModifiedStudentIds(prev => {
-                        const updated = new Set(prev);
-                        students.forEach(s => updated.add(s.id));
-                        return updated;
-                    });
+                    markStudentsModified(students.map(s => s.id));
                     return newGrades;
                 });
                 Swal.fire({ icon: 'success', title: 'ล้างคะแนนเรียบร้อยแล้ว', timer: 1000, showConfirmButton: false, position: 'top-end', toast: true });
             }
         });
-    }, [activeTab, students, setGrades]);
+    }, [activeTab, students, setGrades, markStudentsModified]);
 
     const handleSave = useCallback(async () => {
         if (!selectedCourse || !schoolId) return;
@@ -330,19 +332,19 @@ export const useGradeBookActions = (
             .filter(s => attendanceEligibility[s.id]?.belowThreshold)
             .map(s => s.id);
 
-        // อ่านเอกสารเดิมของ "ทุกคนในวิชานี้" ก่อนเสมอ (ไม่ใช่แค่คนที่ครูแก้คะแนน) — เพื่อตรวจหาใครที่เคย
-        // ติด มส. อัตโนมัติไว้ (เวลาเรียนต่ำกว่า 80% ตอนนั้น) แต่ตอนนี้เวลาเรียนกลับมาครบ 80% แล้ว โดยที่ครู
-        // ไม่ได้แก้คะแนนของเขาเลย — ถ้าไม่เช็คตรงนี้ทุกครั้งที่กด "บันทึก" มส. เดิมจะค้างอยู่ตลอดไปแม้เวลาเรียน
-        // จะฟื้นแล้วก็ตาม (เหมือนที่แก้ไปแล้วในหน้าเช็คชื่อรายวิชา/เช็คชื่อย้อนหลัง — ต้องทำงานสอดคล้องกันทั้ง
-        // 3 หน้า ไม่งั้นผลตัดสินจะขัดแย้งกันขึ้นอยู่กับว่าครูบันทึกจากหน้าไหนล่าสุด)
-        const allExistingSnaps = await Promise.all(
-            students.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', s.id)))
-        );
-        const existingDataById: Record<string, any> = {};
-        students.forEach((s, idx) => {
-            const snap = allExistingSnaps[idx];
-            if (snap.exists()) existingDataById[s.id] = snap.data();
-        });
+        // ใช้เอกสารเดิมจาก Real-time Server Cache (lastServerGradesRef) โดยตรง — ประหยัด 30-50 Reads ต่อการเซฟ 1 ครั้ง!
+        // fallback to getDoc query only if lastServerGradesRef was completely omitted
+        let existingDataById: Record<string, any> = lastServerGradesRef?.current || {};
+        if (!lastServerGradesRef) {
+            const allExistingSnaps = await Promise.all(
+                students.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', selectedCourse, 'grades', s.id)))
+            );
+            existingDataById = {};
+            students.forEach((s, idx) => {
+                const snap = allExistingSnaps[idx];
+                if (snap.exists()) existingDataById[s.id] = snap.data();
+            });
+        }
 
         const unflagCandidateIds = students
             .filter(s => {
@@ -459,12 +461,19 @@ export const useGradeBookActions = (
                 batch.set(ref, dataToSave, { merge: true });
             });
 
+            if (suppressSnapshotRef) {
+                suppressSnapshotRef.current = true;
+            }
+
             await batch.commit();
 
             // Clear modified IDs after successful save
             setModifiedStudentIds(prev => {
                 const updated = new Set(prev);
-                currentModifiedIds.forEach(id => updated.delete(id));
+                currentModifiedIds.forEach(id => {
+                    updated.delete(id);
+                    if (modifiedStudentIdsRef) modifiedStudentIdsRef.current.delete(id);
+                });
                 return updated;
             });
 
@@ -483,7 +492,7 @@ export const useGradeBookActions = (
         } finally {
             setIsSaving(false);
         }
-    }, [grades, schoolId, selectedCourse, modifiedStudentIds, students, attendanceEligibility]);
+    }, [grades, schoolId, selectedCourse, modifiedStudentIds, students, attendanceEligibility, lastServerGradesRef, suppressSnapshotRef, modifiedStudentIdsRef]);
 
     const handleImportFromOtherCourse = useCallback(async () => {
         if (!selectedClass || !selectedCourse || !schoolId) return;

@@ -33,8 +33,8 @@ const GeneralAffairsHome: React.FC = () => {
 
   const menuItems = [
     {
-      title: "ประทับตรารับเอกสาร",
-      description: "ระบบลงรับหนังสือราชการและประทับตราเอกสารเข้า",
+      title: "หนังสือรับ",
+      description: "ประทับตรา",
       icon: <FileText size={24} />,
       path: "/general-affairs",
       colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400"

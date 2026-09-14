@@ -373,6 +373,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                   <FaChalkboardTeacher className="text-lg min-w-[18px]" />
                   <span>ตารางสอน</span>
                 </NavLink>
+                <NavLink to="/academic/hub/evaluation" className={navLinkClasses}>
+                  <FaGraduationCap className="text-lg min-w-[18px]" />
+                  <span>วัดผลและประเมินผล</span>
+                </NavLink>
                 {allowTeacherSelfCheckin && enableCheckinOutSystem && (
                   <CanAccess roles={STAFF_ACCESS}>
                     <NavLink to="/attendance/checkin-out?mode=self" className={navLinkClasses}>

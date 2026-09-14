@@ -66,6 +66,11 @@ const isPrimaryClassValue = (classValue: string) => {
   return /^p[1-6]$/.test(value) || label.includes('ป.') || label.includes('ประถม');
 };
 
+const criteriaModuleCache: {
+  characteristics?: Record<string, CharacteristicCriteria[]>;
+  readingWriting?: Record<string, ReadingWritingCriteria[]>;
+} = {};
+
 const GradeBookPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'grades' | 'characteristics' | 'readingWriting'>('grades');
@@ -203,13 +208,18 @@ const GradeBookPage: React.FC = () => {
     return "0";
   }, []);
 
+  const modifiedStudentIdsRef = useRef<Set<string>>(new Set());
+
   const {
     students,
     grades,
     setGrades,
     loading,
     studentCourseDailyStatus,
-    sdqMap
+    sdqMap,
+    lastServerGradesRef,
+    suppressSnapshotRef,
+    isRealTimeConnected
   } = useGradeBookData(
     schoolId,
     selectedClass,
@@ -220,7 +230,9 @@ const GradeBookPage: React.FC = () => {
     currentCourse,
     calYear || '',
     [],
-    calculateGradeMemoized
+    calculateGradeMemoized,
+    activeTab,
+    modifiedStudentIdsRef.current
   );
 
   const attendance = useGradeBookAttendance(
@@ -303,7 +315,10 @@ const GradeBookPage: React.FC = () => {
     currentCourse,
     coursesWithAssignments,
     sdqMap,
-    attendance.attendanceEligibility
+    attendance.attendanceEligibility,
+    lastServerGradesRef,
+    suppressSnapshotRef,
+    modifiedStudentIdsRef
   );
 
   useEffect(() => {
@@ -358,6 +373,8 @@ const GradeBookPage: React.FC = () => {
     return () => unsubscribe();
   }, [schoolId]);
 
+  const filteredCoursesKey = useMemo(() => filteredCourses.map(c => c.id).sort().join(','), [filteredCourses]);
+
   useEffect(() => {
     if (!schoolId || !selectedClass || !calYear || !effectiveSemester || filteredCourses.length === 0) {
       setSavedPdfUrls({});
@@ -398,7 +415,7 @@ const GradeBookPage: React.FC = () => {
     return () => {
       isCancelled = true;
     };
-  }, [schoolId, selectedClass, calYear, effectiveSemester, filteredCourses, getSavedPdfPath, getSavedPdfKey]);
+  }, [schoolId, selectedClass, calYear, effectiveSemester, filteredCoursesKey, getSavedPdfPath, getSavedPdfKey]);
 
   useEffect(() => {
     if (!isPdfReady || !selectedCourse || !selectedGroup) return;
@@ -552,6 +569,14 @@ const GradeBookPage: React.FC = () => {
   useEffect(() => {
     const fetchCriteria = async () => {
       if (!schoolId) return;
+
+      // Check module cache first (0 Firestore reads if previously fetched)
+      if (criteriaModuleCache.characteristics?.[schoolId] && criteriaModuleCache.readingWriting?.[schoolId]) {
+        setCharacteristicsCriteria(criteriaModuleCache.characteristics[schoolId]);
+        setReadingWritingCriteria(criteriaModuleCache.readingWriting[schoolId]);
+        return;
+      }
+
       try {
         const charSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'desired-characteristics'), orderBy('createdAt', 'asc')));
         let chars = charSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CharacteristicCriteria));
@@ -560,6 +585,8 @@ const GradeBookPage: React.FC = () => {
         if (chars.length === 0) {
           chars = DESIRED_CHARACTERISTICS;
         }
+        if (!criteriaModuleCache.characteristics) criteriaModuleCache.characteristics = {};
+        criteriaModuleCache.characteristics[schoolId] = chars;
         setCharacteristicsCriteria(chars);
 
         const rwSnap = await getDocs(query(collection(db, 'school-settings', schoolId, 'reading-thinking-writing'), orderBy('createdAt', 'asc')));
@@ -633,6 +660,8 @@ const GradeBookPage: React.FC = () => {
             }
           ];
         }
+        if (!criteriaModuleCache.readingWriting) criteriaModuleCache.readingWriting = {};
+        criteriaModuleCache.readingWriting[schoolId] = rws;
         setReadingWritingCriteria(rws);
       } catch (err) {
         console.error("Fetch criteria error:", err);
@@ -843,6 +872,7 @@ const GradeBookPage: React.FC = () => {
             curriculumClassDisplay={curriculumClassDisplay}
             curriculumRoomDisplay={curriculumRoomDisplay}
             academicYear={calYear || ''}
+            isRealTimeConnected={isRealTimeConnected}
           />
           <GradeBookFilter
             selectedClass={selectedClass} setSelectedClass={setSelectedClass}
