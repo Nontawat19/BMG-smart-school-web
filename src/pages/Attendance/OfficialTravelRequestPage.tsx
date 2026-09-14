@@ -21,9 +21,7 @@ import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import BackButton from "@/components/Shared/BackButton";
 import {
-    Send, History, Users, Hash, MapPin, FileText, CalendarDays,
-    Wallet, Car, BookUser, Loader2, Plane, Layers, X, Check,
-    UserCheck, CheckCircle2
+    Send, History, Layers, X, Check, Loader2, CheckCircle2
 } from "lucide-react";
 
 interface TravelRequest {
@@ -383,9 +381,8 @@ const OfficialTravelRequestPage: React.FC = () => {
         } finally { setIsLoading(false); }
     };
 
-    const fi = "w-full px-2.5 py-[7px] text-xs bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder:text-gray-300 dark:placeholder:text-gray-600 focus:outline-none focus:border-indigo-400 dark:focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400/20 transition-colors";
-    const fl = "block text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-0.5";
-    const div = "border-t border-gray-100 dark:border-gray-800";
+    const fi = "w-full bg-white dark:bg-[#1e1f21] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500";
+    const fl = "block text-xs font-medium mb-1 text-gray-700 dark:text-gray-300";
 
     const budgets = [
         { id: 'none', label: 'ไม่เบิก' },
@@ -401,302 +398,239 @@ const OfficialTravelRequestPage: React.FC = () => {
     ];
 
     const selectStyles = {
-        control: (p: any) => ({ ...p, backgroundColor: isDarkMode ? 'rgba(31,41,55,0.8)' : 'white', borderColor: isDarkMode ? '#374151' : '#e5e7eb', borderRadius: '0.5rem', minHeight: '32px', boxShadow: 'none', fontSize: '12px', '&:hover': { borderColor: '#818cf8' } }),
-        valueContainer: (p: any) => ({ ...p, padding: '2px 8px' }),
-        menu: (p: any) => ({ ...p, backgroundColor: isDarkMode ? '#111827' : 'white', borderRadius: '0.5rem', border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`, zIndex: 60, fontSize: '12px' }),
-        option: (p: any, s: any) => ({ ...p, backgroundColor: s.isFocused ? (isDarkMode ? '#374151' : '#eef2ff') : 'transparent', color: isDarkMode ? '#f3f4f6' : '#111827', padding: '6px 10px' }),
-        multiValue: (p: any) => ({ ...p, backgroundColor: isDarkMode ? '#312e81' : '#eef2ff', borderRadius: '4px' }),
-        multiValueLabel: (p: any) => ({ ...p, color: isDarkMode ? '#c7d2fe' : '#4338ca', fontSize: '11px', padding: '1px 4px' }),
-        multiValueRemove: (p: any) => ({ ...p, color: isDarkMode ? '#a5b4fc' : '#6366f1', '&:hover': { backgroundColor: '#ef4444', color: 'white' } }),
-        placeholder: (p: any) => ({ ...p, color: isDarkMode ? '#6b7280' : '#9ca3af', fontSize: '12px' }),
-        input: (p: any) => ({ ...p, color: isDarkMode ? '#f3f4f6' : '#111827', margin: 0, padding: 0 }),
-        dropdownIndicator: (p: any) => ({ ...p, padding: '4px' }),
-        clearIndicator: (p: any) => ({ ...p, padding: '4px' }),
+        control: (base: any) => ({ ...base, backgroundColor: isDarkMode ? '#1e1f21' : '#fff', borderColor: isDarkMode ? '#4b5563' : '#d1d5db' }),
+        menu: (base: any) => ({ ...base, backgroundColor: isDarkMode ? '#2a2b2f' : '#fff' }),
+        option: (base: any, { isFocused, isSelected }: any) => ({
+            ...base,
+            backgroundColor: isSelected ? (isDarkMode ? '#4f46e5' : '#6366f1') : isFocused ? (isDarkMode ? '#374151' : '#eef2ff') : 'transparent',
+            color: isSelected ? 'white' : (isDarkMode ? 'white' : '#111827'),
+        }),
+        multiValue: (base: any) => ({ ...base, backgroundColor: isDarkMode ? '#312e81' : '#eef2ff' }),
+        multiValueLabel: (base: any) => ({ ...base, color: isDarkMode ? '#c7d2fe' : '#4338ca' }),
+        singleValue: (base: any) => ({ ...base, color: isDarkMode ? 'white' : '#111827' }),
+        input: (base: any) => ({ ...base, color: isDarkMode ? 'white' : '#111827' }),
     };
-
-    const Pill = ({ label, active, color, onClick }: { id: string; label: string; active: boolean; color: string; onClick: () => void }) => (
-        <button type="button" onClick={onClick}
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${active
-                ? `${color} text-white shadow-sm border-transparent`
-                : 'bg-white dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'}`}>
-            {label}
-        </button>
-    );
 
     return (
         <MainLayout>
-            <div className="flex flex-col" style={{ height: 'calc(100vh - 60px)' }}>
+            <div className="p-3 sm:p-4 text-gray-900 dark:text-white transition-colors duration-300">
+                <div className="max-w-6xl mx-auto">
 
-                {/* ── Top Bar ── */}
-                <div className="shrink-0 h-11 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center gap-3 px-4 lg:pl-12 lg:pr-5">
-                    <BackButton />
-                    <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center shrink-0">
-                        <Plane size={11} className="text-white" />
+                    {/* ── Header ── */}
+                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl px-5 py-3.5 mb-3 shadow-sm dark:shadow-none">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <BackButton />
+                                <div className="min-w-0">
+                                    <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
+                                        {isEditMode ? `แก้ไขคำขอ${activityLabel}` : `ขออนุญาต${activityLabel}`}
+                                    </h1>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                        กรอกแบบฟอร์มเพื่อยื่นคำขออนุญาต{activityLabel}{docNo ? ` · เลขที่ ${docNo}` : ''}
+                                    </p>
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => navigate(`/school/${schoolId}/official-travel-history`)}
+                                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all">
+                                <History size={15} /> ประวัติ
+                            </button>
+                        </div>
                     </div>
-                    <h1 className="text-sm font-bold text-gray-900 dark:text-white flex-1">{isEditMode ? `แก้ไขคำขอ${activityLabel}` : `ขออนุญาต${activityLabel}`}</h1>
-                    {docNo && (
-                        <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded-full">
-                            <Hash size={9} className="text-gray-400" />
-                            <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">{docNo}</span>
-                        </div>
-                    )}
-                    <button onClick={() => navigate(`/school/${schoolId}/official-travel-history`)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all">
-                        <History size={11} /> ประวัติ
-                    </button>
-                </div>
 
-                {/* ── Body ── */}
-                <div className="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-950 p-3 lg:px-12 pb-6">
-                    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 flex flex-col">
+                    {/* ── Form ── */}
+                    <form
+                        onSubmit={e => { e.preventDefault(); handleSubmit(); }}
+                        className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 space-y-3.5 shadow-sm dark:shadow-none"
+                    >
+                        {!isTeacherRole && !isEditMode && (
+                            <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg">
+                                <label className="block text-sm font-medium mb-1.5 text-amber-700 dark:text-amber-400">
+                                    ยื่นแทนครู *
+                                </label>
+                                <Select
+                                    options={userOptions.filter(o => o.type === 'teacher')}
+                                    value={onBehalfTeacherOption}
+                                    onChange={(opt: any) => {
+                                        setOnBehalfTeacherOption(opt);
+                                        if (opt) {
+                                            const d = opt.data;
+                                            setRequesterName(`${d.title || ''}${d.firstName || ''} ${d.lastName || ''}`);
+                                            setPosition(d.position || 'ครู');
+                                            setDepartment(d.department || d.learningArea || '');
+                                        }
+                                    }}
+                                    styles={selectStyles}
+                                    placeholder="ค้นหาและเลือกครูที่ต้องการยื่นคำขอแทน..."
+                                    noOptionsMessage={() => "ไม่พบครู"}
+                                    isClearable
+                                    aria-label="เลือกครูที่ยื่นคำขอแทน"
+                                />
+                            </div>
+                        )}
 
-                        {/* ── R1: เลขที่ | เรื่อง | เรียน ── */}
-                        <div className="shrink-0 px-5 pt-3 pb-2.5 rounded-t-xl">
-                            <div className="grid grid-cols-12 gap-3">
-                                <div className="col-span-2">
-                                    <label className={fl}><FileText size={9} className="inline mr-1 text-indigo-400" />เลขที่</label>
-                                    <input value={docNo} onChange={e => setDocNo(e.target.value)} className={fi} placeholder="อัตโนมัติ" />
-                                </div>
-                                <div className="col-span-4">
-                                    <label className={fl}>เรื่อง *</label>
-                                    <input value={subject} onChange={e => setSubject(e.target.value)} className={fi} />
-                                </div>
-                                <div className="col-span-6">
-                                    <label className={fl}>เรียน</label>
-                                    <input value={to} onChange={e => setTo(e.target.value)} className={fi} />
-                                </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div>
+                                <label className={fl}>เลขที่</label>
+                                <input value={docNo} onChange={e => setDocNo(e.target.value)} className={fi} placeholder="อัตโนมัติ" />
+                            </div>
+                            <div>
+                                <label className={fl}>เรื่อง *</label>
+                                <input value={subject} onChange={e => setSubject(e.target.value)} className={fi} />
+                            </div>
+                            <div>
+                                <label className={fl}>เรียน</label>
+                                <input value={to} onChange={e => setTo(e.target.value)} className={fi} />
                             </div>
                         </div>
 
-                        <div className={div} />
-
-                        {/* ── R2: ผู้ขออนุญาต ── */}
-                        <div className="shrink-0 px-5 py-2.5">
-                            {!isTeacherRole && !isEditMode && (
-                                <div className="mb-2.5 p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg">
-                                    <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-400 mb-1.5">
-                                        <BookUser size={9} className="inline mr-1" />ยื่นแทนครู *
-                                    </label>
-                                    <Select
-                                        options={userOptions.filter(o => o.type === 'teacher')}
-                                        value={onBehalfTeacherOption}
-                                        onChange={(opt: any) => {
-                                            setOnBehalfTeacherOption(opt);
-                                            if (opt) {
-                                                const d = opt.data;
-                                                setRequesterName(`${d.title || ''}${d.firstName || ''} ${d.lastName || ''}`);
-                                                setPosition(d.position || 'ครู');
-                                                setDepartment(d.department || d.learningArea || '');
-                                            }
-                                        }}
-                                        styles={selectStyles}
-                                        placeholder="ค้นหาและเลือกครูที่ต้องการยื่นคำขอแทน..."
-                                        noOptionsMessage={() => "ไม่พบครู"}
-                                        isClearable
-                                    />
-                                </div>
-                            )}
-                            <div className="grid grid-cols-12 gap-3">
-                                <div className="col-span-4">
-                                    <label className={fl}><BookUser size={9} className="inline mr-1 text-sky-400" />ชื่อ-สกุล *</label>
-                                    <input value={requesterName} onChange={e => setRequesterName(e.target.value)} className={fi} />
-                                </div>
-                                <div className="col-span-3">
-                                    <label className={fl}>ตำแหน่ง</label>
-                                    <input value={position} onChange={e => setPosition(e.target.value)} className={fi} />
-                                </div>
-                                <div className="col-span-5">
-                                    <label className={fl}>สังกัด</label>
-                                    <input value={department} onChange={e => setDepartment(e.target.value)} className={fi} />
-                                </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div>
+                                <label className={fl}>ชื่อ-สกุลผู้ขออนุญาต *</label>
+                                <input value={requesterName} onChange={e => setRequesterName(e.target.value)} className={fi} />
+                            </div>
+                            <div>
+                                <label className={fl}>ตำแหน่ง</label>
+                                <input value={position} onChange={e => setPosition(e.target.value)} className={fi} />
+                            </div>
+                            <div>
+                                <label className={fl}>สังกัด</label>
+                                <input value={department} onChange={e => setDepartment(e.target.value)} className={fi} />
                             </div>
                         </div>
 
-                        <div className={div} />
-
-                        {/* ── R2.5: ผู้ร่วมเดินทาง | การสอนแทน ── */}
-                        <div className="shrink-0 px-5 py-2">
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Users size={10} className="text-emerald-500" />
-                                    <span className="text-[10px] font-semibold text-gray-400 whitespace-nowrap">ผู้ร่วมเดินทาง</span>
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className={`${fl} mb-0`}>
+                                    ผู้ร่วมเดินทาง
                                     {selectedUsers.length > 0 && (
-                                        <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-bold rounded-full whitespace-nowrap">
+                                        <span className="ml-2 px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full">
                                             {selectedUsers.length} คน
                                         </span>
                                     )}
-                                    <button type="button" onClick={() => setIsStudentSelectorOpen(true)}
-                                        className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all">
-                                        <Layers size={9} /> ยกห้อง
-                                    </button>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <Select isMulti options={userOptions} value={selectedUsers}
-                                        onChange={v => setSelectedUsers(v as UserOption[])}
-                                        styles={selectStyles} placeholder="ค้นหาและเพิ่มผู้ร่วมเดินทาง..."
-                                        noOptionsMessage={() => "ไม่พบ"} />
-                                </div>
-
+                                </label>
+                                <button type="button" onClick={() => setIsStudentSelectorOpen(true)}
+                                    className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all">
+                                    <Layers size={13} /> เลือกยกห้อง
+                                </button>
                             </div>
+                            <Select isMulti options={userOptions} value={selectedUsers}
+                                onChange={v => setSelectedUsers(v as UserOption[])}
+                                styles={selectStyles} placeholder="ค้นหาและเพิ่มผู้ร่วมเดินทาง..."
+                                noOptionsMessage={() => "ไม่พบ"}
+                                aria-label="เลือกผู้ร่วมเดินทาง" />
                         </div>
 
-                        <div className={div} />
-
-                        {/* ── R3: รายละเอียด/เหตุผล ── */}
-                        <div className="shrink-0 px-5 py-2.5">
-                            <label className={fl}><MapPin size={9} className="inline mr-1 text-amber-400" />รายละเอียด / เหตุผล *</label>
+                        <div>
+                            <label className={fl}>รายละเอียด / เหตุผล *</label>
                             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2}
-                                className={`${fi} resize-none`}
-                                placeholder={requesterType === 'student' ? "ระบุรายละเอียดการไปร่วมกิจกรรม เช่น แข่งขันกีฬา ทัศนศึกษา อบรม..." : "ระบุรายละเอียดการไปราชการ เช่น เข้าร่วมประชุม อบรม สัมมนา..."} />
+                                className={fi}
+                                placeholder={requesterType === 'student' ? "ระบุรายละเอียดการไปร่วมกิจกรรม เช่น แข่งขันกีฬา ทัศนศึกษา อบรม..." : "ระบุรายละเอียดการไปราชการ เช่น เข้าร่วมประชุม อบรม สัมมนา..."}
+                                aria-label="ระบุรายละเอียด/เหตุผล" />
                         </div>
 
-                        <div className={div} />
-
-                        {/* ── R4: สถานที่ | วันที่ | อ้างอิง ── */}
-                        <div className="shrink-0 px-5 py-2.5">
-                            <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-3">
-                                    <label className={fl}><MapPin size={9} className="inline mr-1 text-rose-400" />สถานที่ ณ *</label>
-                                    <input value={location} onChange={e => setLocation(e.target.value)} className={fi} placeholder="ระบุสถานที่..." />
-                                </div>
-                                <div className="col-span-2">
-                                    <label className={fl}><CalendarDays size={9} className="inline mr-1 text-amber-400" />ตั้งแต่วันที่ *</label>
-                                    <ThaiDatePicker value={startDate} onChange={setStartDate} events={calendarEvents} />
-                                </div>
-                                <div className="col-span-2">
-                                    <label className={fl}>ถึงวันที่ *</label>
-                                    <ThaiDatePicker value={endDate} onChange={setEndDate} events={calendarEvents} />
-                                </div>
-                                <div className="col-span-3">
-                                    <label className={fl}>ตามหนังสือ / คำสั่งที่</label>
-                                    <input value={refDocument} onChange={e => setRefDocument(e.target.value)} className={fi} placeholder="เลขที่อ้างอิง..." />
-                                </div>
-                                <div className="col-span-2">
-                                    <label className={fl}>ลงวันที่</label>
-                                    <ThaiDatePicker value={refDate} onChange={setRefDate} placeholder="วันที่..." />
-                                </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div>
+                                <label className={fl}>สถานที่ ณ *</label>
+                                <input value={location} onChange={e => setLocation(e.target.value)} className={fi} placeholder="ระบุสถานที่..." />
+                            </div>
+                            <div>
+                                <label className={fl}>ตั้งแต่วันที่ *</label>
+                                <ThaiDatePicker value={startDate} onChange={setStartDate} events={calendarEvents} />
+                            </div>
+                            <div>
+                                <label className={fl}>ถึงวันที่ *</label>
+                                <ThaiDatePicker value={endDate} onChange={setEndDate} events={calendarEvents} />
                             </div>
                         </div>
 
-                        <div className={div} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div>
+                                <label className={fl}>ตามหนังสือ / คำสั่งที่</label>
+                                <input value={refDocument} onChange={e => setRefDocument(e.target.value)} className={fi} placeholder="เลขที่อ้างอิง..." />
+                            </div>
+                            <div>
+                                <label className={fl}>ลงวันที่</label>
+                                <ThaiDatePicker value={refDate} onChange={setRefDate} placeholder="วันที่..." />
+                            </div>
+                        </div>
 
-                        {/* ── R5: งบประมาณ | การเดินทาง | สอนแทน ── */}
-                        <div className="shrink-0 px-5 py-3">
-                            <div className="grid grid-cols-3 gap-3">
-
-                                {/* งบประมาณ */}
-                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Wallet size={9} className="text-violet-400" />
-                                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">งบประมาณ</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {budgets.map(b => (
-                                            <Pill key={b.id} id={b.id} label={b.label} active={budgetType === b.id}
-                                                color="bg-violet-600" onClick={() => setBudgetType(b.id as any)} />
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div>
+                                <label className={fl}>งบประมาณ</label>
+                                <select value={budgetType} onChange={e => setBudgetType(e.target.value as any)} className={fi} aria-label="เลือกงบประมาณ">
+                                    {budgets.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                                </select>
+                                {budgetType === 'other' && (
+                                    <input value={budgetOther} onChange={e => setBudgetOther(e.target.value)}
+                                        className={`${fi} mt-2`} placeholder="ระบุ..." />
+                                )}
+                                {budgetType === 'specific' && (
+                                    <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                        {[{ k: 'vehicle', l: 'ค่าพาหนะ' }, { k: 'fuel', l: 'ค่าน้ำมัน' }, { k: 'allowance', l: 'ค่าเบี้ยเลี้ยง' }, { k: 'accommodation', l: 'ค่าที่พัก' }].map(e => (
+                                            <label key={e.k} className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-600 dark:text-gray-300">
+                                                <input type="checkbox" checked={specificExpenses[e.k as keyof typeof specificExpenses]}
+                                                    onChange={() => setSpecificExpenses(p => ({ ...p, [e.k]: !p[e.k as keyof typeof specificExpenses] }))}
+                                                    className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500" />
+                                                {e.l}
+                                            </label>
                                         ))}
                                     </div>
-                                    {budgetType === 'other' && (
-                                        <input value={budgetOther} onChange={e => setBudgetOther(e.target.value)}
-                                            className={`${fi} mt-2`} placeholder="ระบุ..." />
-                                    )}
-                                    {budgetType === 'specific' && (
-                                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                                            <span className="text-[9px] text-gray-400 block mb-1.5">เบิกค่าใช้จ่าย</span>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {[{ k: 'vehicle', l: 'ค่าพาหนะ' }, { k: 'fuel', l: 'ค่าน้ำมัน' }, { k: 'allowance', l: 'ค่าเบี้ยเลี้ยง' }, { k: 'accommodation', l: 'ค่าที่พัก' }].map(e => (
-                                                    <label key={e.k} className={`flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-all ${specificExpenses[e.k as keyof typeof specificExpenses] ? 'bg-violet-600 border-violet-600 text-white' : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-violet-300'}`}>
-                                                        <div className={`w-3 h-3 rounded border flex items-center justify-center shrink-0 ${specificExpenses[e.k as keyof typeof specificExpenses] ? 'bg-white border-white' : 'border-gray-300 dark:border-gray-600'}`}>
-                                                            {specificExpenses[e.k as keyof typeof specificExpenses] && <Check size={7} className="text-violet-600" strokeWidth={3} />}
-                                                        </div>
-                                                        <input type="checkbox" checked={specificExpenses[e.k as keyof typeof specificExpenses]}
-                                                            onChange={() => setSpecificExpenses(p => ({ ...p, [e.k]: !p[e.k as keyof typeof specificExpenses] }))} className="hidden" />
-                                                        {e.l}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* การเดินทาง */}
-                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Car size={9} className="text-rose-400" />
-                                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">การเดินทาง</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {transports.map(t => (
-                                            <Pill key={t.id} id={t.id} label={t.label} active={transportType === t.id}
-                                                color="bg-rose-500" onClick={() => setTransportType(t.id as any)} />
-                                        ))}
-                                    </div>
-                                    {(transportType === 'private_vehicle' || transportType === 'other') && (
-                                        <input value={transportDetail} onChange={e => setTransportDetail(e.target.value)}
-                                            className={`${fi} mt-2`}
-                                            placeholder={transportType === 'private_vehicle' ? 'ทะเบียนรถ / ยี่ห้อ...' : 'ระบุวิธีการเดินทาง...'} />
-                                    )}
-                                </div>
-
-                                {/* สอนแทน */}
-                                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-3.5 py-2.5 flex flex-col items-center justify-center gap-2">
-                                    <div className="flex items-center gap-1.5">
-                                        <UserCheck size={9} className="text-teal-500" />
-                                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">สอนแทน</span>
-                                    </div>
-                                    <div className="flex items-center bg-white dark:bg-gray-800 rounded-full p-0.5 border border-gray-200 dark:border-gray-700 w-fit">
-                                        <button type="button" onClick={() => setRequiresSubstitute(true)}
-                                            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${requiresSubstitute ? 'bg-teal-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
-                                            ต้องการ
-                                        </button>
-                                        <button type="button" onClick={() => setRequiresSubstitute(false)}
-                                            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${!requiresSubstitute ? 'bg-gray-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
-                                            ไม่ต้องการ
-                                        </button>
-                                    </div>
-                                </div>
-
+                                )}
+                            </div>
+                            <div>
+                                <label className={fl}>การเดินทาง</label>
+                                <select value={transportType} onChange={e => setTransportType(e.target.value as any)} className={fi} aria-label="เลือกการเดินทาง">
+                                    {transports.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                                </select>
+                                {(transportType === 'private_vehicle' || transportType === 'other') && (
+                                    <input value={transportDetail} onChange={e => setTransportDetail(e.target.value)}
+                                        className={`${fi} mt-2`}
+                                        placeholder={transportType === 'private_vehicle' ? 'ทะเบียนรถ / ยี่ห้อ...' : 'ระบุวิธีการเดินทาง...'} />
+                                )}
+                            </div>
+                            <div>
+                                <label className={fl}>ต้องการครูสอนแทน</label>
+                                <select value={requiresSubstitute ? '1' : '0'} onChange={e => setRequiresSubstitute(e.target.value === '1')} className={fi} aria-label="เลือกความต้องการครูสอนแทน">
+                                    <option value="0">ไม่ต้องการ</option>
+                                    <option value="1">ต้องการ</option>
+                                </select>
                             </div>
                         </div>
 
                         {isSaved && savedData && (
-                            <>
-                                <div className={div} />
-                                <div className="shrink-0 px-5 py-2 flex items-center gap-2">
-                                    <CheckCircle2 size={13} className="text-emerald-500" />
-                                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">บันทึกสำเร็จ · เลขที่ {savedData.docNo}</span>
-                                    <OfficialTravelPdfButton data={savedData} schoolName={schoolInfo.schoolName}
-                                        schoolAffiliation={schoolInfo.affiliation} directorName={schoolInfo.directorName}
-                                        deputyName={schoolInfo.deputyName} personnelHeadName={schoolInfo.personnelHeadName}
-                                        personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel} />
-                                </div>
-                            </>
+                            <div className="flex flex-wrap items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg">
+                                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                                <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">บันทึกสำเร็จ · เลขที่ {savedData.docNo}</span>
+                                <OfficialTravelPdfButton data={savedData} schoolName={schoolInfo.schoolName}
+                                    schoolAffiliation={schoolInfo.affiliation} directorName={schoolInfo.directorName}
+                                    deputyName={schoolInfo.deputyName} personnelHeadName={schoolInfo.personnelHeadName}
+                                    personnelHeadRoleLabel={schoolInfo.personnelHeadRoleLabel} />
+                            </div>
                         )}
 
-                        {/* ── Submit ── */}
-                        <div className="shrink-0 border-t border-gray-100 dark:border-gray-800 px-5 py-3 flex items-center gap-4 bg-gray-50/60 dark:bg-gray-800/20 rounded-b-xl">
+                        <div className="flex justify-end items-center gap-4">
                             {isSaved ? (
                                 <>
-                                    <button type="button" onClick={() => navigate(-1)}
-                                        className="px-5 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-sm font-semibold text-gray-600 dark:text-gray-300 transition-all">
-                                        กลับ
-                                    </button>
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
                                         เลขที่เอกสาร: <span className="font-bold text-gray-900 dark:text-white">{savedData?.docNo}</span>
                                     </p>
+                                    <button type="button" onClick={() => navigate(-1)}
+                                        className="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-bold py-2 px-6 rounded-lg transition-colors duration-200">
+                                        กลับ
+                                    </button>
                                 </>
                             ) : (
-                                <button type="button" onClick={handleSubmit} disabled={isLoading || isEditLoading}
-                                    className="flex items-center gap-2 px-7 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white rounded-lg text-sm font-semibold shadow-md shadow-indigo-500/20 transition-all disabled:opacity-50">
+                                <button type="submit" disabled={isLoading || isEditLoading}
+                                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg transition-colors duration-200 disabled:bg-gray-500 disabled:cursor-not-allowed">
                                     {isLoading
-                                        ? <><Loader2 size={14} className="animate-spin" /> กำลังบันทึก...</>
+                                        ? <><Loader2 size={16} className="animate-spin" /> กำลังบันทึก...</>
                                         : isEditLoading
-                                            ? <><Loader2 size={14} className="animate-spin" /> กำลังโหลดข้อมูล...</>
-                                            : <><Send size={14} /> {isEditMode ? "บันทึกการแก้ไข" : "บันทึกและส่งคำขอ"}</>}
+                                            ? <><Loader2 size={16} className="animate-spin" /> กำลังโหลดข้อมูล...</>
+                                            : <><Send size={16} /> {isEditMode ? "บันทึกการแก้ไข" : "บันทึกและส่งคำขอ"}</>}
                                 </button>
                             )}
                         </div>
-                    </div>
+                    </form>
                 </div>
             </div>
 
