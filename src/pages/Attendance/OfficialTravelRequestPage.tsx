@@ -300,6 +300,10 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({});
     const [schoolInfo, setSchoolInfo] = useState({ schoolName: "", directorName: "", deputyName: "", personnelHeadName: "", personnelHeadRoleLabel: "", affiliation: "" });
+    // ปุ่ม "เลือกจากทะเบียน" ต้องมีระบบงานธุรการให้อ้างอิงถึงจริง — โชว์เฉพาะโรงเรียนที่เปิดใช้ฟีเจอร์นี้ไว้
+    // (สวิตช์เดียวกับที่ /owner/school-info ใช้เปิด/ปิดเมนูงานธุรการทั้งหมด และ ProtectedRoute ใช้กันหน้า
+    // /general-affairs/* — default เปิดถ้ายังไม่เคยตั้งค่าเลย ให้พฤติกรรมตรงกับจุดอื่นๆ ที่เช็ค flag นี้ทุกจุด)
+    const [isGeneralAffairsEnabled, setIsGeneralAffairsEnabled] = useState(true);
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
@@ -353,6 +357,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                     if (!isEditMode) setTo(`ผู้อำนวยการ${schoolNameWithPrefix}`);
                     const personnelPersonnel = getGroupPersonnel(d, 'personnel');
                     setSchoolInfo({ schoolName: d.schoolName || "", directorName: `${d.directorPrefix || ""}${d.directorName || ""}`, deputyName: `${d.deputyPrefix || ""}${d.deputyName || ""}`, personnelHeadName: personnelPersonnel.name, personnelHeadRoleLabel: personnelPersonnel.label, affiliation: d.affiliation || "" });
+                    setIsGeneralAffairsEnabled(d.features?.generalAdmin ?? true);
                 }
             } catch { }
         })();
@@ -680,10 +685,12 @@ const OfficialTravelRequestPage: React.FC = () => {
                             <div>
                                 <div className="flex items-center justify-between mb-1">
                                     <label className={`${fl} mb-0`}>ตามหนังสือ / คำสั่งที่</label>
-                                    <button type="button" onClick={() => setIsDocSelectorOpen(true)}
-                                        className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
-                                        <BookOpenCheck size={11} /> เลือกจากทะเบียน
-                                    </button>
+                                    {isGeneralAffairsEnabled && (
+                                        <button type="button" onClick={() => setIsDocSelectorOpen(true)}
+                                            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                                            <BookOpenCheck size={11} /> เลือกจากทะเบียน
+                                        </button>
+                                    )}
                                 </div>
                                 <input value={refDocument} onChange={e => setRefDocument(e.target.value)} className={fi} placeholder="เลขที่อ้างอิง..." />
                             </div>
@@ -791,7 +798,7 @@ const OfficialTravelRequestPage: React.FC = () => {
                 />
             )}
 
-            {isDocSelectorOpen && (
+            {isDocSelectorOpen && isGeneralAffairsEnabled && (
                 <DocumentSourceSelectorModal schoolId={schoolId || undefined} onClose={() => setIsDocSelectorOpen(false)}
                     onSelect={picked => {
                         setRefDocument(picked.no);
