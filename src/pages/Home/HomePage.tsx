@@ -7,7 +7,7 @@ import { RootState } from "@/store";
 import MainLayout from "@/layouts/MainLayout";
 import SkeletonLoader from "@/components/SkeletonLoader";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
-import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment, Timestamp } from 'firebase/firestore';
+import { collection, limit, orderBy, query, where, getDocs, doc, onSnapshot, getDoc, updateDoc, increment, Timestamp, getCountFromServer } from 'firebase/firestore';
 import { firestore as db } from "../../firebase";
 
 const DonutChart = lazy(() => import('@/components/Shared/DonutChart'));
@@ -1014,10 +1014,13 @@ const HomePage = () => {
                 } catch (e) { console.warn("Leave report fetch (partial):", e); }
 
                 try {
-                    const [coursesSnap, clubsSnap, enrollmentsSnap, assignmentSnap] = await Promise.all([
+                    // enrollments ใช้แค่จำนวนรวม (totalEnrollments ด้านล่าง) ไม่เคยใช้ข้อมูลรายเอกสารเลย —
+                    // ใช้ getCountFromServer แทน getDocs ทั้ง collection ประหยัด read ได้มาก (นับที่ฝั่ง
+                    // Firestore เอง ไม่ต้องโหลดเอกสารทุกใบมานับที่ client)
+                    const [coursesSnap, clubsSnap, enrollmentsCountSnap, assignmentSnap] = await Promise.all([
                         getDocs(collection(db, "school-settings", schoolId, "courses")),
                         getDocs(collection(db, "school-settings", schoolId, "clubs")),
-                        getDocs(collection(db, "school-settings", schoolId, "enrollments")),
+                        getCountFromServer(collection(db, "school-settings", schoolId, "enrollments")),
                         getDocs(collection(db, "school-settings", schoolId, "course_assignments"))
                     ]);
 
@@ -1109,12 +1112,14 @@ const HomePage = () => {
                             const teacherDocId = teacherSnap.docs[0].id;
                             const teacherData = teacherSnap.docs[0].data();
 
-                            // 3. Fetch period settings & courses & rooms to enrich schedule data
+                            // 3. Fetch period settings & rooms to enrich schedule data — coursesSnap/assignmentSnap
+                            // ใช้ตัวที่ดึงไว้แล้วด้านบน (บรรทัด ~1017 ของ effect นี้) ไม่ต้องอ่านซ้ำ collection
+                            // เดียวกันอีกรอบ (เดิมดึง courses+course_assignments ทั้ง collection ซ้ำ 2 ครั้งในหน้า
+                            // โหลดเดียวกันโดยไม่จำเป็น — ตรรกะเดียวกับที่ clubsSnap ด้านล่างใช้ตัวแปรจาก scope
+                            // นอกอยู่แล้วโดยไม่ต้อง fetch ซ้ำ)
                             let periodSettings: Record<string, { startTime: string, endTime: string }> = {};
-                            const [periodSnap, coursesSnap, assignmentSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
+                            const [periodSnap, roomsSnap, specialPeriodsSnap, learnerActivitiesSnap] = await Promise.all([
                                 getDoc(doc(db, 'school-settings', schoolId, 'configs', 'schedule_settings')),
-                                getDocs(collection(db, 'school-settings', schoolId, 'courses')),
-                                getDocs(collection(db, 'school-settings', schoolId, 'course_assignments')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'physical-rooms')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'special-periods')),
                                 getDocs(collection(db, 'school-settings', schoolId, 'learner-activities'))
@@ -1569,7 +1574,7 @@ const HomePage = () => {
                             todaySchedules = groupedSchedules;
                         }
                     }
-                    setAcademicReport({ totalCourses: totalOpenCourses, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsSnap.size, todaySchedules, compensationScheduleDay });
+                    setAcademicReport({ totalCourses: totalOpenCourses, totalClubs: clubsSnap.size, totalEnrollments: enrollmentsCountSnap.data().count, todaySchedules, compensationScheduleDay });
                 } catch (e) { console.warn("Academic report fetch:", e); }
             } catch (error) { console.error("Error fetching report data:", error); }
             finally { setReportLoading(false); }
