@@ -4,7 +4,7 @@ import { fetchCalendar } from "@/store/slices/calendarSlice";
 import { RootState } from "../../store";
 import { firestore } from "@/firebase";
 import {
-    collection, doc, getDoc, getDocs, query, where,
+    collection, doc, getDoc, getDocs, query, where, orderBy,
     Timestamp, onSnapshot, limit, runTransaction, updateDoc
 } from "firebase/firestore";
 import { ROLES } from "@/constants/roles";
@@ -15,13 +15,17 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import ThaiDatePicker from "../../components/Common/ThaiDatePicker";
 import { isStudyingStudent } from "@/utils/studentStatusUtils";
 import { isAttendanceEntryOnly } from "@/utils/attendanceRoles";
-import { getCurrentThaiYear } from "@/utils/dateUtils";
+import { getCurrentThaiYear, getThaiYear } from "@/utils/dateUtils";
+// ชื่อฟังก์ชันบอกว่าไว้ใช้กับวันเกิดนักเรียน แต่จริงๆ เป็น date normalizer ทั่วไป (รับได้ทั้งข้อความไทย
+// "๒ กันยายน ๒๕๖๐", ค.ศ./พ.ศ. คละกัน, Firestore Timestamp ฯลฯ คืน ISO ค.ศ. เสมอ) — ใช้ตรงนี้เพื่อความปลอดภัย
+// เพราะ docDate ในทะเบียนหนังสือ (stampedDocuments/orders) ถูกกรอกเป็นข้อความอิสระจากหลายจุด ไม่รับประกันรูปแบบ
+import { normalizeBirthDateInput as normalizeAnyDateToIso } from "@/utils/birthDateUtils";
 import { getGroupPersonnel } from "@/utils/schoolUtils";
 import Select from "react-select";
 import OfficialTravelPdfButton from "@/components/Pdf/OfficialTravel/OfficialTravelPdfButton";
 import BackButton from "@/components/Shared/BackButton";
 import {
-    Send, History, Layers, X, Check, Loader2, CheckCircle2
+    Send, History, Layers, X, Check, Loader2, CheckCircle2, BookOpenCheck, Search
 } from "lucide-react";
 
 interface TravelRequest {
@@ -125,6 +129,134 @@ const StudentSelectorModal: React.FC<{
     );
 };
 
+const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const formatDocDateShort = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return dateStr;
+    const date = new Date(y, m - 1, d);
+    return `${d} ${thaiMonthsShort[m - 1]} ${getThaiYear(date)}`;
+};
+
+interface RegistryDoc { id: string; no: string; subject: string; docDate: string; extra?: string }
+
+// normalizeAnyDateToIso คืนค่าดิบกลับมาเป็น string เดิมถ้าแปลงไม่สำเร็จ (ไม่ใช่ค่าว่าง) — ต้องเช็คซ้ำว่า
+// ผลลัพธ์เป็น ISO จริงๆ ก่อนเชื่อ ไม่งั้นค่าที่ ThaiDatePicker (ซึ่งรับได้เฉพาะ "YYYY-MM-DD") จะพังเป็น
+// "undefined undefined NaN" ถ้าข้อมูลในทะเบียนหนังสือเป็นรูปแบบที่แปลงไม่ได้จริงๆ
+const safeIsoDate = (raw: unknown): string => {
+    const normalized = normalizeAnyDateToIso(raw);
+    return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+};
+
+/* ── Document Source Selector Modal (ดึงเลขที่/วันที่จากงานมอบหมาย ผอ. / หนังสือรับ / คำสั่ง) ── */
+const DocumentSourceSelectorModal: React.FC<{
+    schoolId: string | undefined; onClose: () => void; onSelect: (doc: { no: string; date: string }) => void;
+}> = ({ schoolId, onClose, onSelect }) => {
+    const [tab, setTab] = useState<'assignment' | 'received' | 'orders'>('assignment');
+    const [search, setSearch] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [docs, setDocs] = useState<RegistryDoc[]>([]);
+
+    useEffect(() => {
+        if (!schoolId) { setDocs([]); return; }
+        let cancelled = false;
+        const load = async () => {
+            setLoading(true);
+            try {
+                if (tab === 'orders') {
+                    const snap = await getDocs(query(collection(firestore, 'school-settings', schoolId, 'orders'), orderBy('createdAt', 'desc'), limit(300)));
+                    if (cancelled) return;
+                    setDocs(snap.docs.map(d => {
+                        const v = d.data() as any;
+                        return { id: d.id, no: v.orderNo || '-', subject: v.subject || '-', docDate: safeIsoDate(v.docDate), extra: v.signedBy || '' };
+                    }));
+                } else {
+                    // งานมอบหมาย (จากเกษียณ ผอ.) และ หนังสือรับ มาจากคอลเลกชันเดียวกัน (stampedDocuments) —
+                    // ต่างกันแค่ตัวกรอง: "งานมอบหมาย" คือฉบับที่ ผอ. อนุมัติ/เกษียณสั่งการแล้ว (มี assignments)
+                    const snap = await getDocs(query(collection(firestore, 'school-settings', schoolId, 'stampedDocuments'), orderBy('createdAt', 'desc'), limit(300)));
+                    if (cancelled) return;
+                    const rows = snap.docs.map(d => {
+                        const v = d.data() as any;
+                        const a = v.assignments;
+                        const hasAssignment = !!a && (a.academic || a.general || a.budget || a.personnel || a.assignee || a.comment);
+                        return {
+                            id: d.id, no: v.docRefNo || '-', subject: v.subject || '-', docDate: safeIsoDate(v.docDate || v.date),
+                            extra: a?.assignee || a?.comment || v.from || '', hasAssignment,
+                        };
+                    });
+                    setDocs(tab === 'assignment' ? rows.filter(r => r.hasAssignment) : rows);
+                }
+            } catch (err) {
+                console.error('Error loading document registry for picker:', err);
+                if (!cancelled) setDocs([]);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [schoolId, tab]);
+
+    const filtered = docs.filter(d => {
+        const kw = search.trim().toLowerCase();
+        if (!kw) return true;
+        return d.no.toLowerCase().includes(kw) || d.subject.toLowerCase().includes(kw);
+    });
+
+    const tabs: { id: typeof tab; label: string }[] = [
+        { id: 'assignment', label: 'งานมอบหมาย (เกษียณ ผอ.)' },
+        { id: 'received', label: 'หนังสือรับ' },
+        { id: 'orders', label: 'คำสั่ง' },
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[80vh] border border-gray-200 dark:border-gray-800">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <BookOpenCheck size={15} className="text-indigo-500" /> เลือกอ้างอิงจากทะเบียน
+                    </p>
+                    <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center text-gray-400"><X size={13} /></button>
+                </div>
+                <div className="px-4 pt-3 flex gap-1.5">
+                    {tabs.map(t => (
+                        <button key={t.id} type="button" onClick={() => setTab(t.id)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${tab === t.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                            {t.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="p-4 space-y-3">
+                    <div className="relative">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder="ค้นหาเลขที่ / เรื่อง..."
+                            className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none" />
+                    </div>
+                    <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden">
+                        <div className="max-h-64 overflow-y-auto">
+                            {loading ? <div className="flex items-center justify-center py-8 gap-2 text-gray-400 text-xs"><Loader2 size={13} className="animate-spin" />กำลังโหลด...</div>
+                                : filtered.length === 0 ? <p className="text-center py-8 text-xs text-gray-400">ไม่พบเอกสาร</p>
+                                : filtered.map(d => (
+                                    <button key={d.id} type="button"
+                                        onClick={() => onSelect({ no: d.no, date: d.docDate })}
+                                        className="w-full text-left px-3 py-2 border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-xs font-bold text-gray-900 dark:text-white truncate">{d.no}</p>
+                                            {d.docDate && <span className="shrink-0 text-[10px] text-gray-400">{formatDocDateShort(d.docDate)}</span>}
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{d.subject}</p>
+                                        {d.extra && <p className="text-[9px] text-gray-400 truncate">{d.extra}</p>}
+                                    </button>
+                                ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 /* ── Main Component ── */
 const OfficialTravelRequestPage: React.FC = () => {
     const dispatch = useDispatch();
@@ -171,6 +303,7 @@ const OfficialTravelRequestPage: React.FC = () => {
     const [isSaved, setIsSaved] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
     const [isStudentSelectorOpen, setIsStudentSelectorOpen] = useState(false);
+    const [isDocSelectorOpen, setIsDocSelectorOpen] = useState(false);
     const [onBehalfTeacherOption, setOnBehalfTeacherOption] = useState<UserOption | null>(null);
 
     const isTeacherRole = Array.isArray(user?.role)
@@ -545,7 +678,13 @@ const OfficialTravelRequestPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                             <div>
-                                <label className={fl}>ตามหนังสือ / คำสั่งที่</label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className={`${fl} mb-0`}>ตามหนังสือ / คำสั่งที่</label>
+                                    <button type="button" onClick={() => setIsDocSelectorOpen(true)}
+                                        className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                                        <BookOpenCheck size={11} /> เลือกจากทะเบียน
+                                    </button>
+                                </div>
                                 <input value={refDocument} onChange={e => setRefDocument(e.target.value)} className={fi} placeholder="เลขที่อ้างอิง..." />
                             </div>
                             <div>
@@ -648,6 +787,20 @@ const OfficialTravelRequestPage: React.FC = () => {
                             return [...prev, ...newOpts.filter(n => !ex.has(n.value))];
                         });
                         setIsStudentSelectorOpen(false);
+                    }}
+                />
+            )}
+
+            {isDocSelectorOpen && (
+                <DocumentSourceSelectorModal schoolId={schoolId || undefined} onClose={() => setIsDocSelectorOpen(false)}
+                    onSelect={picked => {
+                        setRefDocument(picked.no);
+                        if (picked.date) {
+                            setRefDate(picked.date);
+                        } else {
+                            Swal.fire({ icon: "info", title: "อ่านวันที่ในเอกสารนี้ไม่ได้", text: "กรุณาเลือกวันที่เองในช่อง \"ลงวันที่\"", background: isDarkMode ? "#111827" : "#fff", color: isDarkMode ? "#f9fafb" : "#111827", timer: 2500, showConfirmButton: false, toast: true, position: "top-end" });
+                        }
+                        setIsDocSelectorOpen(false);
                     }}
                 />
             )}
