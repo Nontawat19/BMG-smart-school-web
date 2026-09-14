@@ -357,11 +357,23 @@ const OfficialTravelRequestPage: React.FC = () => {
                     if (!isEditMode) setTo(`ผู้อำนวยการ${schoolNameWithPrefix}`);
                     const personnelPersonnel = getGroupPersonnel(d, 'personnel');
                     setSchoolInfo({ schoolName: d.schoolName || "", directorName: `${d.directorPrefix || ""}${d.directorName || ""}`, deputyName: `${d.deputyPrefix || ""}${d.deputyName || ""}`, personnelHeadName: personnelPersonnel.name, personnelHeadRoleLabel: personnelPersonnel.label, affiliation: d.affiliation || "" });
-                    setIsGeneralAffairsEnabled(d.features?.generalAdmin ?? true);
                 }
             } catch { }
         })();
     }, [schoolId, isEditMode]);
+
+    // Real-time ด้วย onSnapshot แทน polling/getDoc ซ้ำๆ — Firestore เรียกเก็บค่าแค่ 1 read ตอนเปิดหน้า
+    // แล้วจะยิง read เพิ่มก็ต่อเมื่อเอกสารนี้เปลี่ยนจริงเท่านั้น (เช่น แอดมินไปกดปิด/เปิดสวิตช์งานธุรการที่
+    // /owner/school-info) ไม่ใช่การ poll ตามเวลาซึ่งจะเปลือง read โดยไม่จำเป็น — แยกเป็น listener เฉพาะของ
+    // ตัวเองแทนที่จะรวมกับ getDoc ของ schoolInfo ด้านบน เพราะ effect นั้นยังตั้งค่าช่อง "เรียน" (to) ที่ผู้ใช้
+    // แก้เองได้ ถ้าทำเป็น real-time ด้วยกันจะเขียนทับสิ่งที่ผู้ใช้พิมพ์เองไปแล้วทุกครั้งที่เอกสารเปลี่ยน
+    useEffect(() => {
+        if (!schoolId) return;
+        const unsub = onSnapshot(doc(firestore, 'school-settings', schoolId), snap => {
+            setIsGeneralAffairsEnabled(snap.exists() ? (snap.data().features?.generalAdmin ?? true) : true);
+        }, err => console.error('Error watching generalAdmin feature flag:', err));
+        return () => unsub();
+    }, [schoolId]);
 
     useEffect(() => {
         if (!schoolId) return;
