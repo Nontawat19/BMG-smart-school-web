@@ -12,6 +12,7 @@ import { compressImage } from "@/utils/imageUtils";
 import { FaUpload, FaSchool, FaMapMarkerAlt, FaUserTie, FaSave, FaArrowLeft, FaCrosshairs, FaSearch, FaPen, FaEraser, FaUndo, FaWifi, FaChevronRight, FaChevronLeft, FaPlus, FaTrash, FaGlobe, FaShieldAlt, FaLayerGroup, FaCamera, FaUserClock, FaUserCheck, FaBriefcase } from 'react-icons/fa';
 import MainLayout from "@/layouts/MainLayout";
 import { ROLES } from "@/constants/roles";
+import { isFeatureFlagEnabled } from "@/utils/featureFlags";
 import {
   DEFAULT_SCHOOL_SUMMARY,
   getSchoolDashboardSummaryRef,
@@ -109,6 +110,9 @@ interface SchoolInfo {
     budget?: boolean;
     generalAdmin?: boolean;
     director?: boolean;
+    flagCeremony?: boolean;
+    classroomAttendance?: boolean;
+    dailyAttendanceCheck?: boolean;
   };
 }
 
@@ -1846,10 +1850,13 @@ const SchoolInfoPage: React.FC = () => {
                       { key: 'budget', label: 'กลุ่มบริหารงบประมาณ', desc: 'ระบบแผนงาน, การจัดซื้อจัดจ้าง, การเงินและพัสดุ' },
                       // 📌 'generalAdmin' (งานธุรการ) ย้ายไปเป็นสวิตช์เฉพาะ Owner ในหน้า "ข้อมูลทั่วไป" (Step 1) แล้ว — ไม่ให้ school_admin แก้จากตรงนี้
                       { key: 'director', label: 'ส่วนงานผู้อำนวยการ', desc: 'Dashboard ผู้บริหาร, ระบบอนุมัติเอกสาร, รายงานภาพรวม' },
+                      { key: 'flagCeremony', label: 'ระบบเช็คแถว', desc: 'เช็คชื่อกิจกรรมเข้าแถวเคารพธงชาติ (หน้า "เช็คชื่อกิจกรรมเข้าแถว")' },
+                      { key: 'classroomAttendance', label: 'ระบบเช็คขาดคาบ', desc: 'เช็คชื่อรายวิชา/เช็คขาดคาบเรียน รวมถึงประวัติ สรุปผล และตรวจเช็คการเข้าสอนของครู' },
+                      { key: 'dailyAttendanceCheck', label: 'ระบบเช็คชื่อมาเรียน (ไม่ใช้สแกน)', desc: 'ให้ครูประจำชั้นเช็คชื่อมาเรียนของนักเรียนเองรายวัน เหมาะกับโรงเรียนที่ไม่เปิดใช้สแกนบัตร/สแกนหน้า' },
                     ].map((feature) => (
                       <div key={feature.key} className="flex items-center justify-between p-5 bg-gray-50 dark:bg-[#1e1f21] rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all">
                         <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-xl ${(info.features?.[feature.key as keyof typeof info.features] ?? true)
+                          <div className={`p-3 rounded-xl ${isFeatureFlagEnabled(info.features, feature.key)
                             ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'
                             : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
                             }`}>
@@ -1864,7 +1871,7 @@ const SchoolInfoPage: React.FC = () => {
                           <input
                             type="checkbox"
                             className="sr-only peer"
-                            checked={info.features?.[feature.key as keyof typeof info.features] ?? true}
+                            checked={isFeatureFlagEnabled(info.features, feature.key)}
                             onChange={(e) => {
                               setInfo(prev => ({
                                 ...prev,

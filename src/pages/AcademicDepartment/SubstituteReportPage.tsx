@@ -399,11 +399,13 @@ const SubstituteReportPage: React.FC = () => {
       `}</style>
       <div className="min-h-screen bg-gray-50 px-3 py-4 dark:bg-[#1c1c24] sm:px-4 md:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-[1500px]">
-          <div className="mb-4 flex items-center gap-4 print:hidden">
-            <BackButton to="/academic/hub/scheduling" />
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-2xl font-bold text-gray-900 dark:text-white">รายงานการสอนแทน</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">รายละเอียดการมอบหมายครูสอนแทนในแต่ละคาบ</p>
+          <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] print:hidden lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/scheduling" />
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-2xl font-bold text-gray-900 dark:text-white">รายงานการสอนแทน</h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400">รายละเอียดการมอบหมายครูสอนแทนในแต่ละคาบ</p>
+              </div>
             </div>
           </div>
 

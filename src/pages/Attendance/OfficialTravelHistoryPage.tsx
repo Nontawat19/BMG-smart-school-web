@@ -134,22 +134,22 @@ const OfficialTravelHistoryPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="max-w-6xl mx-auto px-4 py-8">
-                <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                    <div>
-                    <div className="flex items-center gap-4">
-                        <BackButton />
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                            <FaPlane className="text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-                            ประวัติการขอไปราชการ
-                        </h1>
-                    </div>
-                        <p className="text-gray-500 dark:text-gray-400 mt-1">
-                            รายการคำขอและสถานะการอนุมัติทั้งหมดของคุณ
-                        </p>
+                <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
+                        <BackButton to="/academic/hub/personnel_info" />
+                        <div className="min-w-0">
+                            <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                                <FaPlane className="text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
+                                ประวัติการขอไปราชการ
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                รายการคำขอและสถานะการอนุมัติทั้งหมดของคุณ
+                            </p>
+                        </div>
                     </div>
                     <button
                         onClick={() => navigate(`/school/${schoolId}/official-travel-request`)}
-                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium shadow-sm"
+                        className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500"
                         aria-label="สร้างคำขอไปราชการใหม่"
                     >
                         <FaPlus aria-hidden="true" />

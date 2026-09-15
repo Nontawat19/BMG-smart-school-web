@@ -15,7 +15,7 @@ import {
   getDoc,
   limit,
 } from 'firebase/firestore';
-import { FaFilePdf, FaSearch, FaPhone, FaLine, FaFilter } from 'react-icons/fa';
+import { FaFilePdf, FaSearch, FaPhone, FaLine } from 'react-icons/fa';
 import { X, FileDown, Loader2 } from 'lucide-react';
 import { pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
@@ -324,37 +324,36 @@ const LeaveHistoryPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="p-6 text-gray-900 dark:text-white transition-colors duration-300">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-6">
           <div className="flex items-center gap-4">
-            <BackButton />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา</h1>
+            <BackButton to="/academic/hub/students" />
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">ประวัติการลา</h1>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-            <div className="relative min-w-[150px]">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaFilter className="text-gray-400" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-black text-gray-500 dark:text-gray-400">ค้นหา</span>
+              <div className="relative">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อ, ประเภทการลา..."
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21] dark:text-white placeholder-gray-400"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
               </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-black text-gray-500 dark:text-gray-400">ห้องเรียน</span>
               <select
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="pl-10 pr-8 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white appearance-none cursor-pointer"
+                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21] dark:text-white"
               >
                 <option value="">ทุกห้อง</option>
                 {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            </div>
-            <div className="relative w-full md:w-64">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaSearch className="text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="ค้นหาชื่อ, ประเภทการลา..."
-                className="pl-10 pr-4 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white placeholder-gray-400"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+            </label>
           </div>
         </div>
 

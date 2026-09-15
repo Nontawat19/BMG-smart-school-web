@@ -595,16 +595,20 @@ const GraduationPendingPage: React.FC = () => {
             <div className="min-h-screen bg-gray-50 dark:bg-[#1c1c24] pb-20">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     <div className="mb-8">
-                        <div className="flex items-center gap-4 mb-2">
-                            <BackButton to="/academic/hub/registration" />
-                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <FaClock className="text-amber-500" />
-                                รายการรอดำเนินการจบการศึกษา
-                            </h1>
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                                <BackButton to="/academic/hub/registration" />
+                                <div className="min-w-0">
+                                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                        <FaClock className="text-amber-500" />
+                                        รายการรอดำเนินการจบการศึกษา
+                                    </h1>
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                        ตรวจสอบและอนุมัติรายชื่อนักเรียนที่สำเร็จการศึกษา เพื่อจัดเข้าสู่ทำเนียบศิษย์เก่า
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <p className="text-gray-500 dark:text-gray-400 ml-14">
-                            ตรวจสอบและอนุมัติรายชื่อนักเรียนที่สำเร็จการศึกษา เพื่อจัดเข้าสู่ทำเนียบศิษย์เก่า
-                        </p>
                     </div>
 
                     <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-3 mb-6">

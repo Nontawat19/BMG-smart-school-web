@@ -317,9 +317,22 @@ export const useGradeBookAttendance = (
         return true;
     }, [students, grades, currentCourse, maxScores, characteristicsCriteria, readingWritingCriteria, studentCourseDailyStatus, attendancePages, completenessStats]);
 
+    const medicalWaiverStudentIds = useMemo(() => {
+        const set = new Set<string>();
+        students.forEach(s => {
+            const record = grades[s.id];
+            if ((record as any)?.medicalWaiver || (record as any)?.status === 'ผ่อนผัน' || record?.remark?.includes('ผ่อนผัน')) {
+                set.add(s.id);
+            }
+        });
+        return set;
+    }, [students, grades]);
+
     const studentAttendanceSummaries = useMemo(
-        () => buildStudentAttendanceSummaries(students, attendancePages, studentCourseDailyStatus),
-        [students, attendancePages, studentCourseDailyStatus]
+        () => buildStudentAttendanceSummaries(students, attendancePages, studentCourseDailyStatus, {
+            medicalWaiverStudentIds,
+        }),
+        [students, attendancePages, studentCourseDailyStatus, medicalWaiverStudentIds]
     );
 
     // Per-student "เวลาเรียนไม่ถึงร้อยละ 80" check for the current course/term scope (whichever
@@ -327,8 +340,10 @@ export const useGradeBookAttendance = (
     // classes forced onto 'annual' upstream, a single semester for secondary). Based on elapsed
     // sessions only (see attendanceEligibility.ts for the 'elapsed' vs 'annual' modes).
     const attendanceEligibility = useMemo(
-        () => computeAttendanceEligibility(studentAttendanceSummaries),
-        [studentAttendanceSummaries]
+        () => computeAttendanceEligibility(studentAttendanceSummaries, {
+            medicalWaiverStudentIds,
+        }),
+        [studentAttendanceSummaries, medicalWaiverStudentIds]
     );
 
     return { attendancePages, completenessStats, validateDataCompleteness, studentAttendanceSummaries, attendanceEligibility };

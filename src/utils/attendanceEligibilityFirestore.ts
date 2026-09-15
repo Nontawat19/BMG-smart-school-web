@@ -2,7 +2,7 @@
 // Shared by every place that needs to know "is this student's attendance below 80% for this
 // course" from live Firestore data: the per-subject attendance-taking page (live save-time
 // check), and the มส backfill tool (batch check over every course/group already in the system).
-import { collection, collectionGroup, getDocs, query, where, Firestore } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDoc, getDocs, query, where, Firestore, DocumentSnapshot } from 'firebase/firestore';
 import { getStableClassKey, matchesAssignmentGroupRoom } from './attendanceClassMatching';
 import { CLASSES } from './schoolUtils';
 import {
@@ -220,8 +220,42 @@ export const computeCourseAttendanceEligibilityForRoster = async (
 
     const classKey = getStableClassKey(identity.classId) || identity.courseId;
     const attendancePages = buildAttendancePages(calendarData, scheduleMap, semesterScope, classKey, scopedDailyStatus, checkIsHolidayLocal);
-    const summaries = buildStudentAttendanceSummaries(rosterStudents, attendancePages, dailyStatus);
-    const eligibility = computeAttendanceEligibility(summaries);
+
+    // ตรวจสอบข้อมูลการผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์) จากบันทึกผลการเรียนของนักเรียน
+    const medicalWaiverStudentIds = new Set<string>();
+    const waiverReasons: Record<string, string> = {};
+    if (identity.courseId && schoolId && rosterStudents.length > 0) {
+        try {
+            const gradeSnaps = await Promise.all(
+                rosterStudents.map(s => getDoc(doc(db, 'school-settings', schoolId, 'courses', identity.courseId, 'grades', s.id)))
+            );
+            gradeSnaps.forEach((snap: DocumentSnapshot, idx: number) => {
+                if (snap.exists()) {
+                    const data = snap.data() as any;
+                    const isWaived = data?.medicalWaiver === true ||
+                        data?.status === 'ผ่อนผัน' ||
+                        (typeof data?.remark === 'string' && data.remark.includes('ผ่อนผัน'));
+                    if (isWaived) {
+                        const sid = rosterStudents[idx].id;
+                        medicalWaiverStudentIds.add(sid);
+                        if (data?.medicalWaiverReason || data?.remark) {
+                            waiverReasons[sid] = data.medicalWaiverReason || data.remark;
+                        }
+                    }
+                }
+            });
+        } catch (err) {
+            console.warn('[attendanceEligibilityFirestore] Error checking medical waivers:', err);
+        }
+    }
+
+    const summaries = buildStudentAttendanceSummaries(rosterStudents, attendancePages, dailyStatus, {
+        medicalWaiverStudentIds,
+    });
+    const eligibility = computeAttendanceEligibility(summaries, {
+        medicalWaiverStudentIds,
+        waiverReasons,
+    });
 
     return { eligibility, dailyStatus };
 };

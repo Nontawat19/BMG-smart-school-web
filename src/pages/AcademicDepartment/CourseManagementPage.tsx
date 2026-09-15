@@ -427,30 +427,34 @@ const CourseManagementPage: React.FC = () => {
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto w-full">
           {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <div className="flex items-center gap-4 mb-2">
-                <BackButton to="/academic/hub/registration" />
-                <span className="text-gray-500 dark:text-gray-400 font-medium">กลับไปหน้าบริหารงานวิชาการ</span>
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between mb-8">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/registration" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                  <PlusCircle className="text-indigo-600 dark:text-indigo-400" size={28} />
+                  เพิ่มหลักสูตรใหม่
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">กรอกข้อมูลเพื่อสร้างรายวิชาใหม่ในระบบการศึกษา</p>
               </div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                <PlusCircle className="text-indigo-600 dark:text-indigo-400" size={32} />
-                เพิ่มหลักสูตรใหม่
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1">กรอกข้อมูลเพื่อสร้างรายวิชาใหม่ในระบบการศึกษา</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-2.5">
               <Link
                 to="/academic/import-courses"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl transition-all duration-300 shadow-lg shadow-green-500/20 hover:shadow-green-500/40"
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
               >
-                <FileText size={18} />
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+                  <FileText size={12} />
+                </span>
                 นำเข้าจาก Excel
               </Link>
               <Link
                 to="/academic/view-courses"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40"
+                className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
               >
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm">
+                  <BookOpen size={12} />
+                </span>
                 ดูหลักสูตรทั้งหมด
               </Link>
             </div>

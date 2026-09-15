@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "bmg-smartschool"
+    "default": "epp5online",
+    "bmg": "bmg-smartschool",
+    "epp5": "epp5online"
   }
 }

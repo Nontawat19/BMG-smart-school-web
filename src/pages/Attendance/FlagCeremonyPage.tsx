@@ -1764,7 +1764,7 @@ const FlagCeremonyPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => navigate('/academic/hub/attendance')}
-                className="w-10 h-10 rounded-full bg-[#26282d] border border-white/10 flex items-center justify-center text-[#a9aebb] hover:bg-[#2d3036] hover:text-white active:scale-95 transition-all shadow-[0_6px_18px_rgba(0,0,0,0.16)] shrink-0"
+                className="w-10 h-10 rounded-full bg-gray-100 dark:bg-[#26282d] border border-gray-200 dark:border-white/10 flex items-center justify-center text-gray-600 dark:text-[#a9aebb] hover:bg-gray-200 dark:hover:bg-[#2d3036] hover:text-gray-900 dark:hover:text-white active:scale-95 transition-all shadow-[0_6px_18px_rgba(0,0,0,0.16)] shrink-0"
               >
                 <ArrowLeft size={20} strokeWidth={2.2} />
               </button>

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
+import BackButton from "@/components/Shared/BackButton";
 import { firestore, auth } from "@/firebase";
 import { collection, getDocs, query, where, Timestamp, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { FaSearch, FaCheck, FaTimes, FaGraduationCap, FaUserCog, FaUsers } from "react-icons/fa";
-import { ArrowLeft, Loader2, Info } from "lucide-react";
+import { Loader2, Info } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -385,22 +386,17 @@ export default function AdvisorManagementPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           
           {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <div>
-              <div className="flex items-center gap-2 mb-2 text-sm text-gray-500 dark:text-gray-400">
-                <Link 
-                  to={schoolId ? `/academic/hub/personnel_info` : "/"} 
-                  className="flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                >
-                  <ArrowLeft size={16} /> กลับสู่เมนูหลัก
-                </Link>
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-6 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to={schoolId ? `/academic/hub/personnel_info` : "/"} />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 dark:from-indigo-400 dark:to-purple-500 bg-clip-text text-transparent">
+                  จัดการครูที่ปรึกษา / ครูประจำชั้น
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  มอบหมายห้องเรียนประจำชั้นและระดับชั้นให้กับคณะครูที่ปฏิบัติหน้าที่อยู่ ("สถานะ อยู่") ของโรงเรียน
+                </p>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 dark:from-indigo-400 dark:to-purple-500 bg-clip-text text-transparent">
-                จัดการครูที่ปรึกษา / ครูประจำชั้น
-              </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                มอบหมายห้องเรียนประจำชั้นและระดับชั้นให้กับคณะครูที่ปฏิบัติหน้าที่อยู่ ("สถานะ อยู่") ของโรงเรียน
-              </p>
             </div>
           </div>
 

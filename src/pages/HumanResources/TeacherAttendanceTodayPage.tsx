@@ -185,10 +185,10 @@ const TeacherAttendanceTodayPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
                     <BackButton to="/academic/hub/personnel_info" />
-                    <div>
+                    <div className="min-w-0">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                             <FaUserClock className="text-indigo-600 dark:text-indigo-400" />
                             ข้อมูลการลงเวลาครู (วันนี้)
@@ -205,15 +205,15 @@ const TeacherAttendanceTodayPage: React.FC = () => {
                     </div>
                     </div>
                 </div>
-                
+
                 <div className="relative w-full md:w-64">
                     <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input 
-                        type="text" 
-                        placeholder="ค้นหาชื่อครู..." 
+                    <input
+                        type="text"
+                        placeholder="ค้นหาชื่อครู..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2a2b2f] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none w-full"
+                        className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none w-full"
                     />
                 </div>
             </div>

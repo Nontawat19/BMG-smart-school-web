@@ -329,19 +329,21 @@ const TeacherLeaveHistoryPage: React.FC = () => {
   return (
     <MainLayout>
       <div className="p-6 text-gray-900 dark:text-white transition-colors duration-300">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-          <div className="flex items-center gap-4">
-            <BackButton />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">ประวัติการลา (ครูและบุคลากร)</h1>
+        <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <BackButton to="/academic/hub/personnel_info" />
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ประวัติการลา (ครูและบุคลากร)</h1>
+            </div>
           </div>
-          <div className="relative w-full md:w-72">
+          <div className="relative w-full lg:w-72">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <FaSearch className="text-gray-400" />
             </div>
             <input
               type="text"
               placeholder="ค้นหาชื่อ, ประเภทการลา..."
-              className="pl-10 pr-4 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm text-gray-900 dark:text-white placeholder-gray-400"
+              className="pl-10 pr-4 py-2.5 w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm text-gray-900 dark:text-white placeholder-gray-400"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />

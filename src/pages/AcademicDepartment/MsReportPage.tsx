@@ -10,7 +10,10 @@ import {
     getDocs,
     collectionGroup,
     doc,
-    getDoc
+    getDoc,
+    setDoc,
+    deleteField,
+    serverTimestamp
 } from 'firebase/firestore';
 import { Document, Font, Image, Page, StyleSheet, Text, View, pdf, PDFViewer } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
@@ -26,7 +29,8 @@ import {
     Percent,
     GraduationCap,
     X,
-    FileDown
+    FileDown,
+    ShieldCheck
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import SkeletonLoader from '@/components/SkeletonLoader';
@@ -86,8 +90,10 @@ interface StudentStats {
     escape: number;
     total: number;
     percentage: number;
-    evaluation: 'มส.' | 'ปกติ';
+    evaluation: 'มส.' | 'ปกติ' | 'ผ่อนผัน';
     remark?: string;
+    isWaived?: boolean;
+    waiverReason?: string;
 }
 
 const toDate = (value: any): Date | null => {
@@ -885,22 +891,30 @@ const MsReportPage: React.FC = () => {
 
         Object.values(statsMap).forEach(s => {
             const authoritative = authoritativeGrades[s.id];
-            const isMsAuthoritative = authoritative?.status === 'มส' || authoritative?.grade === 'มส';
-            s.evaluation = isMsAuthoritative ? 'มส.' : 'ปกติ';
+            const isWaived = Boolean(
+                (authoritative as any)?.medicalWaiver ||
+                authoritative?.status === 'ผ่อนผัน' ||
+                (typeof authoritative?.remark === 'string' && authoritative.remark.includes('ผ่อนผัน'))
+            );
+            const isMsAuthoritative = !isWaived && (authoritative?.status === 'มส' || authoritative?.grade === 'มส');
+            s.isWaived = isWaived;
+            s.waiverReason = (authoritative as any)?.medicalWaiverReason || (isWaived ? authoritative?.remark : undefined);
+            s.evaluation = isWaived ? 'ผ่อนผัน' : (isMsAuthoritative ? 'มส.' : 'ปกติ');
 
-            // ร้อยละเวลาเรียน — คำนวณด้วยเอนจิ้นเดียวกับที่ใช้ตัดสิน มส. จริง (attendanceEligibility.ts,
-            // ดูคอมเมนต์ตรง useState liveEligibility) โดยอิงตารางสอนจริงของวิชานี้ (จำนวนคาบ/สัปดาห์ตาม
-            // ตารางสอนจริงซึ่งต่างกันตามหน่วยกิตของแต่ละวิชาอยู่แล้ว) และอิงช่วงเวลาที่ถูกต้องตามระดับชั้น
-            // (ประถม = สะสมทั้งปี, มัธยม = เฉพาะภาคเรียนที่เลือก) ทำให้ % ตรงกับผลตัดสิน มส. จริงเป๊ะทั้งสองกรณี
-            // ไม่ใช่แค่ตอนติด มส. แล้วเท่านั้น (ต่างจากเดิมที่กรณียังไม่ติด มส. ใช้สัดส่วนคร่าวๆ จากคาบที่เช็คชื่อ
-            // จริงในระบบ ไม่เกี่ยวกับตารางสอน/หน่วยกิตเลย)
+            // ร้อยละเวลาเรียน — คำนวณด้วยเอนจิ้นเดียวกับที่ใช้ตัดสิน มส. จริง (attendanceEligibility.ts)
+            // ตามระเบียบกระทรวงศึกษาธิการ: วันลาป่วยและวันลากิจจะถูกนับรวมเป็นวันที่ไม่ได้เข้าเรียน
+            // เว้นแต่ได้รับอนุมัติผ่อนผันเป็นกรณีพิเศษจากคณะกรรมการสถานศึกษา (มีใบรับรองแพทย์จากโรงพยาบาล)
             const live = liveEligibility[s.id];
             if (live) {
                 s.percentage = Math.round(live.percentage * 10) / 10;
                 s.total = live.totalHours;
-                s.remark = live.totalHours > 0
-                    ? `เวลาเรียน ${live.presentHours}/${live.totalHours} คาบ = ${live.percentage.toFixed(1)}% (คำนวณจากตารางสอนจริง ${liveScopeLabel})`
-                    : `วิชานี้ยังไม่มีตารางสอนที่จับคู่ได้ในระบบ (${liveScopeLabel})`;
+                if (isWaived) {
+                    s.remark = `ได้รับการผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์) ${s.waiverReason ? `— ${s.waiverReason}` : ''} [เวลาเรียน ${live.presentHours}/${live.totalHours} คาบ = ${live.percentage.toFixed(1)}%]`;
+                } else {
+                    s.remark = live.totalHours > 0
+                        ? `เวลาเรียน ${live.presentHours}/${live.totalHours} คาบ = ${live.percentage.toFixed(1)}% (คำนวณจากตารางสอนจริง ${liveScopeLabel} โดยวันลาป่วย/ลากิจนับเป็นวันที่ไม่ได้เข้าเรียนตามระเบียบ ศธ.)`
+                        : `วิชานี้ยังไม่มีตารางสอนที่จับคู่ได้ในระบบ (${liveScopeLabel})`;
+                }
             } else if (isMsAuthoritative && authoritative?.remark) {
                 // เอนจิ้นสดคำนวณไม่สำเร็จ (เช่น กำลังโหลดปฏิทิน) — ใช้ตัวเลขที่บันทึกไว้ตอนติด มส. แทนชั่วคราว
                 const percentMatch = authoritative.remark.match(/=\s*([\d.]+)\s*%/);
@@ -938,15 +952,156 @@ const MsReportPage: React.FC = () => {
     }, [studentsInCourse, selectedRoom]);
 
     const totalStats = useMemo(() => {
-        const stats = { count: studentSummary.length, msCount: 0, avgPercent: 0 };
+        const stats = { count: studentSummary.length, msCount: 0, waivedCount: 0, avgPercent: 0 };
         let percentSum = 0;
         studentSummary.forEach(s => {
             if (s.evaluation === 'มส.') stats.msCount++;
+            if (s.evaluation === 'ผ่อนผัน') stats.waivedCount++;
             percentSum += s.percentage;
         });
         stats.avgPercent = studentSummary.length > 0 ? Math.round((percentSum / studentSummary.length) * 10) / 10 : 0;
         return stats;
     }, [studentSummary]);
+
+    // บันทึก / ยกเลิกการผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์จากโรงพยาบาล) ตามระเบียบกระทรวงศึกษาธิการ
+    const handleToggleMedicalWaiver = async (student: StudentStats) => {
+        if (!schoolId) return;
+        const courseObj = courses.find(c => c.code === selectedCourse.value);
+        const matchedCourseId = courseObj?.id;
+        if (!matchedCourseId) {
+            Swal.fire('ข้อผิดพลาด', 'ไม่พบรหัสรายวิชาในระบบ', 'error');
+            return;
+        }
+
+        const gradeRef = doc(db, 'school-settings', schoolId, 'courses', matchedCourseId, 'grades', student.id);
+
+        if (student.isWaived) {
+            // ยกเลิกการผ่อนผัน
+            const result = await Swal.fire({
+                title: 'ยกเลิกการผ่อนผันกรณีพิเศษ?',
+                html: `<div style="text-align: left; font-size: 13px; line-height: 1.6;">
+                    <p>ต้องการยกเลิกการผ่อนผันของ <b>${student.name}</b> (${student.studentCode}) ใช่หรือไม่?</p>
+                    <p style="color: #64748b; font-size: 11px; margin-top: 6px;">หากยกเลิกและเวลาเรียนจริงไม่ถึง 80% ระบบจะคืนสถานะเป็น "มส." ตามเกณฑ์ปกติ</p>
+                </div>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'ยืนยันยกเลิกผ่อนผัน',
+                cancelButtonText: 'ปิด',
+                confirmButtonColor: '#e11d48',
+            });
+
+            if (!result.isConfirmed) return;
+
+            try {
+                const existingSnap = await getDoc(gradeRef);
+                const existingData = existingSnap.exists() ? existingSnap.data() as any : {};
+                const live = liveEligibility[student.id];
+                const isBelow = live ? live.percentage < 80 : (student.percentage < 80);
+                const remarkMsg = isBelow
+                    ? `เวลาเรียนไม่ถึงร้อยละ 80 (${live ? `${live.presentHours}/${live.totalHours} คาบ = ${live.percentage.toFixed(1)}%` : ''})`
+                    : null;
+
+                await setDoc(gradeRef, {
+                    ...existingData,
+                    medicalWaiver: deleteField(),
+                    medicalWaiverReason: deleteField(),
+                    medicalWaiverDate: deleteField(),
+                    status: isBelow ? 'มส' : deleteField(),
+                    grade: isBelow ? 'มส' : (existingData.grade === 'มส' ? '0' : (existingData.grade || '0')),
+                    remark: remarkMsg || deleteField(),
+                    updatedAt: serverTimestamp(),
+                });
+
+                setAuthoritativeGrades(prev => {
+                    const next = { ...prev };
+                    if (next[student.id]) {
+                        delete (next[student.id] as any).medicalWaiver;
+                        delete (next[student.id] as any).medicalWaiverReason;
+                        next[student.id].status = isBelow ? 'มส' : undefined;
+                        next[student.id].grade = isBelow ? 'มส' : next[student.id].grade;
+                        next[student.id].remark = remarkMsg || undefined;
+                    }
+                    return next;
+                });
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'ยกเลิกการผ่อนผันแล้ว',
+                    timer: 1500,
+                    showConfirmButton: false,
+                });
+            } catch (err) {
+                console.error('Error revoking waiver:', err);
+                Swal.fire('ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
+            }
+        } else {
+            // บันทึกการผ่อนผันกรณีพิเศษ
+            const defaultReason = student.sick > 0
+                ? `ลาป่วยระยะยาว มีใบรับรองแพทย์จากโรงพยาบาล (${student.sick} คาบ)`
+                : 'เจ็บป่วยรุนแรง/อุบัติเหตุสุดวิสัย มีใบรับรองแพทย์จาก รพ. ยืนยัน';
+
+            const { value: reason, isConfirmed } = await Swal.fire({
+                title: 'พิจารณาผ่อนผันกรณีพิเศษ',
+                html: `<div style="text-align: left; font-size: 13px; line-height: 1.6; margin-bottom: 8px;">
+                    <p>นักเรียน: <b>${student.name}</b> (เลขที่ ${student.number || '-'}, รหัส: ${student.studentCode})</p>
+                    <p style="color: #2563eb; font-size: 11px; margin-top: 4px;">
+                        * อ้างอิงระเบียบกระทรวงศึกษาธิการ: กรณีลาป่วยระยะยาวที่มีเหตุจำเป็นสุดวิสัย (เช่น อุบัติเหตุหรือเจ็บป่วยรุนแรงจนต้องนอนโรงพยาบาล) โดยมีใบรับรองแพทย์จากโรงพยาบาลมายืนยัน คณะกรรมการสถานศึกษาสามารถพิจารณาผ่อนผันเป็นกรณีพิเศษเพื่อจัดสอบทดแทนได้
+                    </p>
+                </div>`,
+                input: 'text',
+                inputLabel: 'ระบุเหตุผลสุดวิสัย / โรงพยาบาล / ใบรับรองแพทย์',
+                inputPlaceholder: 'เช่น ประสบอุบัติเหตุนอนโรงพยาบาล มีใบรับรองแพทย์จาก รพ. ยืนยัน',
+                inputValue: defaultReason,
+                showCancelButton: true,
+                confirmButtonText: 'อนุมัติผ่อนผัน (มีสิทธิ์สอบ)',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#059669',
+                inputValidator: (val) => {
+                    if (!val || !val.trim()) return 'กรุณาระบุเหตุผลการผ่อนผันหรือข้อมูลใบรับรองแพทย์';
+                    return null;
+                }
+            });
+
+            if (!isConfirmed || !reason) return;
+
+            try {
+                const existingSnap = await getDoc(gradeRef);
+                const existingData = existingSnap.exists() ? existingSnap.data() as any : {};
+
+                await setDoc(gradeRef, {
+                    ...existingData,
+                    medicalWaiver: true,
+                    medicalWaiverReason: reason.trim(),
+                    medicalWaiverDate: serverTimestamp(),
+                    status: 'ผ่อนผัน',
+                    remark: `ผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์): ${reason.trim()}`,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+
+                setAuthoritativeGrades(prev => ({
+                    ...prev,
+                    [student.id]: {
+                        ...prev[student.id],
+                        status: 'ผ่อนผัน',
+                        medicalWaiver: true,
+                        medicalWaiverReason: reason.trim(),
+                        remark: `ผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์): ${reason.trim()}`,
+                    }
+                }));
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'บันทึกการผ่อนผันกรณีพิเศษสำเร็จ',
+                    text: 'นักเรียนได้รับสิทธิ์เข้าสอบทดแทนตามมติผ่อนผัน',
+                    timer: 2000,
+                    showConfirmButton: false,
+                });
+            } catch (err) {
+                console.error('Error applying waiver:', err);
+                Swal.fire('ข้อผิดพลาด', 'ไม่สามารถบันทึกการผ่อนผันได้', 'error');
+            }
+        }
+    };
 
 
     const buildMsReportPdfDocument = () => {
@@ -1083,10 +1238,27 @@ const MsReportPage: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <SummaryCard title="จำนวนนักเรียน" value={totalStats.count} icon={<Users size={20} />} unit="คน" color="indigo" />
                                 <SummaryCard title="ตกเกณฑ์ (มส.)" value={totalStats.msCount} icon={<AlertCircle size={20} />} unit="คน" color="rose" />
+                                <SummaryCard title="ผ่อนผันกรณีพิเศษ" value={totalStats.waivedCount} icon={<ShieldCheck size={20} />} unit="คน" color="blue" />
                                 <SummaryCard title="ค่าเฉลี่ยการมาเรียน" value={totalStats.avgPercent} icon={<Percent size={20} />} unit="%" color="emerald" />
+                            </div>
+
+                            {/* ป้ายประกาศเกณฑ์ตามระเบียบกระทรวงศึกษาธิการ */}
+                            <div className="bg-blue-50/70 border border-blue-200/80 dark:bg-blue-950/20 dark:border-blue-800/40 p-4 rounded-xl flex items-start gap-3.5 shadow-sm">
+                                <ShieldCheck size={22} className="shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                                <div className="text-xs text-blue-900 dark:text-blue-200 space-y-1.5 leading-relaxed">
+                                    <p className="font-bold text-sm text-blue-950 dark:text-blue-100 flex items-center gap-2">
+                                        เกณฑ์เวลาเรียนตามระเบียบกระทรวงศึกษาธิการ (ทั้งระดับประถมศึกษาและมัธยมศึกษา)
+                                    </p>
+                                    <p>
+                                        • <b>การนับเวลาเรียน:</b> เวลาเรียนรวมที่เข้าเรียนจริงคิดเฉพาะ <b>มาเรียน + มาสาย</b> โดย <b>วันลาป่วยและวันลากิจจะถูกนับรวมเป็นวันที่ไม่ได้เข้าเรียนด้วยเช่นกัน</b> ซึ่งส่งผลให้เวลาเรียนลดลงจริง และหากเวลาเรียนรวมไม่ถึงร้อยละ 80 (&lt; 80%) ของรายวิชา จะได้รับผลการเรียน "มส." (ไม่มีสิทธิ์สอบ)
+                                    </p>
+                                    <p>
+                                        • <b>ข้อยกเว้นพิเศษ:</b> หากเป็นการลาป่วยระยะยาวที่มีเหตุจำเป็นสุดวิสัย (เช่น ประสบอุบัติเหตุ หรือเจ็บป่วยรุนแรงจนต้องนอนโรงพยาบาล) โดยมีใบรับรองแพทย์จากโรงพยาบาลยืนยัน คณะกรรมการสถานศึกษาสามารถพิจารณา <b>"ผ่อนผันให้เป็นกรณีพิเศษเพื่อจัดสอบทดแทนได้"</b> สามารถกดปุ่ม <b>"ผ่อนผันกรณีพิเศษ"</b> ในตารางด้านล่างเพื่อบันทึกมติการผ่อนผัน
+                                    </p>
+                                </div>
                             </div>
 
                             {studentSummary.some(s => s.evaluation === 'มส.' && s.percentage >= 80) && (
@@ -1125,12 +1297,13 @@ const MsReportPage: React.FC = () => {
                                                     <th className="px-2 py-4 text-[10px] font-black text-red-600 uppercase tracking-widest text-center w-16">หนีเรียน</th>
                                                     <th className="px-2 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-16">ร้อยละ</th>
                                                     <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-28">ผลการเข้าเรียน</th>
+                                                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center w-36">การจัดการ</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
                                                 {studentSummary.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan={9} className="py-20 text-center">
+                                                        <td colSpan={10} className="py-20 text-center">
                                                             <div className="flex flex-col items-center gap-3 opacity-30">
                                                                 <Users size={48} />
                                                                 <p className="font-bold text-sm">ไม่พบข้อมูลนักเรียน</p>
@@ -1139,9 +1312,7 @@ const MsReportPage: React.FC = () => {
                                                     </tr>
                                                 ) : studentSummary.map((s) => {
                                                     const isMS = s.evaluation === 'มส.';
-                                                    // เวลาเรียนสด ๆ ฟื้นกลับมา ≥80% แล้ว แต่ผลตัดสิน มส. ที่บันทึกไว้ยังไม่ถูกอัปเดต — ผลตัดสิน
-                                                    // จริงเป็น "ค้าง" ไว้ตามตอนที่ถูกติดครั้งแรก ไม่ปรับตามเวลาเรียนที่ดีขึ้นภายหลังโดยอัตโนมัติ
-                                                    // (ต้องแก้ผ่านหน้าคำร้องขอแก้ตัวเท่านั้น) — ต้องแยกแสดงให้ชัดว่านี่ไม่ใช่ระบบคำนวณขัดแย้งกันเอง
+                                                    const isWaived = s.evaluation === 'ผ่อนผัน';
                                                     const hasRecoveredButStillFlagged = isMS && s.percentage >= 80;
                                                     return (
                                                         <tr key={s.id} className="group hover:bg-gray-50/50 dark:hover:bg-indigo-500/[0.02] transition-colors">
@@ -1150,13 +1321,14 @@ const MsReportPage: React.FC = () => {
                                                             </td>
                                                             <td className="px-4 py-4">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isMS ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-400 group-hover:bg-indigo-600 group-hover:text-white'}`}>
-                                                                        <User size={18} />
+                                                                    <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isWaived ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 shadow-sm' : isMS ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-400 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+                                                                        {isWaived ? <ShieldCheck size={18} /> : <User size={18} />}
                                                                     </div>
                                                                     <div className="min-w-0">
                                                                         <div className="flex items-center gap-2">
-                                                                            <p className={`text-[13px] font-bold truncate ${isMS ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>{s.name}</p>
+                                                                            <p className={`text-[13px] font-bold truncate ${isWaived ? 'text-emerald-600 dark:text-emerald-400' : isMS ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>{s.name}</p>
                                                                             {isMS && <span className="shrink-0 bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-sm">มส.</span>}
+                                                                            {isWaived && <span className="shrink-0 bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-sm">ผ่อนผัน</span>}
                                                                         </div>
                                                                         <p className="text-[10px] font-bold text-gray-400 dark:text-gray-600 tracking-tight italic">รหัส: {s.studentCode}</p>
                                                                     </div>
@@ -1183,19 +1355,53 @@ const MsReportPage: React.FC = () => {
                                                                     ? `เวลาเรียนล่าสุดฟื้นกลับมา ≥80% แล้ว (${s.remark || ''}) แต่ผลตัดสิน มส. เดิมยังไม่ถูกอัปเดตอัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่อปรับผลให้ตรงกัน`
                                                                     : (s.remark || 'ยังคำนวณร้อยละเวลาเรียนไม่สำเร็จ ลองรีเฟรชข้อมูลอีกครั้ง')}
                                                             >
-                                                                <span className={`text-sm font-black tabular-nums ${hasRecoveredButStillFlagged ? 'text-amber-500' : s.percentage < 80 ? 'text-rose-600' : 'text-emerald-600'}`}>{s.percentage}%{hasRecoveredButStillFlagged ? ' *' : ''}</span>
+                                                                <span className={`text-sm font-black tabular-nums ${isWaived ? 'text-emerald-600 dark:text-emerald-400' : hasRecoveredButStillFlagged ? 'text-amber-500' : s.percentage < 80 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                                    {s.percentage}%{hasRecoveredButStillFlagged ? ' *' : ''}
+                                                                </span>
                                                             </td>
                                                             <td className="px-4 py-4 text-center">
-                                                                <span
-                                                                    title={hasRecoveredButStillFlagged
-                                                                        ? "เวลาเรียนล่าสุดฟื้นกลับมาแล้ว แต่ผลตัดสิน มส. นี้ถูกบันทึกไว้ตั้งแต่ตอนที่เวลาเรียนยังไม่ถึงเกณฑ์ — ระบบไม่ปรับผลย้อนหลังให้อัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่ออัปเดตผล"
-                                                                        : "ผลตัดสิน มส. จริงจากระบบเช็คชื่อรายวิชา — แก้ไขได้ที่หน้าคำร้องขอแก้ตัวเท่านั้น"}
-                                                                    className={`inline-block min-w-[70px] px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border shadow-sm ${isMS
-                                                                        ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/20"
-                                                                        : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20"}`}
-                                                                >
-                                                                    {s.evaluation}
-                                                                </span>
+                                                                {isWaived ? (
+                                                                    <span
+                                                                        title={s.waiverReason || "ได้รับการพิจารณาผ่อนผันเป็นกรณีพิเศษจากคณะกรรมการสถานศึกษา (มีใบรับรองแพทย์)"}
+                                                                        className="inline-flex items-center gap-1 min-w-[70px] px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border shadow-sm bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+                                                                    >
+                                                                        <ShieldCheck size={12} />
+                                                                        ผ่อนผัน
+                                                                    </span>
+                                                                ) : (
+                                                                    <span
+                                                                        title={hasRecoveredButStillFlagged
+                                                                            ? "เวลาเรียนล่าสุดฟื้นกลับมาแล้ว แต่ผลตัดสิน มส. นี้ถูกบันทึกไว้ตั้งแต่ตอนที่เวลาเรียนยังไม่ถึงเกณฑ์ — ระบบไม่ปรับผลย้อนหลังให้อัตโนมัติ ต้องยื่นคำร้องขอแก้ตัวเพื่ออัปเดตผล"
+                                                                            : "ผลตัดสิน มส. จริงจากระบบเช็คชื่อรายวิชา — แก้ไขได้ที่หน้าคำร้องขอแก้ตัวเท่านั้น"}
+                                                                        className={`inline-block min-w-[70px] px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border shadow-sm ${isMS
+                                                                            ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/20"
+                                                                            : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20"}`}
+                                                                    >
+                                                                        {s.evaluation}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-4 py-4 text-center">
+                                                                {isWaived ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleToggleMedicalWaiver(s)}
+                                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 transition-all cursor-pointer shadow-sm"
+                                                                        title="ยกเลิกการผ่อนผันกรณีพิเศษ"
+                                                                    >
+                                                                        ยกเลิกผ่อนผัน
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleToggleMedicalWaiver(s)}
+                                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 border border-blue-200 dark:border-blue-500/30 transition-all cursor-pointer shadow-sm"
+                                                                        title="พิจารณาผ่อนผันกรณีพิเศษเพื่อจัดสอบทดแทน (มีใบรับรองแพทย์จากโรงพยาบาล)"
+                                                                    >
+                                                                        <ShieldCheck size={12} />
+                                                                        <span>ผ่อนผันพิเศษ</span>
+                                                                    </button>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     );

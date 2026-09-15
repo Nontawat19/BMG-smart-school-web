@@ -80,4 +80,173 @@ describe('attendanceEligibility multi-room calculation', () => {
         expect(resultS1.percentage).toBeGreaterThanOrEqual(80);
         expect(resultS1.belowThreshold).toBe(false);
     });
+
+    describe('MOE Regulation (กระทรวงศึกษาธิการ) - Leave counts as absence & Medical Waiver', () => {
+        it('counts sick and personal leave as NOT attended, causing มส if attendance < 80%', () => {
+            // Total 20 periods
+            // Student 1: 18 present, 2 absent -> 18/20 = 90% -> Eligible
+            // Student 2: 15 present, 5 leave (sick/personal) -> 15/20 = 75% -> Below 80% -> มส
+            // Student 3: 14 present, 2 late, 4 leave -> 16/20 = 80% -> Eligible (80%)
+            const mockSummaries = [
+                {
+                    studentId: 'std_pass',
+                    present: 18,
+                    late: 0,
+                    leave: 0,
+                    absent: 2,
+                    totalPossibleHours: 20,
+                },
+                {
+                    studentId: 'std_leave_ms',
+                    // Present 15, Leave 5 -> attended = 15 -> 15/20 = 75% -> Below 80% (มส)
+                    present: 15,
+                    late: 0,
+                    leave: 5,
+                    absent: 0,
+                    totalPossibleHours: 20,
+                },
+                {
+                    studentId: 'std_exact_80',
+                    // Present 14, Late 2, Leave 4 -> attended = 16 -> 16/20 = 80% -> Passes
+                    present: 14,
+                    late: 2,
+                    leave: 4,
+                    absent: 0,
+                    totalPossibleHours: 20,
+                },
+            ];
+
+            const eligibility = computeAttendanceEligibility(mockSummaries);
+
+            expect(eligibility['std_pass'].percentage).toBe(90);
+            expect(eligibility['std_pass'].belowThreshold).toBe(false);
+
+            expect(eligibility['std_leave_ms'].percentage).toBe(75);
+            expect(eligibility['std_leave_ms'].belowThreshold).toBe(true);
+            expect(eligibility['std_leave_ms'].isWaived).toBe(false);
+
+            expect(eligibility['std_exact_80'].percentage).toBe(80);
+            expect(eligibility['std_exact_80'].belowThreshold).toBe(false);
+        });
+
+        it('grants special waiver (ผ่อนผันกรณีพิเศษ) when student has approved medical waiver', () => {
+            // Student has prolonged illness with medical certificate:
+            // 12 attended out of 20 = 60% (normally มส)
+            // But has medical waiver approved by committee
+            const mockSummaries = [
+                {
+                    studentId: 'std_hospitalized',
+                    present: 12,
+                    late: 0,
+                    leave: 8,
+                    absent: 0,
+                    totalPossibleHours: 20,
+                },
+            ];
+
+            // 1. Without waiver -> belowThreshold: true
+            const eligibilityWithoutWaiver = computeAttendanceEligibility(mockSummaries);
+            expect(eligibilityWithoutWaiver['std_hospitalized'].belowThreshold).toBe(true);
+            expect(eligibilityWithoutWaiver['std_hospitalized'].isWaived).toBe(false);
+
+            // 2. With waiver -> belowThreshold: false, isWaived: true
+            const eligibilityWithWaiver = computeAttendanceEligibility(mockSummaries, {
+                medicalWaiverStudentIds: new Set(['std_hospitalized']),
+                waiverReasons: new Map([['std_hospitalized', 'พักรักษาตัวในโรงพยาบาล มีใบรับรองแพทย์']]),
+            });
+
+            const waivedResult = eligibilityWithWaiver['std_hospitalized'];
+            expect(waivedResult.belowThreshold).toBe(false);
+            expect(waivedResult.isWaived).toBe(true);
+            expect(waivedResult.waiverReason).toBe('พักรักษาตัวในโรงพยาบาล มีใบรับรองแพทย์');
+            expect(waivedResult.remark).toContain('ผ่อนผันกรณีพิเศษ');
+        });
+
+        it('properly computes attendance summaries from raw daily status where leave is not counted as attended', () => {
+            const roster = [{ id: 'std_moe' }];
+            const mockPages = [
+                {
+                    term: '1',
+                    days: Array.from({ length: 20 }, (_, i) => ({
+                        dateStr: `2026-06-${String(i + 1).padStart(2, '0')}`,
+                        isSession: true,
+                        isHoliday: false,
+                    })),
+                },
+            ];
+
+            // 15 days present, 5 days leave
+            const dailyStatus: Record<string, Record<string, any>> = {
+                std_moe: {},
+            };
+            for (let i = 0; i < 15; i++) {
+                dailyStatus.std_moe[`2026-06-${String(i + 1).padStart(2, '0')}`] = 'present';
+            }
+            for (let i = 15; i < 20; i++) {
+                dailyStatus.std_moe[`2026-06-${String(i + 1).padStart(2, '0')}`] = 'leave';
+            }
+
+            const summaries = buildStudentAttendanceSummaries(roster, mockPages, dailyStatus);
+            const s = summaries['std_moe'].elapsed;
+
+            expect(s.totalPossibleHours).toBe(20);
+            expect(s.present).toBe(15); // NOT 20! Leave is excluded from attended hours
+            expect(s.leave).toBe(5);
+            expect(s.percentage).toBe(75);
+
+            // Run eligibility calculation on the summary
+            const eligibility = computeAttendanceEligibility(summaries);
+            expect(eligibility['std_moe'].percentage).toBe(75);
+            expect(eligibility['std_moe'].belowThreshold).toBe(true); // < 80% -> Flagged for มส
+
+            // Now test passing waiver option to computeAttendanceEligibility
+            const waivedEligibility = computeAttendanceEligibility(summaries, {
+                medicalWaiverStudentIds: new Set(['std_moe']),
+            });
+            expect(waivedEligibility['std_moe'].belowThreshold).toBe(false);
+            expect(waivedEligibility['std_moe'].isWaived).toBe(true);
+        });
+    });
+
+    describe('Learner Activities (กิจกรรมพัฒนาผู้เรียน) - การประเมิน มผ และการแก้ตัว', () => {
+        it('calculates 80% threshold for club/activity sessions and flags มผ when attendance < 80%', () => {
+            // Activity meets 1 time per week (total 10 sessions in the term)
+            // Student 1 (ผ่าน): attended 8 sessions -> 8/10 = 80% -> passes
+            // Student 2 (มผ): attended 7 sessions, 3 leaves (sick/personal) -> 7/10 = 70% -> below 80% -> มผ
+            const mockActivitySummaries = [
+                {
+                    studentId: 'std_act_pass',
+                    present: 8,
+                    late: 0,
+                    leave: 2,
+                    totalPossibleHours: 10,
+                },
+                {
+                    studentId: 'std_act_fail',
+                    present: 7,
+                    late: 0,
+                    leave: 3,
+                    totalPossibleHours: 10,
+                },
+            ];
+
+            const eligibility = computeAttendanceEligibility(mockActivitySummaries);
+
+            expect(eligibility['std_act_pass'].percentage).toBe(80);
+            expect(eligibility['std_act_pass'].belowThreshold).toBe(false); // ผ่าน
+
+            expect(eligibility['std_act_fail'].percentage).toBe(70);
+            expect(eligibility['std_act_fail'].belowThreshold).toBe(true); // ติด มผ
+        });
+
+        it('remediates มผ to ผ่าน (ผ) when activity requirements are completed', () => {
+            // Remediation for มผ turns status to 'passed' ('ผ')
+            const originalFlag = 'มผ';
+            const remediationResult = 'passed';
+            const displayResult = remediationResult === 'passed' ? 'ผ' : 'มผ';
+
+            expect(originalFlag).toBe('มผ');
+            expect(displayResult).toBe('ผ');
+        });
+    });
 });

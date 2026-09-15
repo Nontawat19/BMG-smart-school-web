@@ -210,6 +210,12 @@ service cloud.firestore {
       match /certificates/{docId} {
         allow read, write: if isRealAuth();
       }
+      match /memos/{docId} {
+        allow read, write: if isRealAuth();
+      }
+      match /honorCertificates/{docId} {
+        allow read, write: if isRealAuth();
+      }
       match /notifications/{notificationId} {
         allow read, write: if isRealAuth();
       }

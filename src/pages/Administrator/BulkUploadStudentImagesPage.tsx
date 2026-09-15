@@ -5,6 +5,7 @@ import { firestore, storage } from '../../firebase';
 import { collection, doc, getDoc, getDocs, query, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, deleteObject, getDownloadURL } from 'firebase/storage';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import {
     FaCloudUploadAlt,
     FaImages,
@@ -342,6 +343,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
+                                <BackButton to={schoolId ? `/school/${schoolId}/students` : "/academic/hub/students"} />
                                 <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl hidden sm:block">
                                     <FaImages className="text-2xl text-indigo-600 dark:text-indigo-400" />
                                 </div>
@@ -366,13 +368,7 @@ const BulkUploadStudentImagesPage: React.FC = () => {
                                         <button
                                             onClick={handleUpload}
                                             disabled={uploading}
-                                            className={`
-                                                py-2.5 px-6 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center gap-2
-                                                ${uploading
-                                                    ? 'bg-gray-400 cursor-not-allowed opacity-70'
-                                                    : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700'
-                                                }
-                                            `}
+                                            className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
                                         >
                                             {uploading ? (
                                                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

@@ -202,6 +202,11 @@ export interface StudentAttendanceSummary {
     elapsed: AttendanceBucket;
 }
 
+export interface AttendanceSummariesOptions {
+    countLeaveAsAbsent?: boolean; // Default true (ตามระเบียบ ศธ. วันลาป่วย/ลากิจนับเป็นวันที่ไม่ได้เข้าเรียน)
+    medicalWaiverStudentIds?: Set<string> | Record<string, boolean>; // นักเรียนที่ได้รับการผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์)
+}
+
 // "Elapsed" = sessions on/before today — used for the 80%-attendance "มส" check so a
 // term that hasn't finished yet doesn't have its still-untaught future sessions counted
 // as absences (the annual/term buckets cover the WHOLE term, appropriate once every
@@ -209,13 +214,21 @@ export interface StudentAttendanceSummary {
 export const buildStudentAttendanceSummaries = (
     students: AttendanceEligibilityStudent[],
     attendancePages: any[],
-    studentCourseDailyStatus: Record<string, Record<string, AttendanceStatus>>
+    studentCourseDailyStatus: Record<string, Record<string, AttendanceStatus>>,
+    options?: AttendanceSummariesOptions
 ): Record<string, StudentAttendanceSummary> => {
     const summaries: Record<string, StudentAttendanceSummary> = {};
     if (!students.length || !attendancePages.length) return summaries;
 
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const countLeaveAsAbsent = options?.countLeaveAsAbsent !== false;
+    const waiverIds = options?.medicalWaiverStudentIds;
+    const isStudentWaived = (id: string) => {
+        if (!waiverIds) return false;
+        if (waiverIds instanceof Set) return waiverIds.has(id);
+        return Boolean((waiverIds as Record<string, boolean>)[id]);
+    };
 
     students.forEach(student => {
         const statusMap = studentCourseDailyStatus[student.id] || {};
@@ -257,13 +270,26 @@ export const buildStudentAttendanceSummaries = (
             });
         });
 
-        const { present, late, leave, totalPossibleHours } = summary.annual;
-        summary.annual.percentage = totalPossibleHours > 0 ? ((present + late + leave) / totalPossibleHours) * 100 : 0;
+        const waived = isStudentWaived(student.id);
+        // ตามระเบียบกระทรวงศึกษาธิการ: เวลาเรียนที่เข้าเรียนจริงคือ present + late
+        // วันลาป่วยและวันลากิจนับเป็นวันที่ไม่ได้เข้าเรียน ซึ่งส่งผลให้เวลาเรียนลดลง
+        // ข้อยกเว้น: หากได้รับการผ่อนผันเป็นกรณีพิเศษ (มีใบรับรองแพทย์จาก รพ.) ให้นับวันลาป่วยที่ผ่อนผันเป็นเวลาเรียน
+        const annualPresent = countLeaveAsAbsent
+            ? (summary.annual.present + summary.annual.late + (waived ? summary.annual.leave : 0))
+            : (summary.annual.present + summary.annual.late + summary.annual.leave);
+
+        summary.annual.percentage = summary.annual.totalPossibleHours > 0
+            ? (annualPresent / summary.annual.totalPossibleHours) * 100
+            : 0;
         summary.annual.evaluation = summary.annual.percentage >= 80 ? 'ดีเยี่ยม' : summary.annual.percentage >= 60 ? 'ดี' : summary.annual.percentage >= 50 ? 'ผ่าน' : 'ปรับปรุง';
 
         const elapsedTotal = summary.elapsed.totalPossibleHours;
+        const elapsedPresent = countLeaveAsAbsent
+            ? (summary.elapsed.present + summary.elapsed.late + (waived ? summary.elapsed.leave : 0))
+            : (summary.elapsed.present + summary.elapsed.late + summary.elapsed.leave);
+
         summary.elapsed.percentage = elapsedTotal > 0
-            ? ((summary.elapsed.present + summary.elapsed.late + summary.elapsed.leave) / elapsedTotal) * 100
+            ? (elapsedPresent / elapsedTotal) * 100
             : 0;
 
         summaries[student.id] = summary;
@@ -276,6 +302,9 @@ export interface AttendanceEligibilityResult {
     presentHours: number;
     totalHours: number;
     belowThreshold: boolean;
+    isWaived?: boolean;
+    waiverReason?: string;
+    remark?: string;
 }
 
 // Per-student "เวลาเรียนไม่ถึงร้อยละ 80" check, scoped to sessions on/before today
@@ -290,17 +319,63 @@ export interface AttendanceEligibilityResult {
 // requirement too — 0% is not ≥80% — rather than silently treating them as passing, which
 // would hide the real problem (the course was never scheduled) behind a clean bill of health.
 export const computeAttendanceEligibility = (
-    studentAttendanceSummaries: Record<string, StudentAttendanceSummary>
+    studentAttendanceSummaries: Record<string, StudentAttendanceSummary> | any[],
+    options?: {
+        countLeaveAsAbsent?: boolean;
+        medicalWaiverStudentIds?: Set<string> | Record<string, boolean>;
+        waiverReasons?: Record<string, string> | Map<string, string>;
+    }
 ): Record<string, AttendanceEligibilityResult> => {
     const result: Record<string, AttendanceEligibilityResult> = {};
-    Object.entries(studentAttendanceSummaries).forEach(([studentId, summary]) => {
-        const bucket = summary.elapsed;
-        const presentHours = bucket.present + bucket.late + bucket.leave;
+    const countLeaveAsAbsent = options?.countLeaveAsAbsent !== false;
+    const waiverIds = options?.medicalWaiverStudentIds;
+    const isStudentWaived = (id: string) => {
+        if (!waiverIds) return false;
+        if (waiverIds instanceof Set) return waiverIds.has(id);
+        return Boolean((waiverIds as Record<string, boolean>)[id]);
+    };
+
+    const getWaiverReason = (id: string) => {
+        if (!options?.waiverReasons) return undefined;
+        if (options.waiverReasons instanceof Map) return options.waiverReasons.get(id);
+        return options.waiverReasons[id];
+    };
+
+    const entries: [string, any][] = Array.isArray(studentAttendanceSummaries)
+        ? studentAttendanceSummaries.map((item: any): [string, any] => [String(item.studentId || item.id), item])
+        : Object.entries(studentAttendanceSummaries);
+
+    entries.forEach(([studentId, item]) => {
+        const bucket = item?.elapsed || item || {};
+        const waived = isStudentWaived(studentId);
+
+        const present = Number(bucket.present || 0);
+        const late = Number(bucket.late || 0);
+        const leave = Number(bucket.leave || 0);
+        const totalPossibleHours = Number(bucket.totalPossibleHours || 0);
+
+        // เวลาเรียนจริง (เข้าห้องเรียน): present + late
+        // วันลา (leave): นับเป็นวันที่ไม่ได้เข้าเรียนตามระเบียบ ศธ.
+        // เว้นแต่ได้รับผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์)
+        const attendedHours = present + late;
+        const effectivePresentHours = countLeaveAsAbsent
+            ? (waived ? attendedHours + leave : attendedHours)
+            : (attendedHours + leave);
+
+        const percentage = totalPossibleHours > 0
+            ? (effectivePresentHours / totalPossibleHours) * 100
+            : 0;
+
+        const roundedPercent = Math.round(percentage * 10) / 10;
+        const reason = getWaiverReason(studentId);
         result[studentId] = {
-            percentage: bucket.percentage,
-            presentHours,
-            totalHours: bucket.totalPossibleHours,
-            belowThreshold: bucket.percentage < 80
+            percentage: roundedPercent,
+            presentHours: countLeaveAsAbsent && !waived ? attendedHours : effectivePresentHours,
+            totalHours: totalPossibleHours,
+            belowThreshold: waived ? false : roundedPercent < 80,
+            isWaived: waived,
+            waiverReason: waived ? (reason || 'ได้รับการพิจารณาผ่อนผันเป็นกรณีพิเศษ (มีใบรับรองแพทย์)') : undefined,
+            remark: waived ? (reason ? `ผ่อนผันกรณีพิเศษ: ${reason}` : 'ผ่อนผันกรณีพิเศษ (มีใบรับรองแพทย์)') : undefined,
         };
     });
     return result;

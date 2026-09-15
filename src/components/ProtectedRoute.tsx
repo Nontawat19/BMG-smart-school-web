@@ -4,7 +4,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { firestore as db } from '../firebase';
 import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
 import { isPwaStandalone, PWA_ATTENDANCE_HUB_PATH } from '@/utils/pwaMode';
@@ -13,6 +13,7 @@ import { ROUTE_REGISTRY } from '@/constants/routeRegistry';
 import { ROLES } from '@/constants/roles';
 import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 import { resolveEffectiveRouteAccess, userHasRouteAccess } from '@/utils/routeAccess';
+import { isFeatureFlagEnabled } from '@/utils/featureFlags';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -42,25 +43,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
 
   useEffect(() => {
     let isMounted = true;
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setIsAuthenticated(true);
-
-        if (featureFlag && effectiveSchoolId) {
-          try {
-            const schoolRef = doc(db, 'school-settings', effectiveSchoolId);
-            const schoolSnap = await getDoc(schoolRef);
-            if (schoolSnap.exists() && isMounted) {
-              const features = schoolSnap.data().features || {};
-              if (features[featureFlag] === false) {
-                setIsFeatureEnabled(false);
-              }
-            }
-          } catch (error) {
-            console.error("Error checking feature flag:", error);
-          }
-        }
-
       } else {
         const userType = localStorage.getItem('currentUserType');
         const studentSessionRaw = localStorage.getItem('studentSession');
@@ -105,6 +90,26 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
       isMounted = false;
       unsubscribe();
     };
+  }, []);
+
+  // Real-time: reflects a toggle flipped at /owner/school-info immediately, without
+  // needing a reload (previously a one-time getDoc — see feature_flag_architecture memory).
+  useEffect(() => {
+    if (!featureFlag || !effectiveSchoolId) {
+      setIsFeatureEnabled(true);
+      return;
+    }
+
+    const schoolRef = doc(db, 'school-settings', effectiveSchoolId);
+    const unsubscribe = onSnapshot(schoolRef, (schoolSnap) => {
+      const features = schoolSnap.exists() ? (schoolSnap.data().features || {}) : {};
+      setIsFeatureEnabled(isFeatureFlagEnabled(features, featureFlag));
+    }, (error) => {
+      console.error("Error checking feature flag:", error);
+      setIsFeatureEnabled(true);
+    });
+
+    return () => unsubscribe();
   }, [featureFlag, effectiveSchoolId]);
 
   if (loading) {

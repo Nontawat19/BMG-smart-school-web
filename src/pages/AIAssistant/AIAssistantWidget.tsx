@@ -125,7 +125,7 @@ const AIAssistantWidget: React.FC = () => {
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 bg-gray-50 dark:bg-[#1e1f21]">
             {messages.length === 0 && (
-              <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-6 px-4">
+              <div className="text-center text-xs text-gray-500 dark:text-gray-400 mt-6 px-4">
                 ถามได้เฉพาะข้อมูลในระบบโรงเรียน เช่น "วันนี้นักเรียนมากี่คน" หรือ "วิเคราะห์พฤติกรรมนักเรียนคนนี้หน่อย"
               </div>
             )}

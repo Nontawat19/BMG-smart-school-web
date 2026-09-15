@@ -345,19 +345,21 @@ const GradeTransferPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="p-4 sm:p-8 space-y-6" style={darkVariables}>
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-4 mb-2">
+                <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1c1c24] lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
                         <BackButton to="/academic/hub/students" />
-                        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
-                            <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-sm">
-                                <FaExchangeAlt size={20} />
-                            </div>
-                            ระบบย้ายชั้นนักเรียน
-                        </h1>
+                        <div className="min-w-0">
+                            <h1 className="flex items-center gap-3 text-2xl sm:text-3xl font-bold tracking-tight text-gray-800 dark:text-gray-100">
+                                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm">
+                                    <FaExchangeAlt size={18} />
+                                </span>
+                                ระบบย้ายชั้นนักเรียน
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                ใช้สำหรับย้ายนักเรียนข้ามระดับชั้น เช่น ย้ายจาก ม.5 ไป ม.4 หรือเลื่อนชั้น/ลดชั้นตามความเหมาะสม
+                            </p>
+                        </div>
                     </div>
-                    <p className="text-gray-500 dark:text-gray-400 max-w-2xl text-sm leading-relaxed border-l-4 border-indigo-500 pl-4 py-1 ml-14">
-                        ใช้สำหรับย้ายนักเรียนข้ามระดับชั้น เช่น ย้ายจาก ม.5 ไป ม.4 หรือเลื่อนชั้น/ลดชั้นตามความเหมาะสม
-                    </p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

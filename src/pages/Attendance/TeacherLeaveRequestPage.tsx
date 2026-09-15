@@ -595,16 +595,18 @@ const TeacherLeaveRequestPage: React.FC = () => {
     <MainLayout>
       <div className="p-4 sm:p-6 text-gray-900 dark:text-white transition-colors duration-300">
         <div className="max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-6 mb-6 shadow-sm dark:shadow-none">
-            <div className="flex items-center gap-4 mb-1">
-              <BackButton />
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-                ยื่นใบลากิจ/ลาป่วย (ครูและบุคลากร)
-              </h1>
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-6 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/personnel_info" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                  ยื่นใบลากิจ/ลาป่วย (ครูและบุคลากร)
+                </h1>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  กรอกแบบฟอร์มเพื่อบันทึกการลาของครูและบุคลากร
+                </p>
+              </div>
             </div>
-            <p className="text-gray-500 dark:text-gray-400">
-              กรอกแบบฟอร์มเพื่อบันทึกการลาของครูและบุคลากร
-            </p>
           </div>
 
           <form

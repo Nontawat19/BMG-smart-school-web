@@ -654,27 +654,26 @@ const TimeRangeAttendanceSummaryPage: React.FC = () => {
         <MainLayout>
             <div className="min-h-screen bg-[#eef0f4] px-2 py-4 text-slate-900 transition-colors dark:bg-[#0f1117] dark:text-slate-100 print:bg-white print:text-black">
                 <div className="mx-auto max-w-[1120px]">
-                    <div className="mb-3 flex items-center gap-4 print:hidden">
-                        <BackButton to="/academic/hub/students" />
-                        <span className="font-medium text-gray-500 dark:text-gray-400">กลับไปหน้าข้อมูลนักเรียน</span>
+                    <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-[#d6dbe0] bg-white p-5 shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922] print:hidden lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
+                            <BackButton to="/academic/hub/students" />
+                            <div className="min-w-0">
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">รายงานเช็คมาเรียนรายห้องตามช่วงเวลา</h1>
+                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กลับไปหน้าข้อมูลนักเรียน</p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={openPdfPreview}
+                            disabled={loading}
+                            className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-600/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
+                        >
+                            <FileDown size={16} />
+                            ดาวน์โหลด PDF
+                        </button>
                     </div>
 
                     <div className="rounded-sm border border-[#d6dbe0] bg-white shadow-sm transition-colors dark:border-slate-700 dark:bg-[#171922] print:border-none print:shadow-none">
-                        <div className="flex items-center justify-between border-b border-[#d6dbe0] px-4 py-2.5 dark:border-slate-700 print:hidden">
-                            <h1 className="text-[15px] font-medium text-slate-950 dark:text-slate-100">รายงานเช็คมาเรียนรายห้องตามช่วงเวลา</h1>
-                            <div className="flex items-center gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={openPdfPreview}
-                                    disabled={loading}
-                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <FileDown size={16} />
-                                    ดาวน์โหลด PDF
-                                </button>
-                            </div>
-                        </div>
-
                         <div className="grid grid-cols-1 gap-x-12 gap-y-3 px-7 py-4 md:grid-cols-2 print:hidden">
                             <label className="block">
                                 <span className="mb-1 block text-[13px] font-semibold">โรงเรียน</span>

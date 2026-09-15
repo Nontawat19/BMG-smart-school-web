@@ -265,18 +265,20 @@ const StudentPhotoDownloadPage: React.FC = () => {
       <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-h-screen bg-gray-50 dark:bg-[#1c1c24]">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
-            <BackButton to="/academic/hub/students" className="shrink-0" />
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Camera size={24} className="text-indigo-500" />
-                ดาวน์โหลดรูปภาพนักเรียน
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                {isHomeroomTeacher
-                  ? `ครูประจำชั้น ${homeroomGrade} ห้อง ${homeroomRoom} — ดาวน์โหลดได้เฉพาะห้องของตนเอง`
-                  : "ดาวน์โหลดรูปภาพนักเรียนรายบุคคล หรือดาวน์โหลดทั้งห้อง/ทั้งโรงเรียน (ZIP)"}
-              </p>
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between mb-6">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/students" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
+                  <Camera size={24} className="text-indigo-500" />
+                  ดาวน์โหลดรูปภาพนักเรียน
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+                  {isHomeroomTeacher
+                    ? `ครูประจำชั้น ${homeroomGrade} ห้อง ${homeroomRoom} — ดาวน์โหลดได้เฉพาะห้องของตนเอง`
+                    : "ดาวน์โหลดรูปภาพนักเรียนรายบุคคล หรือดาวน์โหลดทั้งห้อง/ทั้งโรงเรียน (ZIP)"}
+                </p>
+              </div>
             </div>
           </div>
 

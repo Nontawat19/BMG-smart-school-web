@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/store";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { firestore as db } from "../../firebase";
 import LogoutButton from "@/components/LogoutButton";
 import {
@@ -140,51 +140,36 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
   }, [schoolId]);
 
   React.useEffect(() => {
-    let cancelled = false;
+    if (!schoolId || isOwnerRoute) {
+      setFeatures({});
+      setAllowTeacherSelfCheckin(false);
+      setEnableCheckinOutSystem(true);
+      return;
+    }
 
-    const loadSidebarState = async () => {
-      if (!schoolId || isOwnerRoute) {
+    const unsub = onSnapshot(doc(db, 'school-settings', schoolId), (schoolSnap) => {
+      if (!schoolSnap.exists()) {
         setFeatures({});
         setAllowTeacherSelfCheckin(false);
         setEnableCheckinOutSystem(true);
         return;
       }
 
-      try {
-        const schoolSnap = await getDoc(doc(db, 'school-settings', schoolId));
-        if (!schoolSnap.exists() || cancelled) {
-          if (!cancelled) {
-            setFeatures({});
-            setAllowTeacherSelfCheckin(false);
-            setEnableCheckinOutSystem(true);
-          }
-          return;
-        }
+      const data = schoolSnap.data();
+      setFeatures({
+        ...(data?.features || {}),
+        ...(data?.academicSettings || {})
+      });
+      setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
+      setEnableCheckinOutSystem(data?.enableCheckinOutSystem !== false);
+    }, (error) => {
+      console.error("Error loading sidebar features:", error);
+      setFeatures({});
+      setAllowTeacherSelfCheckin(false);
+      setEnableCheckinOutSystem(true);
+    });
 
-        const data = schoolSnap.data();
-        if (cancelled) return;
-
-        setFeatures({
-          ...(data?.features || {}),
-          ...(data?.academicSettings || {})
-        });
-        setAllowTeacherSelfCheckin(data?.allowTeacherSelfCheckin === true);
-        setEnableCheckinOutSystem(data?.enableCheckinOutSystem !== false);
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Error loading sidebar features:", error);
-          setFeatures({});
-          setAllowTeacherSelfCheckin(false);
-          setEnableCheckinOutSystem(true);
-        }
-      }
-    };
-
-    loadSidebarState();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => unsub();
   }, [isOwnerRoute, schoolId]);
 
   const isEnabled = (key: string) => features[key] ?? true;
@@ -388,7 +373,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               </div>
             ) : isAttendanceEntryOnly(currentUser?.role) ? (
               <div className="flex flex-col gap-1">
-                <NavLink to={enableCheckinOutSystem ? "/attendance/checkin-out" : "/academic/flag-ceremony"} className={navLinkClasses}>
+                <NavLink to={enableCheckinOutSystem ? "/attendance/checkin-out" : (isEnabled('flagCeremony') ? "/academic/flag-ceremony" : "/home")} className={navLinkClasses}>
                   <FaUserCheck className="text-lg min-w-[18px]" />
                   <span>{enableCheckinOutSystem ? "ลงเวลาเข้า-ออก" : "เช็คชื่อเข้าแถว"}</span>
                 </NavLink>
@@ -438,7 +423,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
                         <span>ระบบเช็คชื่อ</span>
                       </NavLink>
                       {isEnabled('generalAdmin') && (
-                        <NavLink to="/general-affairs/home" className={navLinkClasses}>
+                        <NavLink to="/general-affairs/home" target="_blank" rel="noopener noreferrer" className={navLinkClasses} title="เปิดระบบงานธุรการในหน้าต่างใหม่">
                           <FaBriefcase className="text-lg min-w-[18px]" />
                           <span>งานธุรการ</span>
                         </NavLink>

@@ -615,29 +615,36 @@ export default function AddStudentPage() {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-          <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <BackButton to="/academic/hub/students" />
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">เพิ่มข้อมูลนักเรียนใหม่</h1>
-                <p className="mt-1 text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของนักเรียนให้ครบถ้วน</p>
+          <header className="mb-8">
+            {/* การ์ดหัวข้อ — ปุ่มลัดเป็นสไตล์รองแบบเดียวกับหน้ารายชื่อนักเรียน (กรอบเทาอ่อน + ไอคอนวงกลมสี) */}
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#242529] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/students" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">เพิ่มข้อมูลนักเรียนใหม่</h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">กรอกรายละเอียดข้อมูลของนักเรียนให้ครบถ้วน</p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Link
-                to="/academic/alumni-management"
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none transition-all hover:scale-105"
-              >
-                <FaGraduationCap />
-                รับจากศิษย์เก่า
-              </Link>
-              <Link
-                to={`/school/${schoolId}/students/quick-add`}
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-200 dark:shadow-none transition-all hover:scale-105"
-              >
-                <FaUserPlus />
-                เพิ่มนักเรียนด่วน
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to="/academic/alumni-management"
+                  className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm dark:bg-indigo-500">
+                    <FaGraduationCap size={12} />
+                  </span>
+                  รับจากศิษย์เก่า
+                </Link>
+                <Link
+                  to={`/school/${schoolId}/students/quick-add`}
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-700 transition hover:bg-amber-100 active:scale-95 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm dark:bg-amber-500">
+                    <FaUserPlus size={12} />
+                  </span>
+                  เพิ่มนักเรียนด่วน
+                </Link>
+              </div>
             </div>
           </header>
 
@@ -645,7 +652,7 @@ export default function AddStudentPage() {
             {/* Tab Navigation - Sticky on Mobile & Desktop */}
             <div className="sticky top-[60px] lg:top-[70px] z-30 -mx-4 px-4 py-4 mb-6 bg-gray-50/80 dark:bg-[#1e1f21]/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
               <div className="max-w-6xl mx-auto">
-                <div className="flex flex-nowrap gap-2 table-responsive pb-1 scrollbar-hide">
+                <div className="flex flex-nowrap gap-2 overflow-x-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-[#242529] scrollbar-hide">
                   {tabs.map((tab) => (
                     <button
                       key={tab.id}
@@ -654,9 +661,9 @@ export default function AddStudentPage() {
                         setActiveTab(tab.id);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20 scale-105"
-                        : "bg-white dark:bg-[#2a2b2f] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 shadow-sm border border-gray-100 dark:border-gray-700"
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 whitespace-nowrap ${activeTab === tab.id
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50"
                         }`}
                     >
                       <span className="text-lg">{tab.icon}</span>

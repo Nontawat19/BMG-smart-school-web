@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import MainLayout from "@/layouts/MainLayout";
+import GeneralAffairsLayout from "@/layouts/GeneralAffairsLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { firestore as db, storage } from '../../firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, Timestamp } from 'firebase/firestore';
@@ -250,7 +250,7 @@ const NewsManagementPage: React.FC = () => {
   };
 
   return (
-    <MainLayout>
+    <GeneralAffairsLayout>
       <div className="min-h-screen transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
         <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
@@ -474,7 +474,7 @@ const NewsManagementPage: React.FC = () => {
           </div>
         )}
       </div>
-    </MainLayout>
+    </GeneralAffairsLayout>
   );
 };
 

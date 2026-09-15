@@ -484,11 +484,11 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-[#1e1f21] dark:text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
+          <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
               <BackButton to="/academic/hub/students" />
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white">รายงานยอดรวมรายวัน รายห้องเรียน</h1>
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">รายงานยอดรวมรายวัน รายห้องเรียน</h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   สรุปยอดนักเรียนมาเรียน/ขาด/สาย/ลา แยกตามห้องเรียน สำหรับวันที่เลือก
                 </p>
@@ -498,7 +498,7 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
               type="button"
               onClick={openPdfPreview}
               disabled={loading || rows.length === 0}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-600/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
             >
               <FileDown size={16} />
               ดาวน์โหลด PDF

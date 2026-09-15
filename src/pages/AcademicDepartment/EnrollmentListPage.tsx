@@ -475,10 +475,10 @@ const EnrollmentListPage: React.FC = () => {
             <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white transition-colors duration-300">
                 <div className="w-full pl-12 pr-2 sm:pl-14 sm:pr-4 md:pl-16 md:pr-6 py-4 sm:py-6 lg:py-8">
                     <header className="mb-6 space-y-4">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div className="flex items-center gap-4">
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
                                 <BackButton to="/academic/hub/registration" />
-                                <div className="flex flex-col">
+                                <div className="min-w-0">
                                     <h1 className="text-lg sm:text-xl font-black text-black dark:text-white leading-none">สรุปรายชื่อการลงทะเบียน</h1>
                                     <p className="text-[9px] text-black/60 dark:text-white/60 font-bold mt-1 uppercase tracking-wider">
                                         แสดงข้อมูลการลงทะเบียนรายวิชาแยกตามระดับชั้นและกลุ่มเรียนในภาคเรียนปัจจุบัน
@@ -486,11 +486,11 @@ const EnrollmentListPage: React.FC = () => {
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f] px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                                <div className="flex items-center gap-2 bg-gray-50 dark:bg-[#1e1f21] px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700">
                                     <Calendar className="text-indigo-500" size={14} />
                                     <span className="text-xs font-bold">ปีการศึกษา {activeYear}</span>
                                 </div>
-                                <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f] px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                                <div className="flex items-center gap-2 bg-gray-50 dark:bg-[#1e1f21] px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700">
                                     <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
                                     <span className="text-xs font-bold">ภาคเรียนที่ {activeSemester}</span>
                                 </div>

@@ -198,7 +198,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'teacher_att_date',            path: '/academic/teacher-attendance-date-selection',label: 'บันทึกลงเวลาครู (เลือกวัน)',  category: 'วิชาการ - รายงาน', defaultRoles: [ROLES.SCHOOL_ADMIN] },
   { key: 'teacher_att_summary',         path: '/academic/teacher-attendance-summary',      label: 'รายงานลงเวลา (ครู)',           category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'teacher_att_individual',      path: '/academic/teacher-attendance-individual',   label: 'การลงเวลารายบุคคล',            category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
-  { key: 'personnel_time_reg',          path: '/academic/personnel-time-registration',     label: 'ลงเวลาบุคลากร',                category: 'วิชาการ - รายงาน', defaultRoles: [ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
+  { key: 'personnel_time_reg',          path: '/academic/personnel-time-registration',     label: 'บันทึกเวลาเข้า-ออก / ขออนุญาตเข้าสาย', category: 'วิชาการ - รายงาน', defaultRoles: [ROLES.SCHOOL_ADMIN, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE] },
   { key: 'behavior_class_report',       path: '/academic/student-behavior-class-report',   label: 'รายงานคะแนนความประพฤติ',       category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'behavior_class_report_scoped',path: '/school/:schoolId/academic/student-behavior-class-report', label: 'รายงานคะแนนความประพฤติ (ระบุโรงเรียน)', category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
 

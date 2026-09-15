@@ -245,7 +245,7 @@ export default function QuickAddStudentPage() {
           {/* Compact Header */}
           <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
             <div className="flex items-center gap-3">
-              <BackButton to="/academic/hub/students" />
+              <BackButton to={schoolId ? `/school/${schoolId}/students` : "/academic/hub/students"} />
               <h1 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                 <FaUserPlus className="text-indigo-600" size={18} />
                 เพิ่มนักเรียนด่วน

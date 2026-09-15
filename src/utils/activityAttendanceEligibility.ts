@@ -83,7 +83,8 @@ export const computeGuidanceEligibilityForRoster = async (
         if (!studentId) return;
         if (!byStudent[studentId]) byStudent[studentId] = { present: 0, total: 0 };
         byStudent[studentId].total++;
-        if (data.status === 'present' || data.status === 'late' || data.status === 'leave') byStudent[studentId].present++;
+        // ตามระเบียบ ศธ. วันลาป่วย/ลากิจ นับเป็นวันที่ไม่ได้เข้าเรียน (ลดทอน % เวลาเรียน)
+        if (data.status === 'present' || data.status === 'late') byStudent[studentId].present++;
     });
 
     const result: Record<string, AttendanceEligibilityResult> = {};

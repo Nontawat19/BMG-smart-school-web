@@ -39,6 +39,7 @@ const LeaveRequestPage = lazy(() => import("./pages/Attendance/LeaveRequestPage"
 const LeaveHistoryPage = lazy(() => import("./pages/Attendance/LeaveHistoryPage"));
 const CheckinOutPage = lazy(() => import("./pages/Attendance/CheckinOutPage"));
 const FlagCeremonyPage = lazy(() => import("./pages/Attendance/FlagCeremonyPage"));
+const DailyAttendanceCheckPage = lazy(() => import("./pages/Attendance/DailyAttendanceCheckPage"));
 const UserManagementPage = lazy(() => import("./pages/Administrator/UserManagementPage"));
 const AddStudentPage = lazy(() => import("./pages/Students/AddStudentPage"));
 const QuickAddStudentPage = lazy(() => import("./pages/Students/QuickAddStudentPage"));
@@ -417,14 +418,15 @@ function App() {
           <Route path="/academic/learner-activities" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityModeGuard><LearnerActivityManagementPage /></ActivityModeGuard></ProtectedRoute>} />
           <Route path="/academic/activity-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityHubSettingsPage /></ProtectedRoute>} />
           <Route path="/academic/learner-activity-students" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ActivityModeGuard><LearnerActivityStudentManagementPage /></ActivityModeGuard></ProtectedRoute>} />
-          <Route path="/academic/flag-ceremony" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]}><FlagCeremonyPage /></ProtectedRoute>} />
+          <Route path="/academic/flag-ceremony" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]} featureFlag="flagCeremony"><FlagCeremonyPage /></ProtectedRoute>} />
+          <Route path="/academic/daily-attendance-check" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ROLES.STUDENT_ATTENDANCE, ROLES.TEACHER_ATTENDANCE, ROLES.SCHOOL_ATTENDANCE]} featureFlag="dailyAttendanceCheck"><DailyAttendanceCheckPage /></ProtectedRoute>} />
           <Route path="/academic/homeroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HomeroomAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/guidance-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><GuidanceAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/special-period-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><SpecialPeriodAttendancePage /></ProtectedRoute>} />
           <Route path="/academic/special-period-reports" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><SpecialPeriodReportsPage /></ProtectedRoute>} />
-          <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClassroomAttendancePage /></ProtectedRoute>} />
-          <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
-          <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><AttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL} featureFlag="classroomAttendance"><ClassroomAttendancePage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance-history" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL} featureFlag="classroomAttendance"><HistoricalClassroomAttendancePage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS} featureFlag="classroomAttendance"><AttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/ms-report" element={<ProtectedRoute allowedRoles={STUDENT_ATTENDANCE_REPORT_ACCESS}><MsReportPage /></ProtectedRoute>} />
           <Route path="/academic/zero-r-ms-report" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ZeroRMsGradeReportPage /></ProtectedRoute>} />
           <Route path="/academic/remediation-settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><RemediationSettingsPage /></ProtectedRoute>} />
@@ -432,7 +434,7 @@ function App() {
           <Route path="/academic/remediation-requests" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><RemediationRequestsPage /></ProtectedRoute>} />
           <Route path="/academic/remediation-overview" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><RemediationOverviewPage /></ProtectedRoute>} />
           <Route path="/academic/remediation-record" element={<ProtectedRoute allowedRoles={[...TEACHER_OPERATIONAL, ...ACADEMIC_MANAGEMENT]}><RemediationRecordPage /></ProtectedRoute>} />
-          <Route path="/academic/classroom-attendance-audit" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ClassroomAttendanceAuditPage /></ProtectedRoute>} />
+          <Route path="/academic/classroom-attendance-audit" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT} featureFlag="classroomAttendance"><ClassroomAttendanceAuditPage /></ProtectedRoute>} />
           <Route path="/academic/escape-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><EscapeSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/time-range-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><TimeRangeAttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/homeroom-student-list" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><HomeroomStudentListPage /></ProtectedRoute>} />

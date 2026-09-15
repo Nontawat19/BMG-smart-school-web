@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLevelsByRange } from '@/utils/schoolUtils';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import { firestore } from '@/firebase';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
@@ -1185,19 +1186,22 @@ const ImportStudentDMCPage: React.FC = () => {
         <MainLayout>
             <div className="p-4 sm:p-8 text-gray-900 dark:text-white transition-colors duration-300 flex-1 flex flex-col min-h-full bg-gray-50 dark:bg-[#1e1f21]">
                 <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
-                    {/* Header Section */}
-                    <header className="mb-10 animate-in fade-in slide-in-from-top-4 duration-700">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-indigo-600 rounded-lg text-white">
-                                <FaTable className="text-xl" />
+                    {/* Header Section — จัดตามหน้ารายชื่อนักเรียน/นำเข้านักเรียน (Bulk): การ์ดขาว + back button + ไอคอนในกล่องสี */}
+                    <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] animate-in fade-in slide-in-from-top-4 duration-700 lg:flex-row lg:items-center">
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
+                            <BackButton to={schoolId ? `/school/${schoolId}/students` : "/academic/hub/students"} />
+                            <div className="min-w-0">
+                                <h1 className="flex items-center gap-3 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                                    <span className="rounded-lg bg-indigo-600 p-2 text-white">
+                                        <FaTable className="text-xl" />
+                                    </span>
+                                    นำเข้าข้อมูลนักเรียน (DMC)
+                                </h1>
+                                <p className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                    นำเข้าข้อมูลจากไฟล์ DMC (Excel) เข้าสู่ระบบบริหารจัดการนักเรียนโดยอัตโนมัติ
+                                </p>
                             </div>
-                            <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">
-                                นำเข้าข้อมูลนักเรียน
-                            </h1>
                         </div>
-                        <p className="text-gray-500 dark:text-gray-400 font-medium pb-2 border-b border-gray-200 dark:border-gray-800">
-                            นำเข้าข้อมูลจากไฟล์ DMC (Excel) เข้าสู่ระบบบริหารจัดการนักเรียนโดยอัตโนมัติ
-                        </p>
                     </header>
 
                     {/* Top Cards Grid */}

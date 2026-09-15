@@ -619,8 +619,11 @@ const ImportCoursePage: React.FC = () => {
 
                         <div className="flex flex-wrap gap-2.5">
                             <div className="relative group inline-block">
-                                <button className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 px-4 py-2 text-sm rounded-xl text-white transition-all shadow-sm font-medium border border-transparent">
-                                    <FaDownload /> แม่แบบ Excel
+                                <button className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20">
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+                                        <FaDownload size={12} />
+                                    </span>
+                                    แม่แบบ Excel
                                 </button>
                                 <div className="absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#2a2b2f] rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden flex flex-col">
                                     <button
@@ -640,9 +643,12 @@ const ImportCoursePage: React.FC = () => {
 
                             <button
                                 onClick={() => navigate('/academic/subject-groups')}
-                                className="inline-flex items-center gap-2 bg-white dark:bg-[#2a2b2f] px-4 py-2 text-sm rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-all shadow-sm border border-slate-200 dark:border-slate-700 font-medium"
+                                className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20"
                             >
-                                <FaList /> กลุ่มสาระฯ
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm">
+                                    <FaList size={12} />
+                                </span>
+                                กลุ่มสาระฯ
                             </button>
                         </div>
                     </div>

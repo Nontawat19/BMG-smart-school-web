@@ -423,21 +423,29 @@ export default function ImportStudentPage() {
         <MainLayout>
             <div className="px-4 py-6 min-h-screen bg-slate-50 dark:bg-[#121212] transition-colors">
                 <div className="max-w-7xl mx-auto space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800/50">
-                        <div>
+                    {/* Header — จัดตามหน้ารายชื่อนักเรียน/เพิ่มนักเรียนใหม่: back button เรียงแนวนอนกับหัวข้อ, ปุ่มลัดเป็นสไตล์สีอ่อนโทนเดียวกับไอคอน */}
+                    <div className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800/50 dark:bg-[#1e1e1e] lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
                             <BackButton to="/academic/hub/students" />
-                            <h1 className="text-2xl font-bold flex items-center gap-3 text-slate-800 dark:text-white mt-4">
-                                <div className="p-2 bg-indigo-100 dark:bg-indigo-500/10 rounded-lg">
-                                    <FaFileExcel className="text-indigo-600 dark:text-indigo-400" size={24} />
-                                </div>
-                                นำเข้าข้อมูลนักเรียน (Bulk)
-                            </h1>
-                            <p className="text-slate-500 dark:text-slate-400 mt-1.5 text-sm">อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลนักเรียนจำนวนมาก</p>
+                            <div className="min-w-0">
+                                <h1 className="flex items-center gap-3 text-2xl font-bold text-slate-800 dark:text-white">
+                                    <span className="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-500/10">
+                                        <FaFileExcel className="text-indigo-600 dark:text-indigo-400" size={22} />
+                                    </span>
+                                    นำเข้าข้อมูลนักเรียน (Bulk)
+                                </h1>
+                                <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลนักเรียนจำนวนมาก</p>
+                            </div>
                         </div>
-                        <div className="flex flex-wrap gap-2.5">
-                            <button onClick={() => handleDownloadTemplate('xlsx')} className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 px-4 py-2 text-sm rounded-xl text-white transition-all shadow-sm font-medium">
-                                <FaDownload /> แม่แบบ Excel
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                onClick={() => handleDownloadTemplate('xlsx')}
+                                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
+                            >
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
+                                    <FaDownload size={11} />
+                                </span>
+                                แม่แบบ Excel
                             </button>
                         </div>
                     </div>

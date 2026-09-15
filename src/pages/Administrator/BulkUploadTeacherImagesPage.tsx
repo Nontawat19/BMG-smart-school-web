@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import MainLayout from '@/layouts/MainLayout';
+import BackButton from '@/components/Shared/BackButton';
 import { firestore, storage } from '@/firebase';
 import { collection, getDocs, query, where, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -20,7 +21,6 @@ interface Teacher {
 
 export default function BulkUploadTeacherImagesPage() {
     const { schoolId } = useParams<{ schoolId: string }>();
-    const navigate = useNavigate();
     const [files, setFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<{ [key: string]: 'pending' | 'uploading' | 'success' | 'error' }>({});
@@ -211,19 +211,16 @@ export default function BulkUploadTeacherImagesPage() {
         <MainLayout>
             <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white p-4 md:p-8">
                 <div className="max-w-6xl mx-auto">
-                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight">อัปโหลดรูปภาพครู (Batch)</h1>
-                            <p className="mt-1 text-gray-500 dark:text-gray-400">
-                                อัปโหลดรูปภาพพร้อมกันหลายคน โดยใช้ <span className="font-bold text-indigo-400">เลขบัตรประชาชน</span> เป็นชื่อไฟล์
-                            </p>
+                    <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center">
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
+                            <BackButton to="/academic/hub/personnel_info" />
+                            <div className="min-w-0">
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">อัปโหลดรูปภาพครู (Batch)</h1>
+                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    อัปโหลดรูปภาพพร้อมกันหลายคน โดยใช้ <span className="font-bold text-indigo-400">เลขบัตรประชาชน</span> เป็นชื่อไฟล์
+                                </p>
+                            </div>
                         </div>
-                        <button 
-                            onClick={() => navigate(-1)}
-                            className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                        >
-                            ย้อนกลับ
-                        </button>
                     </header>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

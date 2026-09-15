@@ -978,10 +978,10 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300 p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] mb-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
               <BackButton to="/academic/hub/personnel_info" />
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <FaCalendarAlt className="text-indigo-600 dark:text-indigo-400" />
                   สรุปการลงเวลาครู
@@ -996,7 +996,7 @@ const TeacherAttendanceSummaryPage: React.FC = () => {
               <button
                 onClick={handleOpenPdfPreview}
                 disabled={isPreparingPdf}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-600/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
               >
                 {isPreparingPdf ? <FaSpinner className="animate-spin" /> : <FaFilePdf />}
                 {isPreparingPdf ? "กำลังเตรียม PDF..." : "Export PDF"}

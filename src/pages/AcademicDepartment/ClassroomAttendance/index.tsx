@@ -1166,13 +1166,14 @@ const ClassroomAttendancePage: React.FC = () => {
                         // ปี/เดือน/วัน แบบ local ตรงๆ แทน เพื่อให้ได้ค่าเป็นวันที่ตามปฏิทินจริงที่ครูเห็นบนจอ
                         const todayStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
 
+                        const getDateStr = (val: any) => {
+                            if (val?.toDate) return val.toDate().toISOString().split('T')[0];
+                            if (typeof val === 'string') return val;
+                            return '';
+                        };
+
                         const validLeave = snap.docs.find(doc => {
                             const data = doc.data();
-                            const getDateStr = (val: any) => {
-                                if (val?.toDate) return val.toDate().toISOString().split('T')[0];
-                                if (typeof val === 'string') return val;
-                                return '';
-                            };
                             const s = getDateStr(data.startDate);
                             const e = getDateStr(data.endDate);
                             return s && e && s <= todayStr && e >= todayStr;
@@ -1180,6 +1181,21 @@ const ClassroomAttendancePage: React.FC = () => {
 
                         if (validLeave) {
                             return { id: student.id, isLeave: true, leaveType: validLeave.data().leaveType };
+                        }
+
+                        // ตรวจสอบคำขอไปราชการ/ไปร่วมกิจกรรม (travel_summary)
+                        const travelRef = collection(db, 'school-settings', schoolId, 'students', student.id, 'travel_summary');
+                        const tq = query(travelRef, where('status', '==', 'approved'));
+                        const tSnap = await getDocs(tq);
+                        const validTravel = tSnap.docs.find(doc => {
+                            const data = doc.data();
+                            const s = getDateStr(data.startDate);
+                            const e = getDateStr(data.endDate);
+                            return s && e && s <= todayStr && e >= todayStr;
+                        });
+
+                        if (validTravel) {
+                            return { id: student.id, isLeave: true, leaveType: 'ไปราชการ/กิจกรรม' };
                         }
                     } catch (err) {
                         console.error("Error checking leave", err);
@@ -1380,6 +1396,11 @@ const ClassroomAttendancePage: React.FC = () => {
                 const gradeRef = doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', student.id);
 
                 if (studentsToReFlagIds.has(student.id)) {
+                    // ข้อยกเว้นพิเศษ: หากได้รับการพิจารณาผ่อนผันจากคณะกรรมการสถานศึกษา (มีใบรับรองแพทย์) ไม่ติด มส.
+                    if (existingData?.medicalWaiver || existingData?.status === 'ผ่อนผัน' || (typeof existingData?.remark === 'string' && existingData.remark.includes('ผ่อนผัน'))) {
+                        return;
+                    }
+
                     // Student has attendance < 80% and should be flagged มส
                     const newRemark = `เวลาเรียนไม่ถึงร้อยละ 80 (${info.presentHours}/${info.totalHours} คาบ = ${info.percentage.toFixed(1)}%)`;
                     if (existingData?.status === 'มส' && existingData?.remark === newRemark) return;

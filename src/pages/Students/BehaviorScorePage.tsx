@@ -139,6 +139,8 @@ export default function BehaviorScorePage() {
 
   // Bulk Form States
   const [showBulkForm, setShowBulkForm] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showSelectedPreview, setShowSelectedPreview] = useState(false);
   const [bulkType, setBulkType] = useState<'add' | 'deduct'>('deduct');
   const [bulkPoints, setBulkPoints] = useState<number>(5);
   const [bulkRuleId, setBulkRuleId] = useState<string>("");
@@ -684,6 +686,8 @@ export default function BehaviorScorePage() {
           setBulkNotes("");
           setBulkCustomPointsVal("");
           setShowBulkForm(false);
+          setShowBulkModal(false);
+          setShowSelectedPreview(false);
         } catch (err) {
           console.error("Error bulk adjusting score: ", err);
           Swal.fire({
@@ -786,6 +790,46 @@ export default function BehaviorScorePage() {
       setSelectedStudentIds(prev => [...prev, studentId]);
     } else {
       setSelectedStudentIds(prev => prev.filter(id => id !== studentId));
+    }
+  };
+
+  const selectedStudents = useMemo(() => {
+    const set = new Set(selectedStudentIds);
+    return students.filter(s => set.has(s.id));
+  }, [students, selectedStudentIds]);
+
+  const openBulkModal = (type: 'add' | 'deduct') => {
+    setBulkType(type);
+
+    // Auto-select all students in room/filter if none checked so recording by room works in 1 click!
+    if (selectedStudentIds.length === 0) {
+      if (sortedStudents.length === 0) {
+        toast.warn("ไม่พบรายชื่อนักเรียนในเงื่อนไขการค้นหา/ตัวกรอง");
+        return;
+      }
+      setSelectedStudentIds(sortedStudents.map(s => s.id));
+    }
+
+    const rules = behaviorRules.filter(r => r.type === (type === 'add' ? 'increase' : 'decrease'));
+    if (rules.length > 0) {
+      setBulkRuleId(rules[0].id);
+      setBulkCategory(rules[0].category);
+      if (!bulkCustomMode) {
+        setBulkPoints(rules[0].points);
+      }
+    }
+    setShowBulkModal(true);
+  };
+
+  const handleBulkTypeChange = (newType: 'add' | 'deduct') => {
+    setBulkType(newType);
+    const rules = behaviorRules.filter(r => r.type === (newType === 'add' ? 'increase' : 'decrease'));
+    if (rules.length > 0) {
+      setBulkRuleId(rules[0].id);
+      setBulkCategory(rules[0].category);
+      if (!bulkCustomMode) {
+        setBulkPoints(rules[0].points);
+      }
     }
   };
 
@@ -931,182 +975,134 @@ export default function BehaviorScorePage() {
             </div>
           </div>
 
-          {/* Bulk Action Panel */}
-          {selectedStudentIds.length > 0 && (
-            <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 dark:from-indigo-950/20 dark:to-indigo-900/10 rounded-2xl p-5 shadow-sm border border-indigo-200/50 dark:border-indigo-500/10 flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-sm">
-                    เลือกอยู่ {selectedStudentIds.length} คน
-                  </span>
-                  <span className="text-slate-700 dark:text-slate-300 text-sm ml-2.5 font-medium">
-                    คุณสามารถบันทึกหรือทำพฤติกรรมกลุ่มสำหรับนักเรียนที่เลือกทั้งหมดพร้อมกัน
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
+          {/* Student Table Card */}
+          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl shadow-sm border border-transparent dark:border-gray-800">
+            
+            {/* Header / Action Bar directly on the student table - Sticky below top navbar */}
+            <div className="sticky top-[60px] z-30 px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white/95 dark:bg-[#1e1f24]/95 backdrop-blur-md rounded-t-2xl shadow-sm transition-all">
+              {/* Left: Title & Room/Multi Selection Helpers */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span className="text-sm sm:text-base font-extrabold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  รายชื่อนักเรียน ({filteredStudents.length} คน)
+                </span>
+
+                {/* Quick Select Entire Room (บันทึกคะแนนรายห้อง) */}
+                {selectedClassLevel && selectedRoom && sortedStudents.length > 0 && (
                   <button
-                    onClick={() => setShowBulkForm(!showBulkForm)}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                    type="button"
+                    onClick={() => {
+                      if (selectedStudentIds.length === sortedStudents.length) {
+                        setSelectedStudentIds([]);
+                      } else {
+                        setSelectedStudentIds(sortedStudents.map(s => s.id));
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                      selectedStudentIds.length === sortedStudents.length && sortedStudents.length > 0
+                        ? 'bg-indigo-600 text-white shadow-indigo-500/20'
+                        : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
+                    }`}
                   >
-                    {showBulkForm ? "ซ่อนกล่องบันทึกกลุ่ม" : "ลงบันทึกกลุ่ม"}
+                    <Check className="w-3.5 h-3.5" />
+                    <span>เลือกทั้งห้อง {selectedClassLevel}/{selectedRoom} ({sortedStudents.length} คน)</span>
                   </button>
+                )}
+
+                {/* Quick Select All Shown / Deselect (บันทึกคะแนนทีละหลายคน) */}
+                {sortedStudents.length > 0 && (!selectedClassLevel || !selectedRoom) && (
                   <button
-                    onClick={() => setSelectedStudentIds([])}
-                    className="px-3.5 py-2 bg-white dark:bg-zinc-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-xl text-sm font-bold hover:bg-gray-50 active:scale-95 transition-all"
+                    type="button"
+                    onClick={() => {
+                      if (selectedStudentIds.length === sortedStudents.length) {
+                        setSelectedStudentIds([]);
+                      } else {
+                        setSelectedStudentIds(sortedStudents.map(s => s.id));
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                   >
-                    ยกเลิกเลือก
+                    {selectedStudentIds.length > 0 && selectedStudentIds.length === sortedStudents.length ? (
+                      <>
+                        <X className="w-3.5 h-3.5" />
+                        ยกเลิกเลือก
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        เลือกทุกคนที่แสดง ({sortedStudents.length})
+                      </>
+                    )}
                   </button>
-                </div>
-              </div>
+                )}
 
-              {/* Bulk Form Container */}
-              {showBulkForm && (
-                <form onSubmit={handleSubmitBulkAdjust} className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-indigo-200/50 dark:border-indigo-500/10">
-                  {/* Action Type */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">ประเภทบันทึก</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBulkType('deduct')}
-                        className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                          bulkType === 'deduct' 
-                            ? 'bg-rose-50 border-rose-300 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400 font-extrabold ring-1 ring-rose-400' 
-                            : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1a1b1e] dark:border-gray-800'
-                        }`}
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                        คะแนนเชิงลบ
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBulkType('add')}
-                        className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                          bulkType === 'add' 
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400 font-extrabold ring-1 ring-emerald-400' 
-                            : 'bg-white border-gray-200 text-gray-500 dark:bg-[#1a1b1e] dark:border-gray-800'
-                        }`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        คะแนนเชิงบวก
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Points Input */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">คะแนน</label>
-                    <div className="flex gap-1.5">
-                      {!bulkCustomMode ? (
-                        <>
-                          {[5, 10, 15, 20].map(pt => (
-                            <button
-                              key={pt}
-                              type="button"
-                              onClick={() => setBulkPoints(pt)}
-                              className={`flex-1 py-2 px-1 text-xs font-bold rounded-xl border transition-all ${
-                                bulkPoints === pt 
-                                  ? 'bg-indigo-600 border-indigo-600 text-white' 
-                                  : 'bg-white dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400'
-                              }`}
-                            >
-                              {pt}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => setBulkCustomMode(true)}
-                            className="flex-1 py-2 px-1 text-xs font-bold rounded-xl border bg-white dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400"
-                          >
-                            ระบุเอง
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex w-full gap-2">
-                          <input
-                            type="number"
-                            value={bulkCustomPointsVal}
-                            onChange={(e) => setBulkCustomPointsVal(e.target.value)}
-                            placeholder="ระบุคะแนน..."
-                            min="1"
-                            className="flex-1 bg-white dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setBulkCustomMode(false)}
-                            className="px-2.5 py-1.5 text-xs rounded-xl border border-gray-300 text-gray-500"
-                          >
-                            ยกเลิก
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Rule Selection */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">หัวข้อพฤติกรรม</label>
-                    <select
-                      value={bulkRuleId}
-                      onChange={(e) => {
-                        const rule = activeBulkRules.find((item) => item.id === e.target.value);
-                        setBulkRuleId(e.target.value);
-                        if (rule) {
-                          setBulkCategory(rule.category);
-                          if (!bulkCustomMode) setBulkPoints(rule.points);
-                        }
-                      }}
-                      className="w-full bg-white dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs focus:outline-none text-gray-700 dark:text-gray-300"
-                    >
-                      {activeBulkRules.map(rule => (
-                        <option key={rule.id} value={rule.id}>
-                          {rule.title} ({rule.category}) - {rule.points} คะแนน
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Description Notes */}
-                  <div className="md:col-span-2 space-y-1">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">รายละเอียดพฤติกรรมเพิ่มเติม / หมายเหตุ</label>
-                    <input
-                      type="text"
-                      value={bulkNotes}
-                      onChange={(e) => setBulkNotes(e.target.value)}
-                      placeholder="เช่น ช่วยจัดเก็บกวาดขยะงานประจำปีการศึกษา, ไม่ส่งงานวิชาภาษาไทย, แต่งกายไม่ถูกระเบียบ..."
-                      className="w-full bg-white dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs focus:outline-none text-gray-700 dark:text-gray-300"
-                    />
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="flex items-end">
+                {/* Selected count pill */}
+                {selectedStudentIds.length > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black bg-indigo-600 text-white shadow-sm">
+                      เลือกอยู่ {selectedStudentIds.length} คน
+                    </span>
                     <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-2 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl text-xs font-extrabold shadow-md hover:from-rose-600 hover:to-red-700 active:scale-95 transition-all disabled:opacity-50"
+                      type="button"
+                      onClick={() => setSelectedStudentIds([])}
+                      className="text-xs font-bold text-gray-400 hover:text-rose-500 underline ml-0.5 cursor-pointer"
                     >
-                      {isSubmitting ? "กำลังบันทึก..." : `ยืนยันลงบันทึกกลุ่ม (${selectedStudentIds.length} คน)`}
+                      ล้างที่เลือก
                     </button>
                   </div>
-                </form>
-              )}
-            </div>
-          )}
+                )}
+              </div>
 
-          {/* Student Table Card */}
-          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl shadow-sm border border-transparent dark:border-gray-800 overflow-hidden">
-            
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                รายชื่อนักเรียน ({filteredStudents.length} คน)
-              </span>
-              
-              {/* Pagination info */}
-              {totalPages > 1 && (
-                <span className="text-xs text-gray-400 font-medium">
-                  แสดง {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredStudents.length)} จาก {filteredStudents.length}
-                </span>
-              )}
+              {/* Right: Prominent Score Recording Buttons (เชิงบวก / เชิงลบ) */}
+              <div className="flex items-center flex-wrap gap-2.5">
+                {/* Positive Score (+) Button */}
+                <button
+                  type="button"
+                  onClick={() => openBulkModal('add')}
+                  disabled={sortedStudents.length === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-black shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer"
+                  title="บันทึกคะแนนเชิงบวกสำหรับนักเรียนที่เลือก หรือทั้งห้อง"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>บันทึกคะแนนเชิงบวก (+)</span>
+                  {selectedStudentIds.length > 0 ? (
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
+                      {selectedStudentIds.length} คน
+                    </span>
+                  ) : selectedClassLevel && selectedRoom && sortedStudents.length > 0 ? (
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
+                      ทั้งห้อง ({sortedStudents.length})
+                    </span>
+                  ) : null}
+                </button>
+
+                {/* Negative Score (-) Button */}
+                <button
+                  type="button"
+                  onClick={() => openBulkModal('deduct')}
+                  disabled={sortedStudents.length === 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-black shadow-md hover:shadow-lg active:scale-95 transition-all cursor-pointer"
+                  title="บันทึกคะแนนเชิงลบสำหรับนักเรียนที่เลือก หรือทั้งห้อง"
+                >
+                  <Minus className="w-4 h-4" />
+                  <span>บันทึกคะแนนเชิงลบ (-)</span>
+                  {selectedStudentIds.length > 0 ? (
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
+                      {selectedStudentIds.length} คน
+                    </span>
+                  ) : selectedClassLevel && selectedRoom && sortedStudents.length > 0 ? (
+                    <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold">
+                      ทั้งห้อง ({sortedStudents.length})
+                    </span>
+                  ) : null}
+                </button>
+
+                {/* Pagination Info */}
+                {totalPages > 1 && (
+                  <span className="text-xs text-gray-400 font-medium ml-1 hidden xl:inline">
+                    ({indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredStudents.length)} จาก {filteredStudents.length})
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Table */}
@@ -1469,6 +1465,239 @@ export default function BehaviorScorePage() {
                 </button>
               </div>
 
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* -------------------- Bulk Adjust Score Modal (รายห้อง / หลายคน) -------------------- */}
+      {showBulkModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#1e1f24] rounded-2xl max-w-lg w-full max-h-[90vh] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 transform transition-all flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-gray-800 flex justify-between items-center bg-slate-50 dark:bg-[#18191d] shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${bulkType === 'add' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'}`}>
+                  {bulkType === 'add' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">
+                    บันทึกคะแนนความประพฤติ (กลุ่ม/รายห้อง)
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {bulkType === 'add' ? 'บันทึกคะแนนเชิงบวก (+)' : 'บันทึกคะแนนเชิงลบ (-)'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowBulkModal(false)} 
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSubmitBulkAdjust} className="p-6 space-y-4 overflow-y-auto">
+              
+              {/* Target Students Summary Card */}
+              <div className="bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 p-3.5 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-sm">
+                      {selectedStudentIds.length} คน
+                    </span>
+                    <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                      {selectedClassLevel && selectedRoom && selectedStudentIds.length === sortedStudents.length
+                        ? `ทั้งห้อง ${selectedClassLevel}/${selectedRoom}`
+                        : `นักเรียนที่เลือกทั้งหมด`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSelectedPreview(!showSelectedPreview)}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    {showSelectedPreview ? "ซ่อนรายชื่อ" : "ดูรายชื่อนักเรียน"}
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showSelectedPreview ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+
+                {/* Collapsible student chips */}
+                {showSelectedPreview && (
+                  <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/30 max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedStudents.map(student => (
+                        <span
+                          key={student.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-[#1e1f24] border border-indigo-200/60 dark:border-indigo-800 text-[11px] font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {student.studentNumber ? `เลขที่ ${student.studentNumber} ` : ''}
+                          {`${student.title}${student.firstName} ${student.lastName}`}
+                          <span className="text-gray-400">({student.classLevel}/{student.room})</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectStudent(student.id, false)}
+                            className="text-gray-400 hover:text-rose-500 ml-0.5"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Type Toggle (เชิงบวก / เชิงลบ) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">
+                  เลือกประเภทคะแนน
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkTypeChange('add')}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      bulkType === 'add' 
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500/30 shadow-sm' 
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1a1b1e] dark:border-gray-800 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    คะแนนเชิงบวก (+)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleBulkTypeChange('deduct')}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      bulkType === 'deduct' 
+                        ? 'bg-rose-50 border-rose-400 text-rose-700 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-300 ring-2 ring-rose-500/30 shadow-sm' 
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 dark:bg-[#1a1b1e] dark:border-gray-800 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <Minus className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    คะแนนเชิงลบ (-)
+                  </button>
+                </div>
+              </div>
+
+              {/* Rule Selection */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">
+                  หัวข้อพฤติกรรม
+                </label>
+                <select
+                  value={bulkRuleId}
+                  onChange={(e) => {
+                    const rule = activeBulkRules.find((item) => item.id === e.target.value);
+                    setBulkRuleId(e.target.value);
+                    if (rule) {
+                      setBulkCategory(rule.category);
+                      if (!bulkCustomMode) setBulkPoints(rule.points);
+                    }
+                  }}
+                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-700 dark:text-gray-300"
+                >
+                  {activeBulkRules.map(rule => (
+                    <option key={rule.id} value={rule.id}>
+                      {rule.title} ({rule.category}) - {rule.points} คะแนน
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Points */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">
+                  จำนวนคะแนน
+                </label>
+                <div className="flex gap-2">
+                  {!bulkCustomMode ? (
+                    <>
+                      {[5, 10, 15, 20].map(pt => (
+                        <button
+                          key={pt}
+                          type="button"
+                          onClick={() => setBulkPoints(pt)}
+                          className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                            bulkPoints === pt 
+                              ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' 
+                              : 'bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                          }`}
+                        >
+                          {pt}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setBulkCustomMode(true)}
+                        className="flex-1 py-2 text-xs font-bold rounded-xl border bg-slate-50 dark:bg-[#1a1b1e] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-indigo-500 cursor-pointer"
+                      >
+                        ระบุเอง
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex w-full gap-2">
+                      <input
+                        type="number"
+                        value={bulkCustomPointsVal}
+                        onChange={(e) => setBulkCustomPointsVal(e.target.value)}
+                        placeholder="ระบุตัวเลขคะแนน..."
+                        min="1"
+                        autoFocus
+                        className="flex-1 bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setBulkCustomMode(false)}
+                        className="px-3 py-2 text-xs font-bold rounded-xl border border-gray-300 text-gray-500 hover:bg-slate-50 cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Description Notes */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-600 dark:text-gray-300">
+                  รายละเอียดเพิ่มเติม / หมายเหตุ
+                </label>
+                <textarea
+                  value={bulkNotes}
+                  onChange={(e) => setBulkNotes(e.target.value)}
+                  placeholder="เช่น ช่วยจัดเก็บกวาดขยะงานประจำปีการศึกษา, ไม่ส่งงานวิชาภาษาไทย, แต่งกายไม่ถูกระเบียบ..."
+                  rows={3}
+                  className="w-full bg-slate-50 dark:bg-[#1a1b1e] border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-gray-200 resize-none"
+                />
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs sm:text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || selectedStudentIds.length === 0}
+                  className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-black text-white shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    bulkType === 'add'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700'
+                      : 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700'
+                  }`}
+                >
+                  {isSubmitting ? "กำลังบันทึก..." : `ยืนยันบันทึกคะแนน (${selectedStudentIds.length} คน)`}
+                </button>
+              </div>
             </form>
           </div>
         </div>

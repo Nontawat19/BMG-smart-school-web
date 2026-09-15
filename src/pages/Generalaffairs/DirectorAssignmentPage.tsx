@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import MainLayout from "@/layouts/MainLayout";
+import GeneralAffairsLayout from "@/layouts/GeneralAffairsLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { firestore, storage, auth } from "@/firebase";
 import { collection, query, where, getDocs, Timestamp, doc, updateDoc, getDoc, deleteField, arrayUnion, arrayRemove, addDoc } from "firebase/firestore";
@@ -1435,7 +1435,7 @@ const DirectorAssignmentPage: React.FC = () => {
   }
 
   return (
-    <MainLayout>
+    <GeneralAffairsLayout>
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
         <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
@@ -1776,7 +1776,7 @@ const DirectorAssignmentPage: React.FC = () => {
         </div>
       )}
 
-    </MainLayout>
+    </GeneralAffairsLayout>
   );
 };
 

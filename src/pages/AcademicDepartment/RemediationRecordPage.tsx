@@ -3,73 +3,20 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import MainLayout from '@/layouts/MainLayout';
 import BackButton from '@/components/Shared/BackButton';
-import AcademicYearSemesterFilter from '@/components/Shared/AcademicYearSemesterFilter';
 import { firestore as db } from '@/firebase';
 import {
     collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, serverTimestamp, deleteField,
 } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { usePermissions } from '@/hooks/usePermissions';
+import { FaSave, FaTimes, FaPrint } from 'react-icons/fa';
 import {
-    RefreshCw, Search, CheckCircle2, Clock, ClipboardEdit, AlertCircle, Pencil, RotateCcw, ChevronLeft, ChevronRight,
+    RefreshCw, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { useResponsivePwaMode as usePwaMode } from '@/hooks/useResponsivePwaMode';
 import {
-    FlaggedCourse, fetchFlaggedStudents, calculateRemediationGrade, getMinistryRemediationGradeOptions,
+    FlaggedCourse, fetchFlaggedStudents, matchesClassLevel, isActivityCourseCode,
 } from '@/utils/remediationUtils';
-import { showChoiceDialog } from '@/utils/swalChoiceDialog';
-
-// สูตรตัดเกรดจากคะแนนรวม — ใช้ตรงกับ SgsExportPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx/
-// ZeroRMsGradeReportPage.tsx (คัดลอกตามธรรมเนียมเดิมของโปรเจกต์ ไม่ได้รวมศูนย์เป็นจุดเดียว)
-const calculateGrade = (total: number): string => {
-    if (total >= 80) return '4';
-    if (total >= 75) return '3.5';
-    if (total >= 70) return '3';
-    if (total >= 65) return '2.5';
-    if (total >= 60) return '2';
-    if (total >= 55) return '1.5';
-    if (total >= 50) return '1';
-    return '0';
-};
-
-// รวมคะแนนดิบของนักเรียนคนหนึ่งในวิชาปกติ (คะแนนเก็บทุกรายการที่ตั้งค่าไว้จริงใน formativeAssessments +
-// กลางภาค + ปลายภาค) จากเอกสาร courses/{courseId} (การตั้งค่า) และ courses/{courseId}/grades/{studentId}
-// (คะแนนดิบ) สดตอนนั้นเลย — ต้อง key คะแนนเก็บด้วย assessment.id || assessment.name แบบเดียวกับ
-// getAssessmentKey ใน FormativeScoreEntryPage.tsx/PostMidtermScoreEntryPage.tsx/GradeBookPage.tsx
-// (getConfiguredFormativeTotal) ทุกตัวอักษร ห้ามกรองด้วย pattern "S{เลข}" เพราะรายการคะแนนเก็บจริงไม่ได้
-// บังคับตั้งชื่อ/id แบบนั้นเสมอไป (ใช้ assessment.term แยก pre/post-midterm แทน) ไม่งั้นจะได้ total
-// ต่ำกว่าที่ 3 หน้านั้นแสดงจริง ทำให้ตัดเกรดผิดจากคะแนนจริงที่ครูกรอกไว้
-const fetchLiveCourseTotal = async (schoolId: string, courseId: string, studentId: string): Promise<number> => {
-    const [courseSnap, gradeSnap] = await Promise.all([
-        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId)),
-        getDoc(doc(db, 'school-settings', schoolId, 'courses', courseId, 'grades', studentId)),
-    ]);
-    const courseData: any = courseSnap.exists() ? courseSnap.data() : {};
-    const record: any = gradeSnap.exists() ? gradeSnap.data() : {};
-
-    if (typeof record.total === 'number' && !isNaN(record.total) && record.total > 0) {
-        return record.total;
-    }
-
-    const details = record.formativeDetails || {};
-    const formativeTotal = (courseData.formativeAssessments || []).reduce((sum: number, a: any) => {
-        const key = a.id || a.name;
-        if (!key) return sum;
-        const raw = details[key];
-        return sum + (raw === undefined || raw === '' ? 0 : Number(raw) || 0);
-    }, 0);
-    const midterm = Number(record.midterm) || 0;
-    const final = Number(record.final) || 0;
-    return formativeTotal + midterm + final;
-};
-
-// หน้า "บันทึก 0 ร มส" (เมนูข้อ 4) — ให้เลือกได้ทั้ง "รายวิชา" (0/ร/มส) และ "กิจกรรม" (มผ ของกิจกรรม
-// พัฒนาผู้เรียน รหัสขึ้นต้นด้วย "ก": ชุมนุม, ลูกเสือ-เนตรนารี, รด., แนะแนว ฯลฯ) จาก dropdown เดียว แบ่งกลุ่ม
-// ด้วย optgroup — ออกแบบให้เหมือนหน้า "คำร้องขอแก้ตัว" (RemediationRequestsPage)
-// ทุกครั้งที่บันทึก: เขียนผลใหม่ลง grades/evaluations doc ตรงๆ พร้อมสร้าง/ปิดคำร้องใน remediation_requests
-// ควบคู่กันเสมอ (status: 'resolved') เพื่อเก็บประวัติ — ไม่รอให้มีคำร้อง pending มาก่อนเหมือนหน้า "คำร้องขอแก้ตัว"
-// "เรียนซ้ำ" ที่นี่เขียน status:'failed' ลง evaluations จริง เพราะวิชากิจกรรมมีค่า "ไม่ผ่าน" เป็นสถานะที่
-// เก็บได้จริงในระบบ (ไม่เหมือนวิชาปกติที่ไม่มีเกรด "เรียนซ้ำ")
 
 interface FlagRowWithStudent {
     key: string;
@@ -84,10 +31,37 @@ interface FlagRowWithStudent {
     requestStatus: 'no_request' | 'pending' | 'resolved';
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-
 const requestDedupKey = (studentId: string, activityId: string, academicYear: string, semester: string) =>
     `${studentId}|${activityId}|${academicYear}|${semester}`;
+
+const SUBJECT_GROUPS = [
+    'ทั้งหมด',
+    'กิจกรรมพัฒนาผู้เรียน',
+    'ภาษาไทย',
+    'คณิตศาสตร์',
+    'วิทยาศาสตร์และเทคโนโลยี',
+    'สังคมศึกษา ศาสนา และวัฒนธรรม',
+    'สุขศึกษาและพลศึกษา',
+    'ศิลปะ',
+    'การงานอาชีพ',
+    'ภาษาต่างประเทศ',
+];
+
+const CLASS_LEVELS = [
+    { value: 'all', label: 'ทั้งหมด' },
+    { value: 'ม.1', label: 'ม.1' },
+    { value: 'ม.2', label: 'ม.2' },
+    { value: 'ม.3', label: 'ม.3' },
+    { value: 'ม.4', label: 'ม.4' },
+    { value: 'ม.5', label: 'ม.5' },
+    { value: 'ม.6', label: 'ม.6' },
+    { value: 'ป.1', label: 'ป.1' },
+    { value: 'ป.2', label: 'ป.2' },
+    { value: 'ป.3', label: 'ป.3' },
+    { value: 'ป.4', label: 'ป.4' },
+    { value: 'ป.5', label: 'ป.5' },
+    { value: 'ป.6', label: 'ป.6' },
+];
 
 const RemediationRecordPage: React.FC = () => {
     const { user: currentUser, hasRole, ACADEMIC_MANAGEMENT } = usePermissions();
@@ -98,17 +72,28 @@ const RemediationRecordPage: React.FC = () => {
     const isPwaMode = usePwaMode();
 
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [rows, setRows] = useState<FlagRowWithStudent[]>([]);
-    const [selectedCourseKey, setSelectedCourseKey] = useState<string>('');
-    const [search, setSearch] = useState('');
-    const [correctingKey, setCorrectingKey] = useState<string | null>(null);
-    const [remarkSavingKey, setRemarkSavingKey] = useState<string | null>(null);
+
+    // Search and filter states (matching SGS style)
+    const [searchStudent, setSearchStudent] = useState('');
+    const [searchCourse, setSearchCourse] = useState('');
+    const [activeCourseSearch, setActiveCourseSearch] = useState('');
+
+    const [termYear, setTermYear] = useState<string>(() => sessionStorage.getItem('rmrec_termYear') || 'ทั้งหมด');
+    const [termSemester, setTermSemester] = useState<string>(() => sessionStorage.getItem('rmrec_termSemester') || 'ทั้งหมด');
+    const [filterSubjectGroup, setFilterSubjectGroup] = useState<string>('ทั้งหมด');
+    const [filterClassLevel, setFilterClassLevel] = useState<string>('all');
+
+    // Inline edit states
+    const [remedValues, setRemedValues] = useState<Record<string, string>>({});
+    const [repeatValues, setRepeatValues] = useState<Record<string, string>>({});
+    const [remarkValues, setRemarkValues] = useState<Record<string, string>>({});
+    const [selectedRowKeys, setSelectedRowKeys] = useState<Record<string, boolean>>({});
+
+    // Pagination
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
-
-    // ปีการศึกษา/ภาคเรียนที่ต้องการย้อนดู — อ้างอิงรายชื่อปีการศึกษาจาก /academic/school-calendar
-    const [termYear, setTermYear] = useState<string>(() => sessionStorage.getItem('rmrec_termYear') ?? '');
-    const [termSemester, setTermSemester] = useState<string>(() => sessionStorage.getItem('rmrec_termSemester') || '');
 
     useEffect(() => {
         sessionStorage.setItem('rmrec_termYear', termYear);
@@ -121,6 +106,12 @@ const RemediationRecordPage: React.FC = () => {
         }
     }, [calendarAcademicYear]);
 
+    const academicYearOptions = useMemo(() => {
+        const base = calendarAcademicYear ? Number(calendarAcademicYear) : (new Date().getFullYear() + 543);
+        const list = [base + 1, base, base - 1, base - 2, 2569, 2568, 2567];
+        return Array.from(new Set(list.map(String))).sort((a, b) => b.localeCompare(a));
+    }, [calendarAcademicYear]);
+
     const loadData = useCallback(async () => {
         if (!schoolId) return;
         setLoading(true);
@@ -128,27 +119,26 @@ const RemediationRecordPage: React.FC = () => {
             const [flagRows, requestSnap] = await Promise.all([
                 fetchFlaggedStudents(schoolId, teacherMap, {
                     classLevelFilter: 'all',
-                    academicYear: termYear || undefined,
-                    semester: termSemester || undefined,
+                    academicYear: (termYear && termYear !== 'ทั้งหมด') ? termYear : undefined,
+                    semester: (termSemester && termSemester !== 'ทั้งหมด') ? termSemester : undefined,
                 }),
                 getDocs(collection(db, 'school-settings', schoolId, 'remediation_requests')),
             ]);
 
-            const requestMap: Record<string, { id: string; status: string }> = {};
+            const requestMap: Record<string, { id: string; status: string; newResult?: string }> = {};
             requestSnap.docs.forEach(d => {
                 const data: any = d.data();
                 if (data.status === 'cancelled') return;
                 const idValue = data.flagType === 'course' ? data.courseId : data.activityId;
                 const key = requestDedupKey(data.studentId, idValue, data.academicYear, data.semester);
                 if (!requestMap[key] || data.status === 'resolved') {
-                    requestMap[key] = { id: d.id, status: data.status };
+                    requestMap[key] = { id: d.id, status: data.status, newResult: data.newResult };
                 }
             });
 
             const merged: FlagRowWithStudent[] = [];
             flagRows.forEach(sr => {
                 sr.flags.forEach((flag, idx) => {
-                    // ครูทั่วไปเห็นเฉพาะวิชา/กิจกรรมที่ตัวเองรับผิดชอบ — ฝ่ายวิชาการเห็นทั้งโรงเรียน
                     if (!isAcademicManagement && !flag.responsibleTeacherIds?.includes(currentUser?.uid || '')) return;
 
                     const idForKey = flag.flagKind === 'course' ? flag.courseId : flag.activityDocId;
@@ -156,10 +146,6 @@ const RemediationRecordPage: React.FC = () => {
                     const key = requestDedupKey(sr.id, idForKey, flag.academicYear, flag.semester);
                     const req = requestMap[key];
                     const requestStatus = req ? (req.status as 'pending' | 'resolved') : 'no_request';
-                    // หมายเหตุ: ตั้งใจ "ไม่" ซ่อนแถวที่มีคำร้อง resolved อยู่แล้ว — fetchFlaggedStudents คืนเฉพาะ
-                    // นักเรียนที่ "ยังติดผลจริงอยู่ตอนนี้" เท่านั้น (อ่านจากเกรด/ผลประเมินสดๆ) ถ้าเคย resolved แล้ว
-                    // แต่ผลจริงกลับมาติดอีก (เช่น มีคนบันทึกทับข้อมูลเดิมซ้ำ หรือแก้ผิดคน) ต้องยังโผล่ให้แก้ไขใหม่ได้
-                    // เสมอ ไม่งั้นจะซ่อนถาวรทั้งที่ยังไม่ได้แก้จริง — ใช้ requestStatus แค่โชว์ป้ายบอกประวัติเท่านั้น
 
                     merged.push({
                         key: `${key}|${idx}`,
@@ -177,54 +163,79 @@ const RemediationRecordPage: React.FC = () => {
             });
             setRows(merged);
         } catch (err) {
-            console.error('Error loading activity remediation records:', err);
+            console.error('Error loading remediation records:', err);
             Swal.fire('ผิดพลาด', 'ไม่สามารถโหลดข้อมูลได้', 'error');
         } finally {
             setLoading(false);
         }
     }, [schoolId, teacherMap, isAcademicManagement, currentUser?.uid, termYear, termSemester]);
 
-    useEffect(() => { loadData(); }, [loadData]);
-
-    const courseOptions = useMemo(() => {
-        const map = new Map<string, { key: string; label: string; count: number; isActivity: boolean }>();
-        rows.forEach(r => {
-            const key = `${r.flag.courseId}|${r.flag.academicYear}|${r.flag.semester}`;
-            const label = `${r.flag.courseCode} ${r.flag.courseTitle} (ปี ${r.flag.academicYear}/${r.flag.semester})`;
-            if (!map.has(key)) map.set(key, { key, label, count: 0, isActivity: r.flag.flagKind !== 'course' });
-            map.get(key)!.count += 1;
-        });
-        return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'th'));
-    }, [rows]);
-
-    const subjectOptions = useMemo(() => courseOptions.filter(o => !o.isActivity), [courseOptions]);
-    const activityOptions = useMemo(() => courseOptions.filter(o => o.isActivity), [courseOptions]);
-
     useEffect(() => {
-        // เลือกวิชาแรกอัตโนมัติเมื่อยังไม่เคยเลือก หรือวิชาที่เลือกไว้ไม่มีในตัวเลือกแล้ว (เช่น เปลี่ยนปี/ภาคเรียน)
-        if (courseOptions.length === 0) return;
-        if (!selectedCourseKey || !courseOptions.some(o => o.key === selectedCourseKey)) {
-            setSelectedCourseKey(courseOptions[0].key);
+        loadData();
+    }, [loadData]);
+
+    const handleSearchClick = () => {
+        setActiveCourseSearch(searchCourse);
+        setCurrentPage(1);
+    };
+
+    const handleCourseKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSearchClick();
         }
-    }, [courseOptions, selectedCourseKey]);
+    };
 
     const filteredRows = useMemo(() => {
-        const kw = search.trim().toLowerCase();
+        const studentKw = searchStudent.trim().toLowerCase();
+        const courseKw = (searchCourse || activeCourseSearch).trim().toLowerCase();
+
         return rows.filter(r => {
-            const courseKey = `${r.flag.courseId}|${r.flag.academicYear}|${r.flag.semester}`;
-            if (courseKey !== selectedCourseKey) return false;
-            if (!kw) return true;
-            return `${r.studentName} ${r.studentCode}`.toLowerCase().includes(kw);
+            // ปีการศึกษา
+            if (termYear && termYear !== 'ทั้งหมด' && r.flag.academicYear && r.flag.academicYear !== termYear) return false;
+
+            // ภาคเรียน
+            if (termSemester && termSemester !== 'ทั้งหมด' && r.flag.semester && r.flag.semester !== termSemester) return false;
+
+            // ระดับชั้น
+            if (filterClassLevel && filterClassLevel !== 'all' && filterClassLevel !== 'ทั้งหมด') {
+                if (!matchesClassLevel(r.classLevel, filterClassLevel)) return false;
+            }
+
+            // กลุ่มสาระวิชา
+            if (filterSubjectGroup && filterSubjectGroup !== 'ทั้งหมด') {
+                if (filterSubjectGroup === 'กิจกรรมพัฒนาผู้เรียน') {
+                    const isAct = r.flag.flagKind !== 'course' ||
+                        isActivityCourseCode(r.flag.courseCode) ||
+                        (r.flag.subjectGroup && r.flag.subjectGroup.includes('กิจกรรม'));
+                    if (!isAct) return false;
+                } else {
+                    const matchGroup = (r.flag.subjectGroup || '').includes(filterSubjectGroup);
+                    const matchTitle = (r.flag.courseTitle || '').includes(filterSubjectGroup);
+                    if (!matchGroup && !matchTitle) return false;
+                }
+            }
+
+            // รหัส ชื่อ นักเรียน
+            if (studentKw) {
+                const matchCode = (r.studentCode || '').toLowerCase().includes(studentKw);
+                const matchName = (r.studentName || '').toLowerCase().includes(studentKw);
+                if (!matchCode && !matchName) return false;
+            }
+
+            // รหัสวิชา / ชื่อวิชา
+            if (courseKw) {
+                const matchCourseCode = (r.flag.courseCode || '').toLowerCase().includes(courseKw);
+                const matchCourseTitle = (r.flag.courseTitle || '').toLowerCase().includes(courseKw);
+                if (!matchCourseCode && !matchCourseTitle) return false;
+            }
+
+            return true;
         });
-    }, [rows, selectedCourseKey, search]);
+    }, [rows, termYear, termSemester, filterClassLevel, filterSubjectGroup, searchStudent, activeCourseSearch, searchCourse]);
 
-    const stats = useMemo(() => ({
-        pendingInCourse: filteredRows.length,
-        withRequest: filteredRows.filter(r => r.requestStatus === 'pending').length,
-        courseCount: courseOptions.length,
-    }), [filteredRows, courseOptions]);
-
-    useEffect(() => { setCurrentPage(1); }, [selectedCourseKey, search, pageSize]);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [termYear, termSemester, filterClassLevel, filterSubjectGroup, searchStudent, activeCourseSearch, pageSize]);
 
     const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
     const pagedRows = useMemo(
@@ -232,547 +243,672 @@ const RemediationRecordPage: React.FC = () => {
         [filteredRows, currentPage, pageSize]
     );
 
-    const handleCorrect = async (row: FlagRowWithStudent, mode: 'pass' | 'repeat') => {
-        // ต้องมีคำร้องขอแก้ตัวที่นักเรียนยื่นมาก่อนเสมอ (สถานะ pending) ห้ามบันทึกผลแก้ตัวข้ามขั้นตอนคำร้อง
-        // อีกต่อไป — ให้ไปอนุมัติที่หน้า "คำร้องขอแก้ตัว" (/academic/remediation-requests) แทน
-        if (row.requestStatus !== 'pending') {
+    // Row selection and inline editing handlers
+    const isAllSelected = pagedRows.length > 0 && pagedRows.every(r => selectedRowKeys[r.key]);
+
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedRowKeys(prev => {
+                const next = { ...prev };
+                pagedRows.forEach(r => delete next[r.key]);
+                return next;
+            });
+        } else {
+            setSelectedRowKeys(prev => {
+                const next = { ...prev };
+                pagedRows.forEach(r => { next[r.key] = true; });
+                return next;
+            });
+        }
+    };
+
+    const toggleSelectRow = (key: string) => {
+        setSelectedRowKeys(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const handleRemedChange = (rowKey: string, val: string) => {
+        setRemedValues(prev => ({ ...prev, [rowKey]: val }));
+        setSelectedRowKeys(prev => ({ ...prev, [rowKey]: true }));
+    };
+
+    const handleRepeatChange = (rowKey: string, val: string) => {
+        setRepeatValues(prev => ({ ...prev, [rowKey]: val }));
+        setSelectedRowKeys(prev => ({ ...prev, [rowKey]: true }));
+    };
+
+    const handleRemarkChange = (rowKey: string, val: string) => {
+        setRemarkValues(prev => ({ ...prev, [rowKey]: val }));
+        setSelectedRowKeys(prev => ({ ...prev, [rowKey]: true }));
+    };
+
+    const handleClearRow = (key: string) => {
+        setRemedValues(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setRepeatValues(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setRemarkValues(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setSelectedRowKeys(prev => { const n = { ...prev }; delete n[key]; return n; });
+    };
+
+    const handleResetEdits = () => {
+        setRemedValues({});
+        setRepeatValues({});
+        setRemarkValues({});
+        setSelectedRowKeys({});
+    };
+
+    // Save batch function (Floppy disk button)
+    const handleSaveAll = async () => {
+        const rowsToSave = filteredRows.filter(r =>
+            (remedValues[r.key] !== undefined && remedValues[r.key] !== '') ||
+            (repeatValues[r.key] !== undefined && repeatValues[r.key] !== '') ||
+            (remarkValues[r.key] !== undefined && remarkValues[r.key] !== (r.flag.remark || '')) ||
+            (selectedRowKeys[r.key] && (remedValues[r.key] || repeatValues[r.key] || remarkValues[r.key]))
+        );
+
+        if (rowsToSave.length === 0) {
             Swal.fire({
-                icon: 'warning',
-                title: 'ยังไม่มีคำร้องขอแก้ตัว',
-                html: `${row.studentName} (${row.studentCode}) ยังไม่ได้ยื่นคำร้องขอแก้ตัว <b>${row.flag.courseTitle || row.flag.courseCode}</b><br/><br/>ต้องให้นักเรียนยื่นคำร้องที่หน้าโปรไฟล์ก่อน (หรือครูยื่นแทนได้) แล้วจึงอนุมัติที่หน้า "คำร้องขอแก้ตัว"`,
+                icon: 'info',
+                title: 'ไม่มีข้อมูลที่ต้องบันทึก',
+                text: 'กรุณากรอกข้อมูลในช่อง แก้ตัว, เรียนซ้ำ หรือ Remark ก่อนกดบันทึก',
+                timer: 2000,
+                showConfirmButton: false,
             });
             return;
         }
 
-        const isCourse = row.flag.flagKind === 'course';
-        let displayValue: string;
-        let newGradeValue: string | undefined;
+        const confirm = await Swal.fire({
+            icon: 'question',
+            title: 'ยืนยันการบันทึกผลการเรียน',
+            text: `ต้องการบันทึกข้อมูลผลการเรียนที่แก้ไขจำนวน ${rowsToSave.length} รายการ หรือไม่?`,
+            showCancelButton: true,
+            confirmButtonText: 'บันทึก',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#17a2b8',
+        });
 
-        if (isCourse) {
-            if (mode === 'pass') {
-                if (row.flag.grade === 'ร') {
-                    const freshTotal = await fetchLiveCourseTotal(schoolId, row.flag.courseId, row.studentId);
-                    const resolvedGrade = calculateGrade(freshTotal);
+        if (!confirm.isConfirmed) return;
 
-                    const confirm = await Swal.fire({
-                        icon: 'question',
-                        title: `แก้ไข ร ของ${row.studentName}`,
-                        html: `
-                            <div style="text-align:left;font-size:14px;line-height:1.6;margin-top:8px">
-                                นักเรียน: <b>${row.studentName}</b> (${row.studentCode})<br/>
-                                วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b><br/>
-                                คะแนนรวมในสมุดคะแนน (TOTAL): <b style="color:#4f46e5">${freshTotal} คะแนน</b><br/>
-                                เกรดสุทธิที่จะได้รับจาก GradeBook: <b style="color:#16a34a;font-size:17px">${resolvedGrade}</b>
-                            </div>
-                        `,
-                        showCancelButton: true,
-                        confirmButtonText: `บันทึกเกรด (${resolvedGrade})`,
-                        cancelButtonText: 'ยกเลิก',
-                        confirmButtonColor: '#4f46e5',
-                    });
-                    if (!confirm.isConfirmed) return;
-                    newGradeValue = resolvedGrade;
-                    displayValue = resolvedGrade;
-                } else {
-                    const gradeOptions = getMinistryRemediationGradeOptions(row.flag.grade);
-                    const { value } = await showChoiceDialog({
-                        title: 'บันทึกผลแก้ตัว (ตามระเบียบ ศธ.)',
-                        html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.studentName} (${row.studentCode})<br/>วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b> — ผลเดิม: <b>${row.flag.grade}</b></div>`,
-                        options: gradeOptions,
-                        placeholder: 'เลือกผลการเรียนใหม่',
-                        confirmButtonText: 'บันทึก',
-                        cancelButtonText: 'ยกเลิก',
-                        confirmButtonColor: '#4f46e5',
-                    });
-                    if (!value) return;
-                    newGradeValue = value;
-                    displayValue = value;
-                }
-            } else {
-                const confirm = await Swal.fire({
-                    icon: 'warning',
-                    title: 'ยืนยันให้เรียนซ้ำ',
-                    html: `<div style="text-align:left;font-size:13px">${row.studentName} (${row.studentCode})<br/>วิชา: <b>${row.flag.courseTitle || row.flag.courseCode}</b><br/><br/>จะบันทึกสถานะเป็น "เรียนซ้ำ" ในระบบคำร้อง โดย<b>ไม่เปลี่ยนแปลงเกรดเดิม</b>ในฐานข้อมูล</div>`,
-                    showCancelButton: true,
-                    confirmButtonText: 'ยืนยัน',
-                    cancelButtonText: 'ยกเลิก',
-                    confirmButtonColor: '#f59e0b',
-                });
-                if (!confirm.isConfirmed) return;
-                displayValue = 'เรียนซ้ำ';
-            }
-        } else {
-            const confirm = mode === 'repeat'
-                ? await Swal.fire({
-                    icon: 'warning',
-                    title: 'ยืนยันให้เรียนซ้ำ',
-                    html: `<div style="text-align:left;font-size:13px">${row.studentName} (${row.studentCode})<br/>กิจกรรม: <b>${row.flag.courseTitle || row.flag.courseCode}</b></div><div style="text-align:center;font-size:14px;margin-top:10px">ผลเดิม: <b style="color:#ef4444">มผ (ไม่ผ่าน)</b> → ผลใหม่: <b style="color:#ef4444">มผ (ไม่ผ่าน / เรียนซ้ำ)</b></div>`,
-                    showCancelButton: true,
-                    confirmButtonText: 'ยืนยัน',
-                    cancelButtonText: 'ยกเลิก',
-                    confirmButtonColor: '#f59e0b',
-                })
-                : await Swal.fire({
-                    icon: 'question',
-                    title: 'ยืนยันบันทึกแก้ตัวสำเร็จ',
-                    html: `<div style="text-align:left;font-size:13px">${row.studentName} (${row.studentCode})<br/>กิจกรรม: <b>${row.flag.courseTitle || row.flag.courseCode}</b></div><div style="text-align:center;font-size:14px;margin-top:10px">ผลเดิม: <b style="color:#ef4444">มผ (ไม่ผ่าน)</b> → ผลใหม่: <b style="color:#22c55e">ผ (ผ่าน)</b></div>`,
-                    showCancelButton: true,
-                    confirmButtonText: 'บันทึก',
-                    cancelButtonText: 'ยกเลิก',
-                    confirmButtonColor: '#4f46e5',
-                });
-            if (!confirm.isConfirmed) return;
-            displayValue = mode === 'pass' ? 'ผ่าน (แก้ตัวสำเร็จ)' : 'ไม่ผ่าน (เรียนซ้ำ)';
-        }
-
-        setCorrectingKey(row.key);
+        setSaving(true);
         try {
-            if (isCourse) {
-                if (mode === 'pass') {
-                    // remark เดิม (หมายเหตุประกอบผล 0/ร/มส) ต้องล้างทิ้งตอนแก้ตัวสำเร็จ ไม่ใช่เขียนทับใหม่ —
-                    // remark ที่ยังค้างอยู่คือตัวบ่งชี้ว่ายังติดค้าง ถ้าไม่ลบจะดูเหมือนยังไม่ได้แก้
-                    const updateData: Record<string, any> = {
-                        grade: newGradeValue,
-                        status: deleteField(),
-                        remark: deleteField(),
-                        originalGrade: row.flag.grade,
-                    };
-                    await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), updateData, { merge: true });
-                }
-                // mode === 'repeat' สำหรับวิชาปกติ: ไม่มีค่าเกรด "เรียนซ้ำ" ในระบบ จึงบันทึกเป็นหมายเหตุ
-                // ในคำร้องเท่านั้น ไม่แตะเกรดเดิมในฐานข้อมูล (เหมือนหน้าภาพรวม/zero-r-ms-report)
-            } else {
-                const newResult: 'passed' | 'failed' = mode === 'pass' ? 'passed' : 'failed';
-                // guidance-evaluations เป็น collection ระดับบนสุด (ไม่ใช่ subcollection ของ activityDocId เหมือน clubs/learner-activities)
-                const evalRef = row.flag.activityCollectionName === 'guidance-evaluations'
-                    ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.flag.evalDocId!)
-                    : doc(db, 'school-settings', schoolId, row.flag.activityCollectionName!, row.flag.activityDocId!, 'evaluations', row.flag.evalDocId!);
-                const evalSnap = await getDoc(evalRef);
-                const data: any = evalSnap.exists() ? evalSnap.data() : {};
-                const results: Record<string, any> = { ...(data.results || {}) };
-                results[row.studentId] = { ...(results[row.studentId] || {}), status: newResult };
-                const summary = Object.values(results).reduce((acc: any, r: any) => {
-                    const s = r?.status || 'pending';
-                    acc[s] = (acc[s] || 0) + 1;
-                    return acc;
-                }, { pending: 0, passed: 0, failed: 0 });
-                await setDoc(evalRef, {
-                    results, summary, updatedAt: serverTimestamp(), updatedBy: currentUser?.uid || '',
-                }, { merge: true });
-            }
+            for (const row of rowsToSave) {
+                const isCourse = row.flag.flagKind === 'course';
+                const remedVal = remedValues[row.key]?.trim();
+                const repeatVal = repeatValues[row.key]?.trim();
+                const remarkVal = remarkValues[row.key]?.trim();
 
-            if (row.requestId) {
-                await updateDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', row.requestId), {
-                    status: 'resolved',
-                    resolvedAt: serverTimestamp(),
-                    resolvedBy: currentUser?.uid || '',
-                    resolvedByName: (currentUser as any)?.fullName || '',
-                    newResult: displayValue,
-                });
-            } else {
-                const payload: Record<string, any> = {
-                    studentId: row.studentId,
-                    studentCode: row.studentCode,
-                    studentName: row.studentName,
-                    classLevel: row.classLevel,
-                    room: row.room,
-                    flagType: row.flag.flagKind,
-                    originalGrade: row.flag.grade,
-                    academicYear: row.flag.academicYear,
-                    semester: row.flag.semester,
-                    responsibleTeacherIds: row.flag.responsibleTeacherIds || [],
-                    responsibleTeacherNames: row.flag.teacherName ? [row.flag.teacherName] : [],
-                    status: 'resolved',
-                    requestedAt: serverTimestamp(),
-                    requestedBy: currentUser?.uid || '',
-                    requestNote: 'บันทึกโดยครู/ฝ่ายวิชาการผ่านหน้าบันทึก 0 ร มส',
-                    resolvedAt: serverTimestamp(),
-                    resolvedBy: currentUser?.uid || '',
-                    resolvedByName: (currentUser as any)?.fullName || '',
-                };
                 if (isCourse) {
-                    payload.courseId = row.flag.courseId;
-                    payload.courseCode = row.flag.courseCode;
-                    payload.courseTitle = row.flag.courseTitle;
+                    const updateData: Record<string, any> = {};
+                    let displayVal = '';
+
+                    if (remedVal) {
+                        updateData.grade = remedVal;
+                        updateData.status = deleteField();
+                        updateData.originalGrade = row.flag.grade;
+                        if (remarkVal) {
+                            updateData.remark = remarkVal;
+                        } else {
+                            updateData.remark = deleteField();
+                        }
+                        displayVal = remedVal;
+                    } else if (repeatVal) {
+                        displayVal = 'เรียนซ้ำ';
+                        if (remarkVal) updateData.remark = remarkVal;
+                    } else if (remarkVal !== undefined) {
+                        if (remarkVal) {
+                            updateData.remark = remarkVal;
+                        } else {
+                            updateData.remark = deleteField();
+                        }
+                    }
+
+                    if (Object.keys(updateData).length > 0) {
+                        await setDoc(
+                            doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId),
+                            updateData,
+                            { merge: true }
+                        );
+                    }
+
+                    if (displayVal) {
+                        if (row.requestId) {
+                            await updateDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', row.requestId), {
+                                status: 'resolved',
+                                resolvedAt: serverTimestamp(),
+                                resolvedBy: currentUser?.uid || '',
+                                resolvedByName: (currentUser as any)?.fullName || '',
+                                newResult: displayVal,
+                            });
+                        } else {
+                            await addDoc(collection(db, 'school-settings', schoolId, 'remediation_requests'), {
+                                studentId: row.studentId,
+                                studentCode: row.studentCode,
+                                studentName: row.studentName,
+                                classLevel: row.classLevel,
+                                room: row.room,
+                                flagType: row.flag.flagKind,
+                                originalGrade: row.flag.grade,
+                                academicYear: row.flag.academicYear,
+                                semester: row.flag.semester,
+                                responsibleTeacherIds: row.flag.responsibleTeacherIds || [],
+                                responsibleTeacherNames: row.flag.teacherName ? [row.flag.teacherName] : [],
+                                status: 'resolved',
+                                requestedAt: serverTimestamp(),
+                                requestedBy: currentUser?.uid || '',
+                                requestNote: 'บันทึกโดยฝ่ายวิชาการผ่านระบบบันทึกแก้ไขผลการเรียน',
+                                resolvedAt: serverTimestamp(),
+                                resolvedBy: currentUser?.uid || '',
+                                resolvedByName: (currentUser as any)?.fullName || '',
+                                courseId: row.flag.courseId,
+                                courseCode: row.flag.courseCode,
+                                courseTitle: row.flag.courseTitle,
+                                newResult: displayVal,
+                            });
+                        }
+                    }
                 } else {
-                    payload.activityId = row.flag.activityDocId;
-                    payload.activityName = row.flag.courseTitle || row.flag.courseCode;
-                    payload.evalDocId = row.flag.evalDocId;
-                    if (row.flag.teacherScopeKey) payload.teacherScopeKey = row.flag.teacherScopeKey;
+                    // กิจกรรมพัฒนาผู้เรียน (guidance, clubs, learner activities)
+                    let newStatus: 'passed' | 'failed' | undefined;
+                    let displayVal = '';
+
+                    if (remedVal) {
+                        newStatus = (remedVal === 'ผ' || remedVal === 'passed') ? 'passed' : 'failed';
+                        displayVal = remedVal;
+                    } else if (repeatVal) {
+                        newStatus = 'failed';
+                        displayVal = 'ไม่ผ่าน (เรียนซ้ำ)';
+                    }
+
+                    const evalRef = row.flag.activityCollectionName === 'guidance-evaluations'
+                        ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.flag.evalDocId!)
+                        : doc(db, 'school-settings', schoolId, row.flag.activityCollectionName!, row.flag.activityDocId!, 'evaluations', row.flag.evalDocId!);
+
+                    const evalSnap = await getDoc(evalRef);
+                    const data: any = evalSnap.exists() ? evalSnap.data() : {};
+                    const results: Record<string, any> = { ...(data.results || {}) };
+                    const currentStudentRes = results[row.studentId] || {};
+
+                    if (newStatus) {
+                        currentStudentRes.status = newStatus;
+                        currentStudentRes.result = remedVal || (newStatus === 'passed' ? 'ผ' : 'มผ');
+                    }
+                    if (remarkVal !== undefined) {
+                        currentStudentRes.remark = remarkVal;
+                    }
+                    results[row.studentId] = currentStudentRes;
+
+                    const summary = Object.values(results).reduce((acc: any, r: any) => {
+                        const s = r?.status || 'pending';
+                        acc[s] = (acc[s] || 0) + 1;
+                        return acc;
+                    }, { pending: 0, passed: 0, failed: 0 });
+
+                    await setDoc(evalRef, {
+                        results,
+                        summary,
+                        updatedAt: serverTimestamp(),
+                        updatedBy: currentUser?.uid || '',
+                    }, { merge: true });
+
+                    if (displayVal) {
+                        if (row.requestId) {
+                            await updateDoc(doc(db, 'school-settings', schoolId, 'remediation_requests', row.requestId), {
+                                status: 'resolved',
+                                resolvedAt: serverTimestamp(),
+                                resolvedBy: currentUser?.uid || '',
+                                resolvedByName: (currentUser as any)?.fullName || '',
+                                newResult: displayVal,
+                            });
+                        } else {
+                            const payload: Record<string, any> = {
+                                studentId: row.studentId,
+                                studentCode: row.studentCode,
+                                studentName: row.studentName,
+                                classLevel: row.classLevel,
+                                room: row.room,
+                                flagType: row.flag.flagKind,
+                                originalGrade: row.flag.grade,
+                                academicYear: row.flag.academicYear,
+                                semester: row.flag.semester,
+                                responsibleTeacherIds: row.flag.responsibleTeacherIds || [],
+                                responsibleTeacherNames: row.flag.teacherName ? [row.flag.teacherName] : [],
+                                status: 'resolved',
+                                requestedAt: serverTimestamp(),
+                                requestedBy: currentUser?.uid || '',
+                                requestNote: 'บันทึกโดยฝ่ายวิชาการผ่านระบบบันทึกแก้ไขผลการเรียน',
+                                resolvedAt: serverTimestamp(),
+                                resolvedBy: currentUser?.uid || '',
+                                resolvedByName: (currentUser as any)?.fullName || '',
+                                activityId: row.flag.activityDocId,
+                                activityName: row.flag.courseTitle || row.flag.courseCode,
+                                evalDocId: row.flag.evalDocId,
+                                newResult: displayVal,
+                            };
+                            if (row.flag.teacherScopeKey) payload.teacherScopeKey = row.flag.teacherScopeKey;
+                            await addDoc(collection(db, 'school-settings', schoolId, 'remediation_requests'), payload);
+                        }
+                    }
                 }
-                await addDoc(collection(db, 'school-settings', schoolId, 'remediation_requests'), {
-                    ...payload,
-                    newResult: displayValue,
-                });
             }
 
-            Swal.fire({ icon: 'success', title: 'บันทึกผลสำเร็จ', timer: 1200, showConfirmButton: false });
+            Swal.fire({
+                icon: 'success',
+                title: 'บันทึกข้อมูลเรียบร้อยแล้ว',
+                timer: 1500,
+                showConfirmButton: false,
+            });
+
+            setRemedValues({});
+            setRepeatValues({});
+            setRemarkValues({});
+            setSelectedRowKeys({});
             await loadData();
         } catch (err) {
-            console.error('Error saving activity remediation result:', err);
-            Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกผลได้', 'error');
+            console.error('Error saving remediation batch:', err);
+            Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้', 'error');
         } finally {
-            setCorrectingKey(null);
-        }
-    };
-
-    // ── Remark ประกอบผล มส/ร/มผ — ตราบใดที่มีข้อความอยู่ในหมายเหตุ จะไม่แสดงเกรดในตาราง (คอลัมน์ Grade)
-    // จนกว่าจะลบหมายเหตุออก (ลบข้อความให้ว่างแล้วออกจากช่อง) เกรดถึงจะกลับมาแสดงตามปกติ — ไม่กระทบสถานะ
-    // "ติดผลการเรียน"/จำนวนใดๆ เป็นแค่การแสดงผลในตารางเท่านั้น
-    const handleSaveRemark = async (row: FlagRowWithStudent, rawValue: string) => {
-        const value = rawValue.trim();
-        if (value === (row.flag.remark || '')) return;
-
-        // กรณีติด "ร" แล้วลบ Remark ออก (แปลว่างานที่ค้างส่งครบแล้ว) ให้คำนวณเกรดใหม่จากคะแนนรวมสดทันที
-        // แทนที่จะปล่อยให้ค้างเป็น "ร" ต่อไป — คะแนนถึง 50 ขึ้นไปให้ตัดเกรดตามปกติ ต่ำกว่า 50 ให้เป็น "0"
-        const shouldRecalculateGrade = !value && row.flag.flagKind === 'course' && row.flag.grade === 'ร';
-
-        setRemarkSavingKey(row.key);
-        try {
-            if (row.flag.flagKind === 'course') {
-                const updateData: Record<string, any> = { remark: value };
-                if (shouldRecalculateGrade) {
-                    // อ่านคะแนนสดจาก Firestore ตอนนี้เลย ไม่เดาจากค่าที่ค้างอยู่ในตาราง — กันกรณีครูเพิ่งไป
-                    // กรอกคะแนนที่ค้าง (สมุดคะแนน/คะแนนเก็บ/คะแนนปลายภาค) เสร็จในแท็บอื่นแล้วยังไม่ได้รีเฟรชหน้านี้
-                    const freshTotal = await fetchLiveCourseTotal(schoolId, row.flag.courseId, row.studentId);
-                    const recalculatedGrade = calculateRemediationGrade(row.flag.grade, freshTotal);
-                    updateData.grade = recalculatedGrade;
-                    updateData.status = deleteField();
-                    updateData.originalGrade = row.flag.grade;
-                    updateData.remark = `เกรด ${recalculatedGrade}`;
-                }
-                await setDoc(doc(db, 'school-settings', schoolId, 'courses', row.flag.courseId, 'grades', row.studentId), updateData, { merge: true });
-            } else {
-                const evalRef = row.flag.activityCollectionName === 'guidance-evaluations'
-                    ? doc(db, 'school-settings', schoolId, 'guidance-evaluations', row.flag.evalDocId!)
-                    : doc(db, 'school-settings', schoolId, row.flag.activityCollectionName!, row.flag.activityDocId!, 'evaluations', row.flag.evalDocId!);
-                const evalSnap = await getDoc(evalRef);
-                const data: any = evalSnap.exists() ? evalSnap.data() : {};
-                const results: Record<string, any> = { ...(data.results || {}) };
-                results[row.studentId] = { ...(results[row.studentId] || {}), remark: value };
-                await setDoc(evalRef, { results }, { merge: true });
-            }
-            if (shouldRecalculateGrade) {
-                // เกรดอาจเปลี่ยนจาก "ร" เป็นเกรดที่ผ่านแล้ว ต้องโหลดรายชื่อคนติดผลการเรียนใหม่ทั้งหมด
-                // เพื่อให้แถวนี้หลุดออกจากลิสต์ไปเองถ้าไม่ติดแล้ว (ไม่ใช่แค่แก้ค่าในแถวเดิมเฉยๆ)
-                await loadData();
-            } else {
-                setRows(prev => prev.map(r => (r.key === row.key ? { ...r, flag: { ...r.flag, remark: value } } : r)));
-            }
-        } catch (err) {
-            console.error('Error saving remark:', err);
-            Swal.fire('ผิดพลาด', 'ไม่สามารถบันทึก Remark ได้', 'error');
-        } finally {
-            setRemarkSavingKey(null);
+            setSaving(false);
         }
     };
 
     return (
         <MainLayout>
-            <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen overflow-x-hidden ${isPwaMode ? 'px-2.5 py-3 pb-6' : 'p-4 sm:p-6 space-y-6'}`}>
-                <div className={`${isPwaMode ? 'max-w-full' : 'max-w-7xl'} mx-auto min-w-0 ${isPwaMode ? 'space-y-4' : 'space-y-6'}`}>
+            <div className={`text-gray-900 dark:text-white transition-colors duration-300 min-h-screen ${isPwaMode ? 'px-2 py-3 pb-6' : 'p-4 sm:p-6 space-y-4'}`}>
+                <div className="max-w-7xl mx-auto space-y-4">
 
-                    {/* Top Header Card */}
-                    {isPwaMode ? (
-                        <div className="mb-3 space-y-1.5">
-                            <div className="flex items-center gap-2 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm px-3 py-2 rounded-xl border border-gray-200/50 dark:border-white/5">
-                                <BackButton to="/academic/hub/zero-r-ms" />
-                                <div className="p-1 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg shrink-0">
-                                    <ClipboardEdit className="text-indigo-600 dark:text-indigo-400" size={14} />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-[11px] font-black text-gray-900 dark:text-white leading-none truncate">บันทึก 0 ร มส</p>
-                                    <p className="text-[9px] text-indigo-500 dark:text-indigo-400 font-semibold truncate mt-0.5">
-                                        แก้ "มผ" ของวิชากิจกรรมพัฒนาผู้เรียน
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4 bg-white dark:bg-[#2a2b2f]/60 backdrop-blur-sm p-5 rounded-[1.5rem] border border-gray-200/50 dark:border-white/5 transition-all duration-300">
-                            <div className="space-y-1 text-left">
-                                <div className="flex items-center gap-3">
-                                    <BackButton to="/academic/hub/zero-r-ms" />
-                                    <div className="p-2.5 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl shadow-sm border border-indigo-100 dark:border-indigo-500/20">
-                                        <ClipboardEdit className="text-indigo-600 dark:text-indigo-400" size={24} />
-                                    </div>
-                                    <div>
-                                        <h1 className="text-2xl font-black text-gray-900 dark:text-white leading-tight tracking-tight">
-                                            บันทึก 0 ร มส
-                                        </h1>
-                                        <p className="text-gray-500 dark:text-gray-400 text-xs font-bold flex items-center gap-1.5 pt-0.5">
-                                            <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
-                                                สำหรับแก้ "มผ" ของวิชากิจกรรมพัฒนาผู้เรียน (ชุมนุม / ลูกเสือ-เนตรนารี / รด. ฯลฯ)
-                                            </span>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Stats Summary Cards */}
-                    <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-2xl text-center transition-all duration-300 p-3 sm:p-4">
-                            <span className="block text-[10px] sm:text-xs font-black text-amber-600 dark:text-amber-400 tracking-wider">รอบันทึกผล (วิชานี้)</span>
-                            <span className="block text-2xl sm:text-3xl font-black text-amber-700 dark:text-amber-300 mt-1">
-                                {stats.pendingInCourse}
-                            </span>
-                        </div>
-                        <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-2xl text-center transition-all duration-300 p-3 sm:p-4">
-                            <span className="block text-[10px] sm:text-xs font-black text-indigo-600 dark:text-indigo-400 tracking-wider">มีคำร้องขอแก้ตัว</span>
-                            <span className="block text-2xl sm:text-3xl font-black text-indigo-700 dark:text-indigo-300 mt-1">
-                                {stats.withRequest}
-                            </span>
-                        </div>
-                        <div className="bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-gray-800 rounded-2xl text-center transition-all duration-300 p-3 sm:p-4">
-                            <span className="block text-[10px] sm:text-xs font-black text-gray-500 dark:text-gray-400 tracking-wider">วิชาที่ติด มผ</span>
-                            <span className="block text-2xl sm:text-3xl font-black text-gray-700 dark:text-gray-200 mt-1">
-                                {stats.courseCount}
-                            </span>
-                        </div>
+                    {/* Back button */}
+                    <div className="flex items-center gap-2">
+                        <BackButton to="/academic/hub/zero-r-ms" />
+                        <span className="text-xs font-bold text-gray-500">กลับไปยังรายงาน 0 ร มส</span>
                     </div>
 
-                    {/* Main Container Card */}
-                    <div className={`bg-white dark:bg-[#1e1f23] rounded-3xl shadow-md border border-gray-100 dark:border-gray-800 overflow-hidden ${isPwaMode ? 'p-0 bg-transparent dark:bg-transparent border-none shadow-none' : ''}`}>
-
-                        {/* Term Filter Row */}
-                        <div className={`border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-white/[0.02] ${isPwaMode ? 'px-2.5 py-2 bg-transparent dark:bg-transparent border-none' : 'px-5 py-3'}`}>
-                            <AcademicYearSemesterFilter
-                                schoolId={schoolId}
-                                academicYear={termYear}
-                                onAcademicYearChange={setTermYear}
-                                semester={termSemester}
-                                onSemesterChange={setTermSemester}
-                            />
+                    {/* Main SGS-Style Top Panel: "บันทึก แก้ไข ผลการเรียน" */}
+                    <div className="border border-[#17a2b8]/60 rounded-md overflow-hidden bg-white dark:bg-[#1a1c22] shadow-sm">
+                        {/* Gradient Header */}
+                        <div className="bg-gradient-to-r from-[#17a2b8] via-[#20b2aa] to-[#138496] px-3 py-1.5 flex items-center justify-between">
+                            <h2 className="text-white font-bold text-sm tracking-wide">
+                                บันทึก แก้ไข ผลการเรียน
+                            </h2>
                         </div>
 
-                        {/* Search + Course select — รวมเป็นแถวเดียวกันทั้งหมด ต่อหลังแถวปีการศึกษา/ภาคเรียนทันที */}
-                        <div className={`border-b border-gray-100 dark:border-gray-800 flex flex-row flex-wrap lg:flex-nowrap items-center gap-2 ${isPwaMode ? 'px-2.5 py-2' : 'px-5 py-3'}`}>
-                            <label className="shrink-0 text-xs font-bold text-gray-500 dark:text-gray-400">ค้นหาจาก</label>
-                            <div className="relative flex-1 min-w-[160px]">
-                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                                    <Search size={14} />
-                                </span>
-                                <input
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="เลขประจำตัว ชื่อ นามสกุล"
-                                    className="w-full h-9 pl-8 pr-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold transition"
-                                />
+                        {/* Filter Form Body */}
+                        <div className="p-3 sm:p-4 text-xs font-medium space-y-2.5">
+                            {/* Row 1: Search Student */}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                                <label className="w-20 sm:text-right font-bold text-gray-700 dark:text-gray-300 shrink-0">
+                                    ค้นหาจาก
+                                </label>
+                                <div className="flex-1 max-w-sm">
+                                    <input
+                                        type="text"
+                                        placeholder="รหัส ชื่อ นักเรียน"
+                                        value={searchStudent}
+                                        onChange={(e) => setSearchStudent(e.target.value)}
+                                        className="w-full h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none"
+                                    />
+                                </div>
                             </div>
-                            <button
-                                onClick={() => setCurrentPage(1)}
-                                className="h-9 px-4 rounded-lg bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center gap-1.5 font-black text-xs shadow-sm transition shrink-0"
-                            >
-                                <Search size={12} /> ไป
-                            </button>
-                            <label className="shrink-0 text-xs font-bold text-gray-500 dark:text-gray-400 lg:ml-4">รายวิชา</label>
-                            <select
-                                value={selectedCourseKey}
-                                onChange={(e) => setSelectedCourseKey(e.target.value)}
-                                className="flex-1 min-w-[200px] h-9 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold transition"
-                            >
-                                {courseOptions.length === 0 && <option value="">ไม่มีวิชา/กิจกรรมที่ต้องบันทึก</option>}
-                                {subjectOptions.length > 0 && (
-                                    <optgroup label="รายวิชา">
-                                        {subjectOptions.map(opt => (
-                                            <option key={opt.key} value={opt.key}>{opt.label} — {opt.count} คน</option>
-                                        ))}
-                                    </optgroup>
-                                )}
-                                {activityOptions.length > 0 && (
-                                    <optgroup label="กิจกรรม">
-                                        {activityOptions.map(opt => (
-                                            <option key={opt.key} value={opt.key}>{opt.label} — {opt.count} คน</option>
-                                        ))}
-                                    </optgroup>
-                                )}
-                            </select>
-                        </div>
 
-                        {/* Toolbar: refresh + pagination — วางแถวเดียวเสมอ (ไม่ตกบรรทัด) ให้ตำแหน่งตรงตามภาพอ้างอิง */}
-                        {!loading && filteredRows.length > 0 && (
-                            <div className="flex flex-row items-center justify-between gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
-                                <button
-                                    onClick={loadData}
-                                    disabled={loading}
-                                    title="รีเฟรชข้อมูล"
-                                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 shadow-sm transition disabled:opacity-60 shrink-0"
-                                >
-                                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                                </button>
-                                <div className="flex flex-row items-center gap-1.5 shrink-0">
+                            {/* Row 2: Search Course + Button */}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                                <label className="w-20 sm:text-right font-bold text-gray-700 dark:text-gray-300 shrink-0">
+                                    ค้นหาจาก
+                                </label>
+                                <div className="flex items-center gap-2 flex-1 max-w-md">
+                                    <input
+                                        type="text"
+                                        placeholder="รหัสวิชา"
+                                        value={searchCourse}
+                                        onChange={(e) => {
+                                            setSearchCourse(e.target.value);
+                                            setActiveCourseSearch(e.target.value);
+                                        }}
+                                        onKeyDown={handleCourseKeyDown}
+                                        className="flex-1 max-w-sm h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none"
+                                    />
                                     <button
-                                        onClick={() => setCurrentPage(1)}
-                                        disabled={currentPage <= 1}
-                                        title="หน้าแรก"
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 disabled:opacity-30 shrink-0"
+                                        type="button"
+                                        onClick={handleSearchClick}
+                                        className="h-7 px-3 bg-[#5dbcb6] hover:bg-[#4aa8a1] text-white rounded font-bold text-xs flex items-center gap-1 shadow-sm transition shrink-0"
                                     >
-                                        <ChevronLeft size={12} />
+                                        <span>&gt;</span> ไป
                                     </button>
-                                    <button
-                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                        disabled={currentPage <= 1}
-                                        title="ก่อนหน้า"
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 disabled:opacity-30 shrink-0"
-                                    >
-                                        <ChevronLeft size={12} />
-                                    </button>
-                                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap px-1">
-                                        หน้า {currentPage} ของ {totalPages} ({filteredRows.length} รายการ)
-                                    </span>
-                                    <button
-                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                        disabled={currentPage >= totalPages}
-                                        title="ถัดไป"
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 disabled:opacity-30 shrink-0"
-                                    >
-                                        <ChevronRight size={12} />
-                                    </button>
-                                    <button
-                                        onClick={() => setCurrentPage(totalPages)}
-                                        disabled={currentPage >= totalPages}
-                                        title="หน้าสุดท้าย"
-                                        className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 disabled:opacity-30 shrink-0"
-                                    >
-                                        <ChevronRight size={12} />
-                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Row 3: Academic Year & Semester */}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                                <label className="w-20 sm:text-right font-bold text-gray-700 dark:text-gray-300 shrink-0">
+                                    ปีการศึกษา
+                                </label>
+                                <div className="flex items-center gap-3">
                                     <select
-                                        value={pageSize}
-                                        onChange={(e) => setPageSize(Number(e.target.value))}
-                                        className="h-7 px-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-xs font-bold outline-none shrink-0"
+                                        value={termYear}
+                                        onChange={(e) => setTermYear(e.target.value)}
+                                        className="h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none min-w-[90px]"
                                     >
-                                        {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n} / หน้า</option>)}
+                                        <option value="ทั้งหมด">ทั้งหมด</option>
+                                        {academicYearOptions.map(yr => (
+                                            <option key={yr} value={yr}>{yr}</option>
+                                        ))}
+                                    </select>
+
+                                    <span className="font-bold text-gray-700 dark:text-gray-300">ภาคเรียน</span>
+                                    <select
+                                        value={termSemester}
+                                        onChange={(e) => setTermSemester(e.target.value)}
+                                        className="h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none min-w-[70px]"
+                                    >
+                                        <option value="ทั้งหมด">ทั้งหมด</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
                                     </select>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Roster Table */}
+                            {/* Row 4: Subject Group */}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                                <label className="w-20 sm:text-right font-bold text-gray-700 dark:text-gray-300 shrink-0">
+                                    กลุ่มสาระวิชา
+                                </label>
+                                <div className="flex-1 max-w-xs">
+                                    <select
+                                        value={filterSubjectGroup}
+                                        onChange={(e) => setFilterSubjectGroup(e.target.value)}
+                                        className="w-full h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none"
+                                    >
+                                        {SUBJECT_GROUPS.map(grp => (
+                                            <option key={grp} value={grp}>{grp}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Row 5: Class Level + Transfer student note */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div className="flex items-center gap-3">
+                                    <label className="w-20 sm:text-right font-bold text-gray-700 dark:text-gray-300 shrink-0">
+                                        ระดับชั้น
+                                    </label>
+                                    <select
+                                        value={filterClassLevel}
+                                        onChange={(e) => setFilterClassLevel(e.target.value)}
+                                        className="h-7 px-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-xs font-medium focus:ring-1 focus:ring-teal-500 outline-none min-w-[90px]"
+                                    >
+                                        {CLASS_LEVELS.map(cl => (
+                                            <option key={cl.value} value={cl.value}>{cl.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Red SGS Transfer Student Notice */}
+                                <div className="text-right text-rose-600 font-bold text-xs sm:text-[13px] pt-1 sm:pt-0">
+                                    บันทึกผลการเรียน นักเรียนโอนย้าย ให้กรอกเกรด ในช่องRemark
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Toolbar (Above Table) */}
+                    <div className="bg-[#d2efec] dark:bg-[#1a2f2e] border border-[#a4ded9] dark:border-teal-900/50 rounded-md px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                        {/* Left Action Buttons */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleResetEdits}
+                                title="ล้างการแก้ไขที่ยังไม่ได้บันทึก"
+                                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/60 dark:hover:bg-black/20 text-rose-600 transition shadow-xs"
+                            >
+                                <FaTimes size={15} />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleSaveAll}
+                                disabled={saving}
+                                title="บันทึกผลการเรียน (บันทึกแถวที่มีการแก้ไข)"
+                                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/60 dark:hover:bg-black/20 text-blue-700 dark:text-blue-400 transition shadow-xs disabled:opacity-50"
+                            >
+                                {saving ? <RefreshCw size={14} className="animate-spin" /> : <FaSave size={15} />}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => window.print()}
+                                title="พิมพ์"
+                                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/60 dark:hover:bg-black/20 text-teal-800 dark:text-teal-300 transition shadow-xs"
+                            >
+                                <FaPrint size={14} />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={loadData}
+                                disabled={loading}
+                                title="รีเฟรชข้อมูล"
+                                className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/60 dark:hover:bg-black/20 text-teal-700 dark:text-teal-400 transition shadow-xs"
+                            >
+                                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
+
+                        {/* Right Pagination Controls (matching pill/capsule style in screenshot) */}
+                        <div className="flex items-center gap-1.5 bg-[#64bdb7] text-white px-2.5 py-1 rounded-md text-xs font-bold shadow-xs">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage <= 1}
+                                className="hover:text-gray-200 disabled:opacity-40 px-0.5"
+                                title="ก่อนหน้า"
+                            >
+                                ◀
+                            </button>
+
+                            <input
+                                type="number"
+                                min={1}
+                                max={totalPages}
+                                value={currentPage}
+                                onChange={(e) => {
+                                    const p = Number(e.target.value);
+                                    if (p >= 1 && p <= totalPages) setCurrentPage(p);
+                                }}
+                                className="w-9 h-5 text-center text-xs font-bold rounded bg-white text-gray-800 border-none outline-none"
+                            />
+
+                            <span className="whitespace-nowrap">ของ {totalPages}</span>
+
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage >= totalPages}
+                                className="hover:text-gray-200 disabled:opacity-40 px-0.5"
+                                title="ถัดไป"
+                            >
+                                ▶
+                            </button>
+
+                            <select
+                                value={pageSize}
+                                onChange={(e) => setPageSize(Number(e.target.value))}
+                                className="h-5 px-1 text-xs font-bold rounded bg-white text-gray-800 border-none outline-none ml-1"
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+
+                            <span className="whitespace-nowrap">/ หน้า</span>
+                        </div>
+                    </div>
+
+                    {/* Table Container */}
+                    <div className="border border-gray-300 dark:border-gray-700 rounded-md overflow-x-auto bg-white dark:bg-[#1a1c22] shadow-sm">
                         {loading ? (
-                            <div className="flex items-center justify-center py-16 text-gray-400">
-                                <RefreshCw size={20} className="animate-spin" />
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+                                <RefreshCw size={24} className="animate-spin text-teal-600" />
+                                <span className="text-xs font-bold">กำลังโหลดข้อมูล...</span>
                             </div>
                         ) : filteredRows.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
-                                {courseOptions.length === 0 ? <CheckCircle2 size={32} className="text-emerald-400" /> : <AlertCircle size={32} />}
-                                <p className="text-sm font-bold">{courseOptions.length === 0 ? 'ไม่มีนักเรียนที่ติด 0/ร/มส/มผ รอบันทึกผล' : 'ไม่มีรายการตรงกับการค้นหา'}</p>
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+                                <CheckCircle2 size={36} className="text-emerald-500" />
+                                <span className="text-sm font-bold">ไม่พบข้อมูลผลการเรียนที่ต้องแก้ไขตามเงื่อนไขที่เลือก</span>
                             </div>
                         ) : (
-                            <div>
-                                <table className="w-full table-fixed text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-gray-800">
-                                            <th className="px-2 py-3 font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[14%]">วิชา</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[7%]">ห้อง</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[7%]">เลขที่</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[10%]">เลขประจำตัว</th>
-                                            <th className="px-2 py-3 font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[14%]">ชื่อ-นามสกุล</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[5%]">%</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[5%]">ปกติ</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[6%]">Grade</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[9%]">แก้ตัว</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[9%]">เรียนซ้ำ</th>
-                                            <th className="px-2 py-3 text-center font-black text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[14%]">Remark</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                        {pagedRows.map(row => (
-                                            <tr key={row.key} className="hover:bg-gray-50/60 dark:hover:bg-white/[0.02]">
-                                                <td className="px-2 py-3">
-                                                    {row.flag.subjectGroup && (
-                                                        <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 truncate uppercase tracking-wide">{row.flag.subjectGroup}</p>
-                                                    )}
-                                                    <p className="font-bold truncate text-gray-900 dark:text-white">{row.flag.courseCode} {row.flag.courseTitle}</p>
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                        {row.flag.flagKind !== 'course' && (
-                                                            <p className="text-[10px] text-gray-400 dark:text-gray-500">กิจกรรม</p>
-                                                        )}
-                                                        {row.requestStatus === 'resolved' && (
-                                                            <span title="เคยมีคำร้องแก้ไขแล้วครั้งหนึ่ง แต่ตอนนี้กลับมาติดผลอีก — ตรวจสอบก่อนแก้ไขซ้ำ" className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                                                                <AlertCircle size={9} /> เคยแก้ไขแล้ว
-                                                            </span>
-                                                        )}
+                            <table className="w-full border-collapse text-xs text-left">
+                                <thead>
+                                    <tr className="bg-[#dcf1ef] dark:bg-[#1c3332] text-gray-700 dark:text-gray-200 border-b border-gray-300 dark:border-gray-700 select-none">
+                                        <th className="p-2 text-center w-12 border-r border-gray-300 dark:border-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={isAllSelected}
+                                                onChange={toggleSelectAll}
+                                                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                                            />
+                                        </th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">ปีการศึกษา</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">ภาคเรียน</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">ระดับชั้น</th>
+                                        <th className="p-2 border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">วิชา</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">นก.</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">เลขประจำตัว</th>
+                                        <th className="p-2 border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">ชื่อ-นามสกุล</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">ปกติ</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">Grade</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">แก้ตัว</th>
+                                        <th className="p-2 text-center border-r border-gray-300 dark:border-gray-700 font-bold whitespace-nowrap">เรียนซ้ำ</th>
+                                        <th className="p-2 text-center font-bold whitespace-nowrap">Remark</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-gray-800 text-gray-800 dark:text-gray-200">
+                                    {pagedRows.map(row => {
+                                        const isChecked = !!selectedRowKeys[row.key];
+                                        const currentRemed = remedValues[row.key] ?? '';
+                                        const currentRepeat = repeatValues[row.key] ?? '';
+                                        const currentRemark = remarkValues[row.key] ?? (row.flag.remark || '');
+
+                                        return (
+                                            <tr
+                                                key={row.key}
+                                                className={`hover:bg-[#f3faf9] dark:hover:bg-white/[0.02] transition ${isChecked ? 'bg-[#f0f9f8] dark:bg-teal-950/20' : ''}`}
+                                            >
+                                                {/* Checkbox with Red X indicator */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 whitespace-nowrap">
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        <span
+                                                            onClick={() => handleClearRow(row.key)}
+                                                            title="ล้างค่าที่กรอกในแถวนี้"
+                                                            className="text-rose-500 font-black text-xs cursor-pointer select-none hover:scale-125 transition"
+                                                        >
+                                                            ✕
+                                                        </span>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => toggleSelectRow(row.key)}
+                                                            className="rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                                                        />
                                                     </div>
                                                 </td>
-                                                <td className="px-2 py-3 text-center text-gray-500 dark:text-gray-400">{row.room || '-'}</td>
-                                                <td className="px-2 py-3 text-center text-gray-500 dark:text-gray-400">{row.number || '-'}</td>
-                                                <td className="px-2 py-3 text-center font-bold">{row.studentCode}</td>
-                                                <td className="px-2 py-3"><p className="font-bold truncate">{row.studentName}</p></td>
-                                                <td className="px-2 py-3 text-center text-gray-400">-</td>
-                                                <td className="px-2 py-3 text-center whitespace-nowrap">
-                                                    <span className="inline-flex items-center justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md text-rose-600 bg-rose-50 dark:bg-rose-500/10 whitespace-nowrap">
-                                                        ติด {row.flag.grade}
-                                                    </span>
+
+                                                {/* Academic Year */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-medium whitespace-nowrap">
+                                                    {row.flag.academicYear || termYear || '-'}
                                                 </td>
-                                                <td className="px-2 py-3 text-center">
-                                                     <span
-                                                         className="inline-flex items-center justify-center px-2 py-0.5 rounded-md font-black border bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20"
-                                                         title={row.flag.remark ? `Remark: ${row.flag.remark}` : undefined}
-                                                     >
-                                                         {row.flag.grade}
-                                                     </span>
-                                                 </td>
-                                                 <td className="px-2 py-3 text-center">
-                                                     {row.requestStatus === 'resolved' ? (
-                                                         <span className="inline-flex items-center justify-center font-black text-emerald-600 dark:text-emerald-400 text-sm" title="แก้ตัวเรียบร้อยแล้ว">
-                                                             ✓
-                                                         </span>
-                                                     ) : (
-                                                         <button
-                                                             onClick={() => handleCorrect(row, 'pass')}
-                                                             disabled={correctingKey === row.key}
-                                                             title="แก้ตัว"
-                                                             className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-all disabled:opacity-50"
-                                                         >
-                                                             {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <Pencil size={13} />}
-                                                         </button>
-                                                     )}
-                                                 </td>
-                                                 <td className="px-2 py-3 text-center">
-                                                     <div className="flex items-center justify-center gap-1.5">
-                                                         {row.requestStatus === 'pending' && (
-                                                             <span title="มีคำร้องรอดำเนินการ" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                                                 <Clock size={11} />
-                                                             </span>
-                                                         )}
-                                                         <button
-                                                             onClick={() => handleCorrect(row, 'repeat')}
-                                                             disabled={correctingKey === row.key}
-                                                             title="เรียนซ้ำ"
-                                                             className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all disabled:opacity-50"
-                                                         >
-                                                             {correctingKey === row.key ? <RefreshCw size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-                                                         </button>
-                                                     </div>
-                                                 </td>
-                                                 <td className="px-2 py-3 text-center">
-                                                     {row.flag.remark ? (
-                                                         <span className="inline-flex max-w-[140px] truncate rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title={row.flag.remark}>
-                                                             {row.flag.remark}
-                                                         </span>
-                                                     ) : (
-                                                         <span className="text-xs text-gray-300 dark:text-gray-700">-</span>
-                                                     )}
-                                                 </td>
-                                                <td className="px-2 py-3 text-center">
+
+                                                {/* Semester */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-medium whitespace-nowrap">
+                                                    {row.flag.semester || termSemester || '-'}
+                                                </td>
+
+                                                {/* Class Level */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-medium whitespace-nowrap">
+                                                    {row.classLevel || '-'}
+                                                </td>
+
+                                                {/* Course Code & Title */}
+                                                <td className="p-2 border-r border-gray-200 dark:border-gray-800 font-medium max-w-[200px] truncate" title={`${row.flag.courseCode} ${row.flag.courseTitle}`}>
+                                                    {row.flag.courseCode} {row.flag.courseTitle}
+                                                </td>
+
+                                                {/* Credits (นก.) */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-medium whitespace-nowrap">
+                                                    {row.flag.credits !== undefined && row.flag.credits !== null
+                                                        ? Number(row.flag.credits).toFixed(1)
+                                                        : '-'}
+                                                </td>
+
+                                                {/* Student Code */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-bold whitespace-nowrap">
+                                                    {row.studentCode || '-'}
+                                                </td>
+
+                                                {/* Student Name */}
+                                                <td className="p-2 border-r border-gray-200 dark:border-gray-800 font-medium max-w-[150px] truncate" title={row.studentName}>
+                                                    {row.studentName}
+                                                </td>
+
+                                                {/* ปกติ (Original Flag Grade) */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-bold text-rose-600 whitespace-nowrap">
+                                                    {row.flag.grade}
+                                                </td>
+
+                                                {/* Grade (Current Evaluated or Remediated Grade) */}
+                                                <td className="p-2 text-center border-r border-gray-200 dark:border-gray-800 font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                                    {row.requestStatus === 'resolved'
+                                                        ? (currentRemed || 'ผ')
+                                                        : (currentRemed || row.flag.grade)}
+                                                </td>
+
+                                                {/* แก้ตัว (Editable Input) */}
+                                                <td className="p-1.5 text-center border-r border-gray-200 dark:border-gray-800 whitespace-nowrap">
                                                     <input
                                                         type="text"
-                                                        defaultValue={row.flag.remark || ''}
-                                                        onBlur={(e) => handleSaveRemark(row, e.target.value)}
-                                                        disabled={remarkSavingKey === row.key}
-                                                        placeholder="หมายเหตุ"
-                                                        className="w-full h-8 px-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#151619] text-[11px] font-bold outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                                                        value={currentRemed}
+                                                        onChange={(e) => handleRemedChange(row.key, e.target.value)}
+                                                        className="w-12 h-6 text-center text-xs font-bold border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-gray-900 dark:text-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition"
+                                                    />
+                                                </td>
+
+                                                {/* เรียนซ้ำ (Editable Input) */}
+                                                <td className="p-1.5 text-center border-r border-gray-200 dark:border-gray-800 whitespace-nowrap">
+                                                    <input
+                                                        type="text"
+                                                        value={currentRepeat}
+                                                        onChange={(e) => handleRepeatChange(row.key, e.target.value)}
+                                                        className="w-12 h-6 text-center text-xs font-bold border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-gray-900 dark:text-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition"
+                                                    />
+                                                </td>
+
+                                                {/* Remark (Editable Input) */}
+                                                <td className="p-1.5 text-center whitespace-nowrap">
+                                                    <input
+                                                        type="text"
+                                                        value={currentRemark}
+                                                        onChange={(e) => handleRemarkChange(row.key, e.target.value)}
+                                                        className="w-24 h-6 px-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-[#121316] text-gray-900 dark:text-white focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none transition"
                                                     />
                                                 </td>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         )}
                     </div>
+
+                    {/* Footer / Summary Information */}
+                    {!loading && filteredRows.length > 0 && (
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1 font-medium">
+                            <div>
+                                แสดงรายการที่ {((currentPage - 1) * pageSize) + 1} ถึง {Math.min(currentPage * pageSize, filteredRows.length)} จากทั้งหมด {filteredRows.length} รายการ
+                            </div>
+                            {Object.keys(selectedRowKeys).length > 0 && (
+                                <div className="text-teal-600 dark:text-teal-400 font-bold">
+                                    เลือกอยู่ {Object.values(selectedRowKeys).filter(Boolean).length} รายการ
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </MainLayout>

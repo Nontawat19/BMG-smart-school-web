@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import MainLayout from '@/layouts/MainLayout';
+import BackButton from '@/components/Shared/BackButton';
 import { firestore } from '@/firebase';
 import { collection, getDocs, doc, writeBatch, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { FaIdCard, FaSearch, FaSave, FaArrowLeft, FaEye, FaEyeSlash, FaUserGraduate, FaChalkboardTeacher, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight } from 'react-icons/fa';
+import * as XLSX from 'xlsx';
+import { FaIdCard, FaSearch, FaSave, FaEye, FaEyeSlash, FaUserGraduate, FaChalkboardTeacher, FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight, FaFileExcel, FaFileDownload } from 'react-icons/fa';
 import { isStudyingStudent } from '@/utils/studentStatusUtils';
 import { isActiveTeacherSummaryStatus } from '@/utils/ownerStatsUtils';
 import { isAttendanceEntryOnly } from '@/utils/attendanceRoles';
@@ -55,8 +57,11 @@ const MapRfidPage: React.FC = () => {
   const [availableLevels, setAvailableLevels] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+  const [isImporting, setIsImporting] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const isStudent = type === 'students';
+  const idFieldLabel = isStudent ? 'รหัสนักเรียน' : 'รหัสครู';
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(isLikelyEmailAutofill(value) ? '' : value);
@@ -185,6 +190,120 @@ const MapRfidPage: React.FC = () => {
     }));
   };
 
+  // member_id ในไฟล์ Excel มักถูก Excel มองเป็นตัวเลขแล้วตัดเลข 0 นำหน้าทิ้ง (เช่น 05977 -> 5977)
+  // เติม 0 นำหน้าคืนให้ครบ 5 หลัก เหมือนตรรกะเดียวกับหน้า ImportStudentPage
+  const normalizeMemberId = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (/^\d+$/.test(raw) && raw.length < 5) {
+      return raw.padStart(5, '0');
+    }
+    return raw;
+  };
+
+  const handleDownloadTemplate = () => {
+    const rows = filteredPeople.map(person => ({
+      rfid_code: rfidMap[person.id] || '',
+      member_id: person.studentId || person.teacherId || '',
+    }));
+
+    if (rows.length === 0) {
+      Swal.fire('ไม่มีข้อมูล', `ไม่พบรายชื่อ${isStudent ? 'นักเรียน' : 'ครู'}ให้สร้างแม่แบบ (ลองล้างตัวกรองก่อน)`, 'warning');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows, { header: ['rfid_code', 'member_id'] });
+    ws['!cols'] = [{ wch: 16 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'RFID_Template');
+    XLSX.writeFile(wb, `RFID_Import_Template_${isStudent ? 'Students' : 'Teachers'}.xlsx`);
+  };
+
+  const handleImportClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    e.target.value = ''; // เผื่อเลือกไฟล์เดิมซ้ำ จะได้ยิง onChange อีกครั้ง
+    if (!selectedFile) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const isCsv = selectedFile.name.toLowerCase().endsWith('.csv');
+        const wb = XLSX.read(event.target?.result, { type: isCsv ? 'string' : 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        if (data.length < 2) {
+          Swal.fire('ไฟล์ว่างเปล่า', 'ไม่พบข้อมูลในไฟล์ที่นำเข้า', 'warning');
+          return;
+        }
+
+        const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+        const rfidColIndex = headers.indexOf('rfid_code');
+        const memberColIndex = headers.indexOf('member_id');
+
+        if (rfidColIndex === -1 || memberColIndex === -1) {
+          Swal.fire('รูปแบบไฟล์ไม่ถูกต้อง', 'ไฟล์ต้องมีคอลัมน์ชื่อ "rfid_code" และ "member_id" ตามแม่แบบ', 'error');
+          return;
+        }
+
+        // person.studentId/teacherId (รหัส 5 หลัก) -> person.id เพื่อจับคู่กับ member_id ในไฟล์
+        const idToPersonId = new Map<string, string>();
+        people.forEach(person => {
+          const idValue = normalizeMemberId(person.studentId || person.teacherId || '');
+          if (idValue) idToPersonId.set(idValue, person.id);
+        });
+
+        const nextRfidMap = { ...rfidMap };
+        let matchedCount = 0;
+        let skippedBlankCount = 0;
+        const notFoundIds: string[] = [];
+
+        data.slice(1).forEach(row => {
+          const memberId = normalizeMemberId(row[memberColIndex]);
+          const rfidCode = String(row[rfidColIndex] ?? '').trim();
+          if (!memberId) return;
+          if (!rfidCode) { skippedBlankCount += 1; return; }
+
+          const personId = idToPersonId.get(memberId);
+          if (!personId) {
+            notFoundIds.push(memberId);
+            return;
+          }
+
+          nextRfidMap[personId] = rfidCode;
+          matchedCount += 1;
+        });
+
+        setRfidMap(nextRfidMap);
+
+        const notFoundSummary = notFoundIds.length > 0
+          ? `<br/><br/>ไม่พบ${idFieldLabel}ในระบบ ${notFoundIds.length} รายการ:<br/>${notFoundIds.slice(0, 15).join(', ')}${notFoundIds.length > 15 ? ' ...' : ''}`
+          : '';
+
+        Swal.fire({
+          icon: notFoundIds.length > 0 ? 'warning' : 'success',
+          title: 'นำเข้าข้อมูลเสร็จสิ้น',
+          html: `จับคู่ RFID สำเร็จ ${matchedCount} รายการ${skippedBlankCount > 0 ? ` (ข้าม ${skippedBlankCount} แถวที่ไม่มีรหัส RFID)` : ''}${notFoundSummary}<br/><br/><b>ข้อมูลยังไม่ถูกบันทึก</b> กรุณาตรวจสอบในตารางแล้วกด "บันทึกข้อมูล" อีกครั้ง`,
+        });
+      } catch (err) {
+        console.error('Error importing RFID file:', err);
+        Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถอ่านไฟล์ที่นำเข้าได้ กรุณาตรวจสอบรูปแบบไฟล์', 'error');
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    if (selectedFile.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(selectedFile, 'utf-8');
+    } else {
+      reader.readAsBinaryString(selectedFile);
+    }
+  };
+
   const handleSave = async () => {
     if (!schoolId || !type) return;
 
@@ -286,23 +405,40 @@ const MapRfidPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <Link to={isStudent ? `/school/${schoolId}/students` : `/school/${schoolId}/teachers`} className="inline-flex items-center text-indigo-600 dark:text-indigo-400 hover:underline mb-2 text-sm font-medium">
-                <FaArrowLeft className="mr-2" /> กลับหน้ารายชื่อ{isStudent ? 'นักเรียน' : 'ครู'}
-              </Link>
-              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                <FaIdCard className="text-indigo-500" />
-                จับคู่รหัส RFID กับ{isStudent ? 'นักเรียน' : 'ครู'}
-              </h1>
-              <p className="mt-1 text-gray-500 dark:text-gray-400">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#15161a] text-gray-900 dark:text-white px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          {/* Header card — จัดตามหน้า HomeroomStudentListPage: back button + badge + title ซ้าย, ปุ่มหลัก (บันทึก) ขวา */}
+          <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#242529] lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex items-start gap-3">
+                <BackButton to={isStudent ? `/school/${schoolId}/students` : `/school/${schoolId}/teachers`} className="mb-0 shrink-0" />
+                <div className="min-w-0 pt-1">
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+                    <FaIdCard size={14} />
+                    RFID {isStudent ? 'นักเรียน' : 'ครู'}
+                  </div>
+                  <h1 className="text-2xl font-black tracking-tight">จับคู่รหัส RFID กับ{isStudent ? 'นักเรียน' : 'ครู'}</h1>
+                </div>
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 lg:pl-[52px]">
                 ระบุรหัส RFID สำหรับ{isStudent ? 'นักเรียน' : 'ครู'}แต่ละคนเพื่อใช้กับระบบลงเวลา
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-              <div className="relative w-full sm:w-64">
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
+            >
+              <FaSave size={16} />
+              {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
+            </button>
+          </div>
+
+          {/* Toolbar card — ค้นหา/ตัวกรอง/นำเข้า-ส่งออก เรียงเป็น grid แบบเดียวกับหน้า HomeroomStudentListPage */}
+          <div className={`mb-6 grid grid-cols-1 gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#242529] ${isStudent ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}>
+            <label className="space-y-1">
+              <span className="text-xs font-black text-gray-500">ค้นหา</span>
+              <div className="relative">
                 <input
                   type="text"
                   name="username"
@@ -319,13 +455,11 @@ const MapRfidPage: React.FC = () => {
                   aria-hidden="true"
                   className="absolute h-0 w-0 opacity-0 pointer-events-none"
                 />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FaSearch className="text-gray-400" />
-                </div>
+                <FaSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder={`ค้นหาชื่อ, ${isStudent ? 'รหัสนักเรียน' : 'รหัสครู'}, RFID...`}
+                  placeholder={`ชื่อ, ${idFieldLabel}, RFID...`}
                   name={searchAutocompleteTokenRef.current}
                   autoComplete="new-password"
                   autoCorrect="off"
@@ -334,44 +468,71 @@ const MapRfidPage: React.FC = () => {
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
-                  className="pl-10 pr-4 py-2.5 w-full bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all shadow-sm text-sm"
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
                   value={searchTerm}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   onInput={(e) => handleSearchChange((e.target as HTMLInputElement).value)}
                 />
               </div>
-              
-              {isStudent && (
-                <div className="flex gap-2">
+            </label>
+
+            {isStudent && (
+              <>
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">ชั้น</span>
                   <select
                     value={selectedClassLevel}
                     onChange={(e) => setSelectedClassLevel(e.target.value)}
-                    className="pl-3 pr-8 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
                   >
                     <option value="">ทุกชั้น</option>
                     {classLevelOptions.map(level => <option key={level} value={level}>{level}</option>)}
                   </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">ห้อง</span>
                   <select
                     value={selectedRoom}
                     onChange={(e) => setSelectedRoom(e.target.value)}
-                    className="pl-3 pr-8 py-2.5 bg-white dark:bg-[#2a2b2f] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-gray-900 dark:text-white"
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
                   >
                     <option value="">ทุกห้อง</option>
                     {roomOptions.map(room => <option key={room} value={room}>{room}</option>)}
                   </select>
-                </div>
-              )}
+                </label>
+              </>
+            )}
 
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={handleImportFileChange}
+            />
+            <div className="space-y-1">
+              <span className="block text-xs font-black text-transparent select-none">แม่แบบ</span>
               <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-medium transition-all shadow-sm hover:shadow-md active:scale-95 text-sm whitespace-nowrap disabled:opacity-50"
+                onClick={handleDownloadTemplate}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold text-gray-700 transition hover:bg-gray-100 active:scale-95 dark:border-gray-700 dark:bg-[#1e1f21] dark:text-gray-300 dark:hover:bg-gray-800"
+                title={`ดาวน์โหลดแม่แบบ Excel (รหัส RFID + ${idFieldLabel} ของรายชื่อที่กรองอยู่)`}
               >
-                <FaSave size={14} />
-                <span>{isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}</span>
+                <FaFileDownload size={14} />
+                <span>ดาวน์โหลดแม่แบบ</span>
               </button>
             </div>
-          </header>
+            <div className="space-y-1">
+              <span className="block text-xs font-black text-transparent select-none">นำเข้า</span>
+              <button
+                onClick={handleImportClick}
+                disabled={isImporting}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-500 active:scale-95 disabled:opacity-50"
+              >
+                <FaFileExcel size={14} />
+                <span>{isImporting ? 'กำลังนำเข้า...' : 'นำเข้าจาก Excel'}</span>
+              </button>
+            </div>
+          </div>
 
           <main>
             <div className="bg-white dark:bg-[#2a2b2f]/60 rounded-2xl shadow-lg ring-1 ring-black/5 dark:ring-white/5">

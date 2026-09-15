@@ -1099,120 +1099,123 @@ export default function StudentListPage() {
       <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white overflow-x-hidden">
         <div className="w-full pl-12 pr-2 sm:pl-14 sm:pr-4 md:pl-16 md:pr-6 py-4 sm:py-6 lg:py-8">
           <header className="mb-6 space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <div>
+            {/* การ์ดหัวข้อ — ปุ่มหลัก (เพิ่มนักเรียนใหม่) ย้ายมาอยู่ขวา แยกจากปุ่มรองอื่นๆ */}
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#242529] lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-4">
                   <BackButton to="/academic/hub/students" />
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ข้อมูลนักเรียนทั้งหมด</h1>
                 </div>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 lg:pl-[56px]">
                   แสดง, จัดการ, และเพิ่มข้อมูลนักเรียนในระบบ
                 </p>
               </div>
+              <CanAccess roles={ACADEMIC_ACCESS}>
+                <Link
+                  to={schoolId ? `/school/${schoolId}/students/add` : '#'}
+                  className="inline-flex h-12 shrink-0 items-center justify-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500"
+                >
+                  <FaPlus size={16} />
+                  เพิ่มนักเรียนใหม่
+                </Link>
+              </CanAccess>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
-              <div className="relative w-44 sm:w-48 md:w-52 flex-shrink-0">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FaSearch className="text-gray-400 text-xs" />
+            {/* การ์ดเครื่องมือ — ตัวกรองแถวบน, ปุ่มรองแถวล่าง (สไตล์เดียวกัน ไม่ใช้สีไล่เฉดหลากสี) */}
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#242529]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">ค้นหา</span>
+                  <div className="relative">
+                    <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
+                    <input
+                      type="text"
+                      placeholder="ชื่อ, รหัสนักเรียน..."
+                      className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">ชั้น</span>
+                  <select
+                    value={selectedClassLevel}
+                    onChange={(e) => setSelectedClassLevel(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                  >
+                    <option value="">ทุกชั้น</option>
+                    {availableLevels.map(level => <option key={level} value={level}>{level}</option>)}
+                  </select>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">ห้อง</span>
+                  <select
+                    value={selectedRoom}
+                    onChange={(e) => setSelectedRoom(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                  >
+                    <option value="">ทุกห้อง</option>
+                    {Array.from(
+                      new Set(
+                        students
+                          .filter(s => !selectedClassLevel || normalizeClassLevel(s.classLevel) === normalizeClassLevel(selectedClassLevel))
+                          .map(s => normalizeRoom(s.room))
+                          .filter(Boolean)
+                      )
+                    )
+                      .sort((a, b) => Number(a) - Number(b))
+                      .map(r => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-black text-gray-500">สถานะ</span>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#1e1f21]"
+                  >
+                    <option value="">ทุกสถานะ</option>
+                    {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <CanAccess roles={ACADEMIC_ACCESS}>
+                <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                  {[
+                    { key: 'assign-numbers', onClick: handleBulkAssignNumbers, icon: FaSortNumericDown, label: 'อัพเดทเลขที่', iconBg: 'bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300' },
+                    { key: 'rfid', to: schoolId ? `/school/${schoolId}/map-rfid/students` : '#', icon: FaIdCard, label: 'จับคู่ RFID', iconBg: 'bg-purple-100 text-purple-600 dark:bg-purple-500/10 dark:text-purple-300' },
+                    { key: 'quick-add', to: schoolId ? `/school/${schoolId}/students/quick-add` : '#', icon: FaUserPlus, label: 'เพิ่มนักเรียนด่วน', iconBg: 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' },
+                    { key: 'import-dmc', to: schoolId ? `/school/${schoolId}/students/import-dmc` : '#', icon: FaFileExcel, label: 'นำเข้า DMC', iconBg: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300', className: 'hidden md:inline-flex' },
+                    { key: 'alumni', to: '/academic/alumni-management', icon: History, label: 'ประวัติศิษย์เก่า', iconBg: 'bg-slate-200 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300' },
+                  ].map(item => {
+                    const Icon = item.icon;
+                    const content = (
+                      <>
+                        <span className={`flex h-6 w-6 items-center justify-center rounded-full ${item.iconBg}`}>
+                          <Icon size={12} />
+                        </span>
+                        <span>{item.label}</span>
+                      </>
+                    );
+                    const sharedClass = `${item.className || 'inline-flex'} items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-100 active:scale-95 dark:border-gray-700 dark:bg-[#1e1f21] dark:text-gray-300 dark:hover:bg-gray-800`;
+
+                    return item.to ? (
+                      <Link key={item.key} to={item.to} className={sharedClass}>{content}</Link>
+                    ) : (
+                      <button key={item.key} type="button" onClick={item.onClick} className={sharedClass}>{content}</button>
+                    );
+                  })}
                 </div>
-                <input
-                  type="text"
-                  placeholder="ค้นหาชื่อ, รหัสนักเรียน..."
-                  className="pl-8 pr-4 py-2 w-full bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-xs text-gray-900 dark:text-white"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-
-              <select
-                value={selectedClassLevel}
-                onChange={(e) => setSelectedClassLevel(e.target.value)}
-                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
-              >
-                <option value="">ทุกชั้น</option>
-                {availableLevels.map(level => <option key={level} value={level}>{level}</option>)}
-              </select>
-              <select
-                value={selectedRoom}
-                onChange={(e) => setSelectedRoom(e.target.value)}
-                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
-              >
-                <option value="">ทุกห้อง</option>
-                {Array.from(
-                  new Set(
-                    students
-                      .filter(s => !selectedClassLevel || normalizeClassLevel(s.classLevel) === normalizeClassLevel(selectedClassLevel))
-                      .map(s => normalizeRoom(s.room))
-                      .filter(Boolean)
-                  )
-                )
-                  .sort((a, b) => Number(a) - Number(b))
-                  .map(r => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-              </select>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="pl-3 pr-8 py-2 bg-gray-50 dark:bg-[#1e1f21] border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs text-gray-900 dark:text-white font-bold"
-              >
-                <option value="">ทุกสถานะ</option>
-                {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-
-              <div className="flex flex-wrap items-center gap-2 ml-auto">
-                <CanAccess roles={ACADEMIC_ACCESS}>
-                  {/* ปุ่มอัพเดทเลขที่ */}
-                  <button
-                    type="button"
-                    onClick={handleBulkAssignNumbers}
-                    className="flex items-center justify-center gap-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap border border-pink-400 dark:border-pink-500"
-                  >
-                    <FaSortNumericDown size={12} />
-                    <span>อัพเดทเลขที่</span>
-                  </button>
-
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/map-rfid/students` : '#'}
-                    className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap animate-pulse"
-                  >
-                    <FaIdCard size={12} />
-                    <span>จับคู่ RFID</span>
-                  </Link>
-
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/students/quick-add` : '#'}
-                    className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <FaUserPlus size={12} />
-                    <span>เพิ่มนักเรียนด่วน</span>
-                  </Link>
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/students/add` : '#'}
-                    className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <FaPlus size={12} />
-                    <span>เพิ่มนักเรียนใหม่</span>
-                  </Link>
-                  <Link
-                    to={schoolId ? `/school/${schoolId}/students/import-dmc` : '#'}
-                    className="hidden md:flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <FaFileExcel size={12} />
-                    <span>นำเข้า DMC</span>
-                  </Link>
-                  <Link
-                    to="/academic/alumni-management"
-                    className="flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-sm active:scale-95 text-xs whitespace-nowrap"
-                  >
-                    <History size={12} />
-                    <span>ประวัติศิษย์เก่า</span>
-                  </Link>
-                </CanAccess>
-              </div>
+              </CanAccess>
             </div>
           </header>
 

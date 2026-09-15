@@ -2,9 +2,9 @@ import React, { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { Link } from "react-router-dom";
 import { RootState } from "../../store";
-import { fetchUserProfile } from "../../store/slices/profileSlice";
-import MainLayout from "@/layouts/MainLayout";
+import GeneralAffairsLayout from "@/layouts/GeneralAffairsLayout";
 import BackButton from "@/components/Shared/BackButton";
+import { fetchUserProfile } from "../../store/slices/profileSlice";
 import {
   FileText,
   FileSignature,
@@ -70,7 +70,7 @@ const GeneralAffairsHome: React.FC = () => {
   ];
 
   return (
-    <MainLayout>
+    <GeneralAffairsLayout>
       <div className="min-h-screen transition-colors duration-300">
         {/* ── STICKY HEADER ── */}
         <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
@@ -124,7 +124,7 @@ const GeneralAffairsHome: React.FC = () => {
           </div>
         </div>
       </div>
-    </MainLayout>
+    </GeneralAffairsLayout>
   );
 };
 

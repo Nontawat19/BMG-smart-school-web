@@ -716,11 +716,11 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-[#1e1f21] dark:text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
+          <div className="mb-5 flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
               <BackButton to="/academic/hub/students" />
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white">
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
                   ดูบันทึกการลงเวลานักเรียนแบบเลือกวัน
                 </h1>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -728,8 +728,8 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:text-slate-300 dark:ring-slate-700">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-2 text-sm font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-[#1e1f21] dark:text-slate-300 dark:ring-slate-700">
                 <CalendarDays size={16} className="text-indigo-500" />
                 จำนวนทั้งหมด : {filteredRows.length}
                 {isEnriching && (
@@ -743,9 +743,11 @@ const StudentAttendanceDateSelectionPage: React.FC = () => {
                 type="button"
                 onClick={openPdfPreview}
                 disabled={loading || isEnriching || filteredRows.length === 0}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
               >
-                <FileDown size={16} />
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-white shadow-sm">
+                  <FileDown size={12} />
+                </span>
                 ดาวน์โหลด PDF
               </button>
             </div>

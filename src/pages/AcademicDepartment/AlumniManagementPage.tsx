@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import MainLayout from "@/layouts/MainLayout";
+import BackButton from "@/components/Shared/BackButton";
 import ProfileAvatar from "@/components/Shared/ProfileAvatar";
 import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { firestore } from '@/firebase';
@@ -8,10 +8,10 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import { fetchSchoolSettings } from '@/store/slices/schoolSettingsSlice';
 import {
-    FaGraduationCap, FaSearch, FaUserGraduate, FaInfoCircle, FaFilter, 
+    FaGraduationCap, FaSearch, FaUserGraduate, FaInfoCircle, FaFilter,
     FaUsers, FaHistory, FaUserTimes, FaExchangeAlt, FaFileAlt
 } from 'react-icons/fa';
-import { Home, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import Swal from 'sweetalert2';
 import Select from 'react-select';
 import { CLASSES } from '@/utils/schoolUtils';
@@ -424,20 +424,15 @@ const AlumniManagementPage: React.FC = () => {
             <div className="min-h-screen bg-gray-50 dark:bg-[#1e1f21] text-gray-900 dark:text-white overflow-x-hidden" style={darkVariables}>
                 <div className="w-full pl-12 pr-2 sm:pl-14 sm:pr-4 md:pl-16 md:pr-6 py-4 sm:py-6 lg:py-8">
                     <header className="mb-6 space-y-4">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                        <div>
-                                <div className="flex items-center gap-4">
-                                    <Link 
-                                        to="/home"
-                                        className="w-10 h-10 rounded-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] hover:text-gray-900 dark:hover:text-white transition-all shadow-sm"
-                                    >
-                                        <Home size={20} />
-                                    </Link>
+                        <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                                <BackButton to="/academic/hub/registration" />
+                                <div className="min-w-0">
                                     <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">ทำเนียบศิษย์เก่า</h1>
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                        แสดงและจัดการข้อมูลศิษย์เก่า นักเรียนย้าย ลาออก และจำหน่ายชื่อออก
+                                    </p>
                                 </div>
-                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    แสดงและจัดการข้อมูลศิษย์เก่า นักเรียนย้าย ลาออก และจำหน่ายชื่อออก
-                                </p>
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 p-4 bg-white dark:bg-[#2a2b2f]/80 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">

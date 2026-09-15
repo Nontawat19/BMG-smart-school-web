@@ -27,7 +27,8 @@ import {
     CheckCircle2,
     MessageSquare,
     Plus,
-    Trash2
+    Trash2,
+    ShieldCheck
 } from 'lucide-react';
 import BackButton from "@/components/Shared/BackButton";
 import AcademicYearSemesterFilter from "@/components/Shared/AcademicYearSemesterFilter";
@@ -165,6 +166,7 @@ interface RosterRow {
     // หมายเหตุประกอบผล มส/ร/มผ — ถ้ามีค่า จะซ่อนการแสดงเกรดไว้จนกว่าจะลบหมายเหตุออก
     remark?: string;
     originalFlag?: string;
+    isWaived?: boolean;
 }
 
 // แถวที่จะบันทึกจริงตอนนำเข้าไฟล์ School MIS — เก็บเฉพาะเซลล์ที่แมตช์เป็น 0/ร/มส เท่านั้น
@@ -374,6 +376,7 @@ const SummaryCard = ({ title, value, unit, icon, color }: { title: string, value
         amber: "text-amber-500 bg-amber-50 dark:bg-amber-500/10 border-amber-100/50 dark:border-amber-500/20",
         slate: "text-slate-500 bg-slate-50 dark:bg-slate-500/10 border-slate-100/50 dark:border-slate-500/20",
         purple: "text-purple-500 bg-purple-50 dark:bg-purple-500/10 border-purple-100/50 dark:border-purple-500/20",
+        emerald: "text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100/50 dark:border-emerald-500/20",
     };
     return (
         <div className="bg-white dark:bg-[#2a2b2f] p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 transition-all hover:shadow-md hover:-translate-y-0.5 group">
@@ -723,8 +726,16 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                     // ทุกจุดที่บันทึกเกรดในระบบ (ปุ่มแก้ไขตรง/นำเข้าไฟล์/หน้าคำร้องขอแก้ตัว) เขียนลงฟิลด์ "grade"
                     // เสมอ ไม่เคยเขียน "status" — เช็ค record.grade ก่อน ไม่งั้นเกรดที่บันทึก/แก้ไขไว้แล้วจะถูกมองข้าม
                     // กลายเป็นคำนวณจากคะแนนดิบ (ซึ่งถ้ายังไม่กรอกคะแนนเลยจะได้ total=0 = "0" ทุกคนโดยไม่จำเป็น)
-                    const grade = record.grade || record.status || calculateGrade(total);
-                    const isFlagged = grade === '0' || grade === 'ร' || grade === 'มส';
+                    const isWaived = Boolean(
+                        (record as any).medicalWaiver ||
+                        record.status === 'ผ่อนผัน' ||
+                        (typeof record.remark === 'string' && record.remark.includes('ผ่อนผัน'))
+                    );
+                    const rawGrade = record.grade || record.status || calculateGrade(total);
+                    const grade = isWaived && (rawGrade === 'มส' || record.status === 'ผ่อนผัน')
+                        ? (record.grade && record.grade !== 'มส' && record.grade !== 'ผ่อนผัน' ? record.grade : calculateGrade(total))
+                        : rawGrade;
+                    const isFlagged = !isWaived && (grade === '0' || grade === 'ร' || grade === 'มส');
                     const rawStatus = (record as any).originalGrade || record.status || record.grade;
                     const originalFlag = (rawStatus === '0' || rawStatus === 'ร' || rawStatus === 'มส')
                         ? rawStatus
@@ -740,7 +751,7 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                         number: String(sData.studentNumber || sData.number || '').trim(),
                         isActivity: false,
                         weeklyPre, weeklyPost, preMidtermSubtotal, postMidtermSubtotal, midterm, final,
-                        total, percent, grade, isFlagged, originalFlag,
+                        total, percent, grade, isFlagged, originalFlag, isWaived,
                         teacherName, responsibleTeacherIds: teacherIds,
                         requestStatus: 'no_request',
                         remark: record.remark || '',
@@ -1240,9 +1251,13 @@ const ZeroRMsGradeReportPage: React.FC = () => {
     }, [rosterRows, selectedRoom, rosterSearch]);
 
     const rosterSummary = useMemo(() => {
-        let normalCount = 0, flaggedCount = 0;
-        filteredRosterRows.forEach(r => { if (r.isFlagged) flaggedCount++; else normalCount++; });
-        return { total: filteredRosterRows.length, normalCount, flaggedCount };
+        let normalCount = 0, flaggedCount = 0, waivedCount = 0;
+        filteredRosterRows.forEach(r => {
+            if (r.isWaived) waivedCount++;
+            if (r.isFlagged) flaggedCount++;
+            else normalCount++;
+        });
+        return { total: filteredRosterRows.length, normalCount, flaggedCount, waivedCount };
     }, [filteredRosterRows]);
 
     // ── ส่งออก PDF: ประกาศผลรายชื่อที่ติด 0/ร/มส/มผ "ทั้งโรงเรียน" ตามระดับชั้น/ปี/เทอมที่เลือกไว้ด้านบน
@@ -1508,10 +1523,10 @@ const ZeroRMsGradeReportPage: React.FC = () => {
 
         const { value, isConfirmed } = await Swal.fire({
             title: row.remark ? 'แก้ไข Remark' : 'เพิ่ม Remark',
-            html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผล: <b>${row.grade}</b></div>`,
+            html: `<div style="text-align:left;font-size:13px;margin-bottom:8px">${row.name} (${row.studentCode})<br/>ผล: <b>${row.grade}</b>${row.isWaived ? ' <span style="color:#059669;font-weight:bold;">(ผ่อนผันกรณีพิเศษ)</span>' : ''}</div>`,
             input: 'text',
             inputValue: row.remark || '',
-            inputPlaceholder: 'ระบุหมายเหตุ เช่น เหตุผลที่ติด มส/ร (ลบข้อความให้ว่างเพื่อแสดงเกรดกลับคืน)',
+            inputPlaceholder: 'ระบุหมายเหตุ เช่น ผ่อนผันเนื่องจากป่วยหนักมีใบรับรองแพทย์ หรือ เหตุผลที่ติด มส/ร (ลบข้อความให้ว่างเพื่อคืนค่า)',
             showCancelButton: true,
             confirmButtonText: 'บันทึก',
             cancelButtonText: 'ยกเลิก',
@@ -1663,10 +1678,28 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    {/* MOE Regulation Info Banner */}
+                    <div className="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 rounded-2xl p-4 flex items-start gap-3.5 text-amber-900 dark:text-amber-200 shadow-sm">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/40 rounded-xl shrink-0 mt-0.5">
+                            <AlertTriangle size={18} className="text-amber-700 dark:text-amber-400" />
+                        </div>
+                        <div className="text-xs space-y-1">
+                            <div className="font-black text-sm flex items-center gap-2">
+                                <span>ระเบียบกระทรวงศึกษาธิการว่าด้วยเกณฑ์เวลาเรียน (มส.)</span>
+                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200/70 dark:bg-amber-900/60 font-bold">เกณฑ์เดียวกันทั้งประถมและมัธยม</span>
+                            </div>
+                            <p className="text-amber-800 dark:text-amber-300/90 leading-relaxed font-medium">
+                                การคิดเวลาเรียนเพื่อประเมินสิทธิ์สอบ (ต้องไม่น้อยกว่า 80%) <b>วันลาป่วยและลากิจจะถูกนับรวมเป็นวันที่ไม่ได้เข้าเรียน</b> ซึ่งส่งผลให้เวลาเรียนลดลงและอาจติด มส. ได้ 
+                                (ข้อยกเว้น: กรณีเจ็บป่วยร้ายแรง/ประสบอุบัติเหตุที่มีใบรับรองแพทย์ ครูหรือฝ่ายวิชาการสามารถพิจารณาอนุมัติ <b>"ผ่อนผันกรณีพิเศษ"</b> ในระบบเพื่อคืนสิทธิ์สอบได้)
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <SummaryCard title="นักเรียนในวิชานี้" value={rosterSummary.total} icon={<Users size={20} />} unit="คน" color="indigo" />
                         <SummaryCard title="ผลปกติ" value={rosterSummary.normalCount} icon={<Users size={20} />} unit="คน" color="slate" />
                         <SummaryCard title="ติดผลการเรียน" value={rosterSummary.flaggedCount} icon={<AlertTriangle size={20} />} unit="คน" color="rose" />
+                        <SummaryCard title="ผ่อนผันกรณีพิเศษ" value={rosterSummary.waivedCount} icon={<ShieldCheck size={20} />} unit="คน" color="emerald" />
                     </div>
 
                     {error && (
@@ -1765,7 +1798,12 @@ const ZeroRMsGradeReportPage: React.FC = () => {
                                                     <span className="text-xs font-black tabular-nums text-gray-700 dark:text-gray-300">{r.isActivity ? '-' : r.percent}</span>
                                                 </td>
                                                 <td className="px-1 py-3 text-center whitespace-nowrap">
-                                                    {r.originalFlag ? (
+                                                    {r.isWaived ? (
+                                                        <span className="inline-flex items-center gap-1 justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 whitespace-nowrap" title="ได้รับการผ่อนผันเวลาเรียนกรณีพิเศษ (มีใบรับรองแพทย์)">
+                                                            <ShieldCheck size={11} className="text-emerald-600" />
+                                                            ผ่อนผัน
+                                                        </span>
+                                                    ) : r.originalFlag ? (
                                                         <span className={`inline-flex items-center justify-center text-[10px] font-black px-1.5 py-0.5 rounded-md whitespace-nowrap ${r.originalFlag === '0' ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/10' : r.originalFlag === 'ร' ? 'text-amber-600 bg-amber-50 dark:bg-amber-500/10' : r.originalFlag === 'มส' ? 'text-slate-700 bg-slate-100 dark:bg-slate-700 dark:text-slate-300' : 'text-purple-600 bg-purple-50 dark:bg-purple-500/10'}`}>
                                                             ติด {r.originalFlag}
                                                         </span>

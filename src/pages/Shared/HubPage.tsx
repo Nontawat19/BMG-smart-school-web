@@ -61,6 +61,7 @@ import { PWA_ATTENDANCE_HUB_PATH, PWA_MY_SCHEDULE_PATH } from "@/utils/pwaMode";
 import { usePermissionContext } from "@/contexts/PermissionContext";
 import { ROUTE_REGISTRY } from "@/constants/routeRegistry";
 import { resolveEffectiveRouteAccess, userHasRouteAccess } from "@/utils/routeAccess";
+import { isFeatureFlagEnabled } from "@/utils/featureFlags";
 
 const ROUTE_KEY_BY_PATH = new Map(ROUTE_REGISTRY.map(r => [r.path, r.key]));
 
@@ -226,7 +227,7 @@ const HubPage: React.FC = () => {
     if (!userHasRouteAccess(currentUser, access)) return false;
 
     // 2. Feature Check
-    if (item.featureKey && features[item.featureKey] === false) {
+    if (item.featureKey && !isFeatureFlagEnabled(features, item.featureKey)) {
       return false;
     }
 
@@ -572,7 +573,7 @@ const HubPage: React.FC = () => {
       description: "จัดการข้อมูลประวัติครูและบุคลากรในโรงเรียน",
       items: [
         {
-          title: "ลงเวลาเข้า-ออก",
+          title: "บันทึกเวลาเข้า-ออก / ขออนุญาตเข้าสาย",
           description: "บันทึกเวลาเข้า-ออก และขออนุญาตเข้าสายของบุคลากร",
           icon: <Clock size={24} />,
           path: "/academic/personnel-time-registration",
@@ -697,7 +698,8 @@ const HubPage: React.FC = () => {
           icon: <Flag size={24} />,
           path: "/academic/flag-ceremony",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "flagCeremony"
         },
         {
           title: "เช็คชื่อรายวิชา",
@@ -705,7 +707,17 @@ const HubPage: React.FC = () => {
           icon: <UserCheck size={24} />,
           path: "/academic/classroom-attendance",
           colorClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "classroomAttendance"
+        },
+        {
+          title: "เช็คชื่อมาเรียน (ไม่ใช้สแกน)",
+          description: "ครูประจำชั้นเช็คชื่อมาเรียนของนักเรียนเองรายวัน สำหรับโรงเรียนที่ไม่ใช้สแกนบัตร/สแกนหน้า",
+          icon: <Users size={24} />,
+          path: "/academic/daily-attendance-check",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "dailyAttendanceCheck"
         },
         {
           title: "เช็คชื่อแนะแนว",
@@ -721,7 +733,8 @@ const HubPage: React.FC = () => {
           icon: <Clock size={24} />,
           path: "/academic/classroom-attendance-history",
           colorClass: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
-          allowedRoles: TEACHER_OPERATIONAL
+          allowedRoles: TEACHER_OPERATIONAL,
+          featureKey: "classroomAttendance"
         },
         {
           title: "เช็คชื่อชุมนุม",
@@ -759,7 +772,8 @@ const HubPage: React.FC = () => {
           icon: <BarChart3 size={24} />,
           path: "/academic/classroom-attendance-summary",
           colorClass: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400",
-          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS
+          allowedRoles: STUDENT_ATTENDANCE_REPORT_ACCESS,
+          featureKey: "classroomAttendance"
         },
         {
           title: "รายงานกิจกรรมพิเศษ",
@@ -775,7 +789,8 @@ const HubPage: React.FC = () => {
           icon: <ListChecks size={24} />,
           path: "/academic/classroom-attendance-audit",
           colorClass: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400",
-          allowedRoles: ACADEMIC_MANAGEMENT
+          allowedRoles: ACADEMIC_MANAGEMENT,
+          featureKey: "classroomAttendance"
         },
         {
           title: "รายงานการมาเรียน (นักเรียน)",
@@ -1354,6 +1369,7 @@ const HubPage: React.FC = () => {
     // special-period-mode side of the activityMode setting, so only that one hides in
     // course-based mode.
     let hideWhenCourseBased = false;
+    let featureKey: string | undefined;
 
     if (lowerTitle.includes("โฮมรูม") || lowerTitle.includes("โฮมรู") || lowerTitle.includes("homeroom") || lowerTitle.includes("โอมรูม")) {
       icon = <Home size={24} />;
@@ -1371,6 +1387,7 @@ const HubPage: React.FC = () => {
       icon = <Flag size={24} />;
       path = `/academic/flag-ceremony`;
       colorClass = "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400";
+      featureKey = "flagCeremony";
     } else {
       // Custom special period (ลูกเสือ/ยุวกาชาด/รด/ลงพื้นที่เขต/บำเพ็ญประโยชน์, etc.) —
       // this IS the special-period side of the activityMode setting, so it must hide once
@@ -1401,7 +1418,8 @@ const HubPage: React.FC = () => {
       path,
       colorClass,
       allowedRoles: TEACHER_OPERATIONAL,
-      hideWhenCourseBased
+      hideWhenCourseBased,
+      featureKey
     };
   };
 

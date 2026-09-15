@@ -681,14 +681,14 @@ const LeaveApprovalPage: React.FC = () => {
     <MainLayout>
       <div className="p-6 min-h-screen bg-gray-50 dark:bg-[#1a1b1e] text-gray-900 dark:text-white transition-colors duration-300">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          <div className="flex items-center gap-4">
-            <BackButton />
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-teal-500 to-indigo-500 bg-clip-text text-transparent">
+        <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <BackButton to="/academic/hub/personnel_info" />
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-teal-500 to-indigo-500 bg-clip-text text-transparent">
                 อนุมัติการลา & ไปราชการ (ฝ่ายบุคคล)
               </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 พิจารณาคำขอลาและใบไปราชการของคณะครูและบุคลากร
               </p>
             </div>

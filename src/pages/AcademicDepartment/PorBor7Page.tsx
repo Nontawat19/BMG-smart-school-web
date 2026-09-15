@@ -722,13 +722,15 @@ const PorBor7Page: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
           <div className="mb-8">
-            <div className="flex items-center gap-4 mb-4">
-              <BackButton to="/academic/hub/registration" />
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">ออกใบรับรองสถานภาพ (ปพ.7)</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">
-                  ค้นหารายชื่อนักเรียนเพื่อพิมพ์ใบรับรองการเป็นนักเรียนหรือใบรับรองผลการเรียน
-                </p>
+            <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between mb-6">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <BackButton to="/academic/hub/registration" />
+                <div className="min-w-0">
+                  <h1 className="text-3xl font-bold tracking-tight">ออกใบรับรองสถานภาพ (ปพ.7)</h1>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    ค้นหารายชื่อนักเรียนเพื่อพิมพ์ใบรับรองการเป็นนักเรียนหรือใบรับรองผลการเรียน
+                  </p>
+                </div>
               </div>
             </div>
 

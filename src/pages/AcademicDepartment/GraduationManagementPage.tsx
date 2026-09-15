@@ -440,10 +440,10 @@ const GraduationManagementPage: React.FC = () => {
         <MainLayout>
             <div className="min-h-screen bg-gray-50/50 dark:bg-[#0f1014] p-4 sm:p-6 space-y-4" style={darkVariables}>
                 {/* Header Section */}
-                <div className="bg-white dark:bg-[#1c1c24] border border-gray-100 dark:border-gray-800 rounded-2xl px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm">
-                    <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1c1c24] lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
                         <BackButton to="/academic/hub/registration" />
-                        <div>
+                        <div className="min-w-0">
                             <h1 className="text-xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
                                 <FaGraduationCap className="text-indigo-600" />
                                 บริหารการจบการศึกษา

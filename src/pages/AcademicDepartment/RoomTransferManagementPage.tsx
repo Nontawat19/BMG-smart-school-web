@@ -504,19 +504,21 @@ const RoomTransferManagementPage: React.FC = () => {
     return (
         <MainLayout>
             <div className="p-4 sm:p-8 space-y-6" style={darkVariables}>
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-4 mb-2">
+                <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#1c1c24] lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
                         <BackButton to="/academic/hub/registration" />
-                        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
-                            <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-sm">
-                                <FaExchangeAlt size={20} />
-                            </div>
-                            จัดการระบบย้ายห้อง
-                        </h1>
+                        <div className="min-w-0">
+                            <h1 className="flex items-center gap-3 text-2xl font-bold text-gray-800 dark:text-gray-100">
+                                <span className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-sm">
+                                    <FaExchangeAlt size={20} />
+                                </span>
+                                จัดการระบบย้ายห้อง
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                ระบบย้ายนักเรียนใช้สำหรับย้ายนักเรียนจากห้องเรียนเดิมไปยังห้องเรียนใหม่ สามารถเลือกนักเรียนได้หลายคนพร้อมกันในคราวเดียว
+                            </p>
+                        </div>
                     </div>
-                    <p className="text-gray-500 dark:text-gray-400 max-w-2xl text-sm leading-relaxed border-l-4 border-indigo-500 pl-4 py-1 ml-14">
-                        ระบบย้ายนักเรียนใช้สำหรับย้ายนักเรียนจากห้องเรียนเดิมไปยังห้องเรียนใหม่ สามารถเลือกนักเรียนได้หลายคนพร้อมกันในคราวเดียว
-                    </p>
                 </div>
 
                 <div className="flex flex-col xl:flex-row gap-6 items-stretch">

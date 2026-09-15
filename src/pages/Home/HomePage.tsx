@@ -155,14 +155,14 @@ const MiniCalendar: React.FC<{ events: Record<string, CalendarEvent> }> = ({ eve
             if (event?.scheduleDay) { const dayName = DAY_MAP[event.scheduleDay] || event.scheduleDay; title = title ? `${title}\n(เรียนชดเชยตารางวัน${dayName})` : `เรียนชดเชยตารางวัน${dayName}`; }
             let icon: React.ReactElement | null = null;
             if (event?.type === 'specialHoliday') icon = <Award size={10} className="absolute bottom-0.5 right-0.5 text-yellow-600 dark:text-yellow-500" />;
-            else if (event?.type === 'holiday') icon = <CalendarX size={10} className="absolute bottom-0.5 right-0.5 text-red-500" />;
+            else if (event?.type === 'holiday') icon = <CalendarX size={10} className="absolute bottom-0.5 right-0.5 text-red-600 dark:text-red-400" />;
             else if (event?.scheduleDay) icon = <RefreshCw size={10} className="absolute bottom-0.5 right-0.5 text-purple-500" />;
             else if (event?.description?.includes('กิจกรรม:')) icon = <CalendarCheck size={10} className="absolute bottom-0.5 right-0.5 text-green-600 dark:text-green-500" />;
             let cellClass = 'text-gray-700 dark:text-gray-300';
             if (isToday) cellClass = 'bg-indigo-600 text-white font-bold';
             else if (event?.type === 'holiday' || event?.type === 'specialHoliday') { cellClass = 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'; if (event.type === 'specialHoliday') title = `วันหยุดพิเศษ: ${title}`; }
             else if (event?.type === 'schoolDay' && (event.description || event.scheduleDay)) cellClass = 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-semibold';
-            else if (isWeekend && !event) cellClass = 'text-red-400 dark:text-red-500';
+            else if (isWeekend && !event) cellClass = 'text-red-600 dark:text-red-400';
             days.push(<div key={d} className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors cursor-default ${cellClass}`} title={title}>{d}{icon}</div>);
         }
         return days;
@@ -386,7 +386,7 @@ const SchoolCalendarEventsList: React.FC<{ events: Record<string, CalendarEvent>
                                             {icon}
                                             {label}
                                         </span>
-                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                                        <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
                                             วัน{dayOfWeek}
                                         </span>
                                     </div>
@@ -408,7 +408,7 @@ const SchoolCalendarEventsList: React.FC<{ events: Record<string, CalendarEvent>
                             📅
                         </div>
                         <p className="text-xs font-bold">ไม่มีกิจกรรมหรือวันหยุดเร็วๆ นี้</p>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">สามารถกำหนดกิจกรรมที่หน้าระบบงานทะเบียน</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">สามารถกำหนดกิจกรรมที่หน้าระบบงานทะเบียน</p>
                     </div>
                 )}
             </div>
@@ -1720,7 +1720,7 @@ const HomePage = () => {
 
     return (
         <MainLayout>
-            <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 text-gray-900 dark:text-white transition-colors duration-300">
+            <main className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 text-gray-900 dark:text-white transition-colors duration-300">
                 <div className="max-w-7xl mx-auto w-full">
                     {/* NEWS MODAL */}
                     {showNewsModal && currentNews && (
@@ -1778,11 +1778,11 @@ const HomePage = () => {
                                     onClick={toggleSummaryDatePicker}
                                     aria-haspopup="dialog"
                                     aria-expanded={showSummaryDatePicker}
-                                    aria-label="เลือกวันที่ดูสรุปย้อนหลัง"
+                                    aria-label={`${isViewingHistoricalSummary ? 'ข้อมูลวันที่ (ย้อนหลัง)' : 'วันที่ปัจจุบัน'}: เลือกวันที่ดูสรุปย้อนหลัง`}
                                     className="w-full flex items-center gap-2 sm:gap-3.5 px-3 sm:px-4 py-2 bg-gray-50/80 dark:bg-white/[0.03] rounded-[18px] border border-gray-100 dark:border-white/5 shadow-inner backdrop-blur-sm hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-colors cursor-pointer"
                                 >
                                     <div className="text-right">
-                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider leading-none mb-0.5 sm:mb-1">
+                                        <p className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider leading-none mb-0.5 sm:mb-1">
                                             {isViewingHistoricalSummary ? 'ข้อมูลวันที่ (ย้อนหลัง)' : 'วันที่ปัจจุบัน'}
                                         </p>
                                         {/* Desktop Date */}
@@ -1854,7 +1854,29 @@ const HomePage = () => {
                                 )}
                             </div>
                             {
-                                summaryLoading ? <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white dark:bg-[#2a2b2f] rounded-2xl p-5 shadow-sm"><SkeletonLoader height="120px" className="rounded-xl" /></div>)}</div> : (<>
+                                summaryLoading ? (
+                                    <div className="grid grid-cols-3 gap-2 mb-6">
+                                        {Array.from({ length: 3 }).map((_, i) => (
+                                            <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm flex flex-col justify-between min-h-[130px] sm:min-h-[162px]">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <SkeletonLoader width="60%" height="10px" />
+                                                    <SkeletonLoader width="8px" height="8px" variant="circle" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <SkeletonLoader width="50%" height="20px" />
+                                                    <div className="grid grid-cols-5 gap-0.5 mt-2.5">
+                                                        {Array.from({ length: 5 }).map((_, j) => (
+                                                            <div key={j} className="flex flex-col items-center py-1 rounded-md bg-gray-50 dark:bg-gray-800/40">
+                                                                <SkeletonLoader width="80%" height="6px" className="mb-0.5" />
+                                                                <SkeletonLoader width="60%" height="9px" />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (<>
                                     <div className="grid grid-cols-3 gap-2 mb-6">
                                         {stats.map((s, i) => (
                                             <div key={i} className="bg-white dark:bg-[#2a2b2f] p-2.5 sm:p-5 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 border-none outline-none ring-0 flex flex-col justify-between">
@@ -1914,7 +1936,7 @@ const HomePage = () => {
                                             { label: 'สาย', val: studentAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
                                             { label: 'ลา', val: studentAttendanceStats?.leave || 0, color: 'bg-purple-500', text: 'text-purple-500' },
                                             { label: 'ไปร่วมกิจกรรม', val: studentAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
-                                            { label: 'ขาดเรียน', val: studentAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
+                                            { label: 'ขาดเรียน', val: studentAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-600 dark:text-red-400' }
                                         ].map(item => (
                                             <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
                                                 <div className="flex items-center gap-1">
@@ -1967,7 +1989,7 @@ const HomePage = () => {
                                             { label: 'สาย', val: teacherAttendanceStats?.late || 0, color: 'bg-amber-500', text: 'text-amber-500' },
                                             { label: 'ลา', val: teacherAttendanceStats?.leave || 0, color: 'bg-purple-500', text: 'text-purple-500' },
                                             { label: 'ไปราชการ', val: teacherAttendanceStats?.officialTravel || 0, color: 'bg-indigo-500', text: 'text-indigo-500' },
-                                            { label: 'ขาดงาน', val: teacherAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-500' }
+                                            { label: 'ขาดงาน', val: teacherAttendanceStats?.absent || 0, color: 'bg-red-500', text: 'text-red-600 dark:text-red-400' }
                                         ].map(item => (
                                             <div key={item.label} className="flex items-center justify-between p-1 sm:p-2 rounded-lg bg-gray-50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5">
                                                 <div className="flex items-center gap-1">
@@ -2054,7 +2076,7 @@ const HomePage = () => {
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-1">
                                                             <span className="text-[12px] font-bold text-gray-900 dark:text-white truncate" title={s.subject}>{s.subject}</span>
-                                                            {s.subjectCode && <span className="text-[8px] font-medium text-gray-400 dark:text-gray-500 truncate">({s.subjectCode})</span>}
+                                                            {s.subjectCode && <span className="text-[8px] font-medium text-gray-500 dark:text-gray-400 truncate">({s.subjectCode})</span>}
                                                             {isSubstitute && (
                                                                 <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40">
                                                                     สอนแทน
@@ -2203,7 +2225,7 @@ const HomePage = () => {
                                                 <div className="flex-1 min-w-0 ml-1">
                                                     <div className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                                         {leave.studentName}
-                                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-normal ml-1">
+                                                        <span className="text-[10px] text-gray-500 dark:text-gray-400 font-normal ml-1">
                                                             {idDisplay}
                                                         </span>
                                                     </div>
@@ -2385,8 +2407,8 @@ const HomePage = () => {
                             </div>
                         </div>
                         <div className="space-y-6">
-                            {isLoading ? <SkeletonLoader height="320px" className="rounded-xl" /> : <MiniCalendar events={calendarEvents} />}
-                            {isLoading ? <SkeletonLoader height="380px" className="rounded-xl" /> : <SchoolCalendarEventsList events={calendarEvents} academicYear={calendarState.academicYear} />}
+                            {isLoading ? <SkeletonLoader height="286px" className="rounded-xl" /> : <MiniCalendar events={calendarEvents} />}
+                            {isLoading ? <SkeletonLoader height="471px" className="rounded-xl" /> : <SchoolCalendarEventsList events={calendarEvents} academicYear={calendarState.academicYear} />}
                             <div className="bg-white dark:bg-[#2a2b2f] rounded-xl shadow-sm p-5 border-none outline-none ring-0">
                                 <h2 className="text-lg font-semibold mb-4">เมนูด่วน</h2>
                                 <div className="space-y-3">
@@ -2404,7 +2426,7 @@ const HomePage = () => {
                     </div>
 
                 </div>
-            </div >
+            </main >
         </MainLayout >
     );
 };

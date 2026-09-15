@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import MainLayout from "@/layouts/MainLayout";
+import GeneralAffairsLayout from "@/layouts/GeneralAffairsLayout";
 import BackButton from "@/components/Shared/BackButton";
 import { firestore, auth } from "@/firebase";
 import { collection, query, where, getDocs, doc, getDoc, Timestamp } from "firebase/firestore";
@@ -462,7 +462,7 @@ const AssignedWorkPage: React.FC = () => {
   };
 
   return (
-    <MainLayout>
+    <GeneralAffairsLayout>
       <div className="min-h-screen bg-[#f8f9fb] dark:bg-[#151618] transition-colors duration-300 pb-20">
         {/* ── STICKY HEADER ── */}
         <div className="sticky top-0 z-30 bg-white/95 dark:bg-[#111318]/95 backdrop-blur border-b border-slate-200 dark:border-white/5 px-4 py-3 flex items-center justify-between gap-4 shadow-sm">
@@ -613,7 +613,7 @@ const AssignedWorkPage: React.FC = () => {
           )}
         </div>
       </div>
-    </MainLayout>
+    </GeneralAffairsLayout>
   );
 };
 

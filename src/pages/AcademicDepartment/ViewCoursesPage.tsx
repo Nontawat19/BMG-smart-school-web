@@ -434,14 +434,16 @@ const ViewCoursesPage: React.FC = () => {
         <div className="page-container">
 
           {/* Header Section */}
-          <div className="flex items-center gap-4 mb-8">
-            <BackButton to="/academic/hub/registration" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <BookOpen className="text-indigo-600 dark:text-indigo-400" size={28} />
-                ทำเนียบหลักสูตร
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">จัดการและตรวจสอบรายวิชาทั้งหมดในโรงเรียน</p>
+          <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between mb-6">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BackButton to="/academic/hub/registration" />
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <BookOpen className="text-indigo-600 dark:text-indigo-400" size={28} />
+                  ทำเนียบหลักสูตร
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">จัดการและตรวจสอบรายวิชาทั้งหมดในโรงเรียน</p>
+              </div>
             </div>
           </div>
 

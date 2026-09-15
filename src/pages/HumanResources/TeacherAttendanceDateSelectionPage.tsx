@@ -237,10 +237,10 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
     <MainLayout>
       <div className="min-h-screen bg-slate-50 dark:bg-[#1e1f21] px-4 py-6 text-slate-900 dark:text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
+          <div className="mb-5 flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-4">
               <BackButton to="/academic/hub/personnel_info" />
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400">
                   <Clock size={16} />
                   Personnel Attendance
@@ -253,7 +253,7 @@ const TeacherAttendanceDateSelectionPage: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:text-slate-300 dark:ring-slate-700">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-600 dark:border-slate-700 dark:bg-[#1e1f21] dark:text-slate-300">
               <CalendarDays size={16} className="text-indigo-500" />
               จำนวนทั้งหมด : {filteredRows.length}
             </div>

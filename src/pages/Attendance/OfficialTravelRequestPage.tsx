@@ -567,24 +567,25 @@ const OfficialTravelRequestPage: React.FC = () => {
                 <div className="max-w-6xl mx-auto">
 
                     {/* ── Header ── */}
-                    <div className="bg-white dark:bg-[#2a2b2f] rounded-2xl px-5 py-3.5 mb-3 shadow-sm dark:shadow-none">
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 min-w-0">
-                                <BackButton />
-                                <div className="min-w-0">
-                                    <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
-                                        {isEditMode ? `แก้ไขคำขอ${activityLabel}` : `ขออนุญาต${activityLabel}`}
-                                    </h1>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                        กรอกแบบฟอร์มเพื่อยื่นคำขออนุญาต{activityLabel}{docNo ? ` · เลขที่ ${docNo}` : ''}
-                                    </p>
-                                </div>
+                    <div className="mb-3 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#2a2b2f] lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
+                            <BackButton to="/academic/hub/personnel_info" />
+                            <div className="min-w-0">
+                                <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
+                                    {isEditMode ? `แก้ไขคำขอ${activityLabel}` : `ขออนุญาต${activityLabel}`}
+                                </h1>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    กรอกแบบฟอร์มเพื่อยื่นคำขออนุญาต{activityLabel}{docNo ? ` · เลขที่ ${docNo}` : ''}
+                                </p>
                             </div>
-                            <button type="button" onClick={() => navigate(`/school/${schoolId}/official-travel-history`)}
-                                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all">
-                                <History size={15} /> ประวัติ
-                            </button>
                         </div>
+                        <button type="button" onClick={() => navigate(`/school/${schoolId}/official-travel-history`)}
+                            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 active:scale-95 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/20">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm">
+                                <History size={12} />
+                            </span>
+                            ประวัติ
+                        </button>
                     </div>
 
                     {/* ── Form ── */}
