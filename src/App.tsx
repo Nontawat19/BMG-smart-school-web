@@ -122,6 +122,8 @@ const SubstituteSchedulePrintPage = lazy(() => import("./pages/AcademicDepartmen
 const TeacherScheduleViewPage = lazy(() => import("./pages/AcademicDepartment/TeacherScheduleViewPage"));
 const ViewCoursesPage = lazy(() => import("./pages/AcademicDepartment/ViewCoursesPage"));
 const DocumentVerificationPage = lazy(() => import("./pages/Public/DocumentVerificationPage"));
+const PrivacyPolicyPage = lazy(() => import("./pages/Legal/PrivacyPolicyPage"));
+const TermsOfUsePage = lazy(() => import("./pages/Legal/TermsOfUsePage"));
 const SlugResolverPage = lazy(() => import("./pages/Public/SlugResolverPage"));
 const LineRegisterPage = lazy(() => import("./pages/Public/LineRegisterPage"));
 const PeriodSettingsPage = lazy(() => import("./pages/AcademicDepartment/PeriodSettingsPage"));
@@ -166,6 +168,7 @@ const RoomTransferManagementPage = lazy(() => import("./pages/AcademicDepartment
 const GradeTransferPage = lazy(() => import("./pages/Students/GradeTransferPage"));
 const PhysicalRoomsPage = lazy(() => import("./pages/AcademicDepartment/PhysicalRoomsPage"));
 const PorBor7Page = lazy(() => import("./pages/AcademicDepartment/PorBor7Page"));
+const PorBor6Page = lazy(() => import("./pages/AcademicDepartment/PorBor6Page"));
 const HubPage = lazy(() => import("./pages/Shared/HubPage"));
 const GeneralAffairsHome = lazy(() => import("./pages/Generalaffairs/GeneralAffairsHome"));
 const GeneralAffairsPage = lazy(() => import("./pages/Generalaffairs/GeneralAffairsPage"));
@@ -175,6 +178,7 @@ const AssignedWorkPage = lazy(() => import("./pages/Generalaffairs/AssignedWorkP
 const DocumentRegistryPage = lazy(() => import("./pages/Generalaffairs/DocumentRegistryPage"));
 const UserManualsPage = lazy(() => import("./pages/Shared/UserManualsPage"));
 const AttendanceConfigPage = lazy(() => import("./pages/HumanResources/AttendanceConfigPage"));
+const ConsentAuditPage = lazy(() => import("./pages/AcademicDepartment/ConsentAuditPage"));
 const BehaviorScoreConfigPage = lazy(() => import("./pages/HumanResources/BehaviorScoreConfigPage"));
 const TeacherAttendanceTodayPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceTodayPage"));
 const TeacherAttendanceSummaryPage = lazy(() => import("./pages/HumanResources/TeacherAttendanceSummaryPage"));
@@ -185,6 +189,7 @@ const HRTimeRegistrationPage = lazy(() => import("./pages/HumanResources/HRTimeR
 const StudentTimeRegistrationPage = lazy(() => import("./pages/Attendance/StudentTimeRegistrationPage"));
 const StudentsAttendanceSummaryPage = lazy(() => import("./pages/Students/StudentsAttendanceSummaryPage"));
 const DailyClassroomAttendanceSummaryPage = lazy(() => import("./pages/Students/DailyClassroomAttendanceSummaryPage"));
+const StudentDataReportPage = lazy(() => import("./pages/Students/StudentDataReportPage"));
 const LineOAManagementPage = lazy(() => import("./pages/Administrator/LineOAManagementPage"));
 const TelegramManagementPage = lazy(() => import("./pages/Administrator/TelegramManagementPage"));
 
@@ -270,6 +275,8 @@ function App() {
           <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
           <Route path="/verify-doc" element={<DocumentVerificationPage />} />
           <Route path="/line/register-parent" element={<LineRegisterPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms-of-use" element={<TermsOfUsePage />} />
 
           {/* Protected Pages - General */}
           <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
@@ -382,6 +389,7 @@ function App() {
           <Route path="/academic/import-courses" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><ImportCoursePage /></ProtectedRoute>} />
           <Route path="/academic/settings" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AcademicSettingsPage /></ProtectedRoute>} />
            <Route path="/academic/attendance-config" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><AttendanceConfigPage /></ProtectedRoute>} />
+          <Route path="/academic/consent-audit" element={<ProtectedRoute allowedRoles={ADMIN_ACCESS}><ConsentAuditPage /></ProtectedRoute>} />
           <Route path="/academic/behavior-score-config" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_MANAGEMENT}><BehaviorScoreConfigPage /></ProtectedRoute>} />
           <Route path="/academic/settings/line-oa" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><LineOAManagementPage /></ProtectedRoute>} />
           <Route path="/academic/settings/telegram" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><TelegramManagementPage /></ProtectedRoute>} />
@@ -396,6 +404,7 @@ function App() {
           <Route path="/academic/student-bk14-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentBK14ReportPage /></ProtectedRoute>} />
           <Route path="/academic/students-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentsAttendanceSummaryPage /></ProtectedRoute>} />
           <Route path="/academic/daily-classroom-attendance-summary" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><DailyClassroomAttendanceSummaryPage /></ProtectedRoute>} />
+          <Route path="/academic/student-data-report" element={<ProtectedRoute allowedRoles={STUDENT_AFFAIRS_ACCESS}><StudentDataReportPage /></ProtectedRoute>} />
           <Route path="/academic/student-photo-download" element={<ProtectedRoute allowedRoles={STAFF_ACCESS}><StudentPhotoDownloadPage /></ProtectedRoute>} />
 
           <Route path="/academic/graduation-management" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GraduationManagementPage /></ProtectedRoute>} />
@@ -405,6 +414,7 @@ function App() {
           <Route path="/academic/grade-transfer" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><GradeTransferPage /></ProtectedRoute>} />
           <Route path="/academic/physical-rooms" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PhysicalRoomsPage /></ProtectedRoute>} />
           <Route path="/academic/porbor-7" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PorBor7Page /></ProtectedRoute>} />
+          <Route path="/academic/porbor-6" element={<ProtectedRoute allowedRoles={ACADEMIC_MANAGEMENT}><PorBor6Page /></ProtectedRoute>} />
 
           {/* Daily Classroom (Staff Access) */}
           <Route path="/academic/club-attendance" element={<ProtectedRoute allowedRoles={TEACHER_OPERATIONAL}><ClubAttendancePage /></ProtectedRoute>} />

@@ -350,6 +350,14 @@ const HubPage: React.FC = () => {
           path: "/academic/porbor-7",
           colorClass: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400",
           allowedRoles: ACADEMIC_MANAGEMENT
+        },
+        {
+          title: "รายงานผลการเรียน (ปพ.6)",
+          description: "พิมพ์รายงานผลการเรียนรายบุคคล พร้อมเกรดเฉลี่ยและอันดับที่ (ม.1-6)",
+          icon: <FileSpreadsheet size={24} />,
+          path: "/academic/porbor-6",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
+          allowedRoles: ACADEMIC_MANAGEMENT
         }
       ]
     },
@@ -564,6 +572,14 @@ const HubPage: React.FC = () => {
           path: "/academic/student-photo-download",
           colorClass: "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-400",
           allowedRoles: STAFF_ACCESS
+        },
+        {
+          title: "รายงานข้อมูลนักเรียน",
+          description: "ค้นหาและออกรายงานข้อมูลนักเรียนรายบุคคล",
+          icon: <FileText size={24} />,
+          path: "/academic/student-data-report",
+          colorClass: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400",
+          allowedRoles: STUDENT_AFFAIRS_ACCESS
         }
       ]
     },
@@ -1179,6 +1195,14 @@ const HubPage: React.FC = () => {
           icon: <Users size={24} />,
           path: "/owner/users",
           colorClass: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400",
+          allowedRoles: ADMIN_ACCESS
+        },
+        {
+          title: "สถิติการยอมรับนโยบาย",
+          description: "ตรวจสอบว่าครู/บุคลากรและนักเรียนยอมรับนโยบายความเป็นส่วนตัว/ข้อกำหนดการใช้บริการครบแล้วหรือยัง",
+          icon: <ShieldCheck size={24} />,
+          path: "/academic/consent-audit",
+          colorClass: "bg-teal-100 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400",
           allowedRoles: ADMIN_ACCESS
         },
         {

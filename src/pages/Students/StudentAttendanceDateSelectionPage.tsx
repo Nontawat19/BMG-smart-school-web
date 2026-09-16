@@ -230,16 +230,49 @@ const getStudentNumberSlot = (value: string | number) => {
   const matched = String(value || "").match(/\d+/);
   if (!matched) return null;
   const number = parseInt(matched[0], 10);
-  return Number.isFinite(number) && number > 0 ? number : null;
+  return Number.isFinite(number) && number > 0 && number <= 100 ? number : null;
 };
 
-const buildPdfRows = (rows: StudentRow[], startNumber: number): PdfTableRow[] => {
-  const rowMap = new Map<number, StudentRow>();
-  rows.forEach((row) => {
-    const slot = getStudentNumberSlot(row.studentNumber);
-    if (slot !== null && slot >= startNumber && slot < startNumber + PDF_ROWS_PER_PAGE && !rowMap.has(slot)) {
-      rowMap.set(slot, row);
+interface AssignedStudentRow {
+  student: StudentRow;
+  slot: number;
+}
+
+const assignStudentSlots = (items: StudentRow[]): AssignedStudentRow[] => {
+  const assigned: AssignedStudentRow[] = [];
+  const occupiedSlots = new Set<number>();
+  const unassigned: StudentRow[] = [];
+
+  // 1. Assign students who have a valid, unique studentNumber (1 - 100)
+  items.forEach((item) => {
+    const rawSlot = getStudentNumberSlot(item.studentNumber);
+    if (rawSlot !== null && !occupiedSlots.has(rawSlot)) {
+      occupiedSlots.add(rawSlot);
+      assigned.push({ student: item, slot: rawSlot });
+    } else {
+      unassigned.push(item);
     }
+  });
+
+  // 2. Assign unassigned students (missing studentNumber, duplicates, or out-of-range)
+  // to the lowest available vacant slot starting from 1
+  let nextSlot = 1;
+  unassigned.forEach((item) => {
+    while (occupiedSlots.has(nextSlot)) {
+      nextSlot++;
+    }
+    occupiedSlots.add(nextSlot);
+    assigned.push({ student: item, slot: nextSlot });
+    nextSlot++;
+  });
+
+  return assigned;
+};
+
+const buildPdfRows = (chunk: AssignedStudentRow[], startNumber: number): PdfTableRow[] => {
+  const rowMap = new Map<number, StudentRow>();
+  chunk.forEach((item) => {
+    rowMap.set(item.slot, item.student);
   });
 
   return Array.from({ length: PDF_ROWS_PER_PAGE }, (_, index) => {
@@ -280,40 +313,35 @@ const getFullClassroomLabel = (classText: string) => {
 
 interface AttendancePdfPage {
   classText: string;
-  chunk: StudentRow[];
+  chunk: AssignedStudentRow[];
   isGroupStart: boolean;
   startNumber: number;
 }
 
 const buildAttendancePdfPages = (rows: StudentRow[]): AttendancePdfPage[] => {
-  const groups: { classText: string; items: StudentRow[] }[] = [];
+  const groupMap = new Map<string, StudentRow[]>();
   rows.forEach((row) => {
     const classText = row.classText || "-";
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup.classText === classText) {
-      lastGroup.items.push(row);
-    } else {
-      groups.push({ classText, items: [row] });
+    if (!groupMap.has(classText)) {
+      groupMap.set(classText, []);
     }
+    groupMap.get(classText)!.push(row);
   });
 
   const pages: AttendancePdfPage[] = [];
-  groups.forEach((group) => {
-    const validSlots = group.items
-      .map((item) => getStudentNumberSlot(item.studentNumber))
-      .filter((slot): slot is number => slot !== null);
-    const maxSlot = validSlots.length > 0 ? Math.max(...validSlots) : 0;
+  groupMap.forEach((items, classText) => {
+    const assignedItems = assignStudentSlots(items);
+    const maxSlot = assignedItems.length > 0
+      ? Math.max(...assignedItems.map((a) => a.slot))
+      : 0;
     const pageCount = Math.max(1, Math.ceil(maxSlot / PDF_ROWS_PER_PAGE));
 
     for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
       const startNumber = pageIndex * PDF_ROWS_PER_PAGE + 1;
       const endNumber = startNumber + PDF_ROWS_PER_PAGE - 1;
       pages.push({
-        classText: group.classText,
-        chunk: group.items.filter((item) => {
-          const slot = getStudentNumberSlot(item.studentNumber);
-          return slot !== null && slot >= startNumber && slot <= endNumber;
-        }),
+        classText,
+        chunk: assignedItems.filter((item) => item.slot >= startNumber && item.slot <= endNumber),
         isGroupStart: pageIndex === 0,
         startNumber,
       });

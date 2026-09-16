@@ -157,7 +157,45 @@ const COL_WIDTHS = {
   leave: "10%",
 };
 
-const ROWS_PER_PAGE = 40;
+const ROWS_PER_PAGE = 18;
+
+type LevelScope = "kindergarten" | "primary" | "secondary" | "all";
+
+const LEVEL_TABS: { key: LevelScope; label: string; pdfLabel: string }[] = [
+  { key: "kindergarten", label: "ระดับอนุบาล", pdfLabel: "ระดับอนุบาล" },
+  { key: "primary", label: "ระดับประถมศึกษา", pdfLabel: "ระดับประถมศึกษา" },
+  { key: "secondary", label: "ระดับมัธยมศึกษา", pdfLabel: "ระดับมัธยมศึกษา" },
+  { key: "all", label: "รวมทุกระดับ", pdfLabel: "รวมทุกระดับ" },
+];
+
+const getLevelScopeOfClass = (classLevel: string): LevelScope | "other" => {
+  const clean = String(classLevel || "").trim().toLowerCase();
+  if (
+    clean.startsWith("อ.") ||
+    clean.startsWith("อนุบาล") ||
+    clean.startsWith("k") ||
+    ["k1", "k2", "k3"].includes(clean)
+  ) {
+    return "kindergarten";
+  }
+  if (
+    clean.startsWith("ป.") ||
+    clean.startsWith("ประถม") ||
+    clean.startsWith("p") ||
+    ["p1", "p2", "p3", "p4", "p5", "p6"].includes(clean)
+  ) {
+    return "primary";
+  }
+  if (
+    clean.startsWith("ม.") ||
+    clean.startsWith("มัธยม") ||
+    clean.startsWith("m") ||
+    ["m1", "m2", "m3", "m4", "m5", "m6"].includes(clean)
+  ) {
+    return "secondary";
+  }
+  return "other";
+};
 
 interface PdfProps {
   rows: ClassroomSummaryRow[];
@@ -170,10 +208,11 @@ interface PdfProps {
   deputyName: string;
   deputyRoleLabel: string;
   directorName: string;
+  levelLabel?: string;
 }
 
 const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
-  rows, schoolName, logoBase64, academicYear, term, dateStr, officerName, deputyName, deputyRoleLabel, directorName,
+  rows, schoolName, logoBase64, academicYear, term, dateStr, officerName, deputyName, deputyRoleLabel, directorName, levelLabel,
 }) => {
   const displaySchoolName = dedupeSchoolWord(`โรงเรียน${schoolName}`);
   const chunks: ClassroomSummaryRow[][] = [];
@@ -195,7 +234,7 @@ const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
     { male: 0, female: 0, total: 0, present: 0, absent: 0, late: 0, leave: 0 }
   );
 
-  const totalPages = chunks.length;
+  const isFilteredLevel = Boolean(levelLabel && levelLabel !== "รวมทุกระดับ");
 
   return (
     <Document>
@@ -203,7 +242,9 @@ const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
         <Page key={pageIndex} size="A4" style={pdfStyles.page}>
           <View style={pdfStyles.topBar} fixed>
             <Text style={pdfStyles.topText}>{displaySchoolName}</Text>
-            <Text style={pdfStyles.topText}>รายงานยอดรวมรายวัน รายห้องเรียน</Text>
+            <Text style={pdfStyles.topText}>
+              รายงานยอดรวมรายวัน รายห้องเรียน{isFilteredLevel ? ` (${levelLabel})` : ""}
+            </Text>
           </View>
 
           {pageIndex === 0 && (
@@ -215,7 +256,9 @@ const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
               )}
               <View style={pdfStyles.titleBlock}>
                 <Text style={pdfStyles.reportTitle}>รายงานยอดรวมรายวัน รายห้องเรียน</Text>
-                <Text style={pdfStyles.reportSubtitle}>{displaySchoolName} ปีการศึกษา {term}/{academicYear}</Text>
+                <Text style={pdfStyles.reportSubtitle}>
+                  {displaySchoolName} {isFilteredLevel ? `[${levelLabel}] ` : ""}ปีการศึกษา {term}/{academicYear}
+                </Text>
                 <Text style={pdfStyles.reportSubtitle}>ประจำวันที่ {formatThaiDateFull(dateStr)}</Text>
               </View>
             </View>
@@ -254,7 +297,7 @@ const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
             {pageIndex === chunks.length - 1 && (
               <View style={[pdfStyles.row, pdfStyles.totalRow]}>
                 <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: COL_WIDTHS.idx }]}><Text style={pdfStyles.boldText}></Text></View>
-                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: COL_WIDTHS.label }]}><Text style={pdfStyles.boldText}>ยอดรวมทั้งสิ้น</Text></View>
+                <View style={[pdfStyles.cell, pdfStyles.leftCell, { width: COL_WIDTHS.label }]}><Text style={pdfStyles.boldText}>ยอดรวม{isFilteredLevel ? ` (${levelLabel})` : "ทั้งสิ้น"}</Text></View>
                 <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: COL_WIDTHS.male }]}><Text style={pdfStyles.boldText}>{totals.male}</Text></View>
                 <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: COL_WIDTHS.female }]}><Text style={pdfStyles.boldText}>{totals.female}</Text></View>
                 <View style={[pdfStyles.cell, pdfStyles.centerCell, { width: COL_WIDTHS.total }]}><Text style={pdfStyles.boldText}>{totals.total}</Text></View>
@@ -289,7 +332,7 @@ const DailyClassroomSummaryPdfDocument: React.FC<PdfProps> = ({
             </>
           )}
 
-          <Text style={pdfStyles.pageNumber} render={({ pageNumber }) => `หน้า ${pageNumber} / ${totalPages}`} fixed />
+          <Text style={pdfStyles.pageNumber} render={({ pageNumber, totalPages }) => `หน้า ${pageNumber} / ${totalPages}`} fixed />
         </Page>
       ))}
     </Document>
@@ -420,9 +463,16 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
     fetchReport();
   }, [fetchReport]);
 
-  const totals = useMemo(
+  const [activeTab, setActiveTab] = useState<LevelScope>("all");
+
+  const displayedRows = useMemo(() => {
+    if (activeTab === "all") return rows;
+    return rows.filter((row) => getLevelScopeOfClass(row.classLevel) === activeTab);
+  }, [rows, activeTab]);
+
+  const displayedTotals = useMemo(
     () =>
-      rows.reduce(
+      displayedRows.reduce(
         (acc, row) => ({
           male: acc.male + row.male,
           female: acc.female + row.female,
@@ -434,8 +484,18 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
         }),
         { male: 0, female: 0, total: 0, present: 0, absent: 0, late: 0, leave: 0 }
       ),
-    [rows]
+    [displayedRows]
   );
+
+  const currentTabObj = useMemo(
+    () => LEVEL_TABS.find((t) => t.key === activeTab) || LEVEL_TABS[3],
+    [activeTab]
+  );
+
+  const getTabCount = (tabKey: LevelScope) => {
+    if (tabKey === "all") return rows.length;
+    return rows.filter((r) => getLevelScopeOfClass(r.classLevel) === tabKey).length;
+  };
 
   const officerName = useMemo(
     () => [schoolSettings?.studentSupportOfficerPrefix, schoolSettings?.studentSupportOfficerName].filter(Boolean).join(" "),
@@ -449,7 +509,7 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
 
   const buildPdfDocument = () => (
     <DailyClassroomSummaryPdfDocument
-      rows={rows}
+      rows={displayedRows}
       schoolName={schoolSettings?.schoolName || ""}
       logoBase64={logoBase64}
       academicYear={academicYear}
@@ -459,12 +519,13 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
       deputyName={deputyName}
       deputyRoleLabel={deputyRoleLabel}
       directorName={schoolSettings?.directorName || ""}
+      levelLabel={currentTabObj.pdfLabel}
     />
   );
 
   const openPdfPreview = () => {
-    if (rows.length === 0) {
-      Swal.fire("ไม่มีข้อมูล", "ไม่พบข้อมูลนักเรียนสำหรับวันที่เลือก", "info");
+    if (displayedRows.length === 0) {
+      Swal.fire("ไม่มีข้อมูล", `ไม่พบข้อมูลนักเรียนในส่วน ${currentTabObj.label} สำหรับวันที่เลือก`, "info");
       return;
     }
     setShowPdfPreview(true);
@@ -474,7 +535,11 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
     setIsDownloadingPdf(true);
     try {
       const blob = await pdf(buildPdfDocument()).toBlob();
-      saveAs(blob, `รายงานยอดรวมรายวัน_รายห้องเรียน_${selectedDate}.pdf`);
+      const levelSuffix = activeTab !== "all" ? `_${currentTabObj.pdfLabel}` : "_รวมทุกระดับ";
+      saveAs(blob, `รายงานยอดรวมรายวัน_รายห้องเรียน${levelSuffix}_${selectedDate}.pdf`);
+    } catch (error) {
+      console.error("Error downloading PDF:", error);
+      Swal.fire("เกิดข้อผิดพลาด", "ไม่สามารถดาวน์โหลดเอกสาร PDF ได้", "error");
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -497,11 +562,11 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
             <button
               type="button"
               onClick={openPdfPreview}
-              disabled={loading || rows.length === 0}
+              disabled={loading || displayedRows.length === 0}
               className="inline-flex h-12 items-center justify-center gap-2.5 rounded-xl bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-600/25 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-none dark:disabled:bg-white/10"
             >
               <FileDown size={16} />
-              ดาวน์โหลด PDF
+              ดาวน์โหลด PDF ({currentTabObj.label})
             </button>
           </div>
 
@@ -530,24 +595,56 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
                 ค้นหารายงาน
               </button>
             </div>
+
+            {/* ชุดข้อมูล 4 ระดับ: 1 ระดับอนุบาล 2 ระดับประถมศึกษา 3 ระดับมัธยมศึกษา 4 รวมทุกระดับ */}
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1">ชุดข้อมูล:</span>
+              {LEVEL_TABS.map((tab) => {
+                const count = getTabCount(tab.key);
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-bold transition-all ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-600 dark:bg-indigo-500"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#1e1f21] dark:text-slate-300 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        isActive
+                          ? "bg-white/20 text-white"
+                          : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {count} ห้อง
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700">
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">นักเรียนทั้งหมด</p>
-              <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{totals.total}</p>
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">นักเรียนทั้งหมด ({currentTabObj.label})</p>
+              <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{displayedTotals.total}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700">
               <p className="text-xs font-bold text-slate-500 dark:text-slate-400">มาเรียนปกติ</p>
-              <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{totals.present}</p>
+              <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{displayedTotals.present}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700">
               <p className="text-xs font-bold text-slate-500 dark:text-slate-400">สาย / ลา</p>
-              <p className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-400">{totals.late} / {totals.leave}</p>
+              <p className="mt-1 text-2xl font-black text-amber-600 dark:text-amber-400">{displayedTotals.late} / {displayedTotals.leave}</p>
             </div>
             <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#2a2b2f] dark:ring-slate-700">
               <p className="text-xs font-bold text-slate-500 dark:text-slate-400">ขาดเรียน</p>
-              <p className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-400">{totals.absent}</p>
+              <p className="mt-1 text-2xl font-black text-rose-600 dark:text-rose-400">{displayedTotals.absent}</p>
             </div>
           </div>
 
@@ -575,15 +672,15 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
                       </td>
                     </tr>
                   ))
-                ) : rows.length === 0 ? (
+                ) : displayedRows.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                      ไม่พบข้อมูลนักเรียนสำหรับวันที่เลือก
+                      ไม่พบข้อมูลห้องเรียนสำหรับ{currentTabObj.label} ในวันที่เลือก
                     </td>
                   </tr>
                 ) : (
                   <>
-                    {rows.map((row, index) => (
+                    {displayedRows.map((row, index) => (
                       <tr key={row.key} className="hover:bg-slate-50 dark:hover:bg-[#1e1f21]">
                         <td className="border-r border-slate-200 px-3 py-2 text-center font-bold dark:border-slate-700">{index + 1}</td>
                         <td className="border-r border-slate-200 px-3 py-2 whitespace-nowrap dark:border-slate-700">{row.label}</td>
@@ -598,14 +695,14 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
                     ))}
                     <tr className="bg-slate-100 font-bold dark:bg-[#323338]">
                       <td className="border-r border-slate-200 px-3 py-2 dark:border-slate-700"></td>
-                      <td className="border-r border-slate-200 px-3 py-2 dark:border-slate-700">ยอดรวมทั้งสิ้น</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.male}</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.female}</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.total}</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.present}</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.absent}</td>
-                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{totals.late}</td>
-                      <td className="px-3 py-2 text-center">{totals.leave}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 dark:border-slate-700">ยอดรวม ({currentTabObj.label})</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.male}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.female}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.total}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.present}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.absent}</td>
+                      <td className="border-r border-slate-200 px-3 py-2 text-center dark:border-slate-700">{displayedTotals.late}</td>
+                      <td className="px-3 py-2 text-center">{displayedTotals.leave}</td>
                     </tr>
                   </>
                 )}
@@ -626,7 +723,7 @@ const DailyClassroomAttendanceSummaryPage: React.FC = () => {
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                ตัวอย่างเอกสาร — รายงานยอดรวมรายวัน รายห้องเรียน
+                ตัวอย่างเอกสาร — รายงานยอดรวมรายวัน รายห้องเรียน ({currentTabObj.label})
               </h2>
               <div className="flex items-center gap-2">
                 <button

@@ -494,6 +494,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile, onClose, isCollapse
               © 2025-{new Date().getFullYear()} BMG Smart School. All rights reserved.
               <br />
               เวอร์ชันระบบ {SYSTEM_VERSION}
+              <br />
+              <Link to="/privacy-policy" className="underline hover:text-indigo-500 dark:hover:text-indigo-400">
+                นโยบายความเป็นส่วนตัว
+              </Link>
+              {" · "}
+              <Link to="/terms-of-use" className="underline hover:text-indigo-500 dark:hover:text-indigo-400">
+                ข้อกำหนดการใช้บริการ
+              </Link>
             </p>
           </div>
         </div>

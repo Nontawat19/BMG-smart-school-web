@@ -14,6 +14,7 @@ import { ROLES } from '@/constants/roles';
 import { useEffectiveSchoolId } from '@/hooks/useEffectiveSchool';
 import { resolveEffectiveRouteAccess, userHasRouteAccess } from '@/utils/routeAccess';
 import { isFeatureFlagEnabled } from '@/utils/featureFlags';
+import ConsentGate from './ConsentGate';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -145,8 +146,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     }
     // Path is whitelisted — render immediately, skip role-based checks below
     // (student/parent users have no roles and would be wrongly blocked)
-    return <>{children}</>;
+    return <ConsentGate>{children}</ConsentGate>;
   }
+
+  // เจ้าหน้าที่ลงเวลา (student_attendance/teacher_attendance/school_attendance ล้วนๆ) มักเป็นบัญชี
+  // ที่ล็อกอินค้างไว้บนอุปกรณ์คีออสก์หน้าประตูโรงเรียนให้คนอื่นสแกน/กดปุ่มแทนตัวเอง ไม่ใช่บัญชีส่วนตัว
+  // ของใครคนใดคนหนึ่ง — ห้ามเอา ConsentGate (ซึ่งต้องมีคนกดยอมรับเอง) ไปค้างขวางหน้าจอคีออสก์
+  const skipConsentGate = !!user && isAttendanceEntryOnly(user.role);
 
   const isPwaAttendanceHub = isPwaStandalone() && location.pathname === PWA_ATTENDANCE_HUB_PATH;
 
@@ -203,7 +209,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
 
     // Super Admin must never be locked out by custom route_permissions.
     if (userRoles.includes('super_admin')) {
-      return <>{children}</>;
+      return skipConsentGate ? <>{children}</> : <ConsentGate>{children}</ConsentGate>;
     }
 
     // Wait for route_permissions to finish loading before deciding access —
@@ -236,7 +242,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     return <Navigate to="/home" replace />;
   }
 
-  return <>{children}</>;
+  return skipConsentGate ? <>{children}</> : <ConsentGate>{children}</ConsentGate>;
 };
 
 export default ProtectedRoute;

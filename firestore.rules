@@ -385,6 +385,15 @@ service cloud.firestore {
       }
     }
 
+    // 4.6 Consents — บันทึกการยอมรับนโยบายความเป็นส่วนตัว/ข้อกำหนดการใช้บริการ (ConsentGate.tsx)
+    // เก็บ 1 เอกสารต่อ uid ทั้งผู้ใช้จริง (ครู/แอดมิน) และ anonymous session (นักเรียน/ผู้ปกครองที่
+    // ล็อกอินผ่าน local session + signInAnonymously) — ต้องอนุญาต anonymous ด้วย ไม่ใช้ isRealAuth()
+    // เพราะ global fallback ด้านล่างกัน anonymous ออกหมด แต่ต้องให้นักเรียน/ผู้ปกครองบันทึกความยินยอม
+    // ของตัวเองได้ อ่าน/เขียนได้เฉพาะเอกสารของ uid ตัวเองเท่านั้น
+    match /consents/{consentId} {
+      allow read, write: if request.auth != null && request.auth.uid == consentId;
+    }
+
     // 5. Global fallback
     // NEW: กัน users/** ออก เพราะข้อ 4.5 คุมเองแล้ว — anonymous excluded entirely,
     // it has no legitimate reason to touch anything not explicitly matched above.

@@ -1061,3 +1061,80 @@ exports.aiAssistantChat = functions.region("us-central1").https.onCall(async (da
     }
 });
 
+// สรุปสถิติการยอมรับนโยบายความเป็นส่วนตัว/ข้อกำหนดการใช้บริการ (ConsentGate.tsx เขียน consents/{uid}
+// พร้อม schoolId/userType/refId ตอนกด "ยอมรับ") ใช้ Admin SDK อ่านตรงแทนที่จะพึ่ง Firestore rules
+// กรอง schoolId เอง — เลี่ยงปัญหา get() ราคาแพงต่อเอกสารตอน query ข้ามหลักร้อย-พันรายการ และรวมศูนย์
+// การตรวจสิทธิ์แอดมินไว้จุดเดียว (เหมือน assertUserManagementAccess) แทนที่จะเขียน rule ซับซ้อน
+exports.getConsentAuditStats = functions.region("us-central1").https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "ต้องเข้าสู่ระบบเพื่อใช้งานฟังก์ชันนี้");
+    }
+
+    const caller = await aiGetCallerContext(context.auth.uid);
+    if (!caller || !caller.roles.some((r) => USER_MANAGEMENT_ROLES.includes(r))) {
+        throw new functions.https.HttpsError("permission-denied", "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนี้");
+    }
+
+    const isSuperAdminCaller = caller.roles.includes(AI_ROLES.SUPER_ADMIN);
+    const requestedSchoolId = data?.schoolId ? String(data.schoolId) : null;
+    // ผู้ดูแลโรงเรียนทั่วไปดูได้เฉพาะโรงเรียนของตัวเอง — SUPER_ADMIN เลือกดูโรงเรียนไหนก็ได้
+    if (!isSuperAdminCaller && requestedSchoolId && requestedSchoolId !== caller.schoolId) {
+        throw new functions.https.HttpsError("permission-denied", "คุณไม่มีสิทธิ์ดูข้อมูลโรงเรียนอื่น");
+    }
+    const schoolId = isSuperAdminCaller ? (requestedSchoolId || caller.schoolId) : caller.schoolId;
+    if (!schoolId) {
+        throw new functions.https.HttpsError("invalid-argument", "ไม่พบรหัสโรงเรียนที่ต้องการตรวจสอบ");
+    }
+
+    const db = admin.firestore();
+    const [teachersSnap, studentsSnap, consentsSnap] = await Promise.all([
+        db.collection("school-settings").doc(schoolId).collection("teachers").get(),
+        db.collection("school-settings").doc(schoolId).collection("students").get(),
+        db.collection("consents").where("schoolId", "==", schoolId).get(),
+    ]);
+
+    const consentByKey = new Map();
+    consentsSnap.docs.forEach((d) => {
+        const c = d.data();
+        if (c.userType && c.refId) consentByKey.set(`${c.userType}_${c.refId}`, c);
+    });
+
+    const MAX_PENDING_LISTED = 300;
+
+    const teacherRows = teachersSnap.docs.map((d) => {
+        const t = d.data();
+        return { id: d.id, name: `${t.title || ""}${t.firstName || ""} ${t.lastName || ""}`.trim() || d.id };
+    });
+    const teacherPending = teacherRows.filter((t) => !consentByKey.has(`teacher_${t.id}`));
+
+    const studentRows = studentsSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter(aiIsActiveStudent)
+        .map((s) => ({
+            id: s.id,
+            name: `${s.title || ""}${s.firstName || ""} ${s.lastName || ""}`.trim() || s.id,
+            classLevel: s.classLevel || "",
+            room: s.room || "",
+        }));
+    const studentPending = studentRows.filter((s) => !consentByKey.has(`student_${s.id}`));
+
+    return {
+        schoolId,
+        teachers: {
+            total: teacherRows.length,
+            accepted: teacherRows.length - teacherPending.length,
+            pending: teacherPending.slice(0, MAX_PENDING_LISTED),
+            pendingTruncated: teacherPending.length > MAX_PENDING_LISTED,
+        },
+        students: {
+            total: studentRows.length,
+            accepted: studentRows.length - studentPending.length,
+            pending: studentPending.slice(0, MAX_PENDING_LISTED),
+            pendingTruncated: studentPending.length > MAX_PENDING_LISTED,
+        },
+        // ผู้ปกครองไม่มีบัญชี/เอกสารส่วนตัวในระบบให้ไล่รายชื่อทั้งหมดมาเทียบ (ล็อกอินผ่านเบอร์โทร+เลขบัตร
+        // ของบุตร ไม่ใช่บัญชีของตัวเอง) จึงรายงานได้แค่ "จำนวนที่เคยกดยอมรับแล้ว" ไม่มีตัวส่วนที่แน่นอน
+        parentsAcceptedCount: consentsSnap.docs.filter((d) => d.data().userType === "parent").length,
+    };
+});
+

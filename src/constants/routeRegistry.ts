@@ -194,6 +194,7 @@ export const ROUTE_REGISTRY: RouteDefinition[] = [
   { key: 'student_bk14',                path: '/academic/student-bk14-report',             label: 'รายงาน บค.14',                 category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'students_att_summary',        path: '/academic/students-attendance-summary',     label: 'รายงานการมาเรียน (นักเรียน)', category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'daily_classroom_att_summary',    path: '/academic/daily-classroom-attendance-summary', label: 'รายงานยอดรวมรายวัน รายห้องเรียน', category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
+  { key: 'student_data_report',         path: '/academic/student-data-report',             label: 'รายงานข้อมูลนักเรียน',          category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
   { key: 'teacher_att_today',           path: '/academic/teacher-attendance-today',        label: 'การลงเวลาวันนี้ (ครู)',        category: 'วิชาการ - รายงาน', defaultRoles: TEACHER_ATTENDANCE_TODAY_ACCESS },
   { key: 'teacher_att_date',            path: '/academic/teacher-attendance-date-selection',label: 'บันทึกลงเวลาครู (เลือกวัน)',  category: 'วิชาการ - รายงาน', defaultRoles: [ROLES.SCHOOL_ADMIN] },
   { key: 'teacher_att_summary',         path: '/academic/teacher-attendance-summary',      label: 'รายงานลงเวลา (ครู)',           category: 'วิชาการ - รายงาน', defaultRoles: STUDENT_AFFAIRS_ACCESS },
